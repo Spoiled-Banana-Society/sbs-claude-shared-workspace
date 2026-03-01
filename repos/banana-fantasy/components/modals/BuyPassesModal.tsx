@@ -128,7 +128,7 @@ export function BuyPassesModal({
           amount: fundingAmount,
           asset: 'USDC',
           card: {
-            preferredProvider: 'coinbase',
+            preferredProvider: 'moonpay',
           },
         },
       });
@@ -142,7 +142,7 @@ export function BuyPassesModal({
       setFlowStep('waiting-for-usdc');
 
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
-      const maxWaitMs = 120_000; // 2 minutes max
+      const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
       const pollIntervalMs = 3_000; // check every 3s
 
       const waitForUsdc = async () => {
@@ -280,7 +280,7 @@ export function BuyPassesModal({
   };
 
   const flowSteps = [
-    { key: 'funding', label: 'Purchasing USDC via Coinbase...' },
+    { key: 'funding', label: 'Purchasing USDC via MoonPay...' },
     { key: 'waiting-for-usdc', label: 'Waiting for USDC to arrive...' },
     { key: 'minting', label: 'Minting draft passes...' },
     { key: 'success', label: 'Purchase complete!' },
@@ -342,24 +342,22 @@ export function BuyPassesModal({
             {/* Payment Method */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
-              <div className={`grid ${loggedInWithWallet ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
-                {loggedInWithWallet && (
-                  <button
-                    onClick={() => setPaymentMethod('usdc')}
-                    className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
-                  >
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'usdc' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                      <svg viewBox="0 0 24 24" className={`w-5 h-5 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <text x="12" y="16" textAnchor="middle" fill="currentColor" stroke="none" fontSize="12" fontWeight="bold">$</text>
-                      </svg>
-                    </div>
-                    <div>
-                      <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</p>
-                      <p className="text-text-muted text-xs">USDC on Base</p>
-                    </div>
-                  </button>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setPaymentMethod('usdc')}
+                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
+                >
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'usdc' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
+                    <svg viewBox="0 0 24 24" className={`w-5 h-5 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <text x="12" y="16" textAnchor="middle" fill="currentColor" stroke="none" fontSize="12" fontWeight="bold">$</text>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</p>
+                    <p className="text-text-muted text-xs">USDC on Base</p>
+                  </div>
+                </button>
 
                 <button
                   onClick={() => setPaymentMethod('card')}

@@ -63,7 +63,7 @@ export function DraftPlayerList({
           filter: brightness(50%) sepia(1) hue-rotate(21deg) saturate(2000%) brightness(100%);
         }
       `}</style>
-      {/* Search/Filter Bar - max width 920px centered */}
+      {/* Search/Filter Bar - centered at 920px */}
       <div className="w-full flex justify-center">
         <div className="w-full" style={{ maxWidth: 920 }}>
           {/* Buttons row */}
@@ -354,7 +354,7 @@ export function DraftPlayerList({
                       Players from team
                     </div>
                     <div className="text-center" style={{ fontSize: 14 }}>
-                      {player.playersFromTeam.map((name, i) => (
+                      {player.playersFromTeam.slice(0, 3).map((name, i) => (
                         <span key={i} className="pr-2 text-white">
                           {name}
                         </span>

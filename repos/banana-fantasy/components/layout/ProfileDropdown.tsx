@@ -129,6 +129,21 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             )}
           </div>
 
+          {/* Wallet Balance */}
+          <div className="px-3 py-2.5 border-b border-bg-tertiary">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded-full bg-[#2775CA] flex items-center justify-center">
+                  <span className="text-white text-[10px] font-bold">$</span>
+                </div>
+                <span className="text-text-muted text-xs uppercase tracking-wider">USDC on Base</span>
+              </div>
+              <span className="text-text-primary font-bold text-sm tabular-nums">
+                {user.usdcBalance !== undefined ? user.usdcBalance.toFixed(2) : '0.00'}
+              </span>
+            </div>
+          </div>
+
           {/* Stats Row */}
           <div className="px-3 py-2.5 border-b border-bg-tertiary">
             <div className="grid grid-cols-4 gap-1.5">

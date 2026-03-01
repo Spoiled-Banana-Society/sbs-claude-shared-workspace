@@ -8,6 +8,7 @@ export interface User {
   nflTeam?: string;
   xHandle?: string;
   draftPasses: number;
+  usdcBalance: number; // USDC balance on Base (human-readable, e.g. 25.00)
   freeDrafts: number;
   wheelSpins: number;
   jackpotEntries: number;

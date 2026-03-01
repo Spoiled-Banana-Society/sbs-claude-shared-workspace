@@ -79,14 +79,12 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
 
         {/* Action Button */}
         <div className="flex justify-center mt-10">
-          <Tooltip content="Enter A Draft">
-            <button
-              onClick={onEnter}
-              className="w-[220px] py-4 text-xl font-bold rounded-xl transition-all duration-200 bg-banana text-black hover:brightness-110 hover:scale-105"
-            >
-              ENTER
-            </button>
-          </Tooltip>
+          <button
+            onClick={onEnter}
+            className="w-[220px] py-4 text-xl font-bold rounded-xl transition-all duration-200 bg-banana text-black hover:brightness-110 hover:scale-105"
+          >
+            ENTER
+          </button>
         </div>
       </div>
     </div>

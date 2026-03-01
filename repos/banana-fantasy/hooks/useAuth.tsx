@@ -62,15 +62,39 @@ function saveProfile(profile: SavedProfile): void {
   }
 }
 
+// ── Mock auth for local testing ──────────────────────────────────────
+// Set NEXT_PUBLIC_MOCK_AUTH=true in .env.local to simulate a logged-in
+// staging user without Privy. This lets the dev preview see the exact
+// same code paths as a real authenticated user on staging.
+const MOCK_AUTH = process.env.NEXT_PUBLIC_MOCK_AUTH === 'true';
+const MOCK_WALLET = '0xd3301bC039faF4223dA98bcEB5Fb818C9993620';
+const MOCK_USER: User | null = MOCK_AUTH
+  ? {
+      id: 'mock-user-001',
+      username: 'TestUser',
+      walletAddress: MOCK_WALLET,
+      loginMethod: 'social',
+      draftPasses: 21,
+      usdcBalance: 0,
+      freeDrafts: 0,
+      wheelSpins: 0,
+      jackpotEntries: 0,
+      hofEntries: 0,
+      isVerified: true,
+      createdAt: '2025-01-01T00:00:00Z',
+    }
+  : null;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(MOCK_USER);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
   const walletAddress = useMemo(() => {
+    if (MOCK_AUTH) return MOCK_WALLET;
     if (!privy.user) return null;
     // First: look for an external (non-Privy) wallet
     const external = privy.user.linkedAccounts?.find(
@@ -93,6 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
+    if (MOCK_AUTH) return; // Skip Privy sync in mock mode
     if (privy.ready && privy.authenticated && privy.user && walletAddress) {
       // Avoid duplicate fetches for the same wallet
       if (fetchingRef.current === walletAddress) return;
@@ -144,6 +169,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             nflTeam: savedProfile?.nflTeam,
             xHandle: undefined,
             draftPasses: savedProfile?.draftPasses || 0,
+            usdcBalance: 0,
             freeDrafts: 20,
             wheelSpins: 0,
             jackpotEntries: 0,
@@ -168,53 +194,83 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [privy.ready, privy.authenticated, privy.user, walletAddress]);
 
-  // Read on-chain NFT balance and sync to user.draftPasses
+  // Read on-chain NFT balance + USDC balance and sync to user
   // Runs on login, every 30s, and on network reconnect
   useEffect(() => {
+    if (MOCK_AUTH) return; // Skip on-chain reads in mock mode
     if (!walletAddress || !user) return;
 
-    const readBalance = () => {
-      const BBB4_ADDRESS = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
-      const balanceOfSig = '0x70a08231'; // balanceOf(address)
-      const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
+    const BBB4_ADDRESS = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
+    const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+    const balanceOfSig = '0x70a08231'; // balanceOf(address)
+    const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
+
+    const readBalances = () => {
+      // Batch both reads in one fetch using JSON-RPC batch
       fetch('https://mainnet.base.org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0', id: 1, method: 'eth_call',
-          params: [{ to: BBB4_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
-        }),
+        body: JSON.stringify([
+          {
+            jsonrpc: '2.0', id: 1, method: 'eth_call',
+            params: [{ to: BBB4_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
+          },
+          {
+            jsonrpc: '2.0', id: 2, method: 'eth_call',
+            params: [{ to: USDC_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
+          },
+        ]),
       })
         .then((res) => res.json())
-        .then((data) => {
-          if (data.result) {
-            const nftBalance = parseInt(data.result, 16);
-            setUser((prev) => {
-              if (prev && prev.draftPasses !== nftBalance) {
-                // Cache to localStorage so it persists across reconnects
+        .then((results) => {
+          if (!Array.isArray(results)) return;
+          const nftResult = results.find((r: { id: number }) => r.id === 1);
+          const usdcResult = results.find((r: { id: number }) => r.id === 2);
+
+          setUser((prev) => {
+            if (!prev) return prev;
+            let changed = false;
+            let updated = prev;
+
+            // NFT draft pass balance
+            if (nftResult?.result) {
+              const nftBalance = parseInt(nftResult.result, 16);
+              if (prev.draftPasses !== nftBalance) {
+                updated = { ...updated, draftPasses: nftBalance };
+                changed = true;
                 try {
                   const saved = localStorage.getItem(USER_PROFILE_KEY);
                   const profile = saved ? JSON.parse(saved) : {};
                   profile.draftPasses = nftBalance;
                   localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
                 } catch { /* ignore */ }
-                return { ...prev, draftPasses: nftBalance };
               }
-              return prev;
-            });
-          }
+            }
+
+            // USDC balance (6 decimals)
+            if (usdcResult?.result) {
+              const rawUsdc = parseInt(usdcResult.result, 16);
+              const usdcBalance = rawUsdc / 1e6;
+              if (prev.usdcBalance !== usdcBalance) {
+                updated = { ...updated, usdcBalance };
+                changed = true;
+              }
+            }
+
+            return changed ? updated : prev;
+          });
         })
         .catch(() => { /* silent — don't break auth if RPC fails */ });
     };
 
     // Read immediately
-    readBalance();
+    readBalances();
 
     // Poll every 30s
-    const interval = setInterval(readBalance, 30_000);
+    const interval = setInterval(readBalances, 30_000);
 
     // Re-read on network reconnect
-    const onOnline = () => { setTimeout(readBalance, 1000); };
+    const onOnline = () => { setTimeout(readBalances, 1000); };
     window.addEventListener('online', onOnline);
 
     return () => {
@@ -254,9 +310,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        walletAddress,
+        walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
-        isLoading: !privy.ready,
+        isLoading: MOCK_AUTH ? false : !privy.ready,
         isNewUser,
         setIsNewUser,
         showOnboarding,

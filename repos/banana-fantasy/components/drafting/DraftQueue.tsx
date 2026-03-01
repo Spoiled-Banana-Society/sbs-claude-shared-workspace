@@ -58,7 +58,6 @@ export function DraftQueue({
             <div ref={provided.innerRef} {...provided.droppableProps}>
               {activeQueue.map((player, index) => {
                 const hexColor = getPositionColorHex(player.position);
-                const basePos = positionFromPlayerId(player.playerId);
                 const expanded = expandedPlayer === player.playerId;
 
                 return (
@@ -67,6 +66,7 @@ export function DraftQueue({
                       <div
                         ref={provided.innerRef}
                         {...provided.draggableProps}
+                        {...provided.dragHandleProps}
                         className="w-[900px] max-w-full mx-auto"
                       >
                         {/* Player row */}
@@ -82,37 +82,32 @@ export function DraftQueue({
                             borderBottom: '1px solid #222',
                           }}
                         >
-                          {/* Drag handle */}
+                          {/* Banana icon — tap to unqueue */}
                           <div
-                            {...provided.dragHandleProps}
-                            className="flex-shrink-0 text-white/30 cursor-grab active:cursor-grabbing select-none"
-                            style={{ fontSize: '14px', lineHeight: 1 }}
+                            className="w-[24px] h-[24px] flex-shrink-0 cursor-pointer"
+                            onClick={e => {
+                              e.stopPropagation();
+                              onRemoveFromQueue(player.playerId);
+                              if (expanded) setExpandedPlayer(null);
+                            }}
                           >
-                            &#x2807;
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src="/banana-filled.webp"
+                              alt="unqueue"
+                              className="w-full h-full"
+                              style={{
+                                filter: 'brightness(50%) sepia(1) hue-rotate(21deg) saturate(2000%) brightness(100%)',
+                              }}
+                            />
                           </div>
 
-                          {/* Queue number */}
-                          <span className="text-banana text-xs font-bold w-5 flex-shrink-0 text-center">
-                            {index + 1}
-                          </span>
-
-                          {/* Banana icon - filled when queued */}
-                          <span className="text-lg flex-shrink-0">&#x1F34C;</span>
-
-                          {/* Player ID with full position color background + BYE below */}
+                          {/* Player name + BYE */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="text-sm font-bold px-2 py-0.5 flex-shrink-0"
-                                style={{ backgroundColor: hexColor, color: '#000' }}
-                              >
-                                {basePos}
-                              </span>
-                              <span className="font-primary font-bold text-white text-sm truncate">
-                                {player.playerId}
-                              </span>
+                            <div className="font-primary font-bold text-white text-sm">
+                              {player.playerId}
                             </div>
-                            <div className="text-[11px] text-white/40 mt-0.5 ml-0.5">
+                            <div className="text-[11px] text-white/40 mt-0.5">
                               BYE {player.byeWeek}
                             </div>
                           </div>
@@ -141,21 +136,23 @@ export function DraftQueue({
                             }}
                           >
                             {/* Players from team */}
-                            <div className="mb-3 text-center">
-                              <span className="text-[11px] uppercase text-white/40 tracking-wider font-bold">
-                                Players from team
-                              </span>
-                              <div className="flex flex-wrap justify-center gap-1 mt-1.5">
-                                {player.playersFromTeam.map((name, i) => (
-                                  <span key={i} className="text-xs text-white/60 bg-white/5 px-2 py-0.5 rounded">
-                                    {name}
-                                  </span>
-                                ))}
+                            {player.playersFromTeam && player.playersFromTeam.length > 0 && (
+                              <div className="mb-3 text-center">
+                                <span className="text-[11px] uppercase text-white/40 tracking-wider font-bold">
+                                  Players from team
+                                </span>
+                                <div className="flex flex-wrap justify-center gap-1 mt-1.5">
+                                  {player.playersFromTeam.slice(0, 3).map((name, i) => (
+                                    <span key={i} className="text-xs text-white/60 bg-white/5 px-2 py-0.5 rounded">
+                                      {name}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
-                            </div>
+                            )}
 
                             {/* Draft / Unqueue buttons */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-center gap-4 py-2">
                               <button
                                 onClick={e => {
                                   e.stopPropagation();
@@ -165,10 +162,10 @@ export function DraftQueue({
                                   }
                                 }}
                                 disabled={!isUserTurn}
-                                className={`font-primary flex-1 py-2 text-sm font-bold uppercase transition-all ${
+                                className={`font-primary py-1 px-2 text-sm font-bold uppercase rounded cursor-pointer transition-all ${
                                   isUserTurn
-                                    ? 'bg-[#F3E216] text-black hover:bg-banana-light'
-                                    : 'bg-white/10 text-white/30 cursor-not-allowed'
+                                    ? 'bg-[#F3E216] text-black'
+                                    : 'bg-gray-500 text-gray-400 cursor-not-allowed'
                                 }`}
                               >
                                 Draft
@@ -179,7 +176,7 @@ export function DraftQueue({
                                   onRemoveFromQueue(player.playerId);
                                   setExpandedPlayer(null);
                                 }}
-                                className="font-primary flex-1 py-2 text-sm font-bold uppercase bg-[#F3E216] text-black hover:bg-banana-light transition-all"
+                                className="font-primary py-1 px-2 text-sm font-bold uppercase rounded cursor-pointer bg-[#F3E216] text-black"
                               >
                                 Unqueue
                               </button>

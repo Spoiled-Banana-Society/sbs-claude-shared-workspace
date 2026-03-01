@@ -13,18 +13,10 @@ const STAGING_KEY = 'sbs-staging-mode';
 const STAGING_API_OVERRIDE_KEY = 'sbs-staging-api-url';
 const STAGING_WS_OVERRIDE_KEY = 'sbs-staging-ws-url';
 
-// Build-time defaults (Cloudflare Tunnel)
-// These fallback hosts keep short-link staging usable even when apiUrl/wsUrl query params are omitted.
-//
-// HOW TO REFRESH:
-//   1. Start a new Cloudflare Quick Tunnel on the staging machine:
-//        cloudflared tunnel --url http://localhost:8080   (API)
-//        cloudflared tunnel --url http://localhost:8081   (WS — use wss:// below)
-//   2. Copy the generated *.trycloudflare.com URLs here.
-//   3. Alternatively, pass runtime overrides via URL params so no code change is needed:
-//        ?staging=true&apiUrl=https://NEW_TUNNEL.trycloudflare.com&wsUrl=wss://NEW_WS_TUNNEL.trycloudflare.com
+// Build-time defaults (Cloud Run staging services)
+// Runtime overrides still work via URL params: ?apiUrl=https://...&wsUrl=wss://...
 const DEFAULT_STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-const DEFAULT_STAGING_DRAFT_SERVER_URL = 'wss://diesel-metallic-cookie-counseling.trycloudflare.com';
+const DEFAULT_STAGING_DRAFT_SERVER_URL = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || DEFAULT_STAGING_DRAFTS_API_URL;
 const STAGING_DRAFT_SERVER_URL = process.env.NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL || DEFAULT_STAGING_DRAFT_SERVER_URL;
 

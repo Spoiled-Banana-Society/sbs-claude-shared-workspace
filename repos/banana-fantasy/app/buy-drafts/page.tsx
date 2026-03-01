@@ -1,8 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/hooks/useAuth';
-import { BuyPassesModal } from '@/components/modals/BuyPassesModal';
+
+const BuyPassesModal = dynamic(
+  () => import('@/components/modals/BuyPassesModal').then(m => m.BuyPassesModal),
+  { ssr: false }
+);
 import { isStagingMode } from '@/lib/staging';
 
 export default function BuyDraftsPage() {

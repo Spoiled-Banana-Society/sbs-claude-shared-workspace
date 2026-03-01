@@ -218,7 +218,7 @@ export function DraftRoomChat({ playerCount, phase, username = 'You' }: DraftRoo
   }
 
   return (
-    <div className="w-64 sticky top-0 h-80 flex flex-col bg-[#1c1c1e] border-l border-white/10 flex-shrink-0 rounded-bl-lg">
+    <div className="w-full max-w-[400px] mx-auto flex-1 flex flex-col bg-[#1c1c1e] rounded-lg">
       {/* Header with tabs - iOS style */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <div className="flex items-center gap-1 bg-[#2c2c2e] rounded-lg p-0.5">

@@ -29,11 +29,9 @@ export interface TimerPayload {
   currentDrafter: string;
 }
 
-export interface NewPickPayload {
-  newPick: PlayerInfo;
-  nextDrafter: string;
-  currentPick: number;
-}
+// Go server broadcasts flat PlayerInfo as new_pick payload (not wrapped in { newPick, nextDrafter, currentPick }).
+// The draft_info_update message (separate WS event) handles advancing pickNumber/currentDrafter.
+export type NewPickPayload = PlayerInfo;
 
 export interface DraftInfoPayload {
   draftId: string;
@@ -171,7 +169,11 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     intentionalCloseRef.current = false;
 
     const serverUrl = getDraftServerUrl() || DEFAULT_SERVER_URL;
-    const url = `${serverUrl}/ws?address=${encodeURIComponent(walletAddress)}&draftName=${encodeURIComponent(draftName)}`;
+    // Normalize wallet address to lowercase — matches production DraftWebSocketClient.buildWsUrl()
+    // which calls normalizeWalletAddress(). The Go server does case-sensitive comparison
+    // between c.address (from URL) and newPick.OwnerAddress (from payload), so they MUST match.
+    const normalizedAddress = walletAddress.trim().toLowerCase();
+    const url = `${serverUrl}/ws?address=${encodeURIComponent(normalizedAddress)}&draftName=${encodeURIComponent(draftName)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -195,6 +197,11 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
         const data = JSON.parse(event.data);
         const { type, payload } = data;
         const cbs = callbacksRef.current;
+
+        // Log all non-timer messages (timer is too frequent)
+        if (type !== 'timer_update') {
+          console.log(`[WS raw] type=${type}`, payload ? JSON.stringify(payload).slice(0, 120) : 'no payload');
+        }
 
         switch (type) {
           case 'countdown_update':

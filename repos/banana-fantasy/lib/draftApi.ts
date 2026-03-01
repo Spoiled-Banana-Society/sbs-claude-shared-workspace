@@ -15,19 +15,21 @@ export interface DraftOrderEntry {
 
 export interface AdpEntry {
   adp: number;
-  byeWeek: number;
+  byeWeek?: number;
+  bye?: string;
   playerId: string;
 }
 
 export interface DraftInfoResponse {
   draftId: string;
   displayName: string;
-  draftStartTime: number; // unix ms
+  draftStartTime: number; // unix seconds
   pickLength: number;
   currentDrafter: string; // wallet address
-  currentPickNumber: number;
-  currentRound: number;
+  pickNumber: number;
+  roundNum: number;
   pickInRound: number;
+  currentPickEndTime?: number;
   draftOrder: DraftOrderEntry[];
   adp: AdpEntry[];
 }
@@ -110,7 +112,13 @@ export async function getDraftInfo(draftId: string): Promise<DraftInfoResponse> 
 }
 
 export async function getDraftSummary(draftId: string): Promise<DraftSummary> {
-  return apiFetch<DraftSummary>(`/draft/${draftId}/state/summary`);
+  const res = await apiFetch<unknown>(`/draft/${draftId}/state/summary`);
+  if (Array.isArray(res)) return res as DraftSummary;
+  if (res && typeof res === 'object') {
+    const obj = res as Record<string, unknown>;
+    if (Array.isArray(obj.summary)) return obj.summary as DraftSummary;
+  }
+  return [];
 }
 
 export async function getDraftRosters(draftId: string): Promise<RosterState> {

@@ -109,7 +109,12 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationStructuredData) }}
         />
         <GoogleAnalytics />
-        {/* <ServiceWorkerRegistration /> */}
+        {/* Unregister stale service worker that was breaking Next.js navigation */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(reg){reg.unregister()})});caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}`
+          }}
+        />
         <StagingBanner />
         <StyledComponentsRegistry>
           <Providers>

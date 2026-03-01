@@ -222,8 +222,10 @@ export async function getLeagueLeaderboard(
  *
  * Backend endpoint: `POST /staging/fill-bots/{draftType}?count={count}`
  */
-export async function stagingFillBots(speed: DraftSpeed, count: number = 9): Promise<unknown> {
-  return draftsApi().post<unknown>(`/staging/fill-bots/${speed}`, undefined, { query: { count } });
+export async function stagingFillBots(speed: DraftSpeed, count: number = 9, leagueId?: string): Promise<unknown> {
+  const query: Record<string, string | number> = { count };
+  if (leagueId) query.leagueId = leagueId;
+  return draftsApi().post<unknown>(`/staging/fill-bots/${speed}`, undefined, { query });
 }
 
 /**

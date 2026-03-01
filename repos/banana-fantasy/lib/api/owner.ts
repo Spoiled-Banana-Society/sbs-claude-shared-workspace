@@ -100,6 +100,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
     xHandle: undefined,
     // These counts should eventually come from draft tokens / promos.
     draftPasses: typeof owner.availableCredit === 'number' ? owner.availableCredit : 0,
+    usdcBalance: 0, // Will be populated by on-chain read in useAuth
     freeDrafts: 20,
     wheelSpins: 0,
     jackpotEntries: 0,
@@ -189,10 +190,39 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
 
 /**
  * Fetch draft tokens (draft passes) for an owner.
+ *
+ * Backend returns `{ available: [...], active: [...] }` with underscore-prefixed
+ * fields (`_cardId`, `_leagueId`, `_level`, etc.). This function flattens both
+ * arrays and normalizes field names to match the `ApiDraftToken` interface.
  */
 export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDraftToken[]> {
   const wallet = normalizeWalletAddress(walletAddress);
-  return draftsApi().get<ApiDraftToken[]>(`/owner/${wallet}/draftToken/all`);
+  const raw: unknown = await draftsApi().get<unknown>(`/owner/${wallet}/draftToken/all`);
+
+  // Flatten { available, active } → single array
+  let rawTokens: Record<string, unknown>[] = [];
+  if (Array.isArray(raw)) {
+    rawTokens = raw;
+  } else if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    const available = Array.isArray(obj.available) ? obj.available : [];
+    const active = Array.isArray(obj.active) ? obj.active : [];
+    rawTokens = [...active, ...available];
+  }
+
+  // Normalize underscore-prefixed fields → ApiDraftToken shape
+  return rawTokens.map((t): ApiDraftToken => ({
+    cardId: String(t._cardId ?? t.cardId ?? ''),
+    leagueId: String(t._leagueId ?? t.leagueId ?? ''),
+    leagueDisplayName: String(t._leagueDisplayName ?? t.leagueDisplayName ?? ''),
+    level: (t._level ?? t.level ?? 'Pro') as ApiDraftTokenLevel,
+    rank: t._rank != null ? String(t._rank) : t.rank != null ? String(t.rank) : undefined,
+    seasonScore: t._seasonScore != null ? String(t._seasonScore) : t.seasonScore != null ? String(t.seasonScore) : undefined,
+    weekScore: t._weekScore != null ? String(t._weekScore) : t.weekScore != null ? String(t.weekScore) : undefined,
+    roster: (t.roster ?? undefined) as ApiDraftToken['roster'],
+    prizes: (t.prizes ?? undefined) as ApiDraftToken['prizes'],
+    ...t, // Preserve any extra fields
+  }));
 }
 
 /**
