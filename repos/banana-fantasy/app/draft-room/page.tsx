@@ -29,27 +29,94 @@ import {
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { useNotifOptIn } from '@/app/providers';
 import * as draftStore from '@/lib/draftStore';
+import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
   const contestName = searchParams.get('name') || 'Draft Room';
   const initialPlayers = parseInt(searchParams.get('players') || '1', 10);
-  const draftId = searchParams.get('draftId') || searchParams.get('id') || '';
+  const urlDraftId = searchParams.get('draftId') || searchParams.get('id') || '';
   const walletParam = searchParams.get('wallet') || '';
   const modeParam = searchParams.get('mode') as DraftMode | null;
-  const isLiveMode = modeParam === 'live' && !!draftId && !!walletParam;
+  const speedParam = searchParams.get('speed') as 'fast' | 'slow' | null;
+
+  // draftId is stateful — starts empty when navigating before joinDraft completes
+  const [draftId, setDraftId] = useState(urlDraftId);
+  const isLiveMode = modeParam === 'live' && !!walletParam;
 
   const { user } = useAuth();
   const { playSpinningSound, playReelStop, playCountdownTick, playWinSound } = useDraftAudio();
   const { triggerOptIn } = useNotifOptIn();
 
-  // Draft engine — live mode (including staging) uses 'live' for server-based state
-  const engine = useDraftEngine(isLiveMode ? 'live' : 'local');
+  // Fallback: when server APIs can't provide player data, switch to local mode
+  // so bots auto-play, local timer ticks, and ALL_POSITIONS provides 224 NFL players
+  const [fallbackLocal, setFallbackLocal] = useState(false);
+
+  // Draft engine — live mode uses 'live' for server state; fallbackLocal overrides to 'local'
+  const engine = useDraftEngine(isLiveMode && !fallbackLocal ? 'live' : 'local');
 
   // ==================== LIVE MODE STATE ====================
-  const [liveLoading, setLiveLoading] = useState(isLiveMode);
+  const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const liveInitializedRef = useRef(false);
+  const [liveDataReady, setLiveDataReady] = useState(false);
+  const [engineReady, setEngineReady] = useState(false);
+  const liveRetryCountRef = useRef(0);
+  // Track whether we're waiting for server to create draft documents after filling
+  const [waitingForServer, setWaitingForServer] = useState(false);
+  const [serverWaitProgress, setServerWaitProgress] = useState(0);
+  // Queue WS messages that arrive before engine initialization (instead of dropping them)
+  // Messages are replayed after initializeFromServer completes — matches production behavior
+  const pendingWsMessagesRef = useRef<Array<{type: string, payload: any}>>([]);
+
+  // ==================== LIVE MODE: Join draft if no draftId yet ====================
+  const joinCalledRef = useRef(false);
+  useEffect(() => {
+    if (!isLiveMode || draftId || !walletParam || joinCalledRef.current) return;
+    joinCalledRef.current = true;
+
+    async function joinAndFill() {
+      try {
+        const { joinDraft } = await import('@/lib/api/leagues');
+        const promoType = searchParams?.get('promoType') as 'jackpot' | 'hof' | 'pro' | null;
+        const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, promoType ?? undefined);
+        if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
+
+        const newId = draftRoom.id;
+        setDraftId(newId);
+
+        // Save to store
+        draftStore.addDraft({
+          id: newId,
+          contestName: draftRoom.contestName || `BBB #${newId}`,
+          status: 'filling',
+          type: null,
+          draftSpeed: speedParam || 'fast',
+          players: draftRoom.players || 1,
+          maxPlayers: 10,
+          joinedAt: Date.now(),
+          phase: 'filling',
+          fillingStartedAt: Date.now(),
+          fillingInitialPlayers: draftRoom.players || 1,
+        });
+
+        // Fire off bot fill in background (staging only)
+        if (isStagingMode()) {
+          const stagingBase = getStagingApiUrl();
+          if (stagingBase) {
+            fetch(`${stagingBase}/staging/fill-bots/${speedParam || 'fast'}?count=9`, { method: 'POST' })
+              .catch(() => console.warn('Bot fill failed'));
+          }
+        }
+      } catch (err) {
+        console.error('[Draft Room] Failed to join draft:', err);
+        setLiveError(err instanceof Error ? err.message : 'Failed to join draft');
+      }
+    }
+
+    joinAndFill();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, draftId, walletParam, speedParam]);
 
   // ==================== RESTORE FROM STORE ====================
   // Never read store in live mode — server is single source of truth
@@ -57,7 +124,7 @@ function DraftRoomContent() {
 
   // ==================== PHASE STATE ====================
   const [phase, setPhase] = useState<RoomPhase>(() => {
-    if (isLiveMode) return 'loading';
+    if (isLiveMode) return 'filling';
     if (stored?.phase) return stored.phase;
     return 'filling';
   });
@@ -98,6 +165,16 @@ function DraftRoomContent() {
   // ==================== DRAFT ORDER STATE (pre-engine) ====================
   const [draftOrder, setDraftOrder] = useState<typeof DRAFT_PLAYERS>(() => {
     if (stored?.draftOrder) return stored.draftOrder;
+    // In live mode, pre-populate with user as first entry so box #1 shows "You"
+    if (isLiveMode && walletParam) {
+      return [{
+        id: '1',
+        name: walletParam,
+        displayName: 'You',
+        isYou: true,
+        avatar: '🍌',
+      }];
+    }
     return [];
   });
   const [userDraftPosition, setUserDraftPosition] = useState<number>(() => {
@@ -215,30 +292,58 @@ function DraftRoomContent() {
       engine.handleCountdownUpdate(payload);
     },
     onTimerUpdate: (payload) => {
+      if (!liveInitializedRef.current) {
+        pendingWsMessagesRef.current.push({ type: 'timer_update', payload });
+        return;
+      }
+      // Match production: let all timer_update through, no blocking.
+      // The display logic uses mainCountdown (from draftStartTime) during
+      // pre-spin/spinning/result phases regardless of engine.draftPhase.
       engine.handleTimerUpdate(payload);
       lastWsUpdateRef.current = Date.now();
     },
     onNewPick: (payload) => {
-      engine.handleNewPick(payload);
-      // Re-fetch available players from REST (matches old system)
-      if (draftId && walletParam) {
-        draftApi.getPlayerRankings(draftId, walletParam).then(fresh => {
-          const available = fresh
-            .filter(p => p.playerStateInfo.ownerAddress === '')
-            .map(p => ({ playerId: p.playerStateInfo.playerId, team: p.playerStateInfo.team, position: p.playerStateInfo.position, adp: p.stats.adp, rank: p.ranking.rank, byeWeek: p.stats.byeWeek, playersFromTeam: p.stats.playersFromTeam || [] }));
-          engine.refreshAvailablePlayers(available);
-        }).catch(() => {});
+      console.log('[WS] new_pick received:', payload?.playerId, 'pick#', payload?.pickNum, 'initialized:', liveInitializedRef.current);
+      if (!liveInitializedRef.current) {
+        pendingWsMessagesRef.current.push({ type: 'new_pick', payload });
+        console.log('[WS] Queued new_pick (engine not ready). Queue size:', pendingWsMessagesRef.current.length);
+        return;
       }
+      engine.handleNewPick(payload);
+      lastWsUpdateRef.current = Date.now();
     },
     onDraftInfoUpdate: (payload) => {
+      if (!liveInitializedRef.current) {
+        pendingWsMessagesRef.current.push({ type: 'draft_info_update', payload });
+        return;
+      }
       // Cast: handler only uses pickNumber + currentDrafter, adp shape differs between WS and engine types
       engine.handleDraftInfoUpdate(payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
+      lastWsUpdateRef.current = Date.now();
+      // Also update draftOrder from WS payload so boxes show wallet addresses
+      if (payload.draftOrder && payload.draftOrder.length > 0) {
+        const mapped = payload.draftOrder.map((entry: { ownerId: string }, idx: number) => {
+          const isUser = entry.ownerId.toLowerCase() === walletParam.toLowerCase();
+          return {
+            id: String(idx + 1),
+            name: entry.ownerId,
+            displayName: isUser ? 'You' : entry.ownerId.slice(0, 6) + '...' + entry.ownerId.slice(-4),
+            isYou: isUser,
+            avatar: '🍌',
+          };
+        });
+        setDraftOrder(mapped);
+      }
     },
     onDraftComplete: () => {
       engine.handleDraftComplete();
     },
     onFinalCard: (payload) => {
       engine.handleFinalCard(payload);
+    },
+    onInvalidPick: (payload) => {
+      // Surface server pick rejections — matches production useDraftRoom.ts logging
+      console.warn('[WS] Invalid pick rejected by server:', payload);
     },
     onNewQueue: (payload) => {
       // Server sent updated queue — sync local state
@@ -250,13 +355,16 @@ function DraftRoomContent() {
     },
     onOpen: () => {
       console.log('[WS] Connected to draft server');
-      // Re-sync available players on reconnect (matches old system)
-      if (liveInitializedRef.current && draftId && walletParam) {
-        draftApi.getPlayerRankings(draftId, walletParam).then(fresh => {
-          const available = fresh
-            .filter(p => p.playerStateInfo.ownerAddress === '')
-            .map(p => ({ playerId: p.playerStateInfo.playerId, team: p.playerStateInfo.team, position: p.playerStateInfo.position, adp: p.stats.adp, rank: p.ranking.rank, byeWeek: p.stats.byeWeek, playersFromTeam: p.stats.playersFromTeam || [] }));
-          engine.refreshAvailablePlayers(available);
+      lastWsUpdateRef.current = Date.now();
+      // Minimal reconnect sync (matches production): only fetch summary to catch
+      // picks missed during disconnect. WS messages handle ongoing state sync.
+      if (liveInitializedRef.current && draftId) {
+        draftApi.getDraftSummary(draftId).then(summary => {
+          const summaryArr = Array.isArray(summary) ? summary : (summary as any).summary || [];
+          if (summaryArr.length > 0) {
+            engine.refreshSummaryPicks(summaryArr);
+            console.log(`[WS Reconnect] Synced ${summaryArr.filter((s: any) => s.playerInfo?.playerId).length} picks from summary`);
+          }
         }).catch(() => {});
       }
     },
@@ -266,43 +374,78 @@ function DraftRoomContent() {
   });
 
   // ==================== LIVE MODE: Load initial state from REST API ====================
+  // Gated by liveDataReady — runs when entering pre-spin (60s before draft starts)
   useEffect(() => {
-    if (!isLiveMode || liveInitializedRef.current) return;
+    if (!isLiveMode || liveInitializedRef.current || !liveDataReady || !draftId) return;
+
+    // Retry helper
+    async function retryAsync<T,>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000): Promise<T> {
+      let lastError: Error | null = null;
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          return await fn();
+        } catch (err) {
+          lastError = err instanceof Error ? err : new Error(String(err));
+          console.warn(`[loadLiveData] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
+          if (attempt < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+        }
+      }
+      throw lastError!;
+    }
 
     async function loadLiveData() {
       try {
         setLiveLoading(true);
         setLiveError(null);
+        console.log('[Draft Room] Loading draft data for', draftId);
 
-        // Fetch all initial data in parallel
-        const [draftInfo, playerRankings, summary, serverRosters, queue] = await Promise.all([
-          draftApi.getDraftInfo(draftId),
-          draftApi.getPlayerRankings(draftId, walletParam),
-          draftApi.getDraftSummary(draftId),
-          draftApi.getDraftRosters(draftId),
-          draftApi.getQueue(walletParam, draftId),
-        ]);
+        // Match production pattern: Promise.allSettled tolerates partial failures.
+        // DraftInfo and playerRankings are required — if either fails, throw to retry.
+        // Rosters, queue, and summary gracefully degrade to empty.
+        const [rankingsResult, infoResult, rostersResult, queueResult, summaryResult] =
+          await Promise.allSettled([
+            retryAsync(() => draftApi.getPlayerRankings(draftId, walletParam)),
+            retryAsync(() => draftApi.getDraftInfo(draftId)),
+            draftApi.getDraftRosters(draftId),
+            draftApi.getQueue(walletParam, draftId),
+            draftApi.getDraftSummary(draftId),
+          ]);
 
-        // Convert types for engine
+        const playerRankings = rankingsResult.status === 'fulfilled' ? rankingsResult.value : [];
+        const draftInfo = infoResult.status === 'fulfilled' ? infoResult.value : null;
+        const serverRosters = rostersResult.status === 'fulfilled'
+          ? rostersResult.value
+          : ({} as Record<string, { QB: unknown[]; RB: unknown[]; WR: unknown[]; TE: unknown[]; DST: unknown[] }>);
+        const queue = queueResult.status === 'fulfilled' ? queueResult.value : ([] as draftApi.PlayerStateInfo[]);
+        const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : ([] as draftApi.DraftSummaryItem[]);
+
+        // Both required — if either failed or empty, throw to retry
+        if (!draftInfo || (playerRankings as draftApi.PlayerDataResponse[]).length === 0) {
+          throw new Error('Required draft data not available yet');
+        }
+
+        // Server has real player data — initialize engine in live mode
         const serverDraftInfo = {
           draftId: draftInfo.draftId,
           displayName: draftInfo.displayName,
           draftStartTime: draftInfo.draftStartTime,
           pickLength: draftInfo.pickLength,
           currentDrafter: draftInfo.currentDrafter,
-          pickNumber: draftInfo.currentPickNumber,
-          roundNum: draftInfo.currentRound,
+          pickNumber: draftInfo.pickNumber,
+          roundNum: draftInfo.roundNum,
           pickInRound: draftInfo.pickInRound,
           draftOrder: draftInfo.draftOrder,
           adp: draftInfo.adp.map(a => ({
             adp: a.adp,
-            byeWeek: String(a.byeWeek),
+            byeWeek: String(a.bye ?? a.byeWeek ?? ''),
             playerId: a.playerId,
           })),
         };
 
         // Convert queue to ServerPickPayload format
-        const queuePayload = queue.map(q => ({
+        const queuePayload = (queue as draftApi.PlayerStateInfo[]).map(q => ({
           playerId: q.playerId,
           displayName: q.displayName,
           team: q.team,
@@ -318,6 +461,9 @@ function DraftRoomContent() {
           rostersForEngine[addr] = roster;
         }
 
+        // Preserve any queue the user built during filling/pre-spin
+        const localQueue = engine.queuedPlayers;
+
         engine.initializeFromServer(
           serverDraftInfo,
           playerRankings,
@@ -327,23 +473,79 @@ function DraftRoomContent() {
           walletParam,
         );
 
-        // Skip filling/spinning phases in live mode — go straight to drafting
-        setPhase('drafting');
-        liveInitializedRef.current = true; // Only after success — allows retry on failure
-        if (draftId) {
-          draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting' });
+        // Restore local queue if server had nothing (user queued during filling)
+        if (queuePayload.length === 0 && localQueue.length > 0) {
+          engine.reorderQueue(localQueue);
         }
+
+        liveInitializedRef.current = true;
+        setEngineReady(true);
+        console.log('[Draft Room] Engine ready — draft data loaded successfully');
+
+        // Replay any WS messages that arrived during REST loading.
+        // The lastPickRef dedup in handleNewPick rejects picks already covered by REST data.
+        if (pendingWsMessagesRef.current.length > 0) {
+          console.log(`[Draft Room] Replaying ${pendingWsMessagesRef.current.length} queued WS messages`);
+          for (const msg of pendingWsMessagesRef.current) {
+            switch (msg.type) {
+              case 'new_pick': engine.handleNewPick(msg.payload); break;
+              case 'timer_update': {
+                // Match production: let timer_update through. Display logic uses
+                // mainCountdown during pre-draft phases regardless of engine state.
+                engine.handleTimerUpdate(msg.payload);
+                break;
+              }
+              case 'draft_info_update':
+                engine.handleDraftInfoUpdate(msg.payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
+                break;
+            }
+          }
+          pendingWsMessagesRef.current = [];
+        }
+        lastWsUpdateRef.current = Date.now();
+
         setLiveLoading(false);
+
+        // If draft is already in progress (picks happening or start time passed),
+        // skip the slot machine countdown and jump straight to drafting
+        const draftAlreadyStarted = draftInfo.pickNumber > 1 ||
+          (draftInfo.draftStartTime && draftInfo.draftStartTime * 1000 < Date.now());
+        if (draftAlreadyStarted) {
+          console.log(`[Draft Room] Draft already at pick ${draftInfo.pickNumber} — skipping countdown, jumping to drafting`);
+          setPhase('drafting');
+          setMainCountdown(0);
+          setShowSlotMachine(false);
+          if (draftId) {
+            draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
+          }
+        }
       } catch (err) {
-        console.error('[Live Mode] Failed to load draft data:', err);
-        setLiveError(err instanceof Error ? err.message : 'Failed to load draft data');
+        const MAX_OUTER_RETRIES = 8;
+        liveRetryCountRef.current += 1;
+        console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
         setLiveLoading(false);
+
+        if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
+          // Exhausted all retries — fall back to local mode (bots + ALL_POSITIONS)
+          // instead of showing an error overlay that blocks the draft
+          console.log('[Draft Room] All retries exhausted — falling back to local mode');
+          setFallbackLocal(true);
+          liveInitializedRef.current = true;
+        } else {
+          // Auto-retry: toggle liveDataReady after delay to re-trigger the effect
+          console.log(`[Live Mode] Auto-retrying in 5s...`);
+          setTimeout(() => {
+            liveInitializedRef.current = false;
+            setLiveDataReady(false);
+            setTimeout(() => setLiveDataReady(true), 100);
+          }, 5000);
+        }
       }
     }
 
     loadLiveData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveMode, draftId, walletParam]);
+  }, [isLiveMode, draftId, walletParam, liveDataReady]);
 
   // ==================== SYNC DRAFT STATE TO STORE ====================
   // Ensure draft exists in the store on mount (defensive — covers edge cases
@@ -399,14 +601,15 @@ function DraftRoomContent() {
   }, [engine.draftStatus, triggerOptIn]);
 
   // ==================== FILLING PHASE ====================
+  // Client-side visual animation for filling phase (all modes).
+  // In live mode, server polling also updates draftOrder + playerCount via Math.max.
   useEffect(() => {
-    if (isLiveMode) return; // Skip filling in all live modes — REST fetch handles initialization
     if (phase !== 'filling') return;
 
     // Record filling start timestamp (only if not already set by addDraft)
     if (!fillingStartedAtRef.current) {
       fillingStartedAtRef.current = Date.now();
-      if (draftId) {
+      if (!isLiveMode && draftId) {
         draftStore.updateDraft(draftId, { phase: 'filling', fillingStartedAt: fillingStartedAtRef.current, fillingInitialPlayers: Math.max(initialPlayers, 1) });
       }
     }
@@ -423,8 +626,8 @@ function DraftRoomContent() {
       setPlayerCount(prev => {
         if (prev >= 10) { clearInterval(interval); return 10; }
         if (count <= prev) return prev;
-        // Sync filling progress to drafting page
-        if (draftId) {
+        // Only sync to draftStore in local mode (server is source of truth in live mode)
+        if (!isLiveMode && draftId) {
           draftStore.updateDraft(draftId, { players: count, status: 'filling' });
         }
         return count;
@@ -434,35 +637,185 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  // ==================== LIVE MODE: Poll server for draft order + player count ====================
+  // Runs during filling AND pre-spin/spinning/result — server may create state/info
+  // document after bots join, so we keep polling to pick up wallet addresses.
   useEffect(() => {
-    if (phase === 'filling' && playerCount >= 10) {
-      // Use stored draft order if resuming, else shuffle fresh
-      let shuffled = draftOrder;
-      let userPos = userDraftPosition;
-      if (shuffled.length === 0) {
-        shuffled = [...DRAFT_PLAYERS].sort(() => Math.random() - 0.5);
-        userPos = shuffled.findIndex(p => p.isYou);
-        setDraftOrder(shuffled);
-        setUserDraftPosition(userPos);
-      }
+    if (!isLiveMode || !draftId) return;
+    if (phase === 'drafting') return; // Stop polling once drafting starts (engine handles state)
 
-      const now = Date.now();
-      preSpinStartedAtRef.current = now;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        console.log('[Draft Room] Polling getDraftInfo for', draftId);
+        const info = await draftApi.getDraftInfo(draftId);
+        if (cancelled) return;
+
+        console.log('[Draft Room] Poll result:', info.draftOrder?.length ?? 0, 'players');
+
+        if (info.draftOrder && info.draftOrder.length > 0) {
+          // During filling phase, only update playerCount here — the "at 10" effect
+          // handles draftOrder, wallets, progress bar, and phase transition.
+          // This prevents a race where setting draftOrder here causes the "at 10" effect
+          // to succeed instantly, skipping the progress bar.
+          if (phase === 'filling') {
+            setPlayerCount(prev => Math.max(prev, info.draftOrder.length));
+            if (info.draftOrder.length >= 10) {
+              console.log('[Draft Room] Poll detected 10/10 — handing off to randomizing phase');
+              return; // Stop polling, let "at 10" effect take over
+            }
+          } else {
+            // After filling (pre-spin/spinning/result), update draftOrder normally
+            const mappedOrder = info.draftOrder.map((entry: { ownerId: string }, idx: number) => {
+              const isUser = entry.ownerId.toLowerCase() === walletParam.toLowerCase();
+              return {
+                id: String(idx + 1),
+                name: entry.ownerId,
+                displayName: isUser ? 'You' : entry.ownerId.slice(0, 6) + '...' + entry.ownerId.slice(-4),
+                isYou: isUser,
+                avatar: '🍌',
+              };
+            });
+            setDraftOrder(mappedOrder);
+            const userPos = mappedOrder.findIndex((p: { isYou: boolean }) => p.isYou);
+            if (userPos >= 0) setUserDraftPosition(userPos);
+            setPlayerCount(prev => Math.max(prev, info.draftOrder.length));
+          }
+        }
+      } catch (err) {
+        console.warn('[Draft Room] Poll failed:', err);
+        // Draft not ready yet — keep polling
+      }
+    };
+
+    poll(); // Immediate first check
+    const interval = setInterval(poll, 2500);
+    return () => { cancelled = true; clearInterval(interval); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, phase, draftId, walletParam]);
+
+  useEffect(() => {
+    if (phase !== 'filling' || playerCount < 10) return;
+    // In live mode, wait until draftId is available (joinDraft is async)
+    if (isLiveMode && !draftId) return;
+
+    // Helper: build draft order from local DRAFT_PLAYERS (local/fallback mode)
+    const buildLocalOrder = () => {
+      const shuffled = [...DRAFT_PLAYERS].sort(() => Math.random() - 0.5);
+      return shuffled;
+    };
+
+    // Helper: start the pre-spin countdown
+    const startPreSpin = (order: typeof draftOrder, countdownStartRef: number) => {
+      const userPos = order.findIndex(p => p.isYou);
+      setDraftOrder(order);
+      setUserDraftPosition(userPos);
+
+      preSpinStartedAtRef.current = countdownStartRef;
+      setWaitingForServer(false);
       setPhase('pre-spin');
       setPreSpinCountdown(15);
-      setMainCountdown(60);
+      // mainCountdown is calculated by the pre-spin tick from preSpinStartedAtRef
+      const remaining = Math.max(0, Math.floor(60 - (Date.now() - countdownStartRef) / 1000));
+      setMainCountdown(remaining);
 
+      if (isLiveMode) setLiveDataReady(true);
       if (draftId) {
         draftStore.updateDraft(draftId, {
           phase: 'pre-spin',
-          preSpinStartedAt: now,
-          draftOrder: shuffled,
+          preSpinStartedAt: countdownStartRef,
+          draftOrder: order,
           userDraftPosition: userPos,
         });
       }
+    };
+
+    if (isLiveMode && draftId) {
+      // LIVE MODE: Wait for server to create draft documents before starting countdown.
+      // After filling, the Go backend needs a few seconds to write Firestore docs.
+      // We poll getDraftInfo until it succeeds, then start the countdown synced to
+      // draftStartTime with real wallet addresses visible from the start.
+      setWaitingForServer(true);
+      setServerWaitProgress(0);
+      let cancelled = false;
+      const randomizingStartedAt = Date.now();
+      const EXPECTED_WAIT_MS = 10000; // Expected ~8-10s, progress fills over this duration
+      const MIN_RANDOMIZING_MS = 3000; // Always show progress bar for at least 3s
+
+      // Smooth progress animation — fills to ~90% over expected wait, last 10% on completion
+      const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - randomizingStartedAt;
+        const raw = Math.min(0.92, elapsed / EXPECTED_WAIT_MS);
+        // Ease-out curve for natural feel
+        const eased = 1 - Math.pow(1 - raw, 2.5);
+        setServerWaitProgress(eased);
+      }, 80);
+
+      const pollUntilReady = async () => {
+        let attempts = 0;
+        while (!cancelled) {
+          attempts++;
+          try {
+            console.log(`[Draft Room] Waiting for server (attempt ${attempts})...`);
+            const info = await draftApi.getDraftInfo(draftId);
+            if (cancelled) return;
+
+            if (!info.draftOrder || info.draftOrder.length < 10) {
+              throw new Error(`Draft order incomplete: ${info.draftOrder?.length || 0}/10`);
+            }
+
+            // Server is ready — build draft order from real wallet addresses
+            const realOrder: typeof draftOrder = info.draftOrder.map((u, idx) => ({
+              id: String(idx + 1),
+              name: u.ownerId,
+              displayName: u.ownerId.length > 10
+                ? u.ownerId.slice(0, 6) + '...' + u.ownerId.slice(-4)
+                : u.ownerId,
+              isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
+              avatar: '🍌',
+            }));
+
+            // Put wallets in boxes NOW (still in "Randomizing" state so user sees them)
+            setDraftOrder(realOrder);
+            setServerWaitProgress(1); // Snap to 100%
+            clearInterval(progressInterval);
+            console.log(`[Draft Room] Wallets loaded:`, realOrder.map(p => p.displayName));
+
+            // Show completed bar briefly before transitioning
+            const elapsed = Date.now() - randomizingStartedAt;
+            if (elapsed < MIN_RANDOMIZING_MS) {
+              await new Promise(resolve => setTimeout(resolve, MIN_RANDOMIZING_MS - elapsed));
+            }
+            if (cancelled) return;
+
+            // Start countdown from NOW so user always sees a full 60 seconds.
+            // The server's draftStartTime will finish before our visual countdown
+            // reaches 0, so timer_update will already be available — no glitch.
+            const countdownStart = Date.now();
+
+            const remaining = Math.ceil((info.draftStartTime * 1000 - Date.now()) / 1000);
+            console.log(`[Draft Room] Starting countdown — draftStartTime in ${remaining}s`);
+            startPreSpin(realOrder, countdownStart);
+            return;
+          } catch (err) {
+            console.warn(`[Draft Room] Server not ready (attempt ${attempts}):`, err instanceof Error ? err.message : err);
+            if (!cancelled) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          }
+        }
+      };
+
+      pollUntilReady();
+      return () => { cancelled = true; clearInterval(progressInterval); };
+    } else {
+      // LOCAL MODE: use DRAFT_PLAYERS with frontend countdown
+      const shuffled = buildLocalOrder();
+      startPreSpin(shuffled, Date.now());
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, playerCount]);
+  }, [phase, playerCount, draftId]);
 
   // ==================== PRE-SPIN COUNTDOWN (timestamp-based) ====================
   useEffect(() => {
@@ -532,32 +885,60 @@ function DraftRoomContent() {
   }, [phase, playCountdownTick]);
 
   // ==================== DRAFT START ====================
+  // ==================== COUNTDOWN END: Transition to active drafting ====================
   useEffect(() => {
     if (phase !== 'pre-spin' && phase !== 'spinning' && phase !== 'result') return;
-    if (mainCountdown <= 0) {
+    if (mainCountdown > 0) return;
+
+    // Clean up visual effects
+    setShowSlotMachine(false);
+    setScreenShake(false);
+    setJackpotRain([]);
+    setConfetti([]);
+    setPulseGlow(false);
+    setParticleBurst([]);
+
+    if (isLiveMode) {
+      if (engineReady) {
+        // loadLiveData already initialized the engine from real server data — just transition phase.
+        // The countdown was synced to the server's draftStartTime, so when it hits 0 the server
+        // is ready and WS timer_update will start the 30-second pick timer naturally.
+        console.log('[Draft Room] Engine ready from server — starting real multiplayer draft');
+        setPhase('drafting');
+        if (draftId) {
+          draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
+        }
+      } else {
+        // Server data not loaded yet — fall back to local mode immediately so bots
+        // start picking right away instead of waiting for server retries to exhaust.
+        console.log('[Draft Room] Countdown finished, engine not ready — falling back to local mode');
+        setFallbackLocal(true);
+        setPhase('drafting');
+        if (draftOrder.length > 0) {
+          engine.initializeDraft(draftOrder);
+        }
+        setEngineReady(true);
+        if (draftId) {
+          draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
+        }
+      }
+    } else {
+      // Local mode: initialize engine directly
       setPhase('drafting');
-      setShowSlotMachine(false);
-      setScreenShake(false);
-      setJackpotRain([]);
-      setConfetti([]);
-      setPulseGlow(false);
-      setParticleBurst([]);
-      // Initialize the draft engine with the shuffled order
       if (draftOrder.length > 0) {
         engine.initializeDraft(draftOrder);
       }
-      // Sync draft start to drafting page
+      setEngineReady(true);
       if (draftId) {
-        draftStore.updateDraft(draftId, {
-          status: 'drafting',
-          phase: 'drafting',
-          players: 10,
-          isYourTurn: false,
-        });
+        draftStore.updateDraft(draftId, { status: 'drafting', phase: 'drafting', players: 10, isYourTurn: false });
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, mainCountdown, draftOrder]);
+  }, [phase, mainCountdown, draftOrder, isLiveMode, engineReady, fallbackLocal]);
+
+  // Note: No safety fallback needed — engine is always initialized immediately when countdown ends.
+  // In live mode, loadLiveData continues retrying in the background and initializeFromServer()
+  // overwrites the local engine state with real server data when it succeeds.
 
   useEffect(() => {
     if (mainCountdown <= 15 && showSlotMachine && slotAnimationDone) setShowSlotMachine(false);
@@ -683,23 +1064,28 @@ function DraftRoomContent() {
   }, [phase, engine.currentPickNumber]);
 
   // ==================== FREEZE DETECTION (matches old system) ====================
+  // Increased threshold to 30s to avoid triggering unnecessary reconnects that cause
+  // state oscillation when Cloud Run has multiple instances.
   useEffect(() => {
-    if (!isLiveMode || phase !== 'drafting' || engine.draftStatus === 'completed') return;
+    // Only check for freezes when draft is actively picking (not during countdown or pre-draft)
+    if (!isLiveMode || phase !== 'drafting' || engine.draftStatus === 'completed' || engine.draftPhase === 'countdown') return;
     const check = setTimeout(() => {
-      if (Date.now() - lastWsUpdateRef.current > 10_000) {
-        console.log('[Freeze] No timer update in 10s, forcing reconnect');
+      if (Date.now() - lastWsUpdateRef.current > 30_000) {
+        console.log('[Freeze] No timer update in 30s, forcing reconnect');
         ws.forceReconnect();
       }
-    }, 3000);
+    }, 10_000);
     return () => clearTimeout(check);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveMode, phase, engine.draftStatus, engine.timeRemaining]);
+  }, [isLiveMode, phase, engine.draftStatus, engine.draftPhase, engine.timeRemaining]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m < 10 ? `0${m}` : m}:${s < 10 ? `0${s}` : s}`;
   };
+
+  // All phases share the same layout — no separate filling page
 
   const getBgColor = () => {
     if ((phase === 'result' || phase === 'drafting') && draftType) {
@@ -714,11 +1100,11 @@ function DraftRoomContent() {
     const roster = engine.rosters[playerName];
     if (!roster) return { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0 };
     return {
-      QB: roster.QB.length,
-      RB: roster.RB.length,
-      WR: roster.WR.length,
-      TE: roster.TE.length,
-      DST: roster.DST.length,
+      QB: roster.QB?.length ?? 0,
+      RB: roster.RB?.length ?? 0,
+      WR: roster.WR?.length ?? 0,
+      TE: roster.TE?.length ?? 0,
+      DST: roster.DST?.length ?? 0,
     };
   };
 
@@ -808,8 +1194,8 @@ function DraftRoomContent() {
         </div>
       )}
 
-      {/* Top Bar */}
-      {!(phase === 'drafting' && engine.draftStatus !== 'completed') && (
+      {/* Top Bar — only during filling or when draft completed */}
+      {(phase === 'filling' || engine.draftStatus === 'completed') && (
         <div className="h-14 bg-black/30 border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0">
           <div className="flex items-center gap-4">
             <span className="font-bold">{contestName}</span>
@@ -844,115 +1230,66 @@ function DraftRoomContent() {
         </div>
       )}
 
-      {/* Live mode loading overlay */}
-      {isLiveMode && liveLoading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center">
-          <div className="text-center">
-            <div className="text-5xl mb-4">🍌</div>
-            <p className="text-xl text-white font-bold mb-2">Connecting to draft...</p>
-            <div className="flex items-center justify-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-banana animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-2 h-2 rounded-full bg-banana animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-2 h-2 rounded-full bg-banana animate-bounce" style={{ animationDelay: '300ms' }} />
+      {/* Live mode loading is handled by the loading skeleton in the player list area */}
+
+      {/* Live mode error — floating card (non-blocking) */}
+      {isLiveMode && liveError && !fallbackLocal && (
+        <div className="fixed top-[200px] left-1/2 -translate-x-1/2 z-30 w-full max-w-lg px-4">
+          <div className="bg-red-950/95 border border-red-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl flex-shrink-0">⚠️</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-red-400 font-bold text-sm">Draft connection error</p>
+                <p className="text-white/50 text-xs mt-1 break-words">{liveError}</p>
+              </div>
+              <button onClick={() => setLiveError(null)} className="text-white/40 hover:text-white flex-shrink-0 text-lg leading-none">&times;</button>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={() => {
+                  liveRetryCountRef.current = 0;
+                  liveInitializedRef.current = false;
+                  setLiveError(null);
+                  setLiveDataReady(false);
+                  setTimeout(() => setLiveDataReady(true), 100);
+                }}
+                className="px-4 py-1.5 bg-banana text-black font-bold rounded-lg text-sm hover:bg-banana-light transition-all"
+              >
+                Retry
+              </button>
+              <button
+                onClick={() => window.history.back()}
+                className="px-4 py-1.5 bg-white/10 text-white font-bold rounded-lg text-sm hover:bg-white/20 transition-all"
+              >
+                Go Back
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Live mode error overlay */}
-      {isLiveMode && liveError && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center">
-          <div className="text-center max-w-md">
-            <div className="text-5xl mb-4">⚠️</div>
-            <p className="text-xl text-red-400 font-bold mb-2">Failed to connect</p>
-            <p className="text-white/50 text-sm mb-4">{liveError}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-banana text-black font-bold rounded-lg hover:bg-banana-light transition-all"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Live mode connection indicator */}
-      {isLiveMode && (phase === 'drafting' || phase === 'loading') && (
+      {isLiveMode && (phase === 'drafting' || phase === 'loading' || phase === 'filling') && (
         <div className="absolute top-16 right-4 z-20 flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${ws.isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
           <span className="text-xs text-white/40">{ws.isConnected ? 'Connected' : 'Reconnecting...'}</span>
         </div>
       )}
 
-      {/* Centered status overlays (pre-drafting phases) */}
-      {phase === 'filling' && !isLiveMode && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <div className="text-8xl font-black text-yellow-400 tabular-nums mb-4" style={{ textShadow: '0 0 60px rgba(250, 204, 21, 0.4)' }}>
-              {playerCount}/10
-            </div>
-            <p className="text-2xl text-white/60 font-medium">Waiting for players...</p>
-            <div className="mt-8 flex items-center justify-center gap-3 text-sm text-white/40">
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                Room fills
-              </span>
-              <span>→</span>
-              <span>Draft type revealed — <span className="text-red-400">Jackpot</span>, <span className="text-yellow-400">HOF</span>, or <span className="text-purple-400">Pro</span></span>
-              <span>→</span>
-              <span>Draft begins</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Filling/pre-drafting overlays removed — all status shown inline in unified banner */}
 
-      {phase === 'pre-spin' && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <p className="text-sm text-white/40 uppercase tracking-widest mb-1">Draft starts in</p>
-            <div className="text-8xl font-black text-white tabular-nums mb-8" style={{ textShadow: '0 0 60px rgba(255, 255, 255, 0.3)' }}>
-              {formatTime(mainCountdown)}
-            </div>
-            <p className="text-lg text-yellow-400/70 uppercase tracking-widest mb-1">Reveal in</p>
-            <div className="text-5xl font-bold text-yellow-400 tabular-nums" style={{ textShadow: '0 0 30px rgba(250, 204, 21, 0.4)' }}>
-              {preSpinCountdown}
-            </div>
-            {userDraftPosition >= 0 && (
-              <p className="mt-8 text-xl text-white/60">
-                Your pick position: <span className="font-bold text-yellow-400">#{userDraftPosition + 1}</span>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {(phase === 'spinning' || phase === 'result') && !showSlotMachine && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <p className="text-xl text-white/50 uppercase tracking-widest mb-2">Draft starting in</p>
-            <div className="text-8xl font-black text-white tabular-nums" style={{ textShadow: '0 0 60px rgba(255, 255, 255, 0.3)' }}>
-              {formatTime(mainCountdown)}
-            </div>
-            {userDraftPosition >= 0 && (
-              <p className="mt-6 text-xl text-yellow-400">
-                Your pick position: <span className="font-bold">#{userDraftPosition + 1}</span>
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ==================== DRAFTING PHASE ==================== */}
-      {phase === 'drafting' && engine.draftStatus !== 'completed' && (
+      {/* ==================== UNIFIED BANNER (ALL phases) ==================== */}
+      {engine.draftStatus !== 'completed' && (
         <>
           {/* Pick Cards Banner */}
-          <div className="fixed top-0 left-0 z-20 w-full overflow-hidden font-primary" style={{ backgroundColor: draftType === 'jackpot' ? '#ef4444' : draftType === 'hof' ? '#B8960C' : '#000' }}>
+          <div className="fixed top-0 left-0 z-20 w-full overflow-hidden font-primary" style={{ backgroundColor: (phase === 'result' || phase === 'drafting') ? (draftType === 'jackpot' ? '#ef4444' : draftType === 'hof' ? '#B8960C' : '#000') : '#000' }}>
             <div
               ref={bannerRef}
               className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar"
               style={{ marginTop: '15px' }}
             >
-              {engine.draftSummary.map((slot) => {
+              {/* Engine-powered banner (after data loads) OR pre-engine 10-box banner */}
+              {engineReady ? engine.draftSummary.map((slot) => {
                 const isPicked = slot.playerId !== '';
                 const isCurrent = slot.pickNum === engine.currentPickNumber;
                 const isUpcoming = slot.pickNum > engine.currentPickNumber;
@@ -969,128 +1306,245 @@ function DraftRoomContent() {
 
                 const playerData = engine.draftOrder[slot.ownerIndex];
                 const displayName = playerData
-                  ? (playerData.isYou ? (playerData.displayName || 'You') : (playerData.displayName || playerData.name))
-                  : slot.ownerName;
-                const truncatedName = displayName.length > 12 ? displayName.substring(0, 10) + '...' : displayName;
-
-                // Position label color: use textColor for user cards in HOF/Jackpot
-                const posLabelColor = (isUserCard && (draftType === 'hof' || draftType === 'jackpot'));
+                  ? (playerData.isYou ? (playerData.displayName || 'You') : (playerData.displayName || playerData.name || ''))
+                  : (slot.ownerName || '');
+                const truncatedName = (displayName || '').length > 12 ? (displayName || '').substring(0, 10) + '...' : (displayName || '');
 
                 return (
                   <div
                     key={slot.pickNum}
                     data-pick={slot.pickNum}
-                    className="flex-shrink-0 text-center overflow-hidden cursor-pointer hover:bg-[#333] hover:border-white"
+                    className="flex-shrink-0 text-center overflow-hidden cursor-pointer"
                     style={{
                       minWidth: '140px',
                       flex: 1,
                       padding: '10px 0 0 0',
                       borderRadius: '5px',
-                      borderWidth: isCurrent ? 2 : 1,
+                      borderWidth: 1,
                       borderStyle: 'solid',
                       borderColor: borderColor,
-                      position: 'relative',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
+                      transition: 'all 0.25s ease-in-out',
                       background: isUserCard
                         ? (draftType === 'hof' ? '#F3E216' : draftType === 'jackpot' ? '#FF474C' : '#222')
                         : '#222',
                     }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; e.currentTarget.style.borderColor = '#fff'; }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = isUserCard
+                        ? (draftType === 'hof' ? '#F3E216' : draftType === 'jackpot' ? '#FF474C' : '#222')
+                        : '#222';
+                      e.currentTarget.style.borderColor = borderColor;
+                    }}
                     onClick={() => handleViewRoster(slot.ownerName)}
                   >
-                    {/* Profile image */}
-                    <div className="mb-1">
+                    <div>
+                      {/* Profile image — always shown */}
                       {isUserCard && user?.profilePicture ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={user.profilePicture} alt="You" className="rounded-full w-[30px] h-[30px] mx-auto border border-gray-500 object-cover" />
                       ) : (
-                        <span className="inline-block w-[30px] h-[30px] leading-[30px] text-center">🍌</span>
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src="/banana-profile.png" alt="Banana" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />
                       )}
-                    </div>
 
-                    {isPicked ? (
-                      /* COMPLETED pick: display name then playerId with position-colored bottom border */
-                      <div>
-                        {/* Display name */}
-                        <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
-                          {truncatedName}
-                        </div>
-                        <div style={{ width: '100%', height: '55px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <p className="font-primary" style={{ fontWeight: 800, fontSize: 15, textAlign: 'center', color: textColor }}>{slot.playerId}</p>
-                        </div>
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: 5, backgroundColor: posHex, borderRadius: '0 0 4px 4px' }} />
-                      </div>
-                    ) : isCurrent ? (
-                      /* CURRENT pick: Timer countdown + display name + "Picking..." with white bottom border */
-                      <div>
-                        {/* Actual countdown timer — bold 18px, centered, color changes at 10s */}
+                      {/* Timer (current pick) OR R/P labels (all other picks) — matches old layout */}
+                      {isCurrent && engine.draftStatus !== 'completed' ? (
                         <div style={{
                           fontWeight: 'bold',
                           fontSize: '18px',
                           margin: '5px auto 0px auto',
                           textAlign: 'center',
-                          color: engine.timeRemaining > 10
-                            ? (isUserCard && (draftType === 'hof' || draftType === 'jackpot') ? textColor : '#fff')
-                            : (draftType === 'jackpot' ? 'yellow' : 'red'),
+                          color: (phase !== 'drafting' ? mainCountdown : engine.timeRemaining) > 10 ? '#fff' : (draftType === 'jackpot' ? 'yellow' : 'red'),
                         }}>
-                          {formatTime(engine.timeRemaining)}
+                          {formatTime(phase !== 'drafting' ? mainCountdown : engine.timeRemaining)}
                         </div>
-                        {/* Display name */}
-                        <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
-                          {truncatedName}
-                        </div>
-                        {/* "Picking..." section */}
-                        <div style={{ width: '100%', minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <p className="font-bold italic text-center pt-2 font-primary" style={{ fontSize: '15px', color: textColor }}>
-                            {engine.timeRemaining === 0 ? 'Starting soon!' : 'Picking...'}
-                          </p>
-                        </div>
-                        <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: 5, backgroundColor: '#fff', borderRadius: '0 0 4px 4px' }} />
-                      </div>
-                    ) : isUpcoming ? (
-                      /* UPCOMING pick: R/P label (separated) + display name + position counts */
-                      <div>
-                        {/* R and P labels first */}
+                      ) : (
                         <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
                           <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>R{slot.round}</span>
                           <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>P{slot.pickNum}</span>
                         </div>
-                        {/* Display name */}
-                        <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
-                          {truncatedName}
-                        </div>
-                        <div className="flex" style={{ marginTop: '4px' }}>
+                      )}
+
+                      {/* Display name — always shown */}
+                      <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                        {truncatedName}
+                      </div>
+
+                      {/* Bottom section: position counts (upcoming), status text (current), or player ID (completed) */}
+                      {isUpcoming && (
+                        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
                           {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
                             <div
                               key={pos}
-                              style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: posLabelColor ? textColor : POSITION_COLORS[pos], textAlign: 'center', padding: '2px 0' }}
+                              style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: POSITION_COLORS[pos], textAlign: 'center' }}
                             >
-                              <div style={{ fontSize: '10px', color: posLabelColor ? textColor : POSITION_COLORS[pos] }}>{pos}</div>
-                              <div className="text-xs" style={{ color: textColor }}>{counts[pos]}</div>
+                              <p style={{ fontSize: '10px' }}>{pos}</p>
+                              <p className="text-xs">{counts[pos]}</p>
                             </div>
                           ))}
                         </div>
+                      )}
+                      {isCurrent && (
+                        <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%', minHeight: '54px' }}>
+                          <p className="font-primary text-[15px] font-bold italic text-center pt-2" style={{ color: textColor }}>
+                            {phase !== 'drafting' ? 'Starting soon!' : 'Picking...'}
+                          </p>
+                        </div>
+                      )}
+                      {isPicked && (
+                        <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: posHex, width: '100%', height: '55px' }}>
+                          <p className="font-primary" style={{ fontWeight: 800, fontSize: 15, textAlign: 'center', paddingTop: 5, color: textColor }}>
+                            {slot.playerId}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }) : /* Pre-engine: unified 10-box banner for filling + pre-spin + spinning + result */
+              Array.from({ length: 10 }, (_, i) => {
+                const player = draftOrder[i];
+                const isFilling = phase === 'filling';
+                const isRandomizing = isFilling && waitingForServer;
+                const isFilled = isRandomizing ? true : isFilling ? (i < playerCount) : true;
+                const isUser = player?.isYou ?? false;
+                // Match drafting card style: user = yellow border, filled = #444, unfilled = #333
+                const borderColor = isUser ? '#F3E216' : isFilled ? '#444' : '#333';
+                // Show wallet addresses when available, placeholder names otherwise
+                const hasWalletData = player && !player.isYou && player.name && player.name.length > 10;
+                const displayName = isRandomizing
+                  ? (isUser ? 'You' : (hasWalletData ? player!.displayName : `Player ${i + 1}`))
+                  : isFilling
+                  ? (isUser ? 'You' : (isFilled ? `Player ${i + 1}` : '---'))
+                  : (player ? (player.isYou ? (player.displayName || 'You') : (player.displayName || player.name || '')) : '???');
+                const truncatedName = (displayName || '').length > 12 ? (displayName || '').substring(0, 10) + '...' : (displayName || '');
+
+                // During pre-spin+, first box shows countdown timer
+                const showCountdown = !isFilling && i === 0;
+                // User background matches drafting cards (draft-type color when known)
+                const bgColor = isUser && isFilled
+                  ? (draftType === 'hof' ? '#F3E216' : draftType === 'jackpot' ? '#FF474C' : '#222')
+                  : '#222';
+                const textColor = isUser && draftType === 'hof' ? '#111'
+                  : isUser && draftType === 'jackpot' ? '#222'
+                  : '#fff';
+
+                return (
+                  <div
+                    key={i}
+                    className="flex-shrink-0 text-center overflow-hidden cursor-pointer"
+                    style={{
+                      minWidth: '140px',
+                      flex: 1,
+                      padding: '10px 0 0 0',
+                      borderRadius: '5px',
+                      borderWidth: 1,
+                      borderStyle: 'solid',
+                      borderColor,
+                      transition: 'all 0.4s ease-in-out',
+                      background: isFilled ? bgColor : '#1a1a1a',
+                    }}
+                  >
+                    <div>
+                      {/* Avatar — same as drafting cards */}
+                      {isUser && user?.profilePicture ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={user.profilePicture} alt="You" className="rounded-full w-[30px] h-[30px] mx-auto border border-gray-500 object-cover" />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src="/banana-profile.png"
+                          alt="Banana"
+                          className={`rounded-full w-[30px] mx-auto h-[30px] border border-gray-500 ${!isFilled ? 'animate-pulse' : ''}`}
+                          style={{ opacity: isFilled ? 1 : 0.4 }}
+                        />
+                      )}
+
+                      {/* Countdown timer (pre-spin+, first box) or slot number — same layout as drafting R/P labels */}
+                      {showCountdown ? (
+                        <div style={{ fontWeight: 'bold', fontSize: '18px', margin: '5px auto 0px auto', textAlign: 'center', color: textColor }}>
+                          {formatTime(mainCountdown)}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
+                          <span style={{ fontSize: '15px', fontWeight: 800, color: isFilled ? textColor : '#444' }}>#{i + 1}</span>
+                        </div>
+                      )}
+
+                      {/* Display name — same font/size as drafting cards */}
+                      <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (draftType ? textColor : '#F3E216') : textColor) : '#444' }}>
+                        {truncatedName}
                       </div>
-                    ) : (
-                      /* Fallback for past picks without data */
-                      <div style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>
-                        R{slot.round} P{slot.pickNum}
-                      </div>
-                    )}
+
+                      {/* Bottom section — matches drafting card layout */}
+                      {!isFilled ? (
+                        // Unfilled: subtle waiting indicator with same height as position counts
+                        <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span className="animate-pulse" style={{ fontSize: '12px', color: '#444' }}>Waiting...</span>
+                        </div>
+                      ) : showCountdown ? (
+                        // Countdown box: "Starting soon!" with white bottom border (matches "Picking..." style)
+                        <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%', minHeight: '54px' }}>
+                          <p className="font-primary text-[15px] font-bold italic text-center pt-2" style={{ color: '#4ade80' }}>
+                            Starting soon!
+                          </p>
+                        </div>
+                      ) : (
+                        // Filled: position count columns (all zeros) — matches drafting "upcoming" cards
+                        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
+                          {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
+                            <div
+                              key={pos}
+                              style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: POSITION_COLORS[pos], textAlign: 'center', opacity: 0.5 }}
+                            >
+                              <p style={{ fontSize: '10px' }}>{pos}</p>
+                              <p className="text-xs">0</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Status text below banner — inherits color from parent (white for pro, black for HOF/Jackpot) */}
+            {/* Status text below banner — all phases */}
             <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
-              {engine.isUserTurn
-                ? 'Your turn to draft!'
-                : engine.turnsUntilUserPick > 0
-                  ? `${engine.turnsUntilUserPick} turn(s) until your pick!`
-                  : 'Draft will start soon'}
+              {phase === 'filling' && waitingForServer ? (
+                <div className="flex flex-col items-center gap-2 w-full max-w-xs mx-auto">
+                  <span className="text-white/70 text-xs tracking-widest uppercase">Randomizing Draft Order</span>
+                  <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden backdrop-blur-sm">
+                    <div
+                      className="h-full rounded-full transition-all duration-200 ease-out"
+                      style={{
+                        width: `${Math.round(serverWaitProgress * 100)}%`,
+                        background: serverWaitProgress >= 1
+                          ? '#4ade80'
+                          : 'linear-gradient(90deg, #fbbf24, #f59e0b)',
+                      }}
+                    />
+                  </div>
+                  <span className="text-white/40 text-[10px]">{Math.round(serverWaitProgress * 100)}%</span>
+                </div>
+              ) : phase === 'filling' ? (
+                <span className="text-yellow-400">
+                  <span className="text-2xl font-black tabular-nums">{playerCount}/10</span>
+                  <span className="text-white/60 ml-2 text-sm">Waiting for players...</span>
+                </span>
+              ) : phase === 'pre-spin' ? (
+                <span className="text-yellow-400 flex items-center justify-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                  Draft type reveal in {preSpinCountdown}s
+                  <span className="text-white/50 ml-2">· Starting in {formatTime(mainCountdown)}</span>
+                </span>
+              ) : (phase === 'spinning' || phase === 'result') ? (
+                <span className="text-white/70">Draft starting in {formatTime(mainCountdown)}</span>
+              ) : phase === 'drafting' && engine.isUserTurn ? (
+                'Your turn to draft!'
+              ) : phase === 'drafting' && engine.turnsUntilUserPick > 0 ? (
+                `${engine.turnsUntilUserPick} turn(s) until your pick!`
+              ) : null}
             </div>
 
             {/* Mute button + league logo row */}
@@ -1121,35 +1575,37 @@ function DraftRoomContent() {
           {/* Spacer after fixed banner */}
           <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
 
-          {/* Tab navigation */}
-          <DraftTabs activeTab={activeTab} onTabChange={setActiveTab} queueCount={engine.queuedPlayers.length} />
         </>
       )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main Content — single column, no sidebar */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Tab navigation — inside content so it centers on the same width */}
+        <DraftTabs activeTab={activeTab} onTabChange={setActiveTab} queueCount={engine.queuedPlayers.length} />
+
         {/* Tab content area */}
         {phase === 'drafting' && engine.draftStatus === 'completed' ? (
           <DraftComplete />
-        ) : phase === 'drafting' ? (
-          <div className="flex-1 flex flex-col overflow-hidden">
+        ) : (
+          <>
             {activeTab === 'draft' && (
               <DraftPlayerList
                 availablePlayers={engine.availablePlayers}
-                isUserTurn={engine.isUserTurn}
-                onDraft={handleLiveDraft}
+                isUserTurn={phase === 'drafting' && engine.isUserTurn}
+                onDraft={(playerId) => {
+                  if (phase !== 'drafting') return;
+                  handleLiveDraft(playerId);
+                }}
                 onAddToQueue={(player) => {
                   engine.addToQueue(player);
-                  // In live mode, sync queue after add
-                  if (isLiveMode) {
+                  if (isLiveMode && phase === 'drafting') {
                     const newQueue = [...engine.queuedPlayers, player];
                     handleLiveQueueSync(newQueue);
                   }
                 }}
                 onRemoveFromQueue={(playerId) => {
                   engine.removeFromQueue(playerId);
-                  // In live mode, sync queue after remove
-                  if (isLiveMode) {
+                  if (isLiveMode && phase === 'drafting') {
                     const newQueue = engine.queuedPlayers.filter(p => p.playerId !== playerId);
                     handleLiveQueueSync(newQueue);
                   }
@@ -1161,18 +1617,21 @@ function DraftRoomContent() {
               <DraftQueue
                 queuedPlayers={engine.queuedPlayers}
                 availablePlayers={engine.availablePlayers}
-                isUserTurn={engine.isUserTurn}
-                onDraft={handleLiveDraft}
+                isUserTurn={phase === 'drafting' && engine.isUserTurn}
+                onDraft={(playerId) => {
+                  if (phase !== 'drafting') return;
+                  handleLiveDraft(playerId);
+                }}
                 onRemoveFromQueue={(playerId) => {
                   engine.removeFromQueue(playerId);
-                  if (isLiveMode) {
+                  if (isLiveMode && phase === 'drafting') {
                     const newQueue = engine.queuedPlayers.filter(p => p.playerId !== playerId);
                     handleLiveQueueSync(newQueue);
                   }
                 }}
                 onReorderQueue={(newOrder) => {
                   engine.reorderQueue(newOrder);
-                  if (isLiveMode) handleLiveQueueSync(newOrder);
+                  if (isLiveMode && phase === 'drafting') handleLiveQueueSync(newOrder);
                 }}
               />
             )}
@@ -1193,19 +1652,14 @@ function DraftRoomContent() {
                 userDraftPosition={engine.userDraftPosition}
               />
             )}
-          </div>
-        ) : (
-          // Pre-drafting phase: show empty content area (overlays handle the display)
-          <div className="flex-1" />
-        )}
-
-        {/* Chat sidebar - hidden during active drafting */}
-        {!(phase === 'drafting' && engine.draftStatus !== 'completed') && (
-          <DraftRoomChat
-            playerCount={playerCount}
-            phase={phase}
-            username={user?.username}
-          />
+            {activeTab === 'chat' && (
+              <DraftRoomChat
+                playerCount={playerCount}
+                phase={phase}
+                username={user?.username}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -1285,3 +1739,4 @@ export default function DraftRoomPage() {
     </Suspense>
   );
 }
+// force deploy 1772096171

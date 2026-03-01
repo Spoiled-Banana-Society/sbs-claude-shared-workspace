@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
@@ -10,7 +10,7 @@ import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { Promo } from '@/types';
-import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
+import { isStagingMode } from '@/lib/staging';
 import { useActiveDrafts } from '@/hooks/useActiveDrafts';
 import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
@@ -32,392 +32,6 @@ function formatRelativeTime(timestamp: number): string {
   if (minutes < 60) return `${minutes} min ago`;
   if (hours < 24) return `${hours} hr${hours > 1 ? 's' : ''} ago`;
   return `${days} day${days > 1 ? 's' : ''} ago`;
-}
-
-// Get next sequential BBB number
-function _getNextBBBNumber(): number {
-  const savedDrafts = draftStore.getActiveDrafts();
-
-  // Extract BBB numbers from all drafts
-  const numbers: number[] = [142, 144]; // Demo draft numbers as baseline
-
-  savedDrafts.forEach((draft: { contestName?: string }) => {
-    const match = draft.contestName?.match(/BBB #(\d+)/);
-    if (match) {
-      numbers.push(parseInt(match[1], 10));
-    }
-  });
-
-  // Find max and add 1
-  const maxNumber = Math.max(...numbers);
-  return maxNumber + 1;
-}
-
-// Single animated demo card with a fixed reveal type
-function DemoCard({ forcedType, contestName, onAction, onExit }: { forcedType: 'pro' | 'hof' | 'jackpot'; contestName: string; onAction: (stage: number, type: 'pro' | 'hof' | 'jackpot' | null, players: number) => void; onExit: (contestName: string) => void }) {
-  const [stage, setStage] = useState(0);
-  const [timer, setTimer] = useState(30);
-  const [players, setPlayers] = useState(4);
-  const [picksAway, setPicksAway] = useState(6);
-  const [revealedType, setRevealedType] = useState<'pro' | 'hof' | 'jackpot' | null>(null);
-
-  const accentColor = revealedType ? getDraftTypeColor(revealedType) : '#22c55e';
-
-  // Cycle through stages (slower for clicking)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStage(prev => (prev + 1) % 4);
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Animate values based on stage
-  useEffect(() => {
-    if (stage === 0) {
-      setPlayers(4);
-      setRevealedType(null);
-      const fillInterval = setInterval(() => {
-        setPlayers(p => Math.min(p + 1, 10));
-      }, 500);
-      return () => clearInterval(fillInterval);
-    } else if (stage === 1) {
-      setPlayers(10);
-      setRevealedType(null);
-      setTimeout(() => {
-        setRevealedType(forcedType);
-      }, 2000);
-    } else if (stage === 2) {
-      setPicksAway(6);
-      const picksInterval = setInterval(() => {
-        setPicksAway(p => Math.max(p - 1, 1));
-      }, 800);
-      return () => clearInterval(picksInterval);
-    } else if (stage === 3) {
-      setTimer(30);
-      const timerInterval = setInterval(() => {
-        setTimer(t => Math.max(t - 1, 15));
-      }, 300);
-      return () => clearInterval(timerInterval);
-    }
-  }, [stage, forcedType]);
-
-  return (
-    <div
-      className={`rounded-2xl p-6 transition-all duration-500 backdrop-blur-xl border ${
-        stage === 3 ? 'border-white/10' : 'bg-white/[0.08] border-white/[0.12]'
-      }`}
-      style={stage === 3 ? {
-        background: `linear-gradient(135deg, ${accentColor}15, ${accentColor}08)`,
-        borderColor: `${accentColor}25`,
-        boxShadow: `0 8px 32px ${accentColor}10, inset 0 1px 0 rgba(255,255,255,0.08)`
-      } : {
-        boxShadow: '0 4px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)'
-      }}
-    >
-      {/* Row 1: Type + Speed */}
-      <div className="flex items-center justify-between mb-4">
-        {stage === 0 ? (
-          <span className="text-xs font-bold uppercase tracking-wide text-yellow-500">✨ Unrevealed</span>
-        ) : stage === 1 && !revealedType ? (
-          <span className="text-xs font-bold uppercase tracking-wide text-yellow-400 animate-pulse">Revealing...</span>
-        ) : (
-          <span className="text-xs font-bold uppercase tracking-wide" style={{ color: accentColor }}>
-            {revealedType === 'jackpot' ? 'Jackpot' : revealedType === 'hof' ? 'Hall of Fame' : 'Pro'}
-          </span>
-        )}
-        <span className="text-white/50 text-xs">30s</span>
-      </div>
-
-      {/* Row 2: Name + Status value */}
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-white font-semibold text-lg">{contestName}</span>
-        {stage === 0 && (
-          <span className="text-yellow-500 font-medium text-lg">{players}/10</span>
-        )}
-        {stage === 1 && (
-          <span className={`font-bold ${revealedType ? 'text-xl' : 'text-white/50'}`} style={revealedType ? { color: accentColor } : {}}>
-            {revealedType ? (revealedType === 'jackpot' ? '🔥 Jackpot!' : revealedType === 'hof' ? '🏆 HOF!' : '⚡ Pro') : '???'}
-          </span>
-        )}
-        {stage === 2 && (
-          <span className="text-white/60 text-lg">{picksAway} picks away</span>
-        )}
-        {stage === 3 && (
-          <span className={`text-3xl font-bold tabular-nums ${timer <= 20 ? 'animate-pulse' : ''}`} style={{ color: timer <= 20 ? '#ef4444' : accentColor }}>
-            {timer}s
-          </span>
-        )}
-      </div>
-
-      {/* Row 3: Status text + Action */}
-      <div className="flex items-center justify-between mt-2">
-        <span className="text-white/60">
-          {stage === 0 && 'In lobby - Waiting to fill'}
-          {stage === 1 && (revealedType ? 'Entering draft...' : 'Full · Revealing type...')}
-          {stage === 2 && 'Waiting for your turn'}
-          {stage === 3 && 'Your turn to pick'}
-        </span>
-        <div className="flex items-end gap-2">
-          <button
-            onClick={() => onAction(stage, revealedType, players)}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
-              stage === 3 ? 'hover:brightness-110 hover:scale-105' : 'bg-transparent border border-white/50 text-white hover:bg-white/10 hover:scale-105'
-            }`}
-            style={stage === 3 ? { background: accentColor, color: revealedType === 'hof' ? '#000' : '#fff' } : {}}
-          >
-            {stage === 0 && 'View Lobby'}
-            {stage === 1 && (revealedType ? 'Enter Draft' : '...')}
-            {stage === 2 && 'Open'}
-            {stage === 3 && 'Pick Now'}
-          </button>
-          {stage === 0 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onExit(contestName); }}
-              className="group relative px-1.5 py-1 rounded-md bg-transparent border border-white/40 text-white/70 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/50 transition-all text-[10px]"
-            >
-              ✕
-              <span className="absolute bottom-full right-0 mb-2 px-2 py-1 text-xs bg-black/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                Leave draft
-              </span>
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// List view row component
-function DemoListRow({ forcedType, contestName, onAction, onExit }: { forcedType: 'pro' | 'hof' | 'jackpot'; contestName: string; onAction: (stage: number, type: 'pro' | 'hof' | 'jackpot' | null, players: number) => void; onExit: (contestName: string) => void }) {
-  const [stage, setStage] = useState(0);
-  const [timer, setTimer] = useState(30);
-  const [players, setPlayers] = useState(4);
-  const [picksAway, setPicksAway] = useState(6);
-  const [revealedType, setRevealedType] = useState<'pro' | 'hof' | 'jackpot' | null>(null);
-
-  const accentColor = revealedType ? getDraftTypeColor(revealedType) : '#22c55e';
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStage(prev => (prev + 1) % 4);
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    if (stage === 0) {
-      setPlayers(4);
-      setRevealedType(null);
-      const fillInterval = setInterval(() => {
-        setPlayers(p => Math.min(p + 1, 10));
-      }, 500);
-      return () => clearInterval(fillInterval);
-    } else if (stage === 1) {
-      setPlayers(10);
-      setRevealedType(null);
-      setTimeout(() => {
-        setRevealedType(forcedType);
-      }, 2000);
-    } else if (stage === 2) {
-      setPicksAway(6);
-      const picksInterval = setInterval(() => {
-        setPicksAway(p => Math.max(p - 1, 1));
-      }, 800);
-      return () => clearInterval(picksInterval);
-    } else if (stage === 3) {
-      setTimer(30);
-      const timerInterval = setInterval(() => {
-        setTimer(t => Math.max(t - 1, 15));
-      }, 300);
-      return () => clearInterval(timerInterval);
-    }
-  }, [stage, forcedType]);
-
-  return (
-    <div
-      className={`grid grid-cols-6 items-center px-5 py-3 rounded-xl transition-all duration-500 ${
-        stage === 3 ? '' : 'bg-white/[0.06] border border-white/[0.10]'
-      }`}
-      style={stage === 3 ? {
-        background: `linear-gradient(90deg, ${accentColor}15, ${accentColor}05)`,
-        boxShadow: `inset 0 0 0 1px ${accentColor}25`
-      } : {
-        boxShadow: '0 2px 12px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.06)'
-      }}
-    >
-      {/* Name */}
-      <span className="text-white font-semibold">{contestName}</span>
-
-      {/* Type badge */}
-      <span className={`text-xs font-bold uppercase tracking-wide ${
-        stage === 0 ? 'text-yellow-500' :
-        stage === 1 && !revealedType ? 'text-yellow-400 animate-pulse' : ''
-      }`} style={revealedType ? { color: accentColor } : {}}>
-        {stage === 0 ? '✨ Unrevealed' :
-         stage === 1 && !revealedType ? 'Revealing...' :
-         revealedType === 'jackpot' ? 'Jackpot' :
-         revealedType === 'hof' ? 'HOF' : 'Pro'}
-      </span>
-
-      {/* Speed */}
-      <span className="text-white/60 text-sm">30s picks</span>
-
-      {/* Status */}
-      <span className="text-white/50 text-sm">
-        {stage === 0 && `${players}/10 filling`}
-        {stage === 1 && (revealedType ? 'Entering draft...' : 'Revealing type...')}
-        {stage === 2 && `${picksAway} picks away`}
-        {stage === 3 && 'Your turn to pick'}
-      </span>
-
-      {/* Timer */}
-      <span className={`text-xl font-bold tabular-nums ${stage !== 3 ? 'text-white/40' : timer <= 20 ? 'animate-pulse' : ''}`} style={stage === 3 ? { color: timer <= 20 ? '#ef4444' : accentColor } : {}}>
-        {stage === 3 ? `${timer}s` : '—'}
-      </span>
-
-      {/* Action */}
-      <div className="justify-self-end flex items-end gap-2">
-        <button
-          onClick={() => onAction(stage, revealedType, players)}
-          className={`px-5 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
-            stage === 3 ? 'hover:brightness-110 hover:scale-105' : 'bg-transparent border border-white/50 text-white hover:bg-white/10 hover:scale-105'
-          }`}
-          style={stage === 3 ? { background: accentColor, color: revealedType === 'hof' ? '#000' : '#fff' } : {}}
-        >
-          {stage === 0 && 'View Lobby'}
-          {stage === 1 && 'Enter Draft'}
-          {stage === 2 && 'Open'}
-          {stage === 3 && 'Pick Now'}
-        </button>
-        {stage === 0 && (
-          <button
-            onClick={() => onExit(contestName)}
-            className="group relative px-1.5 py-1 rounded-md bg-transparent border border-white/40 text-white/70 hover:text-red-400 hover:bg-red-400/10 hover:border-red-400/50 transition-all text-[10px]"
-          >
-            ✕
-            <span className="absolute bottom-full right-0 mb-2 px-2 py-1 text-xs bg-black/90 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              Leave draft
-            </span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Animated demo showing cards - always 1/3 width per card
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function DraftStagesDemo() {
-  const router = useRouter();
-  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
-  const [exitingDraft, setExitingDraft] = useState<string | null>(null);
-
-  const handleAction = (stage: number, type: 'pro' | 'hof' | 'jackpot' | null, contestName: string, players: number = 1) => {
-    const draftId = contestName.replace('BBB #', '');
-
-    if (stage === 0) {
-      // Filling - go to lobby with current player count
-      router.push(`/draft-room?id=${draftId}&name=${encodeURIComponent(contestName)}&speed=fast&players=${players}`);
-    } else if (stage === 1 && type) {
-      // Revealed - enter draft room (10 players since revealed)
-      router.push(`/draft-room?id=${draftId}&type=${type}&name=${encodeURIComponent(contestName)}&speed=fast&players=10`);
-    } else if (stage === 2 || stage === 3) {
-      // In draft - open draft room (10 players since in progress)
-      router.push(`/draft-room?id=${draftId}&type=${type || 'pro'}&name=${encodeURIComponent(contestName)}&speed=fast&players=10`);
-    }
-  };
-
-  const handleExit = (contestName: string) => {
-    setExitingDraft(contestName);
-  };
-
-  const confirmExit = () => {
-    if (exitingDraft) {
-      // TODO: API call to exit draft and return draft pass
-      console.log('Exiting draft:', exitingDraft, '- Draft pass returned');
-      setExitingDraft(null);
-    }
-  };
-
-  return (
-    <div className="mb-8">
-      {/* Exit Confirmation Modal */}
-      {exitingDraft && (
-        <div
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 cursor-pointer"
-          onClick={() => setExitingDraft(null)}
-        >
-          <div
-            className="bg-[#1a1a1a] rounded-2xl border border-white/10 p-6 max-w-sm w-full cursor-default"
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="text-xl font-bold text-white mb-2">Leave Draft?</h3>
-            <p className="text-white/60 mb-6">
-              Are you sure you want to leave <span className="text-white font-medium">{exitingDraft}</span>? Your draft pass will be returned.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setExitingDraft(null)}
-                className="flex-1 px-4 py-3 bg-transparent border border-white/50 text-white font-medium rounded-xl hover:bg-white/10 hover:scale-105 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmExit}
-                className="flex-1 px-4 py-3 bg-red-500 text-white font-medium rounded-xl hover:bg-red-400 transition-colors"
-              >
-                Leave Draft
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* View Toggle */}
-      <div className="flex items-center gap-1 mb-4 bg-white/[0.05] rounded-lg p-1 w-fit">
-        <button
-          onClick={() => setViewMode('cards')}
-          className={`p-2 rounded-md transition-all ${
-            viewMode === 'cards' ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white/60'
-          }`}
-          title="Grid view"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="1" y="1" width="6" height="6" rx="1" />
-            <rect x="9" y="1" width="6" height="6" rx="1" />
-            <rect x="1" y="9" width="6" height="6" rx="1" />
-            <rect x="9" y="9" width="6" height="6" rx="1" />
-          </svg>
-        </button>
-        <button
-          onClick={() => setViewMode('list')}
-          className={`p-2 rounded-md transition-all ${
-            viewMode === 'list' ? 'bg-white/15 text-white' : 'text-white/60 hover:text-white/60'
-          }`}
-          title="List view"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <rect x="1" y="2" width="14" height="2.5" rx="0.5" />
-            <rect x="1" y="6.75" width="14" height="2.5" rx="0.5" />
-            <rect x="1" y="11.5" width="14" height="2.5" rx="0.5" />
-          </svg>
-        </button>
-      </div>
-
-      {viewMode === 'cards' ? (
-        <div className="grid grid-cols-3 gap-6 w-full">
-          <DemoCard forcedType="pro" contestName="BBB #142" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #142', players)} onExit={handleExit} />
-          <DemoCard forcedType="hof" contestName="BBB #143" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #143', players)} onExit={handleExit} />
-          <DemoCard forcedType="jackpot" contestName="BBB #144" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #144', players)} onExit={handleExit} />
-        </div>
-      ) : (
-        <div className="flex flex-col gap-2 w-full">
-          <DemoListRow forcedType="pro" contestName="BBB #142" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #142', players)} onExit={handleExit} />
-          <DemoListRow forcedType="hof" contestName="BBB #143" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #143', players)} onExit={handleExit} />
-          <DemoListRow forcedType="jackpot" contestName="BBB #144" onAction={(stage, type, players) => handleAction(stage, type, 'BBB #144', players)} onExit={handleExit} />
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function DraftingPage() {
@@ -493,77 +107,23 @@ export default function DraftingPage() {
     enterDraftWithPassType(passType, speed);
   };
 
-  const enterDraftWithPassType = async (passType: 'paid' | 'free', speed: 'fast' | 'slow' = 'fast') => {
+  const enterDraftWithPassType = (passType: 'paid' | 'free', speed: 'fast' | 'slow' = 'fast') => {
     if (!user?.walletAddress) return;
-
-    const prevPaidPasses = user?.draftPasses || 0;
-    const prevFreePasses = user?.freeDrafts || 0;
 
     // Deduct the selected pass type locally (optimistic)
     if (passType === 'paid') {
-      updateUser({ draftPasses: Math.max(0, prevPaidPasses - 1) });
+      updateUser({ draftPasses: Math.max(0, (user?.draftPasses || 0) - 1) });
     } else {
-      updateUser({ freeDrafts: Math.max(0, prevFreePasses - 1) });
+      updateUser({ freeDrafts: Math.max(0, (user?.freeDrafts || 0) - 1) });
     }
 
-    try {
-      // Call real backend to join a draft
-      const { joinDraft } = await import('@/lib/api/leagues');
-      const draftRoom = await joinDraft(user.walletAddress, speed);
-      if (!draftRoom?.id) {
-        throw new Error('Draft join failed: missing draft ID');
-      }
-
-      const draftId = draftRoom.id;
-      const contestName = draftRoom.contestName || `BBB #${draftId}`;
-
-      // Save to store for tracking (reactive — drafting page updates automatically)
-      draftStore.addDraft({
-        id: draftId,
-        contestName,
-        status: 'filling',
-        type: null, // unrevealed until slot machine
-        draftSpeed: speed,
-        players: draftRoom.players || 1,
-        maxPlayers: draftRoom.maxPlayers || 10,
-        joinedAt: Date.now(),
-        phase: 'filling',
-        fillingStartedAt: Date.now(),
-        fillingInitialPlayers: draftRoom.players || 1,
-      });
-
-      // In staging mode, fill the draft with bots so it starts quickly
-      if (isStagingMode()) {
-        const stagingBase = getStagingApiUrl();
-        if (stagingBase) {
-          try {
-            await fetch(`${stagingBase}/staging/fill-bots/${speed}?count=9`, { method: 'POST' });
-          } catch {
-            console.warn('Bot fill failed, continuing to lobby');
-          }
-        }
-      }
-
-      // Build draft room URL with live mode params when wallet is available
-      const params = new URLSearchParams({
-        id: draftId,
-        name: contestName,
-        speed,
-      });
-      if (user?.walletAddress && isStagingMode()) {
-        params.set('mode', 'live');
-        params.set('wallet', user.walletAddress);
-      }
-      router.push(`/draft-room?${params.toString()}`);
-    } catch (err) {
-      // Revert optimistic update on failure
-      if (passType === 'paid') {
-        updateUser({ draftPasses: prevPaidPasses });
-      } else {
-        updateUser({ freeDrafts: prevFreePasses });
-      }
-      alert(err instanceof Error ? err.message : 'Failed to join draft. Please try again.');
-    }
+    // Navigate IMMEDIATELY to draft room — it will handle joinDraft + fill-bots
+    const params = new URLSearchParams({
+      speed,
+      mode: 'live',
+      wallet: user.walletAddress,
+    });
+    router.push(`/draft-room?${params.toString()}`);
   };
 
   // In live/staging mode, load real draft tokens from API
@@ -576,9 +136,13 @@ export default function DraftingPage() {
     async function loadLiveDrafts() {
       try {
         const { getOwnerDraftTokens } = await import('@/lib/api/owner');
-        const tokens: ApiDraftToken[] = await getOwnerDraftTokens(user!.walletAddress!);
+        const raw = await getOwnerDraftTokens(user!.walletAddress!);
         if (cancelled) return;
-        const mapped: Draft[] = tokens.map((t) => ({
+        const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
+        // Only show tokens that are actively in a league (have a leagueId).
+        // Available/unused tokens have empty leagueId and should not appear as drafts.
+        const activeTokens = tokens.filter((t) => !!t.leagueId);
+        const mapped: Draft[] = activeTokens.map((t) => ({
           id: t.leagueId || t.cardId,
           contestName: t.leagueDisplayName || `BBB #${t.leagueId || t.cardId}`,
           status: 'drafting' as const,
@@ -607,12 +171,13 @@ export default function DraftingPage() {
   // Merge local + live drafts: localStorage drafts are the source of truth for
   // filling/pre-spin phases (they have timestamps). API drafts supplement with
   // server-confirmed data. Local drafts take priority (fresher state).
-  const activeDrafts: Draft[] = (() => {
+  // Memoized to prevent infinite re-render loops from useEffect dependencies.
+  const activeDrafts: Draft[] = useMemo(() => {
     if (!isLive) return localDrafts;
     const localIds = new Set(localDrafts.map(d => d.id));
     const apiOnly = liveDrafts.filter(d => !localIds.has(d.id));
     return [...localDrafts, ...apiOnly];
-  })();
+  }, [isLive, localDrafts, liveDrafts]);
 
   // Sort drafts: Your turn > In progress (by picks away) > Filling (oldest first, newest at bottom)
   const sortedDrafts = [...activeDrafts].sort((a, b) => {

@@ -72,11 +72,10 @@ export interface ServerDraftInfoPayload {
   adp: { adp: number; byeWeek: string; playerId: string }[];
 }
 
-export interface ServerNewPickPayload {
-  newPick: ServerPickPayload;
-  nextDrafter: string;
-  currentPick: number;
-}
+// The Go server broadcasts flat PlayerInfo as the new_pick payload.
+// (The SendPickMessage struct with newPick/nextDrafter/currentPick exists in event.go but is dead code.)
+// The draft_info_update message (handled separately) advances pickNumber/currentDrafter.
+export type ServerNewPickPayload = ServerPickPayload;
 
 export interface ServerFinalCardPayload {
   cardId: string;
@@ -189,10 +188,16 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const [walletAddress, setWalletAddress] = useState('');
   const [finalCard, setFinalCard] = useState<{ cardId: string; imageUrl: string } | null>(null);
   const [endOfTurnTimestamp, setEndOfTurnTimestamp] = useState(0);
+  // Phase tracking — matches old useDraftRoom.ts "phase" concept:
+  // 'countdown' = pre-draft 60s countdown (server sends countdown_update)
+  // 'live' = draft is active, picks are happening (server sends timer_update)
+  const [draftPhase, setDraftPhase] = useState<'countdown' | 'live'>('countdown');
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingRef = useRef(false);
+  // Track highest pickNum seen — rejects duplicate/stale picks (matches old useDraftRoom.ts pattern)
+  const lastPickRef = useRef<number>(0);
 
   // Computed values
   const currentRound = Math.ceil(currentPickNumber / 10);
@@ -227,6 +232,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setCurrentPickNumber(1);
     setTimeRemaining(30);
     setDraftStatus('active');
+    setDraftPhase('live');
     setMostRecentPick(null);
     setQueuedPlayers([]);
     setDraftSummary(generateDraftSummary(shuffledOrder));
@@ -322,9 +328,12 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       }));
     setAvailablePlayers(available);
 
-    // Build picks from summary
+    // Build picks from summary — filter on playerId (not ownerAddress!) because the server
+    // pre-populates ownerAddress for ALL 150 slots (assigned drafter), but only sets playerId
+    // when a pick is actually made. Using ownerAddress would include all 150 slots, setting
+    // lastPickRef=150 and causing EVERY WS new_pick to be rejected as "stale".
     const existingPicks: DraftPick[] = summary
-      .filter(s => s.playerInfo.ownerAddress !== '')
+      .filter(s => s.playerInfo.playerId !== '')
       .map(s => ({
         pickNumber: s.playerInfo.pickNum,
         round: s.playerInfo.round || Math.ceil(s.playerInfo.pickNum / 10),
@@ -377,11 +386,27 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setDraftStatus(draftInfo.pickNumber > TOTAL_PICKS ? 'completed' : 'active');
     setMostRecentPick(existingPicks[existingPicks.length - 1] || null);
 
-    // Calculate initial timer using old system's formula (all times in UNIX seconds)
-    const endTime = draftInfo.draftStartTime + (draftInfo.pickLength * (draftInfo.pickNumber + 1));
-    const remaining = Math.max(0, Math.ceil((endTime * 1000 - Date.now()) / 1000));
-    setTimeRemaining(remaining);
-    setEndOfTurnTimestamp(endTime); // Store in seconds (matching WS format)
+    // Initialize lastPickRef from existing picks so WS dedup rejects replayed picks
+    const highestPick = existingPicks.reduce((max, p) => Math.max(max, p.pickNumber), 0);
+    lastPickRef.current = highestPick;
+
+    // Timer initialization — matches old useTimer.tsx approach:
+    // 1. If draft hasn't started yet → countdown to draftStartTime
+    // 2. If draft is active → use pickLength as default; WS timer_update will override with exact endOfTurnTimestamp
+    const now = Date.now();
+    if (draftInfo.draftStartTime && now < draftInfo.draftStartTime * 1000) {
+      // Draft hasn't started yet — show countdown to start
+      const remaining = Math.max(0, Math.ceil((draftInfo.draftStartTime * 1000 - now) / 1000));
+      setTimeRemaining(remaining);
+      setEndOfTurnTimestamp(draftInfo.draftStartTime);
+      setDraftPhase('countdown');
+    } else {
+      // Draft is active — use pickLength as reasonable default
+      // The WS timer_update message will quickly override this with the precise endOfTurnTimestamp
+      setTimeRemaining(draftInfo.pickLength || 30);
+      setDraftPhase('live');
+      // Don't set endOfTurnTimestamp here — let the WS timer_update set it accurately
+    }
   }, []);
 
   // ==================== LIVE MODE HANDLERS ====================
@@ -389,6 +414,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const handleCountdownUpdate = useCallback((payload: { timeRemaining: number; currentDrafter: string }) => {
     setPreTimeRemaining(payload.timeRemaining);
     setCurrentDrafterAddress(payload.currentDrafter || '');
+    setDraftPhase('countdown');
   }, []);
 
   const handleTimerUpdate = useCallback((payload: ServerTimerPayload) => {
@@ -397,35 +423,50 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Calculate remaining from server timestamps (server sends UNIX seconds, convert to ms)
     const remaining = Math.max(0, Math.ceil((payload.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
     setTimeRemaining(remaining);
+    setDraftPhase('live'); // First timer_update = draft has started, picks are happening
   }, []);
 
   const handleNewPick = useCallback((payload: ServerNewPickPayload) => {
-    const { newPick, nextDrafter, currentPick } = payload;
-    const basePos = positionFromPlayerId(newPick.playerId);
+    // Go server sends flat PlayerInfo: { playerId, displayName, team, position, ownerAddress, pickNum, round }
+    const pickData = payload;
+    console.log('[handleNewPick] Received:', pickData.playerId, 'pick#', pickData.pickNum, 'lastPickRef:', lastPickRef.current);
+    if (!pickData.playerId) {
+      console.warn('[handleNewPick] Empty playerId, skipping');
+      return;
+    }
+
+    // Guard: reject duplicate/stale picks (matches production useDraftRoom.ts pattern)
+    if (pickData.pickNum <= lastPickRef.current) {
+      console.warn('[handleNewPick] Rejecting stale pick:', pickData.pickNum, '<=', lastPickRef.current);
+      return;
+    }
+    lastPickRef.current = pickData.pickNum;
+
+    const basePos = positionFromPlayerId(pickData.playerId);
 
     const pick: DraftPick = {
-      pickNumber: newPick.pickNum,
-      round: newPick.round,
-      pickInRound: ((newPick.pickNum - 1) % 10) + 1,
-      ownerName: newPick.ownerAddress,
-      ownerIndex: getSnakeDrafterIndex(newPick.pickNum),
-      playerId: newPick.playerId,
-      position: newPick.position,
-      team: newPick.team,
+      pickNumber: pickData.pickNum,
+      round: pickData.round,
+      pickInRound: ((pickData.pickNum - 1) % 10) + 1,
+      ownerName: pickData.ownerAddress,
+      ownerIndex: getSnakeDrafterIndex(pickData.pickNum),
+      playerId: pickData.playerId,
+      position: pickData.position,
+      team: pickData.team,
     };
 
     setPicks(prev => [...prev, pick]);
-    setAvailablePlayers(prev => prev.filter(p => p.playerId !== newPick.playerId));
+    setAvailablePlayers(prev => prev.filter(p => p.playerId !== pickData.playerId));
     setMostRecentPick(pick);
 
-    // Update roster
+    // Update roster (idempotent — check before adding)
     setRosters(prev => {
       const updated = { ...prev };
-      const ownerAddr = newPick.ownerAddress;
+      const ownerAddr = pickData.ownerAddress;
       const roster = { ...(updated[ownerAddr] || createEmptyRoster()) };
       const rosterKey = basePos as keyof PositionRoster;
-      if (roster[rosterKey]) {
-        roster[rosterKey] = [...roster[rosterKey], newPick.playerId];
+      if (roster[rosterKey] && !roster[rosterKey].includes(pickData.playerId)) {
+        roster[rosterKey] = [...roster[rosterKey], pickData.playerId];
       }
       updated[ownerAddr] = roster;
       return updated;
@@ -434,37 +475,36 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Update draft summary
     setDraftSummary(prev => {
       const updated = [...prev];
-      const idx = newPick.pickNum - 1;
+      const idx = pickData.pickNum - 1;
       if (updated[idx]) {
-        updated[idx] = { ...updated[idx], playerId: newPick.playerId, position: newPick.position, team: newPick.team };
+        updated[idx] = { ...updated[idx], playerId: pickData.playerId, position: pickData.position, team: pickData.team };
       }
       return updated;
     });
 
     // Remove from queue if queued
-    setQueuedPlayers(prev => prev.filter(p => p.playerId !== newPick.playerId));
-
-    // Advance state
-    if (currentPick) {
-      setCurrentPickNumber(currentPick);
-    } else {
-      setCurrentPickNumber(prev => prev + 1);
-    }
-
-    if (nextDrafter) {
-      setCurrentDrafterAddress(nextDrafter);
-    }
+    setQueuedPlayers(prev => prev.filter(p => p.playerId !== pickData.playerId));
 
     // Check completion
-    if (newPick.pickNum >= TOTAL_PICKS) {
+    if (pickData.pickNum >= TOTAL_PICKS) {
       setDraftStatus('completed');
     }
   }, []);
 
   const handleDraftInfoUpdate = useCallback((payload: ServerDraftInfoPayload) => {
-    setCurrentPickNumber(payload.pickNumber);
+    // Guard: never go backwards — stale/duplicate server messages can send lower pickNumber
+    setCurrentPickNumber(prev => {
+      if (payload.pickNumber < prev) {
+        console.warn(`[Draft] Ignoring backwards draft_info_update: server sent pick ${payload.pickNumber}, current is ${prev}`);
+        return prev;
+      }
+      return payload.pickNumber;
+    });
     setCurrentDrafterAddress(payload.currentDrafter);
-    // Round is derived from pickNumber, no need to set separately
+    // Note: do NOT update lastPickRef here. The server sends pickNumber = N+1 (next pick)
+    // after pick N is made. Setting lastPickRef = N+1 would cause new_pick for pick N+1 to be
+    // rejected (N+1 <= N+1). lastPickRef is only safely updated by handleNewPick (set to pickNum)
+    // and initializeFromServer (set to highest existing pick).
   }, []);
 
   const handleDraftComplete = useCallback(() => {
@@ -482,24 +522,26 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     // In LIVE mode, just build the payload — don't update local state
     // (server will send new_pick back which triggers handleNewPick)
+    // Matches production useDraftRoom.ts makePick() — no 500ms buffer, just check canDraft equivalent
     if (mode === 'live') {
-      // 500ms pick buffer — reject picks too close to deadline (matches old system)
-      if (endOfTurnTimestamp > 0 && (endOfTurnTimestamp * 1000 - Date.now()) <= 500) {
-        console.log('[Draft] Pick rejected — less than 500ms remaining');
+      const player = availablePlayers.find(p => p.playerId === playerId);
+      if (!player) {
+        console.warn('[Draft] Pick rejected — player not found in availablePlayers:', playerId);
         return null;
       }
-      const player = availablePlayers.find(p => p.playerId === playerId);
-      if (!player) return null;
 
-      return {
+      // Match production useDraftRoom.ts makePick() payload exactly
+      const payload = {
         playerId: player.playerId,
-        displayName: player.playerId, // Server uses playerId as displayName for team positions
+        displayName: player.playerId, // Production also uses playerId as displayName for picks
         team: player.team,
         position: positionFromPlayerId(player.playerId),
-        ownerAddress: walletAddress,
+        ownerAddress: walletAddress, // Already lowercased by initializeFromServer
         pickNum: currentPickNumber,
         round: currentRound,
       };
+      console.log('[Draft] Sending pick:', payload);
+      return payload;
     }
 
     // LOCAL mode: full local state update
@@ -603,6 +645,32 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setAvailablePlayers(players);
   }, []);
 
+  // Re-populate draftSummary from REST summary data on reconnect
+  // summaryData is array of { playerInfo: { playerId, position, team, ownerAddress, pickNum } }
+  const refreshSummaryPicks = useCallback((summaryData: Array<{ playerInfo: { playerId: string; position: string; team: string; ownerAddress: string; pickNum: number } }>) => {
+    setDraftSummary(prev => {
+      const updated = [...prev];
+      for (const entry of summaryData) {
+        const pi = entry.playerInfo;
+        if (pi.playerId && pi.pickNum > 0) {
+          const idx = pi.pickNum - 1;
+          if (updated[idx]) {
+            updated[idx] = { ...updated[idx], playerId: pi.playerId, position: pi.position, team: pi.team };
+          }
+        }
+      }
+      return updated;
+    });
+    // Also update lastPickRef to the highest ACTUAL pick in the summary
+    // (only count entries with a playerId — unpicked slots have pickNum set but empty playerId)
+    const highestPick = summaryData
+      .filter(e => e.playerInfo.playerId !== '')
+      .reduce((max, e) => e.playerInfo.pickNum > max ? e.playerInfo.pickNum : max, 0);
+    if (highestPick > lastPickRef.current) {
+      lastPickRef.current = highestPick;
+    }
+  }, []);
+
   const isInQueue = useCallback((playerId: string) => {
     return queuedPlayers.some(p => p.playerId === playerId);
   }, [queuedPlayers]);
@@ -632,10 +700,11 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     if (mode !== 'live') return;
     if (draftStatus !== 'active' || endOfTurnTimestamp === 0) return;
 
+    // 250ms interval matches production useDraftRoom.ts for smooth countdown display
     timerRef.current = setInterval(() => {
       const remaining = Math.max(0, Math.ceil((endOfTurnTimestamp * 1000 - Date.now()) / 1000));
-      setTimeRemaining(remaining);
-    }, 1000);
+      setTimeRemaining(prev => prev === remaining ? prev : remaining);
+    }, 250);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -700,6 +769,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     currentDrafterAddress,
     walletAddress,
     finalCard,
+    draftPhase,
 
     // LOCAL mode actions
     initializeDraft,
@@ -720,6 +790,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     removeFromQueue,
     reorderQueue,
     refreshAvailablePlayers,
+    refreshSummaryPicks,
     isInQueue,
   };
 }
