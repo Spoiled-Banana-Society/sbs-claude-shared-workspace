@@ -59,7 +59,9 @@ function DraftRoomContent() {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const liveInitializedRef = useRef(false);
-  const [liveDataReady, setLiveDataReady] = useState(false);
+  const storedForInit = draftId ? draftStore.getDraft(draftId) : undefined;
+  const skipToLive = isLiveMode && (storedForInit?.phase === 'drafting' || storedForInit?.status === 'drafting');
+  const [liveDataReady, setLiveDataReady] = useState(skipToLive);
   const [engineReady, setEngineReady] = useState(false);
   const liveRetryCountRef = useRef(0);
   // Track whether we're waiting for server to create draft documents after filling
@@ -120,11 +122,13 @@ function DraftRoomContent() {
   }, [isLiveMode, draftId, walletParam, speedParam]);
 
   // ==================== RESTORE FROM STORE ====================
-  // Never read store in live mode — server is single source of truth
-  const stored = (draftId && !isLiveMode) ? draftStore.getDraft(draftId) : undefined;
+  // Check store in both modes — needed to skip animations when re-entering mid-draft
+  const stored = draftId ? draftStore.getDraft(draftId) : undefined;
 
   // ==================== PHASE STATE ====================
   const [phase, setPhase] = useState<RoomPhase>(() => {
+    // In live mode, if draft already progressed to drafting, skip filling/animations
+    if (isLiveMode && (stored?.phase === 'drafting' || stored?.status === 'drafting')) return 'drafting';
     if (isLiveMode) return 'filling';
     if (stored?.phase) return stored.phase;
     return 'filling';
