@@ -860,13 +860,24 @@ function DraftRoomContent() {
     const MIN_RANDOMIZING_MS = 3000;
     const pollDraftId = draftId; // Capture for async closure
 
+    // Smooth progress animation — ticks every 50ms, reaches ~92% over ~10s
+    // Independent of API attempts so the bar moves smoothly
+    let pollDone = false;
+    const progressInterval = setInterval(() => {
+      if (pollDone) { clearInterval(progressInterval); return; }
+      const elapsed = Date.now() - randomizingStartedAt;
+      // Ease-out curve: fast at start, slows down as it approaches 92%
+      const t = Math.min(1, elapsed / 12000); // 12s to reach max
+      const progress = 0.92 * (1 - Math.pow(1 - t, 2)); // quadratic ease-out
+      setServerWaitProgress(progress);
+    }, 50);
+
     (async () => {
       let attempts = 0;
       while (attempts < 30) {
         attempts++;
         try {
           console.log(`[Draft Room] Waiting for server (attempt ${attempts})...`);
-          setServerWaitProgress(Math.min(0.92, attempts / 15));
           const info = await draftApi.getDraftInfo(pollDraftId);
 
           if (!info.draftOrder || info.draftOrder.length < 10) {
@@ -883,6 +894,8 @@ function DraftRoomContent() {
             avatar: '🍌',
           }));
 
+          pollDone = true;
+          clearInterval(progressInterval);
           setDraftOrder(realOrder);
           setServerWaitProgress(1);
           console.log('[Draft Room] Wallets loaded:', realOrder.map((p: { displayName: string }) => p.displayName));
@@ -903,6 +916,8 @@ function DraftRoomContent() {
         }
       }
       // Exhausted — fall back to local
+      pollDone = true;
+      clearInterval(progressInterval);
       console.log('[Draft Room] Server poll exhausted — falling back to local');
       const shuffled = [...DRAFT_PLAYERS].sort(() => Math.random() - 0.5);
       setServerPollResult({ order: shuffled, countdownStart: Date.now() });
@@ -1654,7 +1669,7 @@ function DraftRoomContent() {
                   <span className="text-white/70 text-xs tracking-widest uppercase">Randomizing Draft Order</span>
                   <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden backdrop-blur-sm">
                     <div
-                      className="h-full rounded-full transition-all duration-200 ease-out"
+                      className="h-full rounded-full transition-all duration-500 ease-out"
                       style={{
                         width: `${Math.round(serverWaitProgress * 100)}%`,
                         background: serverWaitProgress >= 1
