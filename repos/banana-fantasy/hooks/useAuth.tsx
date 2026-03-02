@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useSafePrivy as usePrivy } from '@/providers/PrivyProvider';
+import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
@@ -36,6 +36,13 @@ interface AuthContextType {
   updateUser: (updates: Partial<User>) => void;
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
+  // Twitter/X verification
+  isTwitterVerified: boolean;
+  isTwitterLinking: boolean;
+  twitterError: string | null;
+  linkTwitter: () => void;
+  newUserPromoClaimed: boolean;
+  claimNewUserPromo: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -87,10 +94,61 @@ const MOCK_USER: User | null = MOCK_AUTH
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
+  const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Twitter/X verification state
+  const [isTwitterVerified, setIsTwitterVerified] = useState(false);
+  const [isTwitterLinking, setIsTwitterLinking] = useState(false);
+  const [twitterError, setTwitterError] = useState<string | null>(null);
+  const [newUserPromoClaimed, setNewUserPromoClaimed] = useState(false);
+
+  // Verify Twitter link with backend (anti-sybil check + Firestore storage)
+  const verifyTwitterWithBackend = useCallback(async (
+    twitterId: string,
+    twitterHandle: string,
+    wallet: string,
+  ) => {
+    try {
+      const res = await fetch('/api/auth/verify-twitter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ twitterId, twitterHandle, walletAddress: wallet }),
+      });
+      const data = await res.json();
+      if (data.verified) {
+        setIsTwitterVerified(true);
+        setTwitterError(null);
+        setNewUserPromoClaimed(data.newUserPromoClaimed ?? false);
+        setUser((prev) => prev ? { ...prev, xHandle: `@${data.handle}` } : prev);
+      } else {
+        setTwitterError(data.error || 'Verification failed');
+        setIsTwitterVerified(false);
+      }
+    } catch {
+      setTwitterError('Failed to verify X account');
+    } finally {
+      setIsTwitterLinking(false);
+    }
+  }, []);
+
+  // Check if wallet already has a verified Twitter link (on login)
+  const checkExistingTwitterLink = useCallback(async (wallet: string) => {
+    try {
+      const res = await fetch(`/api/auth/verify-twitter?walletAddress=${encodeURIComponent(wallet)}`);
+      const data = await res.json();
+      if (data.verified) {
+        setIsTwitterVerified(true);
+        setNewUserPromoClaimed(data.newUserPromoClaimed ?? false);
+        setUser((prev) => prev ? { ...prev, xHandle: `@${data.handle}` } : prev);
+      }
+    } catch {
+      // Silent — don't block auth if check fails
+    }
+  }, []);
 
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
   const walletAddress = useMemo(() => {
@@ -114,6 +172,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
+
+  // Check for existing Twitter link on login (also triggers after linkTwitter OAuth redirect)
+  useEffect(() => {
+    if (!walletAddress) {
+      setIsTwitterVerified(false);
+      setTwitterError(null);
+      return;
+    }
+    // Check Privy linkedAccounts first for already-linked Twitter
+    const twitterAccount = privy.user?.linkedAccounts?.find(
+      (a: { type: string }) => a.type === 'twitter_oauth'
+    ) as { subject?: string; username?: string } | undefined;
+    if (twitterAccount?.subject && twitterAccount?.username) {
+      // Already linked via Privy — verify with backend
+      verifyTwitterWithBackend(twitterAccount.subject, twitterAccount.username, walletAddress);
+    } else {
+      // Check backend for previously stored link
+      checkExistingTwitterLink(walletAddress);
+    }
+  }, [walletAddress, privy.user, verifyTwitterWithBackend, checkExistingTwitterLink]);
 
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
@@ -306,6 +384,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Trigger Privy's Twitter OAuth linking flow
+  // linkTwitter() redirects to Twitter — when user returns, privy.user updates
+  // with the new linkedAccount, which our effect above detects and verifies.
+  const handleLinkTwitter = useCallback(() => {
+    if (!privyAvailable || !walletAddress) return;
+    setIsTwitterLinking(true);
+    setTwitterError(null);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (privy as any).linkTwitter();
+    } catch (err) {
+      console.error('[SBS Auth] linkTwitter error:', err);
+      setTwitterError('Failed to open X login');
+      setIsTwitterLinking(false);
+    }
+  }, [privyAvailable, walletAddress, privy]);
+
+  const claimNewUserPromo = useCallback(async () => {
+    if (!walletAddress) return;
+    try {
+      await fetch('/api/auth/verify-twitter', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress }),
+      });
+      setNewUserPromoClaimed(true);
+    } catch {
+      // Silent — claim tracking is best-effort
+    }
+  }, [walletAddress]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -322,6 +431,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser,
         showLoginModal,
         setShowLoginModal,
+        isTwitterVerified,
+        isTwitterLinking,
+        twitterError,
+        linkTwitter: handleLinkTwitter,
+        newUserPromoClaimed,
+        claimNewUserPromo,
       }}
     >
       {children}

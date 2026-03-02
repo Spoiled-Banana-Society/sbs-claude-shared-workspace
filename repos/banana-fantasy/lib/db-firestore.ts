@@ -173,13 +173,21 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
-  const promosSnap = await db
-    .collection(USERS_COLLECTION)
-    .doc(userId)
-    .collection(PROMOS_SUBCOLLECTION)
-    .get();
+  const [promosSnap, twitterSnap] = await Promise.all([
+    db.collection(USERS_COLLECTION).doc(userId).collection(PROMOS_SUBCOLLECTION).get(),
+    db.collection('v2_twitter_links').where('walletAddress', '==', userId.toLowerCase()).limit(1).get(),
+  ]);
 
-  return promosSnap.docs.map((doc) => doc.data() as Promo);
+  const hasVerifiedTwitter = !twitterSnap.empty;
+
+  return promosSnap.docs.map((doc) => {
+    const promo = doc.data() as Promo;
+    // Inject real twitterConnected status for promos that depend on it
+    if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
+      promo.modalContent.twitterConnected = hasVerifiedTwitter;
+    }
+    return promo;
+  });
 }
 
 export async function claimPromo(userId: string, promoId: string) {
@@ -195,6 +203,18 @@ export async function claimPromo(userId: string, promoId: string) {
 
     const user = userSnap.data() as User;
     const promo = deepClone(promoSnap.data() as Promo);
+
+    // Gate new-user and tweet-engagement promos behind X verification
+    if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
+      const twitterSnap = await db
+        .collection('v2_twitter_links')
+        .where('walletAddress', '==', userId.toLowerCase())
+        .limit(1)
+        .get();
+      if (twitterSnap.empty) {
+        throw new ApiError(400, 'X/Twitter verification required before claiming this promo');
+      }
+    }
 
     let spinsAdded = 0;
 

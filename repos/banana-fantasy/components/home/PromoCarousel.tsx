@@ -18,7 +18,7 @@ const GAP = 20; // gap-5 = 1.25rem = 20px
 
 export function PromoCarousel({ promos }: PromoCarouselProps) {
   const router = useRouter();
-  const { user, updateUser, isLoggedIn, setShowLoginModal } = useAuth();
+  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed } = useAuth();
 
   // Sort promos: claimable first, then by progress percent (highest first), then others
   const sortedPromos = [...promos].sort((a, b) => {
@@ -186,7 +186,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
-              const isClaimed = claimedPromos.has(promo.id);
+              const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
               const progressPercent = isClaimed ? 0 : (hasProgress

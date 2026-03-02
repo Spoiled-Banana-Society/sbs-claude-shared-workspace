@@ -123,7 +123,7 @@
         "modalContent": {
           "title": "New User Bonus SPIN",
           "explanation": "Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.",
-          "twitterConnected": true
+          "twitterConnected": false
         }
       },
       {

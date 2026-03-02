@@ -82,7 +82,7 @@ export const mockPromos: Promo[] = [
       title: 'Tweet Engagement Rewards',
       explanation: 'Engage with the SBS launch tweet (like, repost, or meaningful reply) to earn a Banana Wheel spin. Claims are one-time per campaign and reviewed for abuse prevention.',
       additionalRules: 'One reward per user per campaign. Low-quality spam engagement may be denied.',
-      twitterConnected: true,
+      twitterConnected: false,
     },
   },
   {
@@ -98,7 +98,7 @@ export const mockPromos: Promo[] = [
     modalContent: {
       title: 'New User Bonus SPIN',
       explanation: 'Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.',
-      twitterConnected: true,
+      twitterConnected: false,
     },
   },
   {

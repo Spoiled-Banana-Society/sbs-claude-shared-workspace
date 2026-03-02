@@ -17,7 +17,7 @@ interface PromoModalProps {
 
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false }: PromoModalProps) {
   const router = useRouter();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
   const [copied, setCopied] = useState(false);
   const [showAdditionalRules, setShowAdditionalRules] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
@@ -103,6 +103,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       // Mark all as claimed locally
       for (let i = 0; i < claimCount; i++) {
         setClaimedRewards(prev => new Set([...Array.from(prev), `main-claim-${i}`]));
+      }
+      // Persist new-user promo claim to Firestore
+      if (promo.type === 'new-user') {
+        claimNewUserPromo();
       }
       // Tell parent this promo is fully claimed
       onClaim(promo);
@@ -451,34 +455,56 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
-  const renderNewUserContent = () => (
-    <div className="bg-bg-tertiary rounded-xl p-4">
-      <div className="flex items-center gap-3">
-        <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center ${
-            promo.modalContent.twitterConnected ? 'bg-success/20' : 'bg-bg-elevated'
-          }`}
-        >
-          <svg
-            className={`w-5 h-5 ${promo.modalContent.twitterConnected ? 'text-success' : 'text-text-muted'}`}
-            fill="currentColor"
-            viewBox="0 0 24 24"
+  const renderNewUserContent = () => {
+    if (!isLoggedIn) {
+      return (
+        <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+          <p className="text-text-secondary mb-3">Sign in to verify your Twitter/X and claim your bonus spin.</p>
+          <Button onClick={() => { onClose(); setShowLoginModal(true); }}>Log In</Button>
+        </div>
+      );
+    }
+
+    const verified = isTwitterVerified;
+
+    return (
+      <div className="bg-bg-tertiary rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <div
+            className={`w-10 h-10 rounded-full flex items-center justify-center ${
+              verified ? 'bg-success/20' : 'bg-bg-elevated'
+            }`}
           >
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
+            <svg
+              className={`w-5 h-5 ${verified ? 'text-success' : 'text-text-muted'}`}
+              fill="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-medium text-text-primary">Twitter/X Verification</p>
+            {verified ? (
+              <p className="text-sm text-success">
+                Verified {user?.xHandle ? `as ${user.xHandle}` : ''}
+              </p>
+            ) : (
+              <p className="text-sm text-text-muted">Connect to claim</p>
+            )}
+            {twitterError && (
+              <p className="text-sm text-error mt-1">{twitterError}</p>
+            )}
+          </div>
+          {!verified && (
+            <Button size="sm" onClick={linkTwitter} disabled={isTwitterLinking}>
+              {isTwitterLinking ? 'Connecting...' : 'Connect'}
+            </Button>
+          )}
         </div>
-        <div className="flex-1">
-          <p className="font-medium text-text-primary">Twitter/X Verification</p>
-          <p className={`text-sm ${promo.modalContent.twitterConnected ? 'text-success' : 'text-text-muted'}`}>
-            {promo.modalContent.twitterConnected ? 'Verified' : 'Connect to claim'}
-          </p>
-        </div>
-        {!promo.modalContent.twitterConnected && (
-          <Button size="sm">Connect</Button>
-        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderBuyBonusContent = () => (
     <div className="bg-bg-tertiary rounded-xl p-4 text-center">
@@ -493,18 +519,29 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     </div>
   );
 
-  const renderTweetEngagementContent = () => (
-    <div className="bg-bg-tertiary rounded-xl p-4 text-center">
-      <div className="text-4xl mb-3">🐦</div>
-      <p className="font-semibold mb-2 text-text-primary">Tweet Engagement Reward</p>
-      <p className="text-text-secondary text-sm">
-        Like, repost, or reply to the official SBS launch tweet to qualify for a spin reward.
-      </p>
-      <Button className="mt-4" onClick={() => window.open(promo.ctaLink, '_blank', 'noopener,noreferrer')}>
-        Open Tweet
-      </Button>
-    </div>
-  );
+  const renderTweetEngagementContent = () => {
+    if (!isLoggedIn) {
+      return (
+        <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+          <p className="text-text-secondary mb-3">Sign in to participate in Tweet Engagement rewards.</p>
+          <Button onClick={() => { onClose(); setShowLoginModal(true); }}>Log In</Button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+        <div className="text-4xl mb-3">🐦</div>
+        <p className="font-semibold mb-2 text-text-primary">Tweet Engagement Reward</p>
+        <p className="text-text-secondary text-sm">
+          Like, repost, or reply to the official SBS launch tweet to qualify for a spin reward.
+        </p>
+        <Button className="mt-4" onClick={() => window.open(promo.ctaLink, '_blank', 'noopener,noreferrer')}>
+          Open Tweet
+        </Button>
+      </div>
+    );
+  };
 
   const renderPromoContent = () => {
     switch (promo.type) {
@@ -529,7 +566,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     }
   };
 
-  const canClaim = promo.claimable && remainingClaims > 0 && !isPromoClaimed;
+  // For new-user and tweet-engagement promos, require login + Twitter verification before claiming
+  const requiresTwitter = promo.type === 'new-user' || promo.type === 'tweet-engagement';
+  const alreadyClaimed = promo.type === 'new-user' ? newUserPromoClaimed : false;
+  const canClaim = promo.claimable && remainingClaims > 0 && !isPromoClaimed && !alreadyClaimed && isLoggedIn && (!requiresTwitter || isTwitterVerified);
   const claimButtonText = remainingClaims > 1
     ? `CLAIM (${remainingClaims})`
     : 'CLAIM';
