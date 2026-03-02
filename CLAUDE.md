@@ -3,31 +3,57 @@
 > **Note to Claude:**
 > - Update this file when building new features, making design decisions, or changing important logic. This is your memory across sessions.
 > - If you cause an error, fix it immediately without waiting for the user to report it. Check the dev server output after edits.
-> - **Always commit and push after completing changes.** Do not wait for the user to ask — deploy to Vercel automatically by pushing to main.
+> - **Always commit and push after completing changes.** Push to your personal branch, not main.
 
 ## Shared Workspace Sync (IMPORTANT — Read First)
 
-This repo (`sbs-claude-shared-workspace`) is the bridge between Boris and Richard. Both work on banana-fantasy from their own machines and sync through this repo.
+This repo (`sbs-claude-shared-workspace`) is the bridge between Boris and Richard. Both work on banana-fantasy from their own machines using **personal branches** to avoid conflicts.
+
+### Branch Structure
+- `main` — deployable code, only receives merges. **NEVER commit directly to main.**
+- `richard` — Richard's permanent working branch
+- `boris` — Boris's permanent working branch
 
 ### At the START of every session:
 ```bash
-cd ~/sbs-claude-shared-workspace && git pull
+cd ~/sbs-claude-shared-workspace
+git fetch origin
+git checkout <your-branch>          # richard or boris
+git pull origin <your-branch>
+git merge origin/main --no-edit     # get the other person's deployed work
+# If merge conflict: resolve it, then git add + git commit
 ```
-Then check if Boris pushed any updates — look at recent commits for changed files.
 
 ### At the END of every session (after ANY changes):
 ```bash
 cd ~/sbs-claude-shared-workspace
 git add -A
-git commit -m "Richard: <brief description of what changed>"
-git push
+git commit -m "<Name>: <brief description of what changed>"
+git push origin <your-branch>       # push to YOUR branch, not main
+```
+
+### To deploy (only when work is ready):
+```bash
+cd ~/sbs-claude-shared-workspace
+git fetch origin
+git merge origin/main --no-edit
+git checkout main && git pull origin main
+git merge <your-branch> --no-edit && git push origin main
+git checkout <your-branch>
+
+# Sync to deploy repo and trigger Vercel
+cp -R repos/banana-fantasy/app repos/banana-fantasy/components repos/banana-fantasy/hooks repos/banana-fantasy/lib repos/banana-fantasy/e2e repos/banana-fantasy/public /tmp/sbs-frontend-v2/ 2>/dev/null
+cd /tmp/sbs-frontend-v2 && git add -A && git commit -m "<description>" && git push origin main
+curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_laojah7E1rx3bwkFOPcOAsumG0DO/uFCdmzX21J"
 ```
 
 ### Rules:
-- **ALWAYS pull before starting work** — otherwise you'll work on stale code.
-- **ALWAYS commit and push when done** — otherwise Boris won't have your changes.
-- **Never do partial syncs** — always commit all changed files, not just a few.
+- **NEVER commit directly to main** — always work on your personal branch.
+- **ALWAYS pull and merge main at session start** — otherwise you'll miss the other person's work.
+- **ALWAYS push your branch at session end** — otherwise the other person can't see your progress.
+- **Only merge to main when deploying** — main should always be deployable.
 - If there's a merge conflict, resolve it carefully — don't discard either side without checking.
+- Commit messages start with your name: "Richard: ..." or "Boris: ..."
 
 ## Company Overview
 - **Company:** Spoiled Banana Society (SBS)
