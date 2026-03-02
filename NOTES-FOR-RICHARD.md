@@ -1,5 +1,8 @@
 # Notes for Richard — March 2, 2026
 
+## Important: Staging URL
+Always use **`https://banana-fantasy-sbs.vercel.app/`** for browser testing. This is the Privy-whitelisted domain. `banana-fantasy.vercel.app` is the same deploy but Privy auth won't work there.
+
 ## What Changed
 
 ### 1. Twitter/X Verification (Phase 1) — NEW

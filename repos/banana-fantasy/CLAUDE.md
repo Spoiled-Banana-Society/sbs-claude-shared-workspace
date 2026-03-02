@@ -14,12 +14,7 @@
   - Firebase Functions: `/Users/borisvagner/SBS-Backend-main/`
 
 ### Workflow
-- This directory is inside `sbs-claude-shared-workspace` — it is NOT its own git repo.
-- All git operations happen at the workspace root (`~/sbs-claude-shared-workspace/`).
-- Richard works on the `richard` branch. Boris works on the `boris` branch.
-- **Never commit directly to `main`.** Merge to `main` only when deploying.
-- See the workspace root CLAUDE.md for full sync instructions.
-- Always commit and push to your personal branch after completing changes.
+- Always commit and push after completing changes
 - Always test against real staging backend — mint tokens, join league, fill bots. Never use fake draft IDs.
 
 ### Draft Room Race Conditions (DO NOT REINTRODUCE)

@@ -188,7 +188,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
               const isHovered = index === hoveredIndex;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
-              const showProgressBar = hasProgress || isClaimed;
+              const showProgressBar = promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (hasProgress || isClaimed);
               const progressPercent = isClaimed ? 0 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
