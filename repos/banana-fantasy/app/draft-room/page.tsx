@@ -60,8 +60,7 @@ function DraftRoomContent() {
   const [liveError, setLiveError] = useState<string | null>(null);
   const liveInitializedRef = useRef(false);
   const storedForInit = draftId ? draftStore.getDraft(draftId) : undefined;
-  const storedPhaseForInit = storedForInit?.phase || storedForInit?.status;
-  const skipToLive = isLiveMode && !!storedPhaseForInit && storedPhaseForInit !== 'filling';
+  const skipToLive = isLiveMode && storedForInit?.status === 'drafting';
   const [liveDataReady, setLiveDataReady] = useState(skipToLive);
   const [engineReady, setEngineReady] = useState(false);
   const liveRetryCountRef = useRef(0);
@@ -128,12 +127,8 @@ function DraftRoomContent() {
 
   // ==================== PHASE STATE ====================
   const [phase, setPhase] = useState<RoomPhase>(() => {
-    if (isLiveMode && stored) {
-      const sp = stored.phase || stored.status;
-      // Skip to the correct phase when re-entering a draft that already progressed
-      if (sp === 'drafting') return 'drafting';
-      if (sp === 'pre-spin' || sp === 'spinning' || sp === 'result') return sp as RoomPhase;
-    }
+    // In live mode, skip to drafting if stored state shows draft already in progress
+    if (isLiveMode && stored?.status === 'drafting') return 'drafting';
     if (!isLiveMode && stored?.phase) return stored.phase;
     return 'filling';
   });
@@ -768,44 +763,7 @@ function DraftRoomContent() {
         setServerWaitProgress(eased);
       }, 80);
 
-      const buildOrderFromInfo = (info: draftApi.DraftInfoResponse): typeof draftOrder =>
-        info.draftOrder.map((u, idx) => ({
-          id: String(idx + 1),
-          name: u.ownerId,
-          displayName: u.ownerId.length > 10
-            ? u.ownerId.slice(0, 6) + '...' + u.ownerId.slice(-4)
-            : u.ownerId,
-          isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
-          avatar: '🍌',
-        }));
-
       const pollUntilReady = async () => {
-        // Quick check: if draft already started on server, skip all animations
-        try {
-          const preCheck = await draftApi.getDraftInfo(draftId);
-          if (cancelled) return;
-          if (preCheck.draftOrder?.length >= 10) {
-            const alreadyStarted = preCheck.pickNumber > 0 ||
-              (preCheck.draftStartTime && preCheck.draftStartTime * 1000 < Date.now());
-            if (alreadyStarted) {
-              console.log(`[Draft Room] Draft already at pick ${preCheck.pickNumber} — skipping animations`);
-              const realOrder = buildOrderFromInfo(preCheck);
-              setDraftOrder(realOrder);
-              setPhase('drafting');
-              setWaitingForServer(false);
-              setLiveDataReady(true);
-              setPlayerCount(10);
-              clearInterval(progressInterval);
-              if (draftId) {
-                draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10 });
-              }
-              return;
-            }
-          }
-        } catch {
-          // Server not ready yet — continue with normal polling flow
-        }
-
         let attempts = 0;
         while (!cancelled) {
           attempts++;
@@ -819,7 +777,15 @@ function DraftRoomContent() {
             }
 
             // Server is ready — build draft order from real wallet addresses
-            const realOrder = buildOrderFromInfo(info);
+            const realOrder: typeof draftOrder = info.draftOrder.map((u, idx) => ({
+              id: String(idx + 1),
+              name: u.ownerId,
+              displayName: u.ownerId.length > 10
+                ? u.ownerId.slice(0, 6) + '...' + u.ownerId.slice(-4)
+                : u.ownerId,
+              isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
+              avatar: '🍌',
+            }));
 
             // Put wallets in boxes NOW (still in "Randomizing" state so user sees them)
             setDraftOrder(realOrder);
