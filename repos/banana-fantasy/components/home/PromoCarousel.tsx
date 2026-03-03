@@ -212,7 +212,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
                   <div className={`absolute inset-0 bg-[#f5f5f7] pointer-events-none transition-opacity duration-300 z-10 ${isHovered ? 'opacity-50' : 'opacity-0'}`} />
 
                   {/* Hover text - positioned between title and bottom content (for promos without progress bar or claim) */}
-                  <div className={`absolute left-0 right-0 top-1/2 text-center pointer-events-none transition-opacity duration-300 z-20 ${isHovered && ((!promo.claimable && !showProgressBar) || ((promo.type === 'new-user' || promo.type === 'tweet-engagement') && !(isLoggedIn && isTwitterVerified))) ? 'opacity-100' : 'opacity-0'}`}>
+                  <div className={`absolute left-0 right-0 top-1/2 text-center pointer-events-none transition-opacity duration-300 z-20 ${isHovered && ((!promo.claimable && !showProgressBar) || ((promo.type === 'new-user' || promo.type === 'tweet-engagement') && (!(isLoggedIn && isTwitterVerified) || isClaimed))) ? 'opacity-100' : 'opacity-0'}`}>
                     <span className="text-[#1d1d1f] text-xs font-semibold">
                       Learn more
                     </span>
