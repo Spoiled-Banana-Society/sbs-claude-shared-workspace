@@ -18,26 +18,10 @@ const GAP = 20; // gap-5 = 1.25rem = 20px
 
 export function PromoCarousel({ promos }: PromoCarouselProps) {
   const router = useRouter();
-  const { user, updateUser, isLoggedIn, isTwitterVerified, setShowLoginModal, newUserPromoClaimed } = useAuth();
-
-  const [currentIndex, setCurrentIndex] = useState(promos.length);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(true);
-  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
-  const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
-  const [_timerTick, setTimerTick] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Filter out claimed new-user promo entirely
-  const filteredPromos = promos.filter(p => {
-    if (p.type === 'new-user' && (newUserPromoClaimed || claimedPromos.has(p.id))) return false;
-    return true;
-  });
+  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified } = useAuth();
 
   // Sort promos: claimable first, then by progress percent (highest first), then others
-  const sortedPromos = [...filteredPromos].sort((a, b) => {
+  const sortedPromos = [...promos].sort((a, b) => {
     // Claimable promos come first
     if (a.claimable && !b.claimable) return -1;
     if (!a.claimable && b.claimable) return 1;
@@ -53,6 +37,16 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
   // Create extended array with clones for infinite loop
   const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
   const startOffset = sortedPromos.length; // Start at the middle copy
+
+  const [currentIndex, setCurrentIndex] = useState(startOffset);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(true);
+  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
+  const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
+  const [_timerTick, setTimerTick] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -194,7 +188,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
               const isHovered = index === hoveredIndex;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
-              const showProgressBar = promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (hasProgress || isClaimed);
+              const showProgressBar = hasProgress || isClaimed;
               const progressPercent = isClaimed ? 0 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
