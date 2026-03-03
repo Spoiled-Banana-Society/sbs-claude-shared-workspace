@@ -900,7 +900,10 @@ function DraftRoomContent() {
           setServerWaitProgress(1);
           console.log('[Draft Room] Wallets loaded:', realOrder.map((p: { displayName: string }) => p.displayName));
 
-          // Brief delay so user sees 100% green bar
+          // Always wait at least 700ms so the bar visually animates to 100%
+          await new Promise(r => setTimeout(r, 700));
+
+          // Ensure minimum total display time
           const elapsed = Date.now() - randomizingStartedAt;
           if (elapsed < MIN_RANDOMIZING_MS) {
             await new Promise(r => setTimeout(r, MIN_RANDOMIZING_MS - elapsed));
