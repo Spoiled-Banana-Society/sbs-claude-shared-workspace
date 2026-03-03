@@ -182,10 +182,18 @@ export async function getOwnerProfile(walletAddress: string): Promise<ApiOwnerPr
 
 /**
  * Fetch owner profile and map to UI `User`.
+ * Also fetches draft token count so draftPasses reflects real available tokens.
  */
 export async function getOwnerUser(walletAddress: string): Promise<User> {
-  const owner = await getOwnerProfile(walletAddress);
-  return mapOwnerProfileToUser(walletAddress, owner);
+  const [owner, tokens] = await Promise.all([
+    getOwnerProfile(walletAddress),
+    getOwnerDraftTokens(walletAddress).catch(() => [] as ApiDraftToken[]),
+  ]);
+  const availableTokens = tokens.filter(t => !t.leagueId);
+  const user = mapOwnerProfileToUser(walletAddress, owner);
+  user.draftPasses = availableTokens.length;
+  user.freeDrafts = 0;
+  return user;
 }
 
 /**
