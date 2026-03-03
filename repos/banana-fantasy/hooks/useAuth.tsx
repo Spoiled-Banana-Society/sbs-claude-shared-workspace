@@ -311,20 +311,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             let changed = false;
             let updated = prev;
 
-            // NFT draft pass balance
-            if (nftResult?.result) {
-              const nftBalance = parseInt(nftResult.result, 16);
-              if (prev.draftPasses !== nftBalance) {
-                updated = { ...updated, draftPasses: nftBalance };
-                changed = true;
-                try {
-                  const saved = localStorage.getItem(USER_PROFILE_KEY);
-                  const profile = saved ? JSON.parse(saved) : {};
-                  profile.draftPasses = nftBalance;
-                  localStorage.setItem(USER_PROFILE_KEY, JSON.stringify(profile));
-                } catch { /* ignore */ }
-              }
-            }
+            // NFT on-chain balance — informational only.
+            // draftPasses is set by getOwnerDraftTokens (server-side token count).
+            // Do NOT overwrite draftPasses with on-chain NFT balance.
 
             // USDC balance (6 decimals)
             if (usdcResult?.result) {
