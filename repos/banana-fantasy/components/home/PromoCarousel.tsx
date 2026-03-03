@@ -198,8 +198,8 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
               const progressPercent = isClaimed ? 0 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
-              const progressMax = promo.progressMax || 10;
-              const progressCurrent = isClaimed ? 0 : (promo.progressCurrent || 0);
+              const progressMax = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (promo.progressMax || 10);
+              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed ? 0 : (promo.progressCurrent || 0));
               return (
                 <div
                   key={`${promo.id}-${index}`}
@@ -218,7 +218,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
                   <div className={`absolute inset-0 bg-[#f5f5f7] pointer-events-none transition-opacity duration-300 z-10 ${isHovered ? 'opacity-50' : 'opacity-0'}`} />
 
                   {/* Hover text - positioned between title and bottom content (for promos without progress bar or claim) */}
-                  <div className={`absolute left-0 right-0 top-1/2 text-center pointer-events-none transition-opacity duration-300 z-20 ${isHovered && ((!promo.claimable && !showProgressBar) || (promo.type === 'new-user' && !(isLoggedIn && isTwitterVerified))) ? 'opacity-100' : 'opacity-0'}`}>
+                  <div className={`absolute left-0 right-0 top-1/2 text-center pointer-events-none transition-opacity duration-300 z-20 ${isHovered && ((!promo.claimable && !showProgressBar) || ((promo.type === 'new-user' || promo.type === 'tweet-engagement') && !(isLoggedIn && isTwitterVerified))) ? 'opacity-100' : 'opacity-0'}`}>
                     <span className="text-[#1d1d1f] text-xs font-semibold">
                       Learn more
                     </span>
@@ -336,7 +336,7 @@ export function PromoCarousel({ promos }: PromoCarouselProps) {
                       )}
 
                       {/* Claimable button - for other promos (not daily-drafts, mint, or pick-10) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.claimable && !isClaimed && (promo.type !== 'new-user' || (isLoggedIn && isTwitterVerified)) && (
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.claimable && !isClaimed && ((promo.type !== 'new-user' && promo.type !== 'tweet-engagement') || (isLoggedIn && isTwitterVerified)) && (
                         <div className="pt-6">
                           <button
                             onClick={(e) => handleClaim(promo, e)}
