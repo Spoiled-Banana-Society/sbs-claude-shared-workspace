@@ -9,7 +9,7 @@ import type { DraftState } from '@/lib/draftStore';
  * window focus so the drafting page always reflects live state.
  */
 export function useActiveDrafts(): DraftState[] {
-  const [drafts, setDrafts] = useState<DraftState[]>([]);
+  const [drafts, setDrafts] = useState<DraftState[]>(() => draftStore.getActiveDrafts());
 
   const refresh = useCallback(() => {
     setDrafts(draftStore.getActiveDrafts());
