@@ -84,6 +84,25 @@ function DraftRoomContent() {
     if (!isLiveMode || draftId || !walletParam || joinCalledRef.current) return;
     joinCalledRef.current = true;
 
+    // Write a preliminary entry to draftStore immediately so the drafting page
+    // can show it while the joinDraft API call is in progress
+    const pendingId = `pending-${Date.now()}`;
+    const joinStartedAt = Date.now();
+    draftStore.addDraft({
+      id: pendingId,
+      contestName: 'Joining...',
+      status: 'filling',
+      type: null,
+      draftSpeed: speedParam || 'fast',
+      players: 1,
+      maxPlayers: 10,
+      joinedAt: joinStartedAt,
+      phase: 'filling',
+      fillingStartedAt: joinStartedAt,
+      fillingInitialPlayers: 1,
+      liveWalletAddress: walletParam,
+    });
+
     async function joinAndFill() {
       try {
         const { joinDraft } = await import('@/lib/api/leagues');
@@ -94,7 +113,8 @@ function DraftRoomContent() {
         const newId = draftRoom.id;
         setDraftId(newId);
 
-        // Save to store
+        // Remove the pending entry and add the real one
+        draftStore.removeDraft(pendingId);
         draftStore.addDraft({
           id: newId,
           contestName: draftRoom.contestName || `BBB #${newId}`,
@@ -103,9 +123,9 @@ function DraftRoomContent() {
           draftSpeed: speedParam || 'fast',
           players: draftRoom.players || 1,
           maxPlayers: 10,
-          joinedAt: Date.now(),
+          joinedAt: joinStartedAt,
           phase: 'filling',
-          fillingStartedAt: Date.now(),
+          fillingStartedAt: joinStartedAt,  // Use the ORIGINAL timestamp, not Date.now()
           fillingInitialPlayers: draftRoom.players || 1,
           liveWalletAddress: walletParam,
         });
@@ -120,6 +140,7 @@ function DraftRoomContent() {
         }
       } catch (err) {
         console.error('[Draft Room] Failed to join draft:', err);
+        draftStore.removeDraft(pendingId); // Clean up pending entry on failure
         setLiveError(err instanceof Error ? err.message : 'Failed to join draft');
       }
     }
