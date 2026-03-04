@@ -282,9 +282,10 @@ export default function DraftingPage() {
                 // First 15s — reveal countdown
                 patch.phase = 'pre-spin';
               }
-            } else if (draft.preSpinStartedAt) {
-              patch.phase = 'pre-spin';
             }
+            // When draftStartTime is not available but draft room already set
+            // preSpinStartedAt, don't overwrite phase — getLiveState derives
+            // the display from the timestamp, not the stored phase.
 
             draftStore.updateDraft(draft.id, patch);
           } else if (playerCount > 0 && draft.status === 'filling') {
@@ -479,18 +480,21 @@ export default function DraftingPage() {
       return { displayPhase: 'randomizing', playerCount: 10, countdown: null, randomizingProgress: progress, isFilling: false };
     }
 
-    // Pre-spin: countdown to reveal (first 15s)
-    if (draft.preSpinStartedAt && draft.phase === 'pre-spin') {
+    // Countdown phases: derive display from preSpinStartedAt elapsed time
+    // (don't rely on stored phase — syncLiveDrafts may overwrite it)
+    if (draft.preSpinStartedAt) {
       const elapsed = (now - draft.preSpinStartedAt) / 1000;
-      const revealIn = Math.max(0, Math.ceil(15 - elapsed));
-      return { displayPhase: 'pre-spin-countdown', playerCount: 10, countdown: revealIn, randomizingProgress: null, isFilling: false };
-    }
-
-    // Spinning/result: countdown to draft start
-    if (draft.preSpinStartedAt && ['spinning', 'result'].includes(draft.phase || '')) {
-      const elapsed = (now - draft.preSpinStartedAt) / 1000;
-      const startIn = Math.max(0, Math.ceil(60 - elapsed));
-      return { displayPhase: 'draft-starting', playerCount: 10, countdown: startIn > 0 ? startIn : null, randomizingProgress: null, isFilling: false };
+      if (elapsed < 15) {
+        // First 15s: reveal countdown
+        const revealIn = Math.max(0, Math.ceil(15 - elapsed));
+        return { displayPhase: 'pre-spin-countdown', playerCount: 10, countdown: revealIn, randomizingProgress: null, isFilling: false };
+      } else if (elapsed < 60) {
+        // 15-60s: draft starting countdown
+        const startIn = Math.max(0, Math.ceil(60 - elapsed));
+        return { displayPhase: 'draft-starting', playerCount: 10, countdown: startIn > 0 ? startIn : null, randomizingProgress: null, isFilling: false };
+      }
+      // Past 60s: draft should be starting/in-progress
+      return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
     }
 
     // Filling: use the best available count —
