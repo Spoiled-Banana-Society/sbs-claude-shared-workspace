@@ -80,7 +80,9 @@ export default function DraftingPage() {
   const promoCount = promos.length;
   const localDrafts = useActiveDrafts();
   const [liveDrafts, setLiveDrafts] = useState<Draft[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Don't block rendering on API — show local drafts immediately
+  const [isLoading, setIsLoading] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(true);
   const isLive = isStagingMode() && !!user?.walletAddress;
   const [_timers, setTimers] = useState<Record<string, number>>({});
   const [exitingDraft, setExitingDraft] = useState<Draft | null>(null);
@@ -171,10 +173,10 @@ export default function DraftingPage() {
     router.push(`/draft-room?${params.toString()}`);
   };
 
-  // In live/staging mode, load real draft tokens from API
+  // In live/staging mode, load real draft tokens from API (non-blocking — local drafts show immediately)
   useEffect(() => {
     if (!isLive) {
-      setIsLoading(false);
+      setLiveLoading(false);
       return;
     }
     let cancelled = false;
@@ -201,17 +203,12 @@ export default function DraftingPage() {
       } catch (err) {
         console.error('[Drafting] Failed to load live drafts:', err);
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) setLiveLoading(false);
       }
     }
     loadLiveDrafts();
     return () => { cancelled = true; };
   }, [isLive, user, hiddenDraftIds]);
-
-  // In local mode, just mark loading done (useActiveDrafts handles reactivity)
-  useEffect(() => {
-    if (!isLive) setIsLoading(false);
-  }, [isLive]);
 
   // REST polling: refresh live draft state on mount, focus, and every 10s
   useEffect(() => {
