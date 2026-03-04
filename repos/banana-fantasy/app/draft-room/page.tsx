@@ -878,7 +878,10 @@ function DraftRoomContent() {
     setWaitingForServer(true);
     setServerWaitProgress(0);
 
-    const randomizingStartedAt = Date.now();
+    // Reuse existing timestamp if resuming (e.g., re-entering from drafting page)
+    // so the progress bar continues from where it was, not restarting
+    const existingTimestamp = draftId ? draftStore.getDraft(draftId)?.randomizingStartedAt : undefined;
+    const randomizingStartedAt = existingTimestamp || Date.now();
     // Sync to draftStore so drafting page can show progress bar
     if (draftId) {
       draftStore.updateDraft(draftId, { randomizingStartedAt, players: 10 });
