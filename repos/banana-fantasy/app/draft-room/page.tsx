@@ -347,6 +347,46 @@ function DraftRoomContent() {
             setLiveDataReady(true);
             draftStore.updateDraft(draftId, { phase: 'pre-spin', preSpinStartedAt: countdownStart, draftOrder: realOrder, userDraftPosition: userPos });
           }
+        } else if (playerCount >= 10) {
+          // Draft is full but no draftStartTime yet — resume from stored state
+          console.log('[Draft Room] Server shows 10/10 but no draftStartTime — resuming stored phase');
+          setPlayerCount(10);
+          if (stored?.preSpinStartedAt) {
+            // Already in countdown — resume
+            const countdownStart = stored.preSpinStartedAt;
+            preSpinStartedAtRef.current = countdownStart;
+            const elapsed = (Date.now() - countdownStart) / 1000;
+            if (elapsed >= 15) {
+              const selectedResult = (stored.draftType || 'pro') as DraftType;
+              const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
+              setDraftType(selectedResult);
+              setAllReelItems([
+                generateReelItemsForReel(reelResults[0], 0),
+                generateReelItemsForReel(reelResults[1], 1),
+                generateReelItemsForReel(reelResults[2], 2),
+              ]);
+              const animOffset = (elapsed - 15) * 1000;
+              if (animOffset < 6000) {
+                animationOffsetRef.current = animOffset;
+                setShowSlotMachine(true);
+                setSlotAnimationDone(false);
+                setPhase('spinning');
+              } else {
+                setShowSlotMachine(true);
+                setSlotAnimationDone(true);
+                setPhase('result');
+              }
+              setMainCountdown(Math.max(0, Math.floor(60 - elapsed)));
+            } else {
+              setPhase('pre-spin');
+              setPreSpinCountdown(Math.max(0, Math.floor(15 - elapsed)));
+              setMainCountdown(Math.max(0, Math.floor(60 - elapsed)));
+            }
+            setLiveDataReady(true);
+          } else {
+            // Still randomizing or just reached 10/10 — let "at 10" effect handle it
+            setPhase('filling');
+          }
         } else {
           // Still filling — go back to filling phase (normal flow)
           console.log('[Draft Room] Server shows draft still filling — resuming fill');
