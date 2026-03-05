@@ -1,15 +1,10 @@
 export const dynamic = "force-dynamic";
-import { env } from '@/environment';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { createPurchase, verifyPurchase } from '@/lib/db';
 import { getStagingApiUrl } from '@/lib/staging';
 
 export async function POST(req: Request) {
-  if (env === 'prod') {
-    return jsonError('Not available in production', 403);
-  }
-
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
