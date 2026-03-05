@@ -22,6 +22,58 @@ import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
 import * as draftStore from '@/lib/draftStore';
 
+function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: () => void }) {
+  const [minting, setMinting] = React.useState(false);
+  const [qty, setQty] = React.useState(3);
+  const [result, setResult] = React.useState<string | null>(null);
+
+  const handleMint = async () => {
+    setMinting(true);
+    setResult(null);
+    try {
+      const res = await fetch('/api/purchases/staging-mint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, quantity: qty }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult(`Minted ${qty} — promo updated`);
+        onMinted();
+      } else {
+        setResult(`Error: ${data.error || 'Unknown'}`);
+      }
+    } catch (err) {
+      setResult(`Failed: ${err instanceof Error ? err.message : 'Unknown'}`);
+    } finally {
+      setMinting(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3 bg-orange-500/10 border border-orange-500/30 rounded-xl px-4 py-2">
+      <span className="text-orange-400 text-xs font-bold whitespace-nowrap">STAGING MINT</span>
+      <select
+        value={qty}
+        onChange={(e) => setQty(Number(e.target.value))}
+        className="bg-black/50 border border-white/20 rounded-lg px-2 py-1 text-white text-sm"
+      >
+        {[1, 3, 5, 7, 10].map((n) => (
+          <option key={n} value={n}>{n}</option>
+        ))}
+      </select>
+      <button
+        onClick={handleMint}
+        disabled={minting}
+        className="px-4 py-1.5 bg-orange-500 text-black text-xs font-bold rounded-lg hover:brightness-110 disabled:opacity-50 transition-all"
+      >
+        {minting ? 'Minting...' : 'Mint'}
+      </button>
+      {result && <span className="text-xs text-white/70">{result}</span>}
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { isLoggedIn, user, setShowLoginModal, updateUser } = useAuth();
@@ -161,6 +213,13 @@ export default function HomePage() {
           <SkeletonContestCard />
         )}
       </section>
+
+      {/* Staging Mint Button */}
+      {_isStagingMode() && user?.id && (
+        <section className="mb-4 flex justify-center">
+          <StagingMintButton userId={user.id} onMinted={promosQuery.refreshPromos} />
+        </section>
+      )}
 
       {/* Promo Carousel */}
       <section className="mb-4">
