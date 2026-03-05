@@ -410,15 +410,15 @@ export default function DraftingPage() {
 
           // Auto-advance: filling → randomizing → pre-spin when count reaches 10
           if (count >= 10 && !d.preSpinStartedAt) {
-            // LIVE DRAFTS: handle randomizing → pre-spin transition
+            // LIVE DRAFTS: start randomizing bar + auto-transition to countdown
             if (d.liveWalletAddress) {
-              if (d.players !== 10) {
-                draftStore.updateDraft(d.id, { players: 10 });
+              if (!d.randomizingStartedAt) {
+                // 10/10 reached — start the randomizing bar immediately
+                draftStore.updateDraft(d.id, { players: 10, randomizingStartedAt: now });
+                continue;
               }
-              // If randomizing bar has been running 5+ seconds, transition to countdown
-              // (The draft room sets randomizingStartedAt when server confirms 10/10.
-              //  If only the drafting page is open, we auto-transition here.)
-              if (d.randomizingStartedAt && (now - d.randomizingStartedAt) >= 5000) {
+              // After 5s of randomizing, transition to countdown
+              if ((now - d.randomizingStartedAt) >= 5000) {
                 draftStore.updateDraft(d.id, {
                   phase: 'pre-spin', players: 10,
                   preSpinStartedAt: now,
