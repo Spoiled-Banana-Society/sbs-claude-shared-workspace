@@ -229,6 +229,7 @@ function DraftRoomContent() {
   // ==================== TIMESTAMP REFS ====================
   const fillingStartedAtRef = useRef<number | null>(stored?.fillingStartedAt ?? null);
   const preSpinStartedAtRef = useRef<number | null>(stored?.preSpinStartedAt ?? null);
+  const animationOffsetRef = useRef(0); // ms offset for resuming slot animation mid-way
   const lastWsUpdateRef = useRef<number>(Date.now());
 
   // ==================== LOADING PHASE: Check server state before showing any UI ====================
@@ -313,14 +314,31 @@ function DraftRoomContent() {
             if (stored?.draftType) setDraftType(stored.draftType);
             draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10 });
           } else if (elapsed >= 15) {
-            // Past slot machine phase — show result with remaining countdown
-            setPhase('result');
-            setSlotAnimationDone(true);
-            setShowSlotMachine(false);
+            // Past slot machine start — play animation (or show result if animation done)
+            const selectedResult = (stored?.draftType || 'pro') as DraftType;
+            const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
+            setDraftType(selectedResult);
+            setAllReelItems([
+              generateReelItemsForReel(reelResults[0], 0),
+              generateReelItemsForReel(reelResults[1], 1),
+              generateReelItemsForReel(reelResults[2], 2),
+            ]);
+            const animOffset = (elapsed - 15) * 1000; // ms into animation
+            if (animOffset < 6000) {
+              // Animation still in progress — resume from offset
+              animationOffsetRef.current = animOffset;
+              setShowSlotMachine(true);
+              setSlotAnimationDone(false);
+              setPhase('spinning');
+            } else {
+              // Animation done — show result with overlay visible
+              setShowSlotMachine(true);
+              setSlotAnimationDone(true);
+              setPhase('result');
+            }
             setMainCountdown(Math.max(0, Math.floor(60 - elapsed)));
             setLiveDataReady(true);
-            if (stored?.draftType) setDraftType(stored.draftType);
-            draftStore.updateDraft(draftId, { phase: 'result', preSpinStartedAt: countdownStart });
+            draftStore.updateDraft(draftId, { phase: animOffset < 6000 ? 'spinning' : 'result', preSpinStartedAt: countdownStart });
           } else {
             // Still in pre-spin countdown — resume with remaining time
             setPhase('pre-spin');
@@ -378,7 +396,7 @@ function DraftRoomContent() {
       }
     }
 
-    // Resume spinning/result: skip slot animation, show result directly
+    // Resume spinning/result: play animation (or show result if animation done)
     if (restoredPhase === 'spinning' || restoredPhase === 'result') {
       if (stored.preSpinStartedAt) {
         const elapsed = (Date.now() - stored.preSpinStartedAt) / 1000;
@@ -393,12 +411,27 @@ function DraftRoomContent() {
           return;
         }
       }
-      // Skip slot animation on resume — go straight to result phase
-      setPhase('result');
-      setSlotAnimationDone(true);
-      setShowSlotMachine(false);
-      if (draftId && restoredPhase === 'spinning') {
-        draftStore.updateDraft(draftId, { phase: 'result' });
+      // Play the slot machine animation instead of skipping it
+      const selectedResult = (stored.draftType || draftType || 'pro') as DraftType;
+      const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
+      setDraftType(selectedResult);
+      setAllReelItems([
+        generateReelItemsForReel(reelResults[0], 0),
+        generateReelItemsForReel(reelResults[1], 1),
+        generateReelItemsForReel(reelResults[2], 2),
+      ]);
+      const animOffset = stored.preSpinStartedAt
+        ? Math.max(0, Date.now() - stored.preSpinStartedAt - 15000)
+        : 0;
+      if (animOffset < 6000) {
+        animationOffsetRef.current = animOffset;
+        setShowSlotMachine(true);
+        setSlotAnimationDone(false);
+        setPhase('spinning');
+      } else {
+        setShowSlotMachine(true);
+        setSlotAnimationDone(true);
+        setPhase('result');
       }
     }
 
@@ -1175,9 +1208,15 @@ function DraftRoomContent() {
     const landingIndex = (allReelItems[0]?.length || 50) - 8;
     const targetOffset = landingIndex * itemHeight;
     const reelDurations = [2000, 4000, 6000];
-    const startTime = performance.now();
+    const offset = animationOffsetRef.current;
+    animationOffsetRef.current = 0; // Reset after use
+    const startTime = performance.now() - offset;
     let animationId: number;
     const stoppedReels = [false, false, false];
+    // Mark reels that are already stopped from the offset (don't play sound for them)
+    for (let i = 0; i < 3; i++) {
+      if (offset >= reelDurations[i]) stoppedReels[i] = true;
+    }
     const easeOutQuint = (t: number): number => 1 - Math.pow(1 - t, 5);
 
     const animate = (currentTime: number) => {
