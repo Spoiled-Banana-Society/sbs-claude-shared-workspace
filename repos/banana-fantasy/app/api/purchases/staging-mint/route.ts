@@ -17,7 +17,7 @@ export async function POST(req: Request) {
 
     // 1. Mint tokens via Go API
     const goApiUrl = getStagingApiUrl();
-    const mintRes = await fetch(`${goApiUrl}/staging/mint/${userId}/${quantity}`, {
+    const mintRes = await fetch(`${goApiUrl}/staging/mint-tokens/${userId}?count=${quantity}`, {
       method: 'POST',
     });
     if (!mintRes.ok) {
