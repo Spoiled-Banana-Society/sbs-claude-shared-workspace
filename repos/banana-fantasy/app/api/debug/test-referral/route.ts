@@ -28,7 +28,26 @@ export async function GET(req: NextRequest) {
 
       const referrerUserId = (codeSnap.data() as { userId: string }).userId;
       const result = await trackReferral(referrerUserId, friendId, friendName);
-      return NextResponse.json({ action: 'track', result });
+      return NextResponse.json({ action: 'track', referrerUserId, result });
+    }
+
+    if (action === 'lookup') {
+      if (!code) return NextResponse.json({ error: 'Missing code param' }, { status: 400 });
+      const db = getAdminFirestore();
+      const codeSnap = await db.collection('v2_referral_codes').doc(code).get();
+      if (!codeSnap.exists) return NextResponse.json({ error: 'Code not found in v2_referral_codes' }, { status: 404 });
+      return NextResponse.json({ action: 'lookup', code, data: codeSnap.data() });
+    }
+
+    if (action === 'check') {
+      // Check a user's referral promo data
+      const userId = req.nextUrl.searchParams.get('userId');
+      if (!userId) return NextResponse.json({ error: 'Missing userId param' }, { status: 400 });
+      const db = getAdminFirestore();
+      const promosSnap = await db.collection('v2_users').doc(userId).collection('promos').get();
+      const referralPromo = promosSnap.docs.find((doc) => (doc.data() as { type: string }).type === 'referral');
+      if (!referralPromo) return NextResponse.json({ error: 'No referral promo found for user', userId });
+      return NextResponse.json({ action: 'check', userId, referralPromo: referralPromo.data() });
     }
 
     if (action === 'verify') {
@@ -48,6 +67,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       usage: {
+        lookup: '/api/debug/test-referral?action=lookup&code=BANANA-CK99-2026',
+        check: '/api/debug/test-referral?action=check&userId=YOUR_USER_ID',
         track: '/api/debug/test-referral?action=track&code=BANANA-CK99-2026&friendId=test-friend-001&friendName=BananaFriend',
         verify: '/api/debug/test-referral?action=verify&friendId=test-friend-001',
         bought1: '/api/debug/test-referral?action=bought1&friendId=test-friend-001',
