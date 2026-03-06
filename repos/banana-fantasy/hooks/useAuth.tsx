@@ -93,6 +93,8 @@ const MOCK_USER: User | null = MOCK_AUTH
     }
   : null;
 
+const REFERRAL_CODE_KEY = 'banana-referral-code';
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
@@ -100,6 +102,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Capture ?ref= param from URL into sessionStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref');
+    if (refCode) {
+      sessionStorage.setItem(REFERRAL_CODE_KEY, refCode);
+    }
+  }, []);
 
   // Twitter/X verification state
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
@@ -260,6 +272,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (isNotFound) {
             setIsNewUser(true);
             setShowOnboarding(true);
+            // Track referral if ref code exists
+            const refCode = typeof window !== 'undefined' ? sessionStorage.getItem(REFERRAL_CODE_KEY) : null;
+            if (refCode) {
+              fetch('/api/referrals/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  referrerCode: refCode,
+                  referredUserId: fallbackUser.id,
+                  referredUsername: fallbackUser.username,
+                }),
+              })
+                .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
+                .catch(() => { /* silent — referral tracking is best-effort */ });
+            }
           } else {
             setIsNewUser(false);
             setShowOnboarding(false);

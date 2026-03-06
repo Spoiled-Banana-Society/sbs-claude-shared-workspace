@@ -12,13 +12,14 @@ interface PromoCarouselProps {
   autoPlay?: boolean;
   claimPromo?: (promoId: string) => Promise<{ spinsAdded: number } | null>;
   onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>;
+  onGenerateReferralCode?: () => Promise<{ code: string; link: string } | null>;
 }
 
 const VISIBLE_COUNT = 3;
 const CARD_WIDTH = 208; // w-52 = 13rem = 208px
 const GAP = 20; // gap-5 = 1.25rem = 20px
 
-export function PromoCarousel({ promos, claimPromo, onVerifyTweet }: PromoCarouselProps) {
+export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode }: PromoCarouselProps) {
   const router = useRouter();
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder } = useAuth();
 
@@ -416,6 +417,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet }: PromoCarous
         onClaim={handleClaim}
         isPromoClaimed={selectedPromo ? claimedPromos.has(selectedPromo.id) : false}
         onVerifyTweet={onVerifyTweet}
+        onGenerateReferralCode={onGenerateReferralCode}
       />
 
       {/* Claim Success Popup - Apple-style */}

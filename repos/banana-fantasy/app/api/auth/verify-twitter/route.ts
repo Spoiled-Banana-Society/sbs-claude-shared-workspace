@@ -46,6 +46,35 @@ export async function POST(req: Request) {
       newUserPromoClaimed: false,
     });
 
+    // Trigger referral "verified" reward if this user was referred
+    try {
+      const { updateReferralRewards } = await import('@/lib/db');
+      // We need the userId — look up by wallet in our JSON DB
+      const dbModule = await import('@/lib/db-json');
+      const jsonFs = await import('node:fs');
+      const jsonPath = await import('node:path');
+      const isVercelEnv = !!process.env.VERCEL;
+      const dataDir = isVercelEnv ? jsonPath.join('/tmp', 'data') : jsonPath.join(process.cwd(), 'data');
+      const dbPath = jsonPath.join(dataDir, 'db.json');
+      try {
+        const raw = await jsonFs.promises.readFile(dbPath, 'utf8');
+        const dbData = JSON.parse(raw);
+        // Find user by wallet address
+        for (const [userId, userData] of Object.entries(dbData.users ?? {})) {
+          if ((userData as { walletAddress?: string }).walletAddress?.toLowerCase() === walletAddress) {
+            if ((userData as { referredBy?: string }).referredBy) {
+              await updateReferralRewards(userId, 'verified');
+            }
+            break;
+          }
+        }
+      } catch {
+        // Silent — don't block twitter verification if referral update fails
+      }
+    } catch {
+      // Silent
+    }
+
     return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: false });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

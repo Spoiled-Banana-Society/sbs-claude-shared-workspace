@@ -14,9 +14,10 @@ interface PromoModalProps {
   onClaim: (promo: Promo) => void;
   isPromoClaimed?: boolean;
   onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>;
+  onGenerateReferralCode?: () => Promise<{ code: string; link: string } | null>;
 }
 
-export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet }: PromoModalProps) {
+export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode }: PromoModalProps) {
   const router = useRouter();
   const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -27,6 +28,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const hasNotifiedParent = useRef(false);
   const [tweetVerifying, setTweetVerifying] = useState(false);
   const [tweetVerifyResult, setTweetVerifyResult] = useState<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>(null);
+  const [generatingReferral, setGeneratingReferral] = useState(false);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -334,10 +336,17 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       }
     };
 
+    const handleGenerate = async () => {
+      if (!onGenerateReferralCode) return;
+      setGeneratingReferral(true);
+      await onGenerateReferralCode();
+      setGeneratingReferral(false);
+    };
+
     return (
       <>
         {/* Referral Link */}
-        {promo.modalContent.referralLink && (
+        {promo.modalContent.referralLink ? (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-2 text-text-primary">Your Referral Link</h4>
             <p className="text-text-muted text-xs mb-3">Share this link with friends to earn spins together</p>
@@ -349,6 +358,16 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 {copied ? 'Copied!' : 'Copy'}
               </Button>
             </div>
+          </div>
+        ) : (
+          <div className="bg-bg-tertiary rounded-xl p-4 text-center">
+            <p className="text-text-secondary mb-3">Generate your unique referral link to start earning spins!</p>
+            <Button onClick={handleGenerate} disabled={generatingReferral || !isLoggedIn}>
+              {generatingReferral ? 'Generating...' : 'Generate Your Link'}
+            </Button>
+            {!isLoggedIn && (
+              <p className="text-text-muted text-xs mt-2">Log in to generate your referral link</p>
+            )}
           </div>
         )}
 

@@ -16,6 +16,7 @@ export interface User {
   isVerified: boolean;
   blueCheckEmail?: string;
   isBlueCheckVerified?: boolean;
+  referredBy?: string;
   createdAt: string;
 }
 
@@ -233,6 +234,7 @@ export interface ReferralEntryRewards {
 
 export interface ReferralEntry {
   username: string;
+  referredUserId?: string;
   dateJoined: string;
   status: 'pending' | 'claim' | 'claimed';
   pendingReason?: string;

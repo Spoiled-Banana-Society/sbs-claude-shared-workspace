@@ -108,6 +108,27 @@ export function usePromos(opts?: { userId?: string }) {
     [userId, user?.xHandle, swr],
   );
 
+  const generateReferralCode = useCallback(
+    async (): Promise<{ code: string; link: string } | null> => {
+      if (!userId) return null;
+      try {
+        const res = await fetchJson<{ code: string; link: string }>(
+          '/api/promos/referral/generate',
+          {
+            method: 'POST',
+            body: JSON.stringify({ userId, username: user?.username }),
+          },
+        );
+        // Refresh promos so the referral link appears
+        void swr.mutate();
+        return res;
+      } catch {
+        return null;
+      }
+    },
+    [userId, user?.username, swr],
+  );
+
   const refreshPromos = useCallback(() => swr.mutate(), [swr]);
 
   return {
@@ -115,6 +136,7 @@ export function usePromos(opts?: { userId?: string }) {
     promos,
     claimPromo,
     verifyTweetEngagement,
+    generateReferralCode,
     refreshPromos,
     userId,
   };

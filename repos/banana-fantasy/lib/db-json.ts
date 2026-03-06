@@ -11,6 +11,8 @@ import type {
   Purchase,
   PurchaseCreateResponse,
   PurchasePaymentInstructions,
+  ReferralEntry,
+  ReferralEntryRewards,
   ReferralStats,
   User,
   UserExposure,
@@ -229,7 +231,7 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
   const promos = db.promosByUser[userId] ?? seedDb.promosByUser['1'] ?? [];
   const referralPromo = promos.find((p) => p.type === 'referral');
   const code = (db.referralsByUser[userId]?.code || referralPromo?.modalContent.inviteCode || '').trim();
-  const link = referralPromo?.modalContent.referralLink || (code ? `https://bananabestball.com/ref/${code}` : '');
+  const link = referralPromo?.modalContent.referralLink || (code ? `https://banana-fantasy-sbs.vercel.app?ref=${code}` : '');
   const history = referralPromo?.modalContent.referralHistory ?? [];
 
   let claimableRewards = 0;
@@ -266,10 +268,74 @@ export async function generateReferralCode(userId: string, username?: string) {
     const referralPromo = promos.find((p) => p.type === 'referral');
     if (referralPromo) {
       referralPromo.modalContent.inviteCode = code;
-      referralPromo.modalContent.referralLink = `https://bananabestball.com/ref/${code}`;
+      referralPromo.modalContent.referralLink = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
     }
 
-    return { code, link: `https://bananabestball.com/ref/${code}` };
+    return { code, link: `https://banana-fantasy-sbs.vercel.app?ref=${code}` };
+  });
+}
+
+export async function trackReferral(referrerUserId: string, referredUserId: string, referredUsername: string) {
+  return updateDb((db) => {
+    getOrCreateUser(db, referrerUserId);
+    const referredUser = getOrCreateUser(db, referredUserId);
+
+    // Mark referred user
+    referredUser.referredBy = referrerUserId;
+
+    // Add entry to referrer's referral promo history
+    const promos = db.promosByUser[referrerUserId] ?? [];
+    const referralPromo = promos.find((p) => p.type === 'referral');
+    if (!referralPromo) return { success: false };
+
+    if (!referralPromo.modalContent.referralHistory) {
+      referralPromo.modalContent.referralHistory = [];
+    }
+
+    // Don't add duplicate entries
+    const exists = referralPromo.modalContent.referralHistory.some(
+      (e) => e.referredUserId === referredUserId
+    );
+    if (exists) return { success: true, duplicate: true };
+
+    const entry: ReferralEntry = {
+      username: referredUsername,
+      referredUserId,
+      dateJoined: todayDate(),
+      status: 'pending',
+      draftsPurchased: 0,
+      rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' },
+    };
+    referralPromo.modalContent.referralHistory.push(entry);
+
+    return { success: true };
+  });
+}
+
+export async function updateReferralRewards(referredUserId: string, milestone: keyof ReferralEntryRewards) {
+  return updateDb((db) => {
+    const referredUser = db.users[referredUserId];
+    if (!referredUser?.referredBy) return { updated: false };
+
+    const referrerUserId = referredUser.referredBy;
+    const promos = db.promosByUser[referrerUserId] ?? [];
+    const referralPromo = promos.find((p) => p.type === 'referral');
+    if (!referralPromo?.modalContent.referralHistory) return { updated: false };
+
+    const entry = referralPromo.modalContent.referralHistory.find(
+      (e) => e.referredUserId === referredUserId
+    );
+    if (!entry?.rewards) return { updated: false };
+
+    // Only upgrade from 'pending' to 'claim'
+    if (entry.rewards[milestone] !== 'pending') return { updated: false };
+
+    entry.rewards[milestone] = 'claim';
+    entry.status = 'claim';
+    referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
+    referralPromo.claimable = true;
+
+    return { updated: true, referrerUserId };
   });
 }
 
@@ -400,6 +466,44 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
         buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + newlyEarned;
         recalcPromoClaimable(buyBonusPromo);
         freeDraftsAdded = newlyEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+      }
+    }
+
+    // Referral purchase milestones
+    if (user.referredBy) {
+      const totalPurchases = db.purchases.filter(
+        (p) => p.userId === purchase.userId && p.status === 'completed'
+      ).length;
+      const referralPromo = db.promosByUser[user.referredBy]?.find((p) => p.type === 'referral');
+      if (referralPromo?.modalContent.referralHistory) {
+        const entry = referralPromo.modalContent.referralHistory.find(
+          (e) => e.referredUserId === purchase.userId
+        );
+        if (entry) {
+          entry.draftsPurchased = totalPurchases;
+        }
+      }
+      if (totalPurchases >= 1) {
+        const entry = referralPromo?.modalContent.referralHistory?.find(
+          (e) => e.referredUserId === purchase.userId
+        );
+        if (entry?.rewards?.bought1 === 'pending') {
+          entry.rewards.bought1 = 'claim';
+          entry.status = 'claim';
+          referralPromo!.claimCount = (referralPromo!.claimCount || 0) + 1;
+          referralPromo!.claimable = true;
+        }
+      }
+      if (totalPurchases >= 10) {
+        const entry = referralPromo?.modalContent.referralHistory?.find(
+          (e) => e.referredUserId === purchase.userId
+        );
+        if (entry?.rewards?.bought10 === 'pending') {
+          entry.rewards.bought10 = 'claim';
+          entry.status = 'claim';
+          referralPromo!.claimCount = (referralPromo!.claimCount || 0) + 1;
+          referralPromo!.claimable = true;
+        }
       }
     }
 

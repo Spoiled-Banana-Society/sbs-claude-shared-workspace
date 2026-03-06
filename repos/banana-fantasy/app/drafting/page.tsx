@@ -1045,6 +1045,7 @@ export default function DraftingPage() {
           setSelectedPromo(null);
         }}
         onVerifyTweet={promosQuery.verifyTweetEngagement}
+        onGenerateReferralCode={promosQuery.generateReferralCode}
       />
     </div>
   );
