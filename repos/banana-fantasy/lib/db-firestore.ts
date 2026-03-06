@@ -159,10 +159,13 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);
   batch.set(referralRef, stripUndefined(seed.referral));
 
-  // Store reverse lookup for referral code
+  // Store reverse lookup for referral code — only if no one else owns it yet
   if (seed.referral.code) {
     const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(seed.referral.code);
-    batch.set(codeRef, { userId, code: seed.referral.code });
+    const existingCode = await codeRef.get();
+    if (!existingCode.exists) {
+      batch.set(codeRef, { userId, code: seed.referral.code });
+    }
   }
 
   await batch.commit();

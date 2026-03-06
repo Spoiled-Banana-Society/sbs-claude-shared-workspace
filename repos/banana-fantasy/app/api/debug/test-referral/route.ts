@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { trackReferral, updateReferralRewards } from '@/lib/db';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import type { Promo } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +49,47 @@ export async function GET(req: NextRequest) {
       const referralPromo = promosSnap.docs.find((doc) => (doc.data() as { type: string }).type === 'referral');
       if (!referralPromo) return NextResponse.json({ error: 'No referral promo found for user', userId });
       return NextResponse.json({ action: 'check', userId, referralPromo: referralPromo.data() });
+    }
+
+    if (action === 'reset-test') {
+      // Clean up test friend users and fix code ownership
+      const ownerUserId = req.nextUrl.searchParams.get('ownerId');
+      if (!code || !ownerUserId) return NextResponse.json({ error: 'Need code and ownerId params' }, { status: 400 });
+      const db = getAdminFirestore();
+
+      // Delete all test-friend users
+      const testUsers = ['test-friend-001', 'test-friend-002', 'test-friend-003'];
+      for (const testId of testUsers) {
+        const ref = db.collection('v2_users').doc(testId);
+        const snap = await ref.get();
+        if (snap.exists) {
+          const subs = ['promos', 'wheelSpins', 'metadata', 'draftHistory'];
+          for (const sub of subs) {
+            const subSnap = await ref.collection(sub).get();
+            const batch = db.batch();
+            subSnap.docs.forEach((doc) => batch.delete(doc.ref));
+            if (subSnap.docs.length > 0) await batch.commit();
+          }
+          await ref.delete();
+        }
+      }
+
+      // Fix code ownership
+      const codeRef = db.collection('v2_referral_codes').doc(code);
+      await codeRef.set({ userId: ownerUserId, code });
+
+      // Also clear referral history on the owner's referral promo
+      const ownerPromosSnap = await db.collection('v2_users').doc(ownerUserId).collection('promos').get();
+      const referralDoc = ownerPromosSnap.docs.find((doc) => (doc.data() as { type: string }).type === 'referral');
+      if (referralDoc) {
+        const promo = referralDoc.data() as Promo;
+        promo.modalContent.referralHistory = [];
+        promo.claimable = false;
+        promo.claimCount = 0;
+        await referralDoc.ref.set(promo, { merge: true });
+      }
+
+      return NextResponse.json({ action: 'reset-test', done: true, codeOwner: ownerUserId });
     }
 
     if (action === 'verify') {
