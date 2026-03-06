@@ -421,10 +421,13 @@ export default function DraftingPage() {
               }
               // After 5s of randomizing, transition to countdown
               if (!d.preSpinStartedAt && (now - d.randomizingStartedAt) >= 5000) {
+                // Assign draft type if not already set (slot machine does this in draft room)
+                const assignedType = d.draftType || 'pro';
                 draftStore.updateDraft(d.id, {
                   phase: 'pre-spin', players: 10,
                   preSpinStartedAt: now,
                   randomizingStartedAt: undefined,
+                  draftType: assignedType, type: assignedType,
                 });
               }
               continue;
