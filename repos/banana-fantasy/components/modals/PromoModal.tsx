@@ -74,8 +74,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       hasNotifiedParent.current = false;
       setTweetVerifying(false);
       setTweetVerifyResult(null);
+    } else if (promo?.type === 'tweet-engagement' && promo.claimable && (promo.claimCount ?? 0) > 0) {
+      // Pre-populate checkmarks for already-verified tweet engagement promos
+      setTweetVerifyResult({ verified: true, hasReplied: true, hasQuoted: true, alreadyVerified: true });
     }
-  }, [isOpen]);
+  }, [isOpen, promo]);
 
   if (!promo) return null;
 
@@ -640,7 +643,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               <Button
                 className="w-full"
                 onClick={handleVerify}
-                disabled={!verified || tweetVerifying}
+                disabled={!verified || tweetVerifying || tweetVerifyResult?.verified || alreadyClaimable}
               >
                 {tweetVerifying ? 'Verifying...' : 'Verify Engagement'}
               </Button>

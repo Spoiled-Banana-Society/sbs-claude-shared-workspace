@@ -26,6 +26,16 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet }: PromoCarous
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Sync selectedPromo with parent promos array (e.g. after verify sets claimable: true)
+  useEffect(() => {
+    if (selectedPromo) {
+      const updated = promos.find((p) => p.id === selectedPromo.id);
+      if (updated && (updated.claimable !== selectedPromo.claimable || updated.claimCount !== selectedPromo.claimCount)) {
+        setSelectedPromo(updated);
+      }
+    }
+  }, [promos, selectedPromo]);
   const [isTransitioning, setIsTransitioning] = useState(true);
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
