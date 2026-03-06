@@ -27,12 +27,13 @@ export function PromoCarousel({ promos, claimPromo }: PromoCarouselProps) {
     if (a.claimable && !b.claimable) return -1;
     if (!a.claimable && b.claimable) return 1;
 
-    // If both claimable or both not claimable, sort by progress percent
+    // Then by progress percent (higher first)
     const aProgress = a.progressMax ? (a.progressCurrent || 0) / a.progressMax : 0;
     const bProgress = b.progressMax ? (b.progressCurrent || 0) / b.progressMax : 0;
+    if (bProgress !== aProgress) return bProgress - aProgress;
 
-    // Higher progress comes first (after claimable)
-    return bProgress - aProgress;
+    // Stable tiebreaker: keep original seed order (by id)
+    return Number(a.id) - Number(b.id);
   });
 
   // Create extended array with clones for infinite loop
