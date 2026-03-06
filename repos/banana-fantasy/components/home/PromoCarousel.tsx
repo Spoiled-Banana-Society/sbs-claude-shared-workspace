@@ -21,6 +21,16 @@ export function PromoCarousel({ promos, claimPromo }: PromoCarouselProps) {
   const router = useRouter();
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder } = useAuth();
 
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(true);
+  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
+  const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
+  const [_timerTick, setTimerTick] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // Check if a promo's CLAIM button is actually visible in the UI
   const hasVisibleClaim = (p: Promo) => {
     if (!p.claimable || claimedPromos.has(p.id)) return false;
@@ -48,16 +58,6 @@ export function PromoCarousel({ promos, claimPromo }: PromoCarouselProps) {
   // Create extended array with clones for infinite loop
   const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
   const startOffset = sortedPromos.length; // Start at the middle copy
-
-  const [currentIndex, setCurrentIndex] = useState(startOffset);
-  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isTransitioning, setIsTransitioning] = useState(true);
-  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
-  const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
-  const [_timerTick, setTimerTick] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Reset carousel position when promos re-sort (e.g., after minting)
   useEffect(() => {
