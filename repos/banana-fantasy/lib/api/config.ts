@@ -46,8 +46,8 @@ export const API_CONFIG = {
     },
 
     tweetEngagement: {
-      tweetId: '1234567890',
-      tweetUrl: 'https://x.com/SpoiledBanana/status/1234567890',
+      tweetId: '2029602200041951655',
+      tweetUrl: 'https://x.com/BorisVagner/status/2029602200041951655',
     },
   },
 } as const;
