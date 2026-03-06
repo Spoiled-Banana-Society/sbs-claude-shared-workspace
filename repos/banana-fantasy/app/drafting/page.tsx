@@ -247,6 +247,8 @@ export default function DraftingPage() {
                 status: 'drafting',
                 phase: 'drafting',
                 players: 10,
+                type: draft.type || draft.draftType || 'pro',
+                draftType: draft.draftType || draft.type || 'pro',
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
                 pickEndTimestamp,
@@ -258,7 +260,12 @@ export default function DraftingPage() {
           } else if (isFull && !draft.draftRoomOpen) {
             // 10/10 but draft hasn't started yet — derive phase from server timestamps
             // Skip if draft room is open (it owns phase transitions)
-            const patch: Partial<DraftState> = { players: 10 };
+            const resolvedType = draft.type || draft.draftType || 'pro';
+            const patch: Partial<DraftState> = {
+              players: 10,
+              type: resolvedType,
+              draftType: resolvedType,
+            };
 
             if (info.draftStartTime) {
               // Server has a start time — compute preSpinStartedAt (60s before start)
@@ -276,6 +283,7 @@ export default function DraftingPage() {
                 patch.status = 'drafting';
               } else if (elapsed >= 15) {
                 patch.phase = 'result';
+                // Use server draftType if available, otherwise keep resolved
                 if (info.draftType) {
                   const t = info.draftType.toLowerCase();
                   patch.draftType = t === 'jackpot' ? 'jackpot' : t === 'hof' || t === 'hall of fame' ? 'hof' : 'pro';
