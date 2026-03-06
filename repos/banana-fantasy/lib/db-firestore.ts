@@ -366,14 +366,15 @@ export async function trackReferral(referrerUserId: string, referredUserId: stri
   const referredRef = db.collection(USERS_COLLECTION).doc(referredUserId);
 
   return db.runTransaction(async (tx) => {
-    // Set referredBy on the referred user
+    // ALL READS FIRST (Firestore requirement)
     const referredSnap = await tx.get(referredRef);
+    const promosSnap = await tx.get(referrerRef.collection(PROMOS_SUBCOLLECTION));
+
+    // Process referred user
     const referredUser = referredSnap.data() as User;
     referredUser.referredBy = referrerUserId;
-    tx.set(referredRef, stripUndefined(referredUser), { merge: true });
 
     // Find referrer's referral promo
-    const promosSnap = await tx.get(referrerRef.collection(PROMOS_SUBCOLLECTION));
     const referralPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
     if (!referralPromoDoc) return { success: false };
 
@@ -398,6 +399,8 @@ export async function trackReferral(referrerUserId: string, referredUserId: stri
     };
     promo.modalContent.referralHistory.push(entry);
 
+    // ALL WRITES AFTER READS
+    tx.set(referredRef, stripUndefined(referredUser), { merge: true });
     tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
     return { success: true };
   });
