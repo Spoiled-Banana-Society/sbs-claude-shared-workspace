@@ -205,7 +205,13 @@ export default function BananaWheelPage() {
       {/* How to Earn Spins */}
       <section className="mt-12">
         <h2 className="text-xl font-semibold text-text-primary mb-4">How to Earn Spins</h2>
-        <PromoCarousel promos={promosQuery.data ?? []} autoPlay={false} />
+        <PromoCarousel
+          promos={promosQuery.data ?? []}
+          autoPlay={false}
+          claimPromo={promosQuery.claimPromo}
+          onVerifyTweet={promosQuery.verifyTweetEngagement}
+          onGenerateReferralCode={promosQuery.generateReferralCode}
+        />
       </section>
     </div>
   );
