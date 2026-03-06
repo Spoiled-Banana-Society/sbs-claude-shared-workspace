@@ -270,8 +270,8 @@ const seedPromos: Promo[] = [
     ctaText: 'Engage Now',
     ctaLink: 'https://x.com/SpoiledBanana',
     backgroundColor: '#2a2a35',
-    claimable: true,
-    claimCount: 1,
+    claimable: false,
+    claimCount: 0,
     modalContent: {
       title: 'Tweet Engagement Rewards',
       explanation:
