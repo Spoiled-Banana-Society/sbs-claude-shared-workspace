@@ -51,21 +51,7 @@ export const mockPromos: Promo[] = [
         { milestone: 'Friend buys 1 draft', reward: '1 Free Spin' },
         { milestone: 'Friend buys 10 drafts', reward: '1 Free Spin' },
       ],
-      referralHistory: [
-        // Claimable first
-        { username: 'NFLFan88', dateJoined: '2026-01-14', status: 'claim', pendingReason: '', draftsPurchased: 5, rewards: { verified: 'claimed', bought1: 'claim', bought10: 'pending' } },
-        { username: 'BallHawk99', dateJoined: '2026-01-03', status: 'claim', pendingReason: '', draftsPurchased: 15, rewards: { verified: 'claimed', bought1: 'claim', bought10: 'claim' } },
-        // Pending second (including users with any pending rewards)
-        { username: 'TouchdownTom', dateJoined: '2026-01-05', status: 'pending', pendingReason: '', draftsPurchased: 8, rewards: { verified: 'claimed', bought1: 'claimed', bought10: 'pending' } },
-        { username: 'NewDrafter1', dateJoined: '2026-01-16', status: 'pending', pendingReason: 'Needs to verify X account', draftsPurchased: 0, rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' } },
-        { username: 'GridironGuru', dateJoined: '2026-01-17', status: 'pending', pendingReason: 'Needs to claim Free Spin', draftsPurchased: 0, rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' } },
-        { username: 'PuntReturner', dateJoined: '2025-12-15', status: 'pending', pendingReason: 'Needs to verify X account', draftsPurchased: 0, rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' } },
-        // Claimed last (all rewards fully claimed)
-        { username: 'DraftPro22', dateJoined: '2026-01-10', status: 'claimed', pendingReason: '', draftsPurchased: 12, rewards: { verified: 'claimed', bought1: 'claimed', bought10: 'claimed' } },
-        { username: 'FantasyKing', dateJoined: '2026-01-08', status: 'claimed', pendingReason: '', draftsPurchased: 25, rewards: { verified: 'claimed', bought1: 'claimed', bought10: 'claimed' } },
-        { username: 'RedZoneRicky', dateJoined: '2025-12-28', status: 'claimed', pendingReason: '', draftsPurchased: 30, rewards: { verified: 'claimed', bought1: 'claimed', bought10: 'claimed' } },
-        { username: 'EndZoneEric', dateJoined: '2025-12-20', status: 'claimed', pendingReason: '', draftsPurchased: 10, rewards: { verified: 'claimed', bought1: 'claimed', bought10: 'claimed' } },
-      ],
+      referralHistory: [],
     },
   },
   {

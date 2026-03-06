@@ -244,23 +244,7 @@ const seedPromos: Promo[] = [
         { milestone: 'Friend buys 1 draft', reward: '1 Free Spin' },
         { milestone: 'Friend buys 10 drafts', reward: '1 Free Spin' },
       ],
-      referralHistory: [
-        {
-          username: 'NFLFan88',
-          dateJoined: '2026-01-14',
-          status: 'claim',
-          draftsPurchased: 5,
-          rewards: { verified: 'claimed', bought1: 'claim', bought10: 'pending' },
-        },
-        {
-          username: 'NewDrafter1',
-          dateJoined: '2026-01-16',
-          status: 'pending',
-          pendingReason: 'Needs to verify X account',
-          draftsPurchased: 0,
-          rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' },
-        },
-      ],
+      referralHistory: [],
     },
   },
   {
