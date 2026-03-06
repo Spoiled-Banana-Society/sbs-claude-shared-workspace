@@ -11,9 +11,9 @@ function getToken(): string {
   return token;
 }
 
-/** Search recent tweets using a query string. */
-async function searchTweets(query: string): Promise<boolean> {
-  const url = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=10`;
+/** Search recent tweets and return matching tweet data. */
+async function searchTweetsRaw(query: string): Promise<Array<{ id: string; referenced_tweets?: Array<{ type: string; id: string }> }>> {
+  const url = `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(query)}&max_results=10&tweet.fields=referenced_tweets`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${getToken()}` },
   });
@@ -25,9 +25,27 @@ async function searchTweets(query: string): Promise<boolean> {
   }
 
   const data = await res.json();
-  return (data.meta?.result_count ?? 0) > 0;
+  return data.data ?? [];
 }
 
+/** Check if user has directly replied to the target tweet (not to other replies in thread). */
+async function checkDirectReply(tweetId: string, handle: string): Promise<boolean> {
+  const query = `conversation_id:${tweetId} from:${handle}`;
+  const tweets = await searchTweetsRaw(query);
+
+  // Filter to only tweets that are direct replies to the target tweet
+  return tweets.some((t) =>
+    t.referenced_tweets?.some((ref) => ref.type === 'replied_to' && ref.id === tweetId)
+  );
+}
+
+/** Check if user has quote-tweeted the target tweet using url: search. */
+async function checkQuoteTweet(tweetUrl: string, handle: string): Promise<boolean> {
+  // Quote tweets embed the original tweet URL — search for tweets by the user containing that URL
+  const query = `from:${handle} url:"${tweetUrl}"`;
+  const tweets = await searchTweetsRaw(query);
+  return tweets.length > 0;
+}
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -40,7 +58,7 @@ export async function POST(req: Request) {
 
     // Strip @ prefix if present
     const handle = xHandle.replace(/^@/, '');
-    const { tweetId } = API_CONFIG.promos.tweetEngagement;
+    const { tweetId, tweetUrl } = API_CONFIG.promos.tweetEngagement;
 
     // Check if already verified
     const promos = await getPromos(userId);
@@ -49,13 +67,11 @@ export async function POST(req: Request) {
       return json({ verified: true, alreadyVerified: true, hasReplied: true, hasQuoted: true });
     }
 
-    // Check direct replies only (in_reply_to_tweet_id excludes replies to other replies in the thread)
-    const repliedQuery = `in_reply_to_tweet_id:${tweetId} from:${handle}`;
-    const hasReplied = await searchTweets(repliedQuery);
+    // Check direct replies (conversation_id + filter by referenced_tweets)
+    const hasReplied = await checkDirectReply(tweetId, handle);
 
-    // Check quote tweets via search (works on Free tier, unlike quote_tweets endpoint)
-    const quotedQuery = `quoted_tweet_id:${tweetId} from:${handle}`;
-    const hasQuoted = await searchTweets(quotedQuery);
+    // Check quote tweets (url: search finds tweets containing the original tweet link)
+    const hasQuoted = await checkQuoteTweet(tweetUrl, handle);
 
     // Both are required
     if (!hasReplied || !hasQuoted) {
