@@ -232,11 +232,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const loginMethod: 'wallet' | 'social' = hasExternalWallet ? 'wallet' : 'social';
       console.log('[SBS Auth] loginMethod:', loginMethod);
 
-      // Try to fetch real SBS profile from backend
-      getOwnerUser(walletAddress)
-        .then((backendUser) => {
-          // Merge backend data with any locally saved profile overrides
-          // Always use backend draftPasses (real token count from API)
+      // Fetch Go backend profile + Firestore balance in parallel.
+      // The Go backend doesn't store wheelSpins/freeDrafts, so we
+      // read those from Firestore and merge before setting user state.
+      const normalizedWallet = walletAddress.trim().toLowerCase();
+      Promise.all([
+        getOwnerUser(walletAddress),
+        fetch(`/api/owner/balance?userId=${encodeURIComponent(normalizedWallet)}`)
+          .then(r => r.json())
+          .catch(() => null),
+      ])
+        .then(([backendUser, balance]) => {
           const merged: User = {
             ...backendUser,
             loginMethod,
@@ -244,6 +250,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             profilePicture: savedProfile?.profilePicture || backendUser.profilePicture,
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
+          // Overlay Firestore balance (wheelSpins, freeDrafts, etc.)
+          if (balance && typeof balance.wheelSpins === 'number') {
+            merged.wheelSpins = balance.wheelSpins;
+            merged.freeDrafts = balance.freeDrafts ?? merged.freeDrafts;
+            merged.jackpotEntries = balance.jackpotEntries ?? merged.jackpotEntries;
+            merged.hofEntries = balance.hofEntries ?? merged.hofEntries;
+          }
           setUser(merged);
           setIsNewUser(false);
           setShowOnboarding(false);
@@ -251,46 +264,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           // Backend unreachable or user not found — fall back to Privy-only profile
           const isNotFound = err instanceof ClientApiError && err.status === 404;
-          const fallbackUser: User = {
-            id: privy.user!.id,
-            username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
-            walletAddress,
-            loginMethod,
-            profilePicture: savedProfile?.profilePicture,
-            nflTeam: savedProfile?.nflTeam,
-            xHandle: undefined,
-            draftPasses: savedProfile?.draftPasses || 0,
-            usdcBalance: 0,
-            freeDrafts: 20,
-            wheelSpins: 0,
-            jackpotEntries: 0,
-            hofEntries: 0,
-            isVerified: false,
-            createdAt: new Date().toISOString(),
-          };
-          setUser(fallbackUser);
-          if (isNotFound) {
-            setIsNewUser(true);
-            setShowOnboarding(true);
-            // Track referral if ref code exists
-            const refCode = typeof window !== 'undefined' ? sessionStorage.getItem(REFERRAL_CODE_KEY) : null;
-            if (refCode) {
-              fetch('/api/referrals/track', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  referrerCode: refCode,
-                  referredUserId: fallbackUser.id,
-                  referredUsername: fallbackUser.username,
-                }),
-              })
-                .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
-                .catch(() => { /* silent — referral tracking is best-effort */ });
-            }
-          } else {
-            setIsNewUser(false);
-            setShowOnboarding(false);
-          }
+          const normalizedWalletFallback = walletAddress.trim().toLowerCase();
+          // Still try to fetch Firestore balance even if Go backend is down
+          fetch(`/api/owner/balance?userId=${encodeURIComponent(normalizedWalletFallback)}`)
+            .then(r => r.json())
+            .catch(() => null)
+            .then(balance => {
+              const fallbackUser: User = {
+                id: privy.user!.id,
+                username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
+                walletAddress,
+                loginMethod,
+                profilePicture: savedProfile?.profilePicture,
+                nflTeam: savedProfile?.nflTeam,
+                xHandle: undefined,
+                draftPasses: savedProfile?.draftPasses || 0,
+                usdcBalance: 0,
+                freeDrafts: balance?.freeDrafts ?? 20,
+                wheelSpins: balance?.wheelSpins ?? 0,
+                jackpotEntries: balance?.jackpotEntries ?? 0,
+                hofEntries: balance?.hofEntries ?? 0,
+                isVerified: false,
+                createdAt: new Date().toISOString(),
+              };
+              setUser(fallbackUser);
+              if (isNotFound) {
+                setIsNewUser(true);
+                setShowOnboarding(true);
+                const refCode = typeof window !== 'undefined' ? sessionStorage.getItem(REFERRAL_CODE_KEY) : null;
+                if (refCode) {
+                  fetch('/api/referrals/track', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      referrerCode: refCode,
+                      referredUserId: fallbackUser.id,
+                      referredUsername: fallbackUser.username,
+                    }),
+                  })
+                    .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
+                    .catch(() => { /* silent — referral tracking is best-effort */ });
+                }
+              } else {
+                setIsNewUser(false);
+                setShowOnboarding(false);
+              }
+            });
         });
     } else if (privy.ready && !privy.authenticated) {
       setUser(null);
@@ -399,35 +418,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => { /* silent */ });
   }, [walletAddress]);
-
-  // Fetch wheelSpins / freeDrafts / entries from Firestore on login.
-  // The Go backend (getOwnerUser) doesn't store these, so we need a
-  // separate Firestore read to hydrate them on page load.
-  const balanceFetchedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const userId = user?.id;
-    if (!userId) { balanceFetchedRef.current = null; return; }
-    if (balanceFetchedRef.current === userId) return;
-    balanceFetchedRef.current = userId;
-
-    fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data && typeof data.wheelSpins === 'number') {
-          setUser(prev => {
-            if (!prev || prev.id !== userId) return prev;
-            return {
-              ...prev,
-              wheelSpins: data.wheelSpins,
-              freeDrafts: data.freeDrafts ?? prev.freeDrafts,
-              jackpotEntries: data.jackpotEntries ?? prev.jackpotEntries,
-              hofEntries: data.hofEntries ?? prev.hofEntries,
-            };
-          });
-        }
-      })
-      .catch(() => { /* silent — don't block auth */ });
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback((_method?: 'wallet' | 'social') => {
     privy.login();
