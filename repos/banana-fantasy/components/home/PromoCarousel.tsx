@@ -49,6 +49,11 @@ export function PromoCarousel({ promos, claimPromo }: PromoCarouselProps) {
   const [_timerTick, setTimerTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Reset carousel position when promos re-sort (e.g., after minting)
+  useEffect(() => {
+    setCurrentIndex(startOffset);
+  }, [promos, startOffset]);
+
   // Timer tick for countdown updates
   useEffect(() => {
     const interval = setInterval(() => {

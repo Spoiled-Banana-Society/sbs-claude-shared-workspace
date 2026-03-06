@@ -194,11 +194,19 @@ export async function claimPromo(userId: string, promoId: string) {
 
     if (spinsAdded <= 0) throw new ApiError(400, 'Nothing to claim');
 
-    user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
+    // Buy-bonus gives free draft passes, other promos give wheel spins.
+    let freeDraftsAdded = 0;
+    if (promo.type === 'buy-bonus') {
+      freeDraftsAdded = spinsAdded * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+      user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
+      spinsAdded = 0; // No wheel spins for buy-bonus
+    } else {
+      user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
+    }
     promo.claimable = false;
     promo.claimCount = 0;
 
-    return { promo: deepClone(promo), spinsAdded, user: deepClone(user) };
+    return { promo: deepClone(promo), spinsAdded, freeDraftsAdded, user: deepClone(user) };
   });
 }
 
@@ -347,8 +355,8 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     const spinsAdded = calcSpinsForPurchase(purchase.quantity);
     user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
 
-    const freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
-    user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
+    // Free drafts from buy-bonus are awarded on claim, not auto-awarded.
+    let freeDraftsAdded = 0;
 
     // Update promo progress for mint promo.
     const promos = db.promosByUser[purchase.userId] ?? [];
@@ -373,6 +381,12 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       const current = buyBonusPromo.progressCurrent || 0;
       const newTotal = current + purchase.quantity;
       buyBonusPromo.progressCurrent = newTotal % max;
+      const newlyEarned = Math.floor(newTotal / max);
+      if (newlyEarned > 0) {
+        buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + newlyEarned;
+        recalcPromoClaimable(buyBonusPromo);
+        freeDraftsAdded = newlyEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+      }
     }
 
     return {

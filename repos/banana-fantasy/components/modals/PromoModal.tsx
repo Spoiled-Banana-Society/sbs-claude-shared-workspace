@@ -637,7 +637,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {renderPromoContent()}
 
         {/* Claim Button */}
-        {promo.type !== 'buy-bonus' && (
+        {(
           <div className="pt-4 border-t border-bg-tertiary">
             <Button
               className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
