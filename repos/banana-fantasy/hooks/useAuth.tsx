@@ -400,6 +400,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => { /* silent */ });
   }, [walletAddress]);
 
+  // Fetch wheelSpins / freeDrafts / entries from Firestore on login.
+  // The Go backend (getOwnerUser) doesn't store these, so we need a
+  // separate Firestore read to hydrate them on page load.
+  const balanceFetchedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) { balanceFetchedRef.current = null; return; }
+    if (balanceFetchedRef.current === userId) return;
+    balanceFetchedRef.current = userId;
+
+    fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.wheelSpins === 'number') {
+          setUser(prev => {
+            if (!prev || prev.id !== userId) return prev;
+            return {
+              ...prev,
+              wheelSpins: data.wheelSpins,
+              freeDrafts: data.freeDrafts ?? prev.freeDrafts,
+              jackpotEntries: data.jackpotEntries ?? prev.jackpotEntries,
+              hofEntries: data.hofEntries ?? prev.hofEntries,
+            };
+          });
+        }
+      })
+      .catch(() => { /* silent — don't block auth */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login = useCallback((_method?: 'wallet' | 'social') => {
     privy.login();
   }, [privy]);
