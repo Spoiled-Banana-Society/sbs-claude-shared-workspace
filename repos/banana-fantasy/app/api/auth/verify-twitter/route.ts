@@ -49,30 +49,20 @@ export async function POST(req: Request) {
     // Trigger referral "verified" reward if this user was referred
     try {
       const { updateReferralRewards } = await import('@/lib/db');
-      // We need the userId — look up by wallet in our JSON DB
-      const dbModule = await import('@/lib/db-json');
-      const jsonFs = await import('node:fs');
-      const jsonPath = await import('node:path');
-      const isVercelEnv = !!process.env.VERCEL;
-      const dataDir = isVercelEnv ? jsonPath.join('/tmp', 'data') : jsonPath.join(process.cwd(), 'data');
-      const dbPath = jsonPath.join(dataDir, 'db.json');
-      try {
-        const raw = await jsonFs.promises.readFile(dbPath, 'utf8');
-        const dbData = JSON.parse(raw);
-        // Find user by wallet address
-        for (const [userId, userData] of Object.entries(dbData.users ?? {})) {
-          if ((userData as { walletAddress?: string }).walletAddress?.toLowerCase() === walletAddress) {
-            if ((userData as { referredBy?: string }).referredBy) {
-              await updateReferralRewards(userId, 'verified');
-            }
-            break;
-          }
+      // Look up user by wallet address in Firestore
+      const usersSnap = await db.collection('v2_users')
+        .where('walletAddress', '==', walletAddress)
+        .limit(1)
+        .get();
+      if (!usersSnap.empty) {
+        const userData = usersSnap.docs[0].data();
+        const userId = usersSnap.docs[0].id;
+        if (userData.referredBy) {
+          await updateReferralRewards(userId, 'verified');
         }
-      } catch {
-        // Silent — don't block twitter verification if referral update fails
       }
     } catch {
-      // Silent
+      // Silent — don't block twitter verification if referral update fails
     }
 
     return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: false });

@@ -1,8 +1,7 @@
-import * as jsonDb from './db-json';
+import * as firestoreDb from './db-firestore';
 
-// Always use JSON db for app data (contests, promos, etc.).
-// Firestore is used directly by specific routes that need it (e.g. verify-twitter).
-const db = jsonDb;
+// Use Firestore for all data — persists across Vercel serverless functions.
+const db = firestoreDb;
 
 export const getPromos = db.getPromos;
 export const claimPromo = db.claimPromo;

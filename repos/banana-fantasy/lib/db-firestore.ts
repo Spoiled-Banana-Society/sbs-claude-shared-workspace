@@ -13,6 +13,8 @@ import type {
   Purchase,
   PurchaseCreateResponse,
   PurchasePaymentInstructions,
+  ReferralEntry,
+  ReferralEntryRewards,
   ReferralStats,
   User,
   UserExposure,
@@ -25,6 +27,7 @@ const PURCHASES_COLLECTION = 'v2_purchases';
 const WITHDRAWALS_COLLECTION = 'withdrawalRequests';
 const CONTESTS_COLLECTION = 'v2_contests';
 
+const REFERRAL_CODES_COLLECTION = 'v2_referral_codes';
 const PROMOS_SUBCOLLECTION = 'promos';
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const REFERRAL_DOC = 'referral';
@@ -156,6 +159,12 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);
   batch.set(referralRef, stripUndefined(seed.referral));
 
+  // Store reverse lookup for referral code
+  if (seed.referral.code) {
+    const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(seed.referral.code);
+    batch.set(codeRef, { userId, code: seed.referral.code });
+  }
+
   await batch.commit();
   return seed.user;
 }
@@ -248,7 +257,12 @@ export async function claimPromo(userId: string, promoId: string) {
 
     if (spinsAdded <= 0) throw new ApiError(400, 'Nothing to claim');
 
-    user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
+    // Buy-bonus awards free drafts, everything else awards wheel spins
+    if (promo.type === 'buy-bonus') {
+      user.freeDrafts = (user.freeDrafts || 0) + spinsAdded * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+    } else {
+      user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
+    }
     promo.claimable = false;
     promo.claimCount = 0;
 
@@ -257,6 +271,22 @@ export async function claimPromo(userId: string, promoId: string) {
 
     return { promo: deepClone(promo), spinsAdded, user: deepClone(user) };
   });
+}
+
+export async function updatePromo(userId: string, promoId: string, patch: Partial<Pick<Promo, 'claimable' | 'claimCount'>>) {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+
+  const promoRef = db.collection(USERS_COLLECTION).doc(userId).collection(PROMOS_SUBCOLLECTION).doc(promoId);
+  const promoSnap = await promoRef.get();
+  if (!promoSnap.exists) throw new ApiError(404, 'Promo not found');
+
+  const promo = deepClone(promoSnap.data() as Promo);
+  if (patch.claimable !== undefined) promo.claimable = patch.claimable;
+  if (patch.claimCount !== undefined) promo.claimCount = patch.claimCount;
+
+  await promoRef.set(stripUndefined(promo), { merge: true });
+  return deepClone(promo);
 }
 
 export async function getReferralStats(userId: string): Promise<ReferralStats> {
@@ -274,7 +304,7 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
   const referralData = referralSnap.exists ? (referralSnap.data() as { code: string; createdAt: string }) : { code: '', createdAt: todayDate() };
 
   const code = (referralData.code || referralPromo?.modalContent.inviteCode || '').trim();
-  const link = referralPromo?.modalContent.referralLink || (code ? `https://bananabestball.com/ref/${code}` : '');
+  const link = referralPromo?.modalContent.referralLink || (code ? `https://banana-fantasy-sbs.vercel.app?ref=${code}` : '');
   const history = referralPromo?.modalContent.referralHistory ?? [];
 
   let claimableRewards = 0;
@@ -303,16 +333,18 @@ export async function generateReferralCode(userId: string, username?: string) {
   const base = (username || `USER-${userId}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
   const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
   const code = `BANANA-${base}-${suffix}`;
-  const link = `https://bananabestball.com/ref/${code}`;
+  const link = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(code);
 
   await db.runTransaction(async (tx) => {
     const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
     const referralPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
 
     tx.set(referralRef, stripUndefined({ code, createdAt: todayDate() }), { merge: true });
+    tx.set(codeRef, { userId, code });
 
     if (referralPromoDoc) {
       const promo = deepClone(referralPromoDoc.data() as Promo);
@@ -323,6 +355,92 @@ export async function generateReferralCode(userId: string, username?: string) {
   });
 
   return { code, link };
+}
+
+export async function trackReferral(referrerUserId: string, referredUserId: string, referredUsername: string) {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(referrerUserId);
+  await ensureUserSeeded(referredUserId);
+
+  const referrerRef = db.collection(USERS_COLLECTION).doc(referrerUserId);
+  const referredRef = db.collection(USERS_COLLECTION).doc(referredUserId);
+
+  return db.runTransaction(async (tx) => {
+    // Set referredBy on the referred user
+    const referredSnap = await tx.get(referredRef);
+    const referredUser = referredSnap.data() as User;
+    referredUser.referredBy = referrerUserId;
+    tx.set(referredRef, stripUndefined(referredUser), { merge: true });
+
+    // Find referrer's referral promo
+    const promosSnap = await tx.get(referrerRef.collection(PROMOS_SUBCOLLECTION));
+    const referralPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
+    if (!referralPromoDoc) return { success: false };
+
+    const promo = deepClone(referralPromoDoc.data() as Promo);
+    if (!promo.modalContent.referralHistory) {
+      promo.modalContent.referralHistory = [];
+    }
+
+    // Don't add duplicate entries
+    const exists = promo.modalContent.referralHistory.some(
+      (e: ReferralEntry) => e.referredUserId === referredUserId
+    );
+    if (exists) return { success: true, duplicate: true };
+
+    const entry: ReferralEntry = {
+      username: referredUsername,
+      referredUserId,
+      dateJoined: todayDate(),
+      status: 'pending',
+      draftsPurchased: 0,
+      rewards: { verified: 'pending', bought1: 'pending', bought10: 'pending' },
+    };
+    promo.modalContent.referralHistory.push(entry);
+
+    tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
+    return { success: true };
+  });
+}
+
+export async function updateReferralRewards(referredUserId: string, milestone: keyof ReferralEntryRewards) {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(referredUserId);
+
+  const referredRef = db.collection(USERS_COLLECTION).doc(referredUserId);
+  const referredSnap = await referredRef.get();
+  const referredUser = referredSnap.data() as User;
+  if (!referredUser?.referredBy) return { updated: false };
+
+  const referrerUserId = referredUser.referredBy;
+  await ensureUserSeeded(referrerUserId);
+
+  const referrerRef = db.collection(USERS_COLLECTION).doc(referrerUserId);
+
+  return db.runTransaction(async (tx) => {
+    const promosSnap = await tx.get(referrerRef.collection(PROMOS_SUBCOLLECTION));
+    const referralPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
+    if (!referralPromoDoc) return { updated: false };
+
+    const promo = deepClone(referralPromoDoc.data() as Promo);
+    if (!promo.modalContent.referralHistory) return { updated: false };
+
+    const entry = promo.modalContent.referralHistory.find(
+      (e: ReferralEntry) => e.referredUserId === referredUserId
+    );
+    if (!entry?.rewards) return { updated: false };
+
+    // Only upgrade from 'pending' to 'claim'
+    if (entry.rewards[milestone] !== 'pending') return { updated: false };
+
+    entry.rewards[milestone] = 'claim';
+    entry.status = 'claim';
+    promo.claimCount = (promo.claimCount || 0) + 1;
+    promo.claimable = true;
+
+    tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
+    return { updated: true, referrerUserId };
+  });
 }
 
 export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user: User }> {
@@ -449,7 +567,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     const spinsAdded = calcSpinsForPurchase(purchase.quantity);
     user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
 
-    const freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
+    let freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
     const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
@@ -467,6 +585,61 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
         recalcPromoClaimable(mintPromo);
       }
       tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
+    }
+
+    // Buy-bonus promo progress
+    const buyBonusDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus');
+    if (buyBonusDoc) {
+      const buyBonusPromo = deepClone(buyBonusDoc.data() as Promo);
+      const bbMax = buyBonusPromo.progressMax || 2;
+      const bbCurrent = buyBonusPromo.progressCurrent || 0;
+      const bbNewTotal = bbCurrent + purchase.quantity;
+      buyBonusPromo.progressCurrent = bbNewTotal % bbMax;
+      const bbNewlyEarned = Math.floor(bbNewTotal / bbMax);
+      if (bbNewlyEarned > 0) {
+        buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + bbNewlyEarned;
+        recalcPromoClaimable(buyBonusPromo);
+        freeDraftsAdded = bbNewlyEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+      }
+      tx.set(buyBonusDoc.ref, stripUndefined(buyBonusPromo), { merge: true });
+    }
+
+    // Referral purchase milestones
+    if (user.referredBy) {
+      const referrerRef = db.collection(USERS_COLLECTION).doc(user.referredBy);
+      const referrerPromosSnap = await tx.get(referrerRef.collection(PROMOS_SUBCOLLECTION));
+      const referralPromoDoc = referrerPromosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
+      if (referralPromoDoc) {
+        const referralPromo = deepClone(referralPromoDoc.data() as Promo);
+        if (referralPromo.modalContent.referralHistory) {
+          // Count total completed purchases for this user
+          const allPurchasesSnap = await db.collection(PURCHASES_COLLECTION)
+            .where('userId', '==', purchase.userId)
+            .where('status', '==', 'completed')
+            .get();
+          const totalPurchases = allPurchasesSnap.size + 1; // +1 for the current one being completed
+
+          const entry = referralPromo.modalContent.referralHistory.find(
+            (e: ReferralEntry) => e.referredUserId === purchase.userId
+          );
+          if (entry) {
+            entry.draftsPurchased = totalPurchases;
+            if (totalPurchases >= 1 && entry.rewards?.bought1 === 'pending') {
+              entry.rewards.bought1 = 'claim';
+              entry.status = 'claim';
+              referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
+              referralPromo.claimable = true;
+            }
+            if (totalPurchases >= 10 && entry.rewards?.bought10 === 'pending') {
+              entry.rewards.bought10 = 'claim';
+              entry.status = 'claim';
+              referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
+              referralPromo.claimable = true;
+            }
+          }
+          tx.set(referralPromoDoc.ref, stripUndefined(referralPromo), { merge: true });
+        }
+      }
     }
 
     tx.set(purchaseRef, stripUndefined(purchase), { merge: true });
@@ -537,6 +710,24 @@ export async function getWithdrawalsByUser(userId: string): Promise<PrizeWithdra
 export async function getContests(): Promise<Contest[]> {
   const db = getAdminFirestore();
   const contestsSnap = await db.collection(CONTESTS_COLLECTION).get();
+
+  // Seed contests from seed data if Firestore has none
+  if (contestsSnap.empty && seedDb.contests.length > 0) {
+    const batch = db.batch();
+    for (const contest of seedDb.contests) {
+      const contestRef = db.collection(CONTESTS_COLLECTION).doc(contest.id);
+      batch.set(contestRef, stripUndefined(contest));
+      // Seed standings
+      const standings = seedDb.standingsByContestId[contest.id] ?? [];
+      for (const entry of standings) {
+        const standingRef = contestRef.collection(STANDINGS_SUBCOLLECTION).doc(String(entry.rank));
+        batch.set(standingRef, stripUndefined(entry));
+      }
+    }
+    await batch.commit();
+    return deepClone(seedDb.contests);
+  }
+
   return contestsSnap.docs.map((doc) => doc.data() as Contest);
 }
 

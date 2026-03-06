@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { trackReferral } from '@/lib/db';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 export const dynamic = 'force-dynamic';
+
+const REFERRAL_CODES_COLLECTION = 'v2_referral_codes';
 
 /**
  * POST /api/referrals/track — Link a referred user to their referrer
@@ -20,29 +23,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing referrerCode or referredUserId' }, { status: 400 });
     }
 
-    // We need to scan referralsByUser to find who owns this code.
-    // Load the DB directly for this lookup.
-    const { promises: fs } = await import('node:fs');
-    const path = await import('node:path');
-    const isVercel = !!process.env.VERCEL;
-    const DATA_DIR = isVercel ? path.join('/tmp', 'data') : path.join(process.cwd(), 'data');
-    const DB_PATH = path.join(DATA_DIR, 'db.json');
+    // Look up referrer by code in Firestore
+    const db = getAdminFirestore();
+    const codeSnap = await db.collection(REFERRAL_CODES_COLLECTION).doc(referrerCode).get();
 
-    let dbData;
-    try {
-      const raw = await fs.readFile(DB_PATH, 'utf8');
-      dbData = JSON.parse(raw);
-    } catch {
-      return NextResponse.json({ error: 'Database not available' }, { status: 500 });
-    }
-
-    // Find referrer by code
     let referrerUserId: string | null = null;
-    for (const [userId, ref] of Object.entries(dbData.referralsByUser ?? {})) {
-      if ((ref as { code: string }).code === referrerCode) {
-        referrerUserId = userId;
-        break;
-      }
+    if (codeSnap.exists) {
+      referrerUserId = (codeSnap.data() as { userId: string }).userId;
     }
 
     if (!referrerUserId) {
