@@ -41,10 +41,9 @@ git checkout main && git pull origin main
 git merge <your-branch> --no-edit && git push origin main
 git checkout <your-branch>
 
-# Sync to deploy repo and trigger Vercel
+# Sync to deploy repo — pushing to main triggers Vercel automatically
 cp -R repos/banana-fantasy/app repos/banana-fantasy/components repos/banana-fantasy/hooks repos/banana-fantasy/lib repos/banana-fantasy/e2e repos/banana-fantasy/public /tmp/sbs-frontend-v2/ 2>/dev/null
 cd /tmp/sbs-frontend-v2 && git add -A && git commit -m "<description>" && git push origin main
-curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_laojah7E1rx3bwkFOPcOAsumG0DO/uFCdmzX21J"
 ```
 
 ### Rules:
