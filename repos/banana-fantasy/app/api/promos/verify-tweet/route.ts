@@ -19,7 +19,8 @@ async function searchTweets(query: string): Promise<boolean> {
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     console.error(`X API error (${res.status}): ${body}`);
-    throw new ApiError(502, 'Failed to verify with X API');
+    // Surface the actual error to the client so we can debug
+    throw new ApiError(502, `X API error (${res.status}): ${body.slice(0, 200)}`);
   }
 
   const data = await res.json();
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
     const promos = await getPromos(userId);
     const tweetPromo = promos.find((p) => p.type === 'tweet-engagement');
     if (tweetPromo?.claimable && (tweetPromo.claimCount ?? 0) > 0) {
-      return json({ verified: true, alreadyVerified: true });
+      return json({ verified: true, alreadyVerified: true, hasReplied: true, hasQuoted: true });
     }
 
     // Search for replies (conversation_id matches the tweet)
@@ -54,16 +55,26 @@ export async function POST(req: Request) {
     const qrtQuery = `quoted_tweet_id:${tweetId} from:${handle}`;
     const hasQuoted = await searchTweets(qrtQuery);
 
-    if (!hasReplied && !hasQuoted) {
-      return json({ verified: false, message: 'No reply or quote tweet found. Make sure you replied or quote-retweeted the campaign tweet.' });
+    // Both are required
+    if (!hasReplied || !hasQuoted) {
+      return json({
+        verified: false,
+        hasReplied,
+        hasQuoted,
+        message: !hasReplied && !hasQuoted
+          ? 'No reply or quote tweet found yet.'
+          : !hasReplied
+            ? 'Quote tweet found! Now reply to the tweet to complete verification.'
+            : 'Reply found! Now quote-retweet the tweet to complete verification.',
+      });
     }
 
-    // Update the promo to claimable
+    // Both found — update the promo to claimable
     if (tweetPromo) {
       await updatePromo(userId, tweetPromo.id, { claimable: true, claimCount: 1 });
     }
 
-    return json({ verified: true, engagementType: hasReplied ? 'reply' : 'quote_tweet' });
+    return json({ verified: true, hasReplied: true, hasQuoted: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error(err);

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Promo } from '@/types';
-import { fetchJson } from '@/lib/appApiClient';
+import { AppApiError, fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -77,11 +77,11 @@ export function usePromos(opts?: { userId?: string }) {
   );
 
   const verifyTweetEngagement = useCallback(
-    async (promoId: string): Promise<{ verified: boolean; alreadyVerified?: boolean; message?: string; engagementType?: string } | null> => {
-      if (!userId || !user?.xHandle) return null;
+    async (promoId: string): Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null> => {
+      if (!userId || !user?.xHandle) return { verified: false, message: 'Connect your X account first.' };
 
       try {
-        const res = await fetchJson<{ verified: boolean; alreadyVerified?: boolean; message?: string; engagementType?: string }>(
+        const res = await fetchJson<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string }>(
           '/api/promos/verify-tweet',
           {
             method: 'POST',
@@ -90,7 +90,6 @@ export function usePromos(opts?: { userId?: string }) {
         );
 
         if (res.verified) {
-          // Patch the promo locally to show claimable
           setLocalPromos((prev) => {
             const base = prev ?? swr.data ?? [];
             return base.map((p) =>
@@ -101,8 +100,9 @@ export function usePromos(opts?: { userId?: string }) {
         }
 
         return res;
-      } catch {
-        return null;
+      } catch (err) {
+        const msg = err instanceof AppApiError ? err.message : 'Verification failed. Please try again.';
+        return { verified: false, message: msg };
       }
     },
     [userId, user?.xHandle, swr],

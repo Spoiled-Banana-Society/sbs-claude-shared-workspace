@@ -267,7 +267,7 @@ const seedPromos: Promo[] = [
     id: '8',
     type: 'tweet-engagement',
     title: 'Tweet Engagement → FREE SPIN',
-    description: 'Reply or QRT to earn a spin',
+    description: 'Reply & QRT to earn a spin',
     ctaText: 'Engage Now',
     ctaLink: API_CONFIG.promos.tweetEngagement.tweetUrl,
     backgroundColor: '#2a2a35',

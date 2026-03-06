@@ -13,7 +13,7 @@ interface PromoModalProps {
   promo: Promo | null;
   onClaim: (promo: Promo) => void;
   isPromoClaimed?: boolean;
-  onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; message?: string } | null>;
+  onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>;
 }
 
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet }: PromoModalProps) {
@@ -26,7 +26,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [_timerTick, setTimerTick] = useState(0);
   const hasNotifiedParent = useRef(false);
   const [tweetVerifying, setTweetVerifying] = useState(false);
-  const [tweetVerifyResult, setTweetVerifyResult] = useState<{ verified: boolean; alreadyVerified?: boolean; message?: string } | null>(null);
+  const [tweetVerifyResult, setTweetVerifyResult] = useState<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>(null);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -576,10 +576,43 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           </div>
         </div>
 
-        {/* Step 2: Open tweet */}
+        {/* Step 2: Open tweet & engage */}
         <div className="bg-bg-tertiary rounded-xl p-4">
           <p className="font-medium text-text-primary mb-2">Step 1: Engage with the tweet</p>
-          <p className="text-text-secondary text-sm mb-3">Reply or quote-retweet the campaign tweet below.</p>
+          <p className="text-text-secondary text-sm mb-3">You must <strong>both</strong> reply and quote-retweet the campaign tweet.</p>
+
+          {/* Checklist */}
+          <div className="space-y-2 mb-3">
+            <div className="flex items-center gap-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${tweetVerifyResult?.hasReplied ? 'bg-success/20' : 'bg-bg-elevated'}`}>
+                {tweetVerifyResult?.hasReplied ? (
+                  <svg className="w-3 h-3 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-text-muted" />
+                )}
+              </div>
+              <span className={`text-sm ${tweetVerifyResult?.hasReplied ? 'text-success' : 'text-text-secondary'}`}>
+                Reply to the tweet
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${tweetVerifyResult?.hasQuoted ? 'bg-success/20' : 'bg-bg-elevated'}`}>
+                {tweetVerifyResult?.hasQuoted ? (
+                  <svg className="w-3 h-3 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-text-muted" />
+                )}
+              </div>
+              <span className={`text-sm ${tweetVerifyResult?.hasQuoted ? 'text-success' : 'text-text-secondary'}`}>
+                Quote-retweet the tweet
+              </span>
+            </div>
+          </div>
+
           <Button
             variant="secondary"
             className="w-full"
@@ -593,7 +626,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <div className="bg-bg-tertiary rounded-xl p-4">
           <p className="font-medium text-text-primary mb-2">Step 2: Verify your engagement</p>
           <p className="text-text-secondary text-sm mb-3">
-            After replying or quote-retweeting, click below to verify.
+            After completing both actions, click below to verify.
           </p>
           {alreadyClaimable ? (
             <div className="flex items-center gap-2 text-success">
@@ -625,7 +658,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
               </svg>
               <span className="font-medium">
-                {tweetVerifyResult.alreadyVerified ? 'Already verified!' : 'Engagement found! Claim your spin below.'}
+                {tweetVerifyResult.alreadyVerified ? 'Already verified!' : 'Both verified! Claim your spin below.'}
               </span>
             </div>
           )}

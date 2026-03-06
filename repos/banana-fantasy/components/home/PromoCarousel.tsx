@@ -11,7 +11,7 @@ interface PromoCarouselProps {
   promos: Promo[];
   autoPlay?: boolean;
   claimPromo?: (promoId: string) => Promise<{ spinsAdded: number } | null>;
-  onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; message?: string } | null>;
+  onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>;
 }
 
 const VISIBLE_COUNT = 3;
