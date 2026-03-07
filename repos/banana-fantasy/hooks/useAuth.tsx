@@ -560,6 +560,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updated.jackpotEntries = firestoreBalance.jackpotEntries ?? updated.jackpotEntries;
         updated.hofEntries = firestoreBalance.hofEntries ?? updated.hofEntries;
       }
+      saveCachedBalance(updated);
       return updated;
     });
   }, [walletAddress, user?.id]);
