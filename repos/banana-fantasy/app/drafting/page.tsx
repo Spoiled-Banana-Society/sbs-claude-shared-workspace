@@ -258,36 +258,13 @@ export default function DraftingPage() {
               });
             }
           } else if (isFull && !draft.draftRoomOpen) {
-            // 10/10 but draft hasn't started yet — derive phase from server timestamps
-            // Skip if draft room is open (it owns phase transitions)
+            // 10/10 but draft hasn't started yet — set timestamps only.
+            // Type reveal is handled by the tick effect at the 15s mark.
             const patch: Partial<DraftState> = { players: 10 };
 
-            if (info.draftStartTime) {
-              if (!draft.preSpinStartedAt) {
-                patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
-                patch.randomizingStartedAt = undefined;
-              }
-              const preSpinStartedAt = draft.preSpinStartedAt || patch.preSpinStartedAt!;
-              const elapsed = (Date.now() - preSpinStartedAt) / 1000;
-
-              if (elapsed >= 60) {
-                patch.phase = 'drafting';
-                patch.status = 'drafting';
-                // Reveal is long done — show the type
-                patch.type = draft.type || draft.draftType || 'pro';
-                patch.draftType = patch.type;
-              } else if (elapsed >= 15) {
-                // Past reveal (slot machine done) — show the type
-                patch.phase = 'result';
-                const resolvedType = info.draftType
-                  ? (() => { const t = info.draftType.toLowerCase(); return t === 'jackpot' ? 'jackpot' : t === 'hof' || t === 'hall of fame' ? 'hof' : 'pro'; })()
-                  : (draft.type || draft.draftType || 'pro');
-                patch.type = resolvedType;
-                patch.draftType = resolvedType;
-              } else {
-                // Before reveal — keep Unrevealed
-                patch.phase = 'pre-spin';
-              }
+            if (info.draftStartTime && !draft.preSpinStartedAt) {
+              patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
+              patch.randomizingStartedAt = undefined;
             }
 
             draftStore.updateDraft(draft.id, patch);
