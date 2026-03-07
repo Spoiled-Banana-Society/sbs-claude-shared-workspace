@@ -104,7 +104,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       {/* Right semicircle cutout */}
                       <circle cx="88" cy="28" r="6" fill="#1a1a2e"/>
                       {/* Large centered number */}
-                      <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0}</text>
+                      <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{isLoggedIn && user && !isLoading ? (user.draftPasses || 0) + (user.freeDrafts || 0) : '—'}</text>
                     </svg>
                   </Link>
                 </Tooltip>
