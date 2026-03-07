@@ -268,6 +268,10 @@ export async function claimPromo(userId: string, promoId: string) {
     }
     promo.claimable = false;
     promo.claimCount = 0;
+    // Reset progress after claiming so next cycle starts at 0
+    if (promo.progressMax !== undefined) {
+      promo.progressCurrent = 0;
+    }
 
     tx.set(userRef, stripUndefined(user), { merge: true });
     tx.set(promoRef, stripUndefined(promo), { merge: true });
@@ -584,8 +588,11 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       const max = mintPromo.progressMax || 10;
       const current = mintPromo.progressCurrent || 0;
       const newTotal = current + purchase.quantity;
-      mintPromo.progressCurrent = newTotal % max;
       const newlyEarned = Math.floor(newTotal / max);
+      // Keep progress at max when a milestone is hit (shows 10/10).
+      // Only carry over the remainder if there's leftover beyond the milestone.
+      const remainder = newTotal % max;
+      mintPromo.progressCurrent = (newlyEarned > 0 && remainder === 0) ? max : remainder;
       if (newlyEarned > 0) {
         mintPromo.claimCount = (mintPromo.claimCount || 0) + newlyEarned;
         recalcPromoClaimable(mintPromo);
@@ -600,8 +607,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       const bbMax = buyBonusPromo.progressMax || 2;
       const bbCurrent = buyBonusPromo.progressCurrent || 0;
       const bbNewTotal = bbCurrent + purchase.quantity;
-      buyBonusPromo.progressCurrent = bbNewTotal % bbMax;
       const bbNewlyEarned = Math.floor(bbNewTotal / bbMax);
+      const bbRemainder = bbNewTotal % bbMax;
+      buyBonusPromo.progressCurrent = (bbNewlyEarned > 0 && bbRemainder === 0) ? bbMax : bbRemainder;
       if (bbNewlyEarned > 0) {
         buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + bbNewlyEarned;
         recalcPromoClaimable(buyBonusPromo);

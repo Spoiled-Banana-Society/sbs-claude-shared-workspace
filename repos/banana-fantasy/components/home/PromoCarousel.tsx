@@ -225,11 +225,11 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
-              const progressPercent = isClaimed ? 0 : (hasProgress
+              const progressMax = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (promo.progressMax || 10);
+              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed ? progressMax : (promo.progressCurrent || 0));
+              const progressPercent = isClaimed ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
-              const progressMax = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (promo.progressMax || 10);
-              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed ? 0 : (promo.progressCurrent || 0));
               return (
                 <div
                   key={`${promo.id}-${index}`}
