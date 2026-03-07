@@ -163,7 +163,7 @@ function DraftRoomContent() {
     // In live mode, if stored state shows draft is past filling, start in 'loading'
     // to check server state BEFORE showing any UI/animations. This prevents replaying
     // RANDOMIZING/slot machine on re-entry.
-    if (isLiveMode && stored && ((stored.phase && stored.phase !== 'filling') || stored.preSpinStartedAt || stored.randomizingStartedAt)) return 'loading';
+    if (isLiveMode && stored && ((stored.phase && stored.phase !== 'filling') || stored.preSpinStartedAt)) return 'loading';
     if (!isLiveMode && stored?.phase) return stored.phase;
     return 'filling';
   });
@@ -384,17 +384,7 @@ function DraftRoomContent() {
             }
             setLiveDataReady(true);
           } else {
-            // Still randomizing or just reached 10/10 — set progress state
-            // BEFORE transitioning to filling so the bar renders correctly
-            // on the very first frame (no flash of "Waiting for players...")
-            if (stored?.randomizingStartedAt) {
-              const elapsed = Date.now() - stored.randomizingStartedAt;
-              const t = Math.min(1, elapsed / 15000);
-              const progress = 0.99 * (1 - Math.pow(1 - t, 3));
-              setWaitingForServer(true);
-              setServerWaitProgress(progress);
-              serverWaitProgressRef.current = progress;
-            }
+            // Still randomizing or just reached 10/10 — let "at 10" effect handle it
             setPlayerCount(10);
             setPhase('filling');
           }
@@ -412,16 +402,6 @@ function DraftRoomContent() {
           if (stored.draftOrder) setDraftOrder(stored.draftOrder);
           if (stored.userDraftPosition !== undefined) setUserDraftPosition(stored.userDraftPosition);
           if (stored.draftType) setDraftType(stored.draftType);
-        } else if (stored?.randomizingStartedAt) {
-          // Resuming randomizing after server check failed
-          const elapsed = Date.now() - stored.randomizingStartedAt;
-          const t = Math.min(1, elapsed / 15000);
-          const progress = 0.99 * (1 - Math.pow(1 - t, 3));
-          setWaitingForServer(true);
-          setServerWaitProgress(progress);
-          serverWaitProgressRef.current = progress;
-          setPlayerCount(10);
-          setPhase('filling');
         } else {
           setPhase('filling');
         }
@@ -1396,6 +1376,29 @@ function DraftRoomContent() {
 
   // All phases share the same layout — no separate filling page
 
+  // ==================== TIMESTAMP-DERIVED RANDOMIZING STATE ====================
+  // Derive "randomizing" display from draftStore timestamp — works identically on
+  // first entry AND re-entry with zero dependency on effects firing correctly.
+  // This is the same approach the drafting page uses (getLiveState).
+  const storedNow = draftId ? draftStore.getDraft(draftId) : null;
+  const isRandomizingFromStore = !!(storedNow?.randomizingStartedAt && !storedNow?.preSpinStartedAt);
+  const randomizingProgressFromStore = isRandomizingFromStore
+    ? (() => {
+        const elapsed = Date.now() - storedNow!.randomizingStartedAt!;
+        const t = Math.min(1, elapsed / 15000);
+        return 0.99 * (1 - Math.pow(1 - t, 3));
+      })()
+    : 0;
+
+  // Force re-renders for smooth animation when using the timestamp fallback
+  // (before the at-10 effect kicks in and starts its own progress interval)
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    if (!isRandomizingFromStore || waitingForServer) return;
+    const ticker = setInterval(() => forceRender(v => v + 1), 50);
+    return () => clearInterval(ticker);
+  }, [isRandomizingFromStore, waitingForServer]);
+
   const getBgColor = () => {
     if ((phase === 'result' || phase === 'drafting') && draftType) {
       if (draftType === 'jackpot') return 'bg-gradient-to-b from-red-950 to-red-950/50';
@@ -1724,7 +1727,7 @@ function DraftRoomContent() {
               Array.from({ length: 10 }, (_, i) => {
                 const player = draftOrder[i];
                 const isFilling = phase === 'filling';
-                const isRandomizing = isFilling && waitingForServer;
+                const isRandomizing = isFilling && (waitingForServer || isRandomizingFromStore);
                 const isFilled = isRandomizing ? true : isFilling ? (i < playerCount) : true;
                 const isUser = player?.isYou ?? false;
                 // Match drafting card style: user = yellow border, filled = #444, unfilled = #333
@@ -1830,21 +1833,21 @@ function DraftRoomContent() {
 
             {/* Status text below banner — all phases */}
             <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
-              {phase === 'filling' && waitingForServer ? (
+              {phase === 'filling' && (waitingForServer || isRandomizingFromStore) ? (
                 <div className="flex flex-col items-center gap-2 w-full max-w-xs mx-auto">
                   <span className="text-white/70 text-xs tracking-widest uppercase">Randomizing Draft Order</span>
                   <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden backdrop-blur-sm">
                     <div
                       className="h-full rounded-full"
                       style={{
-                        width: `${Math.round(serverWaitProgress * 100)}%`,
-                        background: serverWaitProgress >= 1
+                        width: `${Math.round(Math.max(serverWaitProgress, randomizingProgressFromStore) * 100)}%`,
+                        background: Math.max(serverWaitProgress, randomizingProgressFromStore) >= 1
                           ? '#4ade80'
                           : 'linear-gradient(90deg, #fbbf24, #f59e0b)',
                       }}
                     />
                   </div>
-                  <span className="text-white/40 text-[10px]">{Math.round(serverWaitProgress * 100)}%</span>
+                  <span className="text-white/40 text-[10px]">{Math.round(Math.max(serverWaitProgress, randomizingProgressFromStore) * 100)}%</span>
                 </div>
               ) : phase === 'filling' ? (
                 <span className="text-yellow-400">
