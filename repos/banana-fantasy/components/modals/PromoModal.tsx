@@ -777,25 +777,39 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         )}
       </div>
 
-      {/* Referral Claim Success Popup */}
+      {/* Claim Success Popup */}
       {claimSuccess.show && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}>
           <div className="bg-bg-secondary rounded-2xl p-6 w-80 text-center shadow-2xl">
             <div className="text-4xl mb-4">🎉</div>
             <h3 className="text-xl font-bold text-text-primary mb-2">Success!</h3>
             <p className="text-text-secondary mb-6">
-              You got {claimSuccess.count} free {claimSuccess.count === 1 ? 'spin' : 'spins'}!
+              {promo.type === 'buy-bonus'
+                ? `You got ${claimSuccess.count} free ${claimSuccess.count === 1 ? 'draft' : 'drafts'}!`
+                : `You got ${claimSuccess.count} free ${claimSuccess.count === 1 ? 'spin' : 'spins'}!`}
             </p>
             <div className="flex flex-col gap-3">
-              <button
-                onClick={() => {
-                  setClaimSuccess({ show: false, count: 0 });
-                  router.push('/banana-wheel');
-                }}
-                className="w-full py-3 bg-banana text-bg-primary font-bold rounded-lg hover:bg-banana/90 transition-all"
-              >
-                Spin the Wheel 🎡
-              </button>
+              {promo.type === 'buy-bonus' ? (
+                <button
+                  onClick={() => {
+                    setClaimSuccess({ show: false, count: 0 });
+                    router.push('/drafting');
+                  }}
+                  className="w-full py-3 bg-banana text-bg-primary font-bold rounded-lg hover:bg-banana/90 transition-all"
+                >
+                  Start Drafting
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setClaimSuccess({ show: false, count: 0 });
+                    router.push('/banana-wheel');
+                  }}
+                  className="w-full py-3 bg-banana text-bg-primary font-bold rounded-lg hover:bg-banana/90 transition-all"
+                >
+                  Spin the Wheel
+                </button>
+              )}
               <button
                 onClick={() => setClaimSuccess({ show: false, count: 0 })}
                 className="w-full py-3 bg-bg-tertiary text-text-secondary font-medium rounded-lg hover:bg-bg-elevated transition-all"
