@@ -19,7 +19,6 @@ interface SavedProfile {
   username?: string;
   profilePicture?: string;
   nflTeam?: string;
-  draftPasses?: number;
 }
 
 interface AuthContextType {
@@ -56,6 +55,7 @@ function getSavedProfile(): SavedProfile | null {
     if (!saved) return null;
     const profile = JSON.parse(saved);
     delete profile.profilePicture;
+    delete profile.draftPasses;
     return profile;
   } catch {
     return null;
@@ -260,7 +260,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             profilePicture: savedProfile?.profilePicture,
             nflTeam: savedProfile?.nflTeam,
             xHandle: undefined,
-            draftPasses: savedProfile?.draftPasses || 0,
+            draftPasses: 0,
             usdcBalance: 0,
             freeDrafts: 0,
             wheelSpins: 0,
