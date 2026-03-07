@@ -260,36 +260,32 @@ export default function DraftingPage() {
           } else if (isFull && !draft.draftRoomOpen) {
             // 10/10 but draft hasn't started yet — derive phase from server timestamps
             // Skip if draft room is open (it owns phase transitions)
-            const resolvedType = draft.type || draft.draftType || 'pro';
-            const patch: Partial<DraftState> = {
-              players: 10,
-              type: resolvedType,
-              draftType: resolvedType,
-            };
+            const patch: Partial<DraftState> = { players: 10 };
 
             if (info.draftStartTime) {
-              // Server has a start time — compute preSpinStartedAt (60s before start)
               if (!draft.preSpinStartedAt) {
-                // First time: derive and set
                 patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
                 patch.randomizingStartedAt = undefined;
               }
-              // Use existing or newly derived preSpinStartedAt for phase calc
               const preSpinStartedAt = draft.preSpinStartedAt || patch.preSpinStartedAt!;
               const elapsed = (Date.now() - preSpinStartedAt) / 1000;
 
               if (elapsed >= 60) {
                 patch.phase = 'drafting';
                 patch.status = 'drafting';
+                // Reveal is long done — show the type
+                patch.type = draft.type || draft.draftType || 'pro';
+                patch.draftType = patch.type;
               } else if (elapsed >= 15) {
+                // Past reveal (slot machine done) — show the type
                 patch.phase = 'result';
-                // Use server draftType if available, otherwise keep resolved
-                if (info.draftType) {
-                  const t = info.draftType.toLowerCase();
-                  patch.draftType = t === 'jackpot' ? 'jackpot' : t === 'hof' || t === 'hall of fame' ? 'hof' : 'pro';
-                  patch.type = patch.draftType;
-                }
+                const resolvedType = info.draftType
+                  ? (() => { const t = info.draftType.toLowerCase(); return t === 'jackpot' ? 'jackpot' : t === 'hof' || t === 'hall of fame' ? 'hof' : 'pro'; })()
+                  : (draft.type || draft.draftType || 'pro');
+                patch.type = resolvedType;
+                patch.draftType = resolvedType;
               } else {
+                // Before reveal — keep Unrevealed
                 patch.phase = 'pre-spin';
               }
             }
@@ -427,15 +423,12 @@ export default function DraftingPage() {
                 draftStore.updateDraft(d.id, { players: 10, randomizingStartedAt: now });
                 continue;
               }
-              // After 5s of randomizing, transition to countdown
+              // After 5s of randomizing, transition to countdown (type stays Unrevealed until reveal at +15s)
               if (!d.preSpinStartedAt && (now - d.randomizingStartedAt) >= 5000) {
-                // Assign draft type if not already set (slot machine does this in draft room)
-                const assignedType = d.draftType || 'pro';
                 draftStore.updateDraft(d.id, {
                   phase: 'pre-spin', players: 10,
                   preSpinStartedAt: now,
                   randomizingStartedAt: undefined,
-                  draftType: assignedType, type: assignedType,
                 });
               }
               continue;
@@ -460,6 +453,18 @@ export default function DraftingPage() {
             }
           }
           continue;
+        }
+
+        // PRE-SPIN: reveal type after 15s (slot machine would have played)
+        if (d.phase === 'pre-spin' && d.preSpinStartedAt && !d.type) {
+          const elapsed = (now - d.preSpinStartedAt) / 1000;
+          if (elapsed >= 15) {
+            const revealedType = d.draftType || 'pro';
+            draftStore.updateDraft(d.id, {
+              phase: 'result',
+              type: revealedType, draftType: revealedType,
+            });
+          }
         }
 
         // PRE-SPIN / SPINNING / RESULT → DRAFTING when 60s expires
