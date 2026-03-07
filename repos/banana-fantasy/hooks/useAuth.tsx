@@ -251,7 +251,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Show cached balance immediately while backend loads
       const cached = getCachedBalance();
+      console.log('[SBS Debug] Cached balance:', JSON.stringify(cached));
       if (cached && !user) {
+        console.log('[SBS Debug] Setting cached user: draftPasses=', cached.draftPasses, 'freeDrafts=', cached.freeDrafts, 'total=', cached.draftPasses + cached.freeDrafts);
         setUser({
           id: walletAddress,
           username: walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
@@ -294,15 +296,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(backendUser.id)}`);
             const data = await res.json();
+            console.log('[SBS Debug] Firestore balance response:', JSON.stringify(data));
             if (data && typeof data.wheelSpins === 'number') {
               firestoreBalance = data;
             }
-          } catch { /* silent */ }
+          } catch (e) {
+            console.log('[SBS Debug] Firestore balance fetch FAILED:', e);
+          }
 
           // Merge everything into one setUser call — no flash.
           // Use callback form so we can fall back to cached values (prev)
           // when the Firestore fetch fails.
           setUser(prev => {
+            const prevFreeDrafts = prev?.freeDrafts;
+            const fsFreeDrafts = firestoreBalance?.freeDrafts;
+            const finalFreeDrafts = fsFreeDrafts ?? prevFreeDrafts ?? 0;
+            console.log('[SBS Debug] freeDrafts: firestore=', fsFreeDrafts, 'prev=', prevFreeDrafts, 'final=', finalFreeDrafts);
+            console.log('[SBS Debug] draftPasses:', backendUser.draftPasses, 'total:', backendUser.draftPasses + finalFreeDrafts);
             const merged: User = {
               ...backendUser,
               loginMethod,
@@ -310,7 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               profilePicture: savedProfile?.profilePicture || backendUser.profilePicture,
               nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
               wheelSpins: firestoreBalance?.wheelSpins ?? prev?.wheelSpins ?? 0,
-              freeDrafts: firestoreBalance?.freeDrafts ?? prev?.freeDrafts ?? 0,
+              freeDrafts: finalFreeDrafts,
               jackpotEntries: firestoreBalance?.jackpotEntries ?? prev?.jackpotEntries ?? 0,
               hofEntries: firestoreBalance?.hofEntries ?? prev?.hofEntries ?? 0,
             };
