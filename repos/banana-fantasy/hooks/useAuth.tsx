@@ -100,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
+  const [userDataLoaded, setUserDataLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -262,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } : {}),
           };
           setUser(merged);
+          setUserDataLoaded(true);
           // Mark balance as fetched so the separate effect doesn't re-fetch
           balanceFetchedRef.current = backendUser.id;
           setIsNewUser(false);
@@ -288,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
           };
           setUser(fallbackUser);
+          setUserDataLoaded(true);
           if (isNotFound) {
             setIsNewUser(true);
             setShowOnboarding(true);
@@ -313,6 +316,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
     } else if (privy.ready && !privy.authenticated) {
       setUser(null);
+      setUserDataLoaded(true); // not logged in = nothing to load
       fetchingRef.current = null;
       setIsNewUser(false);
       setShowOnboarding(false);
@@ -544,7 +548,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
-        isLoading: MOCK_AUTH ? false : !privy.ready,
+        isLoading: MOCK_AUTH ? false : (!privy.ready || !userDataLoaded),
         isNewUser,
         setIsNewUser,
         showOnboarding,
