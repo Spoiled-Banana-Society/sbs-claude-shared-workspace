@@ -38,7 +38,7 @@ function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: (us
       });
       const data = await res.json();
       if (res.ok) {
-        setResult(`Minted ${qty} — promo updated`);
+        setResult(`Minted ${qty} tokens`);
         onMinted(data.user);
       } else {
         setResult(`Error: ${data.error || 'Unknown'}`);
