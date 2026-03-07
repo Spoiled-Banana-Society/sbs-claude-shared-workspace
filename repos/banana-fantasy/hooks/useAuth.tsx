@@ -7,8 +7,10 @@ import { getOwnerUser, getOwnerDraftTokens } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
+const USER_BALANCE_CACHE_KEY = 'banana-fantasy-balance-cache';
 const USER_STORAGE_KEYS = [
   USER_PROFILE_KEY,
+  USER_BALANCE_CACHE_KEY,
   'banana-active-drafts',
   'banana-completed-drafts',
   'banana-fantasy-onboarding-complete',
@@ -69,6 +71,36 @@ function saveProfile(profile: SavedProfile): void {
   } catch {
     // Ignore storage errors
   }
+}
+
+interface BalanceCache {
+  draftPasses: number;
+  freeDrafts: number;
+  wheelSpins: number;
+  jackpotEntries: number;
+  hofEntries: number;
+}
+
+function getCachedBalance(): BalanceCache | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(USER_BALANCE_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveCachedBalance(user: { draftPasses?: number; freeDrafts?: number; wheelSpins?: number; jackpotEntries?: number; hofEntries?: number }): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(USER_BALANCE_CACHE_KEY, JSON.stringify({
+      draftPasses: user.draftPasses || 0,
+      freeDrafts: user.freeDrafts || 0,
+      wheelSpins: user.wheelSpins || 0,
+      jackpotEntries: user.jackpotEntries || 0,
+      hofEntries: user.hofEntries || 0,
+    }));
+  } catch { /* ignore */ }
 }
 
 // ── Mock auth for local testing ──────────────────────────────────────
@@ -216,6 +248,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (privy.ready && privy.authenticated && privy.user && walletAddress) {
       // Avoid duplicate fetches for the same wallet
       if (fetchingRef.current === walletAddress) return;
+
+      // Show cached balance immediately while backend loads
+      const cached = getCachedBalance();
+      if (cached && !user) {
+        setUser({
+          id: walletAddress,
+          username: walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
+          walletAddress,
+          loginMethod: 'social',
+          draftPasses: cached.draftPasses,
+          freeDrafts: cached.freeDrafts,
+          wheelSpins: cached.wheelSpins,
+          jackpotEntries: cached.jackpotEntries,
+          hofEntries: cached.hofEntries,
+          usdcBalance: 0,
+          isVerified: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
       fetchingRef.current = walletAddress;
 
       const savedProfile = getSavedProfile();
@@ -263,6 +314,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } : {}),
           };
           setUser(merged);
+          saveCachedBalance(merged);
           setUserDataLoaded(true);
           // Mark balance as fetched so the separate effect doesn't re-fetch
           balanceFetchedRef.current = backendUser.id;
@@ -475,6 +527,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profilePicture: updated.profilePicture,
         nflTeam: updated.nflTeam,
       });
+      saveCachedBalance(updated);
       return updated;
     });
   }, []);
@@ -548,7 +601,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
-        isLoading: MOCK_AUTH ? false : (!privy.ready || !userDataLoaded),
+        isLoading: MOCK_AUTH ? false : (!privy.ready || (!userDataLoaded && !getCachedBalance())),
         isNewUser,
         setIsNewUser,
         showOnboarding,
