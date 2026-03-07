@@ -19,12 +19,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function getUtcDayRange(date = new Date()) {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
-  return { start: start.toISOString(), end: end.toISOString() };
-}
-
 function getPrivyAppId(): string {
   const appId = (process.env.PRIVY_APP_ID || process.env.NEXT_PUBLIC_PRIVY_APP_ID || '').trim();
   if (!appId) throw new ApiError(500, 'Privy app ID not configured');
@@ -132,17 +126,13 @@ export async function POST(req: Request) {
     if (!userId) throw new ApiError(400, 'Missing userId');
 
     const db = getAdminFirestore();
-    const { start, end } = getUtcDayRange();
-    const existing = await db
-      .collection(WHEEL_SPINS_COLLECTION)
-      .where('userId', '==', userId)
-      .where('timestamp', '>=', start)
-      .where('timestamp', '<', end)
-      .limit(1)
-      .get();
 
-    if (!existing.empty) {
-      throw new ApiError(429, 'Spin already used today');
+    // Check that user has spins remaining
+    const userDoc = await db.collection(USERS_COLLECTION).doc(userId).get();
+    const userData = userDoc.data();
+    const spinsLeft = userData?.wheelSpins ?? 0;
+    if (spinsLeft <= 0) {
+      throw new ApiError(429, 'No spins remaining');
     }
 
     const { segments, segmentAngle } = await getWheelConfig();
