@@ -27,6 +27,7 @@ interface AuthContextType {
   walletAddress: string | null;
   isLoggedIn: boolean;
   isLoading: boolean;
+  isBalanceLoaded: boolean;
   isNewUser: boolean;
   setIsNewUser: (isNew: boolean) => void;
   showOnboarding: boolean;
@@ -100,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
+  const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -426,8 +428,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             };
           });
         }
+        setIsBalanceLoaded(true);
       })
-      .catch(() => { /* silent — don't block auth */ });
+      .catch(() => { setIsBalanceLoaded(true); /* silent — don't block auth */ });
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback((_method?: 'wallet' | 'social') => {
@@ -527,6 +530,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
         isLoading: MOCK_AUTH ? false : !privy.ready,
+        isBalanceLoaded,
         isNewUser,
         setIsNewUser,
         showOnboarding,

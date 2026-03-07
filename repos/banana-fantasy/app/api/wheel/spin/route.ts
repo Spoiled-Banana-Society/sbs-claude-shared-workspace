@@ -73,10 +73,10 @@ async function verifyPrivyJwt(token: string): Promise<string> {
 
   const { header, payload, signature, signingInput } = decodeJwt(token);
   const alg = typeof header.alg === 'string' ? header.alg : '';
-  if (!alg || !['ES256', 'RS256'].includes(alg)) throw new ApiError(401, 'Invalid auth token');
+  if (!alg || !['ES256', 'RS256'].includes(alg)) throw new ApiError(401, 'Unsupported token algorithm: ' + alg);
 
   const kid = typeof header.kid === 'string' ? header.kid : '';
-  if (!kid) throw new ApiError(401, 'Missing key ID in token');
+  if (!kid) throw new ApiError(401, 'Missing key ID in token header');
 
   const key = await getPrivyVerificationKey(kid);
   const verifier = crypto.createVerify('SHA256');
@@ -88,7 +88,7 @@ async function verifyPrivyJwt(token: string): Promise<string> {
     signature,
   );
 
-  if (!isValid) throw new ApiError(401, 'Invalid auth token');
+  if (!isValid) throw new ApiError(401, 'Token signature verification failed');
 
   if (typeof payload.exp === 'number' && Date.now() / 1000 >= payload.exp) {
     throw new ApiError(401, 'Auth token expired');
@@ -97,7 +97,7 @@ async function verifyPrivyJwt(token: string): Promise<string> {
   if (payload.aud) {
     const aud = payload.aud;
     const ok = Array.isArray(aud) ? aud.includes(appId) : aud === appId;
-    if (!ok) throw new ApiError(401, 'Invalid auth token');
+    if (!ok) throw new ApiError(401, 'Token audience mismatch');
   }
 
   const expectedIssuer = process.env.PRIVY_JWT_ISSUER;
