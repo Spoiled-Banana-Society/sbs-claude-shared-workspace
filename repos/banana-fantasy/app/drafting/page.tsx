@@ -247,8 +247,8 @@ export default function DraftingPage() {
                 status: 'drafting',
                 phase: 'drafting',
                 players: 10,
-                type: draft.type || draft.draftType || 'pro',
-                draftType: draft.draftType || draft.type || 'pro',
+                type: draft.type || draft.draftType || null,  // Only show if draft room revealed it
+                draftType: draft.draftType || draft.type || null,
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
                 pickEndTimestamp,
@@ -432,24 +432,13 @@ export default function DraftingPage() {
           continue;
         }
 
-        // PRE-SPIN: reveal type after 15s (slot machine would have played)
-        if (d.phase === 'pre-spin' && d.preSpinStartedAt && !d.type) {
-          const elapsed = (now - d.preSpinStartedAt) / 1000;
-          if (elapsed >= 15) {
-            const revealedType = d.draftType || 'pro';
-            draftStore.updateDraft(d.id, {
-              phase: 'result',
-              type: revealedType, draftType: revealedType,
-            });
-          }
-        }
-
         // PRE-SPIN / SPINNING / RESULT → DRAFTING when 60s expires
+        // Type is set by the draft room's slot machine — drafting page never decides it
         if (['pre-spin', 'spinning', 'result'].includes(d.phase || '') && d.preSpinStartedAt) {
           if ((now - d.preSpinStartedAt) / 1000 >= 60) {
             draftStore.updateDraft(d.id, {
               phase: 'drafting', status: 'drafting',
-              type: d.draftType || 'pro',
+              type: d.type || d.draftType || null,  // Only show type if draft room set it
             });
           }
         }
