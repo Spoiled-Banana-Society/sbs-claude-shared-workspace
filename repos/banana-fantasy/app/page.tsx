@@ -22,7 +22,7 @@ import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
 import * as draftStore from '@/lib/draftStore';
 
-function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: () => void }) {
+function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: (userData?: unknown) => void }) {
   const [minting, setMinting] = React.useState(false);
   const [qty, setQty] = React.useState(3);
   const [result, setResult] = React.useState<string | null>(null);
@@ -39,7 +39,7 @@ function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: () 
       const data = await res.json();
       if (res.ok) {
         setResult(`Minted ${qty} — promo updated`);
-        onMinted();
+        onMinted(data.user);
       } else {
         setResult(`Error: ${data.error || 'Unknown'}`);
       }
@@ -217,7 +217,11 @@ export default function HomePage() {
       {/* Staging Mint Button */}
       {_isStagingMode() && user?.id && (
         <section className="mb-4 flex justify-center">
-          <StagingMintButton userId={user.id} onMinted={() => { promosQuery.refreshPromos(); void refreshBalance(); }} />
+          <StagingMintButton userId={user.id} onMinted={(userData) => {
+            if (userData) updateUser(userData as Partial<import('@/types').User>);
+            promosQuery.refreshPromos();
+            void refreshBalance();
+          }} />
         </section>
       )}
 

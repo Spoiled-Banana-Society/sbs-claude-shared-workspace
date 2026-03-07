@@ -11,6 +11,7 @@ import { draftPassPricing } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getStagingApiUrl, getDraftsApiUrl } from '@/lib/staging';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
+import { fetchJson } from '@/lib/appApiClient';
 
 type FlowStep = 'idle' | 'funding' | 'waiting-for-usdc' | 'minting' | 'success' | 'error';
 type ModalPhase = 'purchase' | 'pick-speed' | 'joining' | 'error';
@@ -27,7 +28,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, refreshBalance } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance } = useAuth();
   const { mint, isApproving, isMinting, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -78,14 +79,51 @@ export function BuyPassesModal({
   const isCardProcessing = flowStep === 'funding' || flowStep === 'waiting-for-usdc' || flowStep === 'minting';
   const isProcessing = paymentMethod === 'usdc' ? isUsdcProcessing : isCardProcessing;
 
-  // Transition to pick-speed after successful USDC mint
-  useEffect(() => {
-    if (txHash && !mintError && phase === 'purchase') {
-      setMintedCount(quantity);
-      setPhase('pick-speed');
-      onPurchaseComplete?.(quantity);
+  /**
+   * Track a purchase in Firestore: create record → verify → promo updates.
+   * This ensures buy-bonus, mint-promo, and referral milestones are tracked
+   * identically in staging and production.
+   */
+  const trackPurchase = async (qty: number, hash: string) => {
+    const userId = walletAddress || user?.id;
+    if (!userId) return;
+    try {
+      const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
+        method: 'POST',
+        body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
+      });
+      const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
+        method: 'POST',
+        body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
+      });
+      if (verifyRes.user) {
+        updateUser(verifyRes.user as Partial<import('@/types').User>);
+      }
+    } catch (err) {
+      console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
     }
+    await refreshBalance();
+  };
+
+  // Transition to pick-speed after successful USDC mint
+  const txTrackedRef = useRef(false);
+  useEffect(() => {
+    if (txHash && !mintError && phase === 'purchase' && !txTrackedRef.current) {
+      txTrackedRef.current = true;
+      // Track in Firestore, then transition
+      trackPurchase(quantity, txHash).finally(() => {
+        setMintedCount(quantity);
+        setPhase('pick-speed');
+        onPurchaseComplete?.(quantity);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txHash, mintError, phase, quantity, onPurchaseComplete]);
+
+  // Reset txTracked when modal reopens
+  useEffect(() => {
+    if (isOpen) txTrackedRef.current = false;
+  }, [isOpen]);
 
   const goToPickSpeed = (count: number) => {
     setMintedCount(count);
@@ -467,14 +505,20 @@ export function BuyPassesModal({
               <button
                 onClick={async () => {
                   try {
-                    const mintAddr = walletAddress || user?.id || 'staging-user';
-                    const res = await fetch(`${getStagingApiUrl()}/staging/mint/${mintAddr}/${quantity}`, { method: 'POST' });
+                    const userId = walletAddress || user?.id || 'staging-user';
+                    // Use staging-mint API which does: Go mint + Firestore purchase + verify (promo updates)
+                    const res = await fetch('/api/purchases/staging-mint', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId, quantity }),
+                    });
                     const data = await res.json();
-                    if (data.ok) {
+                    if (res.ok) {
+                      if (data.user) updateUser(data.user as Partial<import('@/types').User>);
                       await refreshBalance();
-                      goToPickSpeed(data.count || quantity);
+                      goToPickSpeed(quantity);
                     } else {
-                      alert('Staging mint failed: ' + JSON.stringify(data));
+                      alert('Staging mint failed: ' + (data.error || JSON.stringify(data)));
                     }
                   } catch (err) {
                     alert('Staging mint error: ' + (err instanceof Error ? err.message : 'Unknown'));
