@@ -15,7 +15,7 @@ type VerifyPurchaseResponse = {
 };
 
 export function usePurchases(opts?: { userId?: string }) {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshBalance } = useAuth();
   const userId = opts?.userId ?? user?.id;
 
   const swr = useSWRLike<Purchase[]>(
@@ -78,6 +78,7 @@ export function usePurchases(opts?: { userId?: string }) {
         });
 
         if (res.user) updateUser(res.user);
+        void refreshBalance();
 
         setLocalHistory((prev) => {
           const base = prev ?? history ?? [];

@@ -38,16 +38,14 @@ export function usePromos(opts?: { userId?: string }) {
       if (!userId) return null;
 
       try {
-        console.log('[SBS Claim] calling /api/promos/claim', { userId, promoId });
         const res = await fetchJson<ClaimPromoResponse>('/api/promos/claim', {
           method: 'POST',
           body: JSON.stringify({ userId, promoId }),
         });
-        console.log('[SBS Claim] response:', { spinsAdded: res.spinsAdded, userWheelSpins: (res.user as Record<string, unknown>)?.wheelSpins });
 
         // Update auth user (wheel spins, etc)
         if (res.user) {
-          updateUser(res.user as Partial<import('@/types').User>);
+          updateUser(res.user);
         }
 
         // Patch the promo in the local list
@@ -61,8 +59,7 @@ export function usePromos(opts?: { userId?: string }) {
         void swr.mutate();
 
         return res;
-      } catch (err) {
-        console.error('[SBS Claim] FAILED:', err);
+      } catch {
         // Fallback: mark promo as claimed locally so UI never looks broken.
         setLocalPromos((prev) => {
           const base = prev ?? swr.data ?? [];
