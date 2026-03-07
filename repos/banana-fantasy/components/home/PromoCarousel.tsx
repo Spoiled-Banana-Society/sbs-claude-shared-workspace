@@ -38,7 +38,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
   }, [promos, selectedPromo]);
   const [isTransitioning, setIsTransitioning] = useState(true);
-  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
+  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number; promoType?: string }>({ show: false, count: 0 });
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
   const [_timerTick, setTimerTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -162,7 +162,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       const result = await claimPromo(promo.id);
       // claimPromo handles optimistic updates and user refresh internally
       if (!isModalOpen) {
-        setClaimSuccess({ show: true, count: result?.spinsAdded ?? count });
+        setClaimSuccess({ show: true, count: result?.spinsAdded ?? count, promoType: promo.type });
       }
       return;
     }
@@ -172,9 +172,13 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
     if (!isModalOpen) {
       if (user) {
-        updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
+        if (promo.type === 'buy-bonus') {
+          updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
+        } else {
+          updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
+        }
       }
-      setClaimSuccess({ show: true, count });
+      setClaimSuccess({ show: true, count, promoType: promo.type });
     }
   };
 
@@ -446,20 +450,35 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               </p>
 
               <h3 className="text-[26px] font-semibold text-white tracking-tight mb-7">
-                {claimSuccess.count} Free {claimSuccess.count === 1 ? 'Spin' : 'Spins'}
+                {claimSuccess.promoType === 'buy-bonus'
+                  ? `${claimSuccess.count} Free ${claimSuccess.count === 1 ? 'Draft' : 'Drafts'}`
+                  : `${claimSuccess.count} Free ${claimSuccess.count === 1 ? 'Spin' : 'Spins'}`}
               </h3>
 
               <div className="flex flex-col gap-3">
-                <button
-                  onClick={() => {
-                    setClaimSuccess({ show: false, count: 0 });
-                    router.push('/banana-wheel');
-                  }}
-                  className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl
-                    hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
-                >
-                  Spin the Wheel <span className="text-lg">🎡</span>
-                </button>
+                {claimSuccess.promoType === 'buy-bonus' ? (
+                  <button
+                    onClick={() => {
+                      setClaimSuccess({ show: false, count: 0 });
+                      router.push('/drafting');
+                    }}
+                    className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl
+                      hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
+                  >
+                    Go Draft <span className="text-lg">🏈</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setClaimSuccess({ show: false, count: 0 });
+                      router.push('/banana-wheel');
+                    }}
+                    className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl
+                      hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
+                  >
+                    Spin the Wheel <span className="text-lg">🎡</span>
+                  </button>
+                )}
                 <button
                   onClick={() => setClaimSuccess({ show: false, count: 0 })}
                   className="w-full py-3 text-[#86868b] font-medium rounded-xl
