@@ -18,7 +18,7 @@ interface HeaderProps {
 }
 
 export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: HeaderProps) {
-  const { user, walletAddress, isLoggedIn, isLoading, login } = useAuth();
+  const { user, walletAddress, isLoggedIn, isLoading, isBalanceLoaded, login } = useAuth();
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isAdminWallet = isWalletAdmin(walletAddress);
@@ -64,7 +64,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
           {/* Right side icons - tighter spacing */}
           <div className="flex items-center gap-1">
-            {isLoading ? (
+            {isLoading || (isLoggedIn && !isBalanceLoaded) ? (
               // Show placeholder while loading to prevent flash
               <div className="w-32" />
             ) : (
