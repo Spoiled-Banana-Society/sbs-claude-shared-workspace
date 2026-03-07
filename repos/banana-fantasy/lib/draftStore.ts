@@ -27,7 +27,6 @@ export interface DraftState {
   fillingInitialPlayers?: number; // player count when filling began (for deriving live count)
   preSpinStartedAt?: number;
   randomizingStartedAt?: number;  // Timestamp when "Randomizing Draft Order" began (10/10 reached)
-  draftRoomOpen?: boolean;        // True when draft room page is mounted — prevents drafting page from competing
   draftType?: 'pro' | 'hof' | 'jackpot' | null;
   draftOrder?: Array<{ id: string; name: string; displayName: string; isYou: boolean; avatar: string }>;
   userDraftPosition?: number;

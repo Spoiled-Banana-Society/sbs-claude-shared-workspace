@@ -232,17 +232,6 @@ function DraftRoomContent() {
   const animationOffsetRef = useRef(0); // ms offset for resuming slot animation mid-way
   const lastWsUpdateRef = useRef<number>(Date.now());
 
-  // ==================== DRAFT ROOM OPEN FLAG ====================
-  // Signals to the drafting page that this draft room is open, so it stops
-  // competing with phase transition writes (tick effect + syncLiveDrafts).
-  useEffect(() => {
-    if (!draftId) return;
-    draftStore.updateDraft(draftId, { draftRoomOpen: true });
-    return () => {
-      draftStore.updateDraft(draftId, { draftRoomOpen: false });
-    };
-  }, [draftId]);
-
   // ==================== LOADING PHASE: Check server state before showing any UI ====================
   // When re-entering a live draft, we start in 'loading' phase to avoid replaying animations.
   // This effect fetches server state and jumps to the exact correct phase.
@@ -1332,13 +1321,7 @@ function DraftRoomContent() {
           setPhase('result');
           if (draftId) {
             // NOW reveal the type to draftStore — slot machine animation is done
-            console.log(`[Draft Room] Writing type=${draftType} to draftStore for ${draftId}`);
             draftStore.updateDraft(draftId, { phase: 'result', type: draftType, draftType: draftType });
-            // Verify write
-            const check = draftStore.getDraft(draftId);
-            console.log(`[Draft Room] After write, stored type=${check?.type}, draftType=${check?.draftType}`);
-          } else {
-            console.warn('[Draft Room] Cannot write type — draftId is falsy');
           }
         }, 400);
       }

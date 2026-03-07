@@ -257,7 +257,7 @@ export default function DraftingPage() {
                   : undefined,
               });
             }
-          } else if (isFull && !draft.draftRoomOpen) {
+          } else if (isFull) {
             // 10/10 but draft hasn't started yet — set timestamps only.
             // Type reveal is handled by the tick effect at the 15s mark.
             const patch: Partial<DraftState> = { players: 10 };
@@ -376,9 +376,6 @@ export default function DraftingPage() {
       const allDrafts = draftStore.getActiveDrafts();
 
       for (const d of allDrafts) {
-        // Draft room owns phase transitions when it's open — don't compete
-        if (d.draftRoomOpen) continue;
-
         // FILLING: derive count from timestamps, write to store
         // Check status OR phase (syncLiveDrafts may set phase='pre-spin' before timestamps are ready)
         if ((d.phase === 'filling' || d.status === 'filling') && !d.preSpinStartedAt && d.fillingStartedAt != null && d.fillingInitialPlayers != null) {
@@ -393,20 +390,11 @@ export default function DraftingPage() {
 
           // Auto-advance: filling → randomizing → pre-spin when count reaches 10
           if (count >= 10 && !d.preSpinStartedAt) {
-            // LIVE DRAFTS: start randomizing bar + auto-transition to countdown
+            // LIVE DRAFTS: only start the randomizing bar — the draft room
+            // handles the transition to pre-spin when server confirms draft order
             if (d.liveWalletAddress) {
               if (!d.randomizingStartedAt) {
-                // 10/10 reached — start the randomizing bar immediately
                 draftStore.updateDraft(d.id, { players: 10, randomizingStartedAt: now });
-                continue;
-              }
-              // After 5s of randomizing, transition to countdown (type stays Unrevealed until reveal at +15s)
-              if (!d.preSpinStartedAt && (now - d.randomizingStartedAt) >= 5000) {
-                draftStore.updateDraft(d.id, {
-                  phase: 'pre-spin', players: 10,
-                  preSpinStartedAt: now,
-                  randomizingStartedAt: undefined,
-                });
               }
               continue;
             }
@@ -615,7 +603,7 @@ export default function DraftingPage() {
           {sortedDrafts.map((draft) => {
             const live = getLiveState(draft);
             const isRevealed = draft.type !== null;
-            if (draft.liveWalletAddress) console.log(`[Drafting] ${draft.id}: type=${draft.type}, draftType=${draft.draftType}, phase=${draft.phase}, isRevealed=${isRevealed}`);
+
             const accentColor = isRevealed ? getDraftTypeColor(draft.type!) : '#888';
             const isYourTurn = draft.isYourTurn;
 
