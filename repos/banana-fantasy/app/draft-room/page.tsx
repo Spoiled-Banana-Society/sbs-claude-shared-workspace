@@ -163,7 +163,7 @@ function DraftRoomContent() {
     // In live mode, if stored state shows draft is past filling, start in 'loading'
     // to check server state BEFORE showing any UI/animations. This prevents replaying
     // RANDOMIZING/slot machine on re-entry.
-    if (isLiveMode && stored && stored.phase && stored.phase !== 'filling') return 'loading';
+    if (isLiveMode && stored && ((stored.phase && stored.phase !== 'filling') || stored.preSpinStartedAt)) return 'loading';
     if (!isLiveMode && stored?.phase) return stored.phase;
     return 'filling';
   });
@@ -942,6 +942,11 @@ function DraftRoomContent() {
   useEffect(() => {
     if (phase !== 'filling' || playerCount < 10) return;
     if (isLiveMode && !draftId) return;
+
+    // If pre-spin already started (e.g., syncLiveDrafts set it while user was on drafting page),
+    // don't restart the randomizing bar — loading phase will handle the transition
+    const currentState = draftId ? draftStore.getDraft(draftId) : null;
+    if (currentState?.preSpinStartedAt) return;
 
     if (!isLiveMode) {
       // LOCAL MODE: transition immediately
