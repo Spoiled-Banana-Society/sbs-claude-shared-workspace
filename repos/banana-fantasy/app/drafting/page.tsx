@@ -265,6 +265,7 @@ export default function DraftingPage() {
             if (info.draftStartTime && !draft.preSpinStartedAt) {
               patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
               patch.randomizingStartedAt = undefined;
+              patch.phase = 'pre-spin';  // Keep phase in sync so draft room re-entry uses loading check
             }
 
             draftStore.updateDraft(draft.id, patch);
