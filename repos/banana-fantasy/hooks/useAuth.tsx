@@ -187,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
+  const balanceFetchedRef = useRef<string | null>(null);
 
   // Check for existing Twitter link on login (also triggers after linkTwitter OAuth redirect)
   useEffect(() => {
@@ -233,19 +234,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const loginMethod: 'wallet' | 'social' = hasExternalWallet ? 'wallet' : 'social';
       console.log('[SBS Auth] loginMethod:', loginMethod);
 
-      // Try to fetch real SBS profile from backend
+      // Fetch Go backend profile + Firestore balance in parallel, then set user once
       getOwnerUser(walletAddress)
-        .then((backendUser) => {
-          // Merge backend data with any locally saved profile overrides
-          // Always use backend draftPasses (real token count from API)
+        .then(async (backendUser) => {
+          // Fetch Firestore balance before setting user to avoid flash
+          let firestoreBalance: Record<string, number> | null = null;
+          try {
+            const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(backendUser.id)}`);
+            const data = await res.json();
+            if (data && typeof data.wheelSpins === 'number') {
+              firestoreBalance = data;
+            }
+          } catch { /* silent */ }
+
+          // Merge everything into one setUser call — no flash
           const merged: User = {
             ...backendUser,
             loginMethod,
             username: savedProfile?.username || backendUser.username,
             profilePicture: savedProfile?.profilePicture || backendUser.profilePicture,
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
+            ...(firestoreBalance ? {
+              wheelSpins: firestoreBalance.wheelSpins,
+              freeDrafts: firestoreBalance.freeDrafts ?? backendUser.freeDrafts,
+              jackpotEntries: firestoreBalance.jackpotEntries ?? backendUser.jackpotEntries,
+              hofEntries: firestoreBalance.hofEntries ?? backendUser.hofEntries,
+            } : {}),
           };
           setUser(merged);
+          // Mark balance as fetched so the separate effect doesn't re-fetch
+          balanceFetchedRef.current = backendUser.id;
           setIsNewUser(false);
           setShowOnboarding(false);
         })
@@ -404,7 +422,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch wheelSpins / freeDrafts / entries from Firestore on login.
   // The Go backend (getOwnerUser) doesn't store these, so we need a
   // separate Firestore read to hydrate them on page load.
-  const balanceFetchedRef = useRef<string | null>(null);
+  // (balanceFetchedRef declared above — set by Privy sync to skip re-fetch)
   useEffect(() => {
     const userId = user?.id;
     if (!userId) { balanceFetchedRef.current = null; return; }
