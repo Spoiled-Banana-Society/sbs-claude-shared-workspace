@@ -3,14 +3,13 @@ export const dynamic = "force-dynamic";
 import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
-import { json, jsonError } from '@/lib/api/routeUtils';
+import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateNonce, generateSeed, pickWeighted } from '@/lib/rng';
 import { getWheelConfig } from '@/lib/wheelConfigFirestore';
 
 const WHEEL_SPINS_COLLECTION = 'wheelSpins';
-
-let cachedKey: crypto.KeyObject | null = null;
+const USERS_COLLECTION = 'v2_users';
 
 function nowIso() {
   return new Date().toISOString();
@@ -22,90 +21,17 @@ function getUtcDayRange(date = new Date()) {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-function getPrivyVerificationKey(): crypto.KeyObject {
-  if (cachedKey) return cachedKey;
-  const rawKey = process.env.PRIVY_JWT_PUBLIC_KEY;
-  if (!rawKey) throw new ApiError(500, 'Privy JWT public key not configured');
-  cachedKey = crypto.createPublicKey(rawKey);
-  return cachedKey;
-}
-
-function base64UrlDecode(input: string): Buffer {
-  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
-  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
-  return Buffer.from(padded, 'base64');
-}
-
-function decodeJwt(token: string): {
-  header: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  signature: Buffer;
-  signingInput: string;
-} {
-  const parts = token.split('.');
-  if (parts.length !== 3) throw new ApiError(401, 'Invalid auth token');
-  const [headerPart, payloadPart, signaturePart] = parts;
-  const header = JSON.parse(base64UrlDecode(headerPart).toString('utf8')) as Record<string, unknown>;
-  const payload = JSON.parse(base64UrlDecode(payloadPart).toString('utf8')) as Record<string, unknown>;
-  const signature = base64UrlDecode(signaturePart);
-  return { header, payload, signature, signingInput: `${headerPart}.${payloadPart}` };
-}
-
-function verifyPrivyJwt(token: string): string {
-  const appId = process.env.PRIVY_APP_ID;
-  if (!appId) throw new ApiError(500, 'Privy app ID not configured');
-
-  const { header, payload, signature, signingInput } = decodeJwt(token);
-  const alg = typeof header.alg === 'string' ? header.alg : '';
-  if (!alg || !['ES256', 'RS256'].includes(alg)) throw new ApiError(401, 'Invalid auth token');
-
-  const key = getPrivyVerificationKey();
-  const verifier = crypto.createVerify('SHA256');
-  verifier.update(signingInput);
-  verifier.end();
-
-  const isValid = verifier.verify(
-    alg.startsWith('ES') ? { key, dsaEncoding: 'ieee-p1363' } : key,
-    signature,
-  );
-
-  if (!isValid) throw new ApiError(401, 'Invalid auth token');
-
-  if (typeof payload.exp === 'number' && Date.now() / 1000 >= payload.exp) {
-    throw new ApiError(401, 'Auth token expired');
-  }
-
-  if (payload.aud) {
-    const aud = payload.aud;
-    const ok = Array.isArray(aud) ? aud.includes(appId) : aud === appId;
-    if (!ok) throw new ApiError(401, 'Invalid auth token');
-  }
-
-  const expectedIssuer = process.env.PRIVY_JWT_ISSUER;
-  if (expectedIssuer && payload.iss && payload.iss !== expectedIssuer) {
-    throw new ApiError(401, 'Invalid auth token');
-  }
-
-  const userId =
-    (typeof payload.sub === 'string' && payload.sub) ||
-    (typeof (payload as Record<string, unknown>).user_id === 'string' && (payload as Record<string, string>).user_id) ||
-    (typeof (payload as Record<string, unknown>).userId === 'string' && (payload as Record<string, string>).userId);
-
-  if (!userId) throw new ApiError(401, 'Invalid auth token');
-  return userId;
-}
-
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
   if (rateLimited) return rateLimited;
   try {
-    const authHeader = req.headers.get('authorization') || '';
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-    if (!token) throw new ApiError(401, 'Missing authorization token');
-
-    const userId = verifyPrivyJwt(token);
+    const body = await parseBody(req);
+    const rawUserId = requireString(body.userId, 'userId');
+    const userId = rawUserId.toLowerCase();
 
     const db = getAdminFirestore();
+
+    // Check daily spin limit
     const { start, end } = getUtcDayRange();
     const existing = await db
       .collection(WHEEL_SPINS_COLLECTION)
@@ -119,6 +45,7 @@ export async function POST(req: Request) {
       throw new ApiError(429, 'Spin already used today');
     }
 
+    // Pick prize
     const { segments, segmentAngle } = await getWheelConfig();
     const seed = generateSeed();
     const nonce = generateNonce();
@@ -137,20 +64,62 @@ export async function POST(req: Request) {
     };
     const timestamp = nowIso();
 
-    await db.collection(WHEEL_SPINS_COLLECTION).doc(spinId).set({
-      userId,
+    // Atomically: decrement wheelSpins, grant prize, record spin
+    const userRef = db.collection(USERS_COLLECTION).doc(userId);
+    const updatedBalances = await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      const userData = userSnap.exists ? userSnap.data()! : {};
+      const currentSpins = userData.wheelSpins ?? 0;
+
+      if (currentSpins <= 0) {
+        throw new ApiError(400, 'No wheel spins available');
+      }
+
+      const updates: Record<string, number> = {
+        wheelSpins: currentSpins - 1,
+      };
+
+      // Grant the prize
+      if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
+        updates.freeDrafts = (userData.freeDrafts ?? 0) + segment.prizeValue;
+      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
+        updates.jackpotEntries = (userData.jackpotEntries ?? 0) + 1;
+      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
+        updates.hofEntries = (userData.hofEntries ?? 0) + 1;
+      }
+
+      tx.set(userRef, updates, { merge: true });
+
+      // Record the spin
+      const spinRef = db.collection(WHEEL_SPINS_COLLECTION).doc(spinId);
+      tx.set(spinRef, {
+        userId,
+        spinId,
+        result: segment.id,
+        prize,
+        timestamp,
+        seed,
+        nonce,
+      });
+
+      return {
+        wheelSpins: updates.wheelSpins,
+        freeDrafts: updates.freeDrafts ?? userData.freeDrafts ?? 0,
+        jackpotEntries: updates.jackpotEntries ?? userData.jackpotEntries ?? 0,
+        hofEntries: updates.hofEntries ?? userData.hofEntries ?? 0,
+      };
+    });
+
+    return json({
       spinId,
       result: segment.id,
       prize,
-      timestamp,
-      seed,
-      nonce,
-    });
-
-    return json({ spinId, result: segment.id, prize, angle }, 200);
+      angle,
+      user: updatedBalances,
+    }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error(err);
+    console.error('[wheel/spin] POST failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

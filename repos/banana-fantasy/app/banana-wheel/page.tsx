@@ -14,7 +14,7 @@ import { usePromos } from '@/hooks/usePromos';
 import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
 
 export default function BananaWheelPage() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshBalance } = useAuth();
   const wheelQuery = useWheel();
   const promosQuery = usePromos({ userId: user?.id });
   const [spinHistory, setSpinHistory] = useState<Array<{ id: string; date: string; result: string }>>([]);
@@ -36,16 +36,29 @@ export default function BananaWheelPage() {
       setSpinHistory((prev) => [{ id: outcome.spinId, date: today, result: outcome.result }, ...prev]);
       setSpinsAvailable((prev) => Math.max(0, prev - 1));
 
-      if (!user || !segment) return;
-      if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
-        updateUser({ freeDrafts: (user.freeDrafts || 0) + segment.prizeValue });
-      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-        updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
-      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-        updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
+      // Use backend response if available (already persisted to Firestore)
+      if (outcome.user) {
+        updateUser({
+          wheelSpins: outcome.user.wheelSpins,
+          freeDrafts: outcome.user.freeDrafts,
+          jackpotEntries: outcome.user.jackpotEntries,
+          hofEntries: outcome.user.hofEntries,
+        });
+      } else if (user && segment) {
+        // Fallback: optimistic update
+        if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
+          updateUser({ freeDrafts: (user.freeDrafts || 0) + segment.prizeValue });
+        } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
+          updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
+        } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
+          updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
+        }
       }
+
+      // Refresh from Firestore to ensure everything is in sync
+      void refreshBalance();
     },
-    [updateUser, user],
+    [updateUser, user, refreshBalance],
   );
 
   const prizeSummary = useMemo(() => {
