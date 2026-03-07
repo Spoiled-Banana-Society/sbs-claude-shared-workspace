@@ -76,7 +76,7 @@ function StagingMintButton({ userId, onMinted }: { userId: string; onMinted: () 
 
 export default function HomePage() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
@@ -217,7 +217,7 @@ export default function HomePage() {
       {/* Staging Mint Button */}
       {_isStagingMode() && user?.id && (
         <section className="mb-4 flex justify-center">
-          <StagingMintButton userId={user.id} onMinted={promosQuery.refreshPromos} />
+          <StagingMintButton userId={user.id} onMinted={() => { promosQuery.refreshPromos(); void refreshBalance(); }} />
         </section>
       )}
 

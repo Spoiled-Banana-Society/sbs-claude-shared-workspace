@@ -27,7 +27,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress } = useAuth();
+  const { user, walletAddress, refreshBalance } = useAuth();
   const { mint, isApproving, isMinting, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -471,6 +471,7 @@ export function BuyPassesModal({
                     const res = await fetch(`${getStagingApiUrl()}/staging/mint/${mintAddr}/${quantity}`, { method: 'POST' });
                     const data = await res.json();
                     if (data.ok) {
+                      await refreshBalance();
                       goToPickSpeed(data.count || quantity);
                     } else {
                       alert('Staging mint failed: ' + JSON.stringify(data));

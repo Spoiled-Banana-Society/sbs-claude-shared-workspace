@@ -247,8 +247,8 @@ export default function DraftingPage() {
                 status: 'drafting',
                 phase: 'drafting',
                 players: 10,
-                type: draft.type || draft.draftType || 'pro',
-                draftType: draft.draftType || draft.type || 'pro',
+                type: draft.type || draft.draftType || null,  // Only show if draft room revealed it
+                draftType: draft.draftType || draft.type || null,
                 currentPick: turnsUntilUserPick,
                 isYourTurn: isUserTurn,
                 pickEndTimestamp,
@@ -258,40 +258,13 @@ export default function DraftingPage() {
               });
             }
           } else if (isFull && !draft.draftRoomOpen) {
-            // 10/10 but draft hasn't started yet — derive phase from server timestamps
-            // Skip if draft room is open (it owns phase transitions)
-            const resolvedType = draft.type || draft.draftType || 'pro';
-            const patch: Partial<DraftState> = {
-              players: 10,
-              type: resolvedType,
-              draftType: resolvedType,
-            };
+            // 10/10 but draft hasn't started yet — set timestamps only.
+            // Type reveal is handled by the tick effect at the 15s mark.
+            const patch: Partial<DraftState> = { players: 10 };
 
-            if (info.draftStartTime) {
-              // Server has a start time — compute preSpinStartedAt (60s before start)
-              if (!draft.preSpinStartedAt) {
-                // First time: derive and set
-                patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
-                patch.randomizingStartedAt = undefined;
-              }
-              // Use existing or newly derived preSpinStartedAt for phase calc
-              const preSpinStartedAt = draft.preSpinStartedAt || patch.preSpinStartedAt!;
-              const elapsed = (Date.now() - preSpinStartedAt) / 1000;
-
-              if (elapsed >= 60) {
-                patch.phase = 'drafting';
-                patch.status = 'drafting';
-              } else if (elapsed >= 15) {
-                patch.phase = 'result';
-                // Use server draftType if available, otherwise keep resolved
-                if (info.draftType) {
-                  const t = info.draftType.toLowerCase();
-                  patch.draftType = t === 'jackpot' ? 'jackpot' : t === 'hof' || t === 'hall of fame' ? 'hof' : 'pro';
-                  patch.type = patch.draftType;
-                }
-              } else {
-                patch.phase = 'pre-spin';
-              }
+            if (info.draftStartTime && !draft.preSpinStartedAt) {
+              patch.preSpinStartedAt = info.draftStartTime * 1000 - 60000;
+              patch.randomizingStartedAt = undefined;
             }
 
             draftStore.updateDraft(draft.id, patch);
@@ -427,15 +400,12 @@ export default function DraftingPage() {
                 draftStore.updateDraft(d.id, { players: 10, randomizingStartedAt: now });
                 continue;
               }
-              // After 5s of randomizing, transition to countdown
+              // After 5s of randomizing, transition to countdown (type stays Unrevealed until reveal at +15s)
               if (!d.preSpinStartedAt && (now - d.randomizingStartedAt) >= 5000) {
-                // Assign draft type if not already set (slot machine does this in draft room)
-                const assignedType = d.draftType || 'pro';
                 draftStore.updateDraft(d.id, {
                   phase: 'pre-spin', players: 10,
                   preSpinStartedAt: now,
                   randomizingStartedAt: undefined,
-                  draftType: assignedType, type: assignedType,
                 });
               }
               continue;
@@ -463,11 +433,12 @@ export default function DraftingPage() {
         }
 
         // PRE-SPIN / SPINNING / RESULT → DRAFTING when 60s expires
+        // Type is set by the draft room's slot machine — drafting page never decides it
         if (['pre-spin', 'spinning', 'result'].includes(d.phase || '') && d.preSpinStartedAt) {
           if ((now - d.preSpinStartedAt) / 1000 >= 60) {
             draftStore.updateDraft(d.id, {
               phase: 'drafting', status: 'drafting',
-              type: d.draftType || 'pro',
+              type: d.type || d.draftType || null,  // Only show type if draft room set it
             });
           }
         }

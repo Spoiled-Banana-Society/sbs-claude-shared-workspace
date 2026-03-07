@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
-import { getOwnerUser } from '@/lib/api/owner';
+import { getOwnerUser, getOwnerDraftTokens } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
@@ -34,6 +34,7 @@ interface AuthContextType {
   login: (method?: 'wallet' | 'social') => void;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
+  refreshBalance: () => Promise<void>;
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
   // Twitter/X verification
@@ -232,17 +233,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const loginMethod: 'wallet' | 'social' = hasExternalWallet ? 'wallet' : 'social';
       console.log('[SBS Auth] loginMethod:', loginMethod);
 
-      // Fetch Go backend profile + Firestore balance in parallel.
-      // The Go backend doesn't store wheelSpins/freeDrafts, so we
-      // read those from Firestore and merge before setting user state.
-      const normalizedWallet = walletAddress.trim().toLowerCase();
-      Promise.all([
-        getOwnerUser(walletAddress),
-        fetch(`/api/owner/balance?userId=${encodeURIComponent(normalizedWallet)}`)
-          .then(r => r.json())
-          .catch(() => null),
-      ])
-        .then(([backendUser, balance]) => {
+      // Try to fetch real SBS profile from backend
+      getOwnerUser(walletAddress)
+        .then((backendUser) => {
+          // Merge backend data with any locally saved profile overrides
+          // Always use backend draftPasses (real token count from API)
           const merged: User = {
             ...backendUser,
             loginMethod,
@@ -250,13 +245,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             profilePicture: savedProfile?.profilePicture || backendUser.profilePicture,
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
-          // Overlay Firestore balance (wheelSpins, freeDrafts, etc.)
-          if (balance && typeof balance.wheelSpins === 'number') {
-            merged.wheelSpins = balance.wheelSpins;
-            merged.freeDrafts = balance.freeDrafts ?? merged.freeDrafts;
-            merged.jackpotEntries = balance.jackpotEntries ?? merged.jackpotEntries;
-            merged.hofEntries = balance.hofEntries ?? merged.hofEntries;
-          }
           setUser(merged);
           setIsNewUser(false);
           setShowOnboarding(false);
@@ -264,52 +252,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           // Backend unreachable or user not found — fall back to Privy-only profile
           const isNotFound = err instanceof ClientApiError && err.status === 404;
-          const normalizedWalletFallback = walletAddress.trim().toLowerCase();
-          // Still try to fetch Firestore balance even if Go backend is down
-          fetch(`/api/owner/balance?userId=${encodeURIComponent(normalizedWalletFallback)}`)
-            .then(r => r.json())
-            .catch(() => null)
-            .then(balance => {
-              const fallbackUser: User = {
-                id: privy.user!.id,
-                username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
-                walletAddress,
-                loginMethod,
-                profilePicture: savedProfile?.profilePicture,
-                nflTeam: savedProfile?.nflTeam,
-                xHandle: undefined,
-                draftPasses: savedProfile?.draftPasses || 0,
-                usdcBalance: 0,
-                freeDrafts: balance?.freeDrafts ?? 20,
-                wheelSpins: balance?.wheelSpins ?? 0,
-                jackpotEntries: balance?.jackpotEntries ?? 0,
-                hofEntries: balance?.hofEntries ?? 0,
-                isVerified: false,
-                createdAt: new Date().toISOString(),
-              };
-              setUser(fallbackUser);
-              if (isNotFound) {
-                setIsNewUser(true);
-                setShowOnboarding(true);
-                const refCode = typeof window !== 'undefined' ? sessionStorage.getItem(REFERRAL_CODE_KEY) : null;
-                if (refCode) {
-                  fetch('/api/referrals/track', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      referrerCode: refCode,
-                      referredUserId: fallbackUser.id,
-                      referredUsername: fallbackUser.username,
-                    }),
-                  })
-                    .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
-                    .catch(() => { /* silent — referral tracking is best-effort */ });
-                }
-              } else {
-                setIsNewUser(false);
-                setShowOnboarding(false);
-              }
-            });
+          const fallbackUser: User = {
+            id: privy.user!.id,
+            username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
+            walletAddress,
+            loginMethod,
+            profilePicture: savedProfile?.profilePicture,
+            nflTeam: savedProfile?.nflTeam,
+            xHandle: undefined,
+            draftPasses: savedProfile?.draftPasses || 0,
+            usdcBalance: 0,
+            freeDrafts: 0,
+            wheelSpins: 0,
+            jackpotEntries: 0,
+            hofEntries: 0,
+            isVerified: false,
+            createdAt: new Date().toISOString(),
+          };
+          setUser(fallbackUser);
+          if (isNotFound) {
+            setIsNewUser(true);
+            setShowOnboarding(true);
+            // Track referral if ref code exists
+            const refCode = typeof window !== 'undefined' ? sessionStorage.getItem(REFERRAL_CODE_KEY) : null;
+            if (refCode) {
+              fetch('/api/referrals/track', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  referrerCode: refCode,
+                  referredUserId: fallbackUser.id,
+                  referredUsername: fallbackUser.username,
+                }),
+              })
+                .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
+                .catch(() => { /* silent — referral tracking is best-effort */ });
+            }
+          } else {
+            setIsNewUser(false);
+            setShowOnboarding(false);
+          }
         });
     } else if (privy.ready && !privy.authenticated) {
       setUser(null);
@@ -419,6 +401,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => { /* silent */ });
   }, [walletAddress]);
 
+  // Fetch wheelSpins / freeDrafts / entries from Firestore on login.
+  // The Go backend (getOwnerUser) doesn't store these, so we need a
+  // separate Firestore read to hydrate them on page load.
+  const balanceFetchedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) { balanceFetchedRef.current = null; return; }
+    if (balanceFetchedRef.current === userId) return;
+    balanceFetchedRef.current = userId;
+
+    fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && typeof data.wheelSpins === 'number') {
+          setUser(prev => {
+            if (!prev || prev.id !== userId) return prev;
+            return {
+              ...prev,
+              wheelSpins: data.wheelSpins,
+              freeDrafts: data.freeDrafts ?? prev.freeDrafts,
+              jackpotEntries: data.jackpotEntries ?? prev.jackpotEntries,
+              hofEntries: data.hofEntries ?? prev.hofEntries,
+            };
+          });
+        }
+      })
+      .catch(() => { /* silent — don't block auth */ });
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login = useCallback((_method?: 'wallet' | 'social') => {
     privy.login();
   }, [privy]);
@@ -445,6 +456,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return updated;
     });
   }, []);
+
+  // Re-fetch draftPasses (Go backend tokens) and freeDrafts/wheelSpins (Firestore).
+  // Call after minting, purchasing, or claiming promos that affect balances.
+  const refreshBalance = useCallback(async () => {
+    const addr = walletAddress;
+    const userId = user?.id;
+    if (!addr && !userId) return;
+
+    const [tokens, firestoreBalance] = await Promise.all([
+      addr ? getOwnerDraftTokens(addr).catch(() => null) : null,
+      userId
+        ? fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`)
+            .then(r => r.json())
+            .catch(() => null)
+        : null,
+    ]);
+
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev };
+      if (tokens) {
+        updated.draftPasses = tokens.filter(t => !t.leagueId).length;
+      }
+      if (firestoreBalance && typeof firestoreBalance.wheelSpins === 'number') {
+        updated.wheelSpins = firestoreBalance.wheelSpins;
+        updated.freeDrafts = firestoreBalance.freeDrafts ?? updated.freeDrafts;
+        updated.jackpotEntries = firestoreBalance.jackpotEntries ?? updated.jackpotEntries;
+        updated.hofEntries = firestoreBalance.hofEntries ?? updated.hofEntries;
+      }
+      return updated;
+    });
+  }, [walletAddress, user?.id]);
 
   // Trigger Privy's Twitter OAuth linking flow
   // linkTwitter() redirects to Twitter — when user returns, privy.user updates
@@ -491,6 +534,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         updateUser,
+        refreshBalance,
         showLoginModal,
         setShowLoginModal,
         isTwitterVerified,

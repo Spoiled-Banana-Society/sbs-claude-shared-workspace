@@ -101,7 +101,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
     // These counts should eventually come from draft tokens / promos.
     draftPasses: typeof owner.availableCredit === 'number' ? owner.availableCredit : 0,
     usdcBalance: 0, // Will be populated by on-chain read in useAuth
-    freeDrafts: 20,
+    freeDrafts: 0,
     wheelSpins: 0,
     jackpotEntries: 0,
     hofEntries: 0,
