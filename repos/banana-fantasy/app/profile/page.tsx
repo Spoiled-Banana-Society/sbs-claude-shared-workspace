@@ -162,7 +162,7 @@ export default function ProfilePage() {
                 onClick={() => exportWallet()}
                 className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/60 hover:text-white text-xs font-bold transition-all"
               >
-                Export Wallet
+                Copy Private Key
               </button>
             )}
           </div>
