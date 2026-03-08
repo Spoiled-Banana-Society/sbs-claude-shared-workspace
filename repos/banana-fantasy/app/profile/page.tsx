@@ -20,17 +20,6 @@ function memberSince(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 }
 
-// ─── Animation ───────────────────────────────────────────────────────────
-
-const stagger = {
-  hidden: { opacity: 0, y: 12 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: i * 0.05, duration: 0.3, ease: 'easeOut' as const },
-  }),
-};
-
 // ─── Page ────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
@@ -166,32 +155,6 @@ export default function ProfilePage() {
               </button>
             )}
           </div>
-        </motion.div>
-
-        {/* ─── Inventory ─── */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-3 gap-3 mb-6"
-        >
-          {[
-            { label: 'Draft Passes', value: user.draftPasses + user.freeDrafts },
-            { label: 'Wheel Spins', value: user.wheelSpins },
-            { label: 'Special Entries', value: user.jackpotEntries + user.hofEntries },
-          ].map((item, i) => (
-            <motion.div
-              key={item.label}
-              custom={i}
-              variants={stagger}
-              initial="hidden"
-              animate="visible"
-              className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-center"
-            >
-              <p className="text-banana font-bold text-2xl tabular-nums">{item.value}</p>
-              <p className="text-white/30 text-[10px] uppercase tracking-wider">{item.label}</p>
-            </motion.div>
-          ))}
         </motion.div>
 
         {/* ─── Linked Accounts ─── */}
