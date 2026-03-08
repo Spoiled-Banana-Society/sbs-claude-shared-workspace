@@ -59,7 +59,6 @@ function getSavedProfile(): SavedProfile | null {
     const saved = localStorage.getItem(USER_PROFILE_KEY);
     if (!saved) return null;
     const profile = JSON.parse(saved);
-    delete profile.profilePicture;
     return profile;
   } catch {
     return null;
