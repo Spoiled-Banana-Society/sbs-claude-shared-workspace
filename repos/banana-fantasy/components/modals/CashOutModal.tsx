@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { VerificationModal } from './VerificationModal';
 
@@ -107,6 +108,7 @@ export function CashOutModal({
   onSwitchToUsdc,
   initialStatusMode,
 }: CashOutModalProps) {
+  const privy = usePrivy();
   const [step, setStep] = useState<Step>('intro');
   const [amountInput, setAmountInput] = useState<string>(maxAmount > 0 ? String(maxAmount) : '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -149,9 +151,12 @@ export function CashOutModal({
 
     const poll = async () => {
       try {
+        const token = await privy.getAccessToken();
         const res = await fetch(
           `/api/coinbase/tx-status?partnerUserId=${encodeURIComponent(active.partnerUserId)}`,
-          { credentials: 'include' },
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          },
         );
         if (!res.ok) throw new Error(`Status fetch failed (${res.status})`);
         const data = (await res.json()) as { timeline: TimelineStep[]; transaction: { status: string } | null };
@@ -194,10 +199,13 @@ export function CashOutModal({
     setStep('loading_quotes');
     setErrorMessage(null);
     try {
+      const token = await privy.getAccessToken();
       const res = await fetch('/api/coinbase/quotes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ walletAddress, cryptoAmount: parsedAmount }),
       });
       if (!res.ok) {
@@ -231,10 +239,13 @@ export function CashOutModal({
         : null;
 
     try {
+      const token = await privy.getAccessToken();
       const res = await fetch('/api/coinbase/sell-session', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           walletAddress,
           cryptoAmount: parsedAmount,

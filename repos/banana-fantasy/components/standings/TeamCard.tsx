@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
 import type { ModalTab } from './LeagueDetailModal';
@@ -9,11 +9,6 @@ interface TeamCardProps {
   league: League;
   onOpenModal: (league: League, tab: ModalTab) => void;
   index?: number;
-  /** Custom nickname the user set for this league. Falls back to
-   *  league.name when missing/empty. */
-  nickname?: string;
-  /** Save handler — empty string clears the nickname. */
-  onRename?: (leagueId: string, name: string) => Promise<void> | void;
 }
 
 const typeConfig = {
@@ -80,21 +75,7 @@ function getPlaceBadge(place: number) {
   );
 }
 
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename }: TeamCardProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(nickname || '');
-  useEffect(() => { setDraft(nickname || ''); }, [nickname]);
-  const canEdit = typeof onRename === 'function';
-  const displayName = nickname?.trim() || league.name;
-  const commit = () => {
-    if (!onRename) return;
-    void onRename(league.id, draft);
-    setEditing(false);
-  };
-  const cancel = () => {
-    setDraft(nickname || '');
-    setEditing(false);
-  };
+export function TeamCard({ league, onOpenModal, index = 0 }: TeamCardProps) {
   const config = typeConfig[league.type] || typeConfig.regular;
   const inTheMoney = league.leagueRank > 0 && league.leagueRank <= 2;
   const isCompleted = league.status === 'completed';
@@ -160,43 +141,9 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename }:
           {/* Top row: rank badge + league name + type pill + prize */}
           <div className="flex items-center gap-2.5 mb-3">
             {league.leagueRank > 0 && getPlaceBadge(league.leagueRank)}
-            {editing ? (
-              <input
-                autoFocus
-                value={draft}
-                maxLength={60}
-                onChange={(e) => setDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') commit();
-                  else if (e.key === 'Escape') cancel();
-                }}
-                onBlur={commit}
-                placeholder={league.name}
-                className="bg-bg-elevated text-white text-sm sm:text-base px-2 py-0.5 rounded border border-banana/40 outline-none focus:border-banana min-w-0 flex-1"
-              />
-            ) : (
-              <h3
-                className="text-white font-medium text-sm sm:text-base truncate flex items-center gap-1.5 group/name"
-                title={nickname?.trim() ? `Custom name (real: ${league.name})` : undefined}
-              >
-                <span className="truncate">{displayName}</span>
-                {canEdit && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setDraft(nickname || ''); setEditing(true); }}
-                    className="text-white/30 hover:text-banana opacity-0 group-hover/name:opacity-100 transition-opacity flex-shrink-0"
-                    aria-label="Rename team"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                )}
-              </h3>
-            )}
+            <h3 className="text-white font-medium text-sm sm:text-base truncate">
+              {league.name}
+            </h3>
             <span
               className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full flex-shrink-0 ${config.color}/20 ${config.text} ring-1 ring-current/20`}
             >

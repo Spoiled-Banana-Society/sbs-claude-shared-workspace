@@ -31,6 +31,8 @@ export function useWalletConnectLogin() {
         // Got the URI from the bridge — deep link to wallet
         const { uri } = event.data;
         const walletId = currentWalletRef.current;
+        const prefix = WALLET_DEEP_LINKS[walletId];
+
         const wallet = WALLET_DEEP_LINKS[walletId];
         if (wallet) {
           setStatus('approving');
