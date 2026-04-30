@@ -24,6 +24,7 @@ import { SupportInbox } from '@/components/admin/SupportInbox';
 import { AuditLog } from '@/components/admin/AuditLog';
 import { AdminTools } from '@/components/admin/AdminTools';
 import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
+import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 
 type TabKey = 'metrics' | 'errors' | 'support' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate';
 
@@ -181,7 +182,7 @@ export default function AdminPage() {
           {activeTab === 'errors' && <ErrorLog enabled={isAuthorized} />}
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
-          {activeTab === 'drafts' && <DraftsPanel items={draftsQuery.data?.drafts ?? []} loading={draftsQuery.isLoading} />}
+          {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}
           {activeTab === 'withdrawals' && <WithdrawalsPanel items={withdrawalsQuery.data ?? []} />}
           {activeTab === 'promos' && <PromosPanel items={promosQuery.data?.promos ?? []} />}
           {activeTab === 'live' && <LiveActivity enabled={isAuthorized} />}

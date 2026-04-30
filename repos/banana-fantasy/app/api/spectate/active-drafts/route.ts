@@ -37,6 +37,7 @@ interface DraftInfoResponse {
   pickNumber: number;
   currentDrafter: string;
   displayName: string;
+  currentPickEndTime?: number | null;
 }
 
 // Hardcoded staging — see comment in /api/spectate/draft-state/route.ts.
@@ -103,14 +104,20 @@ export async function GET(req: Request) {
       ),
     ]);
 
-    const drafts: ActiveDraft[] = candidates
-      .map((c, i): ActiveDraft | null => {
+    type Categorized = ActiveDraft & { completed: boolean };
+    const drafts: Categorized[] = candidates
+      .map((c, i): Categorized | null => {
         const snap = docSnaps[i];
         const info = infoResults[i];
         const docExists = !!snap?.exists;
         if (!docExists && !info) return null;
         const data = snap?.exists ? (snap.data() as { Level?: string; DisplayName?: string } | undefined) : undefined;
         const pickNumber = info?.pickNumber ?? 0;
+        // Completed signal: pickNumber has reached 150 AND there's no
+        // active pick in flight (currentPickEndTime null/missing). Matches
+        // what the Go API exposes for finished drafts (verified on
+        // 2024-fast-draft-709 — pickNumber=150 + currentPickEndTime=null).
+        const completed = pickNumber >= 150 && !info?.currentPickEndTime;
         return {
           draftId: c.id,
           displayName: info?.displayName ?? data?.DisplayName ?? c.id,
@@ -119,15 +126,22 @@ export async function GET(req: Request) {
           pickNumber,
           currentDrafter: info?.currentDrafter ?? '',
           filling: !info,
+          completed,
         };
       })
-      .filter((d): d is ActiveDraft => d !== null);
+      .filter((d): d is Categorized => d !== null);
 
+    const sortNewestFirst = (a: Categorized, b: Categorized) => b.draftId.localeCompare(a.draftId);
     const active = drafts
-      .filter(d => d.filling || (d.pickNumber > 0 && d.pickNumber <= 150))
-      .sort((a, b) => b.draftId.localeCompare(a.draftId));
+      .filter(d => !d.completed && (d.filling || (d.pickNumber > 0 && d.pickNumber <= 150)))
+      .sort(sortNewestFirst)
+      .map(({ completed: _c, ...rest }) => rest);
+    const completed = drafts
+      .filter(d => d.completed)
+      .sort(sortNewestFirst)
+      .map(({ completed: _c, ...rest }) => rest);
 
-    return json({ drafts: active }, 200);
+    return json({ drafts: active, active, completed }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('spectate.active_drafts.failed', { err });
