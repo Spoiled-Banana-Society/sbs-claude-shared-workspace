@@ -85,9 +85,8 @@ export async function GET(req: Request) {
     if (!draftId) throw new ApiError(400, 'draftId required');
 
     const base = getServerDraftsApiUrl();
-    const infoUrl = `${base}/draft/${encodeURIComponent(draftId)}/state/info`;
     const [infoRes, summaryRes, rostersRes] = await Promise.all([
-      fetchJson<DraftInfoResponse>(infoUrl),
+      fetchJson<DraftInfoResponse>(`${base}/draft/${encodeURIComponent(draftId)}/state/info`),
       fetchJson<DraftSummaryItem[] | { summary: DraftSummaryItem[] }>(
         `${base}/draft/${encodeURIComponent(draftId)}/state/summary`,
       ),
@@ -95,9 +94,10 @@ export async function GET(req: Request) {
     ]);
 
     if (!infoRes.ok) {
-      // Surface diagnostic info so we can see what went wrong without
-      // needing Vercel logs. Safe on staging.
-      return jsonError(`info fetch failed: ${infoRes.error} url=${infoUrl}`, 502);
+      // Most likely cause: draft id doesn't exist or is in pre-state-init
+      // filling phase (state/info gets created when the draft fills to 10).
+      // Treat as 404 — caller decides whether to render "filling" UI.
+      return jsonError('draft not found', 404);
     }
 
     const summaryRaw = summaryRes.ok ? summaryRes.data : null;
