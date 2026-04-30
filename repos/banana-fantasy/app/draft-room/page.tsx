@@ -1,7 +1,7 @@
 "use client"
 
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useDraftAudio } from '@/hooks/useDraftAudio';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
@@ -30,6 +30,8 @@ import { logger } from '@/lib/logger';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   // During filling phase, don't show a numbered name — drafts only get a batch number after starting.
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
@@ -49,19 +51,23 @@ function DraftRoomContent() {
   draftIdRef.current = draftId;
   const isLiveMode = modeParam === 'live' && !!walletParam;
 
-  // Wrap setDraftId to also update the URL so refresh rejoins the same draft
+  // Wrap setDraftId to also update the URL so refresh rejoins the same draft.
+  // Uses Next.js router.replace so the new URL is part of the framework's
+  // history stack — window.history.replaceState alone updates the URL bar
+  // but Next.js doesn't see the change, so navigating away + back resurfaces
+  // the original (id-less) URL.
   const setDraftId = useCallback((id: string | ((prev: string) => string)) => {
     const resolved = typeof id === 'function' ? id(draftIdRef.current) : id;
     _setDraftId(resolved);
     draftIdRef.current = resolved;
-    if (typeof window !== 'undefined' && resolved && resolved !== urlDraftId) {
-      const url = new URL(window.location.href);
-      url.searchParams.set('id', resolved);
-      // Remove passType so refresh doesn't consume another pass
-      url.searchParams.delete('passType');
-      window.history.replaceState({}, '', url.toString());
-    }
-  }, [urlDraftId]);
+    if (typeof window === 'undefined' || !resolved) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('id') === resolved) return; // already in URL
+    params.set('id', resolved);
+    // Remove passType so refresh doesn't consume another pass
+    params.delete('passType');
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [router, pathname]);
 
   const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
   const {
