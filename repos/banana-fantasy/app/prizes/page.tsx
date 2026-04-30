@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -14,13 +14,23 @@ import type { PrizeHistoryItem } from '@/types';
 export default function PrizesPage() {
   const { isLoggedIn, setShowLoginModal, user, isEmbeddedWallet } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const prizesQuery = usePrizes({ userId: user?.walletAddress ?? user?.id });
   const eligibilityQuery = useEligibility({ userId: user?.walletAddress ?? user?.id });
   const prizes = prizesQuery.prizes;
   const eligibility = eligibilityQuery.data;
   const hasPrizeError = Boolean(prizesQuery.error);
   const [withdrawModal, setWithdrawModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
-  const [cashOutModal, setCashOutModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
+  const [cashOutModal, setCashOutModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem; statusMode?: boolean }>({ isOpen: false });
+
+  // Auto-open status timeline when redirected back from Coinbase
+  useEffect(() => {
+    if (searchParams?.get('cashout') === 'success') {
+      setCashOutModal({ isOpen: true, statusMode: true });
+      // Clear the query param so refresh doesn't re-trigger
+      router.replace('/prizes');
+    }
+  }, [searchParams, router]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -316,10 +326,16 @@ export default function PrizesPage() {
         isOpen={cashOutModal.isOpen}
         onClose={() => setCashOutModal({ isOpen: false })}
         maxAmount={cashOutModal.prize?.amount ?? 0}
-        fixedAmount
+        fixedAmount={Boolean(cashOutModal.prize)}
         draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
         userId={user?.id}
         walletAddress={user?.walletAddress}
+        initialStatusMode={cashOutModal.statusMode}
+        onSwitchToUsdc={() => {
+          if (cashOutModal.prize) {
+            setWithdrawModal({ isOpen: true, prize: cashOutModal.prize });
+          }
+        }}
       />
     </div>
   );

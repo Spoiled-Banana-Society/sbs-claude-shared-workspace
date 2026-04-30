@@ -5,6 +5,7 @@ import { Modal } from '../ui/Modal';
 import { VerificationModal } from './VerificationModal';
 
 const RETURNING_USER_KEY = 'banana-fantasy-cashout-returning';
+const ACTIVE_TX_KEY = 'banana-fantasy-cashout-active-tx';
 
 interface CashOutModalProps {
   isOpen: boolean;
@@ -16,19 +17,83 @@ interface CashOutModalProps {
   draftId?: string;
   userId?: string;
   walletAddress?: string;
-  /** Called after the Coinbase popup is opened — for analytics/state tracking. */
-  onSessionOpened?: (sessionUrl: string) => void;
+  /** Called when the user picks "Keep as USDC" — opens the old wallet-send flow. */
+  onSwitchToUsdc?: () => void;
+  /** If set, modal opens directly into the status timeline (used after redirect). */
+  initialStatusMode?: boolean;
 }
 
-type Step = 'intro' | 'amount' | 'launching' | 'opened' | 'error';
+type Step =
+  | 'intro'
+  | 'amount'
+  | 'loading_quotes'
+  | 'quotes'
+  | 'launching'
+  | 'opened'
+  | 'status'
+  | 'error';
 
-function formatCurrency(value: number): string {
+type SelectableMethod = 'ACH_BANK_ACCOUNT' | 'RTP' | 'CARD' | 'USDC';
+
+interface QuoteResult {
+  method: 'ACH_BANK_ACCOUNT' | 'RTP' | 'CARD' | 'APPLE_PAY' | 'PAYPAL' | 'FIAT_WALLET';
+  label: string;
+  speed: string;
+  description: string;
+  available: boolean;
+  error?: string;
+  quoteId?: string;
+  fiatAmount?: number;
+  cryptoAmount?: number;
+  totalFee?: number;
+}
+
+interface TimelineStep {
+  key: 'sent' | 'received' | 'converting' | 'paying_out' | 'complete';
+  label: string;
+  status: 'done' | 'active' | 'pending' | 'failed';
+}
+
+interface ActiveTx {
+  partnerUserId: string;
+  amount: number;
+  startedAt: number;
+}
+
+function formatCurrency(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
-    minimumFractionDigits: 0,
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+function rememberActiveTx(tx: ActiveTx) {
+  try {
+    localStorage.setItem(ACTIVE_TX_KEY, JSON.stringify(tx));
+  } catch {
+    /* ignore */
+  }
+}
+
+function readActiveTx(): ActiveTx | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_TX_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as ActiveTx;
+  } catch {
+    return null;
+  }
+}
+
+function clearActiveTx() {
+  try {
+    localStorage.removeItem(ACTIVE_TX_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function CashOutModal({
@@ -39,26 +104,81 @@ export function CashOutModal({
   draftId,
   userId,
   walletAddress,
-  onSessionOpened,
+  onSwitchToUsdc,
+  initialStatusMode,
 }: CashOutModalProps) {
   const [step, setStep] = useState<Step>('intro');
   const [amountInput, setAmountInput] = useState<string>(maxAmount > 0 ? String(maxAmount) : '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [quotes, setQuotes] = useState<QuoteResult[] | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<SelectableMethod | null>(null);
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
   const [isReturning, setIsReturning] = useState(false);
   const [showVerification, setShowVerification] = useState<'basic' | 'kyc' | null>(null);
+  const [timeline, setTimeline] = useState<TimelineStep[] | null>(null);
+  const [pollVersion, setPollVersion] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
     const returning =
       typeof window !== 'undefined' && localStorage.getItem(RETURNING_USER_KEY) === '1';
     setIsReturning(returning);
-    setStep(returning ? 'amount' : 'intro');
-    setAmountInput(maxAmount > 0 ? String(maxAmount) : '');
     setErrorMessage(null);
+    setQuotes(null);
+    setSelectedMethod(null);
     setSessionUrl(null);
     setShowVerification(null);
-  }, [isOpen, maxAmount]);
+    setTimeline(null);
+
+    if (initialStatusMode && readActiveTx()) {
+      setStep('status');
+      setPollVersion((v) => v + 1);
+    } else {
+      setStep(returning ? 'amount' : 'intro');
+      setAmountInput(maxAmount > 0 ? String(maxAmount) : '');
+    }
+  }, [isOpen, maxAmount, initialStatusMode]);
+
+  useEffect(() => {
+    if (step !== 'status') return;
+    const active = readActiveTx();
+    if (!active) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/coinbase/tx-status?partnerUserId=${encodeURIComponent(active.partnerUserId)}`,
+          { credentials: 'include' },
+        );
+        if (!res.ok) throw new Error(`Status fetch failed (${res.status})`);
+        const data = (await res.json()) as { timeline: TimelineStep[]; transaction: { status: string } | null };
+        if (cancelled) return;
+        setTimeline(data.timeline);
+        const isTerminal = data.timeline.some(
+          (s) => s.key === 'complete' && (s.status === 'done' || s.status === 'failed'),
+        );
+        if (isTerminal) {
+          if (!data.timeline.some((s) => s.status === 'failed')) {
+            clearActiveTx();
+          }
+          return;
+        }
+        timer = setTimeout(poll, 5000);
+      } catch {
+        if (cancelled) return;
+        timer = setTimeout(poll, 10000);
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [step, pollVersion]);
 
   const parsedAmount = useMemo(() => {
     const n = Number(amountInput);
@@ -69,21 +189,42 @@ export function CashOutModal({
   const amountValid =
     Number.isFinite(parsedAmount) && parsedAmount > 0 && parsedAmount <= maxAmount;
 
-  const launchCoinbase = async () => {
-    if (!walletAddress) {
-      setErrorMessage('No wallet connected. Please refresh and try again.');
+  const fetchQuotes = async () => {
+    if (!walletAddress || !amountValid) return;
+    setStep('loading_quotes');
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/coinbase/quotes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ walletAddress, cryptoAmount: parsedAmount }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error || `Failed to fetch quotes (${res.status})`);
+      }
+      const data = (await res.json()) as { quotes: QuoteResult[] };
+      setQuotes(data.quotes);
+      const ach = data.quotes.find((q) => q.method === 'ACH_BANK_ACCOUNT' && q.available);
+      const firstAvail = data.quotes.find((q) => q.available);
+      const defaultMethod = ach?.method ?? firstAvail?.method;
+      if (defaultMethod === 'ACH_BANK_ACCOUNT' || defaultMethod === 'RTP' || defaultMethod === 'CARD') {
+        setSelectedMethod(defaultMethod);
+      }
+      setStep('quotes');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Could not load quotes');
       setStep('error');
-      return;
     }
-    if (!amountValid) {
-      setErrorMessage('Please enter a valid amount.');
-      return;
-    }
+  };
+
+  const launchCoinbase = async () => {
+    if (!walletAddress || !amountValid || !selectedMethod || selectedMethod === 'USDC') return;
 
     setStep('launching');
     setErrorMessage(null);
 
-    // Pre-open the popup synchronously so iOS/mobile Safari doesn't block it.
     const popup =
       typeof window !== 'undefined'
         ? window.open('about:blank', 'coinbase-cashout', 'width=480,height=720')
@@ -97,6 +238,7 @@ export function CashOutModal({
         body: JSON.stringify({
           walletAddress,
           cryptoAmount: parsedAmount,
+          paymentMethod: selectedMethod,
           ...(draftId ? { draftId } : {}),
           ...(userId ? { userId } : {}),
         }),
@@ -109,7 +251,7 @@ export function CashOutModal({
         if (data?.requiresVerification) {
           popup?.close();
           setShowVerification(data.requiresVerification);
-          setStep('amount');
+          setStep('quotes');
           return;
         }
         throw new Error(data?.error || `Failed to start cash out (${res.status})`);
@@ -121,7 +263,6 @@ export function CashOutModal({
         popup.location.href = url;
         popup.focus();
       } else {
-        // Popup blocked — fall back to same-tab navigation.
         window.location.href = url;
         return;
       }
@@ -129,21 +270,33 @@ export function CashOutModal({
       try {
         localStorage.setItem(RETURNING_USER_KEY, '1');
       } catch {
-        // ignore
+        /* ignore */
       }
+      rememberActiveTx({
+        partnerUserId: userId || walletAddress.toLowerCase(),
+        amount: parsedAmount,
+        startedAt: Date.now(),
+      });
 
       setSessionUrl(url);
       setStep('opened');
-      onSessionOpened?.(url);
     } catch (err) {
       popup?.close();
-      const message = err instanceof Error ? err.message : 'Could not start cash out';
-      setErrorMessage(message);
+      setErrorMessage(err instanceof Error ? err.message : 'Could not start cash out');
       setStep('error');
     }
   };
 
-  // ---- Step: intro (first-time only) ----
+  const proceedFromQuotes = () => {
+    if (selectedMethod === 'USDC') {
+      onClose();
+      onSwitchToUsdc?.();
+      return;
+    }
+    launchCoinbase();
+  };
+
+  // ---- intro ----
   if (step === 'intro') {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Cash Out to Bank" size="md">
@@ -151,70 +304,40 @@ export function CashOutModal({
           <div className="rounded-xl bg-banana/10 border border-banana/30 p-4">
             <p className="text-banana font-semibold text-sm mb-1">First-time setup</p>
             <p className="text-text-secondary text-sm">
-              Cashing out for the first time takes about 5 minutes. After that, future cash
-              outs take ~30 seconds.
+              First time takes ~5 minutes. After that, future cash outs take ~30 seconds.
             </p>
           </div>
 
           <div>
             <h3 className="font-semibold text-text-primary mb-3">How it works</h3>
             <ol className="space-y-3">
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
-                  1
-                </span>
-                <div className="text-sm text-text-secondary">
-                  <span className="text-text-primary font-medium">Connect Coinbase.</span> If
-                  you have a Coinbase account, sign in. If not, create one — it&apos;s free
-                  and takes ~2 minutes.
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
-                  2
-                </span>
-                <div className="text-sm text-text-secondary">
-                  <span className="text-text-primary font-medium">Verify identity.</span>{' '}
-                  Coinbase will ask for ID and basic info. This is required by US law for
-                  any crypto-to-cash transaction.
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
-                  3
-                </span>
-                <div className="text-sm text-text-secondary">
-                  <span className="text-text-primary font-medium">Add your bank.</span>{' '}
-                  Coinbase will link your bank account so they can deposit USD.
-                </div>
-              </li>
-              <li className="flex gap-3">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
-                  4
-                </span>
-                <div className="text-sm text-text-secondary">
-                  <span className="text-text-primary font-medium">Confirm and sign.</span>{' '}
-                  We&apos;ll show one transaction to approve. Coinbase converts your winnings
-                  to dollars and deposits to your bank within 1–3 business days.
-                </div>
-              </li>
+              {[
+                ['Pick how you want it.', 'Free in 1–3 days, or instant for a small fee. Or keep as crypto for free.'],
+                ['Connect Coinbase.', 'Sign in or sign up — Coinbase handles dollars. We never touch your money.'],
+                ['Verify identity (first time).', 'Coinbase asks for ID — required by US law for crypto-to-cash.'],
+                ['Add a payout method (first time).', 'Bank, debit card, Apple Pay, or PayPal.'],
+                ['Confirm + sign.', 'One tap to send. We show you status until money lands in your bank.'],
+              ].map(([title, body], i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
+                    {i + 1}
+                  </span>
+                  <div className="text-sm text-text-secondary">
+                    <span className="text-text-primary font-medium">{title}</span> {body}
+                  </div>
+                </li>
+              ))}
             </ol>
           </div>
 
           <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 space-y-1.5">
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">Available to cash out</span>
-              <span className="text-text-primary font-semibold">
-                {formatCurrency(maxAmount)}
-              </span>
+              <span className="text-text-primary font-semibold">{formatCurrency(maxAmount)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-text-muted">Service</span>
               <span className="text-text-primary font-medium">Coinbase</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">Time to bank</span>
-              <span className="text-text-primary font-medium">1–3 business days</span>
             </div>
           </div>
 
@@ -224,23 +347,12 @@ export function CashOutModal({
           >
             Got it — Continue
           </button>
-          <p className="text-text-muted text-xs text-center">
-            Need help?{' '}
-            <a
-              href="https://help.coinbase.com/en/coinbase/getting-started/getting-started-with-coinbase/sign-up"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-banana hover:underline"
-            >
-              Coinbase signup guide
-            </a>
-          </p>
         </div>
       </Modal>
     );
   }
 
-  // ---- Step: amount (returning users start here, first-timers come from intro) ----
+  // ---- amount ----
   if (step === 'amount') {
     const setMax = () => setAmountInput(String(maxAmount));
     return (
@@ -248,23 +360,12 @@ export function CashOutModal({
         <div className="space-y-5">
           {isReturning && (
             <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 flex items-start gap-2">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-success mt-0.5 flex-shrink-0"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-success mt-0.5 flex-shrink-0">
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                 <polyline points="22 4 12 14.01 9 11.01" />
               </svg>
               <p className="text-text-secondary text-sm">
-                Welcome back. Coinbase will use your saved bank account.
+                Welcome back. Coinbase will use your saved payout method.
               </p>
             </div>
           )}
@@ -274,9 +375,7 @@ export function CashOutModal({
               {fixedAmount ? 'Cashing out' : 'How much do you want to cash out?'}
             </label>
             <div className="relative">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-2xl font-semibold">
-                $
-              </span>
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-2xl font-semibold">$</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -291,9 +390,7 @@ export function CashOutModal({
                 }}
                 placeholder="0"
                 className={`w-full pl-10 pr-20 py-4 rounded-xl bg-bg-tertiary border text-text-primary text-2xl font-bold focus:outline-none transition-colors ${
-                  errorMessage
-                    ? 'border-error/60'
-                    : 'border-bg-elevated focus:border-banana/50'
+                  errorMessage ? 'border-error/60' : 'border-bg-elevated focus:border-banana/50'
                 } ${fixedAmount ? 'opacity-80 cursor-not-allowed' : ''}`}
               />
               {!fixedAmount && (
@@ -307,73 +404,31 @@ export function CashOutModal({
               )}
             </div>
             <div className="flex items-center justify-between mt-2 text-xs">
-              <span className="text-text-muted">
-                Available: {formatCurrency(maxAmount)}
-              </span>
+              <span className="text-text-muted">Available: {formatCurrency(maxAmount)}</span>
               {amountInput && !amountValid && (
                 <span className="text-error">
-                  {parsedAmount > maxAmount
-                    ? `Max is ${formatCurrency(maxAmount)}`
-                    : 'Enter a valid amount'}
+                  {parsedAmount > maxAmount ? `Max is ${formatCurrency(maxAmount)}` : 'Enter a valid amount'}
                 </span>
               )}
             </div>
           </div>
 
-          <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 space-y-1.5">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">You send</span>
-              <span className="text-text-primary font-medium">
-                {amountValid ? `${parsedAmount} USDC` : '—'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">You receive (approx.)</span>
-              <span className="text-text-primary font-medium">
-                {amountValid ? formatCurrency(parsedAmount) : '—'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-text-muted">Coinbase fee</span>
-              <span className="text-text-muted">Shown next</span>
-            </div>
-          </div>
-
-          {errorMessage && (
-            <p className="text-error text-sm">{errorMessage}</p>
-          )}
-
           <button
-            onClick={launchCoinbase}
+            onClick={fetchQuotes}
             disabled={!amountValid}
             className={`w-full py-4 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 ${
-              amountValid
-                ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
-                : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+              amountValid ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
             }`}
           >
-            Continue to Coinbase
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            See payout options
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="5" y1="12" x2="19" y2="12" />
               <polyline points="12 5 19 12 12 19" />
             </svg>
           </button>
 
           {!isReturning && (
-            <button
-              onClick={() => setStep('intro')}
-              className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors"
-            >
+            <button onClick={() => setStep('intro')} className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors">
               ← Back to overview
             </button>
           )}
@@ -386,7 +441,7 @@ export function CashOutModal({
             userId={userId}
             onComplete={() => {
               setShowVerification(null);
-              launchCoinbase();
+              fetchQuotes();
             }}
           />
         )}
@@ -394,26 +449,147 @@ export function CashOutModal({
     );
   }
 
-  // ---- Step: launching ----
+  // ---- loading_quotes ----
+  if (step === 'loading_quotes') {
+    return (
+      <Modal isOpen={isOpen} onClose={() => undefined} title="Cash Out to Bank" size="md">
+        <div className="flex flex-col items-center justify-center py-12 space-y-4">
+          <svg className="animate-spin h-10 w-10 text-banana" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <p className="text-text-secondary text-base">Getting current rates from Coinbase…</p>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ---- quotes ----
+  if (step === 'quotes' && quotes) {
+    const usdcReceived = parsedAmount;
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Cash Out to Bank" size="md">
+        <div className="space-y-5">
+          <div>
+            <p className="text-text-muted text-sm">You&apos;re cashing out</p>
+            <p className="text-3xl font-bold text-banana">{formatCurrency(parsedAmount)}</p>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
+            <div className="space-y-2">
+              {quotes
+                .filter((q) => q.method === 'ACH_BANK_ACCOUNT' || q.method === 'RTP' || q.method === 'CARD')
+                .map((q) => {
+                  const fee = q.totalFee ?? 0;
+                  const isFree = fee < 0.01;
+                  const selected = selectedMethod === q.method;
+                  const disabled = !q.available;
+                  return (
+                    <button
+                      key={q.method}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setSelectedMethod(q.method as SelectableMethod)}
+                      className={`w-full text-left rounded-xl border p-3.5 transition-all ${
+                        disabled
+                          ? 'border-bg-tertiary bg-bg-tertiary/30 opacity-50 cursor-not-allowed'
+                          : selected
+                          ? 'border-banana bg-banana/10'
+                          : 'border-bg-tertiary bg-bg-tertiary/30 hover:border-bg-elevated'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${selected ? 'border-banana bg-banana' : 'border-text-muted'}`}>
+                              {selected && (
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="ml-px mt-px">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                              )}
+                            </span>
+                            <span className="text-text-primary font-semibold">{q.label}</span>
+                            <span className="text-text-muted text-xs">· {q.speed}</span>
+                          </div>
+                          <p className="text-text-muted text-xs ml-6 mt-0.5">{q.description}</p>
+                          {disabled && q.error && <p className="text-error text-xs ml-6 mt-1">{q.error}</p>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-text-primary font-bold">{formatCurrency(q.fiatAmount)}</p>
+                          <p className={`text-xs ${isFree ? 'text-success' : 'text-text-muted'}`}>
+                            {isFree ? 'No extra fee' : `+${formatCurrency(fee)} fee`}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+
+              <button
+                type="button"
+                onClick={() => setSelectedMethod('USDC')}
+                className={`w-full text-left rounded-xl border p-3.5 transition-all ${
+                  selectedMethod === 'USDC' ? 'border-banana bg-banana/10' : 'border-bg-tertiary bg-bg-tertiary/30 hover:border-bg-elevated'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${selectedMethod === 'USDC' ? 'border-banana bg-banana' : 'border-text-muted'}`}>
+                        {selectedMethod === 'USDC' && (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="ml-px mt-px">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="text-text-primary font-semibold">Keep as USDC</span>
+                      <span className="text-text-muted text-xs">· Instant</span>
+                    </div>
+                    <p className="text-text-muted text-xs ml-6 mt-0.5">
+                      Send to any wallet — no Coinbase needed. Spend or sell later.
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-text-primary font-bold">{usdcReceived.toFixed(2)} USDC</p>
+                    <p className="text-xs text-success">No fees</p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
+            <span className="text-text-primary font-medium">FYI:</span> rates above include
+            Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
+          </div>
+
+          <button
+            onClick={proceedFromQuotes}
+            disabled={!selectedMethod}
+            className={`w-full py-4 rounded-xl font-bold text-base transition-all ${
+              selectedMethod ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+            }`}
+          >
+            {selectedMethod === 'USDC' ? 'Continue with USDC' : 'Continue to Coinbase'}
+          </button>
+
+          <button onClick={() => setStep('amount')} className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors">
+            ← Change amount
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ---- launching ----
   if (step === 'launching') {
     return (
       <Modal isOpen={isOpen} onClose={() => undefined} title="Cash Out to Bank" size="md">
         <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <svg className="animate-spin h-10 w-10 text-banana" viewBox="0 0 24 24">
-            <circle
-              className="opacity-25"
-              cx="12"
-              cy="12"
-              r="10"
-              stroke="currentColor"
-              strokeWidth="4"
-              fill="none"
-            />
-            <path
-              className="opacity-75"
-              fill="currentColor"
-              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-            />
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
           </svg>
           <p className="text-text-secondary text-base">Connecting to Coinbase…</p>
         </div>
@@ -421,47 +597,31 @@ export function CashOutModal({
     );
   }
 
-  // ---- Step: opened ----
+  // ---- opened ----
   if (step === 'opened') {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Cash Out to Bank" size="md">
         <div className="space-y-5">
           <div className="flex flex-col items-center pt-2">
             <div className="w-16 h-16 rounded-full bg-banana/20 flex items-center justify-center mb-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="text-banana"
-              >
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
             </div>
-            <h3 className="text-lg font-bold text-text-primary text-center">
-              Coinbase opened in a new window
-            </h3>
+            <h3 className="text-lg font-bold text-text-primary text-center">Coinbase opened in a new window</h3>
             <p className="text-text-secondary text-sm text-center mt-2">
-              Complete the steps in the Coinbase window. We&apos;ll automatically detect when
-              you&apos;re ready to sign the transaction.
+              Complete the steps in the Coinbase window. You&apos;ll come back here when finished.
             </p>
           </div>
 
           <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 space-y-2 text-sm">
-            <p className="text-text-primary font-semibold">What happens next</p>
+            <p className="text-text-primary font-semibold">In the Coinbase window</p>
             <ul className="space-y-1.5 text-text-secondary text-xs">
               <li>• Sign in or create your Coinbase account</li>
-              <li>• Verify your identity (first time only)</li>
-              <li>• Connect your bank account</li>
-              <li>• Coinbase will show you the deposit details</li>
-              <li>• Come back here to approve the transaction in your wallet</li>
+              <li>• Verify ID and link your payout method (first time only)</li>
+              <li>• Confirm the amount and tap Sign in your wallet</li>
             </ul>
           </div>
 
@@ -475,53 +635,129 @@ export function CashOutModal({
               </button>
             )}
             <button
-              onClick={onClose}
+              onClick={() => {
+                setPollVersion((v) => v + 1);
+                setStep('status');
+              }}
               className="flex-1 py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 transition-all"
             >
-              Done
+              I&apos;m Done — Track It
             </button>
           </div>
-
-          <p className="text-text-muted text-xs text-center">
-            Having trouble?{' '}
-            <a
-              href="https://help.coinbase.com/en/coinbase/trading-and-funding/sending-or-receiving-cryptocurrency"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-banana hover:underline"
-            >
-              Coinbase support
-            </a>
-          </p>
         </div>
       </Modal>
     );
   }
 
-  // ---- Step: error ----
+  // ---- status ----
+  if (step === 'status') {
+    const tx = readActiveTx();
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Cash Out Status" size="md">
+        <div className="space-y-5">
+          <div className="flex items-baseline justify-between">
+            <p className="text-text-secondary text-sm">Cashing out</p>
+            <p className="text-2xl font-bold text-banana">{formatCurrency(tx?.amount)}</p>
+          </div>
+
+          <div className="space-y-3">
+            {timeline ? (
+              timeline.map((s, i) => (
+                <div key={s.key} className="flex items-start gap-3">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        s.status === 'done'
+                          ? 'bg-success text-black'
+                          : s.status === 'active'
+                          ? 'bg-banana text-black'
+                          : s.status === 'failed'
+                          ? 'bg-error text-white'
+                          : 'bg-bg-tertiary text-text-muted'
+                      }`}
+                    >
+                      {s.status === 'done' ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : s.status === 'active' ? (
+                        <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                          <circle className="opacity-30" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" />
+                          <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                      ) : s.status === 'failed' ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      ) : (
+                        <span className="text-xs">{i + 1}</span>
+                      )}
+                    </div>
+                    {i < timeline.length - 1 && (
+                      <div className={`w-0.5 h-6 ${s.status === 'done' ? 'bg-success' : 'bg-bg-tertiary'}`} />
+                    )}
+                  </div>
+                  <p
+                    className={`text-sm pt-1 ${
+                      s.status === 'done'
+                        ? 'text-text-primary'
+                        : s.status === 'active'
+                        ? 'text-banana font-semibold'
+                        : s.status === 'failed'
+                        ? 'text-error'
+                        : 'text-text-muted'
+                    }`}
+                  >
+                    {s.label}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="flex items-center justify-center py-8">
+                <svg className="animate-spin h-8 w-8 text-banana" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
+            Bank deposits typically arrive in 1–3 business days. You can close this window — we&apos;ll
+            keep tracking in the background.
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ---- error ----
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Cash Out to Bank" size="md">
       <div className="space-y-5">
         <div className="rounded-xl bg-error/10 border border-error/30 p-4">
           <p className="text-error font-semibold mb-1">Something went wrong</p>
-          <p className="text-text-secondary text-sm">
-            {errorMessage || 'Please try again in a moment.'}
-          </p>
+          <p className="text-text-secondary text-sm">{errorMessage || 'Please try again in a moment.'}</p>
         </div>
         <div className="flex gap-3">
           <button
             onClick={() => {
               setErrorMessage(null);
-              setStep(isReturning ? 'amount' : 'intro');
+              setStep(quotes ? 'quotes' : isReturning ? 'amount' : 'intro');
             }}
             className="flex-1 py-3 rounded-xl font-bold text-base bg-bg-tertiary text-text-primary hover:bg-bg-elevated transition-all"
           >
             Try Again
           </button>
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all"
-          >
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all">
             Close
           </button>
         </div>
