@@ -65,13 +65,20 @@ export async function GET(req: Request) {
     if (!isFirestoreConfigured()) throw new ApiError(503, 'Firestore not configured');
 
     const db = getAdminFirestore();
-    const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
+    const [trackerSnap, recentSnap] = await Promise.all([
+      db.collection('drafts').doc('draftTracker').get(),
+      // Read a recent draft doc to pull the season year prefix from. Real
+      // doc IDs look like "2024-fast-draft-722" — never trust the calendar
+      // year for the prefix; the season name lives in the data.
+      db.collection('drafts').orderBy('__name__', 'desc').limit(20).get().catch(() => null),
+    ]);
     const filled = Number(
       (trackerSnap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0,
     );
     if (filled <= 0) return json({ drafts: [] }, 200);
 
-    const yearPrefix = new Date().getFullYear().toString();
+    const sampleDraftId = recentSnap?.docs.map(d => d.id).find(id => /^\d{4}-(fast|slow)-draft-\d+$/.test(id));
+    const yearPrefix = sampleDraftId ? sampleDraftId.split('-')[0] : '2024';
     const apiBase = getServerDraftsApiUrl();
 
     const candidates: { id: string; speed: 'fast' | 'slow'; num: number }[] = [];
