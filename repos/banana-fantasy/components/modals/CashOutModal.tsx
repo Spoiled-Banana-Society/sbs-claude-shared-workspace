@@ -26,7 +26,7 @@ interface VerificationError {
   requiresVerification: 'basic' | 'kyc';
 }
 
-function isVerificationError(err: unknown): err is VerificationError {
+function _isVerificationError(err: unknown): err is VerificationError {
   return typeof err === 'object' && err !== null && 'requiresVerification' in err;
 }
 
