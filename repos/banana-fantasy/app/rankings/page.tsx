@@ -125,6 +125,29 @@ export default function RankingsPage() {
       .finally(() => setSavingRankings(false));
   };
 
+  const [resettingRankings, setResettingRankings] = useState(false);
+  const resetRankingsToDefault = async () => {
+    if (!walletAddress) return;
+    if (!confirm('Reset rankings to ADP order? Your custom order will be lost.')) return;
+    setResettingRankings(true);
+    try {
+      // DELETE the saved doc on the Go side. Next GET auto-seeds from
+      // current ADP, which is exactly what we want for "reset to default."
+      await Rankings.removeRankings(walletAddress);
+      const fresh = await Rankings.getRankings(walletAddress);
+      const list = Array.isArray(fresh) ? (fresh as GoRankingItem[]) : [];
+      const adapted = [...list]
+        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
+        .map(adaptRankingItem);
+      setRankings(adapted);
+      setSavedAt(Date.now());
+    } catch (err) {
+      console.error('Failed to reset rankings:', err);
+    } finally {
+      setResettingRankings(false);
+    }
+  };
+
   // Drag and drop handlers
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
@@ -235,12 +258,25 @@ export default function RankingsPage() {
             <span>Sign in to save your custom rankings.</span>
           ) : savingRankings ? (
             <span className="italic">Saving rankings…</span>
+          ) : resettingRankings ? (
+            <span className="italic">Resetting to ADP order…</span>
           ) : savedAt ? (
             <span className="text-text-secondary">Rankings saved</span>
           ) : (
             <span>Drag rows or use the arrows to reorder. Auto-saves to your account.</span>
           )}
         </div>
+        <div className="flex items-center gap-2">
+          {walletAddress && (
+            <button
+              type="button"
+              onClick={resetRankingsToDefault}
+              disabled={resettingRankings}
+              className="text-xs uppercase tracking-wider px-3 py-1.5 rounded-md text-text-muted hover:text-banana hover:bg-white/[0.04] border border-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
+            >
+              Reset to defaults
+            </button>
+          )}
         {/* CSV Upload/Download Button */}
         <div className="relative">
           <Button
@@ -325,6 +361,7 @@ export default function RankingsPage() {
             onChange={handleFileUpload}
             className="hidden"
           />
+        </div>
         </div>
       </div>
 

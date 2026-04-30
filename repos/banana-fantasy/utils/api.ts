@@ -181,6 +181,17 @@ export const Rankings = {
             return null
         }
     },
+    removeRankings: async (walletAddress: string) => {
+        try {
+            const response: AxiosResponse = await api.delete(
+                `/owner/${walletAddress}/drafts/state/rankings`
+            )
+            return response.data
+        } catch (error) {
+            console.error(error)
+            return null
+        }
+    },
 }
 
 export const MintBBB = {
