@@ -1757,6 +1757,7 @@ function DraftRoomContent() {
             }}
             onSortChange={handleSortChange}
             showBanner={phase === 'drafting'}
+            spectator={spectateParam}
           />
         </>
       )}

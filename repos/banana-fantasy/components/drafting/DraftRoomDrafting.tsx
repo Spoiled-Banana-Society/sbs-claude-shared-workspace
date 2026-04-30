@@ -47,6 +47,10 @@ interface DraftRoomDraftingProps {
   onQueueSync: (queue: ReturnType<typeof useDraftEngine>['queuedPlayers']) => void;
   onSortChange: (sort: 'adp' | 'rank') => void;
   showBanner?: boolean;
+  /** Spectator mode — viewer is not in the draft. Replaces user-centric
+   *  copy ("Your turn", "My Team") with drafter-aware copy and points
+   *  the sidebar at whichever drafter the user clicked on. */
+  spectator?: boolean;
 }
 
 export function DraftRoomDrafting({
@@ -72,6 +76,7 @@ export function DraftRoomDrafting({
   onQueueSync,
   onSortChange,
   showBanner = true,
+  spectator = false,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -228,7 +233,23 @@ export function DraftRoomDrafting({
             </div>
 
             <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
-              {engine.isUserTurn && engine.airplaneMode ? (
+              {spectator ? (
+                (() => {
+                  const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;
+                  const onClockName = onClockIdx !== undefined
+                    ? (engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '')
+                    : '';
+                  const truncated = onClockName.length > 14
+                    ? `${onClockName.slice(0, 6)}…${onClockName.slice(-4)}`
+                    : onClockName;
+                  return (
+                    <span className="text-white/80">
+                      On the clock: <span className="text-yellow-400">{truncated || '—'}</span>
+                      <span className="ml-3 text-white/40">Pick {engine.currentPickNumber} / 150</span>
+                    </span>
+                  );
+                })()
+              ) : engine.isUserTurn && engine.airplaneMode ? (
                 <span className="flex items-center justify-center gap-2 text-emerald-400">
                   Auto-drafting...
                 </span>
@@ -421,18 +442,37 @@ export function DraftRoomDrafting({
                 );
               })()}
 
-              {/* My Team preview */}
+              {/* My Team preview — in spectator mode, this follows the
+                  clicked drafter (or current drafter as default) since the
+                  viewer doesn't have a team. */}
               <div className="flex-1 min-h-0 flex flex-col">
+                {(() => {
+                  let viewedIdx = engine.userDraftPosition;
+                  let viewedName = engine.draftOrder[engine.userDraftPosition]?.name || '';
+                  if (spectator) {
+                    const fromClicked = rosterViewPlayer
+                      ? engine.draftOrder.findIndex(d => d.name === rosterViewPlayer || d.displayName === rosterViewPlayer)
+                      : -1;
+                    const fromOnClock = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex ?? -1;
+                    viewedIdx = fromClicked >= 0 ? fromClicked : (fromOnClock >= 0 ? fromOnClock : 0);
+                    viewedName = engine.draftOrder[viewedIdx]?.name || '';
+                  }
+                  const teamCount = engine.picks.filter(p => p.ownerIndex === viewedIdx).length;
+                  const teamLabel = spectator
+                    ? (engine.draftOrder[viewedIdx]?.displayName || viewedName || 'Team').slice(0, 14)
+                    : 'My Team';
+                  return (
+                <>
                 <button
                   onClick={() => onTabChange('roster')}
                   className="flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-white/50 hover:text-white/80 transition-colors flex-shrink-0"
                 >
-                  <span>My Team ({engine.picks.filter(p => p.ownerIndex === engine.userDraftPosition).length}/15)</span>
+                  <span>{teamLabel} ({teamCount}/15)</span>
                   <span className="text-[10px] text-white/30">View full →</span>
                 </button>
                 <div className="flex-1 overflow-y-auto px-2 pb-2">
                   {(() => {
-                    const userRoster = engine.rosters[engine.draftOrder[engine.userDraftPosition]?.name || ''];
+                    const userRoster = engine.rosters[viewedName];
                     const positionKeys = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
                     // Build a lookup for pick details (bye, adp, pick#) from static data
                     // Use ALL_POSITIONS (never mutated) instead of engine.availablePlayers (which removes picked players)
@@ -484,6 +524,9 @@ export function DraftRoomDrafting({
                     );
                   })()}
                 </div>
+                </>
+                  );
+                })()}
               </div>
             </div>
           </div>
