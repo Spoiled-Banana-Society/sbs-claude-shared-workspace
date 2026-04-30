@@ -73,6 +73,7 @@ export default function RankingsPage() {
   const [selectedPosition, setSelectedPosition] = useState<TeamPosition | null>(null);
   const [savingRankings, setSavingRankings] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [positionFilter, setPositionFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST'>('ALL');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load rankings from the Go API. ReturnUserRankings auto-seeds from
@@ -332,6 +333,37 @@ export default function RankingsPage() {
           position-color borders L+R; drag indicator on the left, playerId
           bold in the middle, BYE / ADP / RANK on the right. */}
       <div className="max-w-[900px] mx-auto">
+        {/* Position filter — same shape as the draft-room player list. Hides
+            non-matching rows; reorder actions still operate on the full list
+            so dragging within a filter preserves the underlying order. */}
+        <div className="flex items-center gap-2 flex-wrap mb-2 px-1">
+          {(['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'] as const).map(p => {
+            const isActive = positionFilter === p;
+            const accent = p === 'QB' ? '#FF474C'
+              : p === 'RB' ? '#3c9120'
+              : p === 'WR' ? '#cb6ce6'
+              : p === 'TE' ? '#326cf8'
+              : p === 'DST' ? '#DF893E'
+              : '#fbbf24';
+            return (
+              <button
+                key={p}
+                onClick={() => setPositionFilter(p)}
+                className="px-4 py-1.5 rounded-md text-xs font-bold uppercase tracking-wider transition-colors"
+                style={{
+                  borderWidth: 1,
+                  borderStyle: 'solid',
+                  borderColor: isActive ? accent : '#333',
+                  background: isActive ? `${accent}22` : 'transparent',
+                  color: isActive ? '#fff' : '#888',
+                }}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+
         {/* Heading row — column labels right-aligned to match data rows */}
         <div
           className="hidden sm:flex items-center justify-between gap-5 px-0 pt-2.5 pb-0 mt-5 bg-black"
@@ -372,6 +404,13 @@ export default function RankingsPage() {
           </div>
         ) : (
           rankings.map((position, index) => {
+            // Filter purely visual — non-matching rows aren't rendered, but
+            // index is still the full-list index so drag/move ops apply
+            // correctly across hidden rows.
+            if (positionFilter !== 'ALL') {
+              const basePos = position.position.replace(/[0-9]/g, '');
+              if (basePos !== positionFilter) return null;
+            }
             const color = getPositionColor(position.position);
             return (
               <div
