@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { TeamPosition } from '@/types';
-import { useRankings } from '@/hooks/useRankings';
 import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
 import { useAuth } from '@/hooks/useAuth';
 import { Rankings } from '@/utils/api';
@@ -20,10 +19,52 @@ const getPositionColor = (position: string): string => {
   return '#94a3b8'; // Gray default
 };
 
+// Adapt the Go API's RankingsProps shape (playerId/rank/score/stats) into
+// the page's TeamPosition shape so the existing row renderer just works.
+// Same join key the dev's old draft-web site used: playerId is "TEAM-POS"
+// like "DAL-WR1" / "KAN-QB", split into team + position[0..9]+ suffix.
+interface GoRankingItem {
+  playerId: string;
+  rank: number;
+  score: number;
+  stats: {
+    averageScore?: number;
+    highestScore?: number;
+    top5Finishes?: number;
+    adp?: number;
+    byeWeek?: string | number;
+    playersFromTeam?: string[];
+  };
+}
+
+function adaptRankingItem(item: GoRankingItem): TeamPosition {
+  const [team, ...rest] = item.playerId.split('-');
+  const position = rest.join('-') || 'UNK';
+  const byeWeekRaw = item.stats?.byeWeek;
+  const byeWeek = typeof byeWeekRaw === 'number'
+    ? byeWeekRaw
+    : Number.parseInt(String(byeWeekRaw ?? ''), 10) || 0;
+  const adp = typeof item.stats?.adp === 'number' ? item.stats.adp : 0;
+  return {
+    id: item.playerId,
+    team: team || 'UNK',
+    position,
+    currentPlayer: item.stats?.playersFromTeam?.[0] || '',
+    seasonPoints: item.score ?? 0,
+    weeklyPoints: item.stats?.averageScore ?? 0,
+    projectedPoints: 0,
+    byeWeek,
+    adp,
+    adpChange: 0,
+    depthChart: [],
+  };
+}
+
 export default function RankingsPage() {
-  const rankingsQuery = useRankings();
   const { walletAddress } = useAuth();
   const [rankings, setRankings] = useState<TeamPosition[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showCsvMenu, setShowCsvMenu] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadedData, setUploadedData] = useState<string[][] | null>(null);
@@ -34,47 +75,40 @@ export default function RankingsPage() {
   const [savingRankings, setSavingRankings] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const userOrderLoadedRef = useRef(false);
 
-  // Initial seed: sort the global rankings by seasonPoints. Replaced by
-  // the user's saved order once it loads (below).
+  // Load rankings from the Go API. ReturnUserRankings auto-seeds from
+  // global ADP when the user has no saved doc, so first-time users still
+  // see the full list — pre-sorted by ADP — without needing a separate
+  // "global rankings" call. The /api/rankings → /league/rankings/global
+  // route doesn't exist on the Go side and was always 404ing.
   useEffect(() => {
-    if (!rankingsQuery.data?.length) return;
-    setRankings((prev) => {
-      if (prev.length > 0) return prev;
-      return [...rankingsQuery.data].sort((a, b) => b.seasonPoints - a.seasonPoints);
-    });
-  }, [rankingsQuery.data]);
-
-  // Build the playerId the Go API uses for a TeamPosition row.
-  const playerIdFor = (pos: TeamPosition) => `${pos.team}-${pos.position}`;
-
-  // Apply the user's saved rank order to the global rankings list once
-  // both the global data and the user's saved rankings have loaded.
-  useEffect(() => {
-    if (userOrderLoadedRef.current) return;
-    if (!walletAddress || !rankingsQuery.data?.length) return;
+    if (!walletAddress) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
-    Rankings.getRankings(walletAddress).then(saved => {
-      if (cancelled || !saved || saved.length === 0) return;
-      const orderMap = new Map<string, number>();
-      for (const r of saved as { playerId: string; rank: number }[]) {
-        orderMap.set(r.playerId, r.rank);
-      }
-      setRankings(prev => {
-        if (prev.length === 0) return prev;
-        return [...prev].sort((a, b) => {
-          const aRank = orderMap.get(playerIdFor(a)) ?? Number.MAX_SAFE_INTEGER;
-          const bRank = orderMap.get(playerIdFor(b)) ?? Number.MAX_SAFE_INTEGER;
-          return aRank - bRank;
-        });
+    setLoading(true);
+    setLoadError(null);
+    Rankings.getRankings(walletAddress)
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res) ? (res as GoRankingItem[]) : [];
+        const adapted = [...list]
+          .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
+          .map(adaptRankingItem);
+        setRankings(adapted);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load rankings');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-      userOrderLoadedRef.current = true;
-    }).catch(() => {});
     return () => { cancelled = true; };
-  }, [walletAddress, rankingsQuery.data]);
+  }, [walletAddress]);
 
   // Persist the current order to the Go API. Fires after every reorder.
+  const playerIdFor = (pos: TeamPosition) => pos.id || `${pos.team}-${pos.position}`;
   const persistRankings = (next: TeamPosition[]) => {
     if (!walletAddress) return;
     setSavingRankings(true);
@@ -314,6 +348,23 @@ export default function RankingsPage() {
           </div>
         </div>
 
+        {!walletAddress && !loading ? (
+          <div className="px-6 py-12 text-center text-text-muted text-sm">
+            Sign in to load and customize your rankings.
+          </div>
+        ) : loading ? (
+          <div className="px-6 py-12 text-center text-text-muted text-sm">
+            Loading rankings…
+          </div>
+        ) : loadError ? (
+          <div className="px-6 py-12 text-center text-red-400 text-sm">
+            Failed to load rankings: {loadError}
+          </div>
+        ) : rankings.length === 0 ? (
+          <div className="px-6 py-12 text-center text-text-muted text-sm">
+            No rankings available yet.
+          </div>
+        ) : (
         <div className="divide-y divide-bg-tertiary">
           {rankings.map((position, index) => (
             <div
@@ -407,6 +458,7 @@ export default function RankingsPage() {
             </div>
           ))}
         </div>
+        )}
       </Card>
 
       {/* CSV Upload Preview Modal */}
