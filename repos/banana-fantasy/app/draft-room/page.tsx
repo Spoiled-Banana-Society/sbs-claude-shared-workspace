@@ -70,18 +70,26 @@ function DraftRoomContent() {
     draftIdRef.current = resolved;
     if (typeof window === 'undefined' || !resolved) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('id') === resolved) return; // already in URL
+    if (params.get('id') === resolved) {
+      console.log('[DraftRoom] setDraftId: id already in URL', resolved);
+      return;
+    }
     params.set('id', resolved);
-    // Remove passType so refresh doesn't consume another pass
     params.delete('passType');
     const newSearch = params.toString();
     const newUrl = `${pathname}?${newSearch}`;
+    console.log('[DraftRoom] setDraftId → updating URL to', newUrl);
     try {
       window.history.replaceState(window.history.state, '', newUrl);
     } catch (err) {
       console.warn('[DraftRoom] history.replaceState failed:', err);
     }
-    router.replace(newUrl, { scroll: false });
+    try {
+      router.replace(newUrl, { scroll: false });
+    } catch (err) {
+      console.warn('[DraftRoom] router.replace failed:', err);
+    }
+    console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
   const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
