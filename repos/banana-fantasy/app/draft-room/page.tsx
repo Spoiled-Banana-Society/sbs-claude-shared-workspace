@@ -578,6 +578,9 @@ function DraftRoomContent() {
   useEffect(() => {
     if (!engine.airplaneMode || !engine.isUserTurn || phase !== 'drafting' || engine.draftStatus !== 'active') return;
 
+    // Defer to the next tick so the airplaneMode state change has a chance
+    // to settle in the engine, but no artificial visual buffer beyond that.
+    // Was 500ms — felt like a "thinking" pause; users want it instant.
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
@@ -595,7 +598,7 @@ function DraftRoomContent() {
       } else {
         engine.draftPlayer(pickId);
       }
-    }, 500);
+    }, 0);
 
     return () => clearTimeout(timeoutId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -773,15 +776,31 @@ function DraftRoomContent() {
   const handleToggleAutoDraft = useCallback(async () => {
     if (!isLiveMode || !draftId || !walletParam || autoDraftLoading) return;
     const newValue = !autoDraft;
+
+    // Flip locally first so the airplane-mode useEffect can fire the pick
+    // while we patch prefs server-side. Was awaiting the PATCH first which
+    // added 500-1000ms of perceived latency between the click and the
+    // pick landing.
+    setAutoDraft(newValue);
+    engine.setAirplaneMode(newValue);
+    const id = getPersistId();
+    if (id) localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
+
     setAutoDraftLoading(true);
     try {
       const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue);
-      setAutoDraft(prefs.autoDraft);
-      engine.setAirplaneMode(prefs.autoDraft);
-      const id = getPersistId();
-      if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
+      // Reconcile with server in case it disagreed.
+      if (prefs.autoDraft !== newValue) {
+        setAutoDraft(prefs.autoDraft);
+        engine.setAirplaneMode(prefs.autoDraft);
+        if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
+      }
     } catch (e) {
       console.error('[AutoDraft] Toggle failed:', e);
+      // Revert optimistic flip on failure.
+      setAutoDraft(!newValue);
+      engine.setAirplaneMode(!newValue);
+      if (id) localStorage.setItem(`airplane:${id}`, !newValue ? '1' : '0');
     } finally {
       setAutoDraftLoading(false);
     }

@@ -226,6 +226,8 @@ export function useDraftLiveSync({
             const staleId = match[1];
             logger.debug('[Airplane] Removing stale player and retrying:', staleId);
             engine.removeFromAvailable(staleId);
+            // Defer to next tick so removeFromAvailable settles before
+            // getAutoPickPlayer runs. Was 300ms — no longer visible.
             setTimeout(() => {
               const nextPick = engine.getAutoPickPlayer();
               if (nextPick && draftId) {
@@ -240,7 +242,7 @@ export function useDraftLiveSync({
                   }).catch(e => console.error('[Airplane] Retry failed:', e));
                 }
               }
-            }, 300);
+            }, 0);
           }
         }
       });
