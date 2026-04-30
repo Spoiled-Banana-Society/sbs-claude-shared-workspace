@@ -57,10 +57,13 @@ function DraftRoomContent() {
   const isLiveMode = modeParam === 'live' && !!walletParam;
 
   // Wrap setDraftId to also update the URL so refresh rejoins the same draft.
-  // Uses Next.js router.replace so the new URL is part of the framework's
-  // history stack — window.history.replaceState alone updates the URL bar
-  // but Next.js doesn't see the change, so navigating away + back resurfaces
-  // the original (id-less) URL.
+  // Belt-and-suspenders:
+  //  - window.history.replaceState updates the URL bar synchronously RIGHT
+  //    NOW so the user sees the id immediately, no matter what.
+  //  - router.replace then tells Next.js about the change so its internal
+  //    history stack and useSearchParams() stay consistent (otherwise
+  //    navigating away + back resurfaces the original id-less URL).
+  // Either alone has been observed to flake; together they're reliable.
   const setDraftId = useCallback((id: string | ((prev: string) => string)) => {
     const resolved = typeof id === 'function' ? id(draftIdRef.current) : id;
     _setDraftId(resolved);
@@ -71,7 +74,14 @@ function DraftRoomContent() {
     params.set('id', resolved);
     // Remove passType so refresh doesn't consume another pass
     params.delete('passType');
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    const newSearch = params.toString();
+    const newUrl = `${pathname}?${newSearch}`;
+    try {
+      window.history.replaceState(window.history.state, '', newUrl);
+    } catch (err) {
+      console.warn('[DraftRoom] history.replaceState failed:', err);
+    }
+    router.replace(newUrl, { scroll: false });
   }, [router, pathname]);
 
   const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
