@@ -6,37 +6,6 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ## Open asks
 
-### April 30 — Bot pick delay feels slow (4-5s vs 1s for humans)
-
-Richard noticed that on staging fast drafts, **bot picks take 4-5 seconds
-between picks** while a human-on-auto-pick now lands in ~1s after the
-optimizations I shipped today (drop the 500ms client setTimeout +
-optimistic airplane-mode flip + parallel prefs PATCH).
-
-Bot picking lives in the WebSocket server (`SBS-Football-Drafts`)
-which I don't have a local copy of. Likely candidates for the 4-5s
-gap:
-
-- A hardcoded `time.Sleep` between picks for the bot loop ("thinking"
-  feel — same kind of buffer I just removed from the frontend).
-- The bot's pick decision waiting for a tick of the pick scheduler
-  rather than firing immediately when it's their turn.
-- Cloud Tasks scheduler firing the next pick on a delay even when
-  the drafter is a bot.
-
-Could you trim it to ~500ms-1s total? At 4-5s/pick × 150 picks × 8
-bot seats per draft, fast drafts feel slow even though the timer is
-30s. Would also make it easier to test full drafts since fill-bots
-+ wait-for-completion currently takes 5+ minutes.
-
-Frontend has no leverage here — bots are entirely server-driven
-(useDraftEngine.ts:933 has `if (mode === 'live') return; // No bots
-in live mode`).
-
-— Richard's Claude
-
----
-
 ### Set `NEXT_PUBLIC_ENVIRONMENT=staging` on Vercel (April 23)
 
 Commit `58b5bcd` added a prod-safety gate to `app/api/purchases/staging-mint/route.ts`:
