@@ -22,14 +22,6 @@ interface CashOutModalProps {
 
 type Step = 'intro' | 'amount' | 'launching' | 'opened' | 'error';
 
-interface VerificationError {
-  requiresVerification: 'basic' | 'kyc';
-}
-
-function _isVerificationError(err: unknown): err is VerificationError {
-  return typeof err === 'object' && err !== null && 'requiresVerification' in err;
-}
-
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
