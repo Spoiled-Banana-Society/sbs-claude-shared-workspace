@@ -107,6 +107,21 @@ export function DraftRoomDrafting({
 
   return (
     <>
+      {/* JP/HOF tint behind the drafting view. Same gradient as the
+          DraftRoomReveal pulse-glow so the red/yellow background carries
+          through from reveal into drafting (was disappearing the moment
+          the slot machine resolved into 'drafting' phase). */}
+      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
+        <div
+          className="fixed inset-0 z-0 pointer-events-none"
+          style={{
+            background: visibleDraftType === 'jackpot'
+              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.18) 0%, transparent 70%)'
+              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.18) 0%, transparent 70%)',
+          }}
+        />
+      )}
+
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
           <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
