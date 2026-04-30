@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrizes, useEligibility } from '@/hooks/usePrizes';
 import { WithdrawModal } from '@/components/modals/WithdrawModal';
+import { CashOutModal } from '@/components/modals/CashOutModal';
 import type { PrizeHistoryItem } from '@/types';
 
 export default function PrizesPage() {
@@ -19,6 +20,7 @@ export default function PrizesPage() {
   const eligibility = eligibilityQuery.data;
   const hasPrizeError = Boolean(prizesQuery.error);
   const [withdrawModal, setWithdrawModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
+  const [cashOutModal, setCashOutModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -214,12 +216,20 @@ export default function PrizesPage() {
                     )}
                     {item.type === 'win' && item.status === 'pending' && item.draftId && (
                       canWithdrawPrizes ? (
-                        <button
-                          onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
-                          className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
-                        >
-                          Withdraw
-                        </button>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <button
+                            onClick={() => setCashOutModal({ isOpen: true, prize: item })}
+                            className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
+                          >
+                            Cash Out to Bank
+                          </button>
+                          <button
+                            onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
+                            className="text-text-muted text-xs hover:text-text-secondary transition-colors"
+                          >
+                            or send USDC to a wallet
+                          </button>
+                        </div>
                       ) : (
                         <button
                           onClick={() => router.push(verificationUrl)}
@@ -300,6 +310,16 @@ export default function PrizesPage() {
         walletAddress={user?.walletAddress}
         isEmbeddedWallet={isEmbeddedWallet}
         onWithdraw={prizesQuery.withdraw}
+      />
+
+      <CashOutModal
+        isOpen={cashOutModal.isOpen}
+        onClose={() => setCashOutModal({ isOpen: false })}
+        maxAmount={cashOutModal.prize?.amount ?? 0}
+        fixedAmount
+        draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
+        userId={user?.id}
+        walletAddress={user?.walletAddress}
       />
     </div>
   );
