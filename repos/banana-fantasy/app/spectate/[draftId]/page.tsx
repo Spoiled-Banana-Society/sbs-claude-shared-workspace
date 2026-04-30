@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { DraftBoardGrid } from '@/components/drafting/DraftBoardGrid';
 import { POSITION_COLORS, TOTAL_PICKS, TOTAL_ROUNDS } from '@/lib/draftRoomConstants';
@@ -43,6 +43,7 @@ export default function SpectatePage() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
+  const bannerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!draftId) return;
@@ -78,6 +79,16 @@ export default function SpectatePage() {
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
   }, []);
+
+  // Auto-scroll the banner to keep the active pick visible. Mirrors the
+  // live draft-room behavior where the banner re-centers on each new pick.
+  useEffect(() => {
+    if (!state || !bannerRef.current) return;
+    const el = bannerRef.current.querySelector(`[data-pick="${state.info.pickNumber}"]`);
+    if (el) {
+      (el as HTMLElement).scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [state]);
 
   // Build a 150-slot snake-ordered draft summary for DraftBoardGrid.
   // Pre-fill empty slots, then overlay actual picks from the Go API.
@@ -205,20 +216,36 @@ export default function SpectatePage() {
         </div>
       </div>
 
-      {/* Banner: 10 draft-order tiles (mirrors live banner styling) */}
+      {/* Banner: horizontal scroll of all 150 slot tiles, 1:1 with the
+          live DraftRoomDrafting banner. Active pick highlighted with
+          countdown + "Picking..."; past picks show the playerId; future
+          picks show R/P + the assigned drafter's roster counts. */}
       <div className="w-full overflow-hidden bg-black">
-        <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto" style={{ marginTop: '15px' }}>
-          {Array.from({ length: 10 }, (_, i) => {
-            const isCurrent = i === currentDrafterIndex && !isDone;
-            const label = draftOrderNames[i] ?? '???';
-            const truncated = label.length > 14 ? `${label.substring(0, 12)}…` : label;
-            const bgColor = isCurrent ? '#fbbf24' : '#222';
-            const textColor = isCurrent ? '#111' : '#fff';
-            const tileBorder = isCurrent ? '#fbbf24' : '#444';
+        <div ref={bannerRef} className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
+          {draftSummary.map((slot) => {
+            const isPicked = slot.playerId !== '';
+            const isCurrent = slot.pickNum === info.pickNumber && !isDone;
+            const isUpcoming = slot.pickNum > info.pickNumber;
+            const posHex = isPicked ? POSITION_COLORS[slot.position.replace(/[0-9]/g, '')] || '#888' : '';
+            const ownerName = slot.ownerName || draftOrderNames[slot.ownerIndex] || '';
+            const counts = (() => {
+              const raw = state!.rosters[ownerName.toLowerCase()] || state!.rosters[ownerName] || {};
+              return {
+                QB: (raw as Record<string, string[]>).QB?.length ?? 0,
+                RB: (raw as Record<string, string[]>).RB?.length ?? 0,
+                WR: (raw as Record<string, string[]>).WR?.length ?? 0,
+                TE: (raw as Record<string, string[]>).TE?.length ?? 0,
+                DST: (raw as Record<string, string[]>).DST?.length ?? 0,
+              };
+            })();
+            const truncated = ownerName.length > 14 ? `${ownerName.slice(0, 6)}…${ownerName.slice(-4)}` : ownerName;
+            const borderColor = isCurrent ? '#fff' : '#444';
+            const textColor = '#fff';
             return (
               <div
-                key={i}
-                className="flex-shrink-0 text-center overflow-hidden relative"
+                key={slot.pickNum}
+                data-pick={slot.pickNum}
+                className="flex-shrink-0 text-center overflow-hidden"
                 style={{
                   minWidth: 'clamp(100px, 12vw, 140px)',
                   flex: 1,
@@ -226,33 +253,63 @@ export default function SpectatePage() {
                   borderRadius: '5px',
                   borderWidth: 1,
                   borderStyle: 'solid',
-                  borderColor: tileBorder,
-                  background: bgColor,
-                  boxShadow: isCurrent ? '0 0 14px 2px rgba(251,191,36,0.7)' : 'none',
-                  transform: isCurrent ? 'scale(1.04)' : 'scale(1)',
-                  transition: 'all 120ms ease-out',
+                  borderColor,
+                  transition: 'all 0.25s ease-in-out',
+                  background: '#222',
                 }}
               >
                 <div>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src="/banana-profile.png" alt="" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
-                    <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>#{i + 1}</span>
+
+                  {isCurrent ? (
+                    <div style={{
+                      fontWeight: 'bold',
+                      fontSize: '18px',
+                      margin: '5px auto 0px auto',
+                      textAlign: 'center',
+                      color: (remainingSec ?? 99) > 10 ? '#fff' : 'red',
+                    }}>
+                      {remainingSec !== null ? formatTime(remainingSec) : '—'}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
+                      <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>R{slot.round}</span>
+                      <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>P{slot.pickNum}</span>
+                    </div>
+                  )}
+
+                  <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                    {truncated || '???'}
                   </div>
-                  <div className="font-bold text-[11px] lg:text-[14px]" style={{ color: textColor }}>
-                    {truncated}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
-                    {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
-                      <div
-                        key={pos}
-                        style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: POSITION_COLORS[pos], textAlign: 'center', opacity: 0.5 }}
-                      >
-                        <p style={{ fontSize: '10px' }}>{pos}</p>
-                        <p className="text-xs">{((state!.rosters[draftOrderNames[i]?.toLowerCase() ?? ''] ?? {} as Record<string, string[]>)[pos] ?? []).length}</p>
-                      </div>
-                    ))}
-                  </div>
+
+                  {isUpcoming && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
+                      {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
+                        <div
+                          key={pos}
+                          style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: POSITION_COLORS[pos], textAlign: 'center' }}
+                        >
+                          <p style={{ fontSize: '10px' }}>{pos}</p>
+                          <p className="text-xs">{counts[pos]}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isCurrent && (
+                    <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%', minHeight: '54px' }}>
+                      <p className="font-primary text-[15px] font-bold italic text-center pt-2" style={{ color: textColor }}>
+                        Picking...
+                      </p>
+                    </div>
+                  )}
+                  {isPicked && (
+                    <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: posHex, width: '100%', height: '55px' }}>
+                      <p className="font-primary" style={{ fontWeight: 800, fontSize: 15, textAlign: 'center', paddingTop: 5, color: textColor }}>
+                        {slot.playerId}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -267,9 +324,6 @@ export default function SpectatePage() {
           ) : (
             <span className="text-white/80">
               On the clock: <span className="text-yellow-400">{draftOrderNames[currentDrafterIndex] ?? 'unknown'}</span>
-              {remainingSec !== null && (
-                <span className="ml-3 text-white/60">⏱ {formatTime(remainingSec)}</span>
-              )}
               <span className="ml-3 text-white/40">Pick {info.pickNumber} / {TOTAL_PICKS} (Round {Math.min(TOTAL_ROUNDS, Math.ceil(info.pickNumber / 10))})</span>
             </span>
           )}
