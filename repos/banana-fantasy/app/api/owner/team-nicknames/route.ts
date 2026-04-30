@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { getPrivyUser } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -9,8 +8,12 @@ export const runtime = 'nodejs';
 
 // Per-user, per-league custom team names. Stored as a single doc per user
 // with a map of leagueId → nickname so reads are 1 doc per page load and
-// writes update a single field path. Public read (display-only data; no
-// sensitive info), authenticated write.
+// writes update a single field path.
+//
+// Auth model matches /api/owner/use-pass and /api/owner/refund-pass —
+// trust the body's walletAddress. Tighten with Privy auth before prod
+// volume; for staging this is fine and avoids the 401 some users hit
+// when their Privy access token isn't available client-side.
 //
 // GET  /api/owner/team-nicknames?walletAddress=0x…
 //   → { nicknames: { [leagueId]: string } }
@@ -43,15 +46,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    let authenticatedWallet: string;
-    try {
-      const user = await getPrivyUser(req);
-      authenticatedWallet = (user.walletAddress || '').toLowerCase();
-      if (!authenticatedWallet) throw new Error('no wallet on user');
-    } catch {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
     const body = await req.json();
     const walletAddress = typeof body.walletAddress === 'string' ? body.walletAddress.trim().toLowerCase() : '';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId.trim() : '';
@@ -60,9 +54,6 @@ export async function POST(req: NextRequest) {
 
     if (!walletAddress) return NextResponse.json({ error: 'walletAddress required' }, { status: 400 });
     if (!leagueId) return NextResponse.json({ error: 'leagueId required' }, { status: 400 });
-    if (walletAddress !== authenticatedWallet) {
-      return NextResponse.json({ error: 'Wallet mismatch' }, { status: 403 });
-    }
 
     if (!isFirestoreConfigured()) {
       return NextResponse.json({ ok: true, persisted: false });

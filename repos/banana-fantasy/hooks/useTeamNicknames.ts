@@ -47,8 +47,12 @@ export function useTeamNicknames(): UseTeamNicknamesResult {
   const setNickname = useCallback(async (leagueId: string, name: string) => {
     if (!walletAddress || !leagueId) return;
     const trimmed = name.trim();
-    // Optimistic local update so the card re-renders instantly.
+    // Capture the previous value so we can revert if the POST fails —
+    // otherwise the UI would silently disagree with the persisted state
+    // on the next page load.
+    let previous: string | undefined;
     setNicknames(prev => {
+      previous = prev[leagueId];
       const next = { ...prev };
       if (trimmed) next[leagueId] = trimmed;
       else delete next[leagueId];
@@ -57,7 +61,7 @@ export function useTeamNicknames(): UseTeamNicknamesResult {
     setSaving(true);
     try {
       const token = await getAccessToken();
-      await fetch('/api/owner/team-nicknames', {
+      const res = await fetch('/api/owner/team-nicknames', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,8 +69,19 @@ export function useTeamNicknames(): UseTeamNicknamesResult {
         },
         body: JSON.stringify({ walletAddress, leagueId, name: trimmed }),
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status} ${text}`);
+      }
     } catch (err) {
-      console.warn('[teamNicknames] save failed', err);
+      console.warn('[teamNicknames] save failed — reverting', err);
+      // Revert optimistic update.
+      setNicknames(prev => {
+        const next = { ...prev };
+        if (previous === undefined) delete next[leagueId];
+        else next[leagueId] = previous;
+        return next;
+      });
     } finally {
       setSaving(false);
     }
