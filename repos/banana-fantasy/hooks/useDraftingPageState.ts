@@ -1103,6 +1103,17 @@ export function useDraftingPageState() {
       await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
       draftStore.removeDraft(exitingDraft.id);
       setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
+      // Refund the Firestore pass counter (Go side already returns the
+      // card; without this the header counter stays decremented).
+      const userId = user.id || user.walletAddress;
+      const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
+      fetch('/api/owner/refund-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
+      }).then(() => refreshBalance()).catch(err => {
+        console.warn('[Leave] Refund pass failed:', err);
+      });
     } catch (err) {
       console.error('Failed to leave draft:', err);
     } finally {

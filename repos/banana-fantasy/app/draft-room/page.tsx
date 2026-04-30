@@ -1856,6 +1856,21 @@ function DraftRoomContent() {
                   try {
                     const storedDraft = draftStore.getDraft(draftId);
                     await leaveDraft(draftId, walletParam, storedDraft?.cardId);
+                    // Refund the Firestore pass counter — Go's RemoveUserFromDraft
+                    // returns the card to the user's pool but doesn't touch our
+                    // draftPasses/freeDrafts counter, so the header would show
+                    // a missing pass without this. Pass type comes from URL or
+                    // the stored draft. Best-effort — don't block the UX if it
+                    // fails (Go side already gave the card back).
+                    const userId = user?.id || walletParam;
+                    const passType = passTypeParam || storedDraft?.passType || 'paid';
+                    fetch('/api/owner/refund-pass', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                    }).then(() => refreshBalance()).catch(err => {
+                      console.warn('[Leave] Refund pass failed:', err);
+                    });
                     draftStore.removeDraft(draftId);
                     window.location.href = '/drafting';
                   } catch (err) {

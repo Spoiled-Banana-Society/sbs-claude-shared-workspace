@@ -22,6 +22,7 @@ export type ActivityEventType =
   | 'spin_won'            // wheel spin — any prize
   | 'promo_claimed'       // promo reward claimed (new-user, buy-bonus, referral, etc.)
   | 'draft_entered'       // user entered a draft (a pass is "used")
+  | 'draft_left'          // user left a filling draft before start (pass refunded)
   | 'draft_won'           // league finalized, user finished in paying place
   | 'marketplace_sold';   // team listed → sold
 

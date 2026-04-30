@@ -11,6 +11,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   spin_won: 'Won on wheel',
   promo_claimed: 'Promo claim',
   draft_entered: 'Entered draft',
+  draft_left: 'Left draft',
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
 };
@@ -21,6 +22,7 @@ const TYPE_EMOJI: Record<ActivityEventType, string> = {
   spin_won: '🎡',
   promo_claimed: '🎯',
   draft_entered: '🏟️',
+  draft_left: '↩️',
   draft_won: '🏆',
   marketplace_sold: '💰',
 };
@@ -31,6 +33,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   spin_won: 'text-purple-300',
   promo_claimed: 'text-pink-300',
   draft_entered: 'text-blue-300',
+  draft_left: 'text-gray-400',
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
 };
