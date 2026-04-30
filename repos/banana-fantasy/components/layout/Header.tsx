@@ -25,6 +25,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   // Nav items — desktop only
   const navItems = [
     { href: '/drafting', label: 'Drafting', tooltip: 'View active drafts', auth: false },
+    { href: '/rankings', label: 'Rankings', tooltip: 'Custom rankings & auto-draft limits', auth: false },
     { href: '/exposure', label: 'Exposure', tooltip: 'Player & team exposure', auth: true },
     { href: '/marketplace', label: 'Marketplace', tooltip: 'Buy & sell teams', auth: false },
     { href: '/leaderboard', label: 'Leaderboard', tooltip: 'Top players & teams', auth: false },
