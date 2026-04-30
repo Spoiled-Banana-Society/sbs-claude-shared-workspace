@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { TeamPosition } from '@/types';
@@ -328,23 +327,30 @@ export default function RankingsPage() {
         </div>
       </div>
 
-      {/* Rankings Table */}
-      <Card className="p-0 overflow-x-auto">
-        <div className="grid grid-cols-12 gap-4 px-6 py-4 bg-bg-tertiary border-b border-bg-elevated min-w-[600px]">
-          <div className="col-span-4 text-sm font-medium text-text-muted uppercase tracking-wider">
-            Team Position
-          </div>
-          <div className="col-span-2 text-sm font-medium text-text-muted uppercase tracking-wider text-center">
-            BYE
-          </div>
-          <div className="col-span-2 text-sm font-medium text-text-muted uppercase tracking-wider text-center">
-            ADP
-          </div>
-          <div className="col-span-2 text-sm font-medium text-text-muted uppercase tracking-wider text-center">
-            Rank
-          </div>
-          <div className="col-span-2 text-sm font-medium text-text-muted uppercase tracking-wider text-center">
-            Move
+      {/* Rankings — list of stacked cards, 1:1 with the dev's old draft-web
+          design (RankingItemComponent.tsx). Each row is its own card with
+          position-color borders L+R; drag indicator on the left, playerId
+          bold in the middle, BYE / ADP / RANK on the right. */}
+      <div className="max-w-[900px] mx-auto">
+        {/* Heading row — column labels right-aligned to match data rows */}
+        <div
+          className="hidden sm:flex items-center justify-between gap-5 px-0 pt-2.5 pb-0 mt-5 bg-black"
+        >
+          <div className="w-[20px] h-[20px]" />
+          <div />
+          <div className="flex flex-1 justify-end pr-[15px] gap-[15px]">
+            <div className="min-w-[40px] text-center">
+              <h2 className="text-[12px] font-bold text-[#888] uppercase tracking-wide">BYE</h2>
+            </div>
+            <div className="min-w-[40px] text-center">
+              <h2 className="text-[12px] font-bold text-[#888] uppercase tracking-wide">ADP</h2>
+            </div>
+            <div className="min-w-[40px] text-center">
+              <h2 className="text-[12px] font-bold text-[#888] uppercase tracking-wide">RANK</h2>
+            </div>
+            <div className="min-w-[60px] text-center">
+              <h2 className="text-[12px] font-bold text-[#888] uppercase tracking-wide">MOVE</h2>
+            </div>
           </div>
         </div>
 
@@ -365,101 +371,107 @@ export default function RankingsPage() {
             No rankings available yet.
           </div>
         ) : (
-        <div className="divide-y divide-bg-tertiary">
-          {rankings.map((position, index) => (
-            <div
-              key={position.id}
-              draggable
-              onDragStart={() => handleDragStart(index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDragEnd={handleDragEnd}
-              onClick={() => setSelectedPosition(position)}
-              className={`
-                grid grid-cols-12 gap-4 px-6 py-4 items-center transition-all cursor-pointer min-w-[600px]
-                ${draggedIndex === index ? 'opacity-50 bg-banana/10' : 'hover:bg-bg-tertiary/50'}
-                ${dragOverIndex === index && draggedIndex !== index ? 'border-t-2 border-banana' : ''}
-              `}
-            >
-              {/* Team Position */}
-              <div className="col-span-4">
-                <p
-                  className="font-semibold text-base"
-                  style={{ color: getPositionColor(position.position) }}
-                >
-                  {position.team}-{position.position}
-                </p>
-              </div>
+          rankings.map((position, index) => {
+            const color = getPositionColor(position.position);
+            return (
+              <div
+                key={position.id}
+                draggable
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragEnd={handleDragEnd}
+                onClick={() => setSelectedPosition(position)}
+                className={`
+                  group cursor-grab active:cursor-grabbing transition-all
+                  ${draggedIndex === index ? 'opacity-50' : ''}
+                  ${dragOverIndex === index && draggedIndex !== index ? 'translate-y-[1px]' : ''}
+                `}
+                style={{
+                  background: '#000',
+                  margin: '20px auto 10px auto',
+                  padding: '10px 0',
+                  borderLeft: `2px solid ${color}`,
+                  borderRight: `2px solid ${color}`,
+                  borderTop: '1px solid #222',
+                  borderBottom: '1px solid #222',
+                }}
+              >
+                <div className="flex flex-row items-center justify-between gap-5">
+                  {/* Drag handle */}
+                  <div className="w-[20px] h-[20px] relative ml-[7px]">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      className="text-white/40 hidden group-hover:block absolute left-0 top-[3px]"
+                    >
+                      <circle cx="9" cy="5" r="1.5" />
+                      <circle cx="9" cy="12" r="1.5" />
+                      <circle cx="9" cy="19" r="1.5" />
+                      <circle cx="15" cy="5" r="1.5" />
+                      <circle cx="15" cy="12" r="1.5" />
+                      <circle cx="15" cy="19" r="1.5" />
+                    </svg>
+                  </div>
 
-              {/* BYE Week */}
-              <div className="col-span-2 text-center">
-                <span className="text-text-secondary">{position.byeWeek}</span>
-              </div>
+                  {/* PlayerId */}
+                  <div className="font-primary font-bold text-white text-[18px]">
+                    {position.id || `${position.team}-${position.position}`}
+                  </div>
 
-              {/* ADP */}
-              <div className="col-span-2 text-center flex items-center justify-center gap-1.5">
-                <span className="text-text-secondary">{position.adp}</span>
-                {position.adpChange !== 0 && (
-                  <span className={`text-xs font-medium flex items-center ${
-                    position.adpChange > 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {position.adpChange > 0 ? (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="18 15 12 9 6 15"/>
+                  {/* Right side: BYE / ADP / RANK / MOVE */}
+                  <div className="flex flex-1 flex-row justify-end pr-[15px] gap-[15px] items-center">
+                    <div className="min-w-[40px] text-center">
+                      <div className="text-white font-bold">{position.byeWeek || '—'}</div>
+                    </div>
+                    <div className="min-w-[40px] text-center">
+                      <div className="text-white font-bold">{position.adp === 0 ? 'N/A' : position.adp}</div>
+                    </div>
+                    <div className="min-w-[40px] text-center">
+                      <div className="text-banana font-bold">{index + 1}</div>
+                    </div>
+                    <div
+                      className="min-w-[60px] flex items-center justify-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        onClick={() => movePosition(index, 'up')}
+                        disabled={index === 0}
+                        className={`p-1 rounded transition-colors ${
+                          index === 0
+                            ? 'text-white/10 cursor-not-allowed'
+                            : 'text-white/40 hover:text-white hover:bg-white/10'
+                        }`}
+                        aria-label="Move up"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="18 15 12 9 6 15" />
                         </svg>
-                        {position.adpChange}
-                      </>
-                    ) : (
-                      <>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="6 9 12 15 18 9"/>
+                      </button>
+                      <button
+                        onClick={() => movePosition(index, 'down')}
+                        disabled={index === rankings.length - 1}
+                        className={`p-1 rounded transition-colors ${
+                          index === rankings.length - 1
+                            ? 'text-white/10 cursor-not-allowed'
+                            : 'text-white/40 hover:text-white hover:bg-white/10'
+                        }`}
+                        aria-label="Move down"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9" />
                         </svg>
-                        {Math.abs(position.adpChange)}
-                      </>
-                    )}
-                  </span>
-                )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-
-              {/* Rank */}
-              <div className="col-span-2 text-center">
-                <span className="font-medium text-banana">{index + 1}</span>
-              </div>
-
-              {/* Move Up/Down Buttons */}
-              <div className="col-span-2 flex items-center justify-center gap-1">
-                <button
-                  onClick={(e) => { e.stopPropagation(); movePosition(index, 'up'); }}
-                  disabled={index === 0}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    index === 0
-                      ? 'text-white/10 cursor-not-allowed'
-                      : 'text-white/40 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="18 15 12 9 6 15"/>
-                  </svg>
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); movePosition(index, 'down'); }}
-                  disabled={index === rankings.length - 1}
-                  className={`p-1.5 rounded-md transition-colors ${
-                    index === rankings.length - 1
-                      ? 'text-white/10 cursor-not-allowed'
-                      : 'text-white/40 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            );
+          })
         )}
-      </Card>
+      </div>
 
       {/* CSV Upload Preview Modal */}
       <Modal
