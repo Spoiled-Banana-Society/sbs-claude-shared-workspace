@@ -44,6 +44,11 @@ function DraftRoomContent() {
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
   const promoTypeParam = searchParams?.get('promoType') as 'jackpot' | 'hof' | 'pro' | null;
   const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | null;
+  // Spectator mode: same URL flow as a live participant, but no actions
+  // fire (no pick submit, no leave, no queue mutations) and a SPECTATOR
+  // badge replaces the user's identity-related UI. The page still
+  // subscribes to live state (WS + REST polling) since it's mode=live.
+  const spectateParam = searchParams?.get('spectate') === 'true';
   const isPaidDraft = passTypeParam !== 'free';
 
   const [draftId, _setDraftId] = useState(urlDraftId);
@@ -1579,7 +1584,12 @@ function DraftRoomContent() {
             )}
           </div>
           <div className="flex items-center gap-4">
-            {phase === 'filling' && isLiveMode && (
+            {spectateParam && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest bg-banana text-black">
+                Spectator
+              </span>
+            )}
+            {phase === 'filling' && isLiveMode && !spectateParam && (
               <button
                 onClick={() => setShowLeaveConfirm(true)}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium text-white/40 hover:text-red-400 hover:bg-red-400/10 border border-white/10 hover:border-red-400/30 transition-all"
@@ -1732,6 +1742,7 @@ function DraftRoomContent() {
             onViewRoster={handleViewRoster}
             rosterViewPlayer={rosterViewPlayer}
             onDraftPlayer={(playerId) => {
+              if (spectateParam) return;
               console.log('[DraftRoom] onDraftPlayer:', playerId, 'phase:', phase, 'engineStatus:', engine.draftStatus);
               if (phase !== 'drafting' && engine.draftStatus !== 'active') {
                 console.log('[DraftRoom] BLOCKED — phase:', phase, 'engineStatus:', engine.draftStatus);
@@ -1741,6 +1752,7 @@ function DraftRoomContent() {
               handleLiveDraft(playerId);
             }}
             onQueueSync={(queue) => {
+              if (spectateParam) return;
               if (isLiveMode && phase === 'drafting') handleLiveQueueSync(queue);
             }}
             onSortChange={handleSortChange}
