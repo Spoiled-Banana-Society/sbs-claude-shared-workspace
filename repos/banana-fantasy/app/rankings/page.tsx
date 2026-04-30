@@ -74,7 +74,11 @@ export default function RankingsPage() {
   const [savingRankings, setSavingRankings] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [positionFilter, setPositionFilter] = useState<'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST'>('ALL');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Kept for the unreachable upload modal — actual upload is disabled
+  // (applyUploadedRankings is demo-only). Prefixed with _ so lint
+  // doesn't flag it as unused while the modal stays in place for the
+  // dev to wire up later.
+  const _fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load rankings from the Go API. ReturnUserRankings auto-seeds from
   // global ADP when the user has no saved doc, so first-time users still
@@ -216,7 +220,7 @@ export default function RankingsPage() {
   };
 
   // CSV Upload handler
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const _handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -334,33 +338,12 @@ export default function RankingsPage() {
                     </div>
                   </button>
                 </div>
-                <div className="border-t border-white/10 p-2">
-                  <p className="text-xs text-white/40 uppercase tracking-wider px-3 py-2">Upload</p>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-white hover:bg-white/5 rounded-lg transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="17 8 12 3 7 8"/>
-                      <line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
-                    <div className="text-left">
-                      <div>Import Custom Rankings</div>
-                      <div className="text-xs text-white/40">Upload team position rankings</div>
-                    </div>
-                  </button>
-                </div>
+                {/* Upload section disabled — applyUploadedRankings is
+                    demo-mode only (just shows an alert). Re-enable once
+                    the upload actually persists to the Go API. */}
               </div>
             </>
           )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
         </div>
         </div>
       </div>
