@@ -1,18 +1,18 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
-import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { getPrivyUser } from '@/lib/auth';
+import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
+import { requireWalletAuth } from '@/lib/walletAuth';
 import { createPurchase } from '@/lib/db';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.purchases);
   if (rateLimited) return rateLimited;
   try {
-    // Verify user is authenticated (Privy DID !== wallet address, so we just verify the JWT is valid)
-    await getPrivyUser(req);
+    // Server-derived wallet — purchase is always credited to the authed
+    // caller. body.userId would let one user spawn purchases on another.
+    const { walletAddress: userId } = await requireWalletAuth(req);
     const body = await parseBody(req);
-    const userId = requireString(body.userId, 'userId');
 
     const quantityRaw = body.quantity;
     const quantity = typeof quantityRaw === 'number' ? quantityRaw : Number(quantityRaw);

@@ -48,9 +48,11 @@ export function usePurchases(opts?: { userId?: string }) {
       setIsCreating(true);
       setCreateError(null);
       try {
+        const token = await getAccessToken();
         const res = await fetchJson<PurchaseCreateResponse>('/api/purchases/create', {
           method: 'POST',
-          body: JSON.stringify({ userId, quantity, paymentMethod }),
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          body: JSON.stringify({ quantity, paymentMethod }),
         });
 
         setLocalHistory((prev) => {
@@ -78,8 +80,10 @@ export function usePurchases(opts?: { userId?: string }) {
       setIsVerifying(true);
       setVerifyError(null);
       try {
+        const token = await getAccessToken();
         const res = await fetchJson<VerifyPurchaseResponse>('/api/purchases/verify', {
           method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: JSON.stringify({ purchaseId, txHash }),
         });
 

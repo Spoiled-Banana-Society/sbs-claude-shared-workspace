@@ -36,7 +36,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, getAccessToken } = useAuth();
   const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -139,12 +139,23 @@ export function BuyPassesModal({
     }
 
     try {
+      const token = await getAccessToken();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
       const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
         method: 'POST',
-        body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
+        headers: authHeaders,
+        body: JSON.stringify({
+          quantity: qty,
+          paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card',
+          // txHash lets the server tie the purchase record to the on-chain
+          // mint at create time instead of the previous create→verify split
+          // that drifted Firestore from on-chain state.
+          ...(paymentMethod === 'usdc' && hash ? { txHash: hash } : {}),
+        }),
       });
       const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
         method: 'POST',
+        headers: authHeaders,
         body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
       });
       // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
@@ -341,10 +352,13 @@ export function BuyPassesModal({
       // In staging mode, bots will fill AFTER user lands in draft room lobby
       // (triggered by draft-room page once WebSocket connects)
 
-      // Save to localStorage
+      // Save to localStorage. Upsert by id to avoid duplicate active-drafts
+      // entries when a user buys passes more than once for the same draft —
+      // previously appended unconditionally and the list grew with dupes.
       try {
-        const existing = JSON.parse(localStorage.getItem('banana-active-drafts') || '[]');
-        existing.push({
+        type StoredDraft = { id: string;[k: string]: unknown };
+        const existing = JSON.parse(localStorage.getItem('banana-active-drafts') || '[]') as StoredDraft[];
+        const next: StoredDraft = {
           id: draftId,
           contestName,
           status: 'filling',
@@ -353,8 +367,10 @@ export function BuyPassesModal({
           players: 1,
           maxPlayers: 10,
           joinedAt: Date.now(),
-        });
-        localStorage.setItem('banana-active-drafts', JSON.stringify(existing));
+        };
+        const dedup = existing.filter((d) => d?.id !== draftId);
+        dedup.push(next);
+        localStorage.setItem('banana-active-drafts', JSON.stringify(dedup));
       } catch { /* ignore */ }
 
       if (forcedDraftType) {
