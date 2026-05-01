@@ -48,16 +48,18 @@ export async function POST(req: Request) {
     if (amount <= 0) {
       return jsonError('Amount must be greater than 0', 400);
     }
-    // Temporary safety cap until full prize-ledger validation lands.
-    // Without this an authenticated + KYC'd wallet could submit any amount
-    // and the Firestore withdrawal record would be created. Real fix is
-    // to read the user's prize history and only allow `amount <= unwithdrawn`.
-    // Until then, hard-cap a single withdrawal at $5k and let the human
-    // ops review queue catch anything exotic.
-    const MAX_WITHDRAWAL_AMOUNT = 5000;
-    if (amount > MAX_WITHDRAWAL_AMOUNT) {
-      return jsonError(`Single withdrawals are capped at $${MAX_WITHDRAWAL_AMOUNT} until further validation lands.`, 400);
-    }
+    // ⚠️ TODO when prize-ledger lands:
+    //   const earned   = sum(prizes.where(userId, status='paid')) for this user
+    //   const cashed   = sum(withdrawals.where(userId, status in ['pending','processing','completed']))
+    //   const available = earned - cashed
+    //   if (amount > available) return jsonError('Insufficient prize balance', 400)
+    //
+    // Right now the prize ledger isn't built, so we can't validate amount
+    // against actual winnings. Per Boris (2026-04-30): users should be
+    // able to withdraw any amount they've actually won. Auth + KYC tier
+    // gates below are the only checks for now — and human review of the
+    // pending withdrawals queue is the practical safety net until the
+    // ledger is wired up.
     if (methodRaw !== 'usdc' && methodRaw !== 'bank') {
       return jsonError('Invalid withdrawal method', 400);
     }
