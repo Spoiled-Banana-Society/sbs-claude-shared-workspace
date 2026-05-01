@@ -8,7 +8,7 @@ import { useTimeRemaining } from '@/hooks/useTimeRemaining';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
-import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
+import { getStagingApiUrl } from '@/lib/staging';
 import { logger } from '@/lib/logger';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
 import type {

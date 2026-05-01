@@ -22,7 +22,6 @@ import { usePromoReminders } from '@/hooks/usePromoReminders';
 import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
-import * as draftStore from '@/lib/draftStore';
 
 function StagingMintButton({
   userId,
@@ -134,31 +133,6 @@ export default function HomePage() {
   const selectedContest = contestsQuery.data?.[0];
   const modals = useModalStack();
 
-  const buildDraftRoomUrl = React.useCallback((draftId: string, contestName: string, speed: 'fast' | 'slow') => {
-    const params = new URLSearchParams({
-      id: draftId,
-      name: contestName,
-      speed,
-    });
-
-    // Add live mode params only in staging mode
-    if (user?.walletAddress && _isStagingMode()) {
-      params.set('mode', 'live');
-      params.set('wallet', user.walletAddress);
-    }
-
-    if (typeof window !== 'undefined') {
-      const current = new URLSearchParams(window.location.search);
-      if (current.get('staging') === 'true') params.set('staging', 'true');
-      const apiUrl = current.get('apiUrl');
-      const wsUrl = current.get('wsUrl');
-      if (apiUrl) params.set('apiUrl', apiUrl);
-      if (wsUrl) params.set('wsUrl', wsUrl);
-    }
-
-    return `/draft-room?${params.toString()}`;
-  }, [user?.walletAddress]);
-
 
   const handleEnter = () => {
     if (!isLoggedIn) {
@@ -240,32 +214,19 @@ export default function HomePage() {
       consumePromoDraftType(forcedDraftType);
     }
 
-    if (_isStagingMode()) {
-      const params = new URLSearchParams({
-        speed,
-        mode: 'live',
-        wallet: user.walletAddress,
-        passType,
-      });
-      if (forcedDraftType) params.set('promoType', forcedDraftType);
-      router.push(`/draft-room?${params.toString()}`);
-    } else {
-      const localDraftId = `local-${Date.now()}`;
-      const localContestName = `League #${Math.floor(Math.random() * 9000) + 1000}`;
-      draftStore.addDraft({
-        id: localDraftId,
-        contestName: localContestName,
-        status: 'filling',
-        type: null,
-        draftSpeed: speed,
-        players: 1,
-        maxPlayers: 10,
-        joinedAt: Date.now(),
-        phase: 'filling',
-        liveWalletAddress: user.walletAddress,
-      });
-      router.push(buildDraftRoomUrl(localDraftId, localContestName, speed));
-    }
+    // Always live: drop the staging-only check. The previous else-branch
+    // created a fake `local-${Date.now()}` draft with no backend sync,
+    // intended for early dev without a Go API. Now both staging and prod
+    // run real backends — the fallback would just put users in a
+    // non-functional demo room.
+    const params = new URLSearchParams({
+      speed,
+      mode: 'live',
+      wallet: user.walletAddress,
+      passType,
+    });
+    if (forcedDraftType) params.set('promoType', forcedDraftType);
+    router.push(`/draft-room?${params.toString()}`);
   };
 
   const handlePurchaseComplete = () => {

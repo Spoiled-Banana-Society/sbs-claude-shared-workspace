@@ -124,15 +124,21 @@ function buildPerUserReferralCode(userId: string): string {
 
 /**
  * Origin shared in referral / share links. Reads NEXT_PUBLIC_APP_URL so prod
- * Vercel can ship its own domain without code changes. Previously this was
- * hardcoded to `banana-fantasy-sbs.vercel.app` (the staging domain), which
- * meant prod-deployed referral links would have pointed users back at
- * staging.
+ * Vercel can ship its own domain without code changes.
+ *
+ * Fallback policy:
+ *   - NEXT_PUBLIC_APP_URL set: use it.
+ *   - Unset on staging: fall back to the staging domain (banana-fantasy-sbs).
+ *   - Unset on prod: throw — better to crash loudly at link-build time than
+ *     silently send prod users back to staging via referral links.
  */
 function getAppOrigin(): string {
   const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (env) return env.replace(/\/$/, '');
-  return 'https://banana-fantasy-sbs.vercel.app';
+  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
+    return 'https://banana-fantasy-sbs.vercel.app';
+  }
+  throw new Error('NEXT_PUBLIC_APP_URL is required outside of staging');
 }
 
 function buildSeedUser(userId: string): {

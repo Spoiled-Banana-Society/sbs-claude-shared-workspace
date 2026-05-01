@@ -113,7 +113,13 @@ export function useDraftingPageState() {
   const promos = promosQuery.promos ?? [];
   const promoCount = promos.length;
   const localDrafts = useActiveDrafts();
-  const isLive = isStagingMode() && !!user?.walletAddress;
+  // `isLive` means "this user has a wallet → fetch real drafts from the
+  // Go API and open WS connections." It used to be gated on isStagingMode()
+  // because back when staging was the only env, those were equivalent —
+  // but in prod we obviously also want real drafts. Tying live mode to
+  // staging mode meant flipping the env flag would silently downgrade
+  // prod users to client-only demo mode.
+  const isLive = !!user?.walletAddress;
 
   const [showContestDetails, setShowContestDetails] = useState(false);
   const [infoTopic, setInfoTopic] = useState<string | null>(null);

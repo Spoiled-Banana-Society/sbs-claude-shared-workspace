@@ -388,7 +388,10 @@ export function BuyPassesModal({
         name: contestName,
         speed,
       });
-      if (isStagingMode() && addr) {
+      // Always use live mode when the user has a wallet — staging vs prod
+      // is decided by which backend URL we resolve to, not by whether the
+      // draft is "real."
+      if (addr) {
         params.set('mode', 'live');
         params.set('wallet', addr);
       }

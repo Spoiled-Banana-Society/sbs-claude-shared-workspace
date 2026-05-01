@@ -7,13 +7,24 @@ const DIDIT_API_KEY = process.env.DIDIT_API_KEY || '';
 const DIDIT_WORKFLOW_ID = process.env.DIDIT_WORKFLOW_ID || 'c49a0700-b18e-4a7f-aa55-06061fda42b5';
 const DIDIT_BASE_URL = 'https://verification.didit.me';
 
+function resolveAppOrigin(): string {
+  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (env) return env.replace(/\/$/, '');
+  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
+    return 'https://banana-fantasy-sbs.vercel.app';
+  }
+  // Same fail-loud pattern as lib/db-firestore.ts:getAppOrigin — better to
+  // crash than silently bounce a prod KYC user back to the staging domain.
+  throw new Error('NEXT_PUBLIC_APP_URL is required outside of staging');
+}
+
 export async function POST(req: Request) {
   try {
     const privyUser = await getPrivyUser(req);
     const body = await parseBody(req);
 
     const vendorData = privyUser.userId;
-    const callback = typeof body.callback === 'string' ? body.callback : `${process.env.NEXT_PUBLIC_APP_URL || 'https://banana-fantasy-sbs.vercel.app'}/prizes`;
+    const callback = typeof body.callback === 'string' ? body.callback : `${resolveAppOrigin()}/prizes`;
 
     const res = await fetch(`${DIDIT_BASE_URL}/v3/session/`, {
       method: 'POST',
