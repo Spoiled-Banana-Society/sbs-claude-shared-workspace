@@ -7,6 +7,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { logger } from '@/lib/logger';
 
 type FirestoreTimestamp = Timestamp | { toDate: () => Date };
 
@@ -58,7 +59,7 @@ export async function GET(req: Request) {
     return json(withdrawals, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[admin/withdrawals] GET failed:', err);
+    logger.error('admin.withdrawals.get_unhandled', { route: '/api/admin/withdrawals', err });
     return jsonError('Internal Server Error', 500);
   }
 }

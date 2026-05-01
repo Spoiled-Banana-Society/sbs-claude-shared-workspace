@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { buildOfframpUrl, createCdpSessionToken } from '@/lib/cdpAuth';
+import { logger } from '@/lib/logger';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
     return json({ url, sessionToken: token, redirectUrl });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('CDP sell-session error:', err);
+    logger.error('coinbase.sell-session.unhandled', { route: '/api/coinbase/sell-session', err });
     return jsonError('Failed to create cash-out session', 500);
   }
 }

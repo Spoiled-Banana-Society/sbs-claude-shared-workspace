@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { normalizeWalletAddress } from '@/lib/api/client';
+import { logger } from '@/lib/logger';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
 
@@ -61,7 +62,7 @@ export async function PUT(req: Request) {
     return json(data, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Owner update failed:', err);
+    logger.error('owner.update.unhandled', { route: '/api/owner/update', err });
     return jsonError('Owner update failed', 500);
   }
 }

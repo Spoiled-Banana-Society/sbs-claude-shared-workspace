@@ -5,6 +5,7 @@ import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { logger } from '@/lib/logger';
 
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.admin);
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
     return json({ promos }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[admin/promos] GET failed:', err);
+    logger.error('admin.promos.get_unhandled', { route: '/api/admin/promos', err });
     return jsonError('Internal Server Error', 500);
   }
 }
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     return json({ ...promoData, id: code }, 201);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[admin/promos] POST failed:', err);
+    logger.error('admin.promos.post_unhandled', { route: '/api/admin/promos', err });
     return jsonError('Internal Server Error', 500);
   }
 }
