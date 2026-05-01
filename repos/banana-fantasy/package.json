@@ -37,7 +37,6 @@
     "framer-motion": "^12.34.0",
     "next": "14.2.35",
     "permissionless": "^0.2.57",
-    "persona": "^5.8.0",
     "react": "^18",
     "react-dom": "^18",
     "react-dropdown": "^1.11.0",

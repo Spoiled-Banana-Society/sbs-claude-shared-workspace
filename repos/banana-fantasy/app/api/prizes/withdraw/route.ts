@@ -54,7 +54,8 @@ export async function POST(req: Request) {
     }
     const method: PrizeWithdrawal['method'] = methodRaw;
 
-    // Check Persona verification status before processing
+    // Check KYC verification status before processing (Didit; legacy
+    // Persona naming in helper functions due to vendor swap).
     const verification = await getPersonaVerification(userId);
 
     // Tier 1: First withdrawal — must have age + geo verification
