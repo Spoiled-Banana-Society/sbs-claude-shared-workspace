@@ -1,6 +1,7 @@
 // REST API service for the SBS drafts Go backend
 
 import { getDraftsApiUrl } from '@/lib/staging';
+import { getApiToken } from '@/lib/api/authToken';
 
 const FALLBACK_URL =
   process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
@@ -100,7 +101,18 @@ export interface UserTokens {
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
   const url = `${baseUrl}${path}`;
-  const res = await fetch(url, options);
+
+  // Attach Privy bearer for routes the Go API gates (draft-actions
+  // preferences, submitPick, owner self-edit, league join/leave). Open
+  // routes ignore the header; missing header on auth-required routes
+  // causes 401, which is the right failure mode.
+  const token = await getApiToken();
+  const headers = new Headers(options?.headers);
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(
