@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     const body = await parseBody<RevealRequest>(req);
     const commitId = requireString(body.commitId, 'commitId');
 
-    const commit = markRevealed(commitId);
+    const commit = await markRevealed(commitId);
     if (!commit) throw new ApiError(404, 'Commit not found');
 
     return json(

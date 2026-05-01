@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { verifyPurchase } from '@/lib/db';
+import { logger } from '@/lib/logger';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.purchases);
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
     return json(result, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error(err);
+    logger.error('purchases.verify.unhandled', { route: '/api/purchases/verify', err });
     return jsonError('Internal Server Error', 500);
   }
 }

@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 
     const serverSeed = generateServerSeed();
     const serverSeedHash = hashServerSeed(serverSeed);
-    const commit = createCommit({ serverSeed, serverSeedHash, contextId: draftId });
+    const commit = await createCommit({ serverSeed, serverSeedHash, contextId: draftId });
 
     const clientSeed = typeof body.clientSeed === 'string' && body.clientSeed.trim()
       ? body.clientSeed.trim()

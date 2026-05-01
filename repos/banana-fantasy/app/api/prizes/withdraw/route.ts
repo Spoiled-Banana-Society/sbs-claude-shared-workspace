@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { createWithdrawal } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
 
       if (!res.ok) {
         const message = await readErrorMessage(res);
-        console.error(`Withdraw API error: ${res.status}`, message);
+        logger.error('prizes.withdraw.backend_error', { route: '/api/prizes/withdraw', status: res.status, message });
         return jsonError(message || 'Withdraw service error', res.status);
       }
 
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
     return json({ status: withdrawal.status, withdrawal }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Withdrawal request failed:', err);
+    logger.error('prizes.withdraw.unhandled', { route: '/api/prizes/withdraw', err });
     return jsonError('Failed to process withdrawal', 500);
   }
 }

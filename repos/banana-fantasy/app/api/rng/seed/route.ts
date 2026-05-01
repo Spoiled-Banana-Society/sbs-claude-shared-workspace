@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
     const serverSeed = generateServerSeed();
     const serverSeedHash = hashServerSeed(serverSeed);
-    const commit = createCommit({ serverSeed, serverSeedHash, contextId });
+    const commit = await createCommit({ serverSeed, serverSeedHash, contextId });
 
     return json(
       {
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     const commitId = getSearchParam(req, 'commitId');
     if (!commitId) throw new ApiError(400, 'Missing commitId');
 
-    const commit = getCommit(commitId);
+    const commit = await getCommit(commitId);
     if (!commit) throw new ApiError(404, 'Commit not found');
 
     return json(
