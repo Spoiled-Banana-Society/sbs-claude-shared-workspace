@@ -105,7 +105,7 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function useDraftingPageState() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, getAccessToken } = useAuth();
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
@@ -305,10 +305,14 @@ export function useDraftingPageState() {
     // could let someone enter a draft they shouldn't.
     let decremented = false;
     try {
+      const token = await getAccessToken();
       const res = await fetch('/api/owner/use-pass', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ passType }),
       });
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
@@ -582,11 +586,17 @@ export function useDraftingPageState() {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
               localStorage.setItem(trackedKey, '1');
-              fetch('/api/promos/draft-complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, draftId: draft.id }),
-              }).catch(() => {});
+              (async () => {
+                const token = await getAccessToken();
+                await fetch('/api/promos/draft-complete', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                  },
+                  body: JSON.stringify({ draftId: draft.id }),
+                }).catch(() => {});
+              })();
             }
 
             if (info.draftOrder && draft.liveWalletAddress) {
@@ -597,11 +607,17 @@ export function useDraftingPageState() {
                 const pick10Key = `promo-pick10:${draft.id}`;
                 if (!localStorage.getItem(pick10Key)) {
                   localStorage.setItem(pick10Key, '1');
-                  fetch('/api/promos/pick10', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName }),
-                  }).catch(() => {});
+                  (async () => {
+                    const token = await getAccessToken();
+                    await fetch('/api/promos/pick10', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                      },
+                      body: JSON.stringify({ draftId: draft.id, draftName: draft.contestName }),
+                    }).catch(() => {});
+                  })();
                 }
               }
             }
@@ -1107,13 +1123,16 @@ export function useDraftingPageState() {
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
       // navigation cancels it.
-      const userId = user.id || user.walletAddress;
       const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
       try {
+        const token = await getAccessToken();
         await fetch('/api/owner/refund-pass', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ passType, leagueId: exitingDraft.id }),
         });
         await refreshBalance();
       } catch (err) {

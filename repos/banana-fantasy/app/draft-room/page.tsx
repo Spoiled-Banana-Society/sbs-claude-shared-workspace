@@ -92,7 +92,7 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, setShowLoginModal, getAccessToken } = useAuth();
   const {
     playSpinningSound,
     playReelStop,
@@ -1168,13 +1168,19 @@ function DraftRoomContent() {
       const trackedKey = `promo-tracked:${id}`;
       if (!localStorage.getItem(trackedKey)) {
         localStorage.setItem(trackedKey, '1');
-        fetch('/api/promos/draft-complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id }),
-        }).then(r => r.json()).catch(err => {
-          console.error('[Promo] Failed to track draft:', err);
-        });
+        (async () => {
+          const token = await getAccessToken();
+          await fetch('/api/promos/draft-complete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ draftId: id }),
+          }).then(r => r.json()).catch(err => {
+            console.error('[Promo] Failed to track draft:', err);
+          });
+        })();
       }
     }
 
@@ -1182,13 +1188,19 @@ function DraftRoomContent() {
       const pick10Key = `promo-pick10:${id}`;
       if (!localStorage.getItem(pick10Key)) {
         localStorage.setItem(pick10Key, '1');
-        fetch('/api/promos/pick10', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
-        }).then(r => r.json()).catch(err => {
-          console.error('[Promo] Pick 10 tracking failed:', err);
-        });
+        (async () => {
+          const token = await getAccessToken();
+          await fetch('/api/promos/pick10', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ draftId: id, draftName: contestName }),
+          }).then(r => r.json()).catch(err => {
+            console.error('[Promo] Pick 10 tracking failed:', err);
+          });
+        })();
       }
     }
 
@@ -1217,11 +1229,17 @@ function DraftRoomContent() {
     const jackpotKey = `promo-jackpot:${id}`;
     if (localStorage.getItem(jackpotKey)) return;
     localStorage.setItem(jackpotKey, '1');
-    fetch('/api/promos/jackpot-hit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id }),
-    }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
+    (async () => {
+      const token = await getAccessToken();
+      await fetch('/api/promos/jackpot-hit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ draftId: id }),
+      }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
 
@@ -1881,13 +1899,16 @@ function DraftRoomContent() {
                     // effort still — failure swallowed (Go side already
                     // gave the card back; the next refreshBalance on the
                     // /drafting page will reconcile).
-                    const userId = user?.id || walletParam;
                     const passType = passTypeParam || storedDraft?.passType || 'paid';
                     try {
+                      const token = await getAccessToken();
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                        },
+                        body: JSON.stringify({ passType, leagueId: draftId }),
                       });
                       await refreshBalance();
                     } catch (err) {

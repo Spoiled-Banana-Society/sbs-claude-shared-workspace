@@ -48,7 +48,7 @@ export function usePrizes(opts?: { userId?: string }) {
         const response = await fetchJson<WithdrawResponse>('/api/prizes/withdraw', {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: JSON.stringify({ userId: ownerId, draftId, amount, method }),
+          body: JSON.stringify({ draftId, amount, method }),
         });
         await refresh();
         return response.withdrawal;

@@ -61,6 +61,14 @@ interface AuthContextType {
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
   isEmbeddedWallet: boolean;
+  /**
+   * Get a Privy access token to attach as `Authorization: Bearer <token>` on
+   * authenticated API calls. Returns null when running in mock mode or before
+   * Privy is ready. Server routes that require auth use `requireWalletAuth`
+   * (lib/walletAuth.ts) to derive the wallet from this token — never trust a
+   * wallet from the request body.
+   */
+  getAccessToken: () => Promise<string | null>;
   // Twitter/X verification
   isTwitterVerified: boolean;
   isTwitterLinking: boolean;
@@ -789,6 +797,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         showLoginModal,
         setShowLoginModal,
         isEmbeddedWallet: user?.loginMethod === 'social',
+        getAccessToken: async () => (privy.authenticated ? privy.getAccessToken() : null),
         isTwitterVerified,
         isTwitterLinking,
         twitterError,

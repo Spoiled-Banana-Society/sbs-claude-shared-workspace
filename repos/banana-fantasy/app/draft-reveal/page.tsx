@@ -108,12 +108,10 @@ function DraftRevealContent() {
       });
 
       if (!res.ok) {
-        // Fallback: deterministic client-side pick (still uses SpinWheel animation)
-        const fallbackIndex = Math.floor(Math.random() * BBB4_SLICES.length);
-        return {
-          winningIndex: fallbackIndex,
-          prize: BBB4_SLICES[fallbackIndex].label,
-        };
+        // RNG service is the source of truth for fairness — never fall back to
+        // Math.random() because that breaks the commit-reveal proof and would
+        // leave us unable to verify a draft if anyone audited it.
+        throw new Error(`RNG spin failed: ${res.status}`);
       }
 
       const data = await res.json();
@@ -124,13 +122,9 @@ function DraftRevealContent() {
         serverSeed: data.event?.serverSeed,
         prize: data.prize ?? BBB4_SLICES[data.winningSlot ?? 0]?.label ?? 'Prize',
       };
-    } catch {
-      // Fallback for offline/error
-      const fallbackIndex = Math.floor(Math.random() * BBB4_SLICES.length);
-      return {
-        winningIndex: fallbackIndex,
-        prize: BBB4_SLICES[fallbackIndex].label,
-      };
+    } catch (err) {
+      console.error('[draft-reveal] RNG unavailable:', err);
+      return null;
     }
   }, [draftId, walletAddress]);
 

@@ -27,9 +27,11 @@ import * as draftStore from '@/lib/draftStore';
 function StagingMintButton({
   userId,
   onMinted,
+  getAccessToken,
 }: {
   userId: string;
   onMinted: (data?: { draftPasses?: number | null }) => void;
+  getAccessToken: () => Promise<string | null>;
 }) {
   const [minting, setMinting] = React.useState(false);
   const [qty, setQty] = React.useState(3);
@@ -39,9 +41,13 @@ function StagingMintButton({
     setMinting(true);
     setResult(null);
     try {
+      const token = await getAccessToken();
       const res = await fetch('/api/purchases/staging-mint', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ userId, quantity: qty }),
       });
       const data = await res.json();
@@ -84,7 +90,7 @@ function StagingMintButton({
 
 export default function HomePage() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, getAccessToken } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
@@ -203,10 +209,14 @@ export default function HomePage() {
     // re-syncs from Firestore truth.
     let decremented = false;
     try {
+      const token = await getAccessToken();
       const res = await fetch('/api/owner/use-pass', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ passType }),
       });
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
@@ -292,7 +302,7 @@ export default function HomePage() {
       {/* Staging Mint Button */}
       {_isStagingMode() && user?.id && (
         <section className="mb-4 flex justify-center">
-          <StagingMintButton userId={user.id} onMinted={(data) => {
+          <StagingMintButton userId={user.id} getAccessToken={getAccessToken} onMinted={(data) => {
             // Apply the new draftPasses count from the mint response immediately —
             // skips SSE / refreshBalance roundtrip latency that occasionally
             // delayed the header tick by several seconds.

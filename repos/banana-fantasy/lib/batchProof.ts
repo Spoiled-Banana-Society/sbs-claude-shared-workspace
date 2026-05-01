@@ -157,15 +157,25 @@ export async function combinedSeedHex(saltHex: string, randomnessHex: string): P
 }
 
 /**
- * SHA-256 of a hex-encoded seed. The on-chain commit is keccak256, but we
- * also publish a SHA-256 alongside for browser-native verification without
- * pulling a keccak library.
+ * SHA-256 of a hex-encoded seed. Kept for legacy; the canonical proof check
+ * uses keccak256 because that's what the on-chain commit hashes.
  */
 export async function sha256Hex(hex: string): Promise<string> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) throw new Error('WebCrypto subtle unavailable in this runtime');
   const digest = await subtle.digest('SHA-256', hexToBytes(hex) as BufferSource);
   return bytesToHex(new Uint8Array(digest));
+}
+
+/**
+ * Keccak-256 of a hex-encoded seed. Matches what the BBB4BatchProof contract
+ * computes when verifying `commit(seedHash) == keccak256(reveal(serverSeed))`,
+ * so this is the right primitive for browser-side proof verification.
+ */
+export async function keccak256Hex(hex: string): Promise<string> {
+  const { keccak256, toHex } = await import('viem');
+  const bytes = hexToBytes(hex);
+  return keccak256(toHex(bytes)).replace(/^0x/, '');
 }
 
 export function classifyDraftType(

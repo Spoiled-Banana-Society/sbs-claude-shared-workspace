@@ -2,7 +2,7 @@ import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/api/routeUtils';
-import { getPrivyUser } from '@/lib/auth';
+import { requireWalletAuth } from '@/lib/walletAuth';
 import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
@@ -36,17 +36,14 @@ export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
   try {
-    // Verify user is authenticated (Privy DID !== wallet address, so we just verify the JWT is valid)
-    await getPrivyUser(req);
+    // Server-derived wallet — never trust body.userId. The withdrawal is
+    // always credited to the authenticated caller's wallet.
+    const { walletAddress: userId } = await requireWalletAuth(req);
     const body = await parseBody(req);
-    const userId = requireString(body.userId, 'userId');
     const draftId = requireString(body.draftId, 'draftId');
     const amount = requireNumber(body.amount, 'amount');
     const methodRaw = body.method;
 
-    if (!userId.trim()) {
-      return jsonError('User id is required', 400);
-    }
     if (amount <= 0) {
       return jsonError('Amount must be greater than 0', 400);
     }

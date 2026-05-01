@@ -2,14 +2,15 @@ import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { requireWalletAuth } from '@/lib/walletAuth';
 import { recordJackpotHit } from '@/lib/db';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
+    const { walletAddress: userId } = await requireWalletAuth(req);
     const body = await parseBody(req);
-    const userId = requireString(body.userId, 'userId');
     const draftId = requireString(body.draftId, 'draftId');
 
     const promo = await recordJackpotHit(userId, draftId);
