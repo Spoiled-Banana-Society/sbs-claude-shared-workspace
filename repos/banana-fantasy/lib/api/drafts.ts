@@ -6,10 +6,12 @@ import type { DraftRoom, League, Player, TeamPosition } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { mapDraftTokenToLeague, type ApiDraftToken } from './owner';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { getApiToken } from './authToken';
 
 function draftsApi() {
   return createHttpClient({
     baseUrl: getDraftsApiUrl(),
+    getAccessToken: getApiToken,
   });
 }
 

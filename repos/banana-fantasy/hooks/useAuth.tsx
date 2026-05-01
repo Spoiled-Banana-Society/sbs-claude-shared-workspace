@@ -157,6 +157,29 @@ const REFERRAL_CODE_KEY = 'banana-referral-code';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
+
+  // Register a token getter for the module-level API clients (axios in
+  // utils/api.ts, fetch helpers in lib/api/*) so they can attach Privy
+  // bearer tokens without each call site threading getAccessToken through.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    void import('@/lib/api/authToken').then(({ setApiTokenGetter }) => {
+      if (cancelled) return;
+      setApiTokenGetter(async () => {
+        if (!privy.authenticated) return null;
+        try {
+          return await privy.getAccessToken();
+        } catch {
+          return null;
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      void import('@/lib/api/authToken').then(({ setApiTokenGetter }) => setApiTokenGetter(null));
+    };
+  }, [privy]);
   const [user, setUser] = useState<User | null>(MOCK_USER);
   const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
