@@ -993,9 +993,14 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       const maxId = Math.max(...ids);
       const apiBase = process.env.NEXT_PUBLIC_DRAFTS_API_URL?.trim();
       if (apiBase) {
+        // Server-side caller with no Privy JWT — use admin key.
+        const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
         const res = await fetch(`${apiBase}/owner/${expectedFrom.toLowerCase()}/draftToken/mint`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(adminKey ? { 'X-Admin-Key': adminKey } : {}),
+          },
           body: JSON.stringify({ minId, maxId }),
         });
         if (!res.ok) {

@@ -134,15 +134,30 @@ export function useDraftLiveSync({
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
 
-      // Auto-mint a token before joining so the wallet always has one available
+      // Auto-mint a token before joining so the wallet always has one available.
+      //
+      // ⚠️ TECH DEBT (Codex finding #20): mintId = Date.now() creates a fake
+      // tokenId that drifts from the on-chain ledger. This is a STAGING-ONLY
+      // legacy path — the production buy-pass flow at /api/purchases/staging-mint
+      // now uses real reserveTokens-derived tokenIds from Transfer event logs.
+      // Plan: rip this whole auto-mint out once we confirm staging works
+      // without it (the staging-mint button covers the same need correctly).
+      //
+      // Attach Privy bearer so the Go API auth gate passes (the route now
+      // requires auth or admin key). Skips silently if unavailable.
       try {
         const { getStagingApiUrl } = await import('@/lib/staging');
+        const { getApiToken } = await import('@/lib/api/authToken');
         const apiBase = getStagingApiUrl();
         if (apiBase) {
           const mintId = Date.now();
+          const token = await getApiToken();
           await fetch(`${apiBase}/owner/${walletParam}/draftToken/mint`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
             body: JSON.stringify({ minId: mintId, maxId: mintId }),
           });
         }

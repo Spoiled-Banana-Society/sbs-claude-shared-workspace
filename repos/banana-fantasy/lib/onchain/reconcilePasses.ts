@@ -173,11 +173,18 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[]): Prom
     }
   }
   ranges.push([runStart, runEnd]);
+  // Server-side caller (Alchemy webhook, admin reconcile) — no Privy JWT.
+  // Pass DRAFTS_API_ADMIN_KEY which the Go API accepts as an alternative to
+  // the Privy bearer for the mint route.
+  const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
   for (const [minId, maxId] of ranges) {
     try {
       const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/mint`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(adminKey ? { 'X-Admin-Key': adminKey } : {}),
+        },
         body: JSON.stringify({ minId, maxId }),
       });
       if (res.ok) {
