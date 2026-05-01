@@ -70,7 +70,7 @@ const fadeUp = {
 
 export function OnboardingFlow() {
   const router = useRouter();
-  const { user, walletAddress, getAccessToken } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const { isNewUser, isSubmitting, error, createProfile, updateProfile, completeOnboarding } = useOnboarding();
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
