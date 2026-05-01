@@ -50,7 +50,7 @@ async function sha256Hex(value: string): Promise<string> {
 }
 
 export function useRng() {
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const [result, setResult] = useState<RngSpinResponse | null>(null);
   const [isSpinning, setIsSpinning] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -94,10 +94,12 @@ export function useRng() {
 
     setIsVerifying(true);
     try {
+      const token = await getAccessToken();
       const reveal = await fetchJson<{ commitId: string; serverSeed: string; serverSeedHash: string }>(
         '/api/rng/reveal',
         {
           method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           body: JSON.stringify({ commitId: seedData.commitId }),
         },
       );
@@ -115,7 +117,7 @@ export function useRng() {
     } finally {
       setIsVerifying(false);
     }
-  }, []);
+  }, [getAccessToken]);
 
   return {
     result,

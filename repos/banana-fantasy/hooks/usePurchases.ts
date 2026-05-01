@@ -15,12 +15,18 @@ type VerifyPurchaseResponse = {
 };
 
 export function usePurchases(opts?: { userId?: string }) {
-  const { user, updateUser, refreshBalance } = useAuth();
+  const { user, updateUser, refreshBalance, getAccessToken } = useAuth();
   const userId = opts?.userId ?? user?.id;
 
   const swr = useSWRLike<Purchase[]>(
     userId ? `purchaseHistory:${userId}` : null,
-    ({ signal }) => fetchJson<Purchase[]>('/api/purchases/history', { signal, query: { userId } }),
+    async ({ signal }) => {
+      const token = await getAccessToken();
+      return fetchJson<Purchase[]>('/api/purchases/history', {
+        signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     { enabled: !!userId, fallbackData: [] },
   );
 

@@ -563,7 +563,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (pollInterval) return;
       const refetch = async () => {
         try {
-          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
+          const token = privy.authenticated ? await privy.getAccessToken() : null;
+          const res = await fetch('/api/owner/balance', {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
           if (res.ok) applyPayload(await res.json());
         } catch { /* silent */ }
       };
@@ -571,10 +574,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pollInterval = setInterval(refetch, 15_000);
     };
 
-    const connect = () => {
+    const connect = async () => {
       if (cancelled || eventSource) return;
       try {
-        const es = new EventSource(`/api/owner/balance/stream?userId=${encodeURIComponent(userId)}`);
+        // SSE doesn't support headers — pass Privy token via query param.
+        // Server validates it via requireWalletAuthSSE which derives the
+        // wallet from the JWT (the userId param is no longer trusted).
+        const token = privy.authenticated ? await privy.getAccessToken() : null;
+        if (!token) {
+          startPollingFallback();
+          return;
+        }
+        const es = new EventSource(`/api/owner/balance/stream?token=${encodeURIComponent(token)}`);
         eventSource = es;
 
         const onMessage = (ev: MessageEvent) => {
@@ -595,12 +606,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    connect();
+    void connect();
     const onFocus = () => {
       // On focus: if SSE was torn down, reconnect. Otherwise a no-op.
       if (!eventSource || eventSource.readyState === 2 /* CLOSED */) {
         eventSource = null;
-        connect();
+        void connect();
       }
     };
     window.addEventListener('focus', onFocus);
@@ -682,7 +693,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cardPurchaseCount?: number;
     } | null = null;
     try {
-      const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
+      const token = privy.authenticated ? await privy.getAccessToken() : null;
+      const res = await fetch('/api/owner/balance', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (res.ok) firestoreBalance = await res.json();
     } catch {
       // swallow — keep current state
@@ -723,7 +737,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       while (Date.now() < deadline) {
         try {
-          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
+          const token = privy.authenticated ? await privy.getAccessToken() : null;
+          const res = await fetch('/api/owner/balance', {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          });
           if (res.ok) {
             const data = await res.json();
             const snapshot = {

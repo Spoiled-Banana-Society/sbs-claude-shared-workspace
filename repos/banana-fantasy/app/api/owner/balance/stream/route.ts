@@ -1,4 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { requireWalletAuthSSE } from '@/lib/walletAuth';
+import { ApiError } from '@/lib/api/errors';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -52,10 +54,13 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
  * the use endpoint's correct decrement.
  */
 export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const userId = (searchParams.get('userId') ?? '').trim().toLowerCase();
-  if (!userId) {
-    return new Response('Missing userId', { status: 400 });
+  let userId: string;
+  try {
+    ({ walletAddress: userId } = await requireWalletAuthSSE(req));
+  } catch (err) {
+    const status = err instanceof ApiError ? err.status : 401;
+    const msg = err instanceof ApiError ? err.message : 'Unauthorized';
+    return new Response(msg, { status });
   }
 
   if (!isFirestoreConfigured()) {

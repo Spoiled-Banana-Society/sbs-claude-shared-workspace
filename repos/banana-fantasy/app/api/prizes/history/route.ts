@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
-import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
+import { json, jsonError } from '@/lib/api/routeUtils';
+import { requireWalletAuth } from '@/lib/walletAuth';
 import { mockPrizeHistory } from '@/lib/mock/prizes';
 import { getWithdrawalsByUser } from '@/lib/db';
 import type { PrizeHistoryItem, PrizeStatus, PrizeWithdrawal, WithdrawalStatus } from '@/types';
@@ -133,8 +134,14 @@ function buildFallbackHistory(userId: string): PrizeHistoryItem[] {
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
-  const userId = getSearchParam(req, 'userId');
-  if (!userId) return jsonError('Missing query param: userId', 400);
+
+  let userId: string;
+  try {
+    ({ walletAddress: userId } = await requireWalletAuth(req));
+  } catch (err) {
+    if (err instanceof ApiError) return jsonError(err.message, err.status);
+    return jsonError('Unauthorized', 401);
+  }
 
   const fallback = buildFallbackHistory(userId);
 

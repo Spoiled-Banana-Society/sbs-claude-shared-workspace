@@ -1,7 +1,8 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
-import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
+import { json, jsonError } from '@/lib/api/routeUtils';
+import { requireWalletAuth } from '@/lib/walletAuth';
 import { getPersonaVerification } from '@/lib/db-firestore';
 import type { EligibilityStatus } from '@/types';
 
@@ -9,8 +10,9 @@ export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
-    const userId = getSearchParam(req, 'userId');
-    if (!userId) return jsonError('Missing query param: userId', 400);
+    // Server-derived wallet — KYC status leaks personal data, never let
+    // ?userId= dictate which user we read.
+    const { walletAddress: userId } = await requireWalletAuth(req);
 
     const verification = await getPersonaVerification(userId);
 

@@ -3,6 +3,35 @@ import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser, linkedWalletsOf } from '@/lib/privyServer';
 
 /**
+ * SSE workaround. EventSource doesn't support custom headers, so for stream
+ * routes we accept the access token via `?token=<jwt>` query param and
+ * promote it to an Authorization header before delegating to the standard
+ * verifier. Tokens in URLs can land in proxy logs and browser history — only
+ * use for short-lived, low-blast-radius reads (balance stream).
+ */
+function promoteQueryTokenToHeader(req: Request): Request {
+  const url = new URL(req.url);
+  const token = url.searchParams.get('token');
+  if (!token) return req;
+  if (req.headers.get('authorization')) return req;
+  const headers = new Headers(req.headers);
+  headers.set('authorization', `Bearer ${token}`);
+  return new Request(req.url, {
+    method: req.method,
+    headers,
+    body: req.body,
+    // @ts-expect-error duplex required for some Node fetch impls
+    duplex: 'half',
+  });
+}
+
+export async function requireWalletAuthSSE(
+  req: Request,
+): Promise<{ userId: string; walletAddress: string }> {
+  return requireWalletAuth(promoteQueryTokenToHeader(req));
+}
+
+/**
  * Auth gate for routes that operate on the caller's own wallet.
  *
  * Returns a server-derived wallet address. The route MUST NOT read a wallet

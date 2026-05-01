@@ -20,7 +20,13 @@ export function usePrizes(opts?: { userId?: string }) {
 
   const query = useSWRLike<PrizeHistoryItem[]>(
     ownerId ? `prizes:history:${ownerId}` : null,
-    ({ signal }) => fetchJson<PrizeHistoryItem[]>('/api/prizes/history', { signal, query: { userId: ownerId } }),
+    async ({ signal }) => {
+      const token = await privy.getAccessToken();
+      return fetchJson<PrizeHistoryItem[]>('/api/prizes/history', {
+        signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     { enabled: !!ownerId, fallbackData: [] },
   );
   const refresh = query.mutate;
@@ -94,12 +100,18 @@ export function usePrizes(opts?: { userId?: string }) {
 }
 
 export function useEligibility(opts?: { userId?: string }) {
-  const { user } = useAuth();
+  const { user, getAccessToken } = useAuth();
   const userId = opts?.userId ?? user?.walletAddress ?? user?.id;
 
   return useSWRLike<EligibilityStatus>(
     userId ? `eligibility:${userId}` : null,
-    ({ signal }) => fetchJson<EligibilityStatus>('/api/eligibility', { signal, query: { userId } }),
+    async ({ signal }) => {
+      const token = await getAccessToken();
+      return fetchJson<EligibilityStatus>('/api/eligibility', {
+        signal,
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     { enabled: !!userId, fallbackData: { isVerified: false, season: 0, w9Completed: false, tier1Verified: false, tier2Verified: false, cumulativeWithdrawals: 0 } },
   );
 }
