@@ -14,6 +14,7 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
+import { getApiToken } from '@/lib/api/authToken';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
@@ -747,7 +748,7 @@ export function useDraftingPageState() {
     const wallet = user.walletAddress.trim().toLowerCase();
     const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 
-    const syncConnections = () => {
+    const syncConnections = async () => {
       // WS connections are opened with the current wallet as the `address` param
       // — stale connections from a prior wallet would auth against the wrong
       // user and leak events into the wrong account. Scope by current wallet
@@ -773,13 +774,21 @@ export function useDraftingPageState() {
         }
       });
 
-      for (const draft of draftingDrafts) {
-        if (conns.has(draft.id)) continue;
-
+      // Fetch Privy token once per sync — Go WS server requires it in URL.
+      const draftsToOpen = draftingDrafts.filter((draft) => {
+        if (conns.has(draft.id)) return false;
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+        return !(heartbeat && Date.now() - Number(heartbeat) < 10_000);
+      });
+      if (draftsToOpen.length === 0) return;
+      const token = await getApiToken();
+      if (!token) {
+        logger.warn('[Drafting WS] No Privy token — skipping background sync connections');
+        return;
+      }
 
-        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}`;
+      for (const draft of draftsToOpen) {
+        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}&token=${encodeURIComponent(token)}`;
         const ws = new WebSocket(url);
         conns.set(draft.id, ws);
 
@@ -854,8 +863,8 @@ export function useDraftingPageState() {
       }
     };
 
-    syncConnections();
-    const interval = setInterval(syncConnections, 3000);
+    void syncConnections();
+    const interval = setInterval(() => { void syncConnections(); }, 3000);
 
     return () => {
       clearInterval(interval);
