@@ -6,6 +6,7 @@ import {
   BBB4_CONTRACT,
   type OfferData,
 } from '@/lib/opensea';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
 
     if (!offersRes.ok) {
       const text = await offersRes.text();
-      console.error('[marketplace/offers] OpenSea error:', offersRes.status, text);
+      logger.error('marketplace.offers.opensea_error', { route: '/api/marketplace/offers', status: offersRes.status, text });
       return jsonError('Failed to fetch offers', offersRes.status >= 500 ? 502 : offersRes.status);
     }
 
@@ -139,7 +140,7 @@ export async function GET(req: Request) {
     return json({ offers });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[marketplace/offers] GET failed:', err);
+    logger.error('marketplace.offers.unhandled', { route: '/api/marketplace/offers', err });
     return jsonError('Internal Server Error', 500);
   }
 }
