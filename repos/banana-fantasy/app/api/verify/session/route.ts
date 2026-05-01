@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 
 const DIDIT_API_KEY = process.env.DIDIT_API_KEY || '';
 const DIDIT_WORKFLOW_ID = process.env.DIDIT_WORKFLOW_ID || 'c49a0700-b18e-4a7f-aa55-06061fda42b5';
@@ -29,7 +30,7 @@ export async function POST(req: Request) {
 
     if (!res.ok) {
       const errorText = await res.text();
-      console.error('[Didit] Session creation failed:', res.status, errorText);
+      logger.error('didit.session.create_failed', { route: '/api/verify/session', status: res.status, errorText });
       return jsonError('Failed to create verification session', 500);
     }
 
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
 
     return json({ sessionUrl, sessionId }, 200);
   } catch (err) {
-    console.error('[Didit] Error:', err);
+    logger.error('didit.session.unhandled', { route: '/api/verify/session', err });
     return jsonError(err instanceof Error ? err.message : 'Failed to create session', 500);
   }
 }

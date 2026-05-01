@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { requireWalletOwnership } from '@/lib/walletAuth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { logger } from '@/lib/logger';
 
 const TWITTER_LINKS_COLLECTION = 'v2_twitter_links';
 
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
     return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: false });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[verify-twitter]', err);
+    logger.error('verify-twitter.post_unhandled', { route: '/api/auth/verify-twitter', err });
     return jsonError('Internal Server Error', 500);
   }
 }
@@ -104,7 +105,7 @@ export async function GET(req: Request) {
     const data = snapshot.docs[0].data();
     return json({ verified: true, handle: data.twitterHandle, newUserPromoClaimed: data.newUserPromoClaimed ?? false });
   } catch (err) {
-    console.error('[verify-twitter GET]', err);
+    logger.error('verify-twitter.get_unhandled', { route: '/api/auth/verify-twitter', err });
     return json({ verified: false });
   }
 }
@@ -141,7 +142,7 @@ export async function PATCH(req: Request) {
     return json({ success: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[verify-twitter PATCH]', err);
+    logger.error('verify-twitter.patch_unhandled', { route: '/api/auth/verify-twitter', err });
     return jsonError('Internal Server Error', 500);
   }
 }
