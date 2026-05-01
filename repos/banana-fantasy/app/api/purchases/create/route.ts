@@ -31,10 +31,17 @@ export async function POST(req: Request) {
       if (!cardToken) {
         return jsonError('Payment required', 400);
       }
-      // TODO: Replace this placeholder token check with real payment processor verification before production.
-      // Require card tokens from the checkout flow (prefixed with test_)
-      // This prevents direct API calls from auto-succeeding without going through payment
-      if (!cardToken.startsWith('test_')) {
+      // Production needs real payment-processor token verification (Stripe /
+      // Coinbase Commerce / etc.). Until that lands, the `test_` placeholder
+      // is gated to staging — a prod deploy will reject any test token.
+      if (cardToken.startsWith('test_')) {
+        if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+          return jsonError('Test payment tokens are not accepted in production.', 402);
+        }
+      } else {
+        // Placeholder: any non-test_ token is treated as invalid until real
+        // verification is wired up. Prevents direct API calls from auto-
+        // succeeding without going through real checkout.
         return jsonError('Invalid payment token. Please complete checkout.', 402);
       }
     }

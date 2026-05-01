@@ -498,12 +498,15 @@ export function BuyPassesModal({
                 <input
                   type="number"
                   min="1"
-                  max="1000"
+                  max="100"
                   value={quantity || ''}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '') setQuantity(0);
-                    else setQuantity(Math.min(1000, Math.max(1, parseInt(val) || 1)));
+                    // Cap at 100 to match the API limit in /api/purchases/create.
+                    // Previously capped at 1000 which let the modal send users
+                    // into a guaranteed 400.
+                    else setQuantity(Math.min(100, Math.max(1, parseInt(val) || 1)));
                   }}
                   onBlur={() => { if (quantity < 1) setQuantity(1); }}
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

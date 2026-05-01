@@ -48,7 +48,16 @@ export async function POST(req: Request) {
     if (amount <= 0) {
       return jsonError('Amount must be greater than 0', 400);
     }
-    // TODO: Validate `amount` against the user's actual prize records before creating a withdrawal.
+    // Temporary safety cap until full prize-ledger validation lands.
+    // Without this an authenticated + KYC'd wallet could submit any amount
+    // and the Firestore withdrawal record would be created. Real fix is
+    // to read the user's prize history and only allow `amount <= unwithdrawn`.
+    // Until then, hard-cap a single withdrawal at $5k and let the human
+    // ops review queue catch anything exotic.
+    const MAX_WITHDRAWAL_AMOUNT = 5000;
+    if (amount > MAX_WITHDRAWAL_AMOUNT) {
+      return jsonError(`Single withdrawals are capped at $${MAX_WITHDRAWAL_AMOUNT} until further validation lands.`, 400);
+    }
     if (methodRaw !== 'usdc' && methodRaw !== 'bank') {
       return jsonError('Invalid withdrawal method', 400);
     }
@@ -70,7 +79,15 @@ export async function POST(req: Request) {
     }
 
     let backendStatus: WithdrawalStatus | undefined;
-    if (API_BASE) {
+    if (!API_BASE) {
+      // Fail loud rather than silently telling the user "withdrawal queued"
+      // while no Go-API transfer ever fires. Previously a missing env var
+      // would still write the Firestore withdrawal record + return success,
+      // which is a real prod-config landmine.
+      logger.error('prizes.withdraw.api_base_missing', { route: '/api/prizes/withdraw' });
+      return jsonError('Withdrawal service not configured', 503);
+    }
+    {
       const res = await fetch(`${API_BASE}/owner/${userId}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

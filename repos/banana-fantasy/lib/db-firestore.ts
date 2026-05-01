@@ -122,6 +122,19 @@ function buildPerUserReferralCode(userId: string): string {
   return `BANANA-${hash.slice(0, 4)}-${hash.slice(4, 8)}`;
 }
 
+/**
+ * Origin shared in referral / share links. Reads NEXT_PUBLIC_APP_URL so prod
+ * Vercel can ship its own domain without code changes. Previously this was
+ * hardcoded to `banana-fantasy-sbs.vercel.app` (the staging domain), which
+ * meant prod-deployed referral links would have pointed users back at
+ * staging.
+ */
+function getAppOrigin(): string {
+  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (env) return env.replace(/\/$/, '');
+  return 'https://banana-fantasy-sbs.vercel.app';
+}
+
 function buildSeedUser(userId: string): {
   user: User;
   promos: Promo[];
@@ -159,7 +172,7 @@ function buildSeedUser(userId: string): {
   // hardcodes a shared code which used to leak everyone's referrals to the
   // first-seeded user.
   const code = buildPerUserReferralCode(userId);
-  const link = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
+  const link = `${getAppOrigin()}?ref=${code}`;
   const referralPromo = promos.find((p) => p.type === 'referral');
   if (referralPromo) {
     referralPromo.modalContent.inviteCode = code;
@@ -279,7 +292,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // per-user deterministic code on read AND persist + claim the reverse
   // lookup doc so /api/referrals/track resolves to this user.
   const expectedCode = buildPerUserReferralCode(userId);
-  const expectedLink = `https://banana-fantasy-sbs.vercel.app?ref=${expectedCode}`;
+  const expectedLink = `${getAppOrigin()}?ref=${expectedCode}`;
   const referralPromoToFix = allDocs.find(
     (p) => p.type === 'referral' && p.modalContent.inviteCode !== expectedCode,
   );
