@@ -3,25 +3,39 @@ export const dynamic = 'force-dynamic';
 import crypto from 'node:crypto';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { savePersonaVerification } from '@/lib/db-firestore';
+import { logger } from '@/lib/logger';
 
-const WEBHOOK_SECRET = process.env.PERSONA_WEBHOOK_SECRET || '';
 const TIER1_TEMPLATE = process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_ID_BASIC || '';
 const TIER2_TEMPLATE = process.env.NEXT_PUBLIC_PERSONA_TEMPLATE_ID_KYC || '';
 
-function verifySignature(payload: string, signature: string | null): boolean {
-  if (!signature || !WEBHOOK_SECRET) return false;
-  const expected = crypto.createHmac('sha256', WEBHOOK_SECRET).update(payload).digest('hex');
-  return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+function verifySignature(rawBody: string, signature: string, secret: string): boolean {
+  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const providedBuf = Buffer.from(signature.replace(/^sha256=/, '').trim().toLowerCase(), 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  if (providedBuf.length !== expectedBuf.length) return false;
+  try {
+    return crypto.timingSafeEqual(providedBuf, expectedBuf);
+  } catch {
+    return false;
+  }
 }
 
 export async function POST(req: Request) {
   try {
-    const rawBody = await req.text();
-    const signature = req.headers.get('persona-signature');
+    const secret = (process.env.PERSONA_WEBHOOK_SECRET || '').trim();
+    if (!secret) {
+      // Fail CLOSED — without the secret we can't verify the webhook came
+      // from Persona. The previous behavior (skip verification when secret
+      // missing) let anyone POST fake "verified" events and bypass KYC.
+      // Same fix shape as the Didit webhook.
+      logger.error('persona.webhook.no_signing_secret');
+      return jsonError('Webhook secret not configured', 503);
+    }
 
-    // Verify webhook signature (skip in sandbox if secret not set)
-    if (WEBHOOK_SECRET && !verifySignature(rawBody, signature)) {
-      console.error('[Persona Webhook] Invalid signature');
+    const rawBody = await req.text();
+    const signature = req.headers.get('persona-signature') ?? '';
+    if (!signature || !verifySignature(rawBody, signature, secret)) {
+      logger.warn('persona.webhook.bad_signature');
       return jsonError('Invalid signature', 401);
     }
 
@@ -38,10 +52,10 @@ export async function POST(req: Request) {
     const inquiryId = event?.data?.id;
     const templateId = inquiryData['inquiry-template-id'];
 
-    console.log('[Persona Webhook] Event:', eventName, 'Status:', status, 'User:', referenceId, 'Template:', templateId);
+    logger.info('persona.webhook.received', { event: eventName, status, user: referenceId, template: templateId });
 
     if (!referenceId) {
-      console.warn('[Persona Webhook] No reference-id (userId) in event');
+      logger.warn('persona.webhook.no_reference_id');
       return json({ received: true }, 200);
     }
 
@@ -56,27 +70,27 @@ export async function POST(req: Request) {
         await savePersonaVerification(referenceId, {
           tier1: { verified: true, inquiryId, verifiedAt: now, geoState },
         });
-        console.log('[Persona Webhook] Tier 1 verified for user:', referenceId);
+        logger.info('persona.webhook.tier1_verified', { user: referenceId, geoState });
       } else if (templateId === TIER2_TEMPLATE) {
         // Tier 2: full KYC
         await savePersonaVerification(referenceId, {
           tier2: { verified: true, inquiryId, verifiedAt: now },
         });
-        console.log('[Persona Webhook] Tier 2 (KYC) verified for user:', referenceId);
+        logger.info('persona.webhook.tier2_verified', { user: referenceId });
       } else {
         // Unknown template — save as tier1 by default
         await savePersonaVerification(referenceId, {
           tier1: { verified: true, inquiryId, verifiedAt: now },
         });
-        console.log('[Persona Webhook] Unknown template, saved as tier1 for user:', referenceId);
+        logger.info('persona.webhook.unknown_template_tier1', { user: referenceId, templateId });
       }
     } else if (status === 'failed' || status === 'declined') {
-      console.log('[Persona Webhook] Verification failed/declined for user:', referenceId);
+      logger.info('persona.webhook.failed_or_declined', { user: referenceId, status });
     }
 
     return json({ received: true }, 200);
   } catch (err) {
-    console.error('[Persona Webhook] Error:', err);
+    logger.error('persona.webhook.unhandled', { route: '/api/webhooks/persona', err });
     return jsonError('Webhook processing error', 500);
   }
 }
