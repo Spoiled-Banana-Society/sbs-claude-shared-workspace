@@ -82,9 +82,15 @@ export async function POST(req: Request) {
     const actualDraftId = updatedRound?.draftId || draftId;
     logger.debug('[create-draft] JoinLeagues returned:', draftId, '| Queue stored:', actualDraftId);
 
-    // 4. Fill with 9 bots on Go API (use the actual stored draftId)
+    // 4. Fill with 9 bots on Go API (use the actual stored draftId).
+    // Go API /staging/* routes are now admin-gated — pass DRAFTS_API_ADMIN_KEY
+    // (mirrors the ADMIN_API_KEY env var on the Go service). Without the
+    // header the Go API returns 403 and the draft fills slowly via real
+    // user joins instead of bots, which is acceptable degradation.
+    const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
     const fillRes = await fetch(`${STAGING_API_URL}/staging/fill-bots/slow?count=9&leagueId=${actualDraftId}`, {
       method: 'POST',
+      headers: adminKey ? { 'X-Admin-Key': adminKey } : undefined,
     }).catch(() => null);
     logger.debug('[create-draft] fill-bots result:', fillRes?.status, fillRes?.ok);
 
