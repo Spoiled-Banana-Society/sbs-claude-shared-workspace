@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { requireAdmin } from '@/lib/adminAuth';
 import { logger } from '@/lib/logger';
 import type { Promo } from '@/types';
 
@@ -31,6 +32,10 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
+    // Admin-only even on staging — prevents random testers from resetting
+    // anyone's JP promo state. Staging-only flag plus admin allowlist.
+    await requireAdmin(req);
+
     if (!isFirestoreConfigured()) {
       throw new ApiError(503, 'Firestore not configured');
     }
