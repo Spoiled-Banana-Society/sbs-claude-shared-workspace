@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { ApiError } from '@/lib/api/errors';
+import { appOrigin } from '@/lib/appConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
           filters,
           headings: { en: '🎰 Raffle Draw in 2 Hours!' },
           contents: { en: 'The PWA install raffle is about to be drawn. Come watch the winner get picked live!' },
-          url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://banana-fantasy-sbs.vercel.app'}/banana-wheel/raffle`,
+          url: `${appOrigin()}/banana-wheel/raffle`,
           chrome_web_badge: '/banana-icon-192.png',
           chrome_web_icon: '/banana-icon-192.png',
           ttl: 7200, // 2 hours

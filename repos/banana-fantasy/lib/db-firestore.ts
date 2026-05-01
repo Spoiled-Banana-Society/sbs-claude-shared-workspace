@@ -122,24 +122,8 @@ function buildPerUserReferralCode(userId: string): string {
   return `BANANA-${hash.slice(0, 4)}-${hash.slice(4, 8)}`;
 }
 
-/**
- * Origin shared in referral / share links. Reads NEXT_PUBLIC_APP_URL so prod
- * Vercel can ship its own domain without code changes.
- *
- * Fallback policy:
- *   - NEXT_PUBLIC_APP_URL set: use it.
- *   - Unset on staging: fall back to the staging domain (banana-fantasy-sbs).
- *   - Unset on prod: throw — better to crash loudly at link-build time than
- *     silently send prod users back to staging via referral links.
- */
-function getAppOrigin(): string {
-  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (env) return env.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
-    return 'https://banana-fantasy-sbs.vercel.app';
-  }
-  throw new Error('NEXT_PUBLIC_APP_URL is required outside of staging');
-}
+// Re-export from the central config for callers in this file.
+import { appOrigin as getAppOrigin } from '@/lib/appConfig';
 
 function buildSeedUser(userId: string): {
   user: User;
@@ -543,7 +527,7 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
   const referralData = referralSnap.exists ? (referralSnap.data() as { code: string; createdAt: string }) : { code: '', createdAt: todayDate() };
 
   const code = (referralData.code || referralPromo?.modalContent.inviteCode || '').trim();
-  const link = referralPromo?.modalContent.referralLink || (code ? `https://banana-fantasy-sbs.vercel.app?ref=${code}` : '');
+  const link = referralPromo?.modalContent.referralLink || (code ? `${getAppOrigin()}?ref=${code}` : '');
   const history = referralPromo?.modalContent.referralHistory ?? [];
 
   let claimableRewards = 0;
@@ -572,7 +556,7 @@ export async function generateReferralCode(userId: string, username?: string) {
   const base = (username || `USER-${userId}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
   const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
   const code = `BANANA-${base}-${suffix}`;
-  const link = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
+  const link = `${getAppOrigin()}?ref=${code}`;
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);

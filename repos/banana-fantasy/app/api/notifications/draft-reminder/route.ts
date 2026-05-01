@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
+import { appOrigin } from '@/lib/appConfig';
 
 const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
         ],
         headings: { en: title },
         contents: { en: message },
-        url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.spoiledbananasociety.com'}/draft-room?id=${draftId}`,
+        url: `${appOrigin()}/draft-room?id=${draftId}`,
         chrome_web_badge: '/banana-icon-192.png',
         chrome_web_icon: '/banana-icon-192.png',
         ttl: minutesBefore * 60, // expire after the draft would have started

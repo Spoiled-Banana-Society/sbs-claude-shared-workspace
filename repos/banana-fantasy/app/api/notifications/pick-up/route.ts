@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
+import { appOrigin } from '@/lib/appConfig';
 
 const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
@@ -152,7 +153,7 @@ export async function POST(req: NextRequest) {
           ],
           headings: { en: title },
           contents: { en: message },
-          url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://banana-fantasy-sbs.vercel.app'}/draft-room?id=${draftId}`,
+          url: `${appOrigin()}/draft-room?id=${draftId}`,
           chrome_web_badge: '/icons/icon-192.png',
           chrome_web_icon: '/icons/icon-192.png',
           ttl,
