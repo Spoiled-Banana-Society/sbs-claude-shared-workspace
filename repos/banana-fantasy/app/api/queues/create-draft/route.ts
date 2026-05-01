@@ -24,6 +24,17 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
+    // Forward the caller's Privy bearer to the Go API. /league/{type}/owner/{ownerId}
+    // and /owner/{ownerId}/draftToken/mint require it now. We extract from the
+    // incoming Authorization header rather than re-issuing because (a) the
+    // user's already authenticated to this Next route and (b) this is a
+    // server-side proxy, no fresh user interaction.
+    const incomingAuth = req.headers.get('authorization') || '';
+    const goApiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (incomingAuth.startsWith('Bearer ')) {
+      goApiHeaders.Authorization = incomingAuth;
+    }
+
     // Check if queue round already has a draftId with valid Go API state
     const { getQueueStatus } = await import('@/lib/db');
     const queues = await getQueueStatus();
@@ -47,14 +58,14 @@ export async function POST(req: Request) {
     const mintId = 100000 + Math.floor(Math.random() * 50000);
     await fetch(`${STAGING_API_URL}/owner/${userId}/draftToken/mint`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: goApiHeaders,
       body: JSON.stringify({ minId: mintId, maxId: mintId }),
     }).catch(() => {});
 
     // 2. Join a slow league via JoinLeagues — this properly creates token + adds to league
     const joinRes = await fetch(`${STAGING_API_URL}/league/slow/owner/${userId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: goApiHeaders,
       body: JSON.stringify({ numLeaguesToJoin: 1 }),
     });
 

@@ -324,13 +324,18 @@ export function BuyPassesModal({
     setJoinError(null);
 
     try {
-      // Join a draft
+      // Join a draft. Go API now requires Privy bearer on
+      // /league/{type}/owner/{ownerId} — wallet must match {ownerId}.
       const apiBase = getDraftsApiUrl();
       const forcedDraftType = peekPromoDraftType();
+      const draftsToken = await getAccessToken();
       logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr, forcedDraftType });
       const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(draftsToken ? { Authorization: `Bearer ${draftsToken}` } : {}),
+        },
         body: JSON.stringify({ numLeaguesToJoin: 1, ...(forcedDraftType ? { draftType: forcedDraftType } : {}) }),
       });
 
