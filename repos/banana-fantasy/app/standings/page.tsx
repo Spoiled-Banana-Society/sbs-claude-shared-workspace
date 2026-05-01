@@ -7,6 +7,7 @@ import { LeaderboardView } from '@/components/standings/LeaderboardView';
 import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
+import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
 
@@ -23,6 +24,7 @@ export default function StandingsPage() {
   const { data: currentGameweek } = useGameweek();
 
   const leagues = leaguesQuery.data;
+  const { nicknames, setNickname } = useTeamNicknames();
 
   const [viewMode, setViewMode] = useState<ViewMode>('myteams');
 
@@ -358,6 +360,8 @@ export default function StandingsPage() {
                       league={league}
                       onOpenModal={handleOpenModal}
                       index={i}
+                      nickname={nicknames[league.id]}
+                      onRename={setNickname}
                     />
                   ))}
                   {/* Pagination */}
