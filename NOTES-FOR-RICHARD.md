@@ -4,6 +4,98 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## April 30 — Full code review results, every bug ranked
+
+Got Codex (a second AI reviewer) to do a deep pass on banana-fantasy and I verified each finding against the actual code. Sharing the complete list here — top to bottom by severity — so you have the same picture I do. Most of this is normal for a project our age. A few are urgent. Numbers run highest priority to lowest.
+
+**SECURITY-CRITICAL — fix this week**
+
+1. **Google service account keys leaked in git.** `triggersServiceAccount.json` in `sbs-drafts-api-deploy` contains the private keys to our `sbs-triggers-fantasy` Google project, in plaintext, sitting in git history since March 27. Anyone who has ever cloned that repo has admin access. Rotating today.
+
+2. **`/api/prizes/withdraw` doesn't check who's calling it.** Trusts whatever wallet the request body says. Anyone can submit a withdraw against another user's balance. No max-amount check either.
+
+3. **Didit webhook has no signature verification.** Anyone can POST a fake "KYC approved" payload to our webhook URL and unlock withdrawals without ever uploading an ID.
+
+4. **`/api/owner/refund-pass` is unauthenticated.** Trusts `body.userId`. Anyone can give themselves (or anyone else) free draft passes forever.
+
+5. **`/api/owner/use-pass` is unauthenticated.** Trusts `body.userId`. Anyone can burn another user's pass or reuse their own outside the proper flow.
+
+6. **`/api/owner/balance` is unauthenticated.** Anyone can read any user's pass balance.
+
+7. **`/api/promos/claim` is unauthenticated.** Trusts `body.userId`. Anyone can claim promo rewards as anyone.
+
+8. **`/api/promos/draft-complete` is unauthenticated.** Same pattern — anyone can credit anyone's draft-complete promo progress.
+
+9. **`/api/promos/pick10` is unauthenticated.** Same pattern for the pick-10 promo.
+
+10. **`/api/promos/jackpot-hit` is unauthenticated.** Same pattern for jackpot-hit credit.
+
+11. **`/api/auth/verify-twitter` doesn't verify the wallet really belongs to the caller.** Our own code comment admits this is intentionally deferred — anyone can claim any wallet's Twitter verification.
+
+12. **`/api/purchases/staging-mint` is fully public.** Capped at 20 per call but no auth. Anyone on staging can mint NFTs to any wallet. Gated to staging-only, so prod isn't affected, but still wrong.
+
+13. **Public RNG reveal endpoint.** `/api/rng/reveal` lets anyone with a commitId reveal the server seed early. No auth, no state-machine guard.
+
+14. **Unauth GET endpoints leak personal data.** Prizes, purchases, eligibility, KYC status — readable by anyone with a wallet address.
+
+15. **Go API has zero auth middleware.** Mint, prize transfer, delete user data, change display name, change profile picture — every mutating endpoint is wide open. Anyone who finds the URL can call them.
+
+16. **WebSocket server has no real auth.** Origin check is disabled, identity comes from a URL query param (`?wallet=...`), and there's a literal TODO comment in our code: "check to see if address belongs in the draft?". Anyone can connect to any draft as anyone.
+
+**HIGH — bugs affecting real users in live drafts**
+
+17. **Autopicks sometimes fail silently.** When an autopick errors, our server returns HTTP 200 with "Pick processed successfully" anyway. Cloud Tasks doesn't retry. The pick just disappears. Probably what's behind some of the weird draft complaints we've both seen.
+
+18. **Draft cleanup logic is inverted** at `draft.go:368`. The condition does the opposite of what it should — drafts that should clean up don't, and ones that shouldn't sometimes do.
+
+19. **Proof page uses the wrong hash function.** Checking SHA-256 against values that are actually Keccak-256, so the page shows false fairness errors to users who go look at proofs.
+
+20. **Auto-mint uses `Date.now()` as the token ID.** Drifts between Firestore and on-chain — over time our records and the actual NFT ledger don't match.
+
+21. **Reveal page falls back to `Math.random()` if the real RNG fails.** Not fair-play random. If anyone ever audits a draft where this fallback fired, fairness can't be proven.
+
+22. **`BuyPassesModal` calls `purchases/create` without auth or txHash.** Mint succeeds on chain but our purchase accounting drifts because the API doesn't verify what actually happened.
+
+23. **WebSocket slow-consumer stalls draft fanout.** One bad client (slow network, stuck tab) can freeze message delivery to everyone else in that draft.
+
+24. **Busy-wait on `currentlyPicking`.** Under load this creates a race where two picks can land in the same slot.
+
+25. **VRF batch has no recovery path.** If one fairness commit gets stuck, the entire batch system bricks — no retry, no manual unstick tool.
+
+26. **Spectator routes hardcode the staging backend URL.** If we ever flip a flag wrong, prod spectator views could leak staging state.
+
+**MEDIUM — quality and maintainability**
+
+27. **Redux still owns server data.** Should be React Query for server state — a lot of components still pull through Redux, which means stale-data bugs every time we add a feature.
+
+28. **RNG commits live in process memory only.** If the server restarts mid-draft, the commit state is gone. Fairness state isn't durable.
+
+29. **WalletConnect bridge accepts `postMessage` from any origin.** Should be locked down to known origins.
+
+30. **`BuyPassesModal` appends to active drafts instead of upserting.** Creates duplicates in the active-drafts list when users buy passes more than once.
+
+31. **Conditional Privy hook.** `usePrivy()` is wrapped in a condition in one place — React's rules don't allow that, will cause hydration bugs.
+
+32. **Contract base URI is mutable forever.** Should be made immutable once we're confident in the metadata.
+
+33. **Caret-ranged versions on critical auth/wallet packages.** `^1.2.3` lets npm pull silent updates that could change behavior between deploys.
+
+**LOW — cleanup**
+
+34. **Dev-only routes exposed in prod.** `/test-tutorial`, `/security/blockaid`, the staging-mint button on the home page — should be cut or admin-gated.
+
+35. **Sentry coverage gaps.** Many error handlers fall to `console.error` instead of reporting to Sentry, so we never see them.
+
+36. **Pin runtime versions.** Same caret-range issue but for Node and Go runtimes.
+
+37. **`scripts/wip.go` shipped in prod repo.** Dead code, should be deleted.
+
+Honest summary: the app works if everyone plays nice. It does not yet survive one motivated bad actor. That's the gap between "running" and "production-ready," and we're closing it this week.
+
+Happy to deep-dive any one of these — just say the word.
+
+---
+
 ## April 28 — Reply to your JP-freeze diagnosis (fix deployed)
 
 Read your April 28 note. Diagnosis is solid and the reorder you proposed was the right call — applied + deploying as I write this. About to test on staging once the Go API deploy lands.
