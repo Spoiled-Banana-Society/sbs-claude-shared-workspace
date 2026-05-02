@@ -264,9 +264,9 @@ export default function HomePage() {
       </section>
 
       {/* Staging Mint Button */}
-      {_isStagingMode() && user?.id && (
+      {_isStagingMode() && user?.walletAddress && (
         <section className="mb-4 flex justify-center">
-          <StagingMintButton userId={user.id} getAccessToken={getAccessToken} onMinted={(data) => {
+          <StagingMintButton userId={user.walletAddress} getAccessToken={getAccessToken} onMinted={(data) => {
             // Apply the new draftPasses count from the mint response immediately —
             // skips SSE / refreshBalance roundtrip latency that occasionally
             // delayed the header tick by several seconds.
