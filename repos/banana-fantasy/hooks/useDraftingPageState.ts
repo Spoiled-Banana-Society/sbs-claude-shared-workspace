@@ -884,28 +884,27 @@ export function useDraftingPageState() {
     // Not signed in → don't show anyone else's drafts cached in localStorage.
     // The drafting list belongs to the authenticated wallet only.
     if (!user?.walletAddress) {
-      console.log('[Drafting Diag] no walletAddress, returning empty');
       return [] as Draft[];
     }
 
-    const currentWallet = user.walletAddress.toLowerCase();
-    // Filter cached local drafts to the current wallet so switching accounts
-    // in the same browser doesn't bleed another user's placeholders.
-    const ownedLocalDrafts = localDrafts.filter(d => {
-      if (!d.liveWalletAddress) return true; // legacy entries without wallet stamp — allow
-      return d.liveWalletAddress.toLowerCase() === currentWallet;
-    });
-
-    console.log('[Drafting Diag]', {
-      currentWallet,
-      localDraftsCount: localDrafts.length,
-      localDrafts: localDrafts.map(d => ({ id: d.id, status: d.status, liveWalletAddress: d.liveWalletAddress })),
-      ownedLocalDraftsCount: ownedLocalDrafts.length,
-      liveDraftsCount: liveDrafts.length,
-      liveDrafts: liveDrafts.map(d => ({ id: d.id, status: d.status })),
-      hiddenDraftIdsCount: hiddenDraftIds.size,
-      hiddenDraftIdsList: Array.from(hiddenDraftIds),
-    });
+    // PERMISSIVE wallet behavior. Previously this required a strict
+    // case-insensitive match between the draft's liveWalletAddress stamp
+    // and the live Privy wallet — but during auth hydration / multi-wallet
+    // (embedded vs. external) Privy state, those values can briefly differ
+    // even when the draft truly belongs to the user. The stricter check
+    // caused the draft to flicker into the My Drafts list and then vanish
+    // a few seconds later when the resolved wallet stamp didn't match.
+    //
+    // Now: show every stamped draft from localStorage. Unstamped legacy
+    // rows are purged on mount in useActiveDrafts, so anything left here
+    // was at some point genuinely owned by a wallet that signed in. The
+    // Go API call (loadLiveDrafts) re-stamps every draft it returns with
+    // the current wallet on every load, so briefly-mismatched stamps
+    // self-heal within one fetch. Worst case: same-browser account swap
+    // shows the prior account's drafts until the next page refresh —
+    // acceptable tradeoff for not losing the user's actual draft.
+    void user.walletAddress;
+    const ownedLocalDrafts = localDrafts;
 
     let base: Draft[];
     if (!isLive) {
@@ -946,11 +945,9 @@ export function useDraftingPageState() {
       return true;
     });
 
-    const final = [...remainingBase, ...mergedQueueDrafts].filter(
+    return [...remainingBase, ...mergedQueueDrafts].filter(
       d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed',
     );
-    console.log('[Drafting Diag] final activeDrafts:', final.length, final.map(d => ({ id: d.id, status: d.status, hidden: hiddenDraftIds.has(d.id) })));
-    return final;
   }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
 
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
