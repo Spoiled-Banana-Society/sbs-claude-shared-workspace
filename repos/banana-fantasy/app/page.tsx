@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { AddToHomeScreenCard } from '@/components/home/AddToHomeScreenCard';
+import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
 import { usePWAInstallPromo } from '@/hooks/usePWAInstallPromo';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
@@ -242,7 +243,9 @@ export default function HomePage() {
       {/* Get the App banner */}
       <AddToHomeScreenCard />
 
-      {/* Special Draft Banner removed — special drafts now show on /drafting page */}
+      {/* Founder Draft event banner — only renders on the day-of (within 24h before
+          the event) or during the live window. Otherwise self-hides. */}
+      <FounderDraftBanner />
 
       {/* Featured Contest */}
       <section className="mb-6">

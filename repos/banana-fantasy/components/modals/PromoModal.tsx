@@ -521,6 +521,35 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
+  const renderFounderDraftContent = () => {
+    const history = promo.modalContent.founderHistory;
+    const hasHistory = history && history.length > 0;
+    return (
+      <>
+        {renderProgressSection()}
+        {hasHistory ? (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-3 text-text-primary">Founder Drafts joined</h4>
+            <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
+              {history!.map((entry, index) => (
+                <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
+                  <span className="text-text-secondary">{entry.draftName}</span>
+                  <span className="font-semibold" style={{ color: '#06b6d4' }}>
+                    {entry.amount} {entry.amount === 1 ? 'free draft' : 'free drafts'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p className="text-text-muted text-sm text-center py-4">
+            No Founder Drafts joined yet. Catch the next one!
+          </p>
+        )}
+      </>
+    );
+  };
+
   const renderMintContent = () => {
     return (
       <>
@@ -848,6 +877,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderReferralContent();
       case 'jackpot':
         return renderJackpotContent();
+      case 'founder-draft':
+        return renderFounderDraftContent();
       case 'mint':
         return renderMintContent();
       case 'new-user':
