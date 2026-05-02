@@ -271,7 +271,7 @@ export default function MarketplacePage() {
           refetchActivity();
         }, 1500);
       } catch (error) {
-        console.error('[Marketplace] Buy failed:', error);
+        logger.error('marketplace.buy_failed', { err: error });
         setTxError(error instanceof Error ? error.message : 'Transaction failed');
         setBuyStep('confirm');
       }
@@ -317,7 +317,7 @@ export default function MarketplacePage() {
         refetchActivity();
       }, 1500);
     } catch (error) {
-      console.error('[Marketplace] Card buy failed:', error);
+      logger.error('marketplace.card_buy_failed', { err: error });
       setTxError(error instanceof Error ? error.message : 'Payment failed');
       setBuyStep('confirm');
       setCardFlowStep('idle');
@@ -386,7 +386,7 @@ export default function MarketplacePage() {
       refetchMyNfts();
       refetchActivity();
     } catch (error) {
-      console.error('[Marketplace] List failed:', error);
+      logger.error('marketplace.list_failed', { err: error });
       setTxError(error instanceof Error ? error.message : 'Listing failed');
     }
   }, [addNotification, listPrice, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTransaction, walletAddress]);
@@ -419,7 +419,7 @@ export default function MarketplacePage() {
       refetchMyNfts();
       refetchActivity();
     } catch (error) {
-      console.error('[Marketplace] Cancel failed:', error);
+      logger.error('marketplace.cancel_failed', { err: error });
       setTxError(error instanceof Error ? error.message : 'Failed to cancel listing');
     } finally {
       setCancellingTokenId(null);
@@ -454,7 +454,7 @@ export default function MarketplacePage() {
         }
         if (cancelledRef.current) return;
       } catch (error) {
-        console.error('[Sweep] Fund failed:', error);
+        logger.error('marketplace.sweep_fund_failed', { err: error });
         setSweepStep('confirm');
         return;
       }
@@ -497,7 +497,7 @@ export default function MarketplacePage() {
 
         progress[team.tokenId] = 'done';
       } catch (error) {
-        console.error(`[Sweep] Failed ${team.tokenId}:`, error);
+        logger.error('marketplace.sweep_failed', { tokenId: team.tokenId, err: error });
         progress[team.tokenId] = 'failed';
       }
       setSweepProgress({ ...progress });

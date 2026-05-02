@@ -278,7 +278,7 @@ export default function NftDetailPage() {
         setBuyStep('complete');
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
-        console.error('[NFT Detail] Buy failed:', err);
+        logger.error('nft.buy_failed', { err });
         setTxError(err instanceof Error ? err.message : 'Transaction failed');
         setBuyStep('confirm');
       }
@@ -325,7 +325,7 @@ export default function NftDetailPage() {
         setCardFlowStep('idle');
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
-        console.error('[NFT Detail] Card buy failed:', err);
+        logger.error('nft.card_buy_failed', { err });
         setTxError(err instanceof Error ? err.message : 'Payment failed');
         setBuyStep('confirm');
         setCardFlowStep('idle');
@@ -421,7 +421,7 @@ export default function NftDetailPage() {
       setOfferStep('complete');
       refetchOffers();
     } catch (err) {
-      console.error('[NFT Detail] Offer failed:', err);
+      logger.error('nft.offer_failed', { err });
       setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
       setOfferStep('input');
     }
@@ -507,7 +507,7 @@ export default function NftDetailPage() {
       refetchOffers();
       setTimeout(() => fetchNft(), 2000);
     } catch (err) {
-      console.error('[NFT Detail] Accept offer failed:', err);
+      logger.error('nft.accept_offer_failed', { err });
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept offer');
     } finally {
       setAcceptingOfferHash(null);
@@ -551,7 +551,7 @@ export default function NftDetailPage() {
 
       refetchOffers();
     } catch (err) {
-      console.error('[NFT Detail] Cancel offer failed:', err);
+      logger.error('nft.cancel_offer_failed', { err });
       setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offer');
     } finally {
       setCancellingOfferHash(null);

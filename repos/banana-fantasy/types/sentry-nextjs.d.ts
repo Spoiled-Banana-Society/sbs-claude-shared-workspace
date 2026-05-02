@@ -2,6 +2,8 @@ declare module '@sentry/nextjs' {
   export interface BrowserOptions {
     dsn?: string;
     environment?: string;
+    /** Deploy SHA so Sentry can group + diff events per release. */
+    release?: string;
     tracesSampleRate?: number;
   }
 
