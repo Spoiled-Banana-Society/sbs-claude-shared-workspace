@@ -239,13 +239,33 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   return seed.user;
 }
 
-function calcSpinsForPurchase(quantity: number): number {
+// Pure-math helpers — exported for unit tests. These are the most
+// error-prone parts of the purchase-credit flow (off-by-one on milestone
+// boundaries) so they're tested directly without needing a Firestore mock.
+
+export function calcSpinsForPurchase(quantity: number): number {
   return Math.floor(quantity / API_CONFIG.purchases.spinsPerPasses);
 }
 
-function calcBuyBonusFreeDrafts(quantity: number): number {
+export function calcBuyBonusFreeDrafts(quantity: number): number {
   if (!API_CONFIG.promos.buyBonus.enabled) return 0;
   return Math.floor(quantity / API_CONFIG.promos.buyBonus.buy) * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+}
+
+/**
+ * Card Purchase Rewards: every 6th card purchase = 1 free draft. Returns
+ * the next cardPurchaseCount value + whether this purchase earned the
+ * 6-card-rewards free draft. Pure function over the prior count.
+ */
+export function applyCardPurchaseRewards(priorCount: number): {
+  nextCount: number;
+  freeDraftEarned: boolean;
+} {
+  const incremented = Math.max(0, priorCount) + 1;
+  if (incremented >= 6) {
+    return { nextCount: 0, freeDraftEarned: true };
+  }
+  return { nextCount: incremented, freeDraftEarned: false };
 }
 
 export async function getPromos(userId: string): Promise<Promo[]> {
@@ -921,15 +941,24 @@ export async function creditCompletedPurchase(input: {
 
   const purchasesRef = db.collection(PURCHASES_COLLECTION);
 
-  // Idempotency short-circuit: already credited this on-chain mint.
-  const dupSnap = await purchasesRef
-    .where('txHash', '==', input.txHash)
-    .where('status', '==', 'completed')
-    .limit(1)
-    .get();
-  if (!dupSnap.empty) {
+  // The purchase doc ID IS the on-chain txHash. This is the load-bearing
+  // idempotency invariant: only one v2_purchases doc can ever exist per
+  // mint transaction, and Firestore's transaction conflict detection
+  // enforces it at the database layer (not at the application layer).
+  // Two concurrent calls to creditCompletedPurchase with the same txHash
+  // both call tx.get(purchaseRef) on the same ref; whichever commits first
+  // wins, and the other's tx aborts + retries; the retry's tx.get reads
+  // the now-existing doc and short-circuits. No double-credit possible.
+  const purchaseId = input.txHash;
+  const purchaseRef = purchasesRef.doc(purchaseId);
+
+  // Fast-path short-circuit (avoid even starting the tx if we know it's
+  // already done). The in-tx check below is the real safety net; this
+  // exists purely so happy-path retries don't pay tx-startup cost.
+  const fastPathSnap = await purchaseRef.get();
+  if (fastPathSnap.exists && fastPathSnap.get('status') === 'completed') {
     return {
-      purchase: deepClone(dupSnap.docs[0].data() as Purchase),
+      purchase: deepClone(fastPathSnap.data() as Purchase),
       draftPasses: null,
       spinsAdded: 0,
       freeDraftsAdded: 0,
@@ -939,8 +968,6 @@ export async function creditCompletedPurchase(input: {
   }
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
-  const purchaseId = crypto.randomUUID();
-  const purchaseRef = purchasesRef.doc(purchaseId);
 
   // Build activity event doc OUTSIDE the tx — it does its own Firestore reads.
   const activityDoc = await buildActivityEventDoc({
@@ -960,6 +987,24 @@ export async function creditCompletedPurchase(input: {
   });
 
   const result = await db.runTransaction(async (tx) => {
+    // In-tx idempotency check. Firestore tracks reads + commits; if a
+    // concurrent call commits the purchase doc between our read here
+    // and our writes below, this transaction aborts and Firestore
+    // auto-retries. On retry, this read returns the now-existing doc
+    // and we short-circuit cleanly with alreadyCredited=true.
+    const purchaseSnap = await tx.get(purchaseRef);
+    if (purchaseSnap.exists && purchaseSnap.get('status') === 'completed') {
+      const existing = purchaseSnap.data() as Purchase;
+      return {
+        purchase: deepClone(existing),
+        draftPasses: null,
+        spinsAdded: 0,
+        freeDraftsAdded: 0,
+        freePassFromRewards: false,
+        alreadyCredited: true,
+      };
+    }
+
     const userSnap = await tx.get(userRef);
     const user = (userSnap.exists ? userSnap.data() : {}) as User;
 
@@ -993,9 +1038,9 @@ export async function creditCompletedPurchase(input: {
     // Card Purchase Rewards: every 6th card purchase = 1 free draft.
     let freePassFromRewards = false;
     if (input.paymentMethod === 'card') {
-      user.cardPurchaseCount = (user.cardPurchaseCount ?? 0) + 1;
-      if (user.cardPurchaseCount >= 6) {
-        user.cardPurchaseCount = 0;
+      const rewards = applyCardPurchaseRewards(user.cardPurchaseCount ?? 0);
+      user.cardPurchaseCount = rewards.nextCount;
+      if (rewards.freeDraftEarned) {
         user.freeDrafts = (user.freeDrafts ?? 0) + 1;
         freeDraftsAdded += 1;
         freePassFromRewards = true;
