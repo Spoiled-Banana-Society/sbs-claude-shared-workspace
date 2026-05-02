@@ -1,14 +1,17 @@
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
+import { API_CONFIG } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
-import { logActivityEvent } from '@/lib/activityEvents';
+import {
+  addActivityEventToTx,
+  buildActivityEventDoc,
+  logActivityEvent,
+} from '@/lib/activityEvents';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
   CompletedDraft,
@@ -19,8 +22,7 @@ import type {
   Promo,
   PrizeWithdrawal,
   Purchase,
-  PurchaseCreateResponse,
-  PurchasePaymentInstructions,
+  PurchasePaymentMethod,
   ReferralEntry,
   ReferralEntryRewards,
   ReferralStats,
@@ -33,7 +35,10 @@ import type {
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
 const WITHDRAWALS_COLLECTION = 'withdrawalRequests';
-const PERSONA_COLLECTION = 'personaVerifications';
+// Firestore collection name kept as `personaVerifications` for now — a rename
+// would require a data migration of every existing user doc. The TypeScript
+// helpers use KYC* names since Persona was replaced by Didit.
+const KYC_COLLECTION = 'personaVerifications';
 const CONTESTS_COLLECTION = 'v2_contests';
 
 const REFERRAL_CODES_COLLECTION = 'v2_referral_codes';
@@ -732,44 +737,6 @@ export async function getWheelHistory(userId: string): Promise<WheelSpin[]> {
   });
 }
 
-export async function createPurchase(
-  userId: string,
-  quantity: number,
-  paymentMethod: Purchase['paymentMethod']
-): Promise<PurchaseCreateResponse> {
-  if (!Number.isInteger(quantity) || quantity <= 0) throw new ApiError(400, 'quantity must be a positive integer');
-
-  const db = getAdminFirestore();
-  await ensureUserSeeded(userId);
-
-  const unitPrice = API_CONFIG.purchases.pricePerPassUsd;
-  const totalPrice = unitPrice * quantity;
-
-  const purchase: Purchase = {
-    id: crypto.randomUUID(),
-    userId,
-    quantity,
-    unitPrice,
-    totalPrice,
-    currency: paymentMethod === 'usdc' ? 'USDC' : 'USD',
-    paymentMethod,
-    chain: paymentMethod === 'usdc' ? 'base' : undefined,
-    status: 'pending',
-    createdAt: nowIso(),
-  };
-
-  await db.collection(PURCHASES_COLLECTION).doc(purchase.id).set(stripUndefined(purchase));
-
-  const payment: PurchasePaymentInstructions = {
-    toAddress: getUsdcPaymentAddressOrThrow(),
-    chainId: API_CONFIG.purchases.usdc.chainId,
-    tokenAddress: API_CONFIG.purchases.usdc.tokenAddress,
-    amount: String(totalPrice),
-    decimals: API_CONFIG.purchases.usdc.decimals,
-  };
-
-  return { purchase: deepClone(purchase), payment };
-}
 
 /**
  * Bumps mint promo (Buy 10 → Spin) and buy-bonus promo (Buy 2 → 1 Free)
@@ -914,212 +881,214 @@ export async function incrementReferralPromos(
   });
 }
 
-export async function verifyPurchase(purchaseId: string, txHash: string) {
+/**
+ * Atomically apply every Firestore write that a successful paid mint requires:
+ *   - v2_purchases doc with status='completed' (history + audit + admin retry)
+ *   - draftPasses bump (optimistic; on-chain BBB4 balance is the source of truth
+ *     and the balance route reconciles via writethrough)
+ *   - wheelSpins (10-pass spin promo)
+ *   - buy-bonus freeDrafts (Buy 2 → 1 Free)
+ *   - mint promo + referral promo progress
+ *   - cardPurchaseCount + 6-card-purchases → 1 free draft
+ *   - one activity event (pass_purchased)
+ *
+ * Idempotent on (txHash): a second call with the same txHash returns the
+ * existing purchase doc instead of double-crediting. card-mint can be safely
+ * retried on a Cloud Tasks redrive without users winning extra spins/promos.
+ *
+ * tokenIds are recorded in the Go API outside the Firestore tx — best-effort,
+ * because that endpoint already idempotently dedupes by minId/maxId range.
+ */
+export async function creditCompletedPurchase(input: {
+  userId: string;
+  quantity: number;
+  paymentMethod: PurchasePaymentMethod;
+  txHash: string;
+  tokenIds: string[];
+  totalPriceUsd: number;
+  unitPriceUsd: number;
+}): Promise<{
+  purchase: Purchase;
+  draftPasses: number | null;
+  spinsAdded: number;
+  freeDraftsAdded: number;
+  freePassFromRewards: boolean;
+  alreadyCredited: boolean;
+}> {
+  const userId = input.userId.toLowerCase();
   const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
 
-  const purchaseRef = db.collection(PURCHASES_COLLECTION).doc(purchaseId);
-  const preSnap = await purchaseRef.get();
-  if (!preSnap.exists) throw new ApiError(404, 'Purchase not found');
-  const prePurchase = preSnap.data() as Purchase;
+  const purchasesRef = db.collection(PURCHASES_COLLECTION);
 
-  await ensureUserSeeded(prePurchase.userId);
-  const userRef = db.collection(USERS_COLLECTION).doc(prePurchase.userId);
-
-  // Idempotent short-circuit: already completed → return existing state.
-  if (prePurchase.status === 'completed') {
-    const userSnap = await userRef.get();
-    return {
-      purchase: deepClone(prePurchase),
-      user: deepClone(userSnap.data() as User),
-      spinsAdded: 0,
-      draftPassesAdded: 0,
-      freeDraftsAdded: 0,
-    };
-  }
-
-  // On-chain verification (skipped only for completed short-circuit above).
-  const userSnapPre = await userRef.get();
-  const userPre = userSnapPre.data() as User | undefined;
-  const expectedFrom = userPre?.walletAddress || prePurchase.userId;
-  if (!expectedFrom) throw new ApiError(400, 'No wallet address on user');
-
-  // Replay guard: the same txHash cannot verify two purchases.
-  const dupSnap = await db
-    .collection(PURCHASES_COLLECTION)
-    .where('txHash', '==', txHash)
+  // Idempotency short-circuit: already credited this on-chain mint.
+  const dupSnap = await purchasesRef
+    .where('txHash', '==', input.txHash)
     .where('status', '==', 'completed')
     .limit(1)
     .get();
-  if (!dupSnap.empty && dupSnap.docs[0].id !== purchaseId) {
-    throw new ApiError(400, 'This transaction has already been credited to another purchase');
+  if (!dupSnap.empty) {
+    return {
+      purchase: deepClone(dupSnap.docs[0].data() as Purchase),
+      draftPasses: null,
+      spinsAdded: 0,
+      freeDraftsAdded: 0,
+      freePassFromRewards: false,
+      alreadyCredited: true,
+    };
   }
 
-  let mintInfo;
-  try {
-    mintInfo = await verifyPurchaseTx({
-      txHash,
-      expectedFrom,
-      expectedQuantity: prePurchase.quantity,
-    });
-  } catch (verifyErr) {
-    // Verify rejected the tx. Surface it so admin can investigate + retry.
-    // If the user's BBB4 balance reflects the mint anyway, this is a sync
-    // issue (not a theft). We record the failure so nothing is silently lost.
-    try {
-      await db.collection('failed_mints').doc(purchaseId).set({
-        purchaseId,
-        userId: prePurchase.userId,
-        wallet: expectedFrom.toLowerCase(),
-        quantity: prePurchase.quantity,
-        txHash,
-        reason: 'verify_rejected',
-        error: (verifyErr as Error)?.message ?? String(verifyErr),
-        createdAt: FieldValue.serverTimestamp(),
-        retryable: true,
-        source: 'purchase_verify',
-      });
-    } catch (logErr) {
-      logger.error('verifyPurchase.failed_mint_record_error', { purchaseId, err: logErr });
-    }
-    throw verifyErr;
-  }
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+  const purchaseId = crypto.randomUUID();
+  const purchaseRef = purchasesRef.doc(purchaseId);
 
-  // Record the minted tokenIds in the Go API so `/owner/{wallet}/draftToken/all`
-  // returns them as available passes. BBB4.mint is sequential so tokenIds are
-  // always contiguous within a single tx → minId/maxId range is exact.
-  // Best-effort — if the Go API rejects (e.g. already recorded from a retry),
-  // log and continue. The on-chain mint is the source of truth.
-  try {
-    const ids = mintInfo.tokenIds.map((t) => Number.parseInt(t, 10)).filter((n) => Number.isFinite(n));
-    if (ids.length > 0) {
-      const minId = Math.min(...ids);
-      const maxId = Math.max(...ids);
-      const apiBase = process.env.NEXT_PUBLIC_DRAFTS_API_URL?.trim();
-      if (apiBase) {
-        // Server-side caller with no Privy JWT — use admin key.
-        const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
-        const res = await fetch(`${apiBase}/owner/${expectedFrom.toLowerCase()}/draftToken/mint`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(adminKey ? { 'X-Admin-Key': adminKey } : {}),
-          },
-          body: JSON.stringify({ minId, maxId }),
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          logger.warn('verifyPurchase.record_tokens_failed', { status: res.status, body: text.slice(0, 200), txHash });
-        } else {
-          logger.info('verifyPurchase.record_tokens_ok', { minId, maxId, wallet: expectedFrom, txHash });
-        }
-      } else {
-        logger.warn('verifyPurchase.drafts_api_url_missing');
-      }
-    }
-  } catch (err) {
-    logger.warn('verifyPurchase.record_tokens_error', { err: (err as Error).message, txHash });
-  }
+  // Build activity event doc OUTSIDE the tx — it does its own Firestore reads.
+  const activityDoc = await buildActivityEventDoc({
+    type: 'pass_purchased',
+    userId,
+    walletAddress: userId,
+    paymentMethod: input.paymentMethod,
+    quantity: input.quantity,
+    tokenIds: input.tokenIds,
+    txHash: input.txHash,
+    metadata: {
+      purchaseId,
+      unitPrice: input.unitPriceUsd,
+      totalPrice: input.totalPriceUsd,
+      currency: input.paymentMethod === 'usdc' ? 'USDC' : 'USD',
+    },
+  });
 
-  return db.runTransaction(async (tx) => {
-    const purchaseSnap = await tx.get(purchaseRef);
-    if (!purchaseSnap.exists) throw new ApiError(404, 'Purchase not found');
-    const purchase = purchaseSnap.data() as Purchase;
-
+  const result = await db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
-    const user = userSnap.data() as User;
+    const user = (userSnap.exists ? userSnap.data() : {}) as User;
 
-    if (purchase.status === 'completed') {
-      return {
-        purchase: deepClone(purchase),
-        user: deepClone(user),
-        spinsAdded: 0,
-        draftPassesAdded: 0,
-        freeDraftsAdded: 0,
-      };
-    }
-    if (purchase.status !== 'pending') throw new ApiError(400, `Purchase cannot be verified from status: ${purchase.status}`);
+    // Optimistic on-chain counter — BBB4 balance route writethrough is truth.
+    const currentPasses = user.draftPasses ?? 0;
+    user.draftPasses = currentPasses + input.quantity;
 
-    purchase.status = 'completed';
-    purchase.verifiedAt = nowIso();
-    purchase.txHash = txHash;
+    // Wheel spins (10 passes → 1 spin promo progress).
+    const spinsAdded = calcSpinsForPurchase(input.quantity);
+    user.wheelSpins = (user.wheelSpins ?? 0) + spinsAdded;
 
-    // draftPasses is NOT incremented here. On-chain BBB4 balanceOf is the
-    // source of truth — see app/api/owner/balance/route.ts, which reads
-    // Alchemy and writes the count through to Firestore. Dual-writing here
-    // caused drift (counter ballooning across many test purchases, never
-    // decrementing on use).
-    const draftPassesAdded = purchase.quantity;
+    // Buy-bonus freeDrafts (Buy 2 → 1 Free). Fallback baseline; the promo
+    // milestone calc below may override.
+    let freeDraftsAdded = calcBuyBonusFreeDrafts(input.quantity);
+    user.freeDrafts = (user.freeDrafts ?? 0) + freeDraftsAdded;
 
-    const spinsAdded = calcSpinsForPurchase(purchase.quantity);
-    user.wheelSpins = (user.wheelSpins || 0) + spinsAdded;
-
-    let freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
-    user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
-
-    const { buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
+    // Mint + buy-bonus promo progress (single atomic increment).
+    const { buyBonusMilestonesEarned } = await _incrementMintPromosInTx(
+      tx,
+      userRef,
+      input.quantity,
+    );
     if (buyBonusMilestonesEarned > 0) {
-      freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
+      freeDraftsAdded =
+        buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
     }
 
-    await _incrementReferralPromosInTx(tx, user, purchase.userId, purchase.quantity);
+    // Referrer's referral promo (if buyer was referred).
+    await _incrementReferralPromosInTx(tx, user, userId, input.quantity);
 
-    // Card Purchase Rewards: every 6 card purchases = 1 free draft
+    // Card Purchase Rewards: every 6th card purchase = 1 free draft.
     let freePassFromRewards = false;
-    if (purchase.paymentMethod === 'card') {
-      user.cardPurchaseCount = (user.cardPurchaseCount || 0) + 1;
+    if (input.paymentMethod === 'card') {
+      user.cardPurchaseCount = (user.cardPurchaseCount ?? 0) + 1;
       if (user.cardPurchaseCount >= 6) {
         user.cardPurchaseCount = 0;
-        user.freeDrafts = (user.freeDrafts || 0) + 1;
+        user.freeDrafts = (user.freeDrafts ?? 0) + 1;
         freeDraftsAdded += 1;
         freePassFromRewards = true;
       }
     }
 
-    tx.set(purchaseRef, stripUndefined(purchase), { merge: true });
+    const purchase: Purchase = {
+      id: purchaseId,
+      userId,
+      quantity: input.quantity,
+      unitPrice: input.unitPriceUsd,
+      totalPrice: input.totalPriceUsd,
+      currency: input.paymentMethod === 'usdc' ? 'USDC' : 'USD',
+      paymentMethod: input.paymentMethod,
+      chain: input.paymentMethod === 'usdc' ? 'base' : undefined,
+      status: 'completed',
+      createdAt: nowIso(),
+      verifiedAt: nowIso(),
+      txHash: input.txHash,
+    };
+
+    tx.set(purchaseRef, stripUndefined(purchase));
     tx.set(userRef, stripUndefined(user), { merge: true });
+    addActivityEventToTx(tx, activityDoc);
 
     return {
-      purchase: deepClone(purchase),
-      user: deepClone(user),
+      purchase,
+      draftPasses: user.draftPasses ?? null,
       spinsAdded,
-      draftPassesAdded,
       freeDraftsAdded,
       freePassFromRewards,
+      alreadyCredited: false,
     };
-  }).then(async (result) => {
-    // Record activity for the paid-mint. Done outside the transaction so
-    // a write failure here never rolls back the user credit.
-    await logActivityEvent({
-      type: 'pass_purchased',
-      userId: prePurchase.userId,
-      walletAddress: expectedFrom,
-      paymentMethod: prePurchase.paymentMethod,
-      quantity: prePurchase.quantity,
-      tokenIds: mintInfo.tokenIds,
-      txHash,
-      metadata: {
-        purchaseId,
-        unitPrice: prePurchase.unitPrice,
-        totalPrice: prePurchase.totalPrice,
-        currency: prePurchase.currency,
-        freeDraftsAdded: result.freeDraftsAdded,
-        spinsAdded: result.spinsAdded,
-      },
-    });
-    return result;
   });
+
+  // Record minted tokenIds in the Go API so /owner/{wallet}/draftToken/all
+  // returns them as available passes. Outside the Firestore tx because:
+  //  - it's a network call that can't be atomic with Firestore anyway
+  //  - the Go side dedupes by minId/maxId range, so retries are safe
+  //  - if it fails, the on-chain mint is still the source of truth and a
+  //    manual Go-API replay can backfill
+  if (input.tokenIds.length > 0) {
+    try {
+      const ids = input.tokenIds
+        .map((t) => Number.parseInt(t, 10))
+        .filter((n) => Number.isFinite(n));
+      if (ids.length > 0) {
+        const apiBase = process.env.NEXT_PUBLIC_DRAFTS_API_URL?.trim();
+        if (apiBase) {
+          const minId = Math.min(...ids);
+          const maxId = Math.max(...ids);
+          const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
+          const res = await fetch(
+            `${apiBase}/owner/${userId}/draftToken/mint`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(adminKey ? { 'X-Admin-Key': adminKey } : {}),
+              },
+              body: JSON.stringify({ minId, maxId }),
+            },
+          );
+          if (!res.ok) {
+            const text = await res.text().catch(() => '');
+            logger.warn('creditCompletedPurchase.record_tokens_failed', {
+              status: res.status,
+              body: text.slice(0, 200),
+              txHash: input.txHash,
+            });
+          } else {
+            logger.info('creditCompletedPurchase.record_tokens_ok', {
+              minId,
+              maxId,
+              wallet: userId,
+              txHash: input.txHash,
+            });
+          }
+        } else {
+          logger.warn('creditCompletedPurchase.drafts_api_url_missing');
+        }
+      }
+    } catch (err) {
+      logger.warn('creditCompletedPurchase.record_tokens_error', {
+        err: (err as Error).message,
+        txHash: input.txHash,
+      });
+    }
+  }
+
+  return result;
 }
 
-export async function getPurchaseHistory(userId: string): Promise<Purchase[]> {
-  const db = getAdminFirestore();
-
-  const purchasesSnap = await db
-    .collection(PURCHASES_COLLECTION)
-    .where('userId', '==', userId)
-    .get();
-
-  return purchasesSnap.docs.map((doc) => doc.data() as Purchase);
-}
 
 export async function createWithdrawal(
   userId: string,
@@ -1646,37 +1615,37 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
   });
 }
 
-// ── Persona Verification ──────────────────────────────────────────────
+// ── KYC Verification (Didit-backed; legacy `personaVerifications` collection) ──
 
-export interface PersonaVerificationData {
+export interface KycVerificationData {
   tier1: { verified: boolean; inquiryId?: string; verifiedAt?: string; geoState?: string };
   tier2: { verified: boolean; inquiryId?: string; verifiedAt?: string };
   cumulativeWithdrawals: number;
 }
 
-const DEFAULT_PERSONA: PersonaVerificationData = {
+const DEFAULT_KYC: KycVerificationData = {
   tier1: { verified: false },
   tier2: { verified: false },
   cumulativeWithdrawals: 0,
 };
 
-export async function getPersonaVerification(userId: string): Promise<PersonaVerificationData> {
+export async function getKycVerification(userId: string): Promise<KycVerificationData> {
   const db = getAdminFirestore();
-  const doc = await db.collection(PERSONA_COLLECTION).doc(userId).get();
-  if (!doc.exists) return { ...DEFAULT_PERSONA };
-  return doc.data() as PersonaVerificationData;
+  const doc = await db.collection(KYC_COLLECTION).doc(userId).get();
+  if (!doc.exists) return { ...DEFAULT_KYC };
+  return doc.data() as KycVerificationData;
 }
 
-export async function savePersonaVerification(userId: string, data: Partial<PersonaVerificationData>): Promise<void> {
+export async function saveKycVerification(userId: string, data: Partial<KycVerificationData>): Promise<void> {
   const db = getAdminFirestore();
-  await db.collection(PERSONA_COLLECTION).doc(userId).set(data, { merge: true });
+  await db.collection(KYC_COLLECTION).doc(userId).set(data, { merge: true });
 }
 
 export async function incrementCumulativeWithdrawals(userId: string, amount: number): Promise<number> {
   const db = getAdminFirestore();
-  const ref = db.collection(PERSONA_COLLECTION).doc(userId);
+  const ref = db.collection(KYC_COLLECTION).doc(userId);
   const doc = await ref.get();
-  const current = doc.exists ? (doc.data() as PersonaVerificationData).cumulativeWithdrawals || 0 : 0;
+  const current = doc.exists ? (doc.data() as KycVerificationData).cumulativeWithdrawals || 0 : 0;
   const newTotal = current + amount;
   await ref.set({ cumulativeWithdrawals: newTotal }, { merge: true });
   return newTotal;

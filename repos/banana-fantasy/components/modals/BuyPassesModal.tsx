@@ -12,7 +12,6 @@ import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
-import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import {
   type FlowStep,
@@ -118,11 +117,14 @@ export function BuyPassesModal({
       : 0;
 
   /**
-   * Track a purchase in Firestore: create record → verify → promo updates.
-   * This ensures buy-bonus, mint-promo, and referral milestones are tracked
-   * identically in staging and production.
+   * After the on-chain mint succeeds, /api/purchases/card-mint has already
+   * written the v2_purchases doc, bumped draftPasses, credited wheelSpins +
+   * buy-bonus freeDrafts + 6-card-rewards, advanced mint/referral promos,
+   * and recorded tokenIds in the Go API — atomically and idempotently. The
+   * modal's job is just to bridge the optimistic UI bump to the on-chain
+   * truth coming back through the balance route, then refresh.
    */
-  const trackPurchase = async (qty: number, hash: string) => {
+  const settleMintedPasses = async (qty: number) => {
     const userId = walletAddress || user?.id;
     if (!userId) return;
 
@@ -138,49 +140,6 @@ export function BuyPassesModal({
       });
     }
 
-    try {
-      const token = await getAccessToken();
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
-      const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          quantity: qty,
-          paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card',
-          // txHash lets the server tie the purchase record to the on-chain
-          // mint at create time instead of the previous create→verify split
-          // that drifted Firestore from on-chain state.
-          ...(paymentMethod === 'usdc' && hash ? { txHash: hash } : {}),
-        }),
-      });
-      const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
-      });
-      // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
-      // fields earned alongside the mint. Deliberately DO NOT clobber
-      // `draftPasses` here: on-chain is the source of truth, and the next
-      // refreshBalance() call will pull it from Alchemy. Overwriting with the
-      // Firestore value would cause a flicker (optimistic bump → stale
-      // cached value → real on-chain value).
-      if (verifyRes.user) {
-        const serverUser = verifyRes.user as Partial<import('@/types').User>;
-        const { draftPasses: _ignore, ...rest } = serverUser;
-        void _ignore;
-        updateUser(rest);
-      }
-    } catch (err) {
-      // Verify failed after a successful on-chain mint. The NFT is real; the
-      // counter sync is behind. Log visibly so the user understands their
-      // balance will catch up when the backend reconciles.
-      console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
-      pushNotification({
-        type: 'system',
-        title: 'Pass minted but sync delayed',
-        message: 'Your draft pass is in your wallet. The balance display will catch up shortly.',
-      });
-    }
     // Live-sync: poll the balance endpoint until the on-chain count reflects
     // the new mint. Covers the 1–2s window where Alchemy's RPC edge can still
     // be serving the pre-mint balanceOf even though the tx has finalized.
@@ -193,13 +152,12 @@ export function BuyPassesModal({
     await refreshBalance();
   };
 
-  // Transition to pick-speed after successful USDC mint
+  // Transition to pick-speed after successful USDC/card mint
   const txTrackedRef = useRef(false);
   useEffect(() => {
     if (txHash && !mintError && phase === 'purchase' && !txTrackedRef.current) {
       txTrackedRef.current = true;
-      // Track in Firestore, then transition
-      trackPurchase(quantity, txHash).finally(() => {
+      settleMintedPasses(quantity).finally(() => {
         setMintedCount(quantity);
         setPhase('pick-speed');
         onPurchaseComplete?.(quantity);

@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
-import { getPersonaVerification } from '@/lib/db-firestore';
+import { getKycVerification } from '@/lib/db-firestore';
 import type { EligibilityStatus } from '@/types';
 
 export async function GET(req: Request) {
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     // ?userId= dictate which user we read.
     const { walletAddress: userId } = await requireWalletAuth(req);
 
-    const verification = await getPersonaVerification(userId);
+    const verification = await getKycVerification(userId);
 
     const eligibility: EligibilityStatus = {
       isVerified: verification.tier1.verified,
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       tier2Verified: verification.tier2.verified,
       cumulativeWithdrawals: verification.cumulativeWithdrawals,
       geoState: verification.tier1.geoState,
-      personaInquiryId: verification.tier1.inquiryId,
+      kycInquiryId: verification.tier1.inquiryId,
     };
 
     return json(eligibility, 200);

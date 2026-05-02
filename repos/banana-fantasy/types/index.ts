@@ -213,12 +213,12 @@ export interface EligibilityStatus {
   season: number;
   w9Completed: boolean;
   lastVerifiedDate?: string;
-  // Persona verification tiers
+  // KYC verification tiers (Didit-backed)
   tier1Verified: boolean; // age + geo (first withdrawal)
   tier2Verified: boolean; // full KYC (cumulative $2k+)
   cumulativeWithdrawals: number;
   geoState?: string;
-  personaInquiryId?: string;
+  kycInquiryId?: string;
 }
 
 // Promo types

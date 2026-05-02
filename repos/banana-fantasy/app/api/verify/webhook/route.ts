@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 import crypto from 'node:crypto';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
-import { savePersonaVerification } from '@/lib/db-firestore';
+import { saveKycVerification } from '@/lib/db-firestore';
 import { logger } from '@/lib/logger';
 
 /**
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
       const ipAnalysis = features?.ip_analysis || {};
       const geoState = ipAnalysis?.region || ipAnalysis?.state || '';
 
-      await savePersonaVerification(vendorData, {
+      await saveKycVerification(vendorData, {
         tier1: {
           verified: true,
           inquiryId: sessionId,

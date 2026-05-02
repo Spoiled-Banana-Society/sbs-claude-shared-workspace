@@ -5,7 +5,7 @@ import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { createWithdrawal } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
+import { getKycVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const KYC_THRESHOLD = 2000; // Cumulative withdrawal threshold for full KYC
@@ -65,9 +65,8 @@ export async function POST(req: Request) {
     }
     const method: PrizeWithdrawal['method'] = methodRaw;
 
-    // Check KYC verification status before processing (Didit; legacy
-    // Persona naming in helper functions due to vendor swap).
-    const verification = await getPersonaVerification(userId);
+    // Check KYC verification status before processing (Didit-backed).
+    const verification = await getKycVerification(userId);
 
     // Tier 1: First withdrawal — must have age + geo verification
     if (!verification.tier1.verified) {
