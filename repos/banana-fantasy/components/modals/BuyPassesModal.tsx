@@ -464,7 +464,7 @@ export function BuyPassesModal({
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '') setQuantity(0);
-                    // Cap at 100 to match the API limit in /api/purchases/create.
+                    // Cap at 100 to match a reasonable max-per-purchase UX limit.
                     // Previously capped at 1000 which let the modal send users
                     // into a guaranteed 400.
                     else setQuantity(Math.min(100, Math.max(1, parseInt(val) || 1)));
