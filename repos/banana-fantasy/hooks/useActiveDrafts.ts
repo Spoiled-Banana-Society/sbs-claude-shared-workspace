@@ -25,17 +25,12 @@ export function useActiveDrafts(): DraftState[] {
   }, []);
 
   useEffect(() => {
-    // Purge legacy rows that have no wallet stamp — they're unattributable
-    // and can't be safely shown to any wallet. The downstream filter in
-    // useDraftingPageState allows unstamped through, so without this purge
-    // stale prior-session rows could leak into a new user's My Drafts.
-    try {
-      const all = draftStore.getActiveDrafts();
-      const stale = all.filter(d => !d.liveWalletAddress);
-      for (const d of stale) draftStore.removeDraft(d.id);
-    } catch { /* ignore */ }
-
-    // Initial read
+    // Initial read. The "purge unstamped" pass that used to live here was
+    // removed because the join flow sometimes writes a draft with an
+    // empty/undefined liveWalletAddress (Privy hydration race when the
+    // home-page Enter button fires before user.walletAddress resolves),
+    // and the purge then deleted the user's real, just-joined draft on
+    // the next /drafting mount — making it flicker in and disappear.
     refresh();
 
     // Subscribe to in-tab writes (same window)
