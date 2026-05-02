@@ -236,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (privy as any).unlinkTwitter?.(twitterId);
         } catch (unlinkErr) {
-          console.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
+          logger.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
         }
       }
     } catch {
@@ -797,7 +797,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (privy as any).linkTwitter();
     } catch (err) {
-      console.error('[SBS Auth] linkTwitter error:', err);
+      logger.error('[SBS Auth] linkTwitter error:', err);
       setTwitterError('Failed to open X login');
       setIsTwitterLinking(false);
     }

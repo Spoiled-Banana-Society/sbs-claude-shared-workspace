@@ -125,7 +125,7 @@ export async function POST(req: Request) {
       await new Promise(r => setTimeout(r, 2000));
     }
     if (!stateReady) {
-      console.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);
+      logger.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);
     }
 
     // 6. Sync Firestore queue: add bot members + set status to 'drafting'

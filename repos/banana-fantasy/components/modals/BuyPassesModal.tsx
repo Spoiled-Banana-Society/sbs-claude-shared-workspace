@@ -270,7 +270,7 @@ export function BuyPassesModal({
 
   const handlePickSpeed = async (speed: 'fast' | 'slow') => {
     if (joinInFlightRef.current) {
-      console.warn('[BuyModal] Duplicate join blocked: join already in flight');
+      logger.warn('[BuyModal] Duplicate join blocked: join already in flight');
       return;
     }
     joinInFlightRef.current = true;
@@ -366,7 +366,7 @@ export function BuyPassesModal({
       window.location.href = lobbyUrl;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to join draft';
-      console.error('[BuyModal] Join error:', msg, err);
+      logger.error('[BuyModal] Join error:', msg, err);
       joinInFlightRef.current = false;
       setIsJoiningDraft(false);
       setJoinError(msg);

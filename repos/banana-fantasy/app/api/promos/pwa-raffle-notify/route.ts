@@ -3,6 +3,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { ApiError } from '@/lib/api/errors';
 import { appOrigin } from '@/lib/appConfig';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export async function POST(req: Request) {
         const result = await res.json();
         pushRecipients = result.recipients ?? 0;
       } else {
-        console.error('[pwa-raffle-notify] OneSignal error:', res.status, await res.text());
+        logger.error('[pwa-raffle-notify] OneSignal error:', res.status, await res.text());
       }
     }
 
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
       pushRecipients,
     });
   } catch (err) {
-    console.error('[pwa-raffle-notify]', err);
+    logger.error('[pwa-raffle-notify]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

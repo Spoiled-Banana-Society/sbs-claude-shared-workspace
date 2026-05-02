@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import * as Sentry from '@sentry/nextjs';
+import { logger } from '@/lib/logger';
 
 export default function GlobalError({
   error,
@@ -12,7 +13,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error('Error caught by boundary:', error);
+    logger.error('Error caught by boundary:', error);
     try {
       Sentry.captureException(error);
     } catch {}

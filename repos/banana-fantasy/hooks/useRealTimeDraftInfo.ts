@@ -79,7 +79,7 @@ export function useRealTimeDraftInfo(
 
     // Skip if Firebase is not configured (missing env vars)
     if (!isFirebaseAvailable()) {
-      console.warn('[Firebase RTDB] Firebase not available — env vars missing. Skipping subscription.');
+      logger.warn('[Firebase RTDB] Firebase not available — env vars missing. Skipping subscription.');
       setIsListening(false);
       setHasError(true); // Signal callers to use fallback
       return;
@@ -94,7 +94,7 @@ export function useRealTimeDraftInfo(
     // mark as error so the page can fall back to WebSocket.
     const timeoutId = setTimeout(() => {
       if (!data) {
-        console.warn('[Firebase RTDB] No data received within 15s — marking as error for WS fallback');
+        logger.warn('[Firebase RTDB] No data received within 15s — marking as error for WS fallback');
         setHasError(true);
       }
     }, 15000);
@@ -105,7 +105,7 @@ export function useRealTimeDraftInfo(
         clearTimeout(timeoutId);
 
         if (!value) {
-          console.warn(`[Firebase RTDB] No data at ${path}`);
+          logger.warn(`[Firebase RTDB] No data at ${path}`);
           // If we get a null value on first callback, this often means the path doesn't exist
           // or we don't have permission. Signal error for WS fallback.
           setHasError(true);
@@ -141,7 +141,7 @@ export function useRealTimeDraftInfo(
       (error) => {
         // Firebase permission_denied or other errors — signal WS fallback
         clearTimeout(timeoutId);
-        console.error('[Firebase RTDB] Subscription error:', error.message);
+        logger.error('[Firebase RTDB] Subscription error:', error.message);
         setHasError(true);
         setIsListening(false);
       },

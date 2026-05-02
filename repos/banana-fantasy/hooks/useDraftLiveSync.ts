@@ -201,14 +201,14 @@ export function useDraftLiveSync({
           return;
         } catch (err) {
           lastErr = err;
-          console.warn(`[Draft Room] Join attempt ${attempt}/${MAX_JOIN_RETRIES} failed:`, err instanceof Error ? err.message : err);
+          logger.warn(`[Draft Room] Join attempt ${attempt}/${MAX_JOIN_RETRIES} failed:`, err instanceof Error ? err.message : err);
           if (attempt < MAX_JOIN_RETRIES) {
             await new Promise(r => setTimeout(r, 2000 * attempt));
           }
         }
       }
 
-      console.error('[Draft Room] Failed to join draft after retries:', lastErr);
+      logger.error('[Draft Room] Failed to join draft after retries:', lastErr);
       draftStore.removeDraft(pendingId);
       setLiveError(lastErr instanceof Error ? lastErr.message : 'Failed to join draft');
     }
@@ -254,7 +254,7 @@ export function useDraftLiveSync({
                     displayName: retryPayload.displayName,
                     team: retryPayload.team,
                     position: retryPayload.position,
-                  }).catch(e => console.error('[Airplane] Retry failed:', e));
+                  }).catch(e => logger.error('[Airplane] Retry failed:', e));
                 }
               }
             }, 0);
@@ -277,7 +277,7 @@ export function useDraftLiveSync({
       round: 0,
     }));
     draftApi.updateQueue(walletParam, draftId, payload).catch(err => {
-      console.error('[Queue] REST sync failed:', err);
+      logger.error('[Queue] REST sync failed:', err);
     });
   }, [isLiveMode, draftId, walletParam]);
 
@@ -326,7 +326,7 @@ export function useDraftLiveSync({
       engine.handleFinalCard(payload);
     },
     onInvalidPick: (payload) => {
-      console.warn('[WS] Invalid pick rejected by server:', payload);
+      logger.warn('[WS] Invalid pick rejected by server:', payload);
       if (engine.airplaneMode && engine.isUserTurn) {
         const msg = (payload as { errorMessage?: string })?.errorMessage || '';
         const match = msg.match(/already picked (\S+)/);
@@ -396,7 +396,7 @@ export function useDraftLiveSync({
           return await fn();
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
-          console.warn(`[loadLiveData] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
+          logger.warn(`[loadLiveData] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
           if (attempt < maxRetries - 1) {
             await new Promise(resolve => setTimeout(resolve, delayMs));
           }
@@ -526,7 +526,7 @@ export function useDraftLiveSync({
       } catch (err) {
         const MAX_OUTER_RETRIES = 8;
         liveRetryCountRef.current += 1;
-        console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
+        logger.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
         setLiveLoading(false);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
@@ -577,7 +577,7 @@ export function useDraftLiveSync({
       const elapsed = Date.now() - lastFirebaseUpdateRef.current;
 
       if (elapsed > STALE_THRESHOLD) {
-        console.warn(`[Watchdog] No Firebase RTDB update in ${Math.round(elapsed / 1000)}s — re-syncing from REST`);
+        logger.warn(`[Watchdog] No Firebase RTDB update in ${Math.round(elapsed / 1000)}s — re-syncing from REST`);
 
         if (liveInitializedRef.current) {
           draftApi.getDraftSummary(draftId).then(summary => {

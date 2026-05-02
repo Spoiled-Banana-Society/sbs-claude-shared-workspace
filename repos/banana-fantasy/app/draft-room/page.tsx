@@ -82,12 +82,12 @@ function DraftRoomContent() {
     try {
       window.history.replaceState(window.history.state, '', newUrl);
     } catch (err) {
-      console.warn('[DraftRoom] history.replaceState failed:', err);
+      logger.warn('[DraftRoom] history.replaceState failed:', err);
     }
     try {
       router.replace(newUrl, { scroll: false });
     } catch (err) {
-      console.warn('[DraftRoom] router.replace failed:', err);
+      logger.warn('[DraftRoom] router.replace failed:', err);
     }
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
@@ -498,7 +498,7 @@ function DraftRoomContent() {
           setPhase('filling');
         }
       } catch (err) {
-        console.warn('[Draft Room] Loading phase server check failed:', err);
+        logger.warn('[Draft Room] Loading phase server check failed:', err);
         if (stored?.status === 'drafting') {
           setPhase('drafting');
           setLiveDataReady(true);
@@ -611,7 +611,7 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
+          }).catch(e => logger.error('[Airplane] Auto-pick REST failed:', e));
         }
       } else {
         engine.draftPlayer(pickId);
@@ -784,7 +784,7 @@ function DraftRoomContent() {
         }
       })
       .catch((e) => {
-        console.warn('[Preferences] Failed to load draft preferences:', e);
+        logger.warn('[Preferences] Failed to load draft preferences:', e);
       });
 
     return () => { cancelled = true; };
@@ -814,7 +814,7 @@ function DraftRoomContent() {
         if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
       }
     } catch (e) {
-      console.error('[AutoDraft] Toggle failed:', e);
+      logger.error('[AutoDraft] Toggle failed:', e);
       // Revert optimistic flip on failure.
       setAutoDraft(!newValue);
       engine.setAirplaneMode(!newValue);
@@ -830,7 +830,7 @@ function DraftRoomContent() {
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
-        .catch(e => console.warn('[Sort] Failed to persist sort preference:', e));
+        .catch(e => logger.warn('[Sort] Failed to persist sort preference:', e));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
@@ -881,7 +881,7 @@ function DraftRoomContent() {
         engine.refreshAvailablePlayers(available);
       })
       .catch((err) => {
-        console.warn('[Rankings] Failed to refresh player rankings:', err);
+        logger.warn('[Rankings] Failed to refresh player rankings:', err);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, phase, rankingsRefreshBucket]);
@@ -905,7 +905,7 @@ function DraftRoomContent() {
             logger.debug('[DraftComplete] Generated card URL:', imageUrl);
           }
         } catch (err) {
-          console.error('[DraftComplete] Failed to fetch card:', err);
+          logger.error('[DraftComplete] Failed to fetch card:', err);
         }
       };
       fetchUrl();
@@ -996,7 +996,7 @@ function DraftRoomContent() {
           }
         }
       } catch (err) {
-        console.warn('[Draft Room] Poll failed:', err);
+        logger.warn('[Draft Room] Poll failed:', err);
       }
     };
 
@@ -1100,7 +1100,7 @@ function DraftRoomContent() {
           setServerPollResult({ order: realOrder, countdownStart: serverCountdownStart });
           return;
         } catch (err) {
-          console.warn(`[Draft Room] Server not ready (attempt ${attempts}):`, err instanceof Error ? err.message : err);
+          logger.warn(`[Draft Room] Server not ready (attempt ${attempts}):`, err instanceof Error ? err.message : err);
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
         }
       }
@@ -1178,7 +1178,7 @@ function DraftRoomContent() {
             },
             body: JSON.stringify({ draftId: id }),
           }).then(r => r.json()).catch(err => {
-            console.error('[Promo] Failed to track draft:', err);
+            logger.error('[Promo] Failed to track draft:', err);
           });
         })();
       }
@@ -1198,7 +1198,7 @@ function DraftRoomContent() {
             },
             body: JSON.stringify({ draftId: id, draftName: contestName }),
           }).then(r => r.json()).catch(err => {
-            console.error('[Promo] Pick 10 tracking failed:', err);
+            logger.error('[Promo] Pick 10 tracking failed:', err);
           });
         })();
       }
@@ -1238,7 +1238,7 @@ function DraftRoomContent() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ draftId: id }),
-      }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
+      }).catch(err => logger.error('[Promo] Jackpot tracking failed:', err));
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
@@ -1912,12 +1912,12 @@ function DraftRoomContent() {
                       });
                       await refreshBalance();
                     } catch (err) {
-                      console.warn('[Leave] Refund pass failed:', err);
+                      logger.warn('[Leave] Refund pass failed:', err);
                     }
                     draftStore.removeDraft(draftId);
                     window.location.href = '/drafting';
                   } catch (err) {
-                    console.error('Failed to leave draft:', err);
+                    logger.error('Failed to leave draft:', err);
                     setLeaving(false);
                     setShowLeaveConfirm(false);
                   }

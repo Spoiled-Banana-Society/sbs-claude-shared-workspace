@@ -529,13 +529,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     const pickData = payload;
     logger.debug('[handleNewPick] Received:', pickData.playerId, 'pick#', pickData.pickNum, 'lastPickRef:', lastPickRef.current);
     if (!pickData.playerId) {
-      console.warn('[handleNewPick] Empty playerId, skipping');
+      logger.warn('[handleNewPick] Empty playerId, skipping');
       return;
     }
 
     // Guard: reject duplicate/stale picks (matches production useDraftRoom.ts pattern)
     if (pickData.pickNum <= lastPickRef.current) {
-      console.warn('[handleNewPick] Rejecting stale pick:', pickData.pickNum, '<=', lastPickRef.current);
+      logger.warn('[handleNewPick] Rejecting stale pick:', pickData.pickNum, '<=', lastPickRef.current);
       return;
     }
     lastPickRef.current = pickData.pickNum;
@@ -546,7 +546,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Guard: never go backwards — stale/duplicate server messages can send lower pickNumber
     setCurrentPickNumber(prev => {
       if (payload.pickNumber < prev) {
-        console.warn(`[Draft] Ignoring backwards draft_info_update: server sent pick ${payload.pickNumber}, current is ${prev}`);
+        logger.warn(`[Draft] Ignoring backwards draft_info_update: server sent pick ${payload.pickNumber}, current is ${prev}`);
         return prev;
       }
       return payload.pickNumber;
@@ -577,7 +577,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Update pick number (never go backwards)
     setCurrentPickNumber(prev => {
       if (rtdb.pickNumber < prev) {
-        console.warn(`[Firebase] Ignoring backwards pickNumber: ${rtdb.pickNumber} < ${prev}`);
+        logger.warn(`[Firebase] Ignoring backwards pickNumber: ${rtdb.pickNumber} < ${prev}`);
         return prev;
       }
       return rtdb.pickNumber;
@@ -608,13 +608,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   // Called by the page when useRealTimeDraftInfo signals newPickDetected.
   const handleFirebaseNewPick = useCallback((pick: LastPickInfo) => {
     if (!pick.playerId) {
-      console.warn('[handleFirebaseNewPick] Empty playerId, skipping');
+      logger.warn('[handleFirebaseNewPick] Empty playerId, skipping');
       return;
     }
 
     // Guard: reject duplicate/stale picks
     if (pick.pickNum <= lastPickRef.current) {
-      console.warn('[handleFirebaseNewPick] Rejecting stale pick:', pick.pickNum, '<=', lastPickRef.current);
+      logger.warn('[handleFirebaseNewPick] Rejecting stale pick:', pick.pickNum, '<=', lastPickRef.current);
       return;
     }
     lastPickRef.current = pick.pickNum;
@@ -631,7 +631,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     if (mode === 'live') {
       const player = availablePlayers.find(p => p.playerId === playerId);
       if (!player) {
-        console.warn('[Draft] Pick rejected — player not found in availablePlayers:', playerId);
+        logger.warn('[Draft] Pick rejected — player not found in availablePlayers:', playerId);
         return null;
       }
 

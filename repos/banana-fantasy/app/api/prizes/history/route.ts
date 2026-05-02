@@ -7,6 +7,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { mockPrizeHistory } from '@/lib/mock/prizes';
 import { getWithdrawalsByUser } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import type { PrizeHistoryItem, PrizeStatus, PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
@@ -154,13 +155,13 @@ export async function GET(req: Request) {
     try {
       res = await fetch(`${API_BASE}/owner/${userId}/prizes`, { next: { revalidate: 60 } });
     } catch (err) {
-      console.error('Prize history backend fetch failed:', err);
+      logger.error('prizes.history.backend_fetch_failed', { err });
       return json(fallback, 200);
     }
 
     if (!res.ok) {
       const message = await readErrorMessage(res);
-      console.error(`Prize history API error: ${res.status}`, message);
+      logger.error('prizes.history.backend_error', { status: res.status, message });
       return json(fallback, 200);
     }
 
@@ -168,7 +169,7 @@ export async function GET(req: Request) {
     try {
       data = await res.json();
     } catch {
-      console.error('Invalid prize history response from backend');
+      logger.error('prizes.history.invalid_response');
       return json(fallback, 200);
     }
 
@@ -193,7 +194,7 @@ export async function GET(req: Request) {
     return json(merged, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Prize history fetch failed:', err);
+    logger.error('prizes.history.unhandled', { err });
     return json(fallback, 200);
   }
 }

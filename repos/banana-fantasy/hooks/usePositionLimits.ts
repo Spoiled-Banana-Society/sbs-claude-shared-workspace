@@ -10,6 +10,7 @@ import {
   type Position,
   type PositionLimits,
 } from '@/lib/positionLimits';
+import { logger } from '@/lib/logger';
 
 // Per-user auto-draft positional caps. Mirrors useNotificationOptIn's
 // shape — fetches on mount, exposes setters that optimistically update
@@ -77,7 +78,7 @@ export function usePositionLimits(): UsePositionLimitsResult {
             body: JSON.stringify({ walletAddress, ...next }),
           });
         } catch (err) {
-          console.warn('[positionLimits] save failed', err);
+          logger.warn('[positionLimits] save failed', err);
         } finally {
           setSaving(false);
           inFlightRef.current = null;

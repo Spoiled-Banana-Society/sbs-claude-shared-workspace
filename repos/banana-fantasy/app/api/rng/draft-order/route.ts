@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
 import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/api/routeUtils';
 import { computeResult, generateClientSeed, generateServerSeed, hashServerSeed, resultToIndex } from '@/lib/rng';
 import { createCommit } from '@/lib/rngStore';
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('RNG draft order failed:', err);
+    logger.error('rng.draft_order.failed', { err });
     return jsonError('Failed to generate draft order', 500);
   }
 }

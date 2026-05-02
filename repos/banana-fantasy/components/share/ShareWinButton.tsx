@@ -5,6 +5,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { shareToX, getShareableUrl, wheelResultPath } from '@/lib/shareUtils';
 import type { SpinShareType } from '@/types';
+import { logger } from '@/lib/logger';
 
 type Status = 'idle' | 'opening' | 'verifying' | 'verified' | 'not-found' | 'error' | 'already' | 'no-x-link';
 
@@ -83,7 +84,7 @@ export function ShareWinButton({
 
       setStatus('not-found');
     } catch (err) {
-      console.error('[ShareWinButton] verify error', err);
+      logger.error('[ShareWinButton] verify error', err);
       setStatus('error');
     }
   }, [privy, shareType, sourceId, prize]);

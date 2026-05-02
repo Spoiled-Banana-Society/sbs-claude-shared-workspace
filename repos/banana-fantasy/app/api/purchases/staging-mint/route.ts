@@ -101,7 +101,7 @@ export async function POST(req: Request) {
           return next;
         });
       } catch (txErr) {
-        console.error('[staging-mint] firestore transaction failed, falling back:', txErr);
+        logger.error('staging-mint.firestore_tx_failed', { err: txErr });
         try {
           await userRef.set({ draftPasses: FieldValue.increment(quantity) }, { merge: true });
           const after = await userRef.get();
@@ -118,7 +118,7 @@ export async function POST(req: Request) {
             metadata: { source: 'staging_mint_button', mintedOnChain: true, fallbackPath: true },
           });
         } catch (incErr) {
-          console.error('[staging-mint] atomic increment fallback also failed:', incErr);
+          logger.error('staging-mint.fallback_failed', { err: incErr });
           logger.warn('staging-mint.firestore_increment_failed', {
             userId,
             err: (incErr as Error).message,

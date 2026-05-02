@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +38,7 @@ async function resetUser(userId: string) {
 
     return { success: true, deleted: userId };
   } catch (err) {
-    console.error('[debug/reset-user]', err);
+    logger.error('[debug/reset-user]', err);
     return { error: 'Failed to reset' };
   }
 }

@@ -3,6 +3,7 @@
 import React, { useState, useCallback } from 'react';
 import { Modal } from '../ui/Modal';
 import { usePrivy } from '@privy-io/react-auth';
+import { logger } from '@/lib/logger';
 
 interface VerificationModalProps {
   isOpen: boolean;
@@ -62,7 +63,7 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
         await sdk.startVerification({ url: data.sessionUrl });
       }
     } catch (err) {
-      console.error('[Verification] Error:', err);
+      logger.error('[Verification] Error:', err);
       setError(err instanceof Error ? err.message : 'Verification failed');
       setStep('error');
     }

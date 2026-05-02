@@ -38,7 +38,7 @@ export function MobileLoginModal({ isOpen, onClose }: MobileLoginModalProps) {
       });
       baseProviderRef.current = sdk.getProvider();
       logger.debug('[CB] Base Account SDK pre-loaded');
-    }).catch(err => console.error('[CB] Failed to pre-load Base SDK:', err));
+    }).catch(err => logger.error('[CB] Failed to pre-load Base SDK:', err));
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -248,7 +248,7 @@ export function MobileLoginModal({ isOpen, onClose }: MobileLoginModalProps) {
 
         handleClose();
       } catch (err: unknown) {
-        console.error('[CB] Error:', err);
+        logger.error('[CB] Error:', err);
         const msg = (err instanceof Error ? err.message : null) || 'Connection failed';
         if (msg.includes('rejected') || msg.includes('denied') || msg.includes('User rejected')) {
           setWalletStatus('idle');

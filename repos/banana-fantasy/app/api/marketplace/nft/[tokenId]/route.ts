@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,7 @@ export async function GET(
 
     if (!res.ok) {
       const text = await res.text();
-      console.error('[marketplace/nft] OpenSea error:', res.status, text);
+      logger.error('marketplace.nft.opensea_error', { status: res.status, body: text });
       return jsonError('Failed to fetch NFT', res.status >= 500 ? 502 : res.status);
     }
 
@@ -98,7 +99,7 @@ export async function GET(
     return json({ ...nft, owner, ownerName, ownerPfp, listing });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[marketplace/nft] GET failed:', err);
+    logger.error('marketplace.nft.get_failed', { err });
     return jsonError('Internal Server Error', 500);
   }
 }

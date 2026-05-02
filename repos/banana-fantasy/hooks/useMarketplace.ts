@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MarketplaceTeam, DraftType, OfferData } from '@/lib/opensea';
 import type { CollectionStats } from '@/lib/opensea';
 import { getOwnerDraftTokens, type ApiDraftToken } from '@/lib/api/owner';
+import { logger } from '@/lib/logger';
 
 // ── Collection Stats ────────────────────────────────────────────────
 
@@ -405,7 +406,7 @@ export function useActivityHistory(walletAddress: string | null): UseActivityHis
       setCursor(json.nextCursor ?? null);
       setHasMore(json.hasMore ?? false);
     } catch (err) {
-      console.error('[useActivityHistory] error:', err);
+      logger.error('[useActivityHistory] error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -473,7 +474,7 @@ export function useMyNftOffers(
       );
       setAllOffers(results.flat().sort((a, b) => b.amount - a.amount));
     } catch (err) {
-      console.error('[useMyNftOffers] error:', err);
+      logger.error('[useMyNftOffers] error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -505,7 +506,7 @@ export async function logActivity(data: {
       body: JSON.stringify(data),
     });
   } catch (err) {
-    console.error('[logActivity] error:', err);
+    logger.error('[logActivity] error:', err);
   }
 }
 
@@ -548,7 +549,7 @@ export function useLastSales(tokenIds: string[]): Record<string, LastSaleData> {
       }
       setData(merged);
     } catch (err) {
-      console.error('[useLastSales] error:', err);
+      logger.error('[useLastSales] error:', err);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);
@@ -578,7 +579,7 @@ export function useTokenSaleHistory(tokenId: string | null) {
       const json = await res.json();
       setActivities(json.activities ?? []);
     } catch (err) {
-      console.error('[useTokenSaleHistory] error:', err);
+      logger.error('[useTokenSaleHistory] error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -624,7 +625,7 @@ export function useWatchlist(walletAddress: string | null): UseWatchlistResult {
       const json = await res.json();
       setWatchlist(json.items ?? []);
     } catch (err) {
-      console.error('[useWatchlist] error:', err);
+      logger.error('[useWatchlist] error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -688,7 +689,7 @@ async function postNotification(data: {
       body: JSON.stringify(data),
     });
   } catch (err) {
-    console.error('[postNotification] error:', err);
+    logger.error('[postNotification] error:', err);
   }
 }
 
@@ -777,7 +778,7 @@ export function useFirestoreNotifications(walletAddress: string | null): UseFire
       const json = await res.json();
       setNotifications(json.notifications ?? []);
     } catch (err) {
-      console.error('[useFirestoreNotifications] error:', err);
+      logger.error('[useFirestoreNotifications] error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -800,7 +801,7 @@ export function useFirestoreNotifications(walletAddress: string | null): UseFire
         body: JSON.stringify({ wallet: walletAddress, all: true }),
       });
     } catch (err) {
-      console.error('[markAllRead] error:', err);
+      logger.error('[markAllRead] error:', err);
     }
   }, [walletAddress]);
 

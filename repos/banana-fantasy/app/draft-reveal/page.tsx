@@ -13,6 +13,7 @@ const TeamReveal = dynamic(() => import('@/components/drafting/TeamReveal').then
 });
 import { useAuth } from '@/hooks/useAuth';
 import { getDraftSummary, getDraftInfo, type ApiDraftPick } from '@/lib/api/drafts';
+import { logger } from '@/lib/logger';
 
 type Phase = 'reveal' | 'spin';
 
@@ -123,7 +124,7 @@ function DraftRevealContent() {
         prize: data.prize ?? BBB4_SLICES[data.winningSlot ?? 0]?.label ?? 'Prize',
       };
     } catch (err) {
-      console.error('[draft-reveal] RNG unavailable:', err);
+      logger.error('[draft-reveal] RNG unavailable:', err);
       return null;
     }
   }, [draftId, walletAddress]);

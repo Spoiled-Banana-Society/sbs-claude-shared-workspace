@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { markRevealed } from '@/lib/rngStore';
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('RNG seed reveal failed:', err);
+    logger.error('rng.reveal.failed', { err });
     return jsonError('Failed to reveal RNG seed', 500);
   }
 }

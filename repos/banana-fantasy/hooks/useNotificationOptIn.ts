@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import OneSignal from 'react-onesignal';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { logger } from '@/lib/logger';
 
 const DISMISSED_KEY = 'sbs_notif_dismissed';
 const DISMISSED_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -96,12 +97,12 @@ export function useNotificationOptIn() {
               });
             }
           } catch (err) {
-            console.warn('Failed to register notification subscription:', err);
+            logger.warn('Failed to register notification subscription:', err);
           }
         }
       }
     } catch (err) {
-      console.error('Notification opt-in failed:', err);
+      logger.error('Notification opt-in failed:', err);
     } finally {
       setIsLoading(false);
       setShowPrompt(false);

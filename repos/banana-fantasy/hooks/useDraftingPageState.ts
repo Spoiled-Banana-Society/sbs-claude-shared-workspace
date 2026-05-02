@@ -203,7 +203,7 @@ export function useDraftingPageState() {
           setQueueDrafts(drafts);
         })
         .catch((e) => {
-          console.error('[Queue] Poll failed:', e);
+          logger.error('[Queue] Poll failed:', e);
         });
     };
 
@@ -281,7 +281,7 @@ export function useDraftingPageState() {
           router.push(buildDraftRoomUrl({ ...draft, queueDraftId: finalDraftId }));
         }
       } catch (err) {
-        console.error('Failed to create queue draft:', err);
+        logger.error('Failed to create queue draft:', err);
       } finally {
         setCreatingQueueDraft(null);
       }
@@ -489,7 +489,7 @@ export function useDraftingPageState() {
         }
         setLiveDrafts(mapped);
       } catch (err) {
-        console.error('[Drafting] Failed to load live drafts:', err);
+        logger.error('[Drafting] Failed to load live drafts:', err);
       } finally {
         if (!cancelled && user?.walletAddress) {
           setLiveDraftsLoadedFor(user.walletAddress);
@@ -718,7 +718,7 @@ export function useDraftingPageState() {
             draftStore.updateDraft(draft.id, { players: playerCount });
           }
         } catch (err) {
-          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+          logger.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
         }
       }
     };
@@ -1151,10 +1151,10 @@ export function useDraftingPageState() {
         });
         await refreshBalance();
       } catch (err) {
-        console.warn('[Leave] Refund pass failed:', err);
+        logger.warn('[Leave] Refund pass failed:', err);
       }
     } catch (err) {
-      console.error('Failed to leave draft:', err);
+      logger.error('Failed to leave draft:', err);
     } finally {
       setExitingDraft(null);
     }

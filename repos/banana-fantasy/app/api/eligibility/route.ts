@@ -5,6 +5,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireWalletAuth } from '@/lib/walletAuth';
 import { getKycVerification } from '@/lib/db-firestore';
 import type { EligibilityStatus } from '@/types';
+import { logger } from '@/lib/logger';
 
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
     return json(eligibility, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Eligibility fetch failed:', err);
+    logger.error('Eligibility fetch failed:', err);
     return jsonError('Failed to fetch eligibility', 500);
   }
 }

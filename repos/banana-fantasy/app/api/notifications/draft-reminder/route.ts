@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error('[draft-reminder] OneSignal error:', response.status, errorBody);
+      logger.error('[draft-reminder] OneSignal error:', response.status, errorBody);
       return NextResponse.json(
         { error: 'Failed to send notification' },
         { status: 502 }
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, recipients: result.recipients ?? 0 });
   } catch (err) {
-    console.error('[draft-reminder] Error:', err);
+    logger.error('[draft-reminder] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

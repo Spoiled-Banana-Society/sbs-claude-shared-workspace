@@ -54,7 +54,7 @@ export function DraftComplete({ draftId, generatedCardUrl: initialCardUrl, walle
             return;
           }
         } catch (err) {
-          console.warn(`[DraftComplete] Card fetch attempt ${attempt + 1} failed:`, err);
+          logger.warn(`[DraftComplete] Card fetch attempt ${attempt + 1} failed:`, err);
         }
 
         if (cancelled) return;

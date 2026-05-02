@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         // is a real Firestore failure and should not silently dedupe.
         const isAlreadyExists = code === 6 || code === 'already-exists';
         if (!isAlreadyExists) {
-          console.error('[pick-up] Firestore create() error (non-dedup):', err);
+          logger.error('pick-up.firestore_create_failed', { err });
           return NextResponse.json({ error: 'Dedup store unavailable' }, { status: 502 });
         }
 
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ ok: true, deduped: true });
           }
         } catch (readErr) {
-          console.error('[pick-up] Firestore read after AlreadyExists failed:', readErr);
+          logger.error('pick-up.firestore_dedup_read_failed', { err: readErr });
           return NextResponse.json({ error: 'Dedup store unavailable' }, { status: 502 });
         }
       }
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '');
-        console.error('[pick-up] OneSignal error:', response.status, errorBody);
+        logger.error('pick-up.onesignal_error', { status: response.status, body: errorBody });
         if (dedupRef) {
           await dedupRef.set(
             { status: 'failed', failedAt: FieldValue.serverTimestamp() },
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
       );
       return NextResponse.json({ ok: true, recipients: result.recipients ?? 0 });
     } catch (sendErr) {
-      console.error('[pick-up] send threw:', sendErr);
+      logger.error('pick-up.send_threw', { err: sendErr });
       if (dedupRef) {
         await dedupRef.set(
           { status: 'failed', failedAt: FieldValue.serverTimestamp() },
@@ -194,7 +194,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to send notification' }, { status: 502 });
     }
   } catch (err) {
-    console.error('[pick-up] Error:', err);
+    logger.error('pick-up.unhandled', { err });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

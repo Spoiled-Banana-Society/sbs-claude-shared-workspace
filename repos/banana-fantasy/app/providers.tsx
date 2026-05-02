@@ -16,6 +16,7 @@ import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
 import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
 import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
+import { logger } from '@/lib/logger';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -81,7 +82,7 @@ function OneSignalInit() {
       safari_web_id: 'web.onesignal.auto.3182d724-6e8d-450b-a283-f7f35292ae01',
       allowLocalhostAsSecureOrigin: process.env.NODE_ENV === 'development',
     }).catch((err: unknown) => {
-      console.warn('OneSignal init failed:', err);
+      logger.warn('OneSignal init failed:', err);
     });
   }, []);
 

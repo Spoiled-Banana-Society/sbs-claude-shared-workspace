@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { trackReferral, updateReferralRewards } from '@/lib/db';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import type { Promo } from '@/types';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -128,7 +129,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error('[debug/test-referral]', err);
+    logger.error('[debug/test-referral]', err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

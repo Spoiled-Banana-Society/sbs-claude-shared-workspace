@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
 import { OPENSEA_API_BASE, COLLECTION_SLUG, type OpenSeaListing } from '@/lib/opensea';
 
 export const dynamic = 'force-dynamic';
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
 
     if (!statsRes.ok) {
       const text = await statsRes.text();
-      console.error('[marketplace/collection] OpenSea error:', statsRes.status, text);
+      logger.error('marketplace.collection.opensea_error', { status: statsRes.status, body: text });
       return jsonError('Failed to fetch collection stats', statsRes.status >= 500 ? 502 : statsRes.status);
     }
 
@@ -95,7 +96,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('[marketplace/collection] GET failed:', err);
+    logger.error('marketplace.collection.get_failed', { err });
     return jsonError('Internal Server Error', 500);
   }
 }

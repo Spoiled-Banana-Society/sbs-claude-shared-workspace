@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { mockTeamPositions } from '@/lib/mock/teamPositions';
 
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
 
     if (!res.ok) {
       const message = await readErrorMessage(res);
-      console.error(`Rankings API error: ${res.status}`, message);
+      logger.error('rankings.backend_error', { status: res.status, message });
       return jsonError(message || 'Rankings service error', res.status);
     }
 
@@ -48,7 +49,7 @@ export async function GET(req: Request) {
     return json(data, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Rankings fetch failed:', err);
+    logger.error('rankings.fetch_failed', { err });
     return jsonError('Failed to fetch rankings', 500);
   }
 }

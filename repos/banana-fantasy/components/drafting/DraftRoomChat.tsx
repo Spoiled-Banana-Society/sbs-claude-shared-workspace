@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { logger } from '@/lib/logger';
 
 interface ChatMessage {
   id: string;
@@ -155,7 +156,7 @@ export function DraftRoomChat({
     const text = inputValue.trim();
     if (!text || isSending) return;
     if (!draftId || !walletAddress) {
-      console.warn('[DraftRoomChat] cannot send: missing draftId or walletAddress');
+      logger.warn('[DraftRoomChat] cannot send: missing draftId or walletAddress');
       return;
     }
     setIsSending(true);
@@ -168,7 +169,7 @@ export function DraftRoomChat({
       });
       if (!res.ok) throw new Error(`send failed (${res.status})`);
     } catch (err) {
-      console.warn('[DraftRoomChat] send failed:', err);
+      logger.warn('[DraftRoomChat] send failed:', err);
       setInputValue(text); // restore so user can retry
     } finally {
       setIsSending(false);
