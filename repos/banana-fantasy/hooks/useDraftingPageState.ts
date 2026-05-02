@@ -112,7 +112,7 @@ export function useDraftingPageState() {
   const promosQuery = usePromos({ userId: user?.id });
   const promos = promosQuery.promos ?? [];
   const promoCount = promos.length;
-  const localDrafts = useActiveDrafts();
+  const localDrafts = useActiveDrafts(user?.walletAddress);
   // `isLive` means "this user has a wallet → fetch real drafts from the
   // Go API and open WS connections." It used to be gated on isStagingMode()
   // because back when staging was the only env, those were equivalent —
