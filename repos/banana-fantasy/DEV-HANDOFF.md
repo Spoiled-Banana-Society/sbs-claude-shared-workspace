@@ -57,18 +57,8 @@ deployment protection blocks auto-deploys, you'd just orphan the commit.
 
 ## Open items worth knowing
 
-- A few `app/api/owner/*` routes (`use-pass`, `refund-pass`, `team-nicknames`)
-  trust the body's `walletAddress` — no Privy auth check. Tighten before
-  prod volume.
-- Marketplace listing rule (free passes can't list during season) is
-  client-only. Needs server gate before real volume — see CLAUDE.md.
-- One-off `/api/admin/revoke-7702` should come out (one-time fix, served its
-  purpose).
 - Rankings CSV **import** is demo-only (`applyUploadedRankings` just shows
   an alert). Trigger button hidden; modal + handlers kept intact (prefixed
   `_` for lint) so it's easy to wire to the Go API. Download works.
-- `recordJackpotHit` (`lib/db-firestore.ts`) silently returns null if the
-  Go API `state/info` lookup blips — the JP credit just doesn't land. No
-  retry, no Sentry log. Worth a retry + logger.error on the err path.
 - Pre-existing lint warnings (`<img>` over `next/image`, missing useEffect
   deps) in legacy files. Build passes; warnings haven't been cleaned up.
