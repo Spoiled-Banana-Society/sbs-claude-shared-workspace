@@ -884,6 +884,7 @@ export function useDraftingPageState() {
     // Not signed in → don't show anyone else's drafts cached in localStorage.
     // The drafting list belongs to the authenticated wallet only.
     if (!user?.walletAddress) {
+      console.log('[Drafting Diag] no walletAddress, returning empty');
       return [] as Draft[];
     }
 
@@ -893,6 +894,17 @@ export function useDraftingPageState() {
     const ownedLocalDrafts = localDrafts.filter(d => {
       if (!d.liveWalletAddress) return true; // legacy entries without wallet stamp — allow
       return d.liveWalletAddress.toLowerCase() === currentWallet;
+    });
+
+    console.log('[Drafting Diag]', {
+      currentWallet,
+      localDraftsCount: localDrafts.length,
+      localDrafts: localDrafts.map(d => ({ id: d.id, status: d.status, liveWalletAddress: d.liveWalletAddress })),
+      ownedLocalDraftsCount: ownedLocalDrafts.length,
+      liveDraftsCount: liveDrafts.length,
+      liveDrafts: liveDrafts.map(d => ({ id: d.id, status: d.status })),
+      hiddenDraftIdsCount: hiddenDraftIds.size,
+      hiddenDraftIdsList: Array.from(hiddenDraftIds),
     });
 
     let base: Draft[];
@@ -934,9 +946,11 @@ export function useDraftingPageState() {
       return true;
     });
 
-    return [...remainingBase, ...mergedQueueDrafts].filter(
+    const final = [...remainingBase, ...mergedQueueDrafts].filter(
       d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed',
     );
+    console.log('[Drafting Diag] final activeDrafts:', final.length, final.map(d => ({ id: d.id, status: d.status, hidden: hiddenDraftIds.has(d.id) })));
+    return final;
   }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
 
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
