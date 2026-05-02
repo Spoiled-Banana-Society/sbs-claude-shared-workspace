@@ -42,6 +42,7 @@ export function DraftBoardGrid({
     <div
       ref={gridRef}
       className="font-primary"
+      data-tutorial="draft-board"
       style={{
         maxWidth: 1200,
         margin: '0 auto',

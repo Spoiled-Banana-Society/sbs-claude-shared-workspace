@@ -69,7 +69,7 @@ export function DraftPlayerList({
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: '#000' }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: '#000' }} data-tutorial="player-list">
       <style>{`
         .yellow-image-filter,
         .banana-queue-button:hover img {
@@ -377,7 +377,7 @@ export function DraftPlayerList({
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex mx-auto text-center items-center justify-center gap-4 py-5">
+                  <div className="flex mx-auto text-center items-center justify-center gap-4 py-5" data-tutorial="make-pick">
                     <button
                       onClick={() => {
                         if (isUserTurn) {

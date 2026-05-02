@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import { PrivyProvider } from '@/providers/PrivyProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { AuthProvider } from '@/hooks/useAuth';
-import { ReduxProvider } from '@/redux/provider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { Header } from '@/components/layout/Header';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
@@ -93,14 +92,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PrivyProvider>
       <AuthProvider>
-        <ReduxProvider>
-          <QueryProvider>
-            <ToastProvider>
-              <OneSignalInit />
-              <AppContent>{children}</AppContent>
-            </ToastProvider>
-          </QueryProvider>
-        </ReduxProvider>
+        <QueryProvider>
+          <ToastProvider>
+            <OneSignalInit />
+            <AppContent>{children}</AppContent>
+          </ToastProvider>
+        </QueryProvider>
       </AuthProvider>
     </PrivyProvider>
   );

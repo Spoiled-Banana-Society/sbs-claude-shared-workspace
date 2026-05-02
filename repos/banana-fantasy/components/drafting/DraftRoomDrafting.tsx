@@ -194,7 +194,7 @@ export function DraftRoomDrafting({
                       )}
 
                       {isCurrent && engine.draftStatus !== 'completed' ? (
-                        <div style={{
+                        <div data-tutorial="timer" style={{
                           fontWeight: 'bold',
                           fontSize: '18px',
                           margin: '5px auto 0px auto',

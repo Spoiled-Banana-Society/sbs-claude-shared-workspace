@@ -55,7 +55,7 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
   };
 
   return (
-    <div className="px-3 pt-5 w-full lg:w-[900px] mx-auto">
+    <div className="px-3 pt-5 w-full lg:w-[900px] mx-auto" data-tutorial="roster">
       {/* Dropdown selector */}
       <select
         value={selectedPlayer}
