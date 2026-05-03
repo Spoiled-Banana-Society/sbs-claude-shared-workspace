@@ -887,24 +887,16 @@ export function useDraftingPageState() {
       return [] as Draft[];
     }
 
-    // PERMISSIVE wallet behavior. Previously this required a strict
-    // case-insensitive match between the draft's liveWalletAddress stamp
-    // and the live Privy wallet — but during auth hydration / multi-wallet
-    // (embedded vs. external) Privy state, those values can briefly differ
-    // even when the draft truly belongs to the user. The stricter check
-    // caused the draft to flicker into the My Drafts list and then vanish
-    // a few seconds later when the resolved wallet stamp didn't match.
-    //
-    // Now: show every stamped draft from localStorage. Unstamped legacy
-    // rows are purged on mount in useActiveDrafts, so anything left here
-    // was at some point genuinely owned by a wallet that signed in. The
-    // Go API call (loadLiveDrafts) re-stamps every draft it returns with
-    // the current wallet on every load, so briefly-mismatched stamps
-    // self-heal within one fetch. Worst case: same-browser account swap
-    // shows the prior account's drafts until the next page refresh —
-    // acceptable tradeoff for not losing the user's actual draft.
-    void user.walletAddress;
-    const ownedLocalDrafts = localDrafts;
+    // STRICT wallet match. Same-browser account swap must NOT show the
+    // prior wallet's drafts — that's a privacy/correctness leak (drafts
+    // appear "joinable" to a wallet that never paid for a pass). Modal
+    // stamps liveWalletAddress on every join; loadLiveDrafts re-stamps
+    // server-confirmed drafts to the current wallet. If a draft truly
+    // belongs to the user, the stamp converges within one API fetch.
+    const currentWallet = user.walletAddress.toLowerCase();
+    const ownedLocalDrafts = localDrafts.filter(
+      d => d.liveWalletAddress && d.liveWalletAddress.toLowerCase() === currentWallet,
+    );
 
     let base: Draft[];
     if (!isLive) {

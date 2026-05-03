@@ -276,7 +276,20 @@ export function BuyPassesModal({
     joinInFlightRef.current = true;
     setIsJoiningDraft(true);
 
-    const addr = walletAddress || user?.id || 'staging-user';
+    // Fall through to wallet-only. Falling back to user.id (Privy DID) would
+    // stamp localStorage with a value that never matches user.walletAddress
+    // on /drafting, causing the strict-wallet filter there to hide the user's
+    // own freshly-joined draft. The Go API also rejects DID-as-ownerId because
+    // its Privy middleware extracts the wallet from the JWT and compares to
+    // the URL path — DIDs never match.
+    if (!walletAddress) {
+      joinInFlightRef.current = false;
+      setIsJoiningDraft(false);
+      setJoinError('No wallet connected. Please log in again.');
+      setPhase('error');
+      return;
+    }
+    const addr = walletAddress;
 
     setPhase('joining');
     setJoinError(null);
