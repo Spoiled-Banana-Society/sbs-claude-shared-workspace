@@ -319,6 +319,14 @@ export function BuyPassesModal({
       // entries when a user buys passes more than once for the same draft —
       // previously appended unconditionally and the list grew with dupes.
       try {
+        // Initial player count from Go API response — set by AddCardToLeague
+        // post-join, so the UI shows reality (e.g., 2 if you joined Richard's
+        // existing partial) instead of the optimistic "1/10" placeholder.
+        // Fall back to 1 if the field is missing (older Go API rev); the
+        // RTDB live subscription heals it once it fires.
+        const responseNumPlayers =
+          typeof card?._numPlayers === 'number' ? card._numPlayers : undefined;
+        const initialPlayers = responseNumPlayers && responseNumPlayers > 0 ? responseNumPlayers : 1;
         type StoredDraft = { id: string;[k: string]: unknown };
         const existing = JSON.parse(localStorage.getItem('banana-active-drafts') || '[]') as StoredDraft[];
         const next: StoredDraft = {
@@ -327,9 +335,19 @@ export function BuyPassesModal({
           status: 'filling',
           type: 'pro',
           draftSpeed: speed,
-          players: 1,
+          players: initialPlayers,
           maxPlayers: 10,
           joinedAt: Date.now(),
+          // CRITICAL: stamp the wallet address up front. /drafting's live-count
+          // subscription (subscribeDraftNumPlayers in useDraftingPageState) only
+          // fires for drafts where liveWalletAddress matches the current wallet.
+          // Without this stamp, the freshly-joined draft is excluded from the
+          // RTDB subscribe set and the count stays frozen at `initialPlayers`
+          // even when other players join. The /draft-room page used to set
+          // this on first mount, but that path runs AFTER navigation and only
+          // for the user actively viewing the room — leaves /drafting stale
+          // for the user who just joined.
+          liveWalletAddress: addr ? addr.toLowerCase() : undefined,
         };
         const dedup = existing.filter((d) => d?.id !== draftId);
         dedup.push(next);
