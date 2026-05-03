@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "marketplace_notifications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "wallet", "order": "ASCENDING" },
+        { "fieldPath": "read", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
