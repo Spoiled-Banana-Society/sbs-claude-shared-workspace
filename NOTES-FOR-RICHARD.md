@@ -4,6 +4,49 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## May 2 — Fix shipped for /league/* and /owner/* 403s
+
+You called it. Go auth gate had no Privy User API fallback — it only accepted JWTs that already carried a wallet claim. TS side (`lib/walletAuth.ts:48-64`) had the fallback, Go side (`auth/middleware.go:RequireOwnerMatchesPath`) didn't. Privy issues minimal JWTs to social-login users — wallet only shows up via the User API — so anyone who logged in with email/Google/Twitter and used an embedded wallet hit a hard 403.
+
+**What shipped (deployed to `sbs-drafts-api-staging`):**
+
+- New `auth/privy.go` with `FetchPrivyUserLinkedWallets(ctx, userID)`. HTTP Basic to `https://auth.privy.io/api/v1/users/{did}` using `PRIVY_APP_ID` + `PRIVY_APP_SECRET`. 5-minute in-memory cache so we don't hammer Privy on every request.
+- `auth/middleware.go:RequireOwnerMatchesPath` now does:
+  1. JWT carried wallet → fast path (unchanged behavior for wallet-login users)
+  2. JWT verified, no wallet claim → fetch Privy User API → check linked wallets → match against `{ownerId}`
+  3. No match → 403
+- `PRIVY_APP_SECRET` was missing on Cloud Run. Pulled it from Vercel env (where it's been set since 30d ago) and set it on `sbs-drafts-api-staging` via `gcloud run services update`. Without that, the fallback short-circuits to "no wallets found" — fail-closed, but no different from the prior bug.
+
+The fix is fail-closed by design: if `PRIVY_APP_SECRET` ever rotates or is unset, the route 403s rather than approving anyone — caller still gets the same error you saw, but at least it can't accidentally let the wrong wallet through.
+
+**Why this happened now and not before:** the auth gates landed in the cluster of recent commits (#15, #30, #31). Pre-tonight you'd have noticed only if you hit `/league/*` or `/owner/*draftToken/all` from a social-login session. Wallet-login users (you on a hardware wallet, e.g.) wouldn't have hit it — their JWT carries the wallet claim. Anyone newer or anyone with embedded wallet would have. Quietly broken since the gate landed.
+
+**Diagnostic logs you added:** keep them in. `[Drafting Diag]` is genuinely useful for catching the next case where draft state diverges between localStorage / `useDraftingPageState` / Go API. Cheap to leave on while we're stabilizing.
+
+**Frontend changes today (the 5 commits 18e734f → 59c8fc2):** all worth keeping — `staging-mint walletAddress fix`, `useActiveDrafts unfiltered`, `drop strict wallet-match filter`, `stop auto-purging`, the diag logs. The auto-purge in `useActiveDrafts` was the latent bug I'd traced earlier (wallet stamp never set on join, then purged on every page mount). Good catch on the timing — would have hit users right after they joined a draft.
+
+## May 2 — Reply on the EIP-7702 admin delegation (April 26 ask)
+
+Re-confirmed your diagnosis is correct. `eth_getCode(0xccdF79A51D292CF6De8807Abc1bB58D07D26441D)` on Base mainnet returns `0xef0100…` — the wallet IS delegated. The delegate address `0x63c0c19a282a1b52b07dd5a65b58948a07dae32b` is a smart-account contract.
+
+**Was it intentional?** Per Boris's own memory note (saved 2026-04-26), "Never import admin key into a wallet app." This is the result of that exact mistake — the admin key was imported into a wallet app (Privy or similar) at some point, and the app auto-issued an EIP-7702 authorization to upgrade the EOA into a smart account. Not malicious; not catastrophic; but it broke the 3-tx admin-mint flow exactly as you described because Alchemy enforces a 1-tx in-flight limit on delegated EOAs.
+
+**Recommended fix:** revoke the delegation. Have Boris sign an EIP-7702 authorization with delegate = `0x0000000000000000000000000000000000000000` from the admin key. That clears the delegation and restores the admin to a plain EOA. Mint flow goes back to working. Cost: tiny — single tx for ~30k gas.
+
+**Until that's done:** the 3-tx mint flow will fail at step 2 (`transferFrom`) for any new card-mint attempt. USDC stays on the user, no NFT minted, but the permit nonce was consumed (step 1 already landed). Users would need to re-sign before retrying — known workaround, not a fix.
+
+Boris is going to handle the revoke. Asking him to ping you when it's done.
+
+## May 2 — All other open items in NOTES-FOR-BORIS
+
+- **`NEXT_PUBLIC_ENVIRONMENT=staging` on Vercel:** verified set on `banana-fantasy-sbs` Vercel project (visible via `npx vercel env ls production` — encrypted, set 9 days ago). Staging-mint button works for admin-allowlisted wallets; the 403 you saw was the new `isWalletAdmin` gate, not the env-var gate. Anyone needing staging-mint should be added to the allowlist in `lib/adminAllowlist.ts` (current entries: Boris + Richard + 2 others).
+- **`onPickAdvance` Cloud Function:** noted that you wrote it for me (`functions-for-boris/onPickAdvance.js`). Will deploy in a focused session. No regression here — slow-draft notification path stays client-only until I land it.
+- **Marketplace `passType` overlay:** acked your re-curl result. Marketplace already uses `pass_origin/{tokenId}` overlay via `/api/pass-origin/free-tokens` so we're not blocked on this. Cleanup of admin-minted token registration in the Go ledger is a separate dev-territory task.
+- **Skim cron:** USDC skim cron is live + audit-logged in Firestore `bbb4_usdc_sweeps`. Cold treasury address you provided is wired in.
+- **Multisig migration:** non-urgent. Will start when one of us has a clean afternoon. Tracking it as the long-term remediation for the EIP-7702 incident above.
+
+---
+
 ## April 30 — Full code review results, every bug ranked
 
 Got Codex (a second AI reviewer) to do a deep pass on banana-fantasy and I verified each finding against the actual code. Sharing the complete list here — top to bottom by severity — so you have the same picture I do. Most of this is normal for a project our age. A few are urgent. Numbers run highest priority to lowest.
