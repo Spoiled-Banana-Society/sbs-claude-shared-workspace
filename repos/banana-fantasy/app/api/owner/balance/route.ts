@@ -53,6 +53,7 @@ export async function GET(req: Request) {
       hofEntries: nonNeg(data.hofEntries),
       draftPasses: nonNeg(data.draftPasses),
       cardPurchaseCount: nonNeg(data.cardPurchaseCount),
+      nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

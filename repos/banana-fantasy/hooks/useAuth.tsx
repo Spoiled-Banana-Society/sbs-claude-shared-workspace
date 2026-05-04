@@ -648,6 +648,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (updates.profilePicture && updates.profilePicture !== prev.profilePicture) {
           updateOwnerPfpImage(prev.walletAddress, updates.profilePicture).catch(() => {});
         }
+        // nflTeam lives in v2_users (Go API doesn't model it). Sync via
+        // /api/user/metadata so it survives logout.
+        if (updates.nflTeam !== undefined && updates.nflTeam !== prev.nflTeam) {
+          fetch('/api/user/metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: prev.walletAddress,
+              nflTeam: updates.nflTeam || null,
+            }),
+          }).catch(() => {});
+        }
       }
       return updated;
     });

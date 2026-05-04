@@ -218,6 +218,7 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
     user.jackpotEntries = balance.jackpotEntries;
     user.hofEntries = balance.hofEntries;
     user.cardPurchaseCount = balance.cardPurchaseCount;
+    if (balance.nflTeam) user.nflTeam = balance.nflTeam;
   } else {
     // Balance endpoint unreachable — fall back to Go API token count for
     // draftPasses so the header isn't completely blank.
@@ -235,6 +236,7 @@ interface BalanceCounters {
   hofEntries: number;
   draftPasses: number;
   cardPurchaseCount: number;
+  nflTeam: string | null;
 }
 
 async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCounters | null> {
@@ -250,6 +252,7 @@ async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCount
       hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,
       draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : 0,
       cardPurchaseCount: typeof data.cardPurchaseCount === 'number' ? data.cardPurchaseCount : 0,
+      nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
     };
   } catch {
     return null;

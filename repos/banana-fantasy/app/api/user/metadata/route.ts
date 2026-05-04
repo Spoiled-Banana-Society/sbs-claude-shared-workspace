@@ -18,7 +18,11 @@ const ALLOWED_WALLET_TYPES: WalletType[] = ['privy_embedded', 'privy_external', 
  * denormalized onto activity events for analytics. Called once per session
  * from useAuth when we know the wallet type + device.
  *
- * Body: { userId, walletType, userAgent? }
+ * Also accepts profile fields (nflTeam) that the Go API doesn't model.
+ * The Go API owns username + profilePicture (in `owners` collection); this
+ * route owns nflTeam (in `v2_users`) so it survives logout.
+ *
+ * Body: { userId, walletType?, userAgent?, nflTeam? }
  */
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -31,24 +35,31 @@ export async function POST(req: Request) {
       userId?: string;
       walletType?: string;
       userAgent?: string;
+      nflTeam?: string | null;
     } | null;
     if (!body?.userId || !WALLET_REGEX.test(body.userId)) {
       return jsonError('Invalid userId', 400);
     }
 
-    const walletType: WalletType = ALLOWED_WALLET_TYPES.includes(body.walletType as WalletType)
-      ? (body.walletType as WalletType)
-      : 'unknown';
+    const update: Record<string, unknown> = {
+      lastSeenAt: new Date().toISOString(),
+    };
+
+    if (body.walletType !== undefined) {
+      update.walletType = ALLOWED_WALLET_TYPES.includes(body.walletType as WalletType)
+        ? (body.walletType as WalletType)
+        : 'unknown';
+    }
+    if (body.userAgent !== undefined) {
+      update.lastUserAgent = body.userAgent ?? null;
+    }
+    if (body.nflTeam !== undefined) {
+      // Allow clearing with empty string / null
+      update.nflTeam = body.nflTeam || null;
+    }
 
     const db = getAdminFirestore();
-    await db.collection(USERS_COLLECTION).doc(body.userId.toLowerCase()).set(
-      {
-        walletType,
-        lastUserAgent: body.userAgent ?? null,
-        lastSeenAt: new Date().toISOString(),
-      },
-      { merge: true },
-    );
+    await db.collection(USERS_COLLECTION).doc(body.userId.toLowerCase()).set(update, { merge: true });
 
     return json({ ok: true });
   } catch (err) {
