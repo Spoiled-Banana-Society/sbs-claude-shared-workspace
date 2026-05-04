@@ -5,19 +5,9 @@
 <script type="module">
 const { EthereumProvider } = await import('https://esm.sh/@walletconnect/ethereum-provider@2.22.4');
 
-// Bridge is same-origin with the parent app (loaded as /wc-bridge.html).
-// All postMessage traffic is locked to that origin to prevent any
-// cross-origin frame from driving the WC connect flow.
-const PARENT_ORIGIN = window.location.origin;
-
-function postToParent(payload) {
-  window.parent.postMessage(payload, PARENT_ORIGIN);
-}
-
 let currentProvider = null;
 
 window.addEventListener('message', async (event) => {
-  if (event.origin !== PARENT_ORIGIN) return;
   if (event.data?.type !== 'wc-connect') return;
 
   const { walletId } = event.data;
@@ -37,8 +27,8 @@ window.addEventListener('message', async (event) => {
       metadata: {
         name: 'Banana Fantasy',
         description: 'Onchain Fantasy Football',
-        url: PARENT_ORIGIN,
-        icons: [PARENT_ORIGIN + '/icons/icon-192.png'],
+        url: event.origin,
+        icons: [event.origin + '/icons/icon-192.png'],
       },
     });
 
@@ -47,24 +37,24 @@ window.addEventListener('message', async (event) => {
     if (!showModal) {
       // For specific wallets — send URI back for deep linking
       provider.on('display_uri', (uri) => {
-        postToParent({ type: 'wc-uri', uri, walletId });
+        window.parent.postMessage({ type: 'wc-uri', uri, walletId }, '*');
       });
     }
 
     provider.connect().then(async () => {
       const accounts = await provider.request({ method: 'eth_accounts' });
-      postToParent({ type: 'wc-connected', accounts, walletId });
+      window.parent.postMessage({ type: 'wc-connected', accounts, walletId }, '*');
     }).catch(err => {
-      postToParent({ type: 'wc-error', error: err.message });
+      window.parent.postMessage({ type: 'wc-error', error: err.message }, '*');
     });
 
   } catch(err) {
-    postToParent({ type: 'wc-error', error: err.message });
+    window.parent.postMessage({ type: 'wc-error', error: err.message }, '*');
   }
 });
 
 // Signal ready
-postToParent({ type: 'wc-ready' });
+window.parent.postMessage({ type: 'wc-ready' }, '*');
 </script>
 </body>
 </html>

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminApp } from '@/lib/firebaseAdmin';
-import { logger } from '@/lib/logger';
 
 const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -74,7 +73,7 @@ export async function GET(req: NextRequest) {
       }
     }
   } catch (rtdbErr) {
-    logger.warn('[league-players] RTDB read failed, will try Go fallback:', rtdbErr);
+    console.warn('[league-players] RTDB read failed, will try Go fallback:', rtdbErr);
   }
 
   let numPlayers = rtdbPlayers;
@@ -102,7 +101,7 @@ export async function GET(req: NextRequest) {
         goOk = true; // draft-state doc not created yet — normal during filling
       }
     } catch (goErr) {
-      logger.warn('[league-players] Go /state/info fallback failed:', goErr);
+      console.warn('[league-players] Go /state/info fallback failed:', goErr);
     }
   }
 

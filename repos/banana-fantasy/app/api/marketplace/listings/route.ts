@@ -10,7 +10,6 @@ import {
   type OpenSeaListing,
   type OpenSeaNft,
 } from '@/lib/opensea';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,7 +53,7 @@ export async function GET(req: Request) {
 
     if (!listingsRes.ok) {
       const text = await listingsRes.text();
-      logger.error('marketplace.listings.opensea_error', { route: '/api/marketplace/listings', status: listingsRes.status, text });
+      console.error('[marketplace/listings] OpenSea error:', listingsRes.status, text);
       return jsonError('Failed to fetch listings', listingsRes.status >= 500 ? 502 : listingsRes.status);
     }
 
@@ -154,7 +153,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('marketplace.listings.unhandled', { route: '/api/marketplace/listings', err });
+    console.error('[marketplace/listings] GET failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

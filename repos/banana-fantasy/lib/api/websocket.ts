@@ -8,7 +8,6 @@
 
 import { normalizeWalletAddress } from './client';
 import { getDraftServerUrl } from '@/lib/staging';
-import { getApiToken } from './authToken';
 import { logger } from '@/lib/logger';
 
 export type DraftWsEventType =
@@ -54,12 +53,11 @@ function computeBackoff(attempt: number, baseMs: number, maxMs: number): number 
   return Math.max(0, Math.floor(exp + jitter));
 }
 
-function buildWsUrl(serverUrl: string, walletAddress: string, draftId: string, token?: string): string {
+function buildWsUrl(serverUrl: string, walletAddress: string, draftId: string): string {
   const base = serverUrl.replace(/\/$/, '');
   const u = new URL(`${base}/ws`);
   u.searchParams.set('address', normalizeWalletAddress(walletAddress));
   u.searchParams.set('draftName', draftId);
-  if (token) u.searchParams.set('token', token);
   return u.toString();
 }
 
@@ -182,13 +180,7 @@ export class DraftWebSocketClient {
   }
 
   private async openSocket(): Promise<void> {
-    // Privy bearer attached via ?token= because the browser WS API can't
-    // set headers. Server-side auth/middleware.go verifies before upgrade.
-    const token = await getApiToken();
-    if (!token) {
-      throw new Error('No Privy token — cannot open draft WebSocket');
-    }
-    const url = buildWsUrl(this.opts.serverUrl, this.opts.walletAddress, this.opts.draftId, token);
+    const url = buildWsUrl(this.opts.serverUrl, this.opts.walletAddress, this.opts.draftId);
 
     if (this.opts.debug) logger.debug('[DraftWS] connecting', url);
 

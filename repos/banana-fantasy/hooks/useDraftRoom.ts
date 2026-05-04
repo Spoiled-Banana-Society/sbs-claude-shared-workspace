@@ -11,7 +11,6 @@ import {
   type ApiDraftInfo,
   type ApiDraftPick,
 } from '@/lib/api/drafts';
-import { logger } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -327,7 +326,7 @@ export function useDraftRoom(draftId: string | null) {
         }
       } catch (err) {
         if (!isActive) return;
-        logger.error('[useDraftRoom] Failed to fetch initial state:', err);
+        console.error('[useDraftRoom] Failed to fetch initial state:', err);
         updateState({ error: 'Failed to load draft data.', isLoading: false });
       }
     };
@@ -391,7 +390,7 @@ export function useDraftRoom(draftId: string | null) {
             const round = toNumberOrNull(payload.round);
             const playerId = toNonEmptyStringOrNull(payload.playerId);
             if (pickNum == null || playerId == null) {
-              logger.warn('[useDraftRoom] Ignoring malformed new_pick payload:', payload);
+              console.warn('[useDraftRoom] Ignoring malformed new_pick payload:', payload);
               break;
             }
 
@@ -454,14 +453,14 @@ export function useDraftRoom(draftId: string | null) {
             break;
 
           case 'invalid_pick':
-            logger.warn('[useDraftRoom] Invalid pick:', payload);
+            console.warn('[useDraftRoom] Invalid pick:', payload);
             break;
 
           default:
             break;
         }
       } catch (err) {
-        logger.error('[useDraftRoom] Failed to process WS message:', eventType, payload, err);
+        console.error('[useDraftRoom] Failed to process WS message:', eventType, payload, err);
       }
     });
 
@@ -472,7 +471,7 @@ export function useDraftRoom(draftId: string | null) {
           if (isActive) fetchInitialState();
         })
         .catch((err) => {
-          logger.error('[useDraftRoom] WebSocket connect failed:', err);
+          console.error('[useDraftRoom] WebSocket connect failed:', err);
           // Still try REST
           if (isActive) fetchInitialState();
         });

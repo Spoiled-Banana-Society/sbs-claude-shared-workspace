@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
-import { logger } from '@/lib/logger';
 
 // Per-user nicknames for the leagues you're in. Keyed by leagueId, lives
 // in /api/owner/team-nicknames as a single Firestore doc per wallet.
@@ -75,7 +74,7 @@ export function useTeamNicknames(): UseTeamNicknamesResult {
         throw new Error(`HTTP ${res.status} ${text}`);
       }
     } catch (err) {
-      logger.warn('[teamNicknames] save failed — reverting', err);
+      console.warn('[teamNicknames] save failed — reverting', err);
       // Revert optimistic update.
       setNicknames(prev => {
         const next = { ...prev };

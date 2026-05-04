@@ -24,7 +24,6 @@ export function DraftTabs({ activeTab, onTabChange, queueCount = 0 }: DraftTabsP
       {TABS.map(tab => (
         <button
           key={tab.key}
-          data-tutorial={`${tab.key}-tab`}
           onClick={() => onTabChange(tab.key)}
           className={`uppercase font-bold text-sm cursor-pointer transition-all ${
             activeTab === tab.key

@@ -23,9 +23,11 @@ import {
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
-import { creditCompletedPurchase } from '@/lib/db';
+import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
+import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
+const USERS_COLLECTION = 'v2_users';
 const FAILED_MINTS_COLLECTION = 'failed_mints';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 const MAX_QUANTITY = 40;
@@ -49,15 +51,12 @@ const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_
  *   3. BBB4.reserveTokens(user, quantity)
  *
  * Works for every wallet type (Privy embedded, MetaMask, Coinbase, etc.).
- *
- * Enabled in any environment that has admin mint configured. Previously
- * hard-gated to staging only — a hardcoded `NEXT_PUBLIC_ENVIRONMENT !==
- * 'staging'` check would 403 every card payment in prod. Switching the
- * env var alone wasn't enough; the route enforces real prerequisites
- * (admin key configured + funded admin wallet + permit signature) so
- * there's no benefit to a separate environment guard.
+ * Staging-only during soak — promote to prod after a verification pass.
  */
 export async function POST(req: Request) {
+  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+    return jsonError('Not available in this environment', 403);
+  }
   if (!isAdminMintConfigured()) {
     return jsonError('Admin mint not configured (BBB4_OWNER_PRIVATE_KEY missing)', 503);
   }
@@ -240,51 +239,91 @@ export async function POST(req: Request) {
       );
     }
 
-    // 4. Atomically credit the user — single source of truth for paid mints.
-    //    creditCompletedPurchase covers: v2_purchases doc, draftPasses bump,
-    //    wheelSpins, buy-bonus freeDrafts, mint+referral promos,
-    //    cardPurchaseCount + 6-card-rewards, single activity event, and
-    //    Go-API tokenIds recording. Idempotent on txHash, so a retried
-    //    Cloud Tasks invocation can't double-credit.
-    let creditResult: Awaited<ReturnType<typeof creditCompletedPurchase>> | null = null;
+    // 4. Atomic Firestore commit: counter + cardPurchaseCount + activity
+    //    event all written in ONE transaction. Activity feed and counter
+    //    can never disagree.
+    let newDraftPasses: number | null = null;
+    const activityInput = {
+      type: 'pass_purchased' as const,
+      userId,
+      walletAddress: userId,
+      paymentMethod,
+      quantity,
+      tokenIds: mintResult.tokenIds,
+      txHash: mintResult.txHash,
+      metadata: {
+        source: paymentMethod === 'card' ? 'card_moonpay_permit' : 'usdc_permit',
+        permitDeadline: deadlineNum,
+        permitTxHash,
+        transferTxHash,
+        totalPrice: Number(value) / 1_000_000,
+        currency: 'USDC',
+      },
+    };
+
+    if (isFirestoreConfigured()) {
+      const db = getAdminFirestore();
+      const userRef = db.collection(USERS_COLLECTION).doc(userId);
+      const activityDoc = await buildActivityEventDoc(activityInput);
+
+      try {
+        newDraftPasses = await db.runTransaction(async (tx) => {
+          const snap = await tx.get(userRef);
+          const data = snap.exists ? (snap.data() ?? {}) : {};
+          const currentPasses = (data.draftPasses as number | undefined) ?? 0;
+          const currentCardCount = (data.cardPurchaseCount as number | undefined) ?? 0;
+          const nextPasses = Math.max(0, currentPasses) + quantity;
+          const nextCardCount =
+            paymentMethod === 'card' ? Math.max(0, currentCardCount) + 1 : currentCardCount;
+          tx.set(userRef, { draftPasses: nextPasses, cardPurchaseCount: nextCardCount }, { merge: true });
+          addActivityEventToTx(tx, activityDoc);
+          return nextPasses;
+        });
+      } catch (txErr) {
+        console.error('[card-mint] firestore transaction failed, falling back:', txErr);
+        try {
+          await userRef.set(
+            {
+              draftPasses: FieldValue.increment(quantity),
+              ...(paymentMethod === 'card' ? { cardPurchaseCount: FieldValue.increment(1) } : {}),
+            },
+            { merge: true },
+          );
+          const after = await userRef.get();
+          newDraftPasses = (after.data()?.draftPasses as number | undefined) ?? null;
+          await logActivityEvent({ ...activityInput, metadata: { ...activityInput.metadata, fallbackPath: true } });
+        } catch (incErr) {
+          console.error('[card-mint] atomic increment fallback also failed:', incErr);
+          logger.warn('card-mint.firestore_increment_failed', {
+            userId,
+            err: (incErr as Error).message,
+          });
+        }
+      }
+    } else {
+      await logActivityEvent(activityInput);
+    }
+
+    // Bump Buy 10 + Buy 2 promo progress and referrer milestones.
+    // Best-effort — must not roll back the on-chain mint (already happened).
     if (isFirestoreConfigured()) {
       try {
-        creditResult = await creditCompletedPurchase({
+        await incrementMintPromos(userId, quantity);
+      } catch (promoErr) {
+        logger.warn('card-mint.promo_increment_failed', {
           userId,
           quantity,
-          paymentMethod,
-          txHash: mintResult.txHash,
-          tokenIds: mintResult.tokenIds,
-          totalPriceUsd: Number(value) / 1_000_000,
-          unitPriceUsd: Number(tokenPriceUsdc as bigint) / 1_000_000,
+          err: (promoErr as Error).message,
         });
-      } catch (creditErr) {
-        // The on-chain mint already happened — never throw the route on a
-        // post-mint accounting hiccup. Record for replay and continue.
-        logger.error('card-mint.credit_failed_after_mint', {
+      }
+      try {
+        await incrementReferralPromos(userId, quantity);
+      } catch (refErr) {
+        logger.warn('card-mint.referral_increment_failed', {
           userId,
           quantity,
-          mintTxHash: mintResult.txHash,
-          err: (creditErr as Error).message,
+          err: (refErr as Error).message,
         });
-        try {
-          const db = getAdminFirestore();
-          await db.collection(FAILED_MINTS_COLLECTION).add({
-            source: 'card-mint-credit',
-            userId,
-            quantity,
-            paymentMethod,
-            permitTxHash,
-            transferTxHash,
-            mintTxHash: mintResult.txHash,
-            tokenIds: mintResult.tokenIds,
-            error: (creditErr as Error).message,
-            createdAt: FieldValue.serverTimestamp(),
-            retryable: true,
-          });
-        } catch (logErr) {
-          logger.error('card-mint.failed_credit_record_error', { userId, err: logErr });
-        }
       }
     }
 
@@ -292,11 +331,7 @@ export async function POST(req: Request) {
       success: true,
       minted: quantity,
       tokenIds: mintResult.tokenIds,
-      draftPasses: creditResult?.draftPasses ?? null,
-      spinsAdded: creditResult?.spinsAdded ?? 0,
-      freeDraftsAdded: creditResult?.freeDraftsAdded ?? 0,
-      freePassFromRewards: creditResult?.freePassFromRewards ?? false,
-      alreadyCredited: creditResult?.alreadyCredited ?? false,
+      draftPasses: newDraftPasses,
       txHashes: {
         permit: permitTxHash,
         transferFrom: transferTxHash,

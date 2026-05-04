@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { PrivyProvider } from '@/providers/PrivyProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { AuthProvider } from '@/hooks/useAuth';
+import { ReduxProvider } from '@/redux/provider';
 import { ToastProvider } from '@/components/ui/Toast';
 import { Header } from '@/components/layout/Header';
 import { MobileTabBar } from '@/components/layout/MobileTabBar';
@@ -16,7 +17,6 @@ import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
 import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
 import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
-import { logger } from '@/lib/logger';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -82,7 +82,7 @@ function OneSignalInit() {
       safari_web_id: 'web.onesignal.auto.3182d724-6e8d-450b-a283-f7f35292ae01',
       allowLocalhostAsSecureOrigin: process.env.NODE_ENV === 'development',
     }).catch((err: unknown) => {
-      logger.warn('OneSignal init failed:', err);
+      console.warn('OneSignal init failed:', err);
     });
   }, []);
 
@@ -93,12 +93,14 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PrivyProvider>
       <AuthProvider>
-        <QueryProvider>
-          <ToastProvider>
-            <OneSignalInit />
-            <AppContent>{children}</AppContent>
-          </ToastProvider>
-        </QueryProvider>
+        <ReduxProvider>
+          <QueryProvider>
+            <ToastProvider>
+              <OneSignalInit />
+              <AppContent>{children}</AppContent>
+            </ToastProvider>
+          </QueryProvider>
+        </ReduxProvider>
       </AuthProvider>
     </PrivyProvider>
   );

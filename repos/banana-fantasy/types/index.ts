@@ -213,16 +213,16 @@ export interface EligibilityStatus {
   season: number;
   w9Completed: boolean;
   lastVerifiedDate?: string;
-  // KYC verification tiers (Didit-backed)
+  // Persona verification tiers
   tier1Verified: boolean; // age + geo (first withdrawal)
   tier2Verified: boolean; // full KYC (cumulative $2k+)
   cumulativeWithdrawals: number;
   geoState?: string;
-  kycInquiryId?: string;
+  personaInquiryId?: string;
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share' | 'founder-draft';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -287,7 +287,6 @@ export interface Promo {
     pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed' }[];
     totalPick10s?: number;
     jackpotHistory?: { date: string; draftName: string; amount: number }[];
-    founderHistory?: { date: string; draftName: string; amount: number }[];
     mintHistory?: { date: string; quantity: number; status: 'pending' | 'claim' | 'claimed' }[];
     totalMinted?: number;
   };

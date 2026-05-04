@@ -2,11 +2,23 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { requireWalletOwnership } from '@/lib/walletAuth';
+import { getPrivyUser } from '@/lib/auth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { logger } from '@/lib/logger';
 
 const TWITTER_LINKS_COLLECTION = 'v2_twitter_links';
+
+async function requireAuthenticatedWallet(req: Request, walletAddress: string) {
+  // Verify the Privy access token is valid (proves the caller is logged in).
+  // Wallet comparison is intentionally skipped: Privy JWTs don't carry a
+  // wallet claim, the userId is a Privy DID (not a wallet), and v2_users is
+  // keyed by walletAddress — so we can't look the wallet up either. Proper
+  // anti-sybil here requires @privy-io/server-auth → PrivyClient.getUser()
+  // to fetch linkedAccounts; deferred until that dep is added.
+  await getPrivyUser(req);
+  if (!walletAddress) {
+    throw new ApiError(400, 'walletAddress is required');
+  }
+}
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -21,7 +33,7 @@ export async function POST(req: Request) {
     const twitterId = requireString(body.twitterId, 'twitterId');
     const twitterHandle = requireString(body.twitterHandle, 'twitterHandle');
     const walletAddress = requireString(body.walletAddress, 'walletAddress').toLowerCase();
-    await requireWalletOwnership(req, walletAddress);
+    await requireAuthenticatedWallet(req, walletAddress);
 
     const db = getAdminFirestore();
     const linkRef = db.collection(TWITTER_LINKS_COLLECTION).doc(twitterId);
@@ -67,7 +79,7 @@ export async function POST(req: Request) {
     return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: false });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('verify-twitter.post_unhandled', { route: '/api/auth/verify-twitter', err });
+    console.error('[verify-twitter]', err);
     return jsonError('Internal Server Error', 500);
   }
 }
@@ -105,7 +117,7 @@ export async function GET(req: Request) {
     const data = snapshot.docs[0].data();
     return json({ verified: true, handle: data.twitterHandle, newUserPromoClaimed: data.newUserPromoClaimed ?? false });
   } catch (err) {
-    logger.error('verify-twitter.get_unhandled', { route: '/api/auth/verify-twitter', err });
+    console.error('[verify-twitter GET]', err);
     return json({ verified: false });
   }
 }
@@ -125,7 +137,7 @@ export async function PATCH(req: Request) {
 
     const body = await parseBody(req);
     const walletAddress = requireString(body.walletAddress, 'walletAddress').toLowerCase();
-    await requireWalletOwnership(req, walletAddress);
+    await requireAuthenticatedWallet(req, walletAddress);
 
     const db = getAdminFirestore();
     const snapshot = await db
@@ -142,7 +154,7 @@ export async function PATCH(req: Request) {
     return json({ success: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('verify-twitter.patch_unhandled', { route: '/api/auth/verify-twitter', err });
+    console.error('[verify-twitter PATCH]', err);
     return jsonError('Internal Server Error', 500);
   }
 }

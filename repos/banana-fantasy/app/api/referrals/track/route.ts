@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { trackReferral } from '@/lib/db';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +52,7 @@ export async function POST(req: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
-    logger.error('[referrals/track]', err);
+    console.error('[referrals/track]', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

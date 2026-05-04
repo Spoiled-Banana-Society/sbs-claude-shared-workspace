@@ -7,7 +7,6 @@ import { useDraftAudio } from '@/hooks/useDraftAudio';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import type { DraftMode } from '@/hooks/useDraftEngine';
 import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
-import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -83,17 +82,17 @@ function DraftRoomContent() {
     try {
       window.history.replaceState(window.history.state, '', newUrl);
     } catch (err) {
-      logger.warn('[DraftRoom] history.replaceState failed:', err);
+      console.warn('[DraftRoom] history.replaceState failed:', err);
     }
     try {
       router.replace(newUrl, { scroll: false });
     } catch (err) {
-      logger.warn('[DraftRoom] router.replace failed:', err);
+      console.warn('[DraftRoom] router.replace failed:', err);
     }
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, setShowLoginModal, getAccessToken } = useAuth();
+  const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
   const {
     playSpinningSound,
     playReelStop,
@@ -499,7 +498,7 @@ function DraftRoomContent() {
           setPhase('filling');
         }
       } catch (err) {
-        logger.warn('[Draft Room] Loading phase server check failed:', err);
+        console.warn('[Draft Room] Loading phase server check failed:', err);
         if (stored?.status === 'drafting') {
           setPhase('drafting');
           setLiveDataReady(true);
@@ -612,7 +611,7 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => logger.error('[Airplane] Auto-pick REST failed:', e));
+          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
         }
       } else {
         engine.draftPlayer(pickId);
@@ -785,7 +784,7 @@ function DraftRoomContent() {
         }
       })
       .catch((e) => {
-        logger.warn('[Preferences] Failed to load draft preferences:', e);
+        console.warn('[Preferences] Failed to load draft preferences:', e);
       });
 
     return () => { cancelled = true; };
@@ -815,7 +814,7 @@ function DraftRoomContent() {
         if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
       }
     } catch (e) {
-      logger.error('[AutoDraft] Toggle failed:', e);
+      console.error('[AutoDraft] Toggle failed:', e);
       // Revert optimistic flip on failure.
       setAutoDraft(!newValue);
       engine.setAirplaneMode(!newValue);
@@ -831,7 +830,7 @@ function DraftRoomContent() {
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
-        .catch(e => logger.warn('[Sort] Failed to persist sort preference:', e));
+        .catch(e => console.warn('[Sort] Failed to persist sort preference:', e));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
@@ -882,7 +881,7 @@ function DraftRoomContent() {
         engine.refreshAvailablePlayers(available);
       })
       .catch((err) => {
-        logger.warn('[Rankings] Failed to refresh player rankings:', err);
+        console.warn('[Rankings] Failed to refresh player rankings:', err);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, phase, rankingsRefreshBucket]);
@@ -906,7 +905,7 @@ function DraftRoomContent() {
             logger.debug('[DraftComplete] Generated card URL:', imageUrl);
           }
         } catch (err) {
-          logger.error('[DraftComplete] Failed to fetch card:', err);
+          console.error('[DraftComplete] Failed to fetch card:', err);
         }
       };
       fetchUrl();
@@ -997,7 +996,7 @@ function DraftRoomContent() {
           }
         }
       } catch (err) {
-        logger.warn('[Draft Room] Poll failed:', err);
+        console.warn('[Draft Room] Poll failed:', err);
       }
     };
 
@@ -1101,7 +1100,7 @@ function DraftRoomContent() {
           setServerPollResult({ order: realOrder, countdownStart: serverCountdownStart });
           return;
         } catch (err) {
-          logger.warn(`[Draft Room] Server not ready (attempt ${attempts}):`, err instanceof Error ? err.message : err);
+          console.warn(`[Draft Room] Server not ready (attempt ${attempts}):`, err instanceof Error ? err.message : err);
           await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
         }
       }
@@ -1169,19 +1168,13 @@ function DraftRoomContent() {
       const trackedKey = `promo-tracked:${id}`;
       if (!localStorage.getItem(trackedKey)) {
         localStorage.setItem(trackedKey, '1');
-        (async () => {
-          const token = await getAccessToken();
-          await fetch('/api/promos/draft-complete', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ draftId: id }),
-          }).then(r => r.json()).catch(err => {
-            logger.error('[Promo] Failed to track draft:', err);
-          });
-        })();
+        fetch('/api/promos/draft-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: promoUserId, draftId: id }),
+        }).then(r => r.json()).catch(err => {
+          console.error('[Promo] Failed to track draft:', err);
+        });
       }
     }
 
@@ -1189,19 +1182,13 @@ function DraftRoomContent() {
       const pick10Key = `promo-pick10:${id}`;
       if (!localStorage.getItem(pick10Key)) {
         localStorage.setItem(pick10Key, '1');
-        (async () => {
-          const token = await getAccessToken();
-          await fetch('/api/promos/pick10', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ draftId: id, draftName: contestName }),
-          }).then(r => r.json()).catch(err => {
-            logger.error('[Promo] Pick 10 tracking failed:', err);
-          });
-        })();
+        fetch('/api/promos/pick10', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
+        }).then(r => r.json()).catch(err => {
+          console.error('[Promo] Pick 10 tracking failed:', err);
+        });
       }
     }
 
@@ -1230,55 +1217,13 @@ function DraftRoomContent() {
     const jackpotKey = `promo-jackpot:${id}`;
     if (localStorage.getItem(jackpotKey)) return;
     localStorage.setItem(jackpotKey, '1');
-    (async () => {
-      const token = await getAccessToken();
-      await fetch('/api/promos/jackpot-hit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ draftId: id }),
-      }).catch(err => logger.error('[Promo] Jackpot tracking failed:', err));
-    })();
+    fetch('/api/promos/jackpot-hit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+    }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
-
-  // Founder Draft promo POST. Fires once the draft is past filling.
-  // Server validates that the draft actually qualifies (within window
-  // + founder wallet present + caller in draftOrder) so we can fire
-  // optimistically — non-qualifying drafts get a 400 and we log it.
-  // Idempotent via localStorage promo-founder:* + server-side dedupe
-  // in recordFounderDraftJoin.
-  useEffect(() => {
-    if (!isLiveMode || engine.draftStatus !== 'active') return;
-    const id = draftId || urlDraftId;
-    if (!id) return;
-    const promoUserId = user?.id || walletParam?.toLowerCase();
-    if (!promoUserId) return;
-    const founderKey = `promo-founder:${id}`;
-    if (localStorage.getItem(founderKey)) return;
-    localStorage.setItem(founderKey, '1');
-    (async () => {
-      const token = await getAccessToken();
-      try {
-        const res = await fetch('/api/promos/founder-draft', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ draftId: id }),
-        });
-        if (!res.ok && res.status !== 400) {
-          logger.warn('[Promo] Founder POST non-OK', { status: res.status });
-        }
-      } catch (err) {
-        logger.error('[Promo] Founder tracking failed:', err);
-      }
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.draftStatus, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
 
   useEffect(() => {
     if (phase !== 'pre-spin') return;
@@ -1674,9 +1619,6 @@ function DraftRoomContent() {
             {phase === 'filling' && !specialTypeParam && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-white/10 text-white/50">UNREVEALED</span>
             )}
-            {(draftId || urlDraftId) && (
-              <FounderPill draftId={draftId || urlDraftId} size="md" />
-            )}
           </div>
           <div className="flex items-center gap-4">
             {spectateParam && (
@@ -1939,25 +1881,22 @@ function DraftRoomContent() {
                     // effort still — failure swallowed (Go side already
                     // gave the card back; the next refreshBalance on the
                     // /drafting page will reconcile).
+                    const userId = user?.id || walletParam;
                     const passType = passTypeParam || storedDraft?.passType || 'paid';
                     try {
-                      const token = await getAccessToken();
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                        body: JSON.stringify({ passType, leagueId: draftId }),
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
                       });
                       await refreshBalance();
                     } catch (err) {
-                      logger.warn('[Leave] Refund pass failed:', err);
+                      console.warn('[Leave] Refund pass failed:', err);
                     }
                     draftStore.removeDraft(draftId);
                     window.location.href = '/drafting';
                   } catch (err) {
-                    logger.error('Failed to leave draft:', err);
+                    console.error('Failed to leave draft:', err);
                     setLeaving(false);
                     setShowLeaveConfirm(false);
                   }

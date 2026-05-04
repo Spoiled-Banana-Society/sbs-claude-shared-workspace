@@ -1,7 +1,6 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
-import { logger } from '@/lib/logger';
 import {
   OPENSEA_API_BASE,
   COLLECTION_SLUG,
@@ -49,7 +48,7 @@ export async function GET(req: Request) {
 
     if (!nftsRes.ok) {
       const text = await nftsRes.text();
-      logger.error('marketplace.collection_nfts.opensea_error', { status: nftsRes.status, body: text });
+      console.error('[marketplace/collection-nfts] OpenSea error:', nftsRes.status, text);
       return jsonError('Failed to fetch NFTs', nftsRes.status >= 500 ? 502 : nftsRes.status);
     }
 
@@ -140,7 +139,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('marketplace.collection_nfts.get_failed', { err });
+    console.error('[marketplace/collection-nfts] GET failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

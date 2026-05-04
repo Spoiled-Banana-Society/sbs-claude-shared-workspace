@@ -40,20 +40,11 @@ interface DraftInfoResponse {
   currentPickEndTime?: number | null;
 }
 
-// Spectator backend URL. Resolved order:
-//   1. STAGING_DRAFTS_API_URL env (preferred — deploys can pin a specific env)
-//   2. Hardcoded staging fallback ONLY when NEXT_PUBLIC_ENVIRONMENT === 'staging'
-//   3. Otherwise throw — fails loud rather than silently leaking staging state
-//      into a prod deployment.
+// Hardcoded staging — see comment in /api/spectate/draft-state/route.ts.
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function getServerDraftsApiUrl(): string {
-  const envUrl = process.env.STAGING_DRAFTS_API_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
-    return STAGING_DRAFTS_API_URL;
-  }
-  throw new Error('STAGING_DRAFTS_API_URL not configured');
+  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {

@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { requireWalletAuth } from '@/lib/walletAuth';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -30,9 +29,9 @@ export async function GET(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    // Server-derived wallet — was an unauthenticated GET that returned any
-    // wallet's pass balance to anyone who knew the wallet address.
-    const { walletAddress: userId } = await requireWalletAuth(req);
+    const { searchParams } = new URL(req.url);
+    const userId = searchParams.get('userId');
+    if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
       return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0 });

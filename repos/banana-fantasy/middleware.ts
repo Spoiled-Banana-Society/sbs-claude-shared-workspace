@@ -35,25 +35,10 @@ function corsHeaders(origin: string | null): Record<string, string> {
   return headers;
 }
 
-// Dev-only routes that must 404 in production. Tests, security tooling, or
-// staging-only flows accidentally exposed in prod show up here.
-const DEV_ONLY_PATH_PREFIXES = [
-  '/test-tutorial',
-  '/security/blockaid',
-];
-
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Block dev-only paths in production. Staging keeps them available for
-  // testing — gated by NEXT_PUBLIC_ENVIRONMENT === 'staging'.
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
-    if (DEV_ONLY_PATH_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
-      return new NextResponse(null, { status: 404 });
-    }
-  }
-
-  // Only apply CORS / size guards to API routes.
+  // Only apply to API routes
   if (!pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
@@ -93,5 +78,5 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/:path*', '/test-tutorial/:path*', '/test-tutorial', '/security/:path*'],
+  matcher: '/api/:path*',
 };

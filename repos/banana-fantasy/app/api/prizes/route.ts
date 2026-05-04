@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { mockPrizes } from '@/lib/mock/prizes';
-import { logger } from '@/lib/logger';
 
 const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL || '';
 
@@ -39,7 +38,7 @@ export async function GET(req: Request) {
 
     if (!res.ok) {
       const message = await readErrorMessage(res);
-      logger.error(`Prizes API error: ${res.status}`, message);
+      console.error(`Prizes API error: ${res.status}`, message);
       return jsonError(message || 'Prizes service error', res.status);
     }
 
@@ -52,7 +51,7 @@ export async function GET(req: Request) {
     return json(data, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('Prizes fetch failed:', err);
+    console.error('Prizes fetch failed:', err);
     return jsonError('Failed to fetch prizes', 500);
   }
 }

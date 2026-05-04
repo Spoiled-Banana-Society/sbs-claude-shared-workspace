@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getDraftServerUrl } from '@/lib/staging';
-import { getApiToken } from '@/lib/api/authToken';
 import { logger } from '@/lib/logger';
 
 // ==================== PAYLOAD TYPES ====================
@@ -163,7 +162,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     }
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(() => {
     if (!mountedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
@@ -177,15 +176,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     // which calls normalizeWalletAddress(). The Go server does case-sensitive comparison
     // between c.address (from URL) and newPick.OwnerAddress (from payload), so they MUST match.
     const normalizedAddress = walletAddress.trim().toLowerCase();
-    // WebSocket browser API can't set headers — Privy JWT goes in the URL.
-    // The Go server verifies it before upgrading, so an invalid/missing
-    // token returns 401 instead of opening a socket.
-    const token = await getApiToken();
-    if (!token) {
-      logger.warn('[Draft WS] No Privy token available — skipping connect');
-      return;
-    }
-    const url = `${serverUrl}/ws?address=${encodeURIComponent(normalizedAddress)}&draftName=${encodeURIComponent(draftName)}&token=${encodeURIComponent(token)}`;
+    const url = `${serverUrl}/ws?address=${encodeURIComponent(normalizedAddress)}&draftName=${encodeURIComponent(draftName)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -264,7 +255,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
         const delay = backoffRef.current;
         backoffRef.current = Math.min(backoffRef.current * 2, MAX_BACKOFF_MS);
         reconnectTimerRef.current = setTimeout(() => {
-          if (mountedRef.current) void connect();
+          if (mountedRef.current) connect();
         }, delay);
       }
     };
@@ -277,7 +268,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
   // Connect/disconnect based on `enabled`
   useEffect(() => {
     if (enabled && walletAddress && draftName) {
-      void connect();
+      connect();
     } else {
       closeSocket();
     }
@@ -299,7 +290,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
           backoffRef.current = INITIAL_BACKOFF_MS;
           // Cancel any pending reconnect before starting a new visible-tab reconnect.
           clearTimers();
-          void connect();
+          connect();
         }
       }
     };

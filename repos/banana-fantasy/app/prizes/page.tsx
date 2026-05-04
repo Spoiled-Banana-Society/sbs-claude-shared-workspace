@@ -78,7 +78,7 @@ export default function PrizesPage() {
     return Boolean(eligibility?.tier1Verified);
   }, [eligibility?.tier1Verified]);
 
-  // Users can always attempt withdrawal — KYC verification (Didit) triggers inline if needed
+  // Users can always attempt withdrawal — Persona verification triggers inline if needed
   const canWithdrawPrizes = true;
 
   const verificationUrl = '/verify';

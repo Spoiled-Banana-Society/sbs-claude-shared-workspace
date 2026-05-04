@@ -7,14 +7,10 @@
 import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { getApiToken } from './authToken';
 
 function draftsApi() {
   return createHttpClient({
     baseUrl: getDraftsApiUrl(),
-    // Privy bearer attached automatically — required for the owner self-edit
-    // endpoints the Go API now gates (displayName, pfpImage, queue, etc.).
-    getAccessToken: getApiToken,
   });
 }
 

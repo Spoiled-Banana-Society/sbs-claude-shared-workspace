@@ -28,8 +28,8 @@ function getUrlParams(): URLSearchParams | null {
 export function isStagingMode(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // Capture runtime URL overrides regardless of mode — they're how
-  // ephemeral Cloudflare tunnels get plumbed in.
+  // Always use real server — entire site points at staging backend
+  // Runtime URL overrides still work via ?apiUrl= and ?wsUrl= params
   try {
     const params = getUrlParams();
     if (params) {
@@ -41,14 +41,7 @@ export function isStagingMode(): boolean {
   } catch {
     // SSR/prerender — sessionStorage not available
   }
-
-  // Env-driven so prod Vercel can ship the same bundle and route to
-  // production Cloud Run via NEXT_PUBLIC_DRAFTS_API_URL. Anything other
-  // than 'staging' (incl. unset) means production-mode URL resolution.
-  // Previously this always returned true, which meant pushing this code
-  // to the prod Vercel project would have routed prod users at staging
-  // backends — a hard prod-cutover blocker.
-  return process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging';
+  return true;
 }
 
 export function getStagingApiUrl(): string {

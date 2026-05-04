@@ -70,7 +70,7 @@ const fadeUp = {
 
 export function OnboardingFlow() {
   const router = useRouter();
-  const { user, getAccessToken } = useAuth();
+  const { user, walletAddress } = useAuth();
   const { isNewUser, isSubmitting, error, createProfile, updateProfile, completeOnboarding } = useOnboarding();
   const [stepIndex, setStepIndex] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -190,14 +190,11 @@ export function OnboardingFlow() {
     if (promoClaimed || promoLoading) return;
     setPromoLoading(true);
     try {
-      const token = await getAccessToken();
       const res = await fetch('/api/promos/claim', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          walletAddress,
           promoCode: 'WELCOME_FIRST_DRAFT',
           type: 'first_draft_discount',
         }),

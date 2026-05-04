@@ -9,7 +9,6 @@ import {
     generatedCardProps,
 } from "./types/types"
 import { getDraftsApiUrl } from "@/lib/staging"
-import { getApiToken } from "@/lib/api/authToken"
 axios.defaults.headers.post["Content-Type"] = "application/json"
 
 const getEnv = () => {
@@ -20,16 +19,8 @@ const api = axios.create({
     baseURL: getEnv(),
 })
 
-api.interceptors.request.use(async (config) => {
+api.interceptors.request.use((config) => {
     config.baseURL = getEnv()
-    // Attach Privy bearer token for routes the Go API now requires it on
-    // (owner self-edits: displayName, pfpImage, queue, prizeTransfer, etc.).
-    // Routes that don't require auth ignore the header — sending it is
-    // harmless, missing it on auth-required routes is what causes 401s.
-    const token = await getApiToken()
-    if (token) {
-        config.headers.set('Authorization', `Bearer ${token}`)
-    }
     return config
 })
 

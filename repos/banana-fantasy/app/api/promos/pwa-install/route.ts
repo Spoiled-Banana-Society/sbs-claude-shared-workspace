@@ -1,7 +1,6 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { json, jsonError, parseBody, requireString, getSearchParam } from '@/lib/api/routeUtils';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +45,7 @@ export async function POST(req: Request) {
 
     return json({ entered: true, message: "You're entered!" }, 201);
   } catch (err) {
-    logger.error('[pwa-install POST]', err);
+    console.error('[pwa-install POST]', err);
     return jsonError('Internal Server Error', 500);
   }
 }
@@ -80,7 +79,7 @@ export async function GET(req: Request) {
       drawTime: DRAW_TIME,
     }, 200);
   } catch (err) {
-    logger.error('[pwa-install GET]', err);
+    console.error('[pwa-install GET]', err);
     return jsonError('Internal Server Error', 500);
   }
 }

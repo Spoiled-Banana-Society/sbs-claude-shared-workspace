@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { logger } from '@/lib/logger';
 
 const COLLECTION = 'marketplace_watchlist';
 
@@ -33,7 +32,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items });
   } catch (err) {
-    logger.error('marketplace.watchlist.get_error', { err });
+    console.error('[watchlist] GET error:', err);
     return NextResponse.json({ error: 'Failed to fetch watchlist' }, { status: 500 });
   }
 }
@@ -80,7 +79,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: docRef.id });
   } catch (err) {
-    logger.error('marketplace.watchlist.post_error', { err });
+    console.error('[watchlist] POST error:', err);
     return NextResponse.json({ error: 'Failed to add to watchlist' }, { status: 500 });
   }
 }
@@ -113,7 +112,7 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    logger.error('marketplace.watchlist.delete_error', { err });
+    console.error('[watchlist] DELETE error:', err);
     return NextResponse.json({ error: 'Failed to remove from watchlist' }, { status: 500 });
   }
 }

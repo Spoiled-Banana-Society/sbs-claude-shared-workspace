@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
-import { appOrigin } from '@/lib/appConfig';
 
 const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
         // is a real Firestore failure and should not silently dedupe.
         const isAlreadyExists = code === 6 || code === 'already-exists';
         if (!isAlreadyExists) {
-          logger.error('pick-up.firestore_create_failed', { err });
+          console.error('[pick-up] Firestore create() error (non-dedup):', err);
           return NextResponse.json({ error: 'Dedup store unavailable' }, { status: 502 });
         }
 
@@ -116,7 +115,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ ok: true, deduped: true });
           }
         } catch (readErr) {
-          logger.error('pick-up.firestore_dedup_read_failed', { err: readErr });
+          console.error('[pick-up] Firestore read after AlreadyExists failed:', readErr);
           return NextResponse.json({ error: 'Dedup store unavailable' }, { status: 502 });
         }
       }
@@ -153,7 +152,7 @@ export async function POST(req: NextRequest) {
           ],
           headings: { en: title },
           contents: { en: message },
-          url: `${appOrigin()}/draft-room?id=${draftId}`,
+          url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://banana-fantasy-sbs.vercel.app'}/draft-room?id=${draftId}`,
           chrome_web_badge: '/icons/icon-192.png',
           chrome_web_icon: '/icons/icon-192.png',
           ttl,
@@ -162,7 +161,7 @@ export async function POST(req: NextRequest) {
 
       if (!response.ok) {
         const errorBody = await response.text().catch(() => '');
-        logger.error('pick-up.onesignal_error', { status: response.status, body: errorBody });
+        console.error('[pick-up] OneSignal error:', response.status, errorBody);
         if (dedupRef) {
           await dedupRef.set(
             { status: 'failed', failedAt: FieldValue.serverTimestamp() },
@@ -184,7 +183,7 @@ export async function POST(req: NextRequest) {
       );
       return NextResponse.json({ ok: true, recipients: result.recipients ?? 0 });
     } catch (sendErr) {
-      logger.error('pick-up.send_threw', { err: sendErr });
+      console.error('[pick-up] send threw:', sendErr);
       if (dedupRef) {
         await dedupRef.set(
           { status: 'failed', failedAt: FieldValue.serverTimestamp() },
@@ -194,7 +193,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Failed to send notification' }, { status: 502 });
     }
   } catch (err) {
-    logger.error('pick-up.unhandled', { err });
+    console.error('[pick-up] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

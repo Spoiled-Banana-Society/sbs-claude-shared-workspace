@@ -20,31 +20,15 @@ const PRIVY_FALLBACK = {
   linkWallet: async () => {},
 } as unknown as ReturnType<typeof usePrivyBase>;
 
-/**
- * Hook callable from any component, even when PrivyProviderBase isn't yet
- * mounted (SSR, pre-hydration, error-boundary fallback, missing appId at
- * build time). Returns PRIVY_FALLBACK in those cases.
- *
- * Hook-order safety: React tracks hooks by call order, so the underlying
- * usePrivyBase() must be called the same way on every render — even when
- * Privy isn't available. The previous version only called it inside an
- * `if (available)` branch, which is a rules-of-hooks violation that would
- * silently corrupt state if any sibling hook were ever added below it.
- *
- * Now usePrivyBase() is always invoked. When the provider is missing it
- * throws (no context), which we catch and replace with the fallback.
- * The `available` flag picks the real result vs. fallback regardless of
- * whether the call threw.
- */
 export function useSafePrivy() {
   const available = usePrivyAvailable();
-  let privy: ReturnType<typeof usePrivyBase>;
   try {
-    privy = usePrivyBase();
+    if (!available) return PRIVY_FALLBACK;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return usePrivyBase();
   } catch {
-    privy = PRIVY_FALLBACK;
+    return PRIVY_FALLBACK;
   }
-  return available ? privy : PRIVY_FALLBACK;
 }
 
 class PrivyErrorBoundary extends React.Component<

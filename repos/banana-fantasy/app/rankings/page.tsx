@@ -7,7 +7,6 @@ import { TeamPosition } from '@/types';
 import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
 import { useAuth } from '@/hooks/useAuth';
 import { Rankings } from '@/utils/api';
-import { logger } from '@/lib/logger';
 
 // Position color mapping
 const getPositionColor = (position: string): string => {
@@ -147,7 +146,7 @@ export default function RankingsPage() {
       setRankings(adapted);
       setSavedAt(Date.now());
     } catch (err) {
-      logger.error('Failed to reset rankings:', err);
+      console.error('Failed to reset rankings:', err);
     } finally {
       setResettingRankings(false);
     }

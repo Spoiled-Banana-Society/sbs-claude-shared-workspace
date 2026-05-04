@@ -1,5 +1,3 @@
-import { appOrigin } from '@/lib/appConfig';
-
 export function shareToX(text: string, url?: string): void {
   if (typeof window === 'undefined') return;
   const params = new URLSearchParams({ text });
@@ -8,8 +6,9 @@ export function shareToX(text: string, url?: string): void {
 }
 
 export function getShareableUrl(path: string): string {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://banana-fantasy-sbs.vercel.app';
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
-  return `${appOrigin()}${cleanPath}`;
+  return `${base}${cleanPath}`;
 }
 
 export function wheelResultPath(spinId: string): string {

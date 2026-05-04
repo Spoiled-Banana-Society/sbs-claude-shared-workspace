@@ -5,7 +5,6 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { getUserOfframpTransactions, type OfframpTransaction } from '@/lib/cdpAuth';
-import { logger } from '@/lib/logger';
 
 interface TimelineStep {
   key: 'sent' | 'received' | 'converting' | 'paying_out' | 'complete';
@@ -84,7 +83,7 @@ export async function GET(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('coinbase.tx-status.unhandled', { route: '/api/coinbase/tx-status', err });
+    console.error('CDP tx-status error:', err);
     return jsonError('Failed to fetch transaction status', 500);
   }
 }

@@ -2,10 +2,9 @@ import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/api/routeUtils';
-import { requireWalletAuth } from '@/lib/walletAuth';
+import { getPrivyUser } from '@/lib/auth';
 import { createWithdrawal } from '@/lib/db';
-import { logger } from '@/lib/logger';
-import { getKycVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
+import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const KYC_THRESHOLD = 2000; // Cumulative withdrawal threshold for full KYC
@@ -37,36 +36,28 @@ export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
   try {
-    // Server-derived wallet — never trust body.userId. The withdrawal is
-    // always credited to the authenticated caller's wallet.
-    const { walletAddress: userId } = await requireWalletAuth(req);
+    // Verify user is authenticated (Privy DID !== wallet address, so we just verify the JWT is valid)
+    await getPrivyUser(req);
     const body = await parseBody(req);
+    const userId = requireString(body.userId, 'userId');
     const draftId = requireString(body.draftId, 'draftId');
     const amount = requireNumber(body.amount, 'amount');
     const methodRaw = body.method;
 
+    if (!userId.trim()) {
+      return jsonError('User id is required', 400);
+    }
     if (amount <= 0) {
       return jsonError('Amount must be greater than 0', 400);
     }
-    // ⚠️ TODO when prize-ledger lands:
-    //   const earned   = sum(prizes.where(userId, status='paid')) for this user
-    //   const cashed   = sum(withdrawals.where(userId, status in ['pending','processing','completed']))
-    //   const available = earned - cashed
-    //   if (amount > available) return jsonError('Insufficient prize balance', 400)
-    //
-    // Right now the prize ledger isn't built, so we can't validate amount
-    // against actual winnings. Per Boris (2026-04-30): users should be
-    // able to withdraw any amount they've actually won. Auth + KYC tier
-    // gates below are the only checks for now — and human review of the
-    // pending withdrawals queue is the practical safety net until the
-    // ledger is wired up.
+    // TODO: Validate `amount` against the user's actual prize records before creating a withdrawal.
     if (methodRaw !== 'usdc' && methodRaw !== 'bank') {
       return jsonError('Invalid withdrawal method', 400);
     }
     const method: PrizeWithdrawal['method'] = methodRaw;
 
-    // Check KYC verification status before processing (Didit-backed).
-    const verification = await getKycVerification(userId);
+    // Check Persona verification status before processing
+    const verification = await getPersonaVerification(userId);
 
     // Tier 1: First withdrawal — must have age + geo verification
     if (!verification.tier1.verified) {
@@ -80,15 +71,7 @@ export async function POST(req: Request) {
     }
 
     let backendStatus: WithdrawalStatus | undefined;
-    if (!API_BASE) {
-      // Fail loud rather than silently telling the user "withdrawal queued"
-      // while no Go-API transfer ever fires. Previously a missing env var
-      // would still write the Firestore withdrawal record + return success,
-      // which is a real prod-config landmine.
-      logger.error('prizes.withdraw.api_base_missing', { route: '/api/prizes/withdraw' });
-      return jsonError('Withdrawal service not configured', 503);
-    }
-    {
+    if (API_BASE) {
       const res = await fetch(`${API_BASE}/owner/${userId}/withdraw`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,7 +80,7 @@ export async function POST(req: Request) {
 
       if (!res.ok) {
         const message = await readErrorMessage(res);
-        logger.error('prizes.withdraw.backend_error', { route: '/api/prizes/withdraw', status: res.status, message });
+        console.error(`Withdraw API error: ${res.status}`, message);
         return jsonError(message || 'Withdraw service error', res.status);
       }
 
@@ -119,7 +102,7 @@ export async function POST(req: Request) {
     return json({ status: withdrawal.status, withdrawal }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('prizes.withdraw.unhandled', { route: '/api/prizes/withdraw', err });
+    console.error('Withdrawal request failed:', err);
     return jsonError('Failed to process withdrawal', 500);
   }
 }

@@ -7,7 +7,6 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { logger } from '@/lib/logger';
 
 function toNumber(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -74,7 +73,7 @@ export async function GET(req: Request) {
     );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('[admin/stats] GET failed:', err);
+    console.error('[admin/stats] GET failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

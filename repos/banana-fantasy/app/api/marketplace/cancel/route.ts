@@ -5,7 +5,6 @@ import { OPENSEA_API_BASE, COLLECTION_SLUG } from '@/lib/opensea';
 import { SeaportABI } from '@opensea/seaport-js/lib/abi/Seaport';
 import { CROSS_CHAIN_SEAPORT_V1_6_ADDRESS } from '@opensea/seaport-js/lib/constants';
 import { ethers } from 'ethers';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,7 +115,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('marketplace.cancel.unhandled', { route: '/api/marketplace/cancel', err });
+    console.error('[marketplace/cancel] POST failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

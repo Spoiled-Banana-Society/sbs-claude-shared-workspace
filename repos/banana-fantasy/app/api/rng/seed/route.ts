@@ -1,7 +1,6 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
-import { logger } from '@/lib/logger';
 import { json, jsonError, parseBody, getSearchParam } from '@/lib/api/routeUtils';
 import { generateServerSeed, hashServerSeed } from '@/lib/rng';
 import { createCommit, getCommit } from '@/lib/rngStore';
@@ -23,7 +22,7 @@ export async function POST(req: Request) {
 
     const serverSeed = generateServerSeed();
     const serverSeedHash = hashServerSeed(serverSeed);
-    const commit = await createCommit({ serverSeed, serverSeedHash, contextId });
+    const commit = createCommit({ serverSeed, serverSeedHash, contextId });
 
     return json(
       {
@@ -35,7 +34,7 @@ export async function POST(req: Request) {
     );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('rng.seed.commit_failed', { err });
+    console.error('RNG seed commit failed:', err);
     return jsonError('Failed to create RNG seed', 500);
   }
 }
@@ -47,7 +46,7 @@ export async function GET(req: Request) {
     const commitId = getSearchParam(req, 'commitId');
     if (!commitId) throw new ApiError(400, 'Missing commitId');
 
-    const commit = await getCommit(commitId);
+    const commit = getCommit(commitId);
     if (!commit) throw new ApiError(404, 'Commit not found');
 
     return json(
@@ -61,7 +60,7 @@ export async function GET(req: Request) {
     );
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('rng.seed.fetch_failed', { err });
+    console.error('RNG seed fetch failed:', err);
     return jsonError('Failed to fetch RNG seed', 500);
   }
 }

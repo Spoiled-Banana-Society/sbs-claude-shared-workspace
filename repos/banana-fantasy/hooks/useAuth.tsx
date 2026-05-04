@@ -61,14 +61,6 @@ interface AuthContextType {
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
   isEmbeddedWallet: boolean;
-  /**
-   * Get a Privy access token to attach as `Authorization: Bearer <token>` on
-   * authenticated API calls. Returns null when running in mock mode or before
-   * Privy is ready. Server routes that require auth use `requireWalletAuth`
-   * (lib/walletAuth.ts) to derive the wallet from this token — never trust a
-   * wallet from the request body.
-   */
-  getAccessToken: () => Promise<string | null>;
   // Twitter/X verification
   isTwitterVerified: boolean;
   isTwitterLinking: boolean;
@@ -157,29 +149,6 @@ const REFERRAL_CODE_KEY = 'banana-referral-code';
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
-
-  // Register a token getter for the module-level API clients (axios in
-  // utils/api.ts, fetch helpers in lib/api/*) so they can attach Privy
-  // bearer tokens without each call site threading getAccessToken through.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    let cancelled = false;
-    void import('@/lib/api/authToken').then(({ setApiTokenGetter }) => {
-      if (cancelled) return;
-      setApiTokenGetter(async () => {
-        if (!privy.authenticated) return null;
-        try {
-          return await privy.getAccessToken();
-        } catch {
-          return null;
-        }
-      });
-    });
-    return () => {
-      cancelled = true;
-      void import('@/lib/api/authToken').then(({ setApiTokenGetter }) => setApiTokenGetter(null));
-    };
-  }, [privy]);
   const [user, setUser] = useState<User | null>(MOCK_USER);
   const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -236,7 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           await (privy as any).unlinkTwitter?.(twitterId);
         } catch (unlinkErr) {
-          logger.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
+          console.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
         }
       }
     } catch {
@@ -586,10 +555,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (pollInterval) return;
       const refetch = async () => {
         try {
-          const token = privy.authenticated ? await privy.getAccessToken() : null;
-          const res = await fetch('/api/owner/balance', {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          });
+          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
           if (res.ok) applyPayload(await res.json());
         } catch { /* silent */ }
       };
@@ -597,18 +563,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pollInterval = setInterval(refetch, 15_000);
     };
 
-    const connect = async () => {
+    const connect = () => {
       if (cancelled || eventSource) return;
       try {
-        // SSE doesn't support headers — pass Privy token via query param.
-        // Server validates it via requireWalletAuthSSE which derives the
-        // wallet from the JWT (the userId param is no longer trusted).
-        const token = privy.authenticated ? await privy.getAccessToken() : null;
-        if (!token) {
-          startPollingFallback();
-          return;
-        }
-        const es = new EventSource(`/api/owner/balance/stream?token=${encodeURIComponent(token)}`);
+        const es = new EventSource(`/api/owner/balance/stream?userId=${encodeURIComponent(userId)}`);
         eventSource = es;
 
         const onMessage = (ev: MessageEvent) => {
@@ -629,12 +587,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    void connect();
+    connect();
     const onFocus = () => {
       // On focus: if SSE was torn down, reconnect. Otherwise a no-op.
       if (!eventSource || eventSource.readyState === 2 /* CLOSED */) {
         eventSource = null;
-        void connect();
+        connect();
       }
     };
     window.addEventListener('focus', onFocus);
@@ -716,10 +674,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cardPurchaseCount?: number;
     } | null = null;
     try {
-      const token = privy.authenticated ? await privy.getAccessToken() : null;
-      const res = await fetch('/api/owner/balance', {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
+      const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
       if (res.ok) firestoreBalance = await res.json();
     } catch {
       // swallow — keep current state
@@ -760,10 +715,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       while (Date.now() < deadline) {
         try {
-          const token = privy.authenticated ? await privy.getAccessToken() : null;
-          const res = await fetch('/api/owner/balance', {
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          });
+          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
           if (res.ok) {
             const data = await res.json();
             const snapshot = {
@@ -797,7 +749,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (privy as any).linkTwitter();
     } catch (err) {
-      logger.error('[SBS Auth] linkTwitter error:', err);
+      console.error('[SBS Auth] linkTwitter error:', err);
       setTwitterError('Failed to open X login');
       setIsTwitterLinking(false);
     }
@@ -837,7 +789,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         showLoginModal,
         setShowLoginModal,
         isEmbeddedWallet: user?.loginMethod === 'social',
-        getAccessToken: async () => (privy.authenticated ? privy.getAccessToken() : null),
         isTwitterVerified,
         isTwitterLinking,
         twitterError,

@@ -4,7 +4,6 @@ import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN } from '@/lib/opensea';
 import { SeaportABI } from '@opensea/seaport-js/lib/abi/Seaport';
 import { ethers } from 'ethers';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +60,7 @@ export async function POST(req: Request) {
 
     if (!fulfillRes.ok) {
       const text = await fulfillRes.text();
-      logger.error('marketplace.fulfill.opensea_error', { route: '/api/marketplace/fulfill', status: fulfillRes.status, text });
+      console.error('[marketplace/fulfill] OpenSea error:', fulfillRes.status, text);
       return jsonError(
         `OpenSea fulfillment failed: ${fulfillRes.status}`,
         fulfillRes.status >= 500 ? 502 : fulfillRes.status,
@@ -114,7 +113,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('marketplace.fulfill.unhandled', { route: '/api/marketplace/fulfill', err });
+    console.error('[marketplace/fulfill] POST failed:', err);
     return jsonError('Internal Server Error', 500);
   }
 }

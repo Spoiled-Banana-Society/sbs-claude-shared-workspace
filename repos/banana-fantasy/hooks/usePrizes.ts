@@ -20,13 +20,7 @@ export function usePrizes(opts?: { userId?: string }) {
 
   const query = useSWRLike<PrizeHistoryItem[]>(
     ownerId ? `prizes:history:${ownerId}` : null,
-    async ({ signal }) => {
-      const token = await privy.getAccessToken();
-      return fetchJson<PrizeHistoryItem[]>('/api/prizes/history', {
-        signal,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-    },
+    ({ signal }) => fetchJson<PrizeHistoryItem[]>('/api/prizes/history', { signal, query: { userId: ownerId } }),
     { enabled: !!ownerId, fallbackData: [] },
   );
   const refresh = query.mutate;
@@ -54,7 +48,7 @@ export function usePrizes(opts?: { userId?: string }) {
         const response = await fetchJson<WithdrawResponse>('/api/prizes/withdraw', {
           method: 'POST',
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: JSON.stringify({ draftId, amount, method }),
+          body: JSON.stringify({ userId: ownerId, draftId, amount, method }),
         });
         await refresh();
         return response.withdrawal;
@@ -100,18 +94,12 @@ export function usePrizes(opts?: { userId?: string }) {
 }
 
 export function useEligibility(opts?: { userId?: string }) {
-  const { user, getAccessToken } = useAuth();
+  const { user } = useAuth();
   const userId = opts?.userId ?? user?.walletAddress ?? user?.id;
 
   return useSWRLike<EligibilityStatus>(
     userId ? `eligibility:${userId}` : null,
-    async ({ signal }) => {
-      const token = await getAccessToken();
-      return fetchJson<EligibilityStatus>('/api/eligibility', {
-        signal,
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-    },
+    ({ signal }) => fetchJson<EligibilityStatus>('/api/eligibility', { signal, query: { userId } }),
     { enabled: !!userId, fallbackData: { isVerified: false, season: 0, w9Completed: false, tier1Verified: false, tier2Verified: false, cumulativeWithdrawals: 0 } },
   );
 }

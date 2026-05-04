@@ -3,11 +3,9 @@ export const dynamic = "force-dynamic";
 import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
-import { json, jsonError } from '@/lib/api/routeUtils';
-import { requireWalletAuth } from '@/lib/walletAuth';
+import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { mockPrizeHistory } from '@/lib/mock/prizes';
 import { getWithdrawalsByUser } from '@/lib/db';
-import { logger } from '@/lib/logger';
 import type { PrizeHistoryItem, PrizeStatus, PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
@@ -135,14 +133,8 @@ function buildFallbackHistory(userId: string): PrizeHistoryItem[] {
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
-
-  let userId: string;
-  try {
-    ({ walletAddress: userId } = await requireWalletAuth(req));
-  } catch (err) {
-    if (err instanceof ApiError) return jsonError(err.message, err.status);
-    return jsonError('Unauthorized', 401);
-  }
+  const userId = getSearchParam(req, 'userId');
+  if (!userId) return jsonError('Missing query param: userId', 400);
 
   const fallback = buildFallbackHistory(userId);
 
@@ -155,13 +147,13 @@ export async function GET(req: Request) {
     try {
       res = await fetch(`${API_BASE}/owner/${userId}/prizes`, { next: { revalidate: 60 } });
     } catch (err) {
-      logger.error('prizes.history.backend_fetch_failed', { err });
+      console.error('Prize history backend fetch failed:', err);
       return json(fallback, 200);
     }
 
     if (!res.ok) {
       const message = await readErrorMessage(res);
-      logger.error('prizes.history.backend_error', { status: res.status, message });
+      console.error(`Prize history API error: ${res.status}`, message);
       return json(fallback, 200);
     }
 
@@ -169,7 +161,7 @@ export async function GET(req: Request) {
     try {
       data = await res.json();
     } catch {
-      logger.error('prizes.history.invalid_response');
+      console.error('Invalid prize history response from backend');
       return json(fallback, 200);
     }
 
@@ -194,7 +186,7 @@ export async function GET(req: Request) {
     return json(merged, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('prizes.history.unhandled', { err });
+    console.error('Prize history fetch failed:', err);
     return json(fallback, 200);
   }
 }

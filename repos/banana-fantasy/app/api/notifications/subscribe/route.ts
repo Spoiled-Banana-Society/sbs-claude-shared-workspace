@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, persisted: true });
   } catch (err) {
-    logger.error('[notifications/subscribe] Error:', err);
+    console.error('[notifications/subscribe] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
@@ -94,7 +94,7 @@ export async function DELETE(req: NextRequest) {
     await db.collection(COLLECTION).doc(walletAddress).delete();
     return NextResponse.json({ ok: true, persisted: true });
   } catch (err) {
-    logger.error('[notifications/subscribe DELETE] Error:', err);
+    console.error('[notifications/subscribe DELETE] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

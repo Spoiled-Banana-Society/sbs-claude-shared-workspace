@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { logger } from '@/lib/logger';
 
 const COLLECTION = 'pass_origin';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -44,7 +43,7 @@ export async function GET(req: Request) {
     return json({ tokenIds, wallet });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('[pass-origin/free-tokens] failed', err);
+    console.error('[pass-origin/free-tokens] failed', err);
     return jsonError('Internal Server Error', 500);
   }
 }

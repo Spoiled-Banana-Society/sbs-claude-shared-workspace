@@ -27,11 +27,6 @@ export function useWalletConnectLogin() {
     iframeRef.current = iframe;
 
     const handleMessage = (event: MessageEvent) => {
-      // Bridge iframe is loaded same-origin (/wc-bridge.html). Reject any
-      // messages from other origins — `*` would let any iframe (including
-      // a malicious ad / 3rd-party script) push fake wc-uri / wc-connected
-      // events to drive a phishing flow.
-      if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'wc-uri') {
         // Got the URI from the bridge — deep link to wallet
         const { uri } = event.data;
@@ -77,11 +72,9 @@ export function useWalletConnectLogin() {
 
     // Send connect request to the iframe bridge
     if (iframeRef.current?.contentWindow) {
-      // Target the same-origin bridge explicitly. `*` would broadcast to any
-      // origin if the iframe were ever swapped to a cross-origin URL.
       iframeRef.current.contentWindow.postMessage(
         { type: 'wc-connect', walletId },
-        window.location.origin,
+        '*'
       );
     } else {
       setError('Bridge not ready. Try again.');

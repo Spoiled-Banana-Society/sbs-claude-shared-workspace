@@ -5,7 +5,6 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { requireAdmin } from '@/lib/adminAuth';
 import { logger } from '@/lib/logger';
 
 /**
@@ -26,10 +25,6 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    // Admin-only even on staging — forcing the next jackpot/HOF slot is
-    // a fairness manipulation. Stage flag + admin allowlist.
-    await requireAdmin(req);
-
     if (!isFirestoreConfigured()) {
       throw new ApiError(503, 'Firestore not configured');
     }

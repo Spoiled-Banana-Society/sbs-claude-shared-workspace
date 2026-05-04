@@ -12,6 +12,7 @@ import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
+import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import {
   type FlowStep,
@@ -35,7 +36,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, getAccessToken } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
   const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -117,14 +118,11 @@ export function BuyPassesModal({
       : 0;
 
   /**
-   * After the on-chain mint succeeds, /api/purchases/card-mint has already
-   * written the v2_purchases doc, bumped draftPasses, credited wheelSpins +
-   * buy-bonus freeDrafts + 6-card-rewards, advanced mint/referral promos,
-   * and recorded tokenIds in the Go API — atomically and idempotently. The
-   * modal's job is just to bridge the optimistic UI bump to the on-chain
-   * truth coming back through the balance route, then refresh.
+   * Track a purchase in Firestore: create record → verify → promo updates.
+   * This ensures buy-bonus, mint-promo, and referral milestones are tracked
+   * identically in staging and production.
    */
-  const settleMintedPasses = async (qty: number) => {
+  const trackPurchase = async (qty: number, hash: string) => {
     const userId = walletAddress || user?.id;
     if (!userId) return;
 
@@ -140,6 +138,38 @@ export function BuyPassesModal({
       });
     }
 
+    try {
+      const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
+        method: 'POST',
+        body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
+      });
+      const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
+        method: 'POST',
+        body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
+      });
+      // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
+      // fields earned alongside the mint. Deliberately DO NOT clobber
+      // `draftPasses` here: on-chain is the source of truth, and the next
+      // refreshBalance() call will pull it from Alchemy. Overwriting with the
+      // Firestore value would cause a flicker (optimistic bump → stale
+      // cached value → real on-chain value).
+      if (verifyRes.user) {
+        const serverUser = verifyRes.user as Partial<import('@/types').User>;
+        const { draftPasses: _ignore, ...rest } = serverUser;
+        void _ignore;
+        updateUser(rest);
+      }
+    } catch (err) {
+      // Verify failed after a successful on-chain mint. The NFT is real; the
+      // counter sync is behind. Log visibly so the user understands their
+      // balance will catch up when the backend reconciles.
+      console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
+      pushNotification({
+        type: 'system',
+        title: 'Pass minted but sync delayed',
+        message: 'Your draft pass is in your wallet. The balance display will catch up shortly.',
+      });
+    }
     // Live-sync: poll the balance endpoint until the on-chain count reflects
     // the new mint. Covers the 1–2s window where Alchemy's RPC edge can still
     // be serving the pre-mint balanceOf even though the tx has finalized.
@@ -152,12 +182,13 @@ export function BuyPassesModal({
     await refreshBalance();
   };
 
-  // Transition to pick-speed after successful USDC/card mint
+  // Transition to pick-speed after successful USDC mint
   const txTrackedRef = useRef(false);
   useEffect(() => {
     if (txHash && !mintError && phase === 'purchase' && !txTrackedRef.current) {
       txTrackedRef.current = true;
-      settleMintedPasses(quantity).finally(() => {
+      // Track in Firestore, then transition
+      trackPurchase(quantity, txHash).finally(() => {
         setMintedCount(quantity);
         setPhase('pick-speed');
         onPurchaseComplete?.(quantity);
@@ -270,43 +301,25 @@ export function BuyPassesModal({
 
   const handlePickSpeed = async (speed: 'fast' | 'slow') => {
     if (joinInFlightRef.current) {
-      logger.warn('[BuyModal] Duplicate join blocked: join already in flight');
+      console.warn('[BuyModal] Duplicate join blocked: join already in flight');
       return;
     }
     joinInFlightRef.current = true;
     setIsJoiningDraft(true);
 
-    // Fall through to wallet-only. Falling back to user.id (Privy DID) would
-    // stamp localStorage with a value that never matches user.walletAddress
-    // on /drafting, causing the strict-wallet filter there to hide the user's
-    // own freshly-joined draft. The Go API also rejects DID-as-ownerId because
-    // its Privy middleware extracts the wallet from the JWT and compares to
-    // the URL path — DIDs never match.
-    if (!walletAddress) {
-      joinInFlightRef.current = false;
-      setIsJoiningDraft(false);
-      setJoinError('No wallet connected. Please log in again.');
-      setPhase('error');
-      return;
-    }
-    const addr = walletAddress;
+    const addr = walletAddress || user?.id || 'staging-user';
 
     setPhase('joining');
     setJoinError(null);
 
     try {
-      // Join a draft. Go API now requires Privy bearer on
-      // /league/{type}/owner/{ownerId} — wallet must match {ownerId}.
+      // Join a draft
       const apiBase = getDraftsApiUrl();
       const forcedDraftType = peekPromoDraftType();
-      const draftsToken = await getAccessToken();
       logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr, forcedDraftType });
       const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(draftsToken ? { Authorization: `Bearer ${draftsToken}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ numLeaguesToJoin: 1, ...(forcedDraftType ? { draftType: forcedDraftType } : {}) }),
       });
 
@@ -328,43 +341,20 @@ export function BuyPassesModal({
       // In staging mode, bots will fill AFTER user lands in draft room lobby
       // (triggered by draft-room page once WebSocket connects)
 
-      // Save to localStorage. Upsert by id to avoid duplicate active-drafts
-      // entries when a user buys passes more than once for the same draft —
-      // previously appended unconditionally and the list grew with dupes.
+      // Save to localStorage
       try {
-        // Initial player count from Go API response — set by AddCardToLeague
-        // post-join, so the UI shows reality (e.g., 2 if you joined Richard's
-        // existing partial) instead of the optimistic "1/10" placeholder.
-        // Fall back to 1 if the field is missing (older Go API rev); the
-        // RTDB live subscription heals it once it fires.
-        const responseNumPlayers =
-          typeof card?._numPlayers === 'number' ? card._numPlayers : undefined;
-        const initialPlayers = responseNumPlayers && responseNumPlayers > 0 ? responseNumPlayers : 1;
-        type StoredDraft = { id: string;[k: string]: unknown };
-        const existing = JSON.parse(localStorage.getItem('banana-active-drafts') || '[]') as StoredDraft[];
-        const next: StoredDraft = {
+        const existing = JSON.parse(localStorage.getItem('banana-active-drafts') || '[]');
+        existing.push({
           id: draftId,
           contestName,
           status: 'filling',
           type: 'pro',
           draftSpeed: speed,
-          players: initialPlayers,
+          players: 1,
           maxPlayers: 10,
           joinedAt: Date.now(),
-          // CRITICAL: stamp the wallet address up front. /drafting's live-count
-          // subscription (subscribeDraftNumPlayers in useDraftingPageState) only
-          // fires for drafts where liveWalletAddress matches the current wallet.
-          // Without this stamp, the freshly-joined draft is excluded from the
-          // RTDB subscribe set and the count stays frozen at `initialPlayers`
-          // even when other players join. The /draft-room page used to set
-          // this on first mount, but that path runs AFTER navigation and only
-          // for the user actively viewing the room — leaves /drafting stale
-          // for the user who just joined.
-          liveWalletAddress: addr ? addr.toLowerCase() : undefined,
-        };
-        const dedup = existing.filter((d) => d?.id !== draftId);
-        dedup.push(next);
-        localStorage.setItem('banana-active-drafts', JSON.stringify(dedup));
+        });
+        localStorage.setItem('banana-active-drafts', JSON.stringify(existing));
       } catch { /* ignore */ }
 
       if (forcedDraftType) {
@@ -377,10 +367,7 @@ export function BuyPassesModal({
         name: contestName,
         speed,
       });
-      // Always use live mode when the user has a wallet — staging vs prod
-      // is decided by which backend URL we resolve to, not by whether the
-      // draft is "real."
-      if (addr) {
+      if (isStagingMode() && addr) {
         params.set('mode', 'live');
         params.set('wallet', addr);
       }
@@ -397,7 +384,7 @@ export function BuyPassesModal({
       window.location.href = lobbyUrl;
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to join draft';
-      logger.error('[BuyModal] Join error:', msg, err);
+      console.error('[BuyModal] Join error:', msg, err);
       joinInFlightRef.current = false;
       setIsJoiningDraft(false);
       setJoinError(msg);
@@ -490,15 +477,12 @@ export function BuyPassesModal({
                 <input
                   type="number"
                   min="1"
-                  max="100"
+                  max="1000"
                   value={quantity || ''}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === '') setQuantity(0);
-                    // Cap at 100 to match a reasonable max-per-purchase UX limit.
-                    // Previously capped at 1000 which let the modal send users
-                    // into a guaranteed 400.
-                    else setQuantity(Math.min(100, Math.max(1, parseInt(val) || 1)));
+                    else setQuantity(Math.min(1000, Math.max(1, parseInt(val) || 1)));
                   }}
                   onBlur={() => { if (quantity < 1) setQuantity(1); }}
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"

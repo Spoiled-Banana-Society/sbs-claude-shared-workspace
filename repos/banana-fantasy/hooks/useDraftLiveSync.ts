@@ -8,7 +8,7 @@ import { useTimeRemaining } from '@/hooks/useTimeRemaining';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
-import { getStagingApiUrl } from '@/lib/staging';
+import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 import { logger } from '@/lib/logger';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
 import type {
@@ -134,30 +134,15 @@ export function useDraftLiveSync({
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
 
-      // Auto-mint a token before joining so the wallet always has one available.
-      //
-      // ⚠️ TECH DEBT (Codex finding #20): mintId = Date.now() creates a fake
-      // tokenId that drifts from the on-chain ledger. This is a STAGING-ONLY
-      // legacy path — the production buy-pass flow at /api/purchases/staging-mint
-      // now uses real reserveTokens-derived tokenIds from Transfer event logs.
-      // Plan: rip this whole auto-mint out once we confirm staging works
-      // without it (the staging-mint button covers the same need correctly).
-      //
-      // Attach Privy bearer so the Go API auth gate passes (the route now
-      // requires auth or admin key). Skips silently if unavailable.
+      // Auto-mint a token before joining so the wallet always has one available
       try {
         const { getStagingApiUrl } = await import('@/lib/staging');
-        const { getApiToken } = await import('@/lib/api/authToken');
         const apiBase = getStagingApiUrl();
         if (apiBase) {
           const mintId = Date.now();
-          const token = await getApiToken();
           await fetch(`${apiBase}/owner/${walletParam}/draftToken/mint`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ minId: mintId, maxId: mintId }),
           });
         }
@@ -201,14 +186,14 @@ export function useDraftLiveSync({
           return;
         } catch (err) {
           lastErr = err;
-          logger.warn(`[Draft Room] Join attempt ${attempt}/${MAX_JOIN_RETRIES} failed:`, err instanceof Error ? err.message : err);
+          console.warn(`[Draft Room] Join attempt ${attempt}/${MAX_JOIN_RETRIES} failed:`, err instanceof Error ? err.message : err);
           if (attempt < MAX_JOIN_RETRIES) {
             await new Promise(r => setTimeout(r, 2000 * attempt));
           }
         }
       }
 
-      logger.error('[Draft Room] Failed to join draft after retries:', lastErr);
+      console.error('[Draft Room] Failed to join draft after retries:', lastErr);
       draftStore.removeDraft(pendingId);
       setLiveError(lastErr instanceof Error ? lastErr.message : 'Failed to join draft');
     }
@@ -254,7 +239,7 @@ export function useDraftLiveSync({
                     displayName: retryPayload.displayName,
                     team: retryPayload.team,
                     position: retryPayload.position,
-                  }).catch(e => logger.error('[Airplane] Retry failed:', e));
+                  }).catch(e => console.error('[Airplane] Retry failed:', e));
                 }
               }
             }, 0);
@@ -277,7 +262,7 @@ export function useDraftLiveSync({
       round: 0,
     }));
     draftApi.updateQueue(walletParam, draftId, payload).catch(err => {
-      logger.error('[Queue] REST sync failed:', err);
+      console.error('[Queue] REST sync failed:', err);
     });
   }, [isLiveMode, draftId, walletParam]);
 
@@ -326,7 +311,7 @@ export function useDraftLiveSync({
       engine.handleFinalCard(payload);
     },
     onInvalidPick: (payload) => {
-      logger.warn('[WS] Invalid pick rejected by server:', payload);
+      console.warn('[WS] Invalid pick rejected by server:', payload);
       if (engine.airplaneMode && engine.isUserTurn) {
         const msg = (payload as { errorMessage?: string })?.errorMessage || '';
         const match = msg.match(/already picked (\S+)/);
@@ -396,7 +381,7 @@ export function useDraftLiveSync({
           return await fn();
         } catch (err) {
           lastError = err instanceof Error ? err : new Error(String(err));
-          logger.warn(`[loadLiveData] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
+          console.warn(`[loadLiveData] Attempt ${attempt + 1}/${maxRetries} failed:`, lastError.message);
           if (attempt < maxRetries - 1) {
             await new Promise(resolve => setTimeout(resolve, delayMs));
           }
@@ -526,7 +511,7 @@ export function useDraftLiveSync({
       } catch (err) {
         const MAX_OUTER_RETRIES = 8;
         liveRetryCountRef.current += 1;
-        logger.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
+        console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
         setLiveLoading(false);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
@@ -577,7 +562,7 @@ export function useDraftLiveSync({
       const elapsed = Date.now() - lastFirebaseUpdateRef.current;
 
       if (elapsed > STALE_THRESHOLD) {
-        logger.warn(`[Watchdog] No Firebase RTDB update in ${Math.round(elapsed / 1000)}s — re-syncing from REST`);
+        console.warn(`[Watchdog] No Firebase RTDB update in ${Math.round(elapsed / 1000)}s — re-syncing from REST`);
 
         if (liveInitializedRef.current) {
           draftApi.getDraftSummary(draftId).then(summary => {

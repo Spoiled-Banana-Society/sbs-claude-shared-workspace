@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { normalizeWalletAddress } from '@/lib/api/client';
-import { logger } from '@/lib/logger';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
 
@@ -51,7 +50,7 @@ export async function GET(req: Request) {
     return json(data, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('owners.fetch_failed', { err });
+    console.error('Owner fetch failed:', err);
     return jsonError('Owner fetch failed', 500);
   }
 }
@@ -95,7 +94,7 @@ export async function POST(req: Request) {
     return json(data, 201);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('owners.create_failed', { err });
+    console.error('Owner create failed:', err);
     return jsonError('Owner create failed', 500);
   }
 }
@@ -139,7 +138,7 @@ export async function PUT(req: Request) {
     return json(data, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('owners.update_failed', { err });
+    console.error('Owner update failed:', err);
     return jsonError('Owner update failed', 500);
   }
 }

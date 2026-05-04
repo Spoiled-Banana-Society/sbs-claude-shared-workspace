@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { generateReferralCode } from '@/lib/db';
-import { logger } from '@/lib/logger';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -17,7 +16,7 @@ export async function POST(req: Request) {
     return json(result, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error(err);
+    console.error(err);
     return jsonError('Internal Server Error', 500);
   }
 }

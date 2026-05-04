@@ -1,11 +1,8 @@
 import type { Metadata } from 'next';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { appOrigin } from '@/lib/appConfig';
 
 const WHEEL_SPINS_COLLECTION = 'wheelSpins';
-// Resolve origin at request time, not module-load. appOrigin() throws
-// outside staging when NEXT_PUBLIC_APP_URL is unset, which would otherwise
-// blow up Next's static page-data collection during build.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://banana-fantasy-sbs.vercel.app';
 
 interface WheelSpinDoc {
   userId: string;
@@ -35,7 +32,6 @@ interface PrizeCopy {
 }
 
 function prizeCopy(result: string): PrizeCopy {
-  const SITE_URL = appOrigin();
   if (result === 'jackpot') {
     return {
       title: 'JACKPOT on the Banana Wheel 🎰',
@@ -103,7 +99,7 @@ export async function generateMetadata(
         ? {
             players: [
               {
-                playerUrl: `${appOrigin()}/wheel-result/${params.spinId}/player`,
+                playerUrl: `${SITE_URL}/wheel-result/${params.spinId}/player`,
                 streamUrl: copy.video,
                 width: 720,
                 height: 720,

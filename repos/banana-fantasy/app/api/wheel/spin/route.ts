@@ -368,7 +368,7 @@ export async function POST(req: Request) {
         await joinQueue(userId, segment.prizeValue as 'jackpot' | 'hof');
         logger.debug(`[wheel/spin] Auto-queued ${userId} for ${segment.prizeValue}`);
       } catch (qErr) {
-        logger.warn(`[wheel/spin] Auto-queue failed (entry still awarded):`, qErr);
+        console.warn(`[wheel/spin] Auto-queue failed (entry still awarded):`, qErr);
       }
     }
 

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
-import { appOrigin } from '@/lib/appConfig';
 
 const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
 const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
@@ -50,7 +49,7 @@ export async function POST(req: NextRequest) {
         ],
         headings: { en: title },
         contents: { en: message },
-        url: `${appOrigin()}/draft-room?id=${draftId}`,
+        url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.spoiledbananasociety.com'}/draft-room?id=${draftId}`,
         chrome_web_badge: '/banana-icon-192.png',
         chrome_web_icon: '/banana-icon-192.png',
         ttl: minutesBefore * 60, // expire after the draft would have started
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      logger.error('[draft-reminder] OneSignal error:', response.status, errorBody);
+      console.error('[draft-reminder] OneSignal error:', response.status, errorBody);
       return NextResponse.json(
         { error: 'Failed to send notification' },
         { status: 502 }
@@ -71,7 +70,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, recipients: result.recipients ?? 0 });
   } catch (err) {
-    logger.error('[draft-reminder] Error:', err);
+    console.error('[draft-reminder] Error:', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

@@ -14,7 +14,6 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
-import { getApiToken } from '@/lib/api/authToken';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
@@ -106,20 +105,14 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function useDraftingPageState() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, getAccessToken } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading } = useAuth();
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
   const promos = promosQuery.promos ?? [];
   const promoCount = promos.length;
   const localDrafts = useActiveDrafts();
-  // `isLive` means "this user has a wallet → fetch real drafts from the
-  // Go API and open WS connections." It used to be gated on isStagingMode()
-  // because back when staging was the only env, those were equivalent —
-  // but in prod we obviously also want real drafts. Tying live mode to
-  // staging mode meant flipping the env flag would silently downgrade
-  // prod users to client-only demo mode.
-  const isLive = !!user?.walletAddress;
+  const isLive = isStagingMode() && !!user?.walletAddress;
 
   const [showContestDetails, setShowContestDetails] = useState(false);
   const [infoTopic, setInfoTopic] = useState<string | null>(null);
@@ -203,7 +196,7 @@ export function useDraftingPageState() {
           setQueueDrafts(drafts);
         })
         .catch((e) => {
-          logger.error('[Queue] Poll failed:', e);
+          console.error('[Queue] Poll failed:', e);
         });
     };
 
@@ -281,7 +274,7 @@ export function useDraftingPageState() {
           router.push(buildDraftRoomUrl({ ...draft, queueDraftId: finalDraftId }));
         }
       } catch (err) {
-        logger.error('Failed to create queue draft:', err);
+        console.error('Failed to create queue draft:', err);
       } finally {
         setCreatingQueueDraft(null);
       }
@@ -312,14 +305,10 @@ export function useDraftingPageState() {
     // could let someone enter a draft they shouldn't.
     let decremented = false;
     try {
-      const token = await getAccessToken();
       const res = await fetch('/api/owner/use-pass', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ passType }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
       });
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
@@ -489,7 +478,7 @@ export function useDraftingPageState() {
         }
         setLiveDrafts(mapped);
       } catch (err) {
-        logger.error('[Drafting] Failed to load live drafts:', err);
+        console.error('[Drafting] Failed to load live drafts:', err);
       } finally {
         if (!cancelled && user?.walletAddress) {
           setLiveDraftsLoadedFor(user.walletAddress);
@@ -593,17 +582,11 @@ export function useDraftingPageState() {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
               localStorage.setItem(trackedKey, '1');
-              (async () => {
-                const token = await getAccessToken();
-                await fetch('/api/promos/draft-complete', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                  },
-                  body: JSON.stringify({ draftId: draft.id }),
-                }).catch(() => {});
-              })();
+              fetch('/api/promos/draft-complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id, draftId: draft.id }),
+              }).catch(() => {});
             }
 
             if (info.draftOrder && draft.liveWalletAddress) {
@@ -614,17 +597,11 @@ export function useDraftingPageState() {
                 const pick10Key = `promo-pick10:${draft.id}`;
                 if (!localStorage.getItem(pick10Key)) {
                   localStorage.setItem(pick10Key, '1');
-                  (async () => {
-                    const token = await getAccessToken();
-                    await fetch('/api/promos/pick10', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                      },
-                      body: JSON.stringify({ draftId: draft.id, draftName: draft.contestName }),
-                    }).catch(() => {});
-                  })();
+                  fetch('/api/promos/pick10', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName }),
+                  }).catch(() => {});
                 }
               }
             }
@@ -718,7 +695,7 @@ export function useDraftingPageState() {
             draftStore.updateDraft(draft.id, { players: playerCount });
           }
         } catch (err) {
-          logger.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
         }
       }
     };
@@ -754,7 +731,7 @@ export function useDraftingPageState() {
     const wallet = user.walletAddress.trim().toLowerCase();
     const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 
-    const syncConnections = async () => {
+    const syncConnections = () => {
       // WS connections are opened with the current wallet as the `address` param
       // — stale connections from a prior wallet would auth against the wrong
       // user and leak events into the wrong account. Scope by current wallet
@@ -780,21 +757,13 @@ export function useDraftingPageState() {
         }
       });
 
-      // Fetch Privy token once per sync — Go WS server requires it in URL.
-      const draftsToOpen = draftingDrafts.filter((draft) => {
-        if (conns.has(draft.id)) return false;
-        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        return !(heartbeat && Date.now() - Number(heartbeat) < 10_000);
-      });
-      if (draftsToOpen.length === 0) return;
-      const token = await getApiToken();
-      if (!token) {
-        logger.warn('[Drafting WS] No Privy token — skipping background sync connections');
-        return;
-      }
+      for (const draft of draftingDrafts) {
+        if (conns.has(draft.id)) continue;
 
-      for (const draft of draftsToOpen) {
-        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}&token=${encodeURIComponent(token)}`;
+        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
+        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+
+        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}`;
         const ws = new WebSocket(url);
         conns.set(draft.id, ws);
 
@@ -869,8 +838,8 @@ export function useDraftingPageState() {
       }
     };
 
-    void syncConnections();
-    const interval = setInterval(() => { void syncConnections(); }, 3000);
+    syncConnections();
+    const interval = setInterval(syncConnections, 3000);
 
     return () => {
       clearInterval(interval);
@@ -887,16 +856,13 @@ export function useDraftingPageState() {
       return [] as Draft[];
     }
 
-    // STRICT wallet match. Same-browser account swap must NOT show the
-    // prior wallet's drafts — that's a privacy/correctness leak (drafts
-    // appear "joinable" to a wallet that never paid for a pass). Modal
-    // stamps liveWalletAddress on every join; loadLiveDrafts re-stamps
-    // server-confirmed drafts to the current wallet. If a draft truly
-    // belongs to the user, the stamp converges within one API fetch.
     const currentWallet = user.walletAddress.toLowerCase();
-    const ownedLocalDrafts = localDrafts.filter(
-      d => d.liveWalletAddress && d.liveWalletAddress.toLowerCase() === currentWallet,
-    );
+    // Filter cached local drafts to the current wallet so switching accounts
+    // in the same browser doesn't bleed another user's placeholders.
+    const ownedLocalDrafts = localDrafts.filter(d => {
+      if (!d.liveWalletAddress) return true; // legacy entries without wallet stamp — allow
+      return d.liveWalletAddress.toLowerCase() === currentWallet;
+    });
 
     let base: Draft[];
     if (!isLive) {
@@ -1141,23 +1107,20 @@ export function useDraftingPageState() {
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
       // navigation cancels it.
+      const userId = user.id || user.walletAddress;
       const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
       try {
-        const token = await getAccessToken();
         await fetch('/api/owner/refund-pass', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ passType, leagueId: exitingDraft.id }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
         });
         await refreshBalance();
       } catch (err) {
-        logger.warn('[Leave] Refund pass failed:', err);
+        console.warn('[Leave] Refund pass failed:', err);
       }
     } catch (err) {
-      logger.error('Failed to leave draft:', err);
+      console.error('Failed to leave draft:', err);
     } finally {
       setExitingDraft(null);
     }

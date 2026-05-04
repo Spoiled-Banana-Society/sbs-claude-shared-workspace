@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getContests } from '@/lib/db';
-import { logger } from '@/lib/logger';
 
 const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -43,7 +42,7 @@ export async function GET(req: Request) {
     return json(contests, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error(err);
+    console.error(err);
     return jsonError('Internal Server Error', 500);
   }
 }

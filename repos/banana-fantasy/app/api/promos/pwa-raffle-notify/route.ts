@@ -2,8 +2,6 @@ import { NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { ApiError } from '@/lib/api/errors';
-import { appOrigin } from '@/lib/appConfig';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +58,7 @@ export async function POST(req: Request) {
           filters,
           headings: { en: '🎰 Raffle Draw in 2 Hours!' },
           contents: { en: 'The PWA install raffle is about to be drawn. Come watch the winner get picked live!' },
-          url: `${appOrigin()}/banana-wheel/raffle`,
+          url: `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://banana-fantasy-sbs.vercel.app'}/banana-wheel/raffle`,
           chrome_web_badge: '/banana-icon-192.png',
           chrome_web_icon: '/banana-icon-192.png',
           ttl: 7200, // 2 hours
@@ -71,7 +69,7 @@ export async function POST(req: Request) {
         const result = await res.json();
         pushRecipients = result.recipients ?? 0;
       } else {
-        logger.error('[pwa-raffle-notify] OneSignal error:', res.status, await res.text());
+        console.error('[pwa-raffle-notify] OneSignal error:', res.status, await res.text());
       }
     }
 
@@ -81,7 +79,7 @@ export async function POST(req: Request) {
       pushRecipients,
     });
   } catch (err) {
-    logger.error('[pwa-raffle-notify]', err);
+    console.error('[pwa-raffle-notify]', err);
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

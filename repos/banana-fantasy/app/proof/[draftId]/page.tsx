@@ -8,9 +8,9 @@ import {
   classifyDraftType,
   combinedSeedHex,
   deriveBatchSlots,
-  keccak256Hex,
   locateDraft,
   parseDraftNumber,
+  sha256Hex,
   type BatchSlots,
 } from '@/lib/batchProof';
 
@@ -126,11 +126,10 @@ export default function ProofPage() {
         setRecomputed(slots);
 
         if (variant === 'commit-reveal' && proof.seedHash) {
-          // Cross-check keccak256(seed) — the same primitive the on-chain
-          // commit verifies against. Previously checked SHA-256 against a
-          // Keccak-256 stored hash and showed false fairness errors.
-          const expected = await keccak256Hex(seedHex);
-          setHashMatch(expected.toLowerCase() === proof.seedHash.toLowerCase().replace(/^0x/, ''));
+          // Cross-check sha256(seed) for native browser verification.
+          // (Chain commit uses keccak256; backend stores both hashes.)
+          const sha = await sha256Hex(seedHex);
+          setHashMatch(sha.toLowerCase() === proof.seedHash.toLowerCase().replace(/^0x/, ''));
         }
       } catch (err) {
         if (!cancelled) setRecomputeError((err as Error).message);

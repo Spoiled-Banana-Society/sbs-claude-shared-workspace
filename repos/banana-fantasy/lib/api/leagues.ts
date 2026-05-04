@@ -9,12 +9,10 @@ import type { DraftRoom, LeaderboardEntry } from '@/types';
 import { ApiError, createHttpClient, normalizeWalletAddress } from './client';
 import type { ApiDraftToken, ApiDraftTokenLevel } from './owner';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { getApiToken } from './authToken';
 
 function draftsApi() {
   return createHttpClient({
     baseUrl: getDraftsApiUrl(),
-    getAccessToken: getApiToken,
   });
 }
 

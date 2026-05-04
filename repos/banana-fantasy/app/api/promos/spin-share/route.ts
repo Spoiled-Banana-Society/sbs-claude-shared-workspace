@@ -9,7 +9,6 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { findTweetByUserContainingUrl } from '@/lib/xApi';
 import { getShareableUrl } from '@/lib/shareUtils';
 import type { SpinShareType } from '@/types';
-import { logger } from '@/lib/logger';
 
 const TWITTER_LINKS_COLLECTION = 'v2_twitter_links';
 const SPIN_SHARES_COLLECTION = 'v2_spin_shares';
@@ -175,7 +174,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('[promos/spin-share]', err);
+    console.error('[promos/spin-share]', err);
     return jsonError('Internal Server Error', 500);
   }
 }

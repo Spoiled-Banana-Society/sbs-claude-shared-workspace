@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic';
 
 import { ApiError } from '@/lib/api/errors';
-import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
+import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
-import { requireWalletAuth } from '@/lib/walletAuth';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -25,8 +24,8 @@ const USERS_COLLECTION = 'v2_users';
  */
 export async function POST(req: Request) {
   try {
-    const { walletAddress: userId } = await requireWalletAuth(req);
     const body = await parseBody(req);
+    const userId = requireString(body.userId, 'userId');
     const passType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
 

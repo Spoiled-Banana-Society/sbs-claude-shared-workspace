@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { logger } from '@/lib/logger';
 
 const COLLECTION = 'marketplace_activity';
 
@@ -57,7 +56,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({ lastSales });
     } catch (err) {
-      logger.error('marketplace.activity.get_batch_error', { err });
+      console.error('[activity] GET batch error:', err);
       return NextResponse.json({ error: 'Failed to fetch last sales' }, { status: 500 });
     }
   }
@@ -86,7 +85,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({ activities, hasMore: false });
     } catch (err) {
-      logger.error('marketplace.activity.get_tokenid_error', { err });
+      console.error('[activity] GET tokenId error:', err);
       return NextResponse.json({ error: 'Failed to fetch token activity' }, { status: 500 });
     }
   }
@@ -130,7 +129,7 @@ export async function GET(req: NextRequest) {
       nextCursor: hasMore ? docs[docs.length - 1]?.id : null,
     });
   } catch (err) {
-    logger.error('marketplace.activity.get_error', { err });
+    console.error('[activity] GET error:', err);
     return NextResponse.json({ error: 'Failed to fetch activity' }, { status: 500 });
   }
 }
@@ -169,7 +168,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, id: docRef.id });
   } catch (err) {
-    logger.error('marketplace.activity.post_error', { err });
+    console.error('[activity] POST error:', err);
     return NextResponse.json({ error: 'Failed to log activity' }, { status: 500 });
   }
 }

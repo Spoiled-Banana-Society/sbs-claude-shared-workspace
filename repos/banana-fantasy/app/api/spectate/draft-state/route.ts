@@ -54,19 +54,13 @@ type RosterState = Record<
   { QB: string[]; RB: string[]; WR: string[]; TE: string[]; DST: string[] }
 >;
 
-// Spectator backend URL — same resolution rules as
-// /api/spectate/active-drafts/route.ts. Falls back to the hardcoded staging
-// URL only when NEXT_PUBLIC_ENVIRONMENT === 'staging', otherwise throws so a
-// misconfigured prod deploy can't silently fan spectator traffic at staging.
+// Hardcoded to the staging Cloud Run service. This whole Vercel project
+// (banana-fantasy-sbs) only ever talks to staging; NEXT_PUBLIC_DRAFTS_API_URL
+// can be set to the prod URL for other reasons, so we don't trust it here.
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function getServerDraftsApiUrl(): string {
-  const envUrl = process.env.STAGING_DRAFTS_API_URL?.trim();
-  if (envUrl) return envUrl.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
-    return STAGING_DRAFTS_API_URL;
-  }
-  throw new Error('STAGING_DRAFTS_API_URL not configured');
+  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
 }
 
 async function fetchJson<T>(url: string): Promise<{ ok: true; data: T } | { ok: false; status?: number; error: string }> {

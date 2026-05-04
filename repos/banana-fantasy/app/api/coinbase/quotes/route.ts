@@ -5,7 +5,6 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { createSellQuote, type CdpPaymentMethod } from '@/lib/cdpAuth';
-import { logger } from '@/lib/logger';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -144,7 +143,7 @@ export async function POST(req: Request) {
     return json({ quotes: results, sellAmount });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('coinbase.quotes.unhandled', { route: '/api/coinbase/quotes', err });
+    console.error('CDP quotes error:', err);
     return jsonError('Failed to fetch quotes', 500);
   }
 }

@@ -7,7 +7,6 @@ import type { WheelSpinOutcome } from '@/hooks/useWheelData';
 import { startSpinSound, playWinSound, getWinTier } from '@/lib/wheelSounds';
 import { ShareWinButton } from '@/components/share/ShareWinButton';
 import { buildWheelShareCopy } from '@/lib/shareUtils';
-import { logger } from '@/lib/logger';
 
 interface BananaWheelProps {
   spinsAvailable: number;
@@ -165,7 +164,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     try {
       outcome = await onSpin();
     } catch (err) {
-      logger.error('[BananaWheel] spin error:', err);
+      console.error('[BananaWheel] spin error:', err);
       const msg = err instanceof Error ? err.message : 'Spin failed';
       setSpinError(msg);
     }

@@ -1,22 +1,10 @@
 export const dynamic = 'force-dynamic';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
-import { logger } from '@/lib/logger';
 
 const DIDIT_API_KEY = process.env.DIDIT_API_KEY || '';
 const DIDIT_WORKFLOW_ID = process.env.DIDIT_WORKFLOW_ID || 'c49a0700-b18e-4a7f-aa55-06061fda42b5';
 const DIDIT_BASE_URL = 'https://verification.didit.me';
-
-function resolveAppOrigin(): string {
-  const env = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (env) return env.replace(/\/$/, '');
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging') {
-    return 'https://banana-fantasy-sbs.vercel.app';
-  }
-  // Same fail-loud pattern as lib/db-firestore.ts:getAppOrigin — better to
-  // crash than silently bounce a prod KYC user back to the staging domain.
-  throw new Error('NEXT_PUBLIC_APP_URL is required outside of staging');
-}
 
 export async function POST(req: Request) {
   try {
@@ -24,7 +12,7 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
 
     const vendorData = privyUser.userId;
-    const callback = typeof body.callback === 'string' ? body.callback : `${resolveAppOrigin()}/prizes`;
+    const callback = typeof body.callback === 'string' ? body.callback : `${process.env.NEXT_PUBLIC_APP_URL || 'https://banana-fantasy-sbs.vercel.app'}/prizes`;
 
     const res = await fetch(`${DIDIT_BASE_URL}/v3/session/`, {
       method: 'POST',
@@ -41,7 +29,7 @@ export async function POST(req: Request) {
 
     if (!res.ok) {
       const errorText = await res.text();
-      logger.error('didit.session.create_failed', { route: '/api/verify/session', status: res.status, errorText });
+      console.error('[Didit] Session creation failed:', res.status, errorText);
       return jsonError('Failed to create verification session', 500);
     }
 
@@ -55,7 +43,7 @@ export async function POST(req: Request) {
 
     return json({ sessionUrl, sessionId }, 200);
   } catch (err) {
-    logger.error('didit.session.unhandled', { route: '/api/verify/session', err });
+    console.error('[Didit] Error:', err);
     return jsonError(err instanceof Error ? err.message : 'Failed to create session', 500);
   }
 }

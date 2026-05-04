@@ -1,21 +1,18 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
-import { json, jsonError } from '@/lib/api/routeUtils';
-import { requireWalletAuth } from '@/lib/walletAuth';
-import { getKycVerification } from '@/lib/db-firestore';
+import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
+import { getPersonaVerification } from '@/lib/db-firestore';
 import type { EligibilityStatus } from '@/types';
-import { logger } from '@/lib/logger';
 
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
-    // Server-derived wallet — KYC status leaks personal data, never let
-    // ?userId= dictate which user we read.
-    const { walletAddress: userId } = await requireWalletAuth(req);
+    const userId = getSearchParam(req, 'userId');
+    if (!userId) return jsonError('Missing query param: userId', 400);
 
-    const verification = await getKycVerification(userId);
+    const verification = await getPersonaVerification(userId);
 
     const eligibility: EligibilityStatus = {
       isVerified: verification.tier1.verified,
@@ -26,13 +23,13 @@ export async function GET(req: Request) {
       tier2Verified: verification.tier2.verified,
       cumulativeWithdrawals: verification.cumulativeWithdrawals,
       geoState: verification.tier1.geoState,
-      kycInquiryId: verification.tier1.inquiryId,
+      personaInquiryId: verification.tier1.inquiryId,
     };
 
     return json(eligibility, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('Eligibility fetch failed:', err);
+    console.error('Eligibility fetch failed:', err);
     return jsonError('Failed to fetch eligibility', 500);
   }
 }

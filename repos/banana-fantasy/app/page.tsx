@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { AddToHomeScreenCard } from '@/components/home/AddToHomeScreenCard';
-import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
 import { usePWAInstallPromo } from '@/hooks/usePWAInstallPromo';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
@@ -23,15 +22,14 @@ import { usePromoReminders } from '@/hooks/usePromoReminders';
 import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
+import * as draftStore from '@/lib/draftStore';
 
 function StagingMintButton({
   userId,
   onMinted,
-  getAccessToken,
 }: {
   userId: string;
   onMinted: (data?: { draftPasses?: number | null }) => void;
-  getAccessToken: () => Promise<string | null>;
 }) {
   const [minting, setMinting] = React.useState(false);
   const [qty, setQty] = React.useState(3);
@@ -41,13 +39,9 @@ function StagingMintButton({
     setMinting(true);
     setResult(null);
     try {
-      const token = await getAccessToken();
       const res = await fetch('/api/purchases/staging-mint', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId, quantity: qty }),
       });
       const data = await res.json();
@@ -90,7 +84,7 @@ function StagingMintButton({
 
 export default function HomePage() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, getAccessToken } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
@@ -133,6 +127,31 @@ export default function HomePage() {
 
   const selectedContest = contestsQuery.data?.[0];
   const modals = useModalStack();
+
+  const buildDraftRoomUrl = React.useCallback((draftId: string, contestName: string, speed: 'fast' | 'slow') => {
+    const params = new URLSearchParams({
+      id: draftId,
+      name: contestName,
+      speed,
+    });
+
+    // Add live mode params only in staging mode
+    if (user?.walletAddress && _isStagingMode()) {
+      params.set('mode', 'live');
+      params.set('wallet', user.walletAddress);
+    }
+
+    if (typeof window !== 'undefined') {
+      const current = new URLSearchParams(window.location.search);
+      if (current.get('staging') === 'true') params.set('staging', 'true');
+      const apiUrl = current.get('apiUrl');
+      const wsUrl = current.get('wsUrl');
+      if (apiUrl) params.set('apiUrl', apiUrl);
+      if (wsUrl) params.set('wsUrl', wsUrl);
+    }
+
+    return `/draft-room?${params.toString()}`;
+  }, [user?.walletAddress]);
 
 
   const handleEnter = () => {
@@ -184,14 +203,10 @@ export default function HomePage() {
     // re-syncs from Firestore truth.
     let decremented = false;
     try {
-      const token = await getAccessToken();
       const res = await fetch('/api/owner/use-pass', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ passType }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
       });
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
@@ -215,19 +230,32 @@ export default function HomePage() {
       consumePromoDraftType(forcedDraftType);
     }
 
-    // Always live: drop the staging-only check. The previous else-branch
-    // created a fake `local-${Date.now()}` draft with no backend sync,
-    // intended for early dev without a Go API. Now both staging and prod
-    // run real backends — the fallback would just put users in a
-    // non-functional demo room.
-    const params = new URLSearchParams({
-      speed,
-      mode: 'live',
-      wallet: user.walletAddress,
-      passType,
-    });
-    if (forcedDraftType) params.set('promoType', forcedDraftType);
-    router.push(`/draft-room?${params.toString()}`);
+    if (_isStagingMode()) {
+      const params = new URLSearchParams({
+        speed,
+        mode: 'live',
+        wallet: user.walletAddress,
+        passType,
+      });
+      if (forcedDraftType) params.set('promoType', forcedDraftType);
+      router.push(`/draft-room?${params.toString()}`);
+    } else {
+      const localDraftId = `local-${Date.now()}`;
+      const localContestName = `League #${Math.floor(Math.random() * 9000) + 1000}`;
+      draftStore.addDraft({
+        id: localDraftId,
+        contestName: localContestName,
+        status: 'filling',
+        type: null,
+        draftSpeed: speed,
+        players: 1,
+        maxPlayers: 10,
+        joinedAt: Date.now(),
+        phase: 'filling',
+        liveWalletAddress: user.walletAddress,
+      });
+      router.push(buildDraftRoomUrl(localDraftId, localContestName, speed));
+    }
   };
 
   const handlePurchaseComplete = () => {
@@ -243,9 +271,7 @@ export default function HomePage() {
       {/* Get the App banner */}
       <AddToHomeScreenCard />
 
-      {/* Founder Draft event banner — only renders on the day-of (within 24h before
-          the event) or during the live window. Otherwise self-hides. */}
-      <FounderDraftBanner />
+      {/* Special Draft Banner removed — special drafts now show on /drafting page */}
 
       {/* Featured Contest */}
       <section className="mb-6">
@@ -264,9 +290,9 @@ export default function HomePage() {
       </section>
 
       {/* Staging Mint Button */}
-      {_isStagingMode() && user?.walletAddress && (
+      {_isStagingMode() && user?.id && (
         <section className="mb-4 flex justify-center">
-          <StagingMintButton userId={user.walletAddress} getAccessToken={getAccessToken} onMinted={(data) => {
+          <StagingMintButton userId={user.id} onMinted={(data) => {
             // Apply the new draftPasses count from the mint response immediately —
             // skips SSE / refreshBalance roundtrip latency that occasionally
             // delayed the header tick by several seconds.

@@ -24,17 +24,6 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
-    // Forward the caller's Privy bearer to the Go API. /league/{type}/owner/{ownerId}
-    // and /owner/{ownerId}/draftToken/mint require it now. We extract from the
-    // incoming Authorization header rather than re-issuing because (a) the
-    // user's already authenticated to this Next route and (b) this is a
-    // server-side proxy, no fresh user interaction.
-    const incomingAuth = req.headers.get('authorization') || '';
-    const goApiHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (incomingAuth.startsWith('Bearer ')) {
-      goApiHeaders.Authorization = incomingAuth;
-    }
-
     // Check if queue round already has a draftId with valid Go API state
     const { getQueueStatus } = await import('@/lib/db');
     const queues = await getQueueStatus();
@@ -58,14 +47,14 @@ export async function POST(req: Request) {
     const mintId = 100000 + Math.floor(Math.random() * 50000);
     await fetch(`${STAGING_API_URL}/owner/${userId}/draftToken/mint`, {
       method: 'POST',
-      headers: goApiHeaders,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minId: mintId, maxId: mintId }),
     }).catch(() => {});
 
     // 2. Join a slow league via JoinLeagues — this properly creates token + adds to league
     const joinRes = await fetch(`${STAGING_API_URL}/league/slow/owner/${userId}`, {
       method: 'POST',
-      headers: goApiHeaders,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numLeaguesToJoin: 1 }),
     });
 
@@ -93,15 +82,9 @@ export async function POST(req: Request) {
     const actualDraftId = updatedRound?.draftId || draftId;
     logger.debug('[create-draft] JoinLeagues returned:', draftId, '| Queue stored:', actualDraftId);
 
-    // 4. Fill with 9 bots on Go API (use the actual stored draftId).
-    // Go API /staging/* routes are now admin-gated — pass DRAFTS_API_ADMIN_KEY
-    // (mirrors the ADMIN_API_KEY env var on the Go service). Without the
-    // header the Go API returns 403 and the draft fills slowly via real
-    // user joins instead of bots, which is acceptable degradation.
-    const adminKey = process.env.DRAFTS_API_ADMIN_KEY || '';
+    // 4. Fill with 9 bots on Go API (use the actual stored draftId)
     const fillRes = await fetch(`${STAGING_API_URL}/staging/fill-bots/slow?count=9&leagueId=${actualDraftId}`, {
       method: 'POST',
-      headers: adminKey ? { 'X-Admin-Key': adminKey } : undefined,
     }).catch(() => null);
     logger.debug('[create-draft] fill-bots result:', fillRes?.status, fillRes?.ok);
 
@@ -125,7 +108,7 @@ export async function POST(req: Request) {
       await new Promise(r => setTimeout(r, 2000));
     }
     if (!stateReady) {
-      logger.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);
+      console.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);
     }
 
     // 6. Sync Firestore queue: add bot members + set status to 'drafting'

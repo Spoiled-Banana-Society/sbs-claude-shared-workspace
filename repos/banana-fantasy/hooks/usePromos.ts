@@ -16,7 +16,7 @@ type ClaimPromoResponse = {
 type ClaimPromoResult = ClaimPromoResponse | Error | null;
 
 export function usePromos(opts?: { userId?: string }) {
-  const { user, updateUser, getAccessToken } = useAuth();
+  const { user, updateUser } = useAuth();
   const userId = opts?.userId ?? user?.id;
 
   const swr = useSWRLike<Promo[]>(
@@ -46,11 +46,9 @@ export function usePromos(opts?: { userId?: string }) {
       if (!userId) return null;
 
       try {
-        const token = await getAccessToken();
         const res = await fetchJson<ClaimPromoResponse>('/api/promos/claim', {
           method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: JSON.stringify({ promoId }),
+          body: JSON.stringify({ userId, promoId }),
         });
 
         // Update only Firestore-managed balance fields from the response.

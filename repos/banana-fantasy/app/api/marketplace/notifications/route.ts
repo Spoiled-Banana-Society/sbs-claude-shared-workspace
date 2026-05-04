@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { logger } from '@/lib/logger';
 
 const COLLECTION = 'marketplace_notifications';
 
@@ -35,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ notifications });
   } catch (err) {
-    logger.error('marketplace.notifications.get_error', { err });
+    console.error('[marketplace-notifications] GET error:', err);
     return NextResponse.json({ notifications: [] });
   }
 }
@@ -68,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    logger.error('marketplace.notifications.post_error', { err });
+    console.error('[marketplace-notifications] POST error:', err);
     return NextResponse.json({ error: 'Failed to create notification' }, { status: 500 });
   }
 }
@@ -109,7 +108,7 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    logger.error('marketplace.notifications.patch_error', { err });
+    console.error('[marketplace-notifications] PATCH error:', err);
     return NextResponse.json({ error: 'Failed to mark as read' }, { status: 500 });
   }
 }

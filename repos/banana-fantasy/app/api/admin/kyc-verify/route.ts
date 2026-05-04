@@ -8,7 +8,7 @@ import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
-import { getKycVerification, saveKycVerification } from '@/lib/db-firestore';
+import { getPersonaVerification, savePersonaVerification } from '@/lib/db-firestore';
 
 type Tier = 'tier1' | 'tier2';
 
@@ -36,16 +36,16 @@ export async function POST(req: Request) {
     }
     const tier: Tier = tierRaw;
 
-    const before = await getKycVerification(userId);
+    const before = await getPersonaVerification(userId);
 
     const tierData: { verified: boolean; inquiryId?: string; verifiedAt?: string } = { verified };
     if (verified) {
       tierData.inquiryId = 'admin-override';
       tierData.verifiedAt = new Date().toISOString();
     }
-    await saveKycVerification(userId, { [tier]: tierData });
+    await savePersonaVerification(userId, { [tier]: tierData });
 
-    const after = await getKycVerification(userId);
+    const after = await getPersonaVerification(userId);
 
     await logAdminAction({
       actor: actorWallet,

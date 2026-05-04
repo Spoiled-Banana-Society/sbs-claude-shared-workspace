@@ -2,7 +2,6 @@ import { getAdminApp } from '@/lib/firebaseAdmin';
 import { getStorage } from 'firebase-admin/storage';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +56,7 @@ export async function POST(req: Request) {
 
     return json({ url: publicUrl }, 200);
   } catch (err) {
-    logger.error('[upload] Error:', err);
+    console.error('[upload] Error:', err);
     return jsonError('Upload failed', 500);
   }
 }
