@@ -34,10 +34,10 @@ type Step =
   | 'status'
   | 'error';
 
-type SelectableMethod = 'ACH_BANK_ACCOUNT' | 'RTP' | 'CARD' | 'USDC';
+type SelectableMethod = 'ACH_BANK_ACCOUNT' | 'FIAT_WALLET' | 'CRYPTO_ACCOUNT' | 'USDC';
 
 interface QuoteResult {
-  method: 'ACH_BANK_ACCOUNT' | 'RTP' | 'CARD' | 'APPLE_PAY' | 'PAYPAL' | 'FIAT_WALLET';
+  method: 'ACH_BANK_ACCOUNT' | 'RTP' | 'CARD' | 'APPLE_PAY' | 'PAYPAL' | 'FIAT_WALLET' | 'CRYPTO_ACCOUNT';
   label: string;
   speed: string;
   description: string;
@@ -217,7 +217,13 @@ export function CashOutModal({
       const ach = data.quotes.find((q) => q.method === 'ACH_BANK_ACCOUNT' && q.available);
       const firstAvail = data.quotes.find((q) => q.available);
       const defaultMethod = ach?.method ?? firstAvail?.method;
-      if (defaultMethod === 'ACH_BANK_ACCOUNT' || defaultMethod === 'RTP' || defaultMethod === 'CARD') {
+      // Only auto-select if the default method is one we render. The
+      // SelectableMethod type tracks the rendered options.
+      if (
+        defaultMethod === 'ACH_BANK_ACCOUNT' ||
+        defaultMethod === 'FIAT_WALLET' ||
+        defaultMethod === 'CRYPTO_ACCOUNT'
+      ) {
         setSelectedMethod(defaultMethod);
       }
       setStep('quotes');
@@ -490,7 +496,11 @@ export function CashOutModal({
             <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
             <div className="space-y-2">
               {quotes
-                .filter((q) => q.method === 'ACH_BANK_ACCOUNT' || q.method === 'RTP' || q.method === 'CARD')
+                // Only render methods that returned a successful quote.
+                // Coinbase rejects unsupported (country, asset, payment-method)
+                // combos with available:false — hiding them keeps the UI
+                // clean instead of surfacing raw "InvalidRequest" errors.
+                .filter((q) => q.available)
                 .map((q) => {
                   const fee = q.totalFee ?? 0;
                   const isFree = fee < 0.01;

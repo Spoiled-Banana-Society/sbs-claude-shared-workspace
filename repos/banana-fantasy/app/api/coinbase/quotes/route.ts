@@ -15,6 +15,11 @@ interface QuoteOption {
   description: string;
 }
 
+// Per Coinbase Sell Config API for US, only these payment methods are
+// supported: ACH_BANK_ACCOUNT, FIAT_WALLET, CRYPTO_ACCOUNT. RTP, CARD,
+// PAYPAL are not supported for US offramp at the country level (verified
+// 2026-05-05 against /onramp/v1/sell/config). Any quote returned for an
+// unsupported method comes back with available:false; the UI filters those.
 const OPTIONS: QuoteOption[] = [
   {
     method: 'ACH_BANK_ACCOUNT',
@@ -23,16 +28,16 @@ const OPTIONS: QuoteOption[] = [
     description: 'No fast-rails fee, deposited to your bank',
   },
   {
-    method: 'RTP',
-    label: 'Instant',
+    method: 'FIAT_WALLET',
+    label: 'Coinbase USD wallet',
     speed: 'Seconds',
-    description: 'Instant deposit to supported banks',
+    description: 'Instant credit to your Coinbase USD balance',
   },
   {
-    method: 'CARD',
-    label: 'Debit card',
+    method: 'CRYPTO_ACCOUNT',
+    label: 'Coinbase crypto account',
     speed: 'Seconds',
-    description: 'Pushed instantly to a debit card',
+    description: 'Move USDC to your Coinbase account',
   },
 ];
 

@@ -12,7 +12,8 @@ export type CdpPaymentMethod =
   | 'CARD'
   | 'APPLE_PAY'
   | 'PAYPAL'
-  | 'FIAT_WALLET';
+  | 'FIAT_WALLET'
+  | 'CRYPTO_ACCOUNT';
 
 export interface SessionTokenAddress {
   address: string;
