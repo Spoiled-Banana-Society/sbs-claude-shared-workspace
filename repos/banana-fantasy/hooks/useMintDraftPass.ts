@@ -218,6 +218,22 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         // Request EIP-712 signature via the wallet's own provider. Works for
         // Privy embedded, MetaMask, Coinbase Wallet, etc. — no gas prompt.
         const provider = await selectedWallet.getEthereumProvider();
+
+        // Make sure the wallet is on Base before signing. The USDC permit's
+        // domain references Base (chain 8453), so external wallets sitting
+        // on Ethereum/BNB/Polygon would either warn the user about a
+        // cross-chain typed-data signature or refuse outright. Embedded
+        // wallets are always on Base, so this is a no-op for them.
+        try {
+          const currentChainHex = await provider.request({ method: 'eth_chainId' });
+          if (parseInt(currentChainHex as string, 16) !== 8453) {
+            await selectedWallet.switchChain(8453);
+          }
+        } catch {
+          // Ignore — the signature attempt below will surface a clearer
+          // error if the wallet truly can't switch.
+        }
+
         const signature = (await provider.request({
           method: 'eth_signTypedData_v4',
           params: [selectedWallet.address, JSON.stringify(typedData)],
