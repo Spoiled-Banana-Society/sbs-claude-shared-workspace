@@ -20,13 +20,14 @@ import { ActivityCombined } from '@/components/admin/ActivityCombined';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { MetricsDashboard } from '@/components/admin/MetricsDashboard';
 import { ErrorLog } from '@/components/admin/ErrorLog';
+import { SentryIssues } from '@/components/admin/SentryIssues';
 import { SupportInbox } from '@/components/admin/SupportInbox';
 import { AuditLog } from '@/components/admin/AuditLog';
 import { AdminTools } from '@/components/admin/AdminTools';
 import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 
-type TabKey = 'metrics' | 'errors' | 'support' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate';
+type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate';
 
 interface NavItem {
   key: TabKey;
@@ -36,7 +37,8 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'metrics', label: 'Metrics', group: 'Monitoring' },
-  { key: 'errors', label: 'Errors', group: 'Monitoring' },
+  { key: 'errors', label: 'Server Errors', group: 'Monitoring' },
+  { key: 'sentry', label: 'Frontend Errors', group: 'Monitoring' },
   { key: 'support', label: 'Support', group: 'Monitoring' },
   { key: 'users', label: 'Users', group: 'Manage' },
   { key: 'drafts', label: 'Drafts', group: 'Manage' },
@@ -180,6 +182,7 @@ export default function AdminPage() {
         <div className="px-8 py-6 max-w-[1400px]">
           {activeTab === 'metrics' && <MetricsDashboard enabled={isAuthorized} />}
           {activeTab === 'errors' && <ErrorLog enabled={isAuthorized} />}
+          {activeTab === 'sentry' && <SentryIssues enabled={isAuthorized} />}
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
           {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}

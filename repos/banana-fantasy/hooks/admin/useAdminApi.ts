@@ -345,6 +345,35 @@ export function useRecentErrors(enabled: boolean) {
   });
 }
 
+export interface SentryIssueEntry {
+  id: string;
+  shortId: string;
+  title: string;
+  culprit: string;
+  count: string;
+  userCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  level: string;
+  permalink: string;
+  status: string;
+}
+
+export function useSentryIssues(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<{ issues: SentryIssueEntry[]; configured: boolean; requestId?: string }>({
+    queryKey: ['admin', 'sentry-issues'],
+    enabled,
+    queryFn: () =>
+      adminFetch<{ issues: SentryIssueEntry[]; configured: boolean; requestId?: string }>(
+        '/api/admin/sentry-issues?limit=25&statsPeriod=24h',
+        getHeaders,
+      ),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export interface CrispConversationEntry {
   session_id: string;
   nickname: string | null;
