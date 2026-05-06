@@ -183,5 +183,8 @@ export function buildOfframpUrl(input: BuildSellUrlInput): string {
     params.set('presetFiatAmount', input.presetFiatAmount.toString());
   }
   if (input.fiatCurrency) params.set('fiatCurrency', input.fiatCurrency);
-  return `https://pay.coinbase.com/v3/sell?${params.toString()}`;
+  // /v3/sell/input is the input/validation screen — Coinbase's official demo
+  // (coinbase/onramp-demo-application) uses this exact path. Plain /v3/sell
+  // (no suffix) returns 404 from pay.coinbase.com.
+  return `https://pay.coinbase.com/v3/sell/input?${params.toString()}`;
 }
