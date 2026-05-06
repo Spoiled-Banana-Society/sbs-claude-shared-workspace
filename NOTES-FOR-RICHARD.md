@@ -6,24 +6,27 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ## May 6 — Self-serve backend deploys (Cloud Run + Firebase Functions)
 
-You should be able to deploy ALL the backend services yourself instead of pinging Boris every time. Here's everything you need.
+You should be able to deploy ALL the backend services yourself instead of pinging Boris every time. Scope of this note is **backend deploys only** — everything else stays as-is.
 
-### What Boris needs to do FOR YOU first (one-time)
+### Use the shared `team@sbsfantasy.com` Google account
 
-1. **Grant you GCP IAM on `sbs-staging-env`** (project ID `652484219017`):
-   - Go to: https://console.cloud.google.com/iam-admin/iam?project=sbs-staging-env
-   - Add member: your Google account email
-   - Grant roles: `Cloud Run Admin`, `Cloud Run Invoker`, `Service Account User`, `Storage Object Viewer`, `Logs Viewer`
-   - Save
+Same login Boris uses for everything backend. He'll send you the password in 1Password (or wherever you two share secrets — not in git, not in this note). With that single account you get:
 
-2. **Grant you Firebase access on `sbs-staging-env`**:
-   - Go to: https://console.firebase.google.com/project/sbs-staging-env/settings/iam
-   - Add member: same Google account
-   - Role: `Editor` (covers Functions deploys + Firestore admin + RTDB)
+- GCP `sbs-staging-env` (Cloud Run, Logs, etc.) — full owner
+- Firebase `sbs-staging-env` (Functions, Firestore, RTDB) — full owner
+- Coinbase CDP (the offramp project) — admin
+- Privy dashboard — admin
+- Anything else backend that's already wired to that email
 
-3. **Send you the configs/ folder** for `sbs-drafts-api-deploy` (contains `serviceAccount.json` + secrets the public repo doesn't have). Boris will share via 1Password / encrypted Drive — NOT in git.
+No per-service IAM grants needed — you log in as the project owner. Skip everything below about granting roles or adding members.
 
-Tell Boris when he's done, then proceed with the rest below.
+**Get from Boris (one-time):**
+
+1. The `team@sbsfantasy.com` password (1Password / shared vault).
+2. The 2FA setup — share the TOTP secret so both of you can generate codes (1Password supports this natively, or export the QR from his Authenticator).
+3. The `configs/` folder for `sbs-drafts-api-deploy` (contains `serviceAccount.json` + other secrets the public repo doesn't have). Encrypted share — NOT git.
+
+Once you have those, you're set.
 
 ### One-time machine setup (you do this yourself)
 
@@ -33,14 +36,14 @@ curl https://sdk.cloud.google.com | bash
 exec -l $SHELL
 gcloud init                       # follow prompts → choose sbs-staging-env
 
-# 2. Auth gcloud
-gcloud auth login                 # browser flow with your Google account
+# 2. Auth gcloud — log in as team@sbsfantasy.com
+gcloud auth login                 # browser flow → use team@sbsfantasy.com
 gcloud auth application-default login
 gcloud config set project sbs-staging-env
 
 # 3. Install Firebase CLI
 npm install -g firebase-tools
-firebase login                    # browser flow with your Google account
+firebase login                    # browser flow → use team@sbsfantasy.com
 
 # 4. Verify you can read sbs-staging-env (sanity check)
 gcloud run services list --region us-central1 --project sbs-staging-env
