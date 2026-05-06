@@ -14,7 +14,7 @@ interface ProfileDropdownProps {
 }
 
 export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
-  const { user, logout, isEmbeddedWallet } = useAuth();
+  const { user, logout, switchWallet, isEmbeddedWallet } = useAuth();
   const { exportWallet } = useExportWallet();
   const [isOpen, setIsOpen] = useState(false);
   const [walletCopied, setWalletCopied] = useState(false);
@@ -230,6 +230,24 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                   <line x1="12" y1="3" x2="12" y2="15" />
                 </svg>
                 Export Wallet
+              </button>
+            )}
+
+            {!isEmbeddedWallet && (
+              <button
+                onClick={() => {
+                  switchWallet();
+                  setIsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors flex items-center gap-3 text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="17 1 21 5 17 9" />
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" />
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+                Switch Wallet
               </button>
             )}
 

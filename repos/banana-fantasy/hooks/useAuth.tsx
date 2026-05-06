@@ -39,6 +39,10 @@ interface AuthContextType {
   setShowOnboarding: (show: boolean) => void;
   login: (method?: 'wallet' | 'social') => void;
   logout: () => void;
+  // Re-prompts the wallet account picker so the user can swap to a different
+  // MetaMask/CB account without manually disconnecting in MM settings.
+  // Re-runs SIWE for the newly selected account, replacing the Privy session.
+  switchWallet: () => void;
   updateUser: (updates: Partial<User>) => void;
   refreshBalance: () => Promise<void>;
   /**
@@ -153,6 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showMobileLoginModal, setShowMobileLoginModal] = useState(false);
+  const [switchMode, setSwitchMode] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
@@ -631,6 +636,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [privy]);
 
+  // Switch active wallet without the disconnect dance. Logs out the current
+  // Privy session, then opens the login modal in switch mode — which forces
+  // MM/CB to re-prompt the account picker (via wallet_requestPermissions)
+  // and skips the email/OAuth options.
+  const switchWallet = useCallback(async () => {
+    await privy.logout();
+    setUser(null);
+    if (isMobile) {
+      setSwitchMode(true);
+      setShowMobileLoginModal(true);
+    } else {
+      // Desktop: Privy's connectWallet modal lets user pick wallet again;
+      // they can switch the active MM account in the extension before signing.
+      privy.login();
+    }
+  }, [privy, isMobile]);
+
   const updateUser = useCallback((updates: Partial<User>) => {
     setUser((prev) => {
       if (!prev) return null;
@@ -795,6 +817,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setShowOnboarding,
         login,
         logout,
+        switchWallet,
         updateUser,
         refreshBalance,
         refreshBalanceUntil,
@@ -815,7 +838,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
       <MobileLoginModal
         isOpen={showMobileLoginModal}
-        onClose={() => setShowMobileLoginModal(false)}
+        switchMode={switchMode}
+        onClose={() => {
+          setShowMobileLoginModal(false);
+          setSwitchMode(false);
+        }}
       />
     </AuthContext.Provider>
   );
