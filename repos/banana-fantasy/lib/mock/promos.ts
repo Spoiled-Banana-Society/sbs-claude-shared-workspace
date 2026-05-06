@@ -124,8 +124,8 @@ export const mockPromos: Promo[] = [
   {
     id: 'founder-draft',
     type: 'founder-draft',
-    title: 'Founder Draft → FREE DRAFT',
-    description: 'Join a draft with the founder for a free draft',
+    title: 'Founder Draft → FREE SPIN',
+    description: 'Join a draft with the founder for a free spin',
     ctaText: 'View Drafts',
     ctaLink: '/standings',
     backgroundColor: '#2a2a35',
@@ -134,8 +134,8 @@ export const mockPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Founder Draft → FREE DRAFT',
-      explanation: '• Every Founder Draft event, click "Join Draft" the second the clock hits 0:00:00\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 free draft to claim\n\n• Founder League Perk: Win your Founder league AND beat the founder head-to-head → advance straight to the finals, skipping the first two rounds of playoffs!',
+      title: 'Founder Draft → FREE SPIN',
+      explanation: '• Founder Draft happens every week at the same time\n\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 free spin to claim\n\n• Founder League Perk: Win your Founder league AND beat the founder head-to-head → advance straight to the finals, skipping the first two rounds of playoffs!',
       founderHistory: [],
     },
   },

@@ -535,7 +535,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
                   <span className="text-text-secondary">{entry.draftName}</span>
                   <span className="font-semibold" style={{ color: '#06b6d4' }}>
-                    {entry.amount} {entry.amount === 1 ? 'free draft' : 'free drafts'}
+                    {entry.amount} {entry.amount === 1 ? 'free spin' : 'free spins'}
                   </span>
                 </div>
               ))}

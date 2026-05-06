@@ -77,9 +77,9 @@ export function FounderDraftBanner() {
               : `Next Founder Draft: ${dateLabel}`}
           </h2>
           <p className="text-xs sm:text-sm text-white/60 mt-1">
-            Click <span className="text-white font-medium">Join Draft</span> the second the clock hits
+            Happens every week at this time. Click <span className="text-white font-medium">Join Draft</span> the second the clock hits
             <span className="text-white font-mono"> 0:00:00</span>. Everyone in the draft with the founder
-            earns a free draft + a shot at skipping playoffs.
+            earns a free spin + a shot at skipping playoffs.
           </p>
         </div>
 
