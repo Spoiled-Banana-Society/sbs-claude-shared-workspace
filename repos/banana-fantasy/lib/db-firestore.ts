@@ -1638,6 +1638,57 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
   });
 }
 
+// ── Founder Draft promo ──
+
+const FOUNDER_DRAFT_PROMO_ID = 'founder-draft';
+const FOUNDER_DRAFT_REWARD = 1; // 1 free draft per qualifying drafter
+
+/**
+ * Credit a user's founder-draft promo when their draft has been verified
+ * (server-side) as a Founder Draft. Mirrors recordJackpotHit's shape but
+ * has no winner-picker — every drafter in a Founder Draft gets credited,
+ * not just one. Validation that the draft IS a founder draft (founder
+ * wallet present + within window) lives in the calling endpoint
+ * (app/api/promos/founder-draft/route.ts), so this function trusts the
+ * caller to have gated correctly.
+ *
+ * Idempotent via draftId dedupe in modalContent.founderHistory.
+ */
+export async function recordFounderDraftJoin(userId: string, draftId: string): Promise<Promo | null> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+
+  const promoRef = db
+    .collection(USERS_COLLECTION)
+    .doc(userId)
+    .collection(PROMOS_SUBCOLLECTION)
+    .doc(FOUNDER_DRAFT_PROMO_ID);
+
+  return db.runTransaction(async (tx) => {
+    const promoSnap = await tx.get(promoRef);
+    if (!promoSnap.exists) return null;
+
+    const promo = deepClone(promoSnap.data() as Promo);
+    if (promo.type !== 'founder-draft') return null;
+
+    const history = promo.modalContent.founderHistory || [];
+    if (history.some(h => h.draftName === draftId)) return promo; // idempotent
+
+    history.unshift({
+      date: new Date().toISOString().split('T')[0],
+      draftName: draftId,
+      amount: FOUNDER_DRAFT_REWARD,
+    });
+    promo.modalContent.founderHistory = history;
+    promo.progressCurrent = 1;
+    promo.claimable = true;
+    promo.claimCount = (promo.claimCount || 0) + FOUNDER_DRAFT_REWARD;
+
+    tx.set(promoRef, stripUndefined(promo), { merge: true });
+    return deepClone(promo);
+  });
+}
+
 // ── Persona Verification ──────────────────────────────────────────────
 
 export interface PersonaVerificationData {

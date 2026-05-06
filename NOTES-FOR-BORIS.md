@@ -6,50 +6,6 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ## Open asks
 
-### Go API `/league/*` and `/owner/*` returning 403 for authenticated users (May 2 — URGENT, blocks all drafting)
-
-Live staging is broken — users can't join drafts. Every authenticated POST to `/league/{speed}/owner/{wallet}` and GET to `/owner/{wallet}/draftToken/all` returns **403 Forbidden** even when the Privy bearer is attached. Auth flow on the frontend hasn't changed.
-
-**Symptoms (from staging console, my wallet `0x2e64db49fc597a731091471607f6cd0251d7eafb`):**
-```
-POST https://sbs-drafts-api-staging-…/league/fast/owner/0x2e64db49…  403 (Forbidden)
-[Draft Room] Join attempt 1/3 failed: Forbidden
-[Draft Room] Join attempt 2/3 failed: Forbidden
-[Draft Room] Join attempt 3/3 failed: Forbidden
-[Draft Room] Failed to join draft after retries: ApiError: Forbidden
-
-GET  https://sbs-drafts-api-staging-…/owner/0x2e64db49…/draftToken/all  403 (Forbidden)
-[Drafting] Failed to load live drafts: ApiError: Forbidden
-```
-
-User-visible behavior: clicks Enter on a contest → /draft-room → "Joining…" placeholder appears in /drafting briefly → 6 seconds later (3 join retries × 2s+4s backoff) the placeholder gets removed and the draft is gone. Pass got decremented (Firestore via `/api/owner/use-pass`) but no draft was attached on the Go side.
-
-**What I think happened:** something in your recent auth-tightening pass extended the admin-key gate beyond `/staging/*` onto user-facing endpoints. The frontend HTTP client (`lib/api/client.ts` + `lib/api/authToken.ts` bridge) is sending `Authorization: Bearer <privy-token>` correctly — that part works for `/api/owner/use-pass` (Next.js route, Privy SDK validates server-side). It's the direct Go API calls that 403.
-
-**What I'd need from you:**
-- Either roll back whatever extended the admin gate to `/league/{speed}/owner/{wallet}` and `/owner/{wallet}/draftToken/all` (they should accept Privy bearer like before),
-- Or tell me the new auth contract (extra header? different audience claim? wallet allowlist?) so I can update the frontend.
-
-Both endpoints worked yesterday, so the regression landed in your last `gcloud run deploy sbs-drafts-api-staging`. Worth checking the middleware diff in `~/sbs-drafts-api-deploy` — likely a single misplaced `r.Use(adminKeyMiddleware)` or scope expansion in the auth chain.
-
-While this is broken, /drafting will keep flickering "Joining…" placeholders that disappear after 6s. The diagnostic logs I added (`[Drafting Diag]` console output) can stay or come out — your call. The frontend changes from today around `useActiveDrafts` / `useDraftingPageState` are independent and worth keeping regardless.
-
-### Set `NEXT_PUBLIC_ENVIRONMENT=staging` on Vercel (April 23)
-
-Commit `58b5bcd` added a prod-safety gate to `app/api/purchases/staging-mint/route.ts`:
-
-```ts
-if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
-  return jsonError('Not available in this environment', 403);
-}
-```
-
-The gate is good, but the matching env var was never set on the `banana-fantasy-sbs` Vercel deploy — so the STAGING MINT button on the homepage now returns `Error: Not available in this environment`. Shipped the lock without shipping the key.
-
-**Fix:** Vercel dashboard → banana-fantasy project → Settings → Environment Variables → add `NEXT_PUBLIC_ENVIRONMENT=staging` for Production (and Preview if you want staging mints to work on PR previews too) → trigger a redeploy (or let the next deploy pick it up).
-
-Only unblocks the staging-mint button. Nothing else depends on this var today.
-
 ### Slow-draft "your pick is up" push — Firebase Cloud Function (April 22)
 
 Richard shipped the client-side scaffolding + `/api/notifications/pick-up` endpoint. Covers the "another player has the page open" case but not the common "user closed the tab hours ago" case.
