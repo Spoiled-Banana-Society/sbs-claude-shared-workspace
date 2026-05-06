@@ -4,6 +4,84 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## May 6 — Your last 2 banana-fantasy deploys got blocked (COMMIT_AUTHOR_REQUIRED)
+
+Pulled the actual error from the Vercel API for both of your failed deploys today (`dpl_36wryJgXQCkfcKQdBELWFdftLULU` + the prior one). Same error on each:
+
+> "The Deployment was blocked because GitHub could not associate the committer with a GitHub user."
+> Block code: `COMMIT_AUTHOR_REQUIRED`
+> Vercel doc: https://vercel.com/docs/deployments/troubleshoot-project-collaboration#account-configuration
+
+**This is NOT about invites or team membership** — your push reached Vercel, which means your repo access is fine. It's a `git config user.email` issue: the email on your last commits isn't tied to your `satello` GitHub account in a way GitHub can recognize. Probably an email that's not verified on the GH account, or set to "private" without using the noreply address.
+
+**Fix in 2 min:**
+
+1. Go to https://github.com/settings/emails
+2. Either:
+   - **(easiest)** Check "Keep my email addresses private" at the bottom → GitHub gives you `<id>+satello@users.noreply.github.com` — copy it
+   - OR pick any email already showing as "Verified" on that page
+3. Apply locally in BOTH repos:
+   ```bash
+   cd ~/banana-fantasy
+   git config user.email "<email from step 2>"
+   cd ~/sbs-claude-shared-workspace
+   git config user.email "<same email>"
+   ```
+4. Re-author + force-push the previous commit:
+   ```bash
+   git commit --amend --reset-author --no-edit
+   git push --force-with-lease origin <your-branch>
+   ```
+
+Vercel will retry the deploy automatically.
+
+## May 6 — New safety hooks installed on Boris's Claude — recommend you mirror
+
+Added a Bash safety hook at `~/.claude/hooks/sbs-safety.sh` (218 lines, wired in `~/.claude/settings.json` under PreToolUse + PostToolUse, matcher `Bash`). It blocks:
+
+- Git writes inside prod-reference repos (`sbs-drafts-api-main`, `SBS-Backend-main`, `sbs-draft-web-main`)
+- gcloud/firebase/gsutil/bq writes against prod GCP projects (`sbs-prod-env`, `sbs-test-env`) — reads are allowed
+- Vercel CLI writes against prod Vercel projects (`sbs-draft-web`, `sbsfantasycom`, `sbs-staging-landing`)
+- `git add -A` / `git add .` / `git add --all` in `~/banana-fantasy/` (prevents the stale-overwrite incident from March)
+- `git push origin main` from banana-fantasy when shared-workspace push sentinel is missing or older than 10 min
+- `~/sync-shared-workspace.sh` when the Richard-branch-check sentinel hasn't been touched in last 10 min
+
+Sentinels live at `~/sbs-shared-pushed` and `~/sbs-richard-checked`. Post-tool hook auto-touches them when the relevant commands run successfully.
+
+Worth installing the same hook on your side so your Claude has the same protections (especially the `git add -A` block — that's the one that bit us in March). Copy the script content from Boris's machine: `~/.claude/hooks/sbs-safety.sh` → put on your machine at the same path. Wire in `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/.claude/hooks/sbs-safety.sh pre" }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/.claude/hooks/sbs-safety.sh post" }] }
+    ]
+  }
+}
+```
+
+Run `chmod +x ~/.claude/hooks/sbs-safety.sh` before wiring.
+
+## May 6 — Major changes on banana-fantasy since your last sync
+
+Some may overlap with what you've already integrated; flagging the load-bearing ones in case any conflict with your `richard` branch:
+
+- **New Privy app** (migrated from `team@sbs.xyz` → `team@sbsfantasy.com` workspace). Env vars `PRIVY_APP_ID`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` swapped in Vercel. Old app retired.
+- **New admin wallet** — `0x438bbe98eed1dd2df244b007dab0583cc9be72e0` (MetaMask). Old `0xd3301bc...` removed. `lib/adminAllowlist.ts` updated.
+- **Coinbase offramp shipped** — full integration in `app/api/coinbase/{quotes,sell-session,tx-status}/route.ts` and `components/modals/CashOutModal.tsx`. URL fixed to `pay.coinbase.com/v3/sell/input` (the bare `/v3/sell` 404s now). Switched from the prior rejected CDP project to a new SBS-owned project in trial mode (`CDP_API_KEY_ID` / `CDP_API_KEY_SECRET`). User's selected payment method now passed via `defaultCashoutMethod`. Polling state has staged messaging + 120s timeout with Reopen/Close recovery prompt. Reauth flow added when Privy session goes stale.
+- **KYC verification gate (Phase 1)** — new `lib/verifyBlockRules.ts` with SBS-specific block list (HI/ID/MT/NV/WA outright; AZ for best-ball; 17 LA parishes; per-state age minimums for IA/LA/MA/VA at 21+ and AL/NE at 19+; US + Canada only). `app/api/coinbase/sell-session/route.ts` calls `getPersonaVerification` + `checkBlockRules` before issuing CDP session — returns 403 with `requiresVerification: 'kyc'` if not yet verified, or `blockCode` + reason if blocked by rules. Webhook at `app/api/verify/webhook/route.ts` does HMAC-SHA256 X-Signature-V2 verification with `DIDIT_WEBHOOK_SECRET` and extracts firstName/lastName/dob/address from Didit's payload defensively. New `verifiedIdentity` field on `PersonaVerificationData` stores extracted ID data so we can re-check at every withdrawal without re-prompting. Phase 2 (W9 form at $2k cumulative threshold) is queued — data shape supports it (`withdrawnByYear`, `hasW9` keyed by tax year) but no UI yet.
+- **Crisp API live** — `CRISP_IDENTIFIER` + `CRISP_KEY` env vars added; admin Support tab now active and reads conversations.
+- **Mobile Switch Wallet** — new feature in `ProfileDropdown.tsx` + `useAuth.tsx` + `MobileLoginModal.tsx`. Calls `wallet_requestPermissions({ eth_accounts: {} })` to force MM/CB account picker without manual disconnect.
+- **Frontend Errors admin tab** — `app/api/admin/sentry-issues/route.ts` + `components/admin/SentryIssues.tsx` pulls from Sentry API.
+- **Mobile Prizes link** — added to ProfileDropdown so /prizes is reachable on mobile (mobile tab bar doesn't have a Prizes slot).
+
+If your Founder Draft re-apply (`12522c5`) touched any of: `useAuth.tsx`, `lib/auth.ts`, `app/api/coinbase/*`, `app/api/verify/*`, `lib/db-firestore.ts`, `lib/verifyBlockRules.ts`, `components/modals/CashOutModal.tsx`, `components/modals/MobileLoginModal.tsx`, `components/layout/ProfileDropdown.tsx` — please flag the conflict before pushing to main so we can resolve cleanly.
+
+---
+
 ## May 2 — Fix shipped for /league/* and /owner/* 403s
 
 You called it. Go auth gate had no Privy User API fallback — it only accepted JWTs that already carried a wallet claim. TS side (`lib/walletAuth.ts:48-64`) had the fallback, Go side (`auth/middleware.go:RequireOwnerMatchesPath`) didn't. Privy issues minimal JWTs to social-login users — wallet only shows up via the User API — so anyone who logged in with email/Google/Twitter and used an embedded wallet hit a hard 403.
