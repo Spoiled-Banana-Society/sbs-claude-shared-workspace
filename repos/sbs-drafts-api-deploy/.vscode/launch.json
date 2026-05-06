@@ -1,0 +1,28 @@
+{
+    "configurations": [
+        {
+            "name": "Cloud Run: Run/Debug Locally",
+            "type": "cloudcode.cloudrun",
+            "request": "launch",
+            "build": {
+                "docker": {
+                    "path": "dockerfile"
+                }
+            },
+            "image": "sbs-drafts-api",
+            "service": {
+                "name": "sbs-drafts-api",
+                "containerPort": 8080,
+                "resources": {
+                    "limits": {
+                        "memory": "256Mi"
+                    }
+                }
+            },
+            "target": {
+                "minikube": {}
+            },
+            "watch": true
+        }
+    ]
+}

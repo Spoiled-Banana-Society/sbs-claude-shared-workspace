@@ -37,7 +37,13 @@ type Client struct {
 
 	isAlive bool
 
-	currentlyPicking bool
+	// currentlyPicking is an atomic flag (0/1). Set via CompareAndSwapInt32
+	// in HandleNewPickMessage so a second pick attempt from the same client
+	// can never sneak past the check while the first one is mid-flight.
+	// Replaces the previous non-atomic bool + busy-wait sleep loop, which
+	// had a real data race (read/write across goroutines without sync) and
+	// could in theory let two picks land in the same slot. (BUG #24)
+	currentlyPicking int32
 
 	sync.Mutex
 }

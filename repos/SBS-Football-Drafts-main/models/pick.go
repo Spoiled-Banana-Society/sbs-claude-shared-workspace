@@ -167,6 +167,7 @@ func CheckIfPlayerIsPickedAlready(draftId, playerId string) error {
 func (p *PlayerInfo) MakePickFromPlayerInfo(draftId, clientAddress, channelName, managerId string) error {
 	err := CheckIfPlayerIsPickedAlready(draftId, p.PlayerId)
 	if err != nil {
+		fmt.Printf(`{"severity":"WARNING","draftId":"%s","event":"pick_player_already_taken","player":"%s"}`+"\n", draftId, p.PlayerId)
 		return err
 	}
 
@@ -175,6 +176,7 @@ func (p *PlayerInfo) MakePickFromPlayerInfo(draftId, clientAddress, channelName,
 		fmt.Println("error updating draft summary: ", err)
 		//c.AlertUserOfInvalidDraftPick(err.Error())
 		RevertPlayerUpdateInDraft(draftId, *p)
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"pick_summary_update_failed","pick":%d}`+"\n", draftId, p.PickNum)
 		return err
 	}
 	fmt.Println("updated draft summary from a pick recieved on the client")
@@ -182,6 +184,7 @@ func (p *PlayerInfo) MakePickFromPlayerInfo(draftId, clientAddress, channelName,
 	err = UpdateRosterFromPick(draftId, clientAddress, p.Team, p.Position, p.PlayerId, p.DisplayName, p.Round)
 	if err != nil {
 		fmt.Println("Error updating the roster from the pick event that was received")
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"pick_roster_update_failed"}`+"\n", draftId)
 		return err
 	}
 	fmt.Println("updated rosters from a pick recieved on the client")
@@ -189,6 +192,7 @@ func (p *PlayerInfo) MakePickFromPlayerInfo(draftId, clientAddress, channelName,
 	// update database with new pick
 	err = p.UpdatePlayerInDraft(draftId)
 	if err != nil {
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"pick_state_update_failed"}`+"\n", draftId)
 		return err
 	}
 	fmt.Println("updated player state from a pick recieved on the client")
@@ -214,6 +218,7 @@ func (p *PlayerInfo) MakePickFromPlayerInfo(draftId, clientAddress, channelName,
 		return res.Err()
 	}
 	fmt.Println("Just published new pick to redis channel")
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"pick_published_to_redis","pick":%d,"player":"%s"}`+"\n", draftId, p.PickNum, p.PlayerId)
 
 	return nil
 }

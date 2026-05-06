@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,45 +43,45 @@ func (rm *RedisMessage) UnmarshalBinary(data []byte) (err error) {
 
 // redis url for sbs-prod-env: redis://10.90.138.203
 func CreateRedisClient() {
-	// url, err := ReturnRedisUrl()
-	env := os.Getenv("ENVIRONMENT")
 	url := ""
-	if env == "prod" {
-		url = "10.74.187.59:6379"
+	password := ""
+	useTLS := false
+
+	// Check for explicit REDIS_URL env var first (used by staging with external Redis)
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		url = redisURL
+		password = os.Getenv("REDIS_PASSWORD")
+		useTLS = os.Getenv("REDIS_TLS") == "true"
 	} else {
-		url = "10.39.4.155:6379"
+		env := os.Getenv("ENVIRONMENT")
+		if env == "prod" {
+			url = "10.74.187.59:6379"
+		} else {
+			url = "10.39.4.155:6379"
+		}
 	}
-	
+
 	fmt.Println("Creating client")
-
-	// if err != nil {
-	// 	panic(err)
-	// }
-
 	fmt.Printf("Redis url: %s\r", url)
-	// options, err := redis.ParseURL(url)
-	// if err != nil {
-	// 	fmt.Println("error in parsing redis url: ", err)
-	// }
-	r := redis.NewClient(&redis.Options{
+
+	opts := &redis.Options{
 		Network:  "tcp",
 		Addr:     url,
-		Password: "",
+		Password: password,
 		DB:       0,
-	})
+	}
+	if useTLS {
+		opts.TLSConfig = &tls.Config{}
+	}
 
+	r := redis.NewClient(opts)
 	if err := r.Ping(context.Background()).Err(); err != nil {
 		fmt.Println(err)
 		panic(err)
 	}
 	SubConn = r
 
-	p := redis.NewClient(&redis.Options{
-		Network:  "tcp",
-		Addr:     url,
-		Password: "",
-		DB:       0,
-	})
+	p := redis.NewClient(opts)
 	if err := p.Ping(context.Background()).Err(); err != nil {
 		fmt.Println(err)
 		panic(err)

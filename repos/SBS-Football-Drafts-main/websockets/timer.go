@@ -40,8 +40,22 @@ type PlayerRanking struct {
 }
 
 func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draft *Draft) {
+	if draft.DraftInfo.CurrentPickNumber > 150 {
+		fmt.Println("Draft already complete, not starting timer")
+		fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_skip_complete"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
+		return
+	}
+
 	fmt.Println("Starting Timer")
 	fmt.Println(currentDrafter)
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_started","drafter":"%s"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber, currentDrafter)
+
+	// Staging bots pick instantly (2s delay) instead of waiting the full timer
+	isBot := strings.HasPrefix(currentDrafter, "bot-")
+	if isBot {
+		pickLength = 5
+		fmt.Printf("Bot drafter %s — using 5s timer instead of full pick length\n", currentDrafter)
+	}
 
 	startTime := time.Now().Unix()
 
@@ -87,6 +101,7 @@ func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draf
 		select {
 		case <-ticker.C:
 			if time.Now().Unix() >= timer.EndOfTurnTimestamp {
+				fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_expired","drafter":"%s"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber, timer.currentDrafter)
 				// fetch the queue before we sleep
 				pick := models.PlayerInfo{}
 				GetQueuedPickForUser(&pick, draft.DraftInfo)
@@ -97,6 +112,7 @@ func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draf
 				err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draft.draftId), "summary", &summary)
 				if err != nil {
 					fmt.Println("Error reading summary in timer")
+					fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"timer_summary_read_failed"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 					return
 				}
 
@@ -104,10 +120,27 @@ func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draf
 				sortOrder := models.FetchSortForDrafter(draft.draftId, timer.currentDrafter)
 				if sortOrder == "ADP" || rankPick.PlayerId == "" {
 					fmt.Println("Timer default ADP")
+					fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_default_set","source":"ADP"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 					timer.DefaultPick = adpPick
 				} else {
 					fmt.Println("Timer default RANK")
+					fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_default_set","source":"RANK"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 					timer.DefaultPick = rankPick
+				}
+
+				// If default pick was never set, use ADP pick as fallback
+				if timer.DefaultPick.PickNum == 0 {
+					if adpPick.PickNum > 0 {
+						fmt.Println("DefaultPick not set, falling back to ADP pick")
+						timer.DefaultPick = adpPick
+					} else if rankPick.PickNum > 0 {
+						fmt.Println("DefaultPick not set, falling back to rank pick")
+						timer.DefaultPick = rankPick
+					} else {
+						fmt.Println("ERROR: No valid pick found at all — skipping auto-pick")
+						fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"timer_no_valid_pick"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
+						return
+					}
 				}
 
 				// Summary is indexed starting at 0
@@ -119,32 +152,44 @@ func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draf
 						fmt.Println("Using the default pick")
 					}
 
+					// Mark complete BEFORE publishing to Redis — prevents race where
+					// Redis listener starts a new timer before IsCommplete is set
+					if draft.DraftInfo.CurrentPickNumber == 150 {
+						draft.IsCommplete = true
+						fmt.Println("marked draft is complete from inside of the autopick in timer (set before Redis publish)")
+					}
+
 					err := pick.MakePickFromPlayerInfo(draft.draftId, timer.currentDrafter, draft.getDraftChannelName(), draft.draftManager.Id)
 					if err != nil {
 						fmt.Println("Error in making the pick from the player info so we are going to skip this pick. RIP Drafter")
+						fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"timer_pick_failed","error":"%v"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber, err)
 						// if the pick has been made skip to the next pick by not returning here
 					}
 
 					// Do what we need to do to advance the round if necessary
 					if draft.DraftInfo.CurrentPickNumber == 150 {
-						draft.IsCommplete = true
-						fmt.Println("marked draft is complete from inside of the autopick in timer")
+						// already marked complete above
 					} else {
 						// 
 						if draft.DraftInfo.CurrentPickNumber != timer.DefaultPick.PickNum {
 							fmt.Println("We are NOT going to advance the drafter because it has already advanced.")
 							fmt.Println(draft.DraftInfo.CurrentPickNumber)
 							fmt.Println(timer.DefaultPick.PickNum)
+							fmt.Printf(`{"severity":"WARNING","draftId":"%s","pick":%d,"event":"timer_already_advanced"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 							return
 						}
 					}
 
 					// Go to the next pick
 					fmt.Println("Going to next pick")
+					fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_pick_complete","player":"%s"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber, pick.PlayerId)
 					if err := draft.GoToNextPickInDraftInfo(); err != nil {
 						fmt.Println("Error updating draft info to next pick in default pick: ", err)
+						fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"timer_advance_failed","error":"%v"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber, err)
 						return
 					}
+				} else {
+					fmt.Printf(`{"severity":"WARNING","draftId":"%s","pick":%d,"event":"timer_slot_already_filled"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 				}
 
 				return
@@ -157,6 +202,7 @@ func StartDraftTimerForCurrentPick(currentDrafter string, pickLength int64, draf
 			}
 			if mes.EventType == utils.PickSubChannel {
 				fmt.Println("Pick event received on redis channel so we are returning and cleaning up timer")
+				fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"timer_manual_pick_received"}`+"\n", draft.draftId, draft.DraftInfo.CurrentPickNumber)
 				return
 			}
 		}
@@ -275,6 +321,7 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 	err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftInfo.DraftId), "playerState", &globalCurrentPlayers)
 	if err != nil || len(globalCurrentPlayers) == 0 {
 		fmt.Println("Error because all the players state is nil in default user picking")
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"calc_default_player_state_error"}`+"\n", draftInfo.DraftId, draftInfo.CurrentPickNumber)
 		return
 	}
 	fmt.Println("Current Player state: ", globalCurrentPlayers)
@@ -299,6 +346,7 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 
 	if adpErr != nil {
 		fmt.Println("ERROR: Unable to find ADP rankings for draft. Cannot autopick.")
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"calc_default_adp_error"}`+"\n", draftInfo.DraftId, draftInfo.CurrentPickNumber)
 		return
 	}
 	fmt.Println("Read in ADP rankings in default pick selection: ", adpUserRanks.Ranking[0])
@@ -366,9 +414,8 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 			obj := r.Ranking[i]
 			playerState, ok := globalCurrentPlayers[obj.PlayerId]
 			if !ok {
-				fmt.Printf("Could not find user rank %s in players map\r", obj.PlayerId)
-				fmt.Printf("PlayerId: %s, Object: %v, player State: %v\r", obj.PlayerId, obj, playerState)
-				return
+				fmt.Printf("Could not find user rank %s in players map — skipping\r", obj.PlayerId)
+				continue
 			}
 			if playerState.OwnerAddress == "" && playerState.PickNum == 0 {
 				if strings.ToLower(playerState.Position) == "qb" && !needsQB {
@@ -399,9 +446,8 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 		adpObj := adpUserRanks.Ranking[i]
 		adpPlayerState, ok := globalCurrentPlayers[adpObj.PlayerId]
 		if !ok {
-			fmt.Printf("Could not find ADP %s in players map\r", adpObj.PlayerId)
-			fmt.Printf("PlayerId: %s, Object: %v, player State: %v\r", adpObj.PlayerId, adpObj, adpPlayerState)
-			return
+			fmt.Printf("Could not find ADP %s in players map — skipping\r", adpObj.PlayerId)
+			continue
 		}
 		if adpPlayerState.OwnerAddress == "" && adpPlayerState.PickNum == 0 {
 			if strings.ToLower(adpPlayerState.Position) == "qb" && !needsQB {

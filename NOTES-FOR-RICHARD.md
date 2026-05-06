@@ -20,42 +20,50 @@ Same login Boris uses for everything backend. He'll send you the password in 1Pa
 
 No per-service IAM grants needed — you log in as the project owner. Skip everything below about granting roles or adding members.
 
-**Get from Boris (one-time):**
+**Get from Boris (out-of-band — NOT in this repo):**
 
 1. **`team@sbsfantasy.com` password + 2FA TOTP** (1Password vault).
-2. **Code tarball** — `sbs-deploy-CODE.tar.gz` (~180KB, no secrets, share via Drive/Slack normally).
-   Contains: `sbs-drafts-api-deploy/`, `SBS-Football-Drafts-main/`, `sbs-staging-functions/` source code only.
-3. **Secrets tarball** — `sbs-deploy-SECRETS-1password.tar.gz` (~5KB, **1Password attachment ONLY**).
-   Contains: STAGING-only service accounts (`sbs-test-env-config.json`, `triggersServiceAccount.json`) + `.env` files. Old prod credentials are NOT included — you don't need them and you don't have prod deploy access yet.
-4. **Safety hook** — already pushed to `tools/sbs-safety.sh` in this workspace. Pull and install (instructions below). No need for Boris to send separately.
+2. **Secrets tarball** — `sbs-deploy-SECRETS-1password.tar.gz` (~5KB, **1Password attachment ONLY**).
+   Contains: STAGING-only service accounts (`sbs-test-env-config.json`, `triggersServiceAccount.json`) + `.env` files for both `sbs-drafts-api-deploy` and `SBS-Football-Drafts-main`. Old prod credentials are NOT included — you don't need them and you don't have prod deploy access yet.
 
-**Setup once tarballs land:**
+**Already in this shared workspace (just pull and copy):**
+
+- ✅ **Source code** — under `repos/sbs-drafts-api-deploy/`, `repos/SBS-Football-Drafts-main/`, `repos/sbs-staging-functions/`. No git clone needed; you already have it after `git pull`.
+- ✅ **Safety hook** — at `tools/sbs-safety.sh`.
+
+**Setup steps:**
 
 ```bash
-# 1. Code: extract into ~/
-cd ~ && tar -xzf ~/Downloads/sbs-deploy-CODE.tar.gz
-# Now you have: ~/sbs-drafts-api-deploy ~/SBS-Football-Drafts-main ~/sbs-staging-functions
+# 0. Make sure you've pulled the latest shared workspace
+cd ~/sbs-claude-shared-workspace && git pull origin main
 
-# 2. Secrets: extract — overlays into the same folders
+# 1. Copy source code into ~/
+cp -R ~/sbs-claude-shared-workspace/repos/sbs-drafts-api-deploy ~/
+cp -R ~/sbs-claude-shared-workspace/repos/SBS-Football-Drafts-main ~/
+cp -R ~/sbs-claude-shared-workspace/repos/sbs-staging-functions ~/
+
+# 2. Drop the secrets tarball overlay (gets configs/ and .env into the right places)
 cd ~ && tar -xzf ~/Downloads/sbs-deploy-SECRETS-1password.tar.gz
-# Drops configs/ + .env into the matching code folders
+# This overlays configs/sbs-test-env-config.json + triggersServiceAccount.json + .env into both repos
 
-# 3. Verify the staging configs landed
+# 3. Verify the staging configs landed (sanity check)
 ls ~/sbs-drafts-api-deploy/configs/
 # Should list: sbs-test-env-config.json triggersServiceAccount.json
 ls ~/SBS-Football-Drafts-main/configs/
 # Should list: sbs-test-env-config.json triggersServiceAccount.json
 
 # 4. Install safety hook from this workspace
+mkdir -p ~/.claude/hooks
 cp ~/sbs-claude-shared-workspace/tools/sbs-safety.sh ~/.claude/hooks/sbs-safety.sh
 chmod +x ~/.claude/hooks/sbs-safety.sh
-# Then add to ~/.claude/settings.json (PreToolUse + PostToolUse, matcher Bash) per the JSON snippet below
+# Then wire into ~/.claude/settings.json per the JSON snippet below
 
 # 5. Install npm deps for Firebase Functions
 cd ~/sbs-staging-functions && npm install
 ```
 
-That's it for the file side. Then the gcloud/firebase login + deploy commands below.
+**Why secrets tarball is separate (not in repo):**
+The shared workspace is on GitHub. Even though it's private, anything we commit there is in git history forever. Service account JSON keys must NOT live in git. Secrets only travel via 1Password / encrypted Drive — out-of-band, never in version control.
 
 ### One-time machine setup (you do this yourself)
 

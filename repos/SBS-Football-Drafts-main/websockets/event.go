@@ -3,6 +3,7 @@ package websockets
 import (
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/Spoiled-Banana-Society/SBS-Football-Drafts/models"
@@ -57,21 +58,15 @@ type SendPickMessage struct {
 }
 
 func HandleNewPickMessage(event Event, c *Client) error {
-	// wtf is this
-	for {
-		if c.currentlyPicking {
-			time.Sleep(100 * time.Millisecond)
-		} else {
-			break
-		}
+	// Atomic compare-and-set: claim the pick slot or fail fast. Replaces a
+	// busy-wait + non-atomic bool that could (a) race the read/write across
+	// goroutines and (b) let two picks both observe currentlyPicking=false
+	// and proceed concurrently — a real "two picks in one slot" risk under
+	// load. (BUG #24)
+	if !atomic.CompareAndSwapInt32(&c.currentlyPicking, 0, 1) {
+		return fmt.Errorf("pick already in flight for %s — rejecting concurrent pick", c.address)
 	}
-	// build object
-	c.Lock()
-	c.currentlyPicking = true
-	c.Unlock()
-	defer func() {
-		c.currentlyPicking = false
-	}()
+	defer atomic.StoreInt32(&c.currentlyPicking, 0)
 	var newPick models.PlayerInfo
 	err := json.Unmarshal(event.Payload, &newPick)
 	if err != nil {
@@ -83,6 +78,7 @@ func HandleNewPickMessage(event Event, c *Client) error {
 	if now > c.draftRoom.CurrentTimer.EndOfTurnTimestamp+1 {
 		fmt.Printf("This pick is not being accepted because it came in at %d for a pick with an end timestamp of %d\r", now, c.draftRoom.CurrentTimer.EndOfTurnTimestamp)
 		fmt.Printf("pick owner: %s, Current Timer object: %v", newPick.OwnerAddress, c.draftRoom.CurrentTimer)
+		fmt.Printf(`{"severity":"WARNING","draftId":"%s","pick":%d,"event":"manual_pick_rejected_late","drafter":"%s"}`+"\n", c.draftRoom.draftId, newPick.PickNum, newPick.OwnerAddress)
 		return fmt.Errorf("unable to make pick as it shows it came in after the end timestamp")
 	}
 
@@ -95,6 +91,7 @@ func HandleNewPickMessage(event Event, c *Client) error {
 	if newPick.OwnerAddress != c.address {
 		fmt.Printf("new pick: %v, client address: %s\r", newPick, c.address)
 		fmt.Println("we received a pick from an address that either does not match up with the owner of the new pick")
+		fmt.Printf(`{"severity":"WARNING","draftId":"%s","event":"manual_pick_rejected_wrong_address","drafter":"%s"}`+"\n", c.draftRoom.draftId, newPick.OwnerAddress)
 		c.AlertUserOfInvalidDraftPick("received a pick from an address that either does not match up with the owner of the new pick")
 		return fmt.Errorf("recieved a pick from an unexpected user")
 	}
@@ -102,6 +99,7 @@ func HandleNewPickMessage(event Event, c *Client) error {
 	if newPick.OwnerAddress != c.draftRoom.DraftInfo.CurrentDrafter {
 		fmt.Printf("new pick: %v, current draft: %s\r", newPick, c.draftRoom.DraftInfo.CurrentDrafter)
 		fmt.Println("we received a pick from an address that it is not currently their turn so we are returning")
+		fmt.Printf(`{"severity":"WARNING","draftId":"%s","event":"manual_pick_rejected_wrong_turn","drafter":"%s","currentDrafter":"%s"}`+"\n", c.draftRoom.draftId, newPick.OwnerAddress, c.draftRoom.DraftInfo.CurrentDrafter)
 		c.AlertUserOfInvalidDraftPick("we received a pick from an address that it is not currently their turn so we are returning")
 		return fmt.Errorf("recieved a pick from an unexpected user::::  new pick owner: %s, current drafter: %s, pick object: %v", newPick.OwnerAddress, c.draftRoom.DraftInfo.CurrentDrafter, newPick)
 	}
@@ -113,9 +111,11 @@ func HandleNewPickMessage(event Event, c *Client) error {
 	}
 
 	fmt.Println("Received a pick from client: ", newPick)
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"manual_pick_received","drafter":"%s","player":"%s"}`+"\n", c.draftRoom.draftId, newPick.PickNum, newPick.OwnerAddress, newPick.PlayerId)
 
 	if err := newPick.MakePickFromPlayerInfo(c.draftRoom.draftId, c.address, c.draftRoom.getDraftChannelName(), c.draftRoom.draftManager.Id); err != nil {
 		fmt.Println("ERROR we were unable to make the pick. Returning so draft can continue")
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"manual_pick_failed","player":"%s"}`+"\n", c.draftRoom.draftId, newPick.PickNum, newPick.PlayerId)
 		c.AlertUserOfInvalidDraftPick(fmt.Sprintf("Error picking player: %v", err))
 		return fmt.Errorf("ERROR making the user pick. Returning so draft can continue.")
 	}
@@ -183,6 +183,7 @@ func HandleNewPickMessage(event Event, c *Client) error {
 		return err
 	}
 	fmt.Println("went to next draft pick from a pick recieved on the client")
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","pick":%d,"event":"manual_pick_advanced"}`+"\n", c.draftRoom.draftId, c.draftRoom.DraftInfo.CurrentPickNumber)
 
 	return nil
 }
