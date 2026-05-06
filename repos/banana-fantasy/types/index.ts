@@ -222,7 +222,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share' | 'founder-draft';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';
@@ -287,6 +287,7 @@ export interface Promo {
     pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed' }[];
     totalPick10s?: number;
     jackpotHistory?: { date: string; draftName: string; amount: number }[];
+    founderHistory?: { date: string; draftName: string; amount: number }[];
     mintHistory?: { date: string; quantity: number; status: 'pending' | 'claim' | 'claimed' }[];
     totalMinted?: number;
   };

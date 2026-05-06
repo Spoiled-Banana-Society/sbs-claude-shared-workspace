@@ -3,10 +3,12 @@
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { usePrivy } from '@privy-io/react-auth';
 import { useDraftAudio } from '@/hooks/useDraftAudio';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import type { DraftMode } from '@/hooks/useDraftEngine';
 import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
+import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -93,6 +95,7 @@ function DraftRoomContent() {
   }, [router, pathname]);
 
   const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
+  const { getAccessToken } = usePrivy();
   const {
     playSpinningSound,
     playReelStop,
@@ -1225,6 +1228,42 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
 
+  // Founder Draft promo POST. Fires once the draft is past filling.
+  // Server validates that the draft actually qualifies (within window
+  // + founder wallet present + caller in draftOrder) so we can fire
+  // optimistically — non-qualifying drafts get a 400 and we log it.
+  // Idempotent via localStorage promo-founder:* + server-side dedupe
+  // in recordFounderDraftJoin.
+  useEffect(() => {
+    if (!isLiveMode || engine.draftStatus !== 'active') return;
+    const id = draftId || urlDraftId;
+    if (!id) return;
+    const promoUserId = user?.id || walletParam?.toLowerCase();
+    if (!promoUserId) return;
+    const founderKey = `promo-founder:${id}`;
+    if (localStorage.getItem(founderKey)) return;
+    localStorage.setItem(founderKey, '1');
+    (async () => {
+      const token = await getAccessToken();
+      try {
+        const res = await fetch('/api/promos/founder-draft', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ draftId: id }),
+        });
+        if (!res.ok && res.status !== 400) {
+          logger.warn('[Promo] Founder POST non-OK', { status: res.status });
+        }
+      } catch (err) {
+        logger.error('[Promo] Founder tracking failed:', err);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.draftStatus, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
+
   useEffect(() => {
     if (phase !== 'pre-spin') return;
     const startedAt = preSpinStartedAtRef.current;
@@ -1618,6 +1657,9 @@ function DraftRoomContent() {
             )}
             {phase === 'filling' && !specialTypeParam && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-white/10 text-white/50">UNREVEALED</span>
+            )}
+            {(draftId || urlDraftId) && (
+              <FounderPill draftId={draftId || urlDraftId} size="md" />
             )}
           </div>
           <div className="flex items-center gap-4">
