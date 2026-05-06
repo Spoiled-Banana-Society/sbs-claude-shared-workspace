@@ -1691,10 +1691,36 @@ export async function recordFounderDraftJoin(userId: string, draftId: string): P
 
 // ── Persona Verification ──────────────────────────────────────────────
 
+export interface VerifiedIdentityAddress {
+  street?: string;
+  city?: string;
+  state?: string;
+  parish?: string;
+  zip?: string;
+  country?: string;
+}
+
+export interface VerifiedIdentity {
+  firstName?: string;
+  lastName?: string;
+  dateOfBirth?: string;
+  address?: VerifiedIdentityAddress;
+  sessionId?: string;
+  verifiedAt?: string;
+}
+
 export interface PersonaVerificationData {
   tier1: { verified: boolean; inquiryId?: string; verifiedAt?: string; geoState?: string };
   tier2: { verified: boolean; inquiryId?: string; verifiedAt?: string };
   cumulativeWithdrawals: number;
+  // Set once at first KYC approval; reused at every withdrawal so we can
+  // re-check the SBS-specific block rules (state/parish/age) without
+  // re-prompting the user.
+  verifiedIdentity?: VerifiedIdentity;
+  // Per-tax-year withdrawal totals (Phase 2 W9 trigger uses this).
+  withdrawnByYear?: Record<string, number>;
+  // Per-tax-year W9 submission status.
+  hasW9?: Record<string, boolean>;
 }
 
 const DEFAULT_PERSONA: PersonaVerificationData = {

@@ -5,6 +5,8 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { buildOfframpUrl, createCdpSessionToken, type CdpPaymentMethod } from '@/lib/cdpAuth';
+import { getPersonaVerification } from '@/lib/db-firestore';
+import { checkBlockRules } from '@/lib/verifyBlockRules';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -41,6 +43,35 @@ export async function POST(req: Request) {
     const walletAddress = requireString(body.walletAddress, 'walletAddress').toLowerCase();
     if (!ETH_ADDRESS_RE.test(walletAddress)) {
       return jsonError('Invalid wallet address', 400);
+    }
+
+    // Gate the cashout on KYC + SBS-specific block rules. We re-check at every
+    // withdrawal (even for already-verified users) because state-by-state
+    // restrictions mean a user who moves to a banned state must be re-blocked.
+    const verification = await getPersonaVerification(session.userId);
+    if (!verification.tier1.verified) {
+      // User hasn't completed Didit verification yet. Frontend pops the
+      // VerificationModal to drive them through it.
+      return json(
+        {
+          error: 'Identity verification required',
+          requiresVerification: 'kyc',
+        },
+        403,
+      );
+    }
+    const blockResult = checkBlockRules(verification.verifiedIdentity);
+    if (blockResult.blocked) {
+      // User is verified by Didit but blocked by SBS-specific rules
+      // (banned state, parish-level ban, age below state minimum, etc.).
+      return json(
+        {
+          error: blockResult.message || 'Withdrawal not permitted in your jurisdiction.',
+          blockCode: blockResult.code,
+          blockDetail: blockResult.detail,
+        },
+        403,
+      );
     }
 
     // Optional preset crypto amount (USDC). If omitted, user picks on Coinbase.

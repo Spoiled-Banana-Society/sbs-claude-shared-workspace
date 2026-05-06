@@ -144,6 +144,10 @@ export function CashOutModal({
   // was missing or invalid. Switches the error UI from "Try Again" to a
   // "Sign In" CTA that re-runs the auth flow.
   const [requiresReauth, setRequiresReauth] = useState(false);
+  // True when the backend rejected for a jurisdiction / age / parish reason.
+  // Switches the error UI from generic "Try Again" to a non-actionable
+  // "Withdrawal not available — contact support" path with TOS link.
+  const [isBlocked, setIsBlocked] = useState(false);
   const [amountInput, setAmountInput] = useState<string>(maxAmount > 0 ? String(maxAmount) : '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<QuoteResult[] | null>(null);
@@ -195,6 +199,7 @@ export function CashOutModal({
     setShowVerification(null);
     setTimeline(null);
     setRequiresReauth(false);
+    setIsBlocked(false);
 
     setPollElapsed(0);
     setPollGaveUp(false);
@@ -387,12 +392,29 @@ export function CashOutModal({
           return;
         }
         const data = (await res.json().catch(() => null)) as
-          | { error?: string; requiresVerification?: 'basic' | 'kyc' }
+          | {
+              error?: string;
+              requiresVerification?: 'basic' | 'kyc';
+              blockCode?: string;
+              blockDetail?: string;
+            }
           | null;
         if (data?.requiresVerification) {
           popup?.close();
           setShowVerification(data.requiresVerification);
           setStep('quotes');
+          return;
+        }
+        if (data?.blockCode) {
+          // Jurisdiction / age / parish block. Surface the backend's
+          // user-friendly reason and disable retry — there's nothing the
+          // user can do from this screen to fix it.
+          popup?.close();
+          setIsBlocked(true);
+          setErrorMessage(
+            data.error || 'Withdrawal is not permitted from your location at this time.',
+          );
+          setStep('error');
           return;
         }
         throw new Error(data?.error || `Failed to start cash out (${res.status})`);
@@ -976,11 +998,29 @@ export function CashOutModal({
       <div className="space-y-5">
         <div className="rounded-xl bg-error/10 border border-error/30 p-4">
           <p className="text-error font-semibold mb-1">
-            {requiresReauth ? 'Signed out' : 'Something went wrong'}
+            {requiresReauth
+              ? 'Signed out'
+              : isBlocked
+                ? 'Withdrawal not available'
+                : 'Something went wrong'}
           </p>
           <p className="text-text-secondary text-sm">
             {errorMessage || 'Please try again in a moment.'}
           </p>
+          {isBlocked && (
+            <p className="text-text-muted text-xs mt-2">
+              See our{' '}
+              <a
+                href="/terms"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-text-secondary"
+              >
+                Terms of Service
+              </a>{' '}
+              for details on supported jurisdictions.
+            </p>
+          )}
         </div>
         <div className="flex gap-3">
           {requiresReauth ? (
@@ -1000,6 +1040,14 @@ export function CashOutModal({
               className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all"
             >
               Sign In
+            </button>
+          ) : isBlocked ? (
+            // Block-rule rejections aren't retryable — only show Close.
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all"
+            >
+              Close
             </button>
           ) : (
             <>
