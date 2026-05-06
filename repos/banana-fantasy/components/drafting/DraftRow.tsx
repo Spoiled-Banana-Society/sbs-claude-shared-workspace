@@ -3,6 +3,7 @@
 import React from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { FounderPill } from '@/components/drafting/FounderPill';
 import { getDraftTypeColor } from '@/lib/draftTypes';
 import type { DraftState } from '@/lib/draftStore';
 
@@ -84,6 +85,7 @@ export function DraftRow({
           ) : (
             <span className="text-white/30 text-sm italic">Unrevealed</span>
           )}
+          {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
         <div className="w-28 flex-shrink-0 flex items-center justify-center">
