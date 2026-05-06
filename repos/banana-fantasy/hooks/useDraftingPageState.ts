@@ -1103,6 +1103,15 @@ export function useDraftingPageState() {
       await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
       draftStore.removeDraft(exitingDraft.id);
       setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
+      // Persist a hide flag so the next loadLiveDrafts poll doesn't
+      // re-add this draft from the Go API while leave-propagation is
+      // still in flight (eventual consistency on the Go side can take
+      // a few seconds to drop the leagueId from /owner/.../draftToken/all).
+      try {
+        const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
+        setHiddenDraftIds(newHidden);
+        localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+      } catch { /* ignore */ }
       // Refund the Firestore pass counter (Go side already returns the
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
