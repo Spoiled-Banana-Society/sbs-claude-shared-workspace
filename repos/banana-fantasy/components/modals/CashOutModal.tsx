@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { VerificationModal } from './VerificationModal';
+import { useAuth } from '@/hooks/useAuth';
 
 const RETURNING_USER_KEY = 'banana-fantasy-cashout-returning';
 const ACTIVE_TX_KEY = 'banana-fantasy-cashout-active-tx';
@@ -137,7 +138,12 @@ export function CashOutModal({
   initialStatusMode,
 }: CashOutModalProps) {
   const privy = usePrivy();
+  const { login: triggerLogin, logout: triggerLogout } = useAuth();
   const [step, setStep] = useState<Step>('intro');
+  // True when our backend rejected the request because the Privy access token
+  // was missing or invalid. Switches the error UI from "Try Again" to a
+  // "Sign In" CTA that re-runs the auth flow.
+  const [requiresReauth, setRequiresReauth] = useState(false);
   const [amountInput, setAmountInput] = useState<string>(maxAmount > 0 ? String(maxAmount) : '');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [quotes, setQuotes] = useState<QuoteResult[] | null>(null);
@@ -155,6 +161,28 @@ export function CashOutModal({
   // Stops the loop and shows a recovery prompt instead of spinning forever.
   const [pollGaveUp, setPollGaveUp] = useState(false);
 
+  // Try to get a fresh Privy access token. If unavailable (silent session
+  // expiry, half-state where local user object lingers but JWT is gone),
+  // surface a clear "Sign In" prompt instead of letting the request go out
+  // headerless and 401 with the cryptic "Missing authorization token" error.
+  const getAuthTokenOrPromptReauth = async (): Promise<string | null> => {
+    try {
+      const token = await privy.getAccessToken();
+      if (!token) {
+        setRequiresReauth(true);
+        setErrorMessage('Your session has expired. Please sign in again to cash out.');
+        setStep('error');
+        return null;
+      }
+      return token;
+    } catch {
+      setRequiresReauth(true);
+      setErrorMessage('Your session has expired. Please sign in again to cash out.');
+      setStep('error');
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const returning =
@@ -166,6 +194,7 @@ export function CashOutModal({
     setSessionUrl(null);
     setShowVerification(null);
     setTimeline(null);
+    setRequiresReauth(false);
 
     setPollElapsed(0);
     setPollGaveUp(false);
@@ -220,11 +249,18 @@ export function CashOutModal({
         return;
       }
       try {
+        // Polling is silent — if Privy session is gone we just stop polling.
+        // The user-visible reauth prompt will fire on their next interactive
+        // cashout attempt, where it can be acted on.
         const token = await privy.getAccessToken();
+        if (!token) {
+          if (cancelled) return;
+          return; // skip this poll; let the give-up timer eventually surface a UI prompt
+        }
         const res = await fetch(
           `/api/coinbase/tx-status?partnerUserId=${encodeURIComponent(active.partnerUserId)}`,
           {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            headers: { Authorization: `Bearer ${token}` },
           },
         );
         if (!res.ok) throw new Error(`Status fetch failed (${res.status})`);
@@ -269,16 +305,23 @@ export function CashOutModal({
     setStep('loading_quotes');
     setErrorMessage(null);
     try {
-      const token = await privy.getAccessToken();
+      const token = await getAuthTokenOrPromptReauth();
+      if (!token) return; // Re-auth prompt was set; abort this attempt.
       const res = await fetch('/api/coinbase/quotes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ walletAddress, cryptoAmount: parsedAmount }),
       });
       if (!res.ok) {
+        if (res.status === 401) {
+          setRequiresReauth(true);
+          setErrorMessage('Your session has expired. Please sign in again to cash out.');
+          setStep('error');
+          return;
+        }
         const data = (await res.json().catch(() => null)) as { error?: string } | null;
         throw new Error(data?.error || `Failed to fetch quotes (${res.status})`);
       }
@@ -315,12 +358,16 @@ export function CashOutModal({
         : null;
 
     try {
-      const token = await privy.getAccessToken();
+      const token = await getAuthTokenOrPromptReauth();
+      if (!token) {
+        popup?.close();
+        return;
+      }
       const res = await fetch('/api/coinbase/sell-session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           walletAddress,
@@ -332,6 +379,13 @@ export function CashOutModal({
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          popup?.close();
+          setRequiresReauth(true);
+          setErrorMessage('Your session has expired. Please sign in again to cash out.');
+          setStep('error');
+          return;
+        }
         const data = (await res.json().catch(() => null)) as
           | { error?: string; requiresVerification?: 'basic' | 'kyc' }
           | null;
@@ -921,22 +975,51 @@ export function CashOutModal({
     <Modal isOpen={isOpen} onClose={onClose} title="Cash Out to Bank" size="md">
       <div className="space-y-5">
         <div className="rounded-xl bg-error/10 border border-error/30 p-4">
-          <p className="text-error font-semibold mb-1">Something went wrong</p>
-          <p className="text-text-secondary text-sm">{errorMessage || 'Please try again in a moment.'}</p>
+          <p className="text-error font-semibold mb-1">
+            {requiresReauth ? 'Signed out' : 'Something went wrong'}
+          </p>
+          <p className="text-text-secondary text-sm">
+            {errorMessage || 'Please try again in a moment.'}
+          </p>
         </div>
         <div className="flex gap-3">
-          <button
-            onClick={() => {
-              setErrorMessage(null);
-              setStep(quotes ? 'quotes' : isReturning ? 'amount' : 'intro');
-            }}
-            className="flex-1 py-3 rounded-xl font-bold text-base bg-bg-tertiary text-text-primary hover:bg-bg-elevated transition-all"
-          >
-            Try Again
-          </button>
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all">
-            Close
-          </button>
+          {requiresReauth ? (
+            <button
+              onClick={async () => {
+                // Clear the half-state Privy session, then trigger fresh login.
+                // We close the modal so the login flow has the screen to itself —
+                // the user re-taps Cash Out after signing in.
+                onClose();
+                try {
+                  await triggerLogout();
+                } catch {
+                  /* ignore */
+                }
+                triggerLogin();
+              }}
+              className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all"
+            >
+              Sign In
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={() => {
+                  setErrorMessage(null);
+                  setStep(quotes ? 'quotes' : isReturning ? 'amount' : 'intro');
+                }}
+                className="flex-1 py-3 rounded-xl font-bold text-base bg-bg-tertiary text-text-primary hover:bg-bg-elevated transition-all"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 py-3 rounded-xl font-bold text-base bg-banana text-black hover:brightness-110 transition-all"
+              >
+                Close
+              </button>
+            </>
+          )}
         </div>
       </div>
     </Modal>
