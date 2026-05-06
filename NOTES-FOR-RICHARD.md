@@ -4,6 +4,131 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## May 6 — Self-serve backend deploys (Cloud Run + Firebase Functions)
+
+You should be able to deploy ALL the backend services yourself instead of pinging Boris every time. Scope of this note is **backend deploys only** — everything else stays as-is.
+
+### Use the shared `team@sbsfantasy.com` Google account
+
+Same login Boris uses for everything backend. He'll send you the password in 1Password (or wherever you two share secrets — not in git, not in this note). With that single account you get:
+
+- GCP `sbs-staging-env` (Cloud Run, Logs, etc.) — full owner
+- Firebase `sbs-staging-env` (Functions, Firestore, RTDB) — full owner
+- Coinbase CDP (the offramp project) — admin
+- Privy dashboard — admin
+- Anything else backend that's already wired to that email
+
+No per-service IAM grants needed — you log in as the project owner. Skip everything below about granting roles or adding members.
+
+**Get from Boris (one-time):**
+
+1. The `team@sbsfantasy.com` password (1Password / shared vault).
+2. The 2FA setup — share the TOTP secret so both of you can generate codes (1Password supports this natively, or export the QR from his Authenticator).
+3. The `configs/` folder for `sbs-drafts-api-deploy` (contains `serviceAccount.json` + other secrets the public repo doesn't have). Encrypted share — NOT git.
+
+Once you have those, you're set.
+
+### One-time machine setup (you do this yourself)
+
+```bash
+# 1. Install gcloud SDK
+curl https://sdk.cloud.google.com | bash
+exec -l $SHELL
+gcloud init                       # follow prompts → choose sbs-staging-env
+
+# 2. Auth gcloud — log in as team@sbsfantasy.com
+gcloud auth login                 # browser flow → use team@sbsfantasy.com
+gcloud auth application-default login
+gcloud config set project sbs-staging-env
+
+# 3. Install Firebase CLI
+npm install -g firebase-tools
+firebase login                    # browser flow → use team@sbsfantasy.com
+
+# 4. Verify you can read sbs-staging-env (sanity check)
+gcloud run services list --region us-central1 --project sbs-staging-env
+# Should list: sbs-drafts-api-staging, sbs-drafts-server-staging
+```
+
+### Repos you need cloned locally
+
+All under `~/` to match Boris's setup:
+
+```bash
+cd ~
+
+# Go API — the deployable copy with secrets in configs/
+git clone https://github.com/Spoiled-Banana-Society/sbs-drafts-api.git sbs-drafts-api-deploy
+cd sbs-drafts-api-deploy
+# Checkout the branch that's currently live in staging:
+git checkout playoff-scripts
+# Drop the configs/ folder Boris sent you here — it's gitignored
+
+# WebSocket server
+cd ~
+git clone https://github.com/Spoiled-Banana-Society/SBS-Football-Drafts-main.git
+# (or whatever the actual repo name is — clone matching the path Boris uses)
+
+# Firebase Functions for staging
+cd ~
+git clone https://github.com/Spoiled-Banana-Society/sbs-staging-functions.git
+cd sbs-staging-functions
+npm install
+```
+
+### Deploy commands — run these whenever you need to ship
+
+```bash
+# Go API (REST endpoints)
+gcloud run deploy sbs-drafts-api-staging \
+  --source ~/sbs-drafts-api-deploy \
+  --region us-central1 \
+  --project sbs-staging-env
+
+# WebSocket server (live draft sockets)
+gcloud run deploy sbs-drafts-server-staging \
+  --source ~/SBS-Football-Drafts-main \
+  --region us-central1 \
+  --project sbs-staging-env \
+  --port 8000 \
+  --timeout 3600 \
+  --min-instances 1 \
+  --vpc-connector staging-connector \
+  --allow-unauthenticated
+
+# Firebase Functions
+cd ~/sbs-staging-functions && firebase deploy --only functions
+```
+
+Each takes ~3–5 minutes. Output ends with the deployed URL — sanity-check it matches the staging URLs in `CLAUDE.md`.
+
+### Verify the deploy actually landed (don't skip)
+
+After deploys finish, hit a real endpoint to confirm new code is live — `gcloud run deploy` succeeding doesn't always mean the rollout completed. From `feedback_verify_deploys.md`:
+
+```bash
+# Go API smoke test (returns ok if alive)
+curl -s https://sbs-drafts-api-staging-652484219017.us-central1.run.app/health
+
+# Or check revision
+gcloud run services describe sbs-drafts-api-staging \
+  --region us-central1 --project sbs-staging-env \
+  --format='value(status.traffic[0].revisionName)'
+```
+
+### What's READ-ONLY — do not touch
+
+- `~/sbs-drafts-api-main/` — prod reference. Edit `~/sbs-drafts-api-deploy/` instead.
+- `~/SBS-Backend-main/` — prod functions reference. Edit `~/sbs-staging-functions/` instead.
+- `~/sbs-draft-web-main/` — old draft frontend reference.
+- The Bash safety hook on Boris's machine blocks writes to all three.
+
+### Production deploys
+
+You don't have prod access yet — Boris does all prod deploys. We'll set up your prod IAM separately when SBS Fantasy goes live. For now you're staging-only.
+
+---
+
 ## May 6 — Your last 2 banana-fantasy deploys got blocked (COMMIT_AUTHOR_REQUIRED)
 
 Pulled the actual error from the Vercel API for both of your failed deploys today (`dpl_36wryJgXQCkfcKQdBELWFdftLULU` + the prior one). Same error on each:
