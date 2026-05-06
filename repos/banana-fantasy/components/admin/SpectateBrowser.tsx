@@ -14,6 +14,19 @@ interface ActiveDraft {
   filling: boolean;
 }
 
+interface QueueRound {
+  roundId: number;
+  members: { wallet: string; joinedAt: number }[];
+  status: 'filling' | 'ready' | 'drafting' | 'completed';
+  draftId: string | null;
+}
+
+interface QueueStatus {
+  type: 'jackpot' | 'hof';
+  rounds: QueueRound[];
+  nextRoundId: number;
+}
+
 const REFRESH_INTERVAL_MS = 5000;
 
 function shortAddr(addr: string): string {
@@ -33,6 +46,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const { walletAddress } = useAuth();
   const { getAccessToken } = usePrivy();
   const [drafts, setDrafts] = useState<ActiveDraft[] | null>(null);
+  const [queues, setQueues] = useState<Record<string, QueueStatus> | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'fast' | 'slow' | 'jackpot' | 'hof'>('all');
@@ -46,13 +60,18 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
       try {
         setLoading(true);
         const token = await getAccessToken();
-        const res = await fetch('/api/spectate/active-drafts', {
-          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        });
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-        const data = (await res.json()) as { drafts: ActiveDraft[] };
+        const [activeRes, queuesRes] = await Promise.all([
+          fetch('/api/spectate/active-drafts', {
+            headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          }),
+          fetch('/api/queues', { cache: 'no-store' }),
+        ]);
+        if (!activeRes.ok) throw new Error(`${activeRes.status} ${activeRes.statusText}`);
+        const activeData = (await activeRes.json()) as { drafts: ActiveDraft[] };
+        const queueData = queuesRes.ok ? (await queuesRes.json()) as Record<string, QueueStatus> : null;
         if (!cancelled) {
-          setDrafts(data.drafts ?? []);
+          setDrafts(activeData.drafts ?? []);
+          setQueues(queueData);
           setError(null);
         }
       } catch (err) {
@@ -100,6 +119,81 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
           ))}
         </div>
       </div>
+
+      {queues && (() => {
+        const specialRounds = (['jackpot', 'hof'] as const)
+          .flatMap(type => (queues[type]?.rounds || [])
+            .filter(r => r.status !== 'completed')
+            .map(r => ({ type, round: r })))
+          .sort((a, b) => b.round.roundId - a.round.roundId);
+        if (specialRounds.length === 0) return null;
+        return (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+            <div className="px-4 py-2 bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 font-medium border-b border-white/[0.04]">
+              Special Drafts ({specialRounds.length})
+            </div>
+            <table className="w-full text-left text-sm">
+              <thead className="bg-white/[0.02] text-[11px] uppercase text-gray-500 tracking-wider">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Round</th>
+                  <th className="px-4 py-3 font-medium">Members</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Watch</th>
+                </tr>
+              </thead>
+              <tbody>
+                {specialRounds.map(({ type, round }) => {
+                  const pill = type === 'jackpot'
+                    ? { bg: '#ef4444', color: '#fff', label: 'JP' }
+                    : { bg: '#D4AF37', color: '#000', label: 'HOF' };
+                  const memberCount = round.members?.length || 0;
+                  const fillPct = (memberCount / 10) * 100;
+                  return (
+                    <tr key={`${type}-${round.roundId}`} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full font-black"
+                          style={{ background: pill.bg, color: pill.color }}
+                        >
+                          {pill.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">#{round.roundId}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${fillPct}%`, backgroundColor: pill.bg }}
+                            />
+                          </div>
+                          <span className="text-gray-300 text-xs">{memberCount}/10</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300 capitalize">{round.status}</td>
+                      <td className="px-4 py-3 text-right">
+                        {round.draftId ? (
+                          <a
+                            href={`/spectate/${round.draftId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
+                          >
+                            Spectate ↗
+                          </a>
+                        ) : (
+                          <span className="text-gray-500 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
         <table className="w-full text-left text-sm">
