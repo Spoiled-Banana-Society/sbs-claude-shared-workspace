@@ -1098,20 +1098,23 @@ export function useDraftingPageState() {
 
   const confirmExitDraft = async () => {
     if (!exitingDraft || !user?.walletAddress) return;
+    const storedDraft = draftStore.getDraft(exitingDraft.id);
+
+    // Local cleanup runs UNCONDITIONALLY. Was previously after `await leaveDraft`,
+    // which meant a Go-API failure (auth, network, anything) left the draft
+    // visible in the UI even though the user had asked to leave. The UI should
+    // reflect the user's intent immediately — if the backend leave fails the
+    // worst case is a stale Go-side row that the next reconcile clears.
+    draftStore.removeDraft(exitingDraft.id);
+    setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
     try {
-      const storedDraft = draftStore.getDraft(exitingDraft.id);
+      const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
+      setHiddenDraftIds(newHidden);
+      localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+    } catch { /* ignore */ }
+
+    try {
       await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
-      draftStore.removeDraft(exitingDraft.id);
-      setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
-      // Persist a hide flag so the next loadLiveDrafts poll doesn't
-      // re-add this draft from the Go API while leave-propagation is
-      // still in flight (eventual consistency on the Go side can take
-      // a few seconds to drop the leagueId from /owner/.../draftToken/all).
-      try {
-        const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
-        setHiddenDraftIds(newHidden);
-        localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
-      } catch { /* ignore */ }
       // Refund the Firestore pass counter (Go side already returns the
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
