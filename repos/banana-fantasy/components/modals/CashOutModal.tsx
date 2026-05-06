@@ -649,7 +649,7 @@ export function CashOutModal({
           <div className="flex gap-3">
             {sessionUrl && (
               <button
-                onClick={() => window.open(sessionUrl, 'coinbase-cashout')}
+                onClick={() => launchCoinbase()}
                 className="flex-1 py-3 rounded-xl font-semibold text-sm bg-bg-tertiary text-text-primary hover:bg-bg-elevated transition-all"
               >
                 Reopen Coinbase
