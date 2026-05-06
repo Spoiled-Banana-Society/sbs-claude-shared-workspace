@@ -59,6 +59,34 @@ interface ActiveTx {
   partnerUserId: string;
   amount: number;
   startedAt: number;
+  // The destination the user picked. Used to render correct status copy
+  // ("arrives in your bank in 1–3 days" vs. "in your Coinbase wallet in 5 min").
+  method?: 'ACH_BANK_ACCOUNT' | 'FIAT_WALLET' | 'CRYPTO_ACCOUNT';
+}
+
+// Friendly per-method copy shown on the status screen so users know what to
+// expect for the destination they actually picked, not a hardcoded ACH line.
+function getStatusCopy(method?: ActiveTx['method']): {
+  arrival: string;
+  destination: string;
+} {
+  if (method === 'FIAT_WALLET') {
+    return {
+      arrival: 'USD will appear in your Coinbase USD wallet within 5 minutes.',
+      destination: 'Coinbase USD wallet',
+    };
+  }
+  if (method === 'CRYPTO_ACCOUNT') {
+    return {
+      arrival: 'USDC will appear in your Coinbase crypto account within 5 minutes.',
+      destination: 'Coinbase crypto account',
+    };
+  }
+  // Default to ACH for backwards compatibility / unknown method.
+  return {
+    arrival: 'Bank deposits typically arrive in 1–3 business days.',
+    destination: 'your bank',
+  };
 }
 
 function formatCurrency(value: number | undefined): string {
@@ -119,6 +147,13 @@ export function CashOutModal({
   const [showVerification, setShowVerification] = useState<'basic' | 'kyc' | null>(null);
   const [timeline, setTimeline] = useState<TimelineStep[] | null>(null);
   const [pollVersion, setPollVersion] = useState(0);
+  // Seconds since polling started for the current attempt — drives the
+  // staged messaging on the status screen ("Confirming..." → "Still waiting..."
+  // → "We didn't see a transaction") so users aren't staring at a vague spinner.
+  const [pollElapsed, setPollElapsed] = useState(0);
+  // Set once we've polled past the give-up threshold without seeing any tx.
+  // Stops the loop and shows a recovery prompt instead of spinning forever.
+  const [pollGaveUp, setPollGaveUp] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -131,6 +166,9 @@ export function CashOutModal({
     setSessionUrl(null);
     setShowVerification(null);
     setTimeline(null);
+
+    setPollElapsed(0);
+    setPollGaveUp(false);
 
     if (initialStatusMode && readActiveTx()) {
       setStep('status');
@@ -146,10 +184,41 @@ export function CashOutModal({
     const active = readActiveTx();
     if (!active) return;
 
+    // Stop polling after this many seconds with no tx seen. Past this point,
+    // the user almost certainly closed the Coinbase popup without completing
+    // the sign step — so we surface a recovery prompt instead of an infinite
+    // spinner.
+    const GIVE_UP_AFTER_SEC = 120;
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const startedAt = Date.now();
+    setPollElapsed(0);
+    setPollGaveUp(false);
+
+    const tickElapsed = () => {
+      if (cancelled) return;
+      const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+      setPollElapsed(elapsedSec);
+    };
+
+    // 1Hz UI ticker so the staged messaging swaps without waiting for the
+    // next poll response (poll runs every 5–10s; copy should still feel live).
+    const elapsedTimer = setInterval(tickElapsed, 1000);
 
     const poll = async () => {
+      const elapsedSec = Math.floor((Date.now() - startedAt) / 1000);
+      // Give up if past threshold AND we've never seen a timeline.
+      if (elapsedSec >= GIVE_UP_AFTER_SEC) {
+        if (cancelled) return;
+        // Use a callback to avoid stale-closure on `timeline`.
+        setTimeline((current) => {
+          if (current && current.length > 0) return current;
+          setPollGaveUp(true);
+          return current;
+        });
+        return;
+      }
       try {
         const token = await privy.getAccessToken();
         const res = await fetch(
@@ -182,6 +251,7 @@ export function CashOutModal({
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      clearInterval(elapsedTimer);
     };
   }, [step, pollVersion]);
 
@@ -293,6 +363,12 @@ export function CashOutModal({
         partnerUserId: userId || walletAddress.toLowerCase(),
         amount: parsedAmount,
         startedAt: Date.now(),
+        method:
+          selectedMethod === 'ACH_BANK_ACCOUNT' ||
+          selectedMethod === 'FIAT_WALLET' ||
+          selectedMethod === 'CRYPTO_ACCOUNT'
+            ? selectedMethod
+            : undefined,
       });
 
       setSessionUrl(url);
@@ -329,11 +405,11 @@ export function CashOutModal({
             <h3 className="font-semibold text-text-primary mb-3">How it works</h3>
             <ol className="space-y-3">
               {[
-                ['Pick how you want it.', 'Free in 1–3 days, or instant for a small fee. Or keep as crypto for free.'],
+                ['Pick how you want it.', 'Bank in 1–3 days, or instant to your Coinbase account.'],
                 ['Connect Coinbase.', 'Sign in or sign up — Coinbase handles dollars. We never touch your money.'],
                 ['Verify identity (first time).', 'Coinbase asks for ID — required by US law for crypto-to-cash.'],
-                ['Add a payout method (first time).', 'Bank, debit card, Apple Pay, or PayPal.'],
-                ['Confirm + sign.', 'One tap to send. We show you status until money lands in your bank.'],
+                ['Add a payout method (first time).', 'Bank account, or keep funds in your Coinbase wallet.'],
+                ['Confirm + sign in your wallet.', 'After tapping Cash out now in Coinbase, your wallet pops up to approve sending the USDC. One tap to sign.'],
               ].map(([title, body], i) => (
                 <li key={i} className="flex gap-3">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-bg-tertiary text-text-primary text-xs font-bold flex items-center justify-center">
@@ -642,7 +718,11 @@ export function CashOutModal({
             <ul className="space-y-1.5 text-text-secondary text-xs">
               <li>• Sign in or create your Coinbase account</li>
               <li>• Verify ID and link your payout method (first time only)</li>
-              <li>• Confirm the amount and tap Sign in your wallet</li>
+              <li>• Tap <strong>Cash out now</strong> to confirm the amount</li>
+              <li>
+                • Your wallet (MetaMask / Coinbase Wallet) will pop up to approve sending USDC. Tap{' '}
+                <strong>Sign / Confirm</strong> in your wallet to finish.
+              </li>
             </ul>
           </div>
 
@@ -673,6 +753,39 @@ export function CashOutModal({
   // ---- status ----
   if (step === 'status') {
     const tx = readActiveTx();
+    const copy = getStatusCopy(tx?.method);
+
+    // Staged status text driven by elapsed time — keeps the user informed
+    // about WHAT is happening rather than just spinning silently.
+    const noTimelineYet = !timeline || timeline.length === 0;
+    const stageText = (() => {
+      if (timeline && timeline.length > 0) return null; // real timeline takes over
+      if (pollGaveUp) {
+        return {
+          title: "We didn't see a transaction",
+          body:
+            "It looks like the cash-out didn't complete in Coinbase. If you closed the popup before signing, you can try again. Otherwise reopen Coinbase to finish.",
+        };
+      }
+      if (pollElapsed >= 60) {
+        return {
+          title: 'Still no transaction yet',
+          body:
+            "You may need to complete the final sign step in Coinbase. If you closed the popup, tap Reopen Coinbase to resume.",
+        };
+      }
+      if (pollElapsed >= 30) {
+        return {
+          title: 'Confirming with Coinbase...',
+          body: 'This usually takes under 30 seconds — hang tight.',
+        };
+      }
+      return {
+        title: 'Confirming with Coinbase...',
+        body: 'Verifying your transaction on Base.',
+      };
+    })();
+
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Cash Out Status" size="md">
         <div className="space-y-5">
@@ -680,6 +793,25 @@ export function CashOutModal({
             <p className="text-text-secondary text-sm">Cashing out</p>
             <p className="text-2xl font-bold text-banana">{formatCurrency(tx?.amount)}</p>
           </div>
+
+          {noTimelineYet && stageText && (
+            <div
+              className={`rounded-xl p-4 ${
+                pollGaveUp
+                  ? 'bg-error/10 border border-error/30'
+                  : 'bg-banana/10 border border-banana/30'
+              }`}
+            >
+              <p
+                className={`font-semibold text-sm mb-1 ${
+                  pollGaveUp ? 'text-error' : 'text-banana'
+                }`}
+              >
+                {stageText.title}
+              </p>
+              <p className="text-text-secondary text-sm">{stageText.body}</p>
+            </div>
+          )}
 
           <div className="space-y-3">
             {timeline ? (
@@ -745,16 +877,40 @@ export function CashOutModal({
           </div>
 
           <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
-            Bank deposits typically arrive in 1–3 business days. You can close this window — we&apos;ll
-            keep tracking in the background.
+            {copy.arrival} You can close this window — we&apos;ll keep tracking in the background.
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 transition-all"
-          >
-            Close
-          </button>
+          {pollGaveUp || (noTimelineYet && pollElapsed >= 60) ? (
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  // Re-open Coinbase with a fresh session so the user can
+                  // complete the sign step. Reset polling state so the new
+                  // attempt isn't pre-tagged as "gave up".
+                  setPollGaveUp(false);
+                  setPollElapsed(0);
+                  setTimeline(null);
+                  launchCoinbase();
+                }}
+                className="flex-1 py-3 rounded-xl font-semibold text-sm bg-bg-tertiary text-text-primary hover:bg-bg-elevated transition-all"
+              >
+                Reopen Coinbase
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onClose}
+              className="w-full py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 transition-all"
+            >
+              Close
+            </button>
+          )}
         </div>
       </Modal>
     );

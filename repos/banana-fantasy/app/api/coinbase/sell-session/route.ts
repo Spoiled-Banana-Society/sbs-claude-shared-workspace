@@ -4,7 +4,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
-import { buildOfframpUrl, createCdpSessionToken } from '@/lib/cdpAuth';
+import { buildOfframpUrl, createCdpSessionToken, type CdpPaymentMethod } from '@/lib/cdpAuth';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -51,6 +51,24 @@ export async function POST(req: Request) {
       presetCryptoAmount = Math.round(n * 100) / 100;
     }
 
+    // Honour the destination the user picked in our UI (ACH / Coinbase wallet
+    // / Coinbase crypto). Without this, Coinbase ignores our selection and
+    // shows whatever default they want — which surfaced as users picking
+    // "Standard ACH" but seeing the USD-cash-balance flow.
+    const VALID_METHODS: CdpPaymentMethod[] = [
+      'ACH_BANK_ACCOUNT',
+      'FIAT_WALLET',
+      'CRYPTO_ACCOUNT',
+      'RTP',
+      'CARD',
+      'APPLE_PAY',
+      'PAYPAL',
+    ];
+    const rawMethod = typeof body.paymentMethod === 'string' ? body.paymentMethod : undefined;
+    const defaultCashoutMethod = VALID_METHODS.includes(rawMethod as CdpPaymentMethod)
+      ? (rawMethod as CdpPaymentMethod)
+      : undefined;
+
     const origin = getOrigin(req);
     const redirectUrl = `${origin}/prizes?cashout=success`;
 
@@ -68,6 +86,7 @@ export async function POST(req: Request) {
       redirectUrl,
       defaultAsset: 'USDC',
       defaultNetwork: 'base',
+      ...(defaultCashoutMethod ? { defaultCashoutMethod } : {}),
       presetCryptoAmount,
       fiatCurrency: 'USD',
     });

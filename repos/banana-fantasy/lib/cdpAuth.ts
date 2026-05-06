@@ -164,6 +164,7 @@ export interface BuildSellUrlInput {
   redirectUrl: string;
   defaultAsset?: string;
   defaultNetwork?: string;
+  defaultCashoutMethod?: CdpPaymentMethod;
   presetCryptoAmount?: number;
   presetFiatAmount?: number;
   fiatCurrency?: string;
@@ -176,6 +177,7 @@ export function buildOfframpUrl(input: BuildSellUrlInput): string {
   params.set('redirectUrl', input.redirectUrl);
   if (input.defaultAsset) params.set('defaultAsset', input.defaultAsset);
   if (input.defaultNetwork) params.set('defaultNetwork', input.defaultNetwork);
+  if (input.defaultCashoutMethod) params.set('defaultCashoutMethod', input.defaultCashoutMethod);
   if (typeof input.presetCryptoAmount === 'number') {
     params.set('presetCryptoAmount', input.presetCryptoAmount.toString());
   }
