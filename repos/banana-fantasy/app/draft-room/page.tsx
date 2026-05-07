@@ -1231,9 +1231,14 @@ function DraftRoomContent() {
   // Founder Draft promo POST. Fires once the draft is past filling.
   // Server validates that the draft actually qualifies (within window
   // + founder wallet present + caller in draftOrder) so we can fire
-  // optimistically — non-qualifying drafts get a 400 and we log it.
-  // Idempotent via localStorage promo-founder:* + server-side dedupe
-  // in recordFounderDraftJoin.
+  // optimistically. Server-side dedupe in recordFounderDraftJoin is
+  // the source of truth (founderHistory.draftName check).
+  //
+  // Client-side flag is set ONLY on definitive responses (2xx success
+  // or 4xx rejection) — never on transient failures (5xx, network).
+  // Previously the flag was set before the fetch, which meant a
+  // transient hiccup permanently lost the credit because subsequent
+  // renders short-circuited on the flag and never retried.
   useEffect(() => {
     if (!isLiveMode || engine.draftStatus !== 'active') return;
     const id = draftId || urlDraftId;
@@ -1242,7 +1247,6 @@ function DraftRoomContent() {
     if (!promoUserId) return;
     const founderKey = `promo-founder:${id}`;
     if (localStorage.getItem(founderKey)) return;
-    localStorage.setItem(founderKey, '1');
     (async () => {
       const token = await getAccessToken();
       try {
@@ -1254,11 +1258,18 @@ function DraftRoomContent() {
           },
           body: JSON.stringify({ draftId: id }),
         });
-        if (!res.ok && res.status !== 400) {
-          logger.warn('[Promo] Founder POST non-OK', { status: res.status });
+        if (res.ok || (res.status >= 400 && res.status < 500)) {
+          // Definitive response: 2xx success or 4xx rejection (not eligible,
+          // not authed, etc). Mark done so we don't spam.
+          localStorage.setItem(founderKey, '1');
+        } else {
+          // 5xx or other transient — leave the flag unset so the next
+          // render retries. Server-side dedupe makes that safe.
+          logger.warn('[Promo] Founder POST non-OK (will retry)', { status: res.status });
         }
       } catch (err) {
-        logger.error('[Promo] Founder tracking failed:', err);
+        // Network error — same retry treatment as 5xx.
+        logger.error('[Promo] Founder tracking failed (will retry):', err);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
