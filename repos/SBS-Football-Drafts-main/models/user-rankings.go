@@ -59,8 +59,13 @@ func UpdateRosterFromPick(draftId, address, teamName, position, playerId, displa
 	}
 	err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "rosters", &data)
 	if err != nil {
-		fmt.Println("Error reading in roster map from db")
-		return err
+		fmt.Println("Rosters doc not found, initializing empty rosters for draft: ", draftId)
+		// Continue with empty data — first pick will create the doc via CreateOrUpdateDocument below
+	}
+
+	// Initialize roster for this address if it doesn't exist yet
+	if data.Rosters[address] == nil {
+		data.Rosters[address] = &DraftStateRoster{}
 	}
 
 	if strings.ToLower(position) == "qb" {

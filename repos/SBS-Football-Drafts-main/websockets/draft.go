@@ -87,6 +87,16 @@ func (cl *ConnectionList) UpdateConnectionList(draftId string) error {
 }
 
 func NewDraft(draftId string, manager *DraftManager) (*Draft, error) {
+	return newDraft(draftId, manager, false)
+}
+
+// NewDraftForRecovery creates a draft instance even if the league is locked/filled.
+// Used by RecoverActiveDrafts to resume mid-progress drafts after server restart.
+func NewDraftForRecovery(draftId string, manager *DraftManager) (*Draft, error) {
+	return newDraft(draftId, manager, true)
+}
+
+func newDraft(draftId string, manager *DraftManager, skipLockCheck bool) (*Draft, error) {
 
 	var leagueDoc models.League
 	err := utils.Db.ReadDocument("drafts", draftId, &leagueDoc)
@@ -94,7 +104,7 @@ func NewDraft(draftId string, manager *DraftManager) (*Draft, error) {
 		fmt.Println("Error reading drafts document: ", err)
 		return nil, err
 	}
-	if leagueDoc.IsLocked {
+	if !skipLockCheck && leagueDoc.IsLocked {
 		errMes := fmt.Sprintf("%s is locked so you cannot join this league and we are returning", draftId)
 		fmt.Println(errMes)
 		return nil, fmt.Errorf(errMes)
@@ -331,7 +341,15 @@ func (d *Draft) ReturnDraftTokensToUser() error {
 			var e Event
 			e.Type = FinalCard
 			e.Payload = res
-			c.egress <- e
+			// Non-blocking send — a slow client used to stall this whole
+			// broadcast loop and freeze final-card delivery for everyone.
+			// If their egress is full, drop and let them resync on
+			// reconnect rather than blocking the rest of the draft.
+			select {
+			case c.egress <- e:
+			default:
+				fmt.Printf("[ws] slow client %s — dropping FinalCard event\n", c.address)
+			}
 		} else {
 			fmt.Println("This user was not connected to this server instance: ", d.draftManager.Id)
 		}
@@ -348,15 +366,19 @@ func (d *Draft) CloseAndCleanUpDraftUponComplete() {
 		return
 	}
 
-	// Check and make sure summary has 150 picks
+	// Check and make sure summary has 150 picks. Pick 149 (the last) must be
+	// FILLED for the draft to be considered complete. The previous condition
+	// was inverted — `!= ""` returned early when the last pick WAS filled,
+	// which is exactly when we should proceed to close. Drafts that should
+	// have cleaned up never did. (BUG #18)
 	var summary models.DraftSummary
 	err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", d.draftId), "summary", &summary)
 	if err != nil {
 		fmt.Println("error reading summary in CloseAndCleanUpDraftUponComplete()")
 		return
 	}
-	if summary.Summary[149].PlayerInfo.PlayerId != "" {
-		fmt.Println("We are trying to close and complete the draft when it is not over: ", d.DraftInfo)
+	if summary.Summary[149].PlayerInfo.PlayerId == "" {
+		fmt.Println("Final pick not yet recorded — refusing to close draft: ", d.DraftInfo)
 		return
 	}
 
@@ -406,7 +428,15 @@ func (d *Draft) CloseAndCleanUpDraftUponComplete() {
 func (d *Draft) broadcastEventToActiveUsers(data Event) {
 	fmt.Printf("Broadcasting event from %s to %d connected clients: %v\r", d.draftManager.Id, len(d.activeUsers), data)
 	for _, client := range d.activeUsers {
-		client.egress <- data
+		// Non-blocking — one slow client used to stall the entire
+		// broadcast loop and freeze pick / timer events for everyone in
+		// the draft. (BUG #23) Drop the event for the laggy client and
+		// let them resync on reconnect or via the next broadcast.
+		select {
+		case client.egress <- data:
+		default:
+			fmt.Printf("[ws] slow client %s — dropping broadcast event\n", client.address)
+		}
 	}
 }
 
@@ -416,9 +446,11 @@ func (d *Draft) handlePickRedisMessage(redisMessage utils.RedisMessage) {
 		Payload: redisMessage.Payload,
 	}
 	d.broadcastEventToActiveUsers(NewPickEvent)
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"redis_pick_received"}`+"\n", d.draftId)
 	if !d.IsCommplete {
 		if redisMessage.Sender == d.draftManager.Id {
 			fmt.Println("Starting the next timer for new pick with drafter: ", d.DraftInfo.CurrentDrafter)
+			fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"redis_starting_next_timer","nextDrafter":"%s"}`+"\n", d.draftId, d.DraftInfo.CurrentDrafter)
 			time.Sleep(250 * time.Millisecond)
 			go StartDraftTimerForCurrentPick(d.DraftInfo.CurrentDrafter, d.DraftInfo.PickLength, d)
 		} else {
@@ -426,6 +458,7 @@ func (d *Draft) handlePickRedisMessage(redisMessage utils.RedisMessage) {
 		}
 	} else {
 		fmt.Println("the draft is complete so we are not starting a new timer")
+		fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"redis_draft_complete"}`+"\n", d.draftId)
 	}
 
 	fmt.Println("Handled Pick Redis Message in ", d.draftId)

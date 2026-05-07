@@ -1,0 +1,31 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Firebase
+.firebase/
+.firebaserc.bak
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Build outputs
+lib/
+build/
+dist/
+
+# Secrets — NEVER commit. Service accounts, env files, keys, certs.
+configs/
+.env
+.env.*
+*.serviceAccount.json
+*serviceAccount.json
+serviceAccount.json
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

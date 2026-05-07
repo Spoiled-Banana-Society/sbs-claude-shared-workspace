@@ -20,13 +20,54 @@ Same login Boris uses for everything backend. He'll send you the password in 1Pa
 
 No per-service IAM grants needed — you log in as the project owner. Skip everything below about granting roles or adding members.
 
-**Get from Boris (one-time):**
+**Get from Boris (out-of-band — private DM, NEVER public channel, NEVER in this repo):**
 
-1. The `team@sbsfantasy.com` password (1Password / shared vault).
-2. The 2FA setup — share the TOTP secret so both of you can generate codes (1Password supports this natively, or export the QR from his Authenticator).
-3. The `configs/` folder for `sbs-drafts-api-deploy` (contains `serviceAccount.json` + other secrets the public repo doesn't have). Encrypted share — NOT git.
+1. **`team@sbsfantasy.com` password** — Discord DM or iMessage from Boris.
+2. **2FA / TOTP for the Google account** — Boris will set up "another device" via `myaccount.google.com/security → 2-Step Verification → Authenticator app → Add` and have you scan the same QR code with your phone's Authenticator app. After scanning, both phones generate independent codes.
 
-Once you have those, you're set.
+   **When to ping Boris for this:** after you've pulled the shared workspace, copied the code, extracted the secrets tarball, and installed the CLIs (`gcloud` + `firebase`). Once you're ready to run `gcloud auth login`, ping Boris in Discord and he'll open the QR-code page on his side so you both scan together. Two minutes total. Don't run `gcloud auth login` before this — it'll fail at the 2FA prompt.
+3. **Secrets tarball** — `sbs-deploy-SECRETS.tar.gz` (~5KB).
+   Contains: STAGING-only service accounts (`sbs-test-env-config.json`, `triggersServiceAccount.json`) + `.env` files for both `sbs-drafts-api-deploy` and `SBS-Football-Drafts-main`. Old prod credentials are NOT included — you don't need them and you don't have prod deploy access yet.
+   **Send as a Discord/iMessage DM attachment, not in any public channel or git.**
+
+**Already in this shared workspace (just pull and copy):**
+
+- ✅ **Source code** — under `repos/sbs-drafts-api-deploy/`, `repos/SBS-Football-Drafts-main/`, `repos/sbs-staging-functions/`. No git clone needed; you already have it after `git pull`.
+- ✅ **Safety hook** — at `tools/sbs-safety.sh`.
+
+**Setup steps:**
+
+```bash
+# 0. Make sure you've pulled the latest shared workspace
+cd ~/sbs-claude-shared-workspace && git pull origin main
+
+# 1. Copy source code into ~/
+cp -R ~/sbs-claude-shared-workspace/repos/sbs-drafts-api-deploy ~/
+cp -R ~/sbs-claude-shared-workspace/repos/SBS-Football-Drafts-main ~/
+cp -R ~/sbs-claude-shared-workspace/repos/sbs-staging-functions ~/
+
+# 2. Drop the secrets tarball overlay (gets configs/ and .env into the right places)
+cd ~ && tar -xzf ~/Downloads/sbs-deploy-SECRETS-1password.tar.gz
+# This overlays configs/sbs-test-env-config.json + triggersServiceAccount.json + .env into both repos
+
+# 3. Verify the staging configs landed (sanity check)
+ls ~/sbs-drafts-api-deploy/configs/
+# Should list: sbs-test-env-config.json triggersServiceAccount.json
+ls ~/SBS-Football-Drafts-main/configs/
+# Should list: sbs-test-env-config.json triggersServiceAccount.json
+
+# 4. Install safety hook from this workspace
+mkdir -p ~/.claude/hooks
+cp ~/sbs-claude-shared-workspace/tools/sbs-safety.sh ~/.claude/hooks/sbs-safety.sh
+chmod +x ~/.claude/hooks/sbs-safety.sh
+# Then wire into ~/.claude/settings.json per the JSON snippet below
+
+# 5. Install npm deps for Firebase Functions
+cd ~/sbs-staging-functions && npm install
+```
+
+**Why secrets tarball is separate (not in repo):**
+The shared workspace is on GitHub. Even though it's private, anything we commit there is in git history forever. Service account JSON keys must NOT live in git. Secrets only travel via 1Password / encrypted Drive — out-of-band, never in version control.
 
 ### One-time machine setup (you do this yourself)
 
@@ -50,31 +91,9 @@ gcloud run services list --region us-central1 --project sbs-staging-env
 # Should list: sbs-drafts-api-staging, sbs-drafts-server-staging
 ```
 
-### Repos you need cloned locally
+### Re: getting the source code
 
-All under `~/` to match Boris's setup:
-
-```bash
-cd ~
-
-# Go API — the deployable copy with secrets in configs/
-git clone https://github.com/Spoiled-Banana-Society/sbs-drafts-api.git sbs-drafts-api-deploy
-cd sbs-drafts-api-deploy
-# Checkout the branch that's currently live in staging:
-git checkout playoff-scripts
-# Drop the configs/ folder Boris sent you here — it's gitignored
-
-# WebSocket server
-cd ~
-git clone https://github.com/Spoiled-Banana-Society/SBS-Football-Drafts-main.git
-# (or whatever the actual repo name is — clone matching the path Boris uses)
-
-# Firebase Functions for staging
-cd ~
-git clone https://github.com/Spoiled-Banana-Society/sbs-staging-functions.git
-cd sbs-staging-functions
-npm install
-```
+The 3 backend repos aren't on GitHub — they're local-only on Boris's Mac. You'll get them via the tarballs in the "Get from Boris" section above. **Do NOT try to `git clone` from any URL** — none of those repos exist remotely.
 
 ### Deploy commands — run these whenever you need to ship
 

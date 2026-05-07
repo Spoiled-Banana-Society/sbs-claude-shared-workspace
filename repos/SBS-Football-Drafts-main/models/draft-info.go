@@ -49,6 +49,14 @@ func (info *DraftInfo) UpdateDraftInfoFromNewPick(channelName string, managerId 
 	// will need to check in the future if the draft is over and send out a draft complete event
 	if info.PickInRound == 10 {
 		if info.CurrentRound == 15 && info.CurrentPickNumber == 150 {
+			fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"draft_completing","pick":150}`+"\n", info.DraftId)
+			// Write final state to Firestore BEFORE completing — otherwise info doc stays stale
+			collectionPath := fmt.Sprintf("drafts/%s/state", info.DraftId)
+			if err := utils.Db.CreateOrUpdateDocument(collectionPath, "info", &info); err != nil {
+				fmt.Println("Error writing final draft info to Firestore on pick 150: ", err)
+				// Continue anyway — don't block completion for a Firestore write failure
+			}
+
 			mes := SendDraftComplete{
 				HasCompletedClosing: false,
 			}
@@ -78,6 +86,7 @@ func (info *DraftInfo) UpdateDraftInfoFromNewPick(channelName string, managerId 
 			err = info.InitiateDraftClosingProcess(info.DraftId)
 			if err != nil {
 				fmt.Println("Error in the cosing process: ", err)
+				fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"draft_close_error"}`+"\n", info.DraftId)
 				return err
 			}
 			return nil
@@ -85,10 +94,12 @@ func (info *DraftInfo) UpdateDraftInfoFromNewPick(channelName string, managerId 
 			info.CurrentRound++
 			info.CurrentPickNumber++
 			info.PickInRound = 1
+			fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"draft_advanced","pick":%d,"round":%d}`+"\n", info.DraftId, info.CurrentPickNumber, info.CurrentRound)
 		}
 	} else {
 		info.PickInRound++
 		info.CurrentPickNumber++
+		fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"draft_advanced","pick":%d,"round":%d}`+"\n", info.DraftId, info.CurrentPickNumber, info.CurrentRound)
 	}
 
 	// determine the current drafter by pick information
