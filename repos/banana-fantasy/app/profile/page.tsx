@@ -2,13 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useExportWallet } from '@privy-io/react-auth';
 import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -29,12 +30,12 @@ export default function ProfilePage() {
   const { exportWallet } = useExportWallet();
   const [copiedWallet, setCopiedWallet] = useState(false);
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'overview' | 'activity'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'badges'>('overview');
 
   // Honor ?tab=activity deep link from the profile dropdown's "Activity →" shortcut.
   useEffect(() => {
     const tab = searchParams?.get('tab');
-    if (tab === 'activity' || tab === 'overview') setActiveTab(tab);
+    if (tab === 'activity' || tab === 'overview' || tab === 'badges') setActiveTab(tab);
   }, [searchParams]);
 
   const PROMO_KEY = 'sbs-first-draft-promo-claimed';
@@ -102,13 +103,14 @@ export default function ProfilePage() {
           className="bg-gradient-to-br from-banana/10 to-transparent border border-banana/15 rounded-2xl p-5 sm:p-6 mb-6"
         >
           <div className="flex items-center gap-4">
-            {/* Avatar */}
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-banana/20 border-2 border-banana/30 flex items-center justify-center overflow-hidden flex-shrink-0">
-              {user.profilePicture ? (
-                <Image src={user.profilePicture} alt="Avatar" width={80} height={80} className="object-cover w-full h-full" />
-              ) : (
-                <span className="text-3xl sm:text-4xl">🍌</span>
-              )}
+            {/* Avatar with equipped badge overlay */}
+            <div className="flex-shrink-0">
+              <AvatarWithBadge
+                imageUrl={user.profilePicture}
+                alt="Avatar"
+                size={80}
+                equippedBadge={user.equippedBadge}
+              />
             </div>
 
             {/* Info */}
@@ -142,6 +144,9 @@ export default function ProfilePage() {
           <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
             Overview
           </TabButton>
+          <TabButton active={activeTab === 'badges'} onClick={() => setActiveTab('badges')}>
+            Badges
+          </TabButton>
           <TabButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')}>
             Activity
           </TabButton>
@@ -150,6 +155,12 @@ export default function ProfilePage() {
         {activeTab === 'activity' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ActivityHistory userId={user.walletAddress ?? user.id} />
+          </motion.div>
+        )}
+
+        {activeTab === 'badges' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <BadgeCatalogGrid />
           </motion.div>
         )}
 

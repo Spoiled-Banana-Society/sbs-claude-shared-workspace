@@ -18,10 +18,12 @@ import {
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 
 interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
+  equippedBadge?: string | null;
 }
 
 interface DraftRoomDraftingProps {
@@ -188,9 +190,17 @@ export function DraftRoomDrafting({
                     onClick={() => onViewRoster(slot.ownerName)}
                   >
                     <div>
-                      {isUserCard && user?.profilePicture ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={user.profilePicture} alt="You" className="rounded-full w-[30px] h-[30px] mx-auto border border-gray-500 object-cover" />
+                      {isUserCard ? (
+                        <div className="flex justify-center">
+                          <AvatarWithBadge
+                            imageUrl={user?.profilePicture || '/banana-profile.png'}
+                            alt="You"
+                            size={30}
+                            equippedBadge={user?.equippedBadge}
+                            useNextImage={false}
+                            className="border border-gray-500"
+                          />
+                        </div>
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src="/banana-profile.png" alt="Banana" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />

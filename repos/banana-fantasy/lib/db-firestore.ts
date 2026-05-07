@@ -25,10 +25,12 @@ import type {
   ReferralEntryRewards,
   ReferralStats,
   User,
+  UserBadge,
   UserExposure,
   WheelPrize,
   WheelSpin,
 } from '@/types';
+import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -39,6 +41,7 @@ const CONTESTS_COLLECTION = 'v2_contests';
 const REFERRAL_CODES_COLLECTION = 'v2_referral_codes';
 const PROMOS_SUBCOLLECTION = 'promos';
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
+const BADGES_SUBCOLLECTION = 'badges';
 const REFERRAL_DOC = 'referral';
 const EXPOSURE_DOC = 'exposure';
 const DRAFT_HISTORY_SUBCOLLECTION = 'draftHistory';
@@ -126,6 +129,7 @@ function buildSeedUser(userId: string): {
   user: User;
   promos: Promo[];
   wheelSpins: WheelSpin[];
+  badges: UserBadge[];
   exposure: UserExposure;
   draftHistory: CompletedDraft[];
   referral: { code: string; createdAt: string };
@@ -167,6 +171,7 @@ function buildSeedUser(userId: string): {
   }
 
   const wheelSpins = deepClone(seedDb.wheelSpinsByUser['1'] ?? []);
+  const badges = deepClone(seedDb.badgesByUser['1'] ?? seedUserBadges());
   const exposure: UserExposure = {
     ...deepClone(seedDb.exposureByUser['1'] ?? { username: user.username, totalDrafts: 0, exposures: [] }),
     username: user.username,
@@ -174,7 +179,7 @@ function buildSeedUser(userId: string): {
   const draftHistory = deepClone(seedDb.draftHistoryByUser['1'] ?? []);
   const referral = { code, createdAt: todayDate() };
 
-  return { user, promos, wheelSpins, exposure, draftHistory, referral };
+  return { user, promos, wheelSpins, badges, exposure, draftHistory, referral };
 }
 
 async function ensureUserSeeded(userId: string): Promise<User> {
@@ -196,6 +201,11 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   for (const spin of seed.wheelSpins) {
     const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spin.id);
     batch.set(spinRef, stripUndefined(spin));
+  }
+
+  for (const badge of seed.badges) {
+    const badgeRef = userRef.collection(BADGES_SUBCOLLECTION).doc(badge.id);
+    batch.set(badgeRef, stripUndefined(badge));
   }
 
   const exposureRef = userRef.collection('metadata').doc(EXPOSURE_DOC);
@@ -704,7 +714,7 @@ export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
-  return db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
     const user = userSnap.data() as User;
 
@@ -727,6 +737,18 @@ export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user
 
     return { spin: deepClone(spin), user: deepClone(user) };
   });
+
+  // Badge unlocks on JP/HOF wheel hits — fire-and-forget so a Firestore
+  // hiccup on the badge write doesn't roll back the spin reward. The
+  // unlock function is idempotent so retries via the admin sweep path
+  // are safe.
+  if (result.spin.prize.type === 'jackpot') {
+    void unlockBadge(userId, 'spin-jackpot', { spinId: result.spin.id }).catch(() => {});
+  } else if (result.spin.prize.type === 'hof') {
+    void unlockBadge(userId, 'spin-hof', { spinId: result.spin.id }).catch(() => {});
+  }
+
+  return result;
 }
 
 export async function getWheelHistory(userId: string): Promise<WheelSpin[]> {
@@ -1760,6 +1782,131 @@ export async function recordFounderDraftJoin(userId: string, draftId: string): P
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     return deepClone(promo);
   });
+}
+
+// ── Badges ────────────────────────────────────────────────────────────
+
+/**
+ * Read every badge state for a user. Lazy-backfills missing badge docs
+ * from the catalog (mirrors the promo lazy-backfill in getPromos) so
+ * adding a new badge to BADGE_CATALOG works for existing users without
+ * a migration. Returns merged shape: catalog static copy + per-user
+ * unlock state.
+ */
+export async function getUserBadges(userId: string): Promise<Array<UserBadge & { label: string; description: string; criteria: string; category: string; color: string; glyph: string }>> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+  const snap = await userRef.collection(BADGES_SUBCOLLECTION).get();
+
+  const existing = new Map<string, UserBadge>();
+  snap.docs.forEach(d => existing.set(d.id, d.data() as UserBadge));
+
+  // Lazy-backfill: any catalog badge missing from the user's subcollection
+  // gets seeded as locked.
+  const missing = BADGE_CATALOG.filter(b => !existing.has(b.id));
+  if (missing.length > 0) {
+    const batch = db.batch();
+    for (const b of missing) {
+      const ref = userRef.collection(BADGES_SUBCOLLECTION).doc(b.id);
+      const seed: UserBadge = { id: b.id, unlocked: false };
+      batch.set(ref, stripUndefined(seed));
+      existing.set(b.id, seed);
+    }
+    await batch.commit();
+  }
+
+  // Project in catalog order with static-copy overlay.
+  return BADGE_CATALOG.map(b => {
+    const state = existing.get(b.id) ?? { id: b.id, unlocked: false };
+    return {
+      ...state,
+      label: b.label,
+      description: b.description,
+      criteria: b.criteria,
+      category: b.category,
+      color: b.color,
+      glyph: b.glyph,
+    };
+  });
+}
+
+/**
+ * Idempotently unlock a badge. Re-runs are safe — if the badge is
+ * already unlocked, the existing unlockedAt is preserved. Returns true
+ * if a state change happened, false if it was already unlocked.
+ */
+export async function unlockBadge(
+  userId: string,
+  badgeId: string,
+  source?: Record<string, unknown>,
+): Promise<boolean> {
+  if (!BADGE_BY_ID[badgeId]) return false; // unknown badge id
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const ref = db
+    .collection(USERS_COLLECTION)
+    .doc(userId)
+    .collection(BADGES_SUBCOLLECTION)
+    .doc(badgeId);
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const existing = snap.exists ? (snap.data() as UserBadge) : null;
+    if (existing?.unlocked) return false;
+    const updated: UserBadge = {
+      id: badgeId,
+      unlocked: true,
+      unlockedAt: nowIso(),
+      ...(source ? { source } : {}),
+    };
+    tx.set(ref, stripUndefined(updated), { merge: true });
+    return true;
+  });
+}
+
+/**
+ * Set or clear the user's equipped badge. Pass null to unequip.
+ * Validates that the badge is unlocked before persisting.
+ */
+export async function equipBadge(
+  userId: string,
+  badgeId: string | null,
+): Promise<{ ok: boolean; reason?: string }> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+
+  if (badgeId === null) {
+    await userRef.set({ equippedBadge: null }, { merge: true });
+    return { ok: true };
+  }
+
+  if (!BADGE_BY_ID[badgeId]) return { ok: false, reason: 'unknown badge id' };
+
+  const badgeSnap = await userRef.collection(BADGES_SUBCOLLECTION).doc(badgeId).get();
+  const data = badgeSnap.exists ? (badgeSnap.data() as UserBadge) : null;
+  if (!data?.unlocked) return { ok: false, reason: 'badge not unlocked' };
+
+  await userRef.set({ equippedBadge: badgeId }, { merge: true });
+  return { ok: true };
+}
+
+/**
+ * Read just the equipped badge ids for a list of users — used by the
+ * leaderboard / batch-render path so we don't N+1-query Firestore.
+ */
+export async function getEquippedBadgesBatch(userIds: string[]): Promise<Record<string, string | null>> {
+  if (userIds.length === 0) return {};
+  const db = getAdminFirestore();
+  const refs = userIds.map(id => db.collection(USERS_COLLECTION).doc(id));
+  const snaps = await db.getAll(...refs);
+  const out: Record<string, string | null> = {};
+  for (let i = 0; i < userIds.length; i++) {
+    const data = snaps[i].exists ? (snaps[i].data() as User) : null;
+    out[userIds[i]] = data?.equippedBadge ?? null;
+  }
+  return out;
 }
 
 // ── Persona Verification ──────────────────────────────────────────────

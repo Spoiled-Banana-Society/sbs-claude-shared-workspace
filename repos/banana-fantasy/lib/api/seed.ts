@@ -4,11 +4,15 @@ import type {
   LeaderboardEntry,
   Promo,
   User,
+  UserBadge,
   UserExposure,
   WheelSpin,
 } from '@/types';
 import type { DbSchema } from './dbTypes';
 import { API_CONFIG } from './config';
+import { seedUserBadges } from '@/lib/badges/catalog';
+
+const seedBadges: UserBadge[] = seedUserBadges();
 
 const seedUser1: User = {
   id: '1',
@@ -419,6 +423,7 @@ export const seedDb: DbSchema = {
   users: { '1': seedUser1 },
   promosByUser: { '1': seedPromos },
   wheelSpinsByUser: { '1': seedWheelHistory },
+  badgesByUser: { '1': seedBadges },
   purchases: [],
   withdrawals: [],
   contests: seedContests,

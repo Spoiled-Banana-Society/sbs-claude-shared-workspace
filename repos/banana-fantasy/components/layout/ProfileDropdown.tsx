@@ -8,6 +8,7 @@ import { useExportWallet } from '@privy-io/react-auth';
 import { getNflTeamLogo } from '@/lib/nflTeams';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { InstallAppButton } from '@/components/home/AddToHomeScreenCard';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 
 interface ProfileDropdownProps {
   onEditProfile: () => void;
@@ -52,21 +53,13 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 p-1 rounded-lg hover:bg-bg-tertiary transition-colors group"
       >
-        {/* Avatar */}
-        <div className="w-9 h-9 rounded-full flex items-center justify-center overflow-hidden bg-[#1a1a2e] border border-white/20">
-          {user.profilePicture ? (
-            <Image
-              src={user.profilePicture}
-              alt={user.username}
-              width={36}
-              height={36}
-              className="w-full h-full object-cover"
-              unoptimized
-            />
-          ) : (
-            <span className="text-lg">🍌</span>
-          )}
-        </div>
+        {/* Avatar with equipped badge */}
+        <AvatarWithBadge
+          imageUrl={user.profilePicture}
+          alt={user.username}
+          size={36}
+          equippedBadge={user.equippedBadge}
+        />
         {/* Dropdown arrow */}
         <svg
           xmlns="http://www.w3.org/2000/svg"

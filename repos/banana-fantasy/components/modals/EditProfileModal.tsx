@@ -6,6 +6,8 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { getNflTeamLogo } from '@/lib/nflTeams';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -89,20 +91,12 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
             Profile Picture
           </label>
           <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden bg-[#1a1a2e] border border-white/20">
-              {profilePicturePreview ? (
-                <Image
-                  src={profilePicturePreview}
-                  alt={user.username}
-                  width={80}
-                  height={80}
-                  className="w-full h-full object-cover"
-                  unoptimized
-                />
-              ) : (
-                <span className="text-4xl">🍌</span>
-              )}
-            </div>
+            <AvatarWithBadge
+              imageUrl={profilePicturePreview}
+              alt={user.username}
+              size={80}
+              equippedBadge={user.equippedBadge}
+            />
             <input
               type="file"
               ref={fileInputRef}
@@ -189,6 +183,20 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
               Connect X Account
             </Button>
           )}
+        </div>
+
+        {/* Badges — pick which badge to show next to your avatar */}
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-2">
+            Badges
+          </label>
+          <p className="text-xs text-text-muted mb-3">
+            Earn badges by drafting, winning leagues, hitting JP/HOF on the wheel, and more. Click an
+            unlocked badge to show it next to your avatar everywhere.
+          </p>
+          <div className="max-h-[420px] overflow-y-auto p-3 bg-bg-tertiary rounded-lg border border-white/10">
+            <BadgeCatalogGrid />
+          </div>
         </div>
 
         <div className="p-4 bg-bg-tertiary rounded-lg border border-white/10">

@@ -366,6 +366,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(merged);
           setIsNewUser(false);
           setShowOnboarding(false);
+          // Lazy-load the equipped badge from our own backend (the Go
+          // API doesn't know about badges). Fire-and-forget — if it
+          // fails the avatar just renders without a badge overlay.
+          fetch(`/api/badges?userId=${encodeURIComponent(walletAddress.toLowerCase())}`)
+            .then(r => r.ok ? r.json() : null)
+            .then((data) => {
+              if (data && typeof data.equipped !== 'undefined') {
+                setUser(prev => prev ? { ...prev, equippedBadge: data.equipped ?? null } : prev);
+              }
+            })
+            .catch(() => { /* non-fatal */ });
           // Auto-seeding on the backend can create the user before this
           // hook runs, so a 200 response doesn't mean "no referral to track".
           // Fire the track call if we have a code and no existing referrer.

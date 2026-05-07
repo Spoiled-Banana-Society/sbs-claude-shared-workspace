@@ -6,6 +6,7 @@ import type {
   PrizeWithdrawal,
   Purchase,
   User,
+  UserBadge,
   UserExposure,
   WheelSpin,
 } from '@/types';
@@ -14,6 +15,7 @@ export interface DbSchema {
   users: Record<string, User>;
   promosByUser: Record<string, Promo[]>;
   wheelSpinsByUser: Record<string, WheelSpin[]>;
+  badgesByUser: Record<string, UserBadge[]>;
   purchases: Purchase[];
   withdrawals: PrizeWithdrawal[];
   contests: Contest[];

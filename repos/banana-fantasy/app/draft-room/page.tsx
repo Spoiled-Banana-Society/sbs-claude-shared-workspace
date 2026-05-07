@@ -1179,6 +1179,29 @@ function DraftRoomContent() {
           console.error('[Promo] Failed to track draft:', err);
         });
       }
+      // Fire the badge sweep — server fetches the user's leagues and
+      // unlocks any newly-earned tier (1/20/100 drafts, league winners,
+      // made-playoffs). Idempotent on the server, so a missed sweep
+      // gets caught next time the user visits /profile.
+      const badgeKey = `badge-sweep:${id}`;
+      if (!localStorage.getItem(badgeKey)) {
+        (async () => {
+          const token = await getAccessToken();
+          if (!token) return;
+          try {
+            const res = await fetch('/api/badges/sweep-mine', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            if (res.ok) localStorage.setItem(badgeKey, '1');
+          } catch {
+            // non-fatal — sweep retries on next draft completion
+          }
+        })();
+      }
     }
 
     if (id && promoUserId && isPaidDraft && userPos === 9) {

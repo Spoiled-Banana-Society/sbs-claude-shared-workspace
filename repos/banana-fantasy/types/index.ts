@@ -17,6 +17,39 @@ export interface User {
   isVerified: boolean;
   referredBy?: string;
   createdAt: string;
+  // The single badge ID the user has equipped to display next to their
+  // avatar across the app. Null/undefined = no badge shown. The user
+  // doesn't have to display one — they can clear this anytime.
+  equippedBadge?: string | null;
+}
+
+// Badges
+export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder';
+
+export interface Badge {
+  id: string;
+  label: string;
+  description: string;
+  /** One-line text shown in the catalog when locked, e.g. "Complete 20 drafts". */
+  criteria: string;
+  category: BadgeCategory;
+  /** Tailwind-friendly hex used for the badge ring + glow. */
+  color: string;
+  /** Single-character / emoji glyph used inside the small circle when no
+   *  custom image asset is shipped. */
+  glyph: string;
+  /** Optional asset path. If unset, BadgeIcon renders the glyph instead. */
+  iconUrl?: string;
+}
+
+/** Per-user badge unlock state. Stored at users/{userId}/badges/{badgeId}. */
+export interface UserBadge {
+  id: string;
+  unlocked: boolean;
+  unlockedAt?: string;
+  /** Free-form metadata about how it was awarded (draftId, leagueId,
+   *  reason if admin-granted, etc.). */
+  source?: Record<string, unknown>;
 }
 
 // Contest types
