@@ -4,7 +4,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
-import { savePersonaVerification } from '@/lib/db-firestore';
+import { savePersonaVerification, type VerifiedIdentity } from '@/lib/db-firestore';
 import { checkBlockRules } from '@/lib/verifyBlockRules';
 
 // Custom KYC submission endpoint:
@@ -167,7 +167,11 @@ export async function POST(req: Request) {
     // Step 5: Build the verifiedIdentity record from a mix of form data
     // (which the user typed) and extracted ID data (Didit-validated).
     // Address comes from the form since the ID address may be outdated.
-    const verifiedIdentity = {
+    // Firestore rejects `undefined` values, so optional fields are omitted
+    // when absent rather than set to undefined. If state is LA, we'd want
+    // a parish field; for now the backend block-rule skips parish check
+    // when not present (future: dedicated parish input for LA users).
+    const verifiedIdentity: VerifiedIdentity = {
       firstName,
       lastName,
       dateOfBirth,
@@ -177,14 +181,10 @@ export async function POST(req: Request) {
         state,
         country,
         zip,
-        // No parish in the form; if state is LA, the user must enter the
-        // parish in `city` or we fall through (parish-rule will skip).
-        // Future improvement: dedicated parish field for LA.
-        parish: undefined,
       },
-      sessionId: requestId,
       verifiedAt: new Date().toISOString(),
     };
+    if (requestId) verifiedIdentity.sessionId = requestId;
 
     // Step 6: Run SBS block rules — banned states, parish, age, country.
     const blockResult = checkBlockRules(verifiedIdentity);
@@ -192,12 +192,14 @@ export async function POST(req: Request) {
       // Save the verified identity even when blocked so we don't ask for
       // the same docs again next time. The cashout endpoint will hit the
       // same block rule and reject with the same reason.
+      // Optional fields (inquiryId, geoState) are spread conditionally —
+      // Firestore rejects explicit undefined values.
       await savePersonaVerification(session.userId, {
         tier1: {
           verified: true,
-          inquiryId: requestId,
           verifiedAt: new Date().toISOString(),
-          geoState: state,
+          ...(requestId ? { inquiryId: requestId } : {}),
+          ...(state ? { geoState: state } : {}),
         },
         verifiedIdentity,
       });
@@ -212,9 +214,9 @@ export async function POST(req: Request) {
     await savePersonaVerification(session.userId, {
       tier1: {
         verified: true,
-        inquiryId: requestId,
         verifiedAt: new Date().toISOString(),
-        geoState: state,
+        ...(requestId ? { inquiryId: requestId } : {}),
+        ...(state ? { geoState: state } : {}),
       },
       verifiedIdentity,
     });
