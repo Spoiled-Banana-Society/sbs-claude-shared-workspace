@@ -2,15 +2,11 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-import { ApiError } from '@/lib/api/errors';
-import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { getPrivyUser } from '@/lib/auth';
+import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { recordFounderDraftJoin, markFounderDraft } from '@/lib/db';
+import { isFounderDraftMarked, markFounderDraft } from '@/lib/db';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
-import { logger } from '@/lib/logger';
 
-// Hardcoded staging — same pattern as /api/spectate/draft-state.
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function getServerDraftsApiUrl(): string {
@@ -54,59 +50,49 @@ async function fetchSchedule(): Promise<FounderSchedule> {
 }
 
 /**
- * POST /api/promos/founder-draft
- * Body: { draftId }
+ * GET /api/founder-drafts/check?draftId=X
  *
- * Caller is authenticated via Privy. Server validates:
- *  1. The draft is a Founder Draft (schedule active + within window + founder wallet in draftOrder).
- *  2. The caller's wallet is also in the draftOrder (no crediting non-participants).
- * Then credits the founder-draft promo. Idempotent via draftId dedupe in
- * recordFounderDraftJoin.
+ * Source-of-truth check for whether a draft is a Founder Draft. Reads from
+ * the persistent `founderDrafts` collection — once a draft is marked, it
+ * stays marked forever, even if the founder schedule changes later.
  *
- * Note: every drafter in a Founder Draft gets credited (unlike JP, which
- * picks 1 of 10). The frontend POSTs once per drafter when their copy of
- * the draft room sees the draft fill.
+ * For drafts not yet persisted, evaluates live eligibility (schedule
+ * active + within window + founder wallet in draftOrder) and AUTO-PROMOTES
+ * them to persistent if eligible. This means the moment any client renders
+ * a FounderPill on a qualifying draft, it gets locked in permanently.
+ *
+ * Returns { isFounder: boolean }.
  */
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
+  const draftId = getSearchParam(req, 'draftId');
+  if (!draftId) return jsonError('draftId is required', 400);
+
   try {
-    const { walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) throw new ApiError(401, 'Authenticated wallet address missing from token');
+    // 1. Persistent flag — most authoritative.
+    if (await isFounderDraftMarked(draftId)) {
+      return json({ isFounder: true, source: 'persisted' }, 200);
+    }
 
-    const body = await parseBody(req);
-    const draftId = requireString(body.draftId, 'draftId');
-
+    // 2. Not marked. Check live eligibility — if it qualifies under the
+    //    current schedule, persist it now and return true.
     const [info, schedule] = await Promise.all([
       fetchDraftInfo(draftId),
       fetchSchedule(),
     ]);
-
-    if (!info) throw new ApiError(404, 'draft not found');
+    if (!info || !schedule.active) return json({ isFounder: false }, 200);
     if (!isFounderDraft(info.draftStartTime, info.draftOrder, schedule)) {
-      throw new ApiError(400, 'draft is not a Founder Draft');
+      return json({ isFounder: false }, 200);
     }
 
-    const callerInDraft = info.draftOrder.some(
-      o => (o?.ownerId || '').toLowerCase() === walletAddress.toLowerCase(),
-    );
-    if (!callerInDraft) {
-      throw new ApiError(403, 'caller is not in this draft');
-    }
-
-    // Persist the founder-draft flag for this draftId BEFORE crediting.
-    // Once persisted, the FounderPill renders for this draft forever, even
-    // if the schedule changes later. Idempotent — first writer wins.
     await markFounderDraft(draftId, {
       founderWallet: schedule.founderWallet,
       scheduleAt: schedule.at,
     });
-    const promo = await recordFounderDraftJoin(walletAddress, draftId);
-    return json({ promo }, 200);
-  } catch (err) {
-    if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('promos.founder-draft.failed', { err });
-    return jsonError('Internal Server Error', 500);
+    return json({ isFounder: true, source: 'auto-promoted' }, 200);
+  } catch {
+    return json({ isFounder: false }, 200);
   }
 }

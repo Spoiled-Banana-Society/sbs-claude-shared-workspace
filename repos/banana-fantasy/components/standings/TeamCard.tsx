@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
 import type { ModalTab } from './LeagueDetailModal';
+import { FounderPill } from '@/components/drafting/FounderPill';
 
 interface TeamCardProps {
   league: League;
@@ -202,6 +203,7 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename }:
             >
               {config.label}
             </span>
+            <FounderPill draftId={league.id} size="sm" />
             {league.prizeIndicator != null && league.prizeIndicator > 0 && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 flex-shrink-0">
                 ${league.prizeIndicator}

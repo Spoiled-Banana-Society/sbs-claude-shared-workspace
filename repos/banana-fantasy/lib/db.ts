@@ -32,5 +32,7 @@ export const recordDraftCompletion = db.recordDraftCompletion;
 export const recordPick10 = db.recordPick10;
 export const recordJackpotHit = db.recordJackpotHit;
 export const recordFounderDraftJoin = db.recordFounderDraftJoin;
+export const markFounderDraft = db.markFounderDraft;
+export const isFounderDraftMarked = db.isFounderDraftMarked;
 export const incrementMintPromos = db.incrementMintPromos;
 export const incrementReferralPromos = db.incrementReferralPromos;
