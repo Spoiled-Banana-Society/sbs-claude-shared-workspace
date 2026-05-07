@@ -119,7 +119,63 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
     setError('');
   };
 
-  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Compress an image client-side before upload. Modern phone cameras shoot
+  // 3-8 MB photos (JPEG @ 12MP+), but our upload endpoint caps the request
+  // body at ~1 MB. Without compression users hit "request body too large"
+  // and have to manually resize — terrible UX. We downscale to max 2000px
+  // wide at JPEG quality 0.82, which puts a typical passport photo under
+  // 500 KB while keeping it sharp enough for OCR/document validation.
+  const compressImage = async (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX_DIMENSION = 2000;
+        let { width, height } = img;
+        if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+          if (width > height) {
+            height = Math.round((MAX_DIMENSION / width) * height);
+            width = MAX_DIMENSION;
+          } else {
+            width = Math.round((MAX_DIMENSION / height) * width);
+            height = MAX_DIMENSION;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas not supported'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Image compression failed'));
+              return;
+            }
+            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressed);
+          },
+          'image/jpeg',
+          0.82,
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Failed to read image. Please try a different photo.'));
+      };
+      img.src = url;
+    });
+  };
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -133,12 +189,24 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
       return;
     }
     setError('');
-    setIdFile(file);
+
+    // Compress so the upload fits under the API request body limit.
+    // For HEIC files (iPhone default), the canvas approach below relies on
+    // the browser being able to decode them — Safari does, Chrome doesn't.
+    // We use the original file as fallback if compression fails for any
+    // reason; if it's still too big, the backend rejects with a clear message.
+    let toUpload = file;
+    try {
+      toUpload = await compressImage(file);
+    } catch (err) {
+      console.warn('[Verification] Image compression failed, using original:', err);
+    }
+    setIdFile(toUpload);
 
     // Show preview so user knows the right photo got picked.
     const reader = new FileReader();
     reader.onload = () => setIdPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(toUpload);
   }, []);
 
   const handleSubmit = useCallback(async () => {
