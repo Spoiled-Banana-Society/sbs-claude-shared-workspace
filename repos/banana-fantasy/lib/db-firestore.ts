@@ -738,10 +738,10 @@ export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user
     return { spin: deepClone(spin), user: deepClone(user) };
   });
 
-  // Badge unlocks on JP/HOF wheel hits — fire-and-forget so a Firestore
-  // hiccup on the badge write doesn't roll back the spin reward. The
-  // unlock function is idempotent so retries via the admin sweep path
-  // are safe.
+  // Badge unlocks on every spin — fire-and-forget so a Firestore hiccup
+  // on the badge write doesn't roll back the spin reward. The unlock
+  // function is idempotent so retries are safe.
+  void unlockBadge(userId, 'first-spin', { spinId: result.spin.id }).catch(() => {});
   if (result.spin.prize.type === 'jackpot') {
     void unlockBadge(userId, 'spin-jackpot', { spinId: result.spin.id }).catch(() => {});
   } else if (result.spin.prize.type === 'hof') {

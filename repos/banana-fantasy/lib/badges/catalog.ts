@@ -143,6 +143,15 @@ export const BADGE_CATALOG: Badge[] = [
 
   // ── Wheel ────────────────────────────────────────────────────────────
   {
+    id: 'first-spin',
+    label: 'First Spin',
+    description: 'Spun the wheel for the first time.',
+    criteria: 'Spin the wheel once',
+    category: 'wheel',
+    color: '#94a3b8', // slate-400 — common badge
+    glyph: '🎡',
+  },
+  {
     id: 'spin-jackpot',
     label: 'Lucky Spin (JP)',
     description: 'Hit Jackpot on the wheel.',

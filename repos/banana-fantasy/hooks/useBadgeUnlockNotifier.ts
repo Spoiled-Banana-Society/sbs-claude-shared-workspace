@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { pushNotification } from '@/components/NotificationCenter';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
 const POLL_MS = 30_000; // 30s — covers the post-draft sweep + wheel spin paths
+const SWEEP_THROTTLE_MS = 60_000; // don't run sweep-mine more than once per minute per session
 
 function storageKey(userId: string) {
   return `sbs-badges-seen:${userId.toLowerCase()}`;
@@ -48,19 +50,40 @@ function writeSeen(userId: string, ids: Set<string>) {
  */
 export function useBadgeUnlockNotifier() {
   const { user, isLoggedIn } = useAuth();
+  const { getAccessToken } = usePrivy();
   const { show } = useToast();
   const seedDoneRef = useRef<Set<string>>(new Set()); // tracks userIds we've seeded the "seen" set for
   const inFlightRef = useRef(false);
+  const lastSweepRef = useRef(0);
 
   useEffect(() => {
     if (!isLoggedIn || !user?.id) return;
     const userId = user.id.toLowerCase();
     let cancelled = false;
 
+    const trySweep = async () => {
+      if (Date.now() - lastSweepRef.current < SWEEP_THROTTLE_MS) return;
+      lastSweepRef.current = Date.now();
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        await fetch('/api/badges/sweep-mine', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      } catch { /* non-fatal */ }
+    };
+
     const tick = async () => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       try {
+        // Run a sweep first (server-side awarding for league-outcome /
+        // draft-count tiers based on Go API state). Throttled to 1/min.
+        await trySweep();
         const res = await fetch(`/api/badges?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json() as { unlocked?: { id: string }[] };
@@ -124,5 +147,5 @@ export function useBadgeUnlockNotifier() {
       window.clearInterval(interval);
       window.removeEventListener('focus', onFocus);
     };
-  }, [isLoggedIn, user?.id, show]);
+  }, [isLoggedIn, user?.id, show, getAccessToken]);
 }
