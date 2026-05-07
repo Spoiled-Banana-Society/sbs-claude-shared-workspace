@@ -311,7 +311,36 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     })();
   }
 
+  // Overlay the latest static copy from the canonical seed (title,
+  // description, CTA, explanation) onto each promo. Per-user state
+  // (claimCount, claimable, progressCurrent, history arrays, referral
+  // codes, etc.) is preserved. This means copy edits in seed.ts
+  // propagate to existing users on their next read — no migration
+  // needed.
+  const seedById = new Map(seedList.map(p => [p.id, p]));
+
   return allDocs.map((promo) => {
+    const seed = seedById.get(promo.id);
+    if (seed) {
+      promo.title = seed.title;
+      promo.description = seed.description;
+      promo.ctaText = seed.ctaText;
+      promo.ctaLink = seed.ctaLink;
+      promo.backgroundColor = seed.backgroundColor;
+      promo.progressMax = seed.progressMax;
+      // modalContent.title and modalContent.explanation are static copy;
+      // other modalContent fields (history arrays, referral codes,
+      // twitterConnected) are per-user state.
+      if (seed.modalContent) {
+        promo.modalContent = promo.modalContent || {};
+        if (seed.modalContent.title !== undefined) {
+          promo.modalContent.title = seed.modalContent.title;
+        }
+        if (seed.modalContent.explanation !== undefined) {
+          promo.modalContent.explanation = seed.modalContent.explanation;
+        }
+      }
+    }
     // Inject real twitterConnected status for promos that depend on it
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
