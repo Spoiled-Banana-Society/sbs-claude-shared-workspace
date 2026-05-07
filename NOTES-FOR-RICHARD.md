@@ -24,6 +24,8 @@ No per-service IAM grants needed — you log in as the project owner. Skip every
 
 1. **`team@sbsfantasy.com` password** — Discord DM or iMessage from Boris.
 2. **2FA / TOTP for the Google account** — Boris will set up "another device" via `myaccount.google.com/security → 2-Step Verification → Authenticator app → Add` and have you scan the same QR code with your phone's Authenticator app. After scanning, both phones generate independent codes.
+
+   **When to ping Boris for this:** after you've pulled the shared workspace, copied the code, extracted the secrets tarball, and installed the CLIs (`gcloud` + `firebase`). Once you're ready to run `gcloud auth login`, ping Boris in Discord and he'll open the QR-code page on his side so you both scan together. Two minutes total. Don't run `gcloud auth login` before this — it'll fail at the 2FA prompt.
 3. **Secrets tarball** — `sbs-deploy-SECRETS.tar.gz` (~5KB).
    Contains: STAGING-only service accounts (`sbs-test-env-config.json`, `triggersServiceAccount.json`) + `.env` files for both `sbs-drafts-api-deploy` and `SBS-Football-Drafts-main`. Old prod credentials are NOT included — you don't need them and you don't have prod deploy access yet.
    **Send as a Discord/iMessage DM attachment, not in any public channel or git.**
