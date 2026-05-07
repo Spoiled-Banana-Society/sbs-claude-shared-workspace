@@ -7,6 +7,7 @@ import { getPrivyUser } from '@/lib/auth';
 import { buildOfframpUrl, createCdpSessionToken, type CdpPaymentMethod } from '@/lib/cdpAuth';
 import { getPersonaVerification } from '@/lib/db-firestore';
 import { checkBlockRules } from '@/lib/verifyBlockRules';
+import { logOfframpSessionCreated } from '@/lib/offrampAudit';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -124,6 +125,19 @@ export async function POST(req: Request) {
       ...(defaultCashoutMethod ? { defaultCashoutMethod } : {}),
       presetCryptoAmount,
       fiatCurrency: 'USD',
+    });
+
+    // Audit log: record that we issued a Coinbase session for this user.
+    // Status will be updated to tx_pending/completed/failed when tx-status
+    // polling sees a real Coinbase tx, or marked abandoned after 1h with no
+    // tx detected.
+    await logOfframpSessionCreated({
+      userId: verificationKey,
+      walletAddress,
+      partnerUserId,
+      amount: presetCryptoAmount,
+      paymentMethod: defaultCashoutMethod,
+      draftId: typeof body.draftId === 'string' ? body.draftId : undefined,
     });
 
     return json({ url, sessionToken: token, redirectUrl });

@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { getUserOfframpTransactions, type OfframpTransaction } from '@/lib/cdpAuth';
+import { updateOfframpFromTx } from '@/lib/offrampAudit';
 
 interface TimelineStep {
   key: 'sent' | 'received' | 'converting' | 'paying_out' | 'complete';
@@ -73,6 +74,18 @@ export async function GET(req: Request) {
       target = result.transactions.find((t) => t.id === txId) ?? null;
     } else if (result.transactions.length > 0) {
       target = result.transactions[0];
+    }
+
+    // Sync the audit log with the latest tx state. Best-effort — never block
+    // the response on this. Updates the user's most recent open offramp
+    // attempt with whatever Coinbase says about the tx now.
+    if (target) {
+      const auditUserKey = (session.walletAddress ?? session.userId).toLowerCase();
+      updateOfframpFromTx({
+        userId: auditUserKey,
+        coinbaseTxId: target.id,
+        coinbaseTxStatus: target.status,
+      }).catch(() => { /* ignored — audit is fire-and-forget */ });
     }
 
     return json({

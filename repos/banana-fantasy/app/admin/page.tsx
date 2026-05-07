@@ -17,6 +17,7 @@ import {
 } from '@/hooks/admin/useAdminApi';
 import { UsersTable } from '@/components/admin/UsersTable';
 import { KycAttemptsViewer } from '@/components/admin/KycAttemptsViewer';
+import { OfframpAttemptsViewer } from '@/components/admin/OfframpAttemptsViewer';
 import { ActivityCombined } from '@/components/admin/ActivityCombined';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { MetricsDashboard } from '@/components/admin/MetricsDashboard';
@@ -29,7 +30,7 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 
-type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
+type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'offramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
 
 interface NavItem {
   key: TabKey;
@@ -43,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'sentry', label: 'Frontend Errors', group: 'Monitoring' },
   { key: 'support', label: 'Support', group: 'Monitoring' },
   { key: 'kyc', label: 'KYC Attempts', group: 'Monitoring' },
+  { key: 'offramp', label: 'Offramps', group: 'Monitoring' },
   { key: 'users', label: 'Users', group: 'Manage' },
   { key: 'drafts', label: 'Drafts', group: 'Manage' },
   { key: 'withdrawals', label: 'Withdrawals', group: 'Manage' },
@@ -189,6 +191,7 @@ export default function AdminPage() {
           {activeTab === 'sentry' && <SentryIssues enabled={isAuthorized} />}
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
           {activeTab === 'kyc' && <KycAttemptsViewer enabled={isAuthorized} />}
+          {activeTab === 'offramp' && <OfframpAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
           {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}
           {activeTab === 'withdrawals' && <WithdrawalsPanel items={withdrawalsQuery.data ?? []} />}

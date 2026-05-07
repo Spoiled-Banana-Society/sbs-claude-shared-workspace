@@ -420,6 +420,57 @@ export function useKycAttempts(enabled: boolean, status: KycAttemptStatus | '' =
   });
 }
 
+export type OfframpAttemptStatus =
+  | 'session_created'
+  | 'tx_pending'
+  | 'tx_completed'
+  | 'tx_failed'
+  | 'abandoned';
+
+export type OfframpSource = 'coinbase_offramp' | 'direct_usdc' | 'direct_bank';
+
+export interface OfframpAttemptEntry {
+  id: string;
+  userId: string;
+  walletAddress?: string;
+  source: OfframpSource;
+  partnerUserId?: string;
+  timestamp: string;
+  updatedAt: string;
+  status: OfframpAttemptStatus;
+  amount?: number;
+  paymentMethod?: string;
+  draftId?: string;
+  coinbaseTxId?: string;
+  coinbaseTxStatus?: string;
+  txDetectedAt?: string;
+  txCompletedAt?: string;
+  errorMessage?: string;
+  withdrawalId?: string;
+}
+
+export function useOfframpAttempts(
+  enabled: boolean,
+  status: OfframpAttemptStatus | '' = '',
+  limit = 100,
+) {
+  const getHeaders = useAdminAuthHeaders();
+  const qs = new URLSearchParams();
+  if (status) qs.set('status', status);
+  qs.set('limit', String(limit));
+  return useQuery<{ attempts: OfframpAttemptEntry[]; count: number }>({
+    queryKey: ['admin', 'offramp-attempts', status, limit],
+    enabled,
+    queryFn: () =>
+      adminFetch<{ attempts: OfframpAttemptEntry[]; count: number }>(
+        `/api/admin/offramp-attempts?${qs.toString()}`,
+        getHeaders,
+      ),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export function useSentryIssues(enabled: boolean) {
   const getHeaders = useAdminAuthHeaders();
   return useQuery<{ issues: SentryIssueEntry[]; configured: boolean; requestId?: string }>({
