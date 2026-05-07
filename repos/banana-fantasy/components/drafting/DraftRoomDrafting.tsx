@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult } from '@hello-pangea/dnd';
 import { DraftRoomChat } from '@/components/drafting/DraftRoomChat';
+import { FounderPill } from '@/components/drafting/FounderPill';
 import { DraftTabs } from '@/components/drafting/DraftTabs';
 import type { DraftTab } from '@/components/drafting/DraftTabs';
 import { DraftPlayerList } from '@/components/drafting/DraftPlayerList';
@@ -120,6 +121,18 @@ export function DraftRoomDrafting({
               : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.18) 0%, transparent 70%)',
           }}
         />
+      )}
+
+      {/* Founder Draft persistent indicator. The header-bar FounderPill only
+          shows during filling/countdown — once drafting starts the header is
+          gone and the user has no on-screen signal that this is a Founder
+          Draft. Render the pill at a fixed top-left position so it stays
+          visible the whole way through. Self-hides via FounderPill internal
+          eligibility check if the schedule doesn't qualify. */}
+      {(draftId || urlDraftId) && engine.draftStatus !== 'completed' && (
+        <div className="fixed top-3 left-3 z-[60] pointer-events-none">
+          <FounderPill draftId={draftId || urlDraftId} size="md" />
+        </div>
       )}
 
       {showBanner && engine.draftStatus !== 'completed' && (
