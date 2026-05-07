@@ -50,15 +50,6 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'fast' | 'slow' | 'jackpot' | 'hof'>('all');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  const copySpectateLink = (draftId: string) => {
-    const url = `${window.location.origin}/spectate/${draftId}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedId(draftId);
-      setTimeout(() => setCopiedId(prev => (prev === draftId ? null : prev)), 1500);
-    }).catch(() => { /* clipboard blocked — silently no-op */ });
-  };
 
   useEffect(() => {
     if (!enabled || !walletAddress) return;
@@ -183,23 +174,14 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       <td className="px-4 py-3 text-gray-300 capitalize">{round.status}</td>
                       <td className="px-4 py-3 text-right">
                         {round.draftId ? (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              onClick={() => copySpectateLink(round.draftId!)}
-                              className="inline-flex items-center px-2.5 py-1 rounded-md border border-white/15 text-white/70 text-xs font-medium hover:bg-white/[0.06] hover:text-white transition"
-                              title="Copy spectator URL"
-                            >
-                              {copiedId === round.draftId ? '✓ Copied' : 'Copy link'}
-                            </button>
-                            <a
-                              href={`/spectate/${round.draftId}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
-                            >
-                              Spectate ↗
-                            </a>
-                          </div>
+                          <a
+                            href={`/spectate/${round.draftId}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
+                          >
+                            Spectate ↗
+                          </a>
                         ) : (
                           <span className="text-gray-500 text-xs">—</span>
                         )}
@@ -259,23 +241,14 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                   </td>
                   <td className="px-4 py-3 text-gray-400 font-mono text-xs">{shortAddr(d.currentDrafter)}</td>
                   <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-1.5">
-                      <button
-                        onClick={() => copySpectateLink(d.draftId)}
-                        className="inline-flex items-center px-2.5 py-1 rounded-md border border-white/15 text-white/70 text-xs font-medium hover:bg-white/[0.06] hover:text-white transition"
-                        title="Copy spectator URL"
-                      >
-                        {copiedId === d.draftId ? '✓ Copied' : 'Copy link'}
-                      </button>
-                      <a
-                        href={`/spectate/${d.draftId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
-                      >
-                        Spectate ↗
-                      </a>
-                    </div>
+                    <a
+                      href={`/spectate/${d.draftId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
+                    >
+                      Spectate ↗
+                    </a>
                   </td>
                 </tr>
               );
