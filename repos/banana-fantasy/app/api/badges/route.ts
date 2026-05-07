@@ -52,33 +52,46 @@ function normalizeToken(t: RawApiToken): ApiDraftToken {
  * user via a `lastBadgeSweepAt` field on the user doc — concurrent reads
  * across tabs / devices share the same throttle so we don't spam the Go
  * API or Firestore. Idempotent on the unlock side.
+ *
+ * Returns a small diagnostic object so debug=1 callers can see what
+ * happened.
  */
-async function maybeRunSweep(userId: string): Promise<void> {
+async function maybeRunSweep(userId: string, force = false): Promise<{
+  ran: boolean;
+  reason?: string;
+  goApiStatus?: number;
+  joined?: number;
+  completed?: number;
+  awards?: string[];
+}> {
   const db = getAdminFirestore();
   const userRef = db.collection('v2_users').doc(userId);
   const snap = await userRef.get();
   const data = snap.exists ? (snap.data() as User & { lastBadgeSweepAt?: string }) : null;
   const last = data?.lastBadgeSweepAt ? Date.parse(data.lastBadgeSweepAt) : 0;
-  if (Number.isFinite(last) && Date.now() - last < SWEEP_THROTTLE_MS) return;
+  if (!force && Number.isFinite(last) && last > 0 && Date.now() - last < SWEEP_THROTTLE_MS) {
+    return { ran: false, reason: 'throttled' };
+  }
 
-  // Optimistically claim the throttle slot before doing the work, so
-  // parallel reads bail.
   await userRef.set({ lastBadgeSweepAt: new Date().toISOString() }, { merge: true });
 
   try {
     const url = `${getServerDraftsApiUrl()}/owner/${encodeURIComponent(userId)}/draftToken/all`;
     const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return;
+    if (!res.ok) return { ran: true, reason: 'go-api-not-ok', goApiStatus: res.status };
     const body = await res.json() as { active?: RawApiToken[] };
     const active = body.active ?? [];
+    const joined = active.filter(t => (t._leagueId || t.leagueId)).length;
     const leagues = active
       .filter(t => (t._leagueId || t.leagueId))
       .map(t => mapDraftTokenToLeague(normalizeToken(t)));
     const completedCount = leagues.filter(l => l.status === 'completed').length;
     await awardDraftCountBadges(userId, completedCount);
-    await awardLeagueOutcomeBadges(userId, leagues);
+    const { awards } = await awardLeagueOutcomeBadges(userId, leagues);
+    return { ran: true, joined, completed: completedCount, awards };
   } catch (err) {
     logger.warn('badges.read.sweep.failed', { userId, err });
+    return { ran: true, reason: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -101,11 +114,13 @@ export async function GET(req: Request) {
     }
 
     const lower = userId.toLowerCase();
+    const debug = req.url.includes('debug=1');
+    const force = req.url.includes('force=1');
     // Run the sweep BEFORE reading. Throttled per-user, so this is cheap
     // when called on every page render. Awards new badges based on the
     // user's Go-API league portfolio (1/20/100 draft tiers, league
     // winners, made-playoffs). Idempotent.
-    await maybeRunSweep(lower);
+    const sweep = await maybeRunSweep(lower, force);
 
     const [badges, userSnap] = await Promise.all([
       getUserBadges(lower),
@@ -120,6 +135,7 @@ export async function GET(req: Request) {
         unlockedAt: b.unlockedAt ?? null,
       })),
       equipped: user?.equippedBadge ?? null,
+      ...(debug ? { sweep } : {}),
     }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
