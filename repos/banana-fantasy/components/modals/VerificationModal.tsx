@@ -11,7 +11,10 @@ interface VerificationModalProps {
   onComplete: () => void;
 }
 
-type Step = 'form' | 'upload' | 'submitting' | 'success' | 'error';
+// Single combined input step (form fields + ID upload visible together) — was
+// previously split into 'form' then 'upload' but Boris asked for everything on
+// one screen. Submission/success/error stays separate.
+type Step = 'form' | 'submitting' | 'success' | 'error';
 
 // US states + DC. Used for the State dropdown when country is US.
 const US_STATES = [
@@ -271,209 +274,202 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Verify Your Identity" size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Verify your identity" size="md">
       {step === 'form' && (
-        <div className="space-y-4">
-          <p className="text-text-secondary text-sm">
-            We need to verify your identity before you can withdraw winnings. Required by US/Canadian law for crypto-to-cash payouts.
+        // base text-base on inputs prevents iOS Safari from auto-zooming
+        // on focus (which it does for any input <16px font-size).
+        <div className="space-y-6">
+          <p className="text-text-secondary text-sm leading-relaxed">
+            One-time verification. Required by law for crypto-to-cash payouts.
+            Usually takes under 30 seconds.
           </p>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">First name</label>
-              <input
-                type="text"
-                value={form.firstName}
-                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
-                placeholder="As shown on your ID"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">Last name</label>
-              <input
-                type="text"
-                value={form.lastName}
-                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
-                placeholder="As shown on your ID"
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">Date of birth</label>
-            <div className="grid grid-cols-3 gap-2">
-              <select
-                value={form.dobMonth}
-                onChange={(e) => setForm({ ...form, dobMonth: e.target.value })}
-                className="px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              >
-                <option value="">Month</option>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <option key={m} value={String(m)}>{new Date(0, m - 1).toLocaleString('en', { month: 'long' })}</option>
-                ))}
-              </select>
-              <select
-                value={form.dobDay}
-                onChange={(e) => setForm({ ...form, dobDay: e.target.value })}
-                className="px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              >
-                <option value="">Day</option>
-                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                  <option key={d} value={String(d)}>{d}</option>
-                ))}
-              </select>
-              <select
-                value={form.dobYear}
-                onChange={(e) => setForm({ ...form, dobYear: e.target.value })}
-                className="px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              >
-                <option value="">Year</option>
-                {Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i).map((y) => (
-                  <option key={y} value={String(y)}>{y}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">Country</label>
-            <select
-              value={form.country}
-              onChange={(e) => setForm({ ...form, country: e.target.value as 'US' | 'CA', state: '' })}
-              className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-            >
-              <option value="US">United States</option>
-              <option value="CA">Canada</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">Street address</label>
-            <input
-              type="text"
-              value={form.street}
-              onChange={(e) => setForm({ ...form, street: e.target.value })}
-              placeholder="123 Main St"
-              className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">City</label>
-              <input
-                type="text"
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">
-                {form.country === 'CA' ? 'Province' : 'State'}
-              </label>
-              <select
-                value={form.state}
-                onChange={(e) => setForm({ ...form, state: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-              >
-                <option value="">Select…</option>
-                {stateOptions.map((s) => (
-                  <option key={s.code} value={s.code}>{s.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-semibold text-text-secondary uppercase tracking-wide block mb-1">
-              {form.country === 'CA' ? 'Postal code' : 'ZIP code'}
-            </label>
-            <input
-              type="text"
-              value={form.zip}
-              onChange={(e) => setForm({ ...form, zip: e.target.value })}
-              className="w-full px-3 py-2.5 rounded-lg bg-bg-tertiary border border-bg-elevated text-text-primary text-sm focus:outline-none focus:border-banana/50"
-            />
-          </div>
-
-          <button
-            onClick={() => setStep('upload')}
-            disabled={!formValid}
-            className={`w-full py-3 rounded-xl font-bold text-base transition-all ${
-              formValid ? 'bg-banana text-black hover:brightness-110' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
-            }`}
-          >
-            Continue
-          </button>
-        </div>
-      )}
-
-      {step === 'upload' && (
-        <div className="space-y-4">
-          <p className="text-text-secondary text-sm">
-            Upload a photo of your driver&apos;s license, passport, or state ID. The photo on the ID needs to match the name and date of birth you entered.
-          </p>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="image/jpeg,image/png,image/heic,image/webp,image/*"
-            className="hidden"
-          />
-
-          {idPreview ? (
-            <div className="rounded-xl overflow-hidden border border-bg-elevated bg-bg-tertiary">
-              <img src={idPreview} alt="ID preview" className="w-full max-h-64 object-contain bg-black/20" />
-              <div className="p-3 flex items-center justify-between">
-                <span className="text-xs text-text-muted">{idFile?.name}</span>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="text-xs text-banana hover:underline"
-                >
-                  Change photo
-                </button>
+          {/* ── Section: Personal info ── */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-text-secondary block mb-1.5">First name</label>
+                <input
+                  type="text"
+                  value={form.firstName}
+                  onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  placeholder="As on your ID"
+                  className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-text-secondary block mb-1.5">Last name</label>
+                <input
+                  type="text"
+                  value={form.lastName}
+                  onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  placeholder="As on your ID"
+                  className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                />
               </div>
             </div>
-          ) : (
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full border-2 border-dashed border-bg-elevated rounded-xl py-12 px-4 text-center hover:border-banana/50 hover:bg-bg-tertiary/40 transition-all"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted mx-auto mb-2">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <circle cx="9" cy="9" r="2" />
-                <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-              </svg>
-              <p className="text-text-primary text-sm font-medium">Tap to upload ID photo</p>
-              <p className="text-text-muted text-xs mt-1">JPG, PNG, HEIC, or WEBP · max {MAX_ID_FILE_SIZE_MB}MB</p>
-            </button>
-          )}
+
+            <div>
+              <label className="text-sm font-medium text-text-secondary block mb-1.5">Date of birth</label>
+              <div className="grid grid-cols-3 gap-2">
+                <select
+                  value={form.dobMonth}
+                  onChange={(e) => setForm({ ...form, dobMonth: e.target.value })}
+                  className="px-3 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                >
+                  <option value="">Month</option>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                    <option key={m} value={String(m)}>{new Date(0, m - 1).toLocaleString('en', { month: 'long' })}</option>
+                  ))}
+                </select>
+                <select
+                  value={form.dobDay}
+                  onChange={(e) => setForm({ ...form, dobDay: e.target.value })}
+                  className="px-3 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                >
+                  <option value="">Day</option>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                    <option key={d} value={String(d)}>{d}</option>
+                  ))}
+                </select>
+                <select
+                  value={form.dobYear}
+                  onChange={(e) => setForm({ ...form, dobYear: e.target.value })}
+                  className="px-3 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                >
+                  <option value="">Year</option>
+                  {Array.from({ length: maxYear - minYear + 1 }, (_, i) => maxYear - i).map((y) => (
+                    <option key={y} value={String(y)}>{y}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Section: Address ── */}
+          <div className="space-y-3 pt-1">
+            <div>
+              <label className="text-sm font-medium text-text-secondary block mb-1.5">Country</label>
+              <select
+                value={form.country}
+                onChange={(e) => setForm({ ...form, country: e.target.value as 'US' | 'CA', state: '' })}
+                className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+              >
+                <option value="US">United States</option>
+                <option value="CA">Canada</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-text-secondary block mb-1.5">Street address</label>
+              <input
+                type="text"
+                value={form.street}
+                onChange={(e) => setForm({ ...form, street: e.target.value })}
+                placeholder="123 Main St"
+                className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-text-secondary block mb-1.5">City</label>
+                <input
+                  type="text"
+                  value={form.city}
+                  onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-text-secondary block mb-1.5">
+                  {form.country === 'CA' ? 'Province' : 'State'}
+                </label>
+                <select
+                  value={form.state}
+                  onChange={(e) => setForm({ ...form, state: e.target.value })}
+                  className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+                >
+                  <option value="">Select…</option>
+                  {stateOptions.map((s) => (
+                    <option key={s.code} value={s.code}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-text-secondary block mb-1.5">
+                {form.country === 'CA' ? 'Postal code' : 'ZIP code'}
+              </label>
+              <input
+                type="text"
+                value={form.zip}
+                onChange={(e) => setForm({ ...form, zip: e.target.value })}
+                className="w-full px-3.5 py-3 rounded-xl bg-bg-tertiary border border-bg-elevated text-text-primary text-base focus:outline-none focus:border-banana/60 transition-colors"
+              />
+            </div>
+          </div>
+
+          {/* ── Section: ID photo ── */}
+          <div className="space-y-2 pt-3 border-t border-bg-tertiary">
+            <label className="text-sm font-medium text-text-secondary block">ID photo</label>
+            <p className="text-text-muted text-xs">
+              Driver&apos;s license, passport, or state ID. Must match the name and date of birth above.
+            </p>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept="image/jpeg,image/png,image/heic,image/webp,image/*"
+              className="hidden"
+            />
+
+            {idPreview ? (
+              <div className="rounded-xl overflow-hidden border border-bg-elevated bg-bg-tertiary mt-2">
+                <img src={idPreview} alt="ID preview" className="w-full max-h-56 object-contain bg-black/20" />
+                <div className="px-4 py-2.5 flex items-center justify-between border-t border-bg-elevated">
+                  <span className="text-xs text-text-muted truncate">{idFile?.name}</span>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-xs font-medium text-banana hover:underline ml-3 flex-shrink-0"
+                  >
+                    Change
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full border-2 border-dashed border-bg-elevated rounded-xl py-7 px-4 text-center hover:border-banana/60 hover:bg-bg-tertiary/30 active:scale-[0.99] transition-all mt-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="text-text-muted mx-auto mb-2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="9" cy="9" r="2" />
+                  <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                </svg>
+                <p className="text-text-primary text-sm font-medium">Upload ID photo</p>
+                <p className="text-text-muted text-xs mt-0.5">JPG, PNG, HEIC, or WEBP</p>
+              </button>
+            )}
+          </div>
 
           {error && (
             <p className="text-error text-sm">{error}</p>
           )}
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setStep('form')}
-              className="flex-1 py-3 rounded-xl font-semibold text-sm bg-bg-tertiary text-text-primary hover:bg-bg-elevated"
-            >
-              ← Back
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={!idFile}
-              className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${
-                idFile ? 'bg-banana text-black hover:brightness-110' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
-              }`}
-            >
-              Submit for verification
-            </button>
-          </div>
+          <button
+            onClick={handleSubmit}
+            disabled={!formValid || !idFile}
+            className={`w-full py-3.5 rounded-xl font-semibold text-base transition-all ${
+              formValid && idFile
+                ? 'bg-banana text-black hover:brightness-110 active:scale-[0.99]'
+                : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+            }`}
+          >
+            Submit
+          </button>
         </div>
       )}
 
@@ -506,14 +502,14 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
           </div>
           <div className="flex gap-3">
             <button
-              onClick={() => setStep('upload')}
-              className="flex-1 py-3 rounded-xl font-bold text-sm bg-bg-tertiary text-text-primary hover:bg-bg-elevated"
+              onClick={() => setStep('form')}
+              className="flex-1 py-3 rounded-xl font-semibold text-sm bg-bg-tertiary text-text-primary hover:bg-bg-elevated active:scale-[0.99] transition-all"
             >
-              Try a different photo
+              Try again
             </button>
             <button
               onClick={handleClose}
-              className="flex-1 py-3 rounded-xl font-bold text-sm bg-banana text-black hover:brightness-110"
+              className="flex-1 py-3 rounded-xl font-semibold text-sm bg-banana text-black hover:brightness-110 active:scale-[0.99] transition-all"
             >
               Close
             </button>
