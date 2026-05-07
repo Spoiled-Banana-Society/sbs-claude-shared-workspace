@@ -425,6 +425,7 @@ export function useDraftingPageState() {
             players,
             maxPlayers: 10,
             lastUpdated: Date.now(),
+            cardId: t.cardId,
           };
         });
 
@@ -457,6 +458,10 @@ export function useDraftingPageState() {
             || existing.liveWalletAddress.toLowerCase() !== currentWallet.toLowerCase();
 
           const isConfirmedDrafting = existing.phase === 'drafting' || existing.status === 'drafting';
+          // Heal cardId on any existing row missing it. Without cardId, the
+          // Go API leave endpoint can't match (it requires ownerId AND
+          // tokenId) and silently 500s — phantom drafts that won't leave.
+          const needsCardId = !existing.cardId && !!d.cardId;
           if (!isConfirmedDrafting) {
             draftStore.updateDraft(d.id, {
               status: d.status,
@@ -465,6 +470,7 @@ export function useDraftingPageState() {
               players: d.players,
               draftType: d.type,
               ...(needsWalletStamp ? { liveWalletAddress: currentWallet } : {}),
+              ...(needsCardId ? { cardId: d.cardId } : {}),
             });
           } else {
             // For rows already drafting, we still heal speed/type if unset
@@ -473,6 +479,7 @@ export function useDraftingPageState() {
             if (!existing.draftSpeed || existing.draftSpeed !== d.draftSpeed) patch.draftSpeed = d.draftSpeed;
             if (existing.type == null && d.type != null) patch.type = d.type;
             if (needsWalletStamp) patch.liveWalletAddress = currentWallet;
+            if (needsCardId) patch.cardId = d.cardId;
             if (Object.keys(patch).length > 0) draftStore.updateDraft(d.id, patch);
           }
         }
@@ -1098,11 +1105,23 @@ export function useDraftingPageState() {
 
   const confirmExitDraft = async () => {
     if (!exitingDraft || !user?.walletAddress) return;
+    const storedDraft = draftStore.getDraft(exitingDraft.id);
+
+    // Local cleanup runs UNCONDITIONALLY. Was previously after `await leaveDraft`,
+    // which meant a Go-API failure (auth, network, anything) left the draft
+    // visible in the UI even though the user had asked to leave. The UI should
+    // reflect the user's intent immediately — if the backend leave fails the
+    // worst case is a stale Go-side row that the next reconcile clears.
+    draftStore.removeDraft(exitingDraft.id);
+    setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
     try {
-      const storedDraft = draftStore.getDraft(exitingDraft.id);
+      const newHidden = new Set([...Array.from(hiddenDraftIds), exitingDraft.id]);
+      setHiddenDraftIds(newHidden);
+      localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
+    } catch { /* ignore */ }
+
+    try {
       await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
-      draftStore.removeDraft(exitingDraft.id);
-      setLiveDrafts(prev => prev.filter(d => d.id !== exitingDraft.id));
       // Refund the Firestore pass counter (Go side already returns the
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
