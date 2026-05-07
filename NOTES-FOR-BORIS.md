@@ -24,30 +24,16 @@ Two things still need to happen — both via Discord/iMessage DM, not git:
 
 After those, I run `gcloud run services list --region us-central1 --project sbs-staging-env` as the sanity check from your note. If that returns the staging services, I'm fully self-serve for backend deploys and you're off the hook for them.
 
-### Privy bearer no longer attached on Go API calls from `lib/api/{leagues,owner,drafts}.ts` — intended? (May 6)
+### ~~Privy bearer no longer attached on Go API calls~~ — RETRACTED, real cause was different (May 6)
 
-Symptom Richard hit on staging: clicked the X (Leave) on two `/drafting` cards, confirmed the leave dialog → drafts didn't disappear. They had been visible at 3/10 (real Go-side joins). Worked fine before any of our recent work.
+Originally flagged this as the root cause of leaveDraft failing. Was wrong. Now that I have backend access I curl'd the staging Go API directly and confirmed:
 
-I traced it to `confirmExitDraft` in `useDraftingPageState.ts:1099` — the `await leaveDraft(...)` was throwing, and because the local cleanup (`draftStore.removeDraft` + `setLiveDrafts` filter) lived AFTER the await in the same try block, none of it ran on failure. UI stayed pinned to the phantom drafts.
+- The staging Go API has **no auth middleware at all** (`main.go:66-107`, just `middleware.Logger` + CORS, no `r.Use(jwt.Verify)` or similar). Auth being missing on the frontend wasn't the problem because the Go side wasn't requiring it.
+- Real cause was a frontend mapping bug — `loadLiveDrafts` stripped the cardId from Go API tokens when storing to localStorage, so `confirmExitDraft` sent an empty `tokenId`, and Go API `models/leagues.go:351` requires both ownerId AND tokenId to match.
 
-Fix shipped (commit `9af9b4b`): local cleanup now runs unconditionally — clicking X removes the draft from the UI immediately, Go-API leave still fires best-effort. Plus a hide-flag write so the next `loadLiveDrafts` poll doesn't re-add it from `/owner/.../draftToken/all` while leave-propagation is in flight. That unsticks users either way.
+Fix shipped: `useDraftingPageState.ts:420-429` now maps `cardId` through, plus heal-on-poll for existing rows missing it. No backend change.
 
-But that's a workaround, not a root-cause fix. The actual question is **what's making `leaveDraft` throw**, and the only thing I can see that would have changed is auth:
-
-- Pre-May-3 revert: `lib/api/leagues.ts`, `lib/api/owner.ts`, `lib/api/drafts.ts` all built `draftsApi()` with `getAccessToken: getApiToken` from `lib/api/authToken.ts` (the Privy bearer bridge you wrote up in your May 2 note).
-- After your revert: `lib/api/authToken.ts` is gone, and all three files now build `draftsApi()` with NO `getAccessToken`. Every Go-API call from those modules goes out with no `Authorization` header.
-
-Other code paths still attach the bearer manually (`useTeamNicknames.ts:68`, `useNotificationOptIn.ts:93`, `useWheelData.ts:65`, etc. — all `usePrivy().getAccessToken` + manual header), so the pattern lives on for individual fetches. It's specifically the centralized `lib/api/{leagues,owner,drafts}.ts` clients that lost it.
-
-Question for you: was that intentional? A few possibilities I can see:
-
-1. **Intentional revert because the Go side now allows unauthed access on these endpoints**, and the May 2 fallback was rolled back too — in which case the leave failure is something else and I should keep digging.
-2. **Intentional move to a different auth path** (Redux middleware? `useDraftRoomBridge.ts`? something else I missed) — in which case point me at the new pattern and I'll wire `leaveDraft` through it.
-3. **Accidental** — the bridge file got cleaned up but the `getAccessToken: getApiToken` lines should have stayed (replaced with whatever the new Privy access path is).
-
-Whichever it is, would help to know so the workaround can become a real fix. Don't think I have enough signal to know which without you confirming.
-
-If it's (3), I'm happy to re-introduce a small `getApiToken` helper that wraps `usePrivy().getAccessToken` (or whatever the current pattern is) and re-thread it through the three `draftsApi()` callsites — should be ~10 lines, no Redux dependency, won't conflict with anything else you have in flight.
+So no action on you for this — sorry for the noise on the Privy bearer ask. But it does open a real follow-up question: **was the Go API supposed to gate auth on those endpoints?** Your May 2 note implied yes (you wired the Privy User API fallback). If staging is intentionally running unauthed and prod isn't, fine — flag it and I'll stop assuming. If staging should match prod's auth posture, that's a separate gap we should size.
 
 ### Slow-draft "your pick is up" push — Firebase Cloud Function (April 22)
 
