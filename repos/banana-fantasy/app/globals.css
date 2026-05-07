@@ -152,6 +152,28 @@ body {
     box-shadow: 0 0 20px rgba(251, 191, 36, 0.3), 0 0 40px rgba(251, 191, 36, 0.1);
   }
 
+  /* Badge pulse — gentle scale + glow throb for legendary badges. The
+     filter:drop-shadow uses currentColor so the calling element can set
+     its own color via inline style. */
+  @keyframes badge-pulse {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px currentColor); }
+    50% { transform: scale(1.05); filter: drop-shadow(0 0 10px currentColor); }
+  }
+  .badge-pulse {
+    animation: badge-pulse 2.4s ease-in-out infinite;
+  }
+
+  /* Slow rainbow ring spin for the most prestigious champion badge */
+  @keyframes badge-rainbow {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+  }
+  .badge-rainbow-ring {
+    background: linear-gradient(90deg, #ef4444, #fbbf24, #22c55e, #06b6d4, #a855f7, #ef4444);
+    background-size: 200% 100%;
+    animation: badge-rainbow 4s linear infinite;
+  }
+
   /* HOF gold filter - turns red logo to gold */
   .hof-gold-filter {
     filter: sepia(100%) saturate(400%) brightness(110%) hue-rotate(10deg);

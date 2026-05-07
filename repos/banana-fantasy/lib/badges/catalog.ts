@@ -5,6 +5,14 @@ import type { Badge } from '@/types';
  * list — ordered as displayed in the catalog grid. Adding a badge here +
  * deploying is sufficient for new users to see it; existing users get the
  * lazy-backfill on their next /api/badges read.
+ *
+ * Visual design rules:
+ *  - Every badge has a unique glyph + color combo (no two look the same).
+ *  - Champion-tier badges (BBB Champion, HOF Champion, Founder's Pick)
+ *    get pulse + double-ring + gradient.
+ *  - HOF podium uses gold ring overlay so it reads distinct from BBB
+ *    podium even though the medal glyphs match.
+ *  - Rare/special badges (drafts-100, beat-founder) get gradient fills.
  */
 export const BADGE_CATALOG: Badge[] = [
   // ── Drafts ───────────────────────────────────────────────────────────
@@ -14,8 +22,8 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Completed your first draft. Welcome to SBS.',
     criteria: 'Complete 1 draft',
     category: 'drafts',
-    color: '#94a3b8', // slate-400
-    glyph: '🍌',
+    color: '#84cc16', // lime — fresh start
+    glyph: '🌱',
   },
   {
     id: 'drafts-20',
@@ -23,8 +31,10 @@ export const BADGE_CATALOG: Badge[] = [
     description: '20 drafts deep. You know the lobby by heart.',
     criteria: 'Complete 20 drafts',
     category: 'drafts',
-    color: '#60a5fa', // blue-400
-    glyph: '★',
+    color: '#3b82f6', // blue
+    accentColor: '#1e40af',
+    gradient: true,
+    glyph: '⚔️',
   },
   {
     id: 'drafts-100',
@@ -32,7 +42,11 @@ export const BADGE_CATALOG: Badge[] = [
     description: '100 drafts. Certified degenerate.',
     criteria: 'Complete 100 drafts',
     category: 'drafts',
-    color: '#a855f7', // purple-500
+    color: '#a855f7', // purple
+    accentColor: '#ec4899', // pink
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'pulse',
     glyph: '💯',
   },
 
@@ -53,7 +67,9 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Finish 1st in a Jackpot league regular season',
     category: 'league',
     color: '#ef4444', // jackpot red
-    glyph: '👑',
+    accentColor: '#fbbf24', // gold accent (jp bling)
+    gradient: true,
+    glyph: '💰',
   },
   {
     id: 'league-winner-hof',
@@ -62,7 +78,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Finish 1st in a HOF league regular season',
     category: 'league',
     color: '#D4AF37', // hof gold
-    glyph: '👑',
+    ringStyle: 'double',
+    glyph: '🏛️',
   },
   {
     id: 'made-playoffs',
@@ -70,7 +87,7 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Top 2 in your league regular season — made the playoffs.',
     criteria: 'Finish top 2 in any league regular season',
     category: 'league',
-    color: '#22c55e', // green-500
+    color: '#22c55e', // green
     glyph: '🏈',
   },
 
@@ -81,7 +98,8 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Reached the week-17 finals. The big stage.',
     criteria: 'Reach the BBB finals',
     category: 'finals',
-    color: '#facc15', // yellow-400
+    color: '#facc15', // yellow
+    glow: 'soft',
     glyph: '🎯',
   },
   {
@@ -108,11 +126,17 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'BBB Champion. The whole damn season.',
     criteria: 'Win the BBB finals',
     category: 'finals',
-    color: '#ffd700', // gold
+    color: '#ffd700',
+    accentColor: '#fb923c', // amber
+    gradient: true,
+    ringStyle: 'rainbow',
+    glow: 'pulse',
     glyph: '🏆',
   },
 
   // ── HOF playoffs (weeks 15–17 cumulative) ────────────────────────────
+  // Same medal glyphs as BBB podium, but with a gold ring overlay so
+  // viewers can distinguish "HOF bronze" from "BBB bronze" at a glance.
   {
     id: 'hof-bronze',
     label: 'HOF Bronze',
@@ -120,6 +144,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Finish 3rd in the HOF playoff bracket',
     category: 'finals',
     color: '#cd7f32',
+    ringColor: '#D4AF37', // gold ring marks it HOF
+    ringStyle: 'double',
     glyph: '🥉',
   },
   {
@@ -129,6 +155,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Finish 2nd in the HOF playoff bracket',
     category: 'finals',
     color: '#c0c0c0',
+    ringColor: '#D4AF37',
+    ringStyle: 'double',
     glyph: '🥈',
   },
   {
@@ -138,7 +166,11 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Win the HOF playoff bracket',
     category: 'finals',
     color: '#D4AF37',
-    glyph: '🏆',
+    accentColor: '#fde68a',
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'pulse',
+    glyph: '🌟',
   },
 
   // ── Wheel ────────────────────────────────────────────────────────────
@@ -148,7 +180,7 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Spun the wheel for the first time.',
     criteria: 'Spin the wheel once',
     category: 'wheel',
-    color: '#94a3b8', // slate-400 — common badge
+    color: '#94a3b8', // slate
     glyph: '🎡',
   },
   {
@@ -158,6 +190,7 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Land on Jackpot on a wheel spin',
     category: 'wheel',
     color: '#ef4444',
+    glow: 'soft',
     glyph: '🎰',
   },
   {
@@ -167,7 +200,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Land on HOF on a wheel spin',
     category: 'wheel',
     color: '#D4AF37',
-    glyph: '🎰',
+    glow: 'soft',
+    glyph: '🪙', // coin — distinct from slot machine
   },
 
   // ── Founder ──────────────────────────────────────────────────────────
@@ -178,6 +212,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Score more than the founder in a Founder league regular season',
     category: 'founder',
     color: '#06b6d4', // cyan
+    accentColor: '#7dd3fc', // light cyan
+    gradient: true,
     glyph: '⚡',
   },
   {
@@ -187,6 +223,10 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Be randomly selected from the Founder draw',
     category: 'founder',
     color: '#06b6d4',
+    accentColor: '#fbbf24', // cyan + gold = lucky pick
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'pulse',
     glyph: '🎟️',
   },
 ];

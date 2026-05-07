@@ -40,6 +40,19 @@ export interface Badge {
   glyph: string;
   /** Optional asset path. If unset, BadgeIcon renders the glyph instead. */
   iconUrl?: string;
+  /** Secondary color — used for gradients and dual-tone treatments. */
+  accentColor?: string;
+  /** When true, the background fill blends color → accentColor. */
+  gradient?: boolean;
+  /** Ring style. 'solid' (default) is a single border. 'double' adds an
+   *  inner ring for high-tier badges. 'rainbow' uses an animated rainbow
+   *  ring for the rarest. */
+  ringStyle?: 'solid' | 'double' | 'rainbow';
+  /** Override ring color independently from fill. Useful for HOF-tier
+   *  variants of base medals. */
+  ringColor?: string;
+  /** Visual flair. 'soft' = static drop-shadow. 'pulse' = animated. */
+  glow?: 'none' | 'soft' | 'pulse';
 }
 
 /** Per-user badge unlock state. Stored at users/{userId}/badges/{badgeId}. */
