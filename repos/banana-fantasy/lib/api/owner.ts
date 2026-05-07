@@ -157,6 +157,27 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
   const leagueNum = leagueId.match(/(\d+)$/)?.[1];
   const name = leagueNum ? `League #${leagueNum}` : (token.leagueDisplayName || `League ${leagueId}`);
 
+  // Real chronology comes from the timestamp embedded in cardId — modern
+  // cards use a 13-digit Unix ms (e.g. "1777581797653" or
+  // "staging-1772408844125-19"). Sorting by leagueId trailing digits is
+  // unreliable on staging because the backend recycles ID ranges (a draft
+  // with leagueId 1609 can be older than one with leagueId 737). Older
+  // cards use 5-digit serials (e.g. "90099") with no timestamp — those
+  // get an empty draftDate and the standings sort treats them as older
+  // than any timestamped card, falling back to trailing-id ordering for
+  // tie-breaking among themselves.
+  const draftDate = (() => {
+    const cardId = token.cardId || '';
+    // Year 2001+ in ms = 13 digits starting with 1; year 2286 ends 13-digit
+    // territory. Anything shorter than 12 digits isn't a real timestamp.
+    const msMatch = cardId.match(/\d{12,13}/);
+    if (msMatch) {
+      const ms = Number(msMatch[0]);
+      if (Number.isFinite(ms) && ms > 946684800000) return new Date(ms).toISOString();
+    }
+    return '';
+  })();
+
   return {
     id: leagueId,
     name,
@@ -178,7 +199,7 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
       return 'active';
     })(),
     roster: mapRosterToUiRoster(token.roster),
-    draftDate: new Date().toISOString(),
+    draftDate,
   };
 }
 
