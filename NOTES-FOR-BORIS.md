@@ -6,29 +6,23 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ## Open asks
 
-### Self-serve backend deploys — gcloud + Firebase CLI installed, need 4 things from you (May 6)
+### Self-serve backend deploys — ready for the secrets tarball + 2FA pairing (May 6)
 
-Per your "Self-serve backend deploys" note. Did the parts I could do solo:
+Local setup done:
 
-- ✅ `gcloud` SDK installed at `~/google-cloud-sdk/`, wired into `.zshrc` PATH
-- ✅ `firebase-tools` installed via `npm install -g` (`~/.npm-global/bin/firebase`, also in PATH)
+- ✅ `gcloud` SDK installed at `~/google-cloud-sdk/`, in PATH
+- ✅ `firebase-tools` installed at `~/.npm-global/bin/firebase`, in PATH
+- ✅ Backend repos copied to `~/sbs-drafts-api-deploy/`, `~/SBS-Football-Drafts-main/`, `~/sbs-staging-functions/` (from `repos/` you committed)
+- ✅ `tools/sbs-safety.sh` installed at `~/.claude/hooks/sbs-safety.sh` and wired into `~/.claude/settings.json` (PreToolUse + PostToolUse, matcher Bash)
+- ✅ `cd ~/sbs-staging-functions/functions && npm install` done
 
-Stuck on these — all need you:
+Two things still need to happen — both via Discord/iMessage DM, not git:
 
-1. **`team@sbsfantasy.com` password + 2FA TOTP secret** — drop into our shared 1Password vault (or however you want to share). Without this I can't run `gcloud auth login` / `firebase login`.
+1. **Send the secrets tarball** (`sbs-deploy-SECRETS-1password.tar.gz`). I'll drop it in `~/Downloads/`, extract per your setup note, verify `configs/` lands in both backend repos.
 
-2. **The 3 backend repos aren't on GitHub under the names you wrote.** Confirmed via `gh api orgs/Spoiled-Banana-Society/repos` — all four 404 on the org:
-   - `Spoiled-Banana-Society/sbs-drafts-api` → not found
-   - `Spoiled-Banana-Society/SBS-Football-Drafts` (and `-main`) → not found
-   - `Spoiled-Banana-Society/sbs-staging-functions` → not found
+2. **2FA pairing for `gcloud auth login` + `firebase login`** — per your "When to ping Boris" line, I'm at the point of ready. Once the tarball lands and is extracted, I'll DM you to coordinate the QR-code scan together.
 
-   They're presumably local-only on your mac at `~/sbs-drafts-api-deploy/`, `~/SBS-Football-Drafts-main/`, `~/sbs-staging-functions/`. Push them to the org (private is fine — my SBSTeam PAT has org access) so I can clone, OR send tarballs.
-
-3. **The `configs/` folder for `sbs-drafts-api-deploy`** — gitignored (correctly), needs encrypted out-of-band transfer. 1Password attachment or whatever's easiest.
-
-4. **The `~/.claude/hooks/sbs-safety.sh` script content** — your May 6 note says "copy from Boris's machine," which I can't do remotely. Easiest is just commit the script into shared workspace at `tools/sbs-safety.sh` (you said it has no secrets, just paths + bash logic) so I can pull and install it from there. I'll wire it into my own `~/.claude/settings.json` once it lands.
-
-Once #1–3 are in, I can do everything else from your setup note solo (`gcloud auth login` → clone repos → `gcloud run deploy ...` for the backend services). #4 is independent — install whenever.
+After those, I run `gcloud run services list --region us-central1 --project sbs-staging-env` as the sanity check from your note. If that returns the staging services, I'm fully self-serve for backend deploys and you're off the hook for them.
 
 ### Privy bearer no longer attached on Go API calls from `lib/api/{leagues,owner,drafts}.ts` — intended? (May 6)
 
