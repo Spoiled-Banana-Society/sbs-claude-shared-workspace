@@ -16,6 +16,7 @@ import {
   type AdminPromoItem,
 } from '@/hooks/admin/useAdminApi';
 import { UsersTable } from '@/components/admin/UsersTable';
+import { KycAttemptsViewer } from '@/components/admin/KycAttemptsViewer';
 import { ActivityCombined } from '@/components/admin/ActivityCombined';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { MetricsDashboard } from '@/components/admin/MetricsDashboard';
@@ -28,7 +29,7 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 
-type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
+type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
 
 interface NavItem {
   key: TabKey;
@@ -41,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'errors', label: 'Server Errors', group: 'Monitoring' },
   { key: 'sentry', label: 'Frontend Errors', group: 'Monitoring' },
   { key: 'support', label: 'Support', group: 'Monitoring' },
+  { key: 'kyc', label: 'KYC Attempts', group: 'Monitoring' },
   { key: 'users', label: 'Users', group: 'Manage' },
   { key: 'drafts', label: 'Drafts', group: 'Manage' },
   { key: 'withdrawals', label: 'Withdrawals', group: 'Manage' },
@@ -186,6 +188,7 @@ export default function AdminPage() {
           {activeTab === 'errors' && <ErrorLog enabled={isAuthorized} />}
           {activeTab === 'sentry' && <SentryIssues enabled={isAuthorized} />}
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
+          {activeTab === 'kyc' && <KycAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
           {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}
           {activeTab === 'withdrawals' && <WithdrawalsPanel items={withdrawalsQuery.data ?? []} />}
