@@ -107,8 +107,27 @@ export default function StandingsPage() {
         });
       });
     }
-    // Sort by league number
+    // Sort by real draft chronology (timestamp embedded in cardId, surfaced
+    // as draftDate by mapDraftTokenToLeague). Cards with no parsable
+    // timestamp (very old serial-only IDs like "90099") get an empty
+    // draftDate and are treated as older than any timestamped card —
+    // newest-first puts them at the bottom, oldest-first at the top, with
+    // trailing-id digits as the tie-breaker among themselves.
     result.sort((a, b) => {
+      const tA = a.draftDate ? Date.parse(a.draftDate) : NaN;
+      const tB = b.draftDate ? Date.parse(b.draftDate) : NaN;
+      const aHas = Number.isFinite(tA);
+      const bHas = Number.isFinite(tB);
+      if (aHas && bHas) {
+        if (tA !== tB) return sortOrder === 'oldest' ? tA - tB : tB - tA;
+      } else if (aHas !== bHas) {
+        // One side has a timestamp, the other doesn't. The timestamped
+        // side is always newer than a serial-only card.
+        const aIsNewer = aHas;
+        return sortOrder === 'oldest'
+          ? (aIsNewer ? 1 : -1)
+          : (aIsNewer ? -1 : 1);
+      }
       const numA = parseInt(a.id.match(/(\d+)$/)?.[1] || '0', 10);
       const numB = parseInt(b.id.match(/(\d+)$/)?.[1] || '0', 10);
       return sortOrder === 'oldest' ? numA - numB : numB - numA;
