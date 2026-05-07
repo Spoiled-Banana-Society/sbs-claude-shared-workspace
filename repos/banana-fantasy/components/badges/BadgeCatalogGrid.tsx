@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import React, { useMemo } from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
 import { useBadges } from '@/hooks/useBadges';
@@ -28,39 +27,9 @@ interface BadgeCatalogGridProps {
  * badge to equip / unequip.
  */
 export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
-  const { catalog, unlockedIds, equipped, equipBadge, isLoading, refresh } = useBadges(
+  const { catalog, unlockedIds, equipped, equipBadge, isLoading } = useBadges(
     readOnlyForUserId ? { userId: readOnlyForUserId } : undefined,
   );
-  const { getAccessToken } = usePrivy();
-  const [sweeping, setSweeping] = useState(false);
-  const [sweepStatus, setSweepStatus] = useState<string | null>(null);
-
-  const runManualSweep = async () => {
-    setSweeping(true);
-    setSweepStatus(null);
-    try {
-      const token = await getAccessToken();
-      if (!token) {
-        setSweepStatus('Not authenticated — log in first.');
-        return;
-      }
-      const res = await fetch('/api/badges/sweep-mine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setSweepStatus(`Failed: ${res.status} ${body?.error || ''}`);
-        return;
-      }
-      setSweepStatus(`Sweep complete — ${body.completedCount ?? '?'} completed drafts, ${(body.awards ?? []).length} new badges.`);
-      await refresh();
-    } catch (err) {
-      setSweepStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setSweeping(false);
-    }
-  };
 
   const grouped = useMemo(() => {
     const out: Record<BadgeCategory, Badge[]> = {
@@ -150,30 +119,17 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
       ))}
 
       {!readOnlyForUserId && (
-        <div className="space-y-2">
-          <div className="text-xs text-text-muted">
-            You can only equip badges you&apos;ve unlocked. Hover any badge for details.
-            {equipped && (
-              <button
-                type="button"
-                onClick={() => equipBadge(null)}
-                className="ml-3 underline hover:text-banana"
-              >
-                Clear equipped badge
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
+        <div className="text-xs text-text-muted">
+          You can only equip badges you&apos;ve unlocked. Hover any badge for details.
+          {equipped && (
             <button
               type="button"
-              onClick={runManualSweep}
-              disabled={sweeping}
-              className="text-xs px-3 py-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 disabled:opacity-50"
+              onClick={() => equipBadge(null)}
+              className="ml-3 underline hover:text-banana"
             >
-              {sweeping ? 'Refreshing…' : 'Refresh badges'}
+              Clear equipped badge
             </button>
-            {sweepStatus && <span className="text-xs text-text-muted">{sweepStatus}</span>}
-          </div>
+          )}
         </div>
       )}
     </div>
