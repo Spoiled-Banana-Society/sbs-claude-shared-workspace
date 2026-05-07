@@ -53,23 +53,23 @@ async function fetchSchedule(): Promise<FounderSchedule> {
 /**
  * Credit every human drafter in a Founder Draft. Bot owners (ids that
  * start with "bot-") are skipped. Each call to recordFounderDraftJoin is
- * idempotent — re-credits are no-ops via the founderHistory dedupe.
- *
- * Marks `creditedAt` on the founderDrafts doc so subsequent check calls
- * don't redo the per-drafter Firestore writes; if the field is missing,
- * the credit loop runs even when the draft is already marked Founder
- * (this lets us self-heal old marker docs that pre-date this code).
+ * idempotent — re-credits are no-ops via the founderHistory dedupe, so
+ * we always re-run the loop instead of gating on a `creditedAt` flag.
+ * That keeps things self-healing if any individual write failed.
  */
-async function creditAllDraftersIfNeeded(
+async function creditAllDrafters(
   draftId: string,
   draftOrder: { ownerId: string }[],
 ): Promise<{ humans: string[]; results: Array<{ wallet: string; ok: boolean; reason?: string }> }> {
-  const out = { humans: [] as string[], results: [] as Array<{ wallet: string; ok: boolean; reason?: string }> };
+  const out = {
+    humans: [] as string[],
+    results: [] as Array<{ wallet: string; ok: boolean; reason?: string }>,
+  };
   if (!isFirestoreConfigured()) return out;
   const db = getAdminFirestore();
   const ref = db.collection('founderDrafts').doc(draftId);
   const snap = await ref.get();
-  if (!snap.exists) return out; // marker not written yet — caller should mark first
+  if (!snap.exists) return out;
 
   const humans = draftOrder
     .map(o => (o?.ownerId || '').toLowerCase())
@@ -79,10 +79,18 @@ async function creditAllDraftersIfNeeded(
   for (const wallet of humans) {
     try {
       const promo = await recordFounderDraftJoin(wallet, draftId);
-      out.results.push({ wallet, ok: !!promo, reason: promo ? undefined : 'recordFounderDraftJoin returned null' });
+      out.results.push({
+        wallet,
+        ok: !!promo,
+        reason: promo ? undefined : 'recordFounderDraftJoin returned null',
+      });
     } catch (err) {
       logger.warn('founder-drafts.credit.failed', { wallet, draftId, err });
-      out.results.push({ wallet, ok: false, reason: err instanceof Error ? err.message : String(err) });
+      out.results.push({
+        wallet,
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -91,7 +99,7 @@ async function creditAllDraftersIfNeeded(
 }
 
 /**
- * GET /api/founder-drafts/check?draftId=X
+ * GET /api/founder-drafts/check?draftId=X[&debug=1]
  *
  * Source-of-truth check for whether a draft is a Founder Draft. Reads from
  * the persistent `founderDrafts` collection — once a draft is marked, it
@@ -99,17 +107,15 @@ async function creditAllDraftersIfNeeded(
  *
  * For drafts not yet persisted, evaluates live eligibility (schedule
  * active + within window + founder wallet in draftOrder) and AUTO-PROMOTES
- * them to persistent if eligible. This means the moment any client renders
- * a FounderPill on a qualifying draft, it gets locked in permanently.
+ * them to persistent if eligible.
  *
- * On promotion (and on first observation of an already-persisted draft
- * that hasn't been credited yet), credits every human drafter's
+ * On every call to a marked draft, also credits every human drafter's
  * founder-draft promo. This removes the dependency on each individual
  * drafter firing an authenticated POST from their own browser — which
  * could fail for transient Privy auth reasons and cause some drafters to
- * miss the credit entirely.
+ * miss the credit entirely. recordFounderDraftJoin is idempotent.
  *
- * Returns { isFounder: boolean }.
+ * `debug=1` returns the per-wallet credit results for diagnostics.
  */
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -117,26 +123,18 @@ export async function GET(req: Request) {
 
   const draftId = getSearchParam(req, 'draftId');
   if (!draftId) return jsonError('draftId is required', 400);
+  const debug = req.url.includes('debug=1');
 
   try {
-    // 1. Persistent flag — most authoritative.
     if (await isFounderDraftMarked(draftId)) {
-      // Self-heal: marker exists but credit may not have fired yet.
-      // Always run the credit loop — recordFounderDraftJoin is idempotent
-      // via founderHistory dedupe, so re-runs are safe and cheap.
       const info = await fetchDraftInfo(draftId);
-      const debug = req.url.includes('debug=1');
+      let credit;
       if (info?.draftOrder) {
-        const credit = await creditAllDraftersIfNeeded(draftId, info.draftOrder);
-        if (debug) {
-          return json({ isFounder: true, source: 'persisted', credit }, 200);
-        }
+        credit = await creditAllDrafters(draftId, info.draftOrder);
       }
-      return json({ isFounder: true, source: 'persisted' }, 200);
+      return json({ isFounder: true, source: 'persisted', ...(debug ? { credit } : {}) }, 200);
     }
 
-    // 2. Not marked. Check live eligibility — if it qualifies under the
-    //    current schedule, persist it now and return true.
     const [info, schedule] = await Promise.all([
       fetchDraftInfo(draftId),
       fetchSchedule(),
@@ -150,9 +148,12 @@ export async function GET(req: Request) {
       founderWallet: schedule.founderWallet,
       scheduleAt: schedule.at,
     });
-    await creditAllDraftersIfNeeded(draftId, info.draftOrder);
-    return json({ isFounder: true, source: 'auto-promoted' }, 200);
-  } catch {
+    const credit = await creditAllDrafters(draftId, info.draftOrder);
+    return json({ isFounder: true, source: 'auto-promoted', ...(debug ? { credit } : {}) }, 200);
+  } catch (err) {
+    if (debug) {
+      return json({ isFounder: false, error: err instanceof Error ? err.message : String(err) }, 200);
+    }
     return json({ isFounder: false }, 200);
   }
 }
