@@ -20,11 +20,13 @@ Same login Boris uses for everything backend. He'll send you the password in 1Pa
 
 No per-service IAM grants needed — you log in as the project owner. Skip everything below about granting roles or adding members.
 
-**Get from Boris (out-of-band — NOT in this repo):**
+**Get from Boris (out-of-band — private DM, NEVER public channel, NEVER in this repo):**
 
-1. **`team@sbsfantasy.com` password + 2FA TOTP** (1Password vault).
-2. **Secrets tarball** — `sbs-deploy-SECRETS-1password.tar.gz` (~5KB, **1Password attachment ONLY**).
+1. **`team@sbsfantasy.com` password** — Discord DM or iMessage from Boris.
+2. **2FA / TOTP for the Google account** — Boris will set up "another device" via `myaccount.google.com/security → 2-Step Verification → Authenticator app → Add` and have you scan the same QR code with your phone's Authenticator app. After scanning, both phones generate independent codes.
+3. **Secrets tarball** — `sbs-deploy-SECRETS.tar.gz` (~5KB).
    Contains: STAGING-only service accounts (`sbs-test-env-config.json`, `triggersServiceAccount.json`) + `.env` files for both `sbs-drafts-api-deploy` and `SBS-Football-Drafts-main`. Old prod credentials are NOT included — you don't need them and you don't have prod deploy access yet.
+   **Send as a Discord/iMessage DM attachment, not in any public channel or git.**
 
 **Already in this shared workspace (just pull and copy):**
 
