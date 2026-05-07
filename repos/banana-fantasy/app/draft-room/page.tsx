@@ -1240,7 +1240,11 @@ function DraftRoomContent() {
   // transient hiccup permanently lost the credit because subsequent
   // renders short-circuited on the flag and never retried.
   useEffect(() => {
-    if (!isLiveMode || engine.draftStatus !== 'active') return;
+    // Fire as soon as the draft FILLS (10/10), not when active drafting
+    // begins. The Founder Draft rule is: be in the draft when it fills.
+    // If the user navigates away during the slot-machine reveal or
+    // post-reveal countdown, they should still get credit.
+    if (!isLiveMode || playerCount < 10) return;
     const id = draftId || urlDraftId;
     if (!id) return;
     const promoUserId = user?.id || walletParam?.toLowerCase();
@@ -1273,7 +1277,7 @@ function DraftRoomContent() {
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.draftStatus, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
+  }, [playerCount, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
 
   useEffect(() => {
     if (phase !== 'pre-spin') return;
@@ -1627,6 +1631,17 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
+      {/* Persistent Founder Draft indicator — renders across ALL phases
+          (filling, reveal, countdown, active drafting, completed) so the
+          founder branding doesn't disappear during the slot-machine
+          animation or the post-reveal countdown. The pill self-hides
+          via internal eligibility check if the schedule doesn't qualify. */}
+      {(draftId || urlDraftId) && (
+        <div className="fixed top-3 left-3 z-[70] pointer-events-none">
+          <FounderPill draftId={draftId || urlDraftId} size="md" />
+        </div>
+      )}
+
       {/* Login gate — dims draft and blocks interaction when logged out */}
       {!isLoggedIn && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
