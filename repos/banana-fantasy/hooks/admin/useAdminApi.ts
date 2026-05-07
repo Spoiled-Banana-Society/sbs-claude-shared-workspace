@@ -359,6 +359,67 @@ export interface SentryIssueEntry {
   status: string;
 }
 
+export type KycAttemptStatus =
+  | 'approved'
+  | 'didit_declined'
+  | 'name_mismatch'
+  | 'dob_mismatch'
+  | 'blocked'
+  | 'error'
+  | 'invalid_input';
+
+export interface KycAttemptEntry {
+  id: string;
+  userId: string;
+  walletAddress?: string;
+  timestamp: string;
+  status: KycAttemptStatus;
+  formData: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth: string;
+    country: string;
+    street: string;
+    city: string;
+    state: string;
+    zip: string;
+  };
+  didit?: {
+    requestId?: string;
+    status?: string;
+    extractedFirstName?: string;
+    extractedLastName?: string;
+    extractedDob?: string;
+    documentType?: string;
+    documentNumber?: string;
+    warnings?: string[];
+  };
+  blockCode?: string;
+  blockReason?: string;
+  errorMessage?: string;
+  identityHash?: string;
+  imageSizeKb?: number;
+  durationMs?: number;
+}
+
+export function useKycAttempts(enabled: boolean, status: KycAttemptStatus | '' = '', limit = 100) {
+  const getHeaders = useAdminAuthHeaders();
+  const qs = new URLSearchParams();
+  if (status) qs.set('status', status);
+  qs.set('limit', String(limit));
+  return useQuery<{ attempts: KycAttemptEntry[]; count: number }>({
+    queryKey: ['admin', 'kyc-attempts', status, limit],
+    enabled,
+    queryFn: () =>
+      adminFetch<{ attempts: KycAttemptEntry[]; count: number }>(
+        `/api/admin/kyc-attempts?${qs.toString()}`,
+        getHeaders,
+      ),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export function useSentryIssues(enabled: boolean) {
   const getHeaders = useAdminAuthHeaders();
   return useQuery<{ issues: SentryIssueEntry[]; configured: boolean; requestId?: string }>({

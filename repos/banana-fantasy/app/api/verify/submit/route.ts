@@ -6,6 +6,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { savePersonaVerification, type VerifiedIdentity } from '@/lib/db-firestore';
 import { checkBlockRules } from '@/lib/verifyBlockRules';
+import { buildIdentityHash, logKycAttempt } from '@/lib/kycAudit';
 
 // Custom KYC submission endpoint:
 //   POST /api/verify/submit
@@ -64,13 +65,39 @@ function dobMatches(formDob: string, idDob: string | undefined): boolean {
 }
 
 export async function POST(req: Request) {
+  const startMs = Date.now();
   const limited = rateLimit(req, RATE_LIMITS.prizes);
   if (limited) return limited;
 
   if (!DIDIT_API_KEY) return jsonError('Didit API key not configured', 500);
 
+  let userId = '';
+  let walletAddress: string | undefined;
+  // Capture form values for audit log even when validation rejects them.
+  const formData = {
+    firstName: '',
+    lastName: '',
+    dateOfBirth: '',
+    country: '',
+    street: '',
+    city: '',
+    state: '',
+    zip: '',
+  };
+  let identityHash: string | undefined;
+  let imageSizeKb = 0;
+
   try {
     const session = await getPrivyUser(req);
+    walletAddress = session.walletAddress ?? undefined;
+    // Use wallet address (lowercase) as the canonical Firestore key to match
+    // the rest of the system. /api/eligibility reads under walletAddress (the
+    // /prizes page passes user.walletAddress); v2_users etc. all key on
+    // walletAddress. Saving under the Privy DID would create orphan docs the
+    // eligibility view can't find. Fall back to Privy userId only when the
+    // user has no wallet at all (shouldn't happen for cashout — Coinbase needs
+    // a wallet — but defensive).
+    userId = (walletAddress ?? session.userId).toLowerCase();
 
     // Multipart form parsing
     const form = await req.formData();
@@ -84,25 +111,43 @@ export async function POST(req: Request) {
     const zip = readFormString(form, 'zip', 20);
     const idImage = form.get('idImage');
 
-    if (!firstName || !lastName) return jsonError('Name is required', 400);
+    Object.assign(formData, { firstName, lastName, dateOfBirth, country, street, city, state, zip });
+    if (firstName && lastName && /^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+      identityHash = buildIdentityHash(firstName, lastName, dateOfBirth);
+    }
+
+    // Validation. Each early-return logs an `invalid_input` audit row so
+    // we can see what users were tripping on (missing fields, bad dates,
+    // wrong country, oversized file, etc.).
+    const failInvalidInput = async (msg: string, status = 400) => {
+      await logKycAttempt({
+        userId, walletAddress, status: 'invalid_input',
+        formData, identityHash, errorMessage: msg,
+        durationMs: Date.now() - startMs,
+      });
+      return jsonError(msg, status);
+    };
+
+    if (!firstName || !lastName) return failInvalidInput('Name is required');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
-      return jsonError('Date of birth must be YYYY-MM-DD', 400);
+      return failInvalidInput('Date of birth must be YYYY-MM-DD');
     }
     if (country !== 'US' && country !== 'CA') {
-      return jsonError('Country must be US or CA', 400);
+      return failInvalidInput('Country must be US or CA');
     }
     if (!street || !city || !state || !zip) {
-      return jsonError('Address is required', 400);
+      return failInvalidInput('Address is required');
     }
     if (!(idImage instanceof File)) {
-      return jsonError('ID image is required', 400);
+      return failInvalidInput('ID image is required');
     }
     if (idImage.size > MAX_ID_FILE_SIZE) {
-      return jsonError('ID image exceeds 10MB limit', 400);
+      return failInvalidInput('ID image exceeds 10MB limit');
     }
     if (idImage.type && !ALLOWED_MIME_TYPES.has(idImage.type)) {
-      return jsonError('ID image must be JPG, PNG, HEIC, or WEBP', 400);
+      return failInvalidInput('ID image must be JPG, PNG, HEIC, or WEBP');
     }
+    imageSizeKb = Math.round(idImage.size / 1024);
 
     // Step 1: Send the ID image directly to Didit's standalone synchronous
     // endpoint. No session, no polling — Didit validates the document and
@@ -123,6 +168,12 @@ export async function POST(req: Request) {
     if (!verifyRes.ok) {
       const text = await verifyRes.text();
       console.error('[Verify Submit] Didit ID verification failed:', verifyRes.status, text);
+      await logKycAttempt({
+        userId, walletAddress, status: 'error',
+        formData, identityHash, imageSizeKb,
+        errorMessage: `Didit API ${verifyRes.status}: ${text.slice(0, 500)}`,
+        durationMs: Date.now() - startMs,
+      });
       return jsonError(
         'Failed to verify ID. Please try a clearer photo of your driver\'s license, passport, or state ID.',
         502,
@@ -134,10 +185,28 @@ export async function POST(req: Request) {
     const idVer = verifyData?.id_verification ?? {};
     const decision: string = idVer?.status || 'Declined';
     const requestId: string | undefined = verifyData?.request_id;
+    const idFirstName: string | undefined = idVer?.first_name;
+    const idLastName: string | undefined = idVer?.last_name;
+    const idDob: string | undefined = idVer?.date_of_birth;
+    const idWarnings: string[] = Array.isArray(idVer?.warnings) ? idVer.warnings : [];
+    const diditAuditData = {
+      requestId,
+      status: decision,
+      extractedFirstName: idFirstName,
+      extractedLastName: idLastName,
+      extractedDob: idDob,
+      documentType: idVer?.document_type,
+      documentNumber: idVer?.document_number,
+      warnings: idWarnings.length > 0 ? idWarnings : undefined,
+    };
 
     if (decision !== 'Approved') {
-      const warnings: string[] = Array.isArray(idVer?.warnings) ? idVer.warnings : [];
-      const detail = warnings.length > 0 ? ` (${warnings.join(', ')})` : '';
+      const detail = idWarnings.length > 0 ? ` (${idWarnings.join(', ')})` : '';
+      await logKycAttempt({
+        userId, walletAddress, status: 'didit_declined',
+        formData, didit: diditAuditData, identityHash, imageSizeKb,
+        durationMs: Date.now() - startMs,
+      });
       return json({
         approved: false,
         reason: `We couldn't verify the ID you uploaded${detail}. Please try a clearer photo of a valid government-issued ID.`,
@@ -145,11 +214,13 @@ export async function POST(req: Request) {
     }
 
     // Step 2: Cross-check extracted ID data against the user's form values.
-    const idFirstName: string | undefined = idVer?.first_name;
-    const idLastName: string | undefined = idVer?.last_name;
-    const idDob: string | undefined = idVer?.date_of_birth;
 
     if (!nameMatches(firstName, idFirstName) || !nameMatches(lastName, idLastName)) {
+      await logKycAttempt({
+        userId, walletAddress, status: 'name_mismatch',
+        formData, didit: diditAuditData, identityHash, imageSizeKb,
+        durationMs: Date.now() - startMs,
+      });
       return json({
         approved: false,
         reason:
@@ -157,11 +228,38 @@ export async function POST(req: Request) {
       });
     }
     if (!dobMatches(dateOfBirth, idDob)) {
+      await logKycAttempt({
+        userId, walletAddress, status: 'dob_mismatch',
+        formData, didit: diditAuditData, identityHash, imageSizeKb,
+        durationMs: Date.now() - startMs,
+      });
       return json({
         approved: false,
         reason:
           "The date of birth on your ID doesn't match what you entered. Please verify and try again.",
       });
+    }
+
+    // Sybil check (logged-only for now). If this identity hash already maps
+    // to a different userId in our audit log, flag it. Enforcement (rejecting
+    // the verification) is gated off until we've reviewed the data and are
+    // confident in the match logic. For now we just log a warning so the
+    // admin can spot multi-account attempts.
+    if (identityHash) {
+      const { findIdentityCollision } = await import('@/lib/kycAudit');
+      const collision = await findIdentityCollision(identityHash, userId);
+      if (collision) {
+        console.warn(
+          '[KYC Sybil] Identity hash collision detected — userId',
+          userId,
+          'matches existing approved userId',
+          collision.userId,
+          'wallet',
+          collision.walletAddress,
+        );
+        // Future enforcement: return json({ approved: false, reason: '...' })
+        // and log status: 'sybil_blocked'. For now just continue + log.
+      }
     }
 
     // Step 5: Build the verifiedIdentity record from a mix of form data
@@ -194,7 +292,7 @@ export async function POST(req: Request) {
       // same block rule and reject with the same reason.
       // Optional fields (inquiryId, geoState) are spread conditionally —
       // Firestore rejects explicit undefined values.
-      await savePersonaVerification(session.userId, {
+      await savePersonaVerification(userId, {
         tier1: {
           verified: true,
           verifiedAt: new Date().toISOString(),
@@ -202,6 +300,13 @@ export async function POST(req: Request) {
           ...(state ? { geoState: state } : {}),
         },
         verifiedIdentity,
+      });
+      await logKycAttempt({
+        userId, walletAddress, status: 'blocked',
+        formData, didit: diditAuditData, identityHash, imageSizeKb,
+        blockCode: blockResult.code,
+        blockReason: blockResult.message,
+        durationMs: Date.now() - startMs,
       });
       return json({
         approved: false,
@@ -221,10 +326,25 @@ export async function POST(req: Request) {
       verifiedIdentity,
     });
 
+    await logKycAttempt({
+      userId, walletAddress, status: 'approved',
+      formData, didit: diditAuditData, identityHash, imageSizeKb,
+      durationMs: Date.now() - startMs,
+    });
+
     return json({ approved: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[Verify Submit] Error:', err);
+    // Log the unexpected error to the audit so admin can see what blew up.
+    if (userId) {
+      await logKycAttempt({
+        userId, walletAddress, status: 'error',
+        formData, identityHash, imageSizeKb,
+        errorMessage: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - startMs,
+      });
+    }
     return jsonError(err instanceof Error ? err.message : 'Verification failed', 500);
   }
 }

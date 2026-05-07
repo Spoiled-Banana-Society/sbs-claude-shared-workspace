@@ -48,7 +48,11 @@ export async function POST(req: Request) {
     // Gate the cashout on KYC + SBS-specific block rules. We re-check at every
     // withdrawal (even for already-verified users) because state-by-state
     // restrictions mean a user who moves to a banned state must be re-blocked.
-    const verification = await getPersonaVerification(session.userId);
+    // Read verification under wallet address (lowercase) — canonical key
+    // matching /api/verify/submit's save target. Falls back to Privy userId
+    // only when no wallet exists (defensive — shouldn't happen for cashout).
+    const verificationKey = (session.walletAddress ?? session.userId).toLowerCase();
+    const verification = await getPersonaVerification(verificationKey);
     if (!verification.tier1.verified) {
       // User hasn't completed Didit verification yet. Frontend pops the
       // VerificationModal to drive them through it.
