@@ -1666,10 +1666,24 @@ export async function recordFounderDraftJoin(userId: string, draftId: string): P
 
   return db.runTransaction(async (tx) => {
     const promoSnap = await tx.get(promoRef);
-    if (!promoSnap.exists) return null;
 
-    const promo = deepClone(promoSnap.data() as Promo);
-    if (promo.type !== 'founder-draft') return null;
+    // Lazy-seed the founder-draft promo doc if missing. ensureUserSeeded
+    // only runs the full seed for never-seen users; pre-existing users
+    // who signed up before this promo type was added will have a user doc
+    // but no promos/founder-draft doc, and the credit would silently
+    // no-op (`if (!exists) return null`). Seed inline from the canonical
+    // template in seedDb.promosByUser so the credit can land on the same
+    // transaction.
+    let promo: Promo;
+    if (!promoSnap.exists) {
+      const seedList = seedDb.promosByUser['1'] ?? [];
+      const template = seedList.find(p => p.id === FOUNDER_DRAFT_PROMO_ID && p.type === 'founder-draft');
+      if (!template) return null; // seed list missing the template — fail closed
+      promo = deepClone(template);
+    } else {
+      promo = deepClone(promoSnap.data() as Promo);
+      if (promo.type !== 'founder-draft') return null;
+    }
 
     const history = promo.modalContent.founderHistory || [];
     if (history.some(h => h.draftName === draftId)) return promo; // idempotent
