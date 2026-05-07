@@ -63,29 +63,31 @@ async function fetchSchedule(): Promise<FounderSchedule> {
 async function creditAllDraftersIfNeeded(
   draftId: string,
   draftOrder: { ownerId: string }[],
-): Promise<void> {
-  if (!isFirestoreConfigured()) return;
+): Promise<{ humans: string[]; results: Array<{ wallet: string; ok: boolean; reason?: string }> }> {
+  const out = { humans: [] as string[], results: [] as Array<{ wallet: string; ok: boolean; reason?: string }> };
+  if (!isFirestoreConfigured()) return out;
   const db = getAdminFirestore();
   const ref = db.collection('founderDrafts').doc(draftId);
   const snap = await ref.get();
-  if (!snap.exists) return; // marker not written yet — caller should mark first
-  const data = snap.data() || {};
-  if (data.creditedAt) return; // already credited, idempotent skip
+  if (!snap.exists) return out; // marker not written yet — caller should mark first
 
   const humans = draftOrder
     .map(o => (o?.ownerId || '').toLowerCase())
     .filter(o => o && !o.startsWith('bot-'));
+  out.humans = humans;
 
   for (const wallet of humans) {
     try {
-      await recordFounderDraftJoin(wallet, draftId);
+      const promo = await recordFounderDraftJoin(wallet, draftId);
+      out.results.push({ wallet, ok: !!promo, reason: promo ? undefined : 'recordFounderDraftJoin returned null' });
     } catch (err) {
       logger.warn('founder-drafts.credit.failed', { wallet, draftId, err });
-      // continue — partial credit is better than none
+      out.results.push({ wallet, ok: false, reason: err instanceof Error ? err.message : String(err) });
     }
   }
 
   await ref.set({ creditedAt: new Date().toISOString() }, { merge: true });
+  return out;
 }
 
 /**
@@ -119,13 +121,16 @@ export async function GET(req: Request) {
   try {
     // 1. Persistent flag — most authoritative.
     if (await isFounderDraftMarked(draftId)) {
-      // Self-heal: if the marker exists but credit hasn't fired (older
-      // marker docs from before bulk-credit shipped), run the credit loop
-      // now. The Go API draftOrder lookup is the source of truth for who
-      // was in the draft.
+      // Self-heal: marker exists but credit may not have fired yet.
+      // Always run the credit loop — recordFounderDraftJoin is idempotent
+      // via founderHistory dedupe, so re-runs are safe and cheap.
       const info = await fetchDraftInfo(draftId);
+      const debug = req.url.includes('debug=1');
       if (info?.draftOrder) {
-        await creditAllDraftersIfNeeded(draftId, info.draftOrder);
+        const credit = await creditAllDraftersIfNeeded(draftId, info.draftOrder);
+        if (debug) {
+          return json({ isFounder: true, source: 'persisted', credit }, 200);
+        }
       }
       return json({ isFounder: true, source: 'persisted' }, 200);
     }
