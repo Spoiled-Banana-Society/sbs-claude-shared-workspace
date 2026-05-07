@@ -31,23 +31,28 @@ export async function POST(req: Request) {
 
     if (!isFirestoreConfigured()) throw new ApiError(503, 'Firestore not configured');
 
-    const before = await getPersonaVerification(admin.userId);
+    // Use wallet address (lowercase) as the canonical Firestore key — same
+    // pattern verify/submit and sell-session use. Resetting under Privy DID
+    // would miss the actual saved doc and leave the user still showing as
+    // verified on /prizes.
+    const verificationKey = (admin.walletAddress ?? admin.userId).toLowerCase();
+    const before = await getPersonaVerification(verificationKey);
 
     // Reset tier1 + tier2. verifiedIdentity stays in the doc but is harmless
     // (the cashout flow gates on tier1.verified, which is now false → it'll
     // re-trigger verification → next submit overwrites verifiedIdentity).
     // cumulativeWithdrawals intentionally left alone.
-    await savePersonaVerification(admin.userId, {
+    await savePersonaVerification(verificationKey, {
       tier1: { verified: false },
       tier2: { verified: false },
     });
 
-    const after = await getPersonaVerification(admin.userId);
+    const after = await getPersonaVerification(verificationKey);
 
     await logAdminAction({
       actor: actorWallet,
       action: 'kyc-revoke',
-      target: admin.userId,
+      target: verificationKey,
       before: { tier1: before.tier1, tier2: before.tier2 },
       after: { tier1: after.tier1, tier2: after.tier2 },
       requestId,
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
       durationMs: Date.now() - start,
     });
 
-    return json({ success: true, userId: admin.userId, requestId });
+    return json({ success: true, userId: verificationKey, requestId });
   } catch (err) {
     logger.error('admin.kyc_self_reset.failed', {
       requestId,

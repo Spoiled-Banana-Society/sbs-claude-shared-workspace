@@ -89,8 +89,15 @@ export async function POST(req: Request) {
 
   try {
     const session = await getPrivyUser(req);
-    userId = session.userId;
     walletAddress = session.walletAddress ?? undefined;
+    // Use wallet address (lowercase) as the canonical Firestore key to match
+    // the rest of the system. /api/eligibility reads under walletAddress (the
+    // /prizes page passes user.walletAddress); v2_users etc. all key on
+    // walletAddress. Saving under the Privy DID would create orphan docs the
+    // eligibility view can't find. Fall back to Privy userId only when the
+    // user has no wallet at all (shouldn't happen for cashout — Coinbase needs
+    // a wallet — but defensive).
+    userId = (walletAddress ?? session.userId).toLowerCase();
 
     // Multipart form parsing
     const form = await req.formData();
@@ -285,7 +292,7 @@ export async function POST(req: Request) {
       // same block rule and reject with the same reason.
       // Optional fields (inquiryId, geoState) are spread conditionally —
       // Firestore rejects explicit undefined values.
-      await savePersonaVerification(session.userId, {
+      await savePersonaVerification(userId, {
         tier1: {
           verified: true,
           verifiedAt: new Date().toISOString(),
