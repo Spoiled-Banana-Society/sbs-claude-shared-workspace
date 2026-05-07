@@ -126,12 +126,12 @@ export default function PrizesPage() {
             </div>
             <p className="text-text-muted text-sm">
               {isEligible
-                ? 'Your eligibility allows SBS to issue prizes automatically when you win a contest.'
-                : 'Complete verification to receive prize payouts.'}
+                ? 'Your identity is verified. You can withdraw prize winnings any time.'
+                : 'Complete identity verification to withdraw your prize winnings.'}
             </p>
             {!isEligible && (
               <p className="text-text-muted text-sm mt-1">
-                Verification will be required when you make your first withdrawal.
+                One-time ID + selfie verification via Coinbase&apos;s identity partner. Required by US law for crypto-to-cash payouts.
               </p>
             )}
           </div>
@@ -146,39 +146,27 @@ export default function PrizesPage() {
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="flex items-center justify-between rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-4 py-3">
             <div>
-              <p className="text-xs text-text-muted">Age + Location</p>
-              <p className="text-sm text-text-primary font-medium">Basic Verification</p>
+              <p className="text-xs text-text-muted">Identity</p>
+              <p className="text-sm text-text-primary font-medium">Name, DOB, Address, ID</p>
             </div>
             {eligibility?.tier1Verified ? (
               <Badge type="default" className="bg-success/20 text-success border-success/30">Verified</Badge>
             ) : (
-              <Badge type="default" className="bg-bg-elevated text-text-muted border-bg-elevated">At Withdrawal</Badge>
+              <Badge type="default" className="bg-bg-elevated text-text-muted border-bg-elevated">Required</Badge>
             )}
           </div>
           <div className="flex items-center justify-between rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-4 py-3">
             <div>
-              <p className="text-xs text-text-muted">Full KYC</p>
-              <p className="text-sm text-text-primary font-medium">Identity (over $2k)</p>
+              <p className="text-xs text-text-muted">Tax Form (US, $2k+ per year)</p>
+              <p className="text-sm text-text-primary font-medium">W9</p>
             </div>
-            {eligibility?.tier2Verified ? (
-              <Badge type="default" className="bg-success/20 text-success border-success/30">Verified</Badge>
+            {eligibility?.w9Completed ? (
+              <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
             ) : (
               <Badge type="default" className="bg-bg-elevated text-text-muted border-bg-elevated">When Needed</Badge>
             )}
           </div>
         </div>
-
-        {eligibility?.w9Completed && (
-          <div className="mt-4 pt-4 border-t border-bg-tertiary">
-            <div className="flex items-center gap-2 text-sm">
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-success">
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-              </svg>
-              <span className="text-text-secondary">W9 Completed</span>
-            </div>
-          </div>
-        )}
       </Card>
 
       <section>
