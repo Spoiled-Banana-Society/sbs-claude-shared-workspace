@@ -86,6 +86,7 @@ export function usePrizes(opts?: { userId?: string }) {
     totalWinnings,
     pendingWithdrawals,
     isLoading: query.isLoading,
+    isValidating: query.isValidating,
     error: query.error,
     withdrawError,
     withdraw,

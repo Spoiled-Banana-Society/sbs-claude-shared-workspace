@@ -1231,26 +1231,18 @@ function DraftRoomContent() {
   // Founder Draft promo POST. Fires once the draft is past filling.
   // Server validates that the draft actually qualifies (within window
   // + founder wallet present + caller in draftOrder) so we can fire
-  // optimistically. Server-side dedupe in recordFounderDraftJoin is
-  // the source of truth (founderHistory.draftName check).
-  //
-  // Client-side flag is set ONLY on definitive responses (2xx success
-  // or 4xx rejection) — never on transient failures (5xx, network).
-  // Previously the flag was set before the fetch, which meant a
-  // transient hiccup permanently lost the credit because subsequent
-  // renders short-circuited on the flag and never retried.
+  // optimistically — non-qualifying drafts get a 400 and we log it.
+  // Idempotent via localStorage promo-founder:* + server-side dedupe
+  // in recordFounderDraftJoin.
   useEffect(() => {
-    // Fire as soon as the draft FILLS (10/10), not when active drafting
-    // begins. The Founder Draft rule is: be in the draft when it fills.
-    // If the user navigates away during the slot-machine reveal or
-    // post-reveal countdown, they should still get credit.
-    if (!isLiveMode || playerCount < 10) return;
+    if (!isLiveMode || engine.draftStatus !== 'active') return;
     const id = draftId || urlDraftId;
     if (!id) return;
     const promoUserId = user?.id || walletParam?.toLowerCase();
     if (!promoUserId) return;
     const founderKey = `promo-founder:${id}`;
     if (localStorage.getItem(founderKey)) return;
+    localStorage.setItem(founderKey, '1');
     (async () => {
       const token = await getAccessToken();
       try {
@@ -1262,22 +1254,15 @@ function DraftRoomContent() {
           },
           body: JSON.stringify({ draftId: id }),
         });
-        if (res.ok || (res.status >= 400 && res.status < 500)) {
-          // Definitive response: 2xx success or 4xx rejection (not eligible,
-          // not authed, etc). Mark done so we don't spam.
-          localStorage.setItem(founderKey, '1');
-        } else {
-          // 5xx or other transient — leave the flag unset so the next
-          // render retries. Server-side dedupe makes that safe.
-          logger.warn('[Promo] Founder POST non-OK (will retry)', { status: res.status });
+        if (!res.ok && res.status !== 400) {
+          logger.warn('[Promo] Founder POST non-OK', { status: res.status });
         }
       } catch (err) {
-        // Network error — same retry treatment as 5xx.
-        logger.error('[Promo] Founder tracking failed (will retry):', err);
+        logger.error('[Promo] Founder tracking failed:', err);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerCount, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
+  }, [engine.draftStatus, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
 
   useEffect(() => {
     if (phase !== 'pre-spin') return;
@@ -1631,17 +1616,6 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {/* Persistent Founder Draft indicator — renders across ALL phases
-          (filling, reveal, countdown, active drafting, completed) so the
-          founder branding doesn't disappear during the slot-machine
-          animation or the post-reveal countdown. The pill self-hides
-          via internal eligibility check if the schedule doesn't qualify. */}
-      {(draftId || urlDraftId) && (
-        <div className="fixed top-3 left-3 z-[70] pointer-events-none">
-          <FounderPill draftId={draftId || urlDraftId} size="md" />
-        </div>
-      )}
-
       {/* Login gate — dims draft and blocks interaction when logged out */}
       {!isLoggedIn && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">

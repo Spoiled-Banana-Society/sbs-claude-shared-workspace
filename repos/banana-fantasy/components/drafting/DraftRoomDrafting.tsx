@@ -122,9 +122,6 @@ export function DraftRoomDrafting({
         />
       )}
 
-      {/* Founder pill is rendered at the draft-room page level (z-[70])
-          so it persists across all phases — see app/draft-room/page.tsx. */}
-
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
           <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
