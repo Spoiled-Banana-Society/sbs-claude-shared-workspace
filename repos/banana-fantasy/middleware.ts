@@ -14,7 +14,13 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3001',
 ];
 
-const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB — default for typical JSON payloads
+// File-upload endpoints get a higher cap. KYC ID photos are typically
+// 300-600 KB after client-side compression but can be larger (HEIC files
+// where canvas compression fell back to original, edge-of-camera-roll cases).
+// 5 MB matches Vercel's serverless function request limit, gives headroom.
+const FILE_UPLOAD_MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB
+const FILE_UPLOAD_PATHS = ['/api/verify/submit'];
 
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true;
@@ -58,11 +64,14 @@ export function middleware(req: NextRequest) {
     });
   }
 
-  // Check request size
+  // Check request size — file-upload endpoints get a higher cap
   const contentLength = req.headers.get('content-length');
-  if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+  const isFileUpload = FILE_UPLOAD_PATHS.some((p) => pathname === p);
+  const sizeLimit = isFileUpload ? FILE_UPLOAD_MAX_BODY_SIZE : MAX_BODY_SIZE;
+  if (contentLength && parseInt(contentLength, 10) > sizeLimit) {
+    const limitMb = Math.floor(sizeLimit / 1024 / 1024);
     return NextResponse.json(
-      { error: 'Request body too large. Maximum size is 1MB.' },
+      { error: `Request body too large. Maximum size is ${limitMb}MB.` },
       { status: 413 }
     );
   }

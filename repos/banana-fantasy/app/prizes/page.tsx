@@ -172,7 +172,12 @@ export default function PrizesPage() {
       <section>
         <h2 className="text-xl font-semibold text-text-primary mb-4">Prize History</h2>
 
-        {prizesQuery.isLoading && (
+        {/* Show loading whenever a fetch is in flight AND we have no data yet.
+            isLoading-only was insufficient because the hook can mount AFTER
+            isFirstLoadRef has already been flipped (when isLoggedIn gates the
+            JSX subtree where these hooks live), causing the empty state to
+            render briefly while the real fetch is still running. */}
+        {(prizesQuery.isLoading || (prizesQuery.isValidating && prizes.length === 0)) && (
           <Card className="text-center py-12">
             <p className="text-text-muted">Loading prize history...</p>
           </Card>
@@ -185,7 +190,7 @@ export default function PrizesPage() {
           </Card>
         )}
 
-        {!prizesQuery.isLoading && !hasPrizeError && (
+        {!prizesQuery.isLoading && !hasPrizeError && prizes.length > 0 && (
           <div className="space-y-4">
             {prizes.map((item) => (
               <Card key={`${item.type}-${item.id}`} className="p-0">
@@ -274,7 +279,12 @@ export default function PrizesPage() {
           </div>
         )}
 
-        {!prizesQuery.isLoading && !prizesQuery.error && prizes.length === 0 && (
+        {/* Empty state only when truly empty AFTER fetch settles. Without
+            !isValidating, this rendered briefly during the first fetch
+            after login transitioned the JSX subtree from logged-out to
+            logged-in (the hook mounts late and isFirstLoadRef is already
+            flipped by then). */}
+        {!prizesQuery.isLoading && !prizesQuery.isValidating && !prizesQuery.error && prizes.length === 0 && (
           <Card className="text-center py-12">
             <div className="text-4xl mb-4">🎯</div>
             <p className="text-text-muted">No prizes yet. Start drafting to win!</p>
