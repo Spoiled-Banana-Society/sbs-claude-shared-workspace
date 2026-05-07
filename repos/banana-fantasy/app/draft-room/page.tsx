@@ -1245,39 +1245,49 @@ function DraftRoomContent() {
     // If the user navigates away during the slot-machine reveal or
     // post-reveal countdown, they should still get credit.
     if (!isLiveMode || playerCount < 10) return;
+    // Privy must be authenticated before we can mint a Bearer token.
+    // Without it the route returns 401 and we'd waste an attempt — server
+    // dedupe makes the wait-and-retry safe.
+    if (!isLoggedIn) return;
     const id = draftId || urlDraftId;
     if (!id) return;
     const promoUserId = user?.id || walletParam?.toLowerCase();
     if (!promoUserId) return;
-    const founderKey = `promo-founder:${id}`;
+    // Bumped from `promo-founder:` → `promo-founder-v2:` so any flags set
+    // by a prior buggy build (which marked-done on transient 401s) get
+    // ignored and the credit gets one fresh shot.
+    const founderKey = `promo-founder-v2:${id}`;
     if (localStorage.getItem(founderKey)) return;
     (async () => {
       const token = await getAccessToken();
+      if (!token) return; // try again on next render once Privy hands one over
       try {
         const res = await fetch('/api/promos/founder-draft', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ draftId: id }),
         });
-        if (res.ok || (res.status >= 400 && res.status < 500)) {
-          // Definitive response: 2xx success or 4xx rejection (not eligible,
-          // not authed, etc). Mark done so we don't spam.
+        if (res.ok) {
+          localStorage.setItem(founderKey, '1');
+        } else if (res.status === 400) {
+          // Server says draft is genuinely not a Founder Draft — mark done.
           localStorage.setItem(founderKey, '1');
         } else {
-          // 5xx or other transient — leave the flag unset so the next
-          // render retries. Server-side dedupe makes that safe.
+          // 401 (token rejected), 403 (caller not in draft yet — race with
+          // Go's draftOrder population), 5xx, network — leave flag unset and
+          // let the next render retry. Server-side dedupe is the source of
+          // truth, so retrying is safe.
           logger.warn('[Promo] Founder POST non-OK (will retry)', { status: res.status });
         }
       } catch (err) {
-        // Network error — same retry treatment as 5xx.
         logger.error('[Promo] Founder tracking failed (will retry):', err);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerCount, draftId, urlDraftId, isLiveMode, walletParam, user?.id]);
+  }, [playerCount, draftId, urlDraftId, isLiveMode, isLoggedIn, walletParam, user?.id]);
 
   useEffect(() => {
     if (phase !== 'pre-spin') return;
@@ -1602,6 +1612,18 @@ function DraftRoomContent() {
           <img src="/jackpot-logo.png" alt="Jackpot" className="w-[100px] mr-2 h-auto" />
         </div>
       )}
+      {/* Founder pill — sits inline with the JP/HOF logo (when present) and
+          the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
+          premium tag alongside the larger JP/HOF artwork rather than a plain
+          chip. Self-hides when the draft isn't a Founder Draft. */}
+      {(draftId || urlDraftId) && (
+        <div
+          className="flex items-center"
+          style={{ filter: 'drop-shadow(0 0 6px rgba(6,182,212,0.55))' }}
+        >
+          <FounderPill draftId={draftId || urlDraftId} size="md" />
+        </div>
+      )}
       <div>
         <button
           onClick={handleToggleMute}
@@ -1631,17 +1653,6 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {/* Persistent Founder Draft indicator — renders across ALL phases
-          (filling, reveal, countdown, active drafting, completed) so the
-          founder branding doesn't disappear during the slot-machine
-          animation or the post-reveal countdown. The pill self-hides
-          via internal eligibility check if the schedule doesn't qualify. */}
-      {(draftId || urlDraftId) && (
-        <div className="fixed top-3 left-3 z-[70] pointer-events-none">
-          <FounderPill draftId={draftId || urlDraftId} size="md" />
-        </div>
-      )}
-
       {/* Login gate — dims draft and blocks interaction when logged out */}
       {!isLoggedIn && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
