@@ -66,15 +66,26 @@ export function useBadgeUnlockNotifier() {
       lastSweepRef.current = Date.now();
       try {
         const token = await getAccessToken();
-        if (!token) return;
-        await fetch('/api/badges/sweep-mine', {
+        if (!token) {
+          console.warn('[Badges] sweep skipped: no Privy token yet');
+          return;
+        }
+        const res = await fetch('/api/badges/sweep-mine', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
         });
-      } catch { /* non-fatal */ }
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          console.warn('[Badges] sweep failed', { status: res.status, body });
+        } else {
+          console.log('[Badges] sweep ok', body);
+        }
+      } catch (err) {
+        console.warn('[Badges] sweep threw', err);
+      }
     };
 
     const tick = async () => {
