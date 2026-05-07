@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { recordFounderDraftJoin } from '@/lib/db';
+import { recordFounderDraftJoin, markFounderDraft } from '@/lib/db';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { logger } from '@/lib/logger';
 
@@ -95,6 +95,13 @@ export async function POST(req: Request) {
       throw new ApiError(403, 'caller is not in this draft');
     }
 
+    // Persist the founder-draft flag for this draftId BEFORE crediting.
+    // Once persisted, the FounderPill renders for this draft forever, even
+    // if the schedule changes later. Idempotent — first writer wins.
+    await markFounderDraft(draftId, {
+      founderWallet: schedule.founderWallet,
+      scheduleAt: schedule.at,
+    });
     const promo = await recordFounderDraftJoin(walletAddress, draftId);
     return json({ promo }, 200);
   } catch (err) {

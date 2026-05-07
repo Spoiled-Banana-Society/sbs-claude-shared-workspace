@@ -1642,6 +1642,36 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
 
 const FOUNDER_DRAFT_PROMO_ID = 'founder-draft';
 const FOUNDER_DRAFT_REWARD = 1; // 1 free draft per qualifying drafter
+const FOUNDER_DRAFTS_COLLECTION = 'founderDrafts';
+
+/**
+ * Once-and-permanent record that a draft qualified as a Founder Draft at
+ * the time it filled. The pill rendering and credit endpoints read this
+ * record so changing the founder schedule later doesn't retroactively
+ * untag a draft that was already a Founder Draft. Idempotent — first
+ * write wins, subsequent calls are no-ops.
+ */
+export async function markFounderDraft(
+  draftId: string,
+  meta: { founderWallet: string; scheduleAt: string },
+): Promise<void> {
+  const db = getAdminFirestore();
+  const ref = db.collection(FOUNDER_DRAFTS_COLLECTION).doc(draftId);
+  const snap = await ref.get();
+  if (snap.exists) return; // already marked, never overwrite
+  await ref.set(stripUndefined({
+    draftId,
+    founderWallet: meta.founderWallet.toLowerCase(),
+    scheduleAt: meta.scheduleAt,
+    markedAt: new Date().toISOString(),
+  }));
+}
+
+export async function isFounderDraftMarked(draftId: string): Promise<boolean> {
+  const db = getAdminFirestore();
+  const snap = await db.collection(FOUNDER_DRAFTS_COLLECTION).doc(draftId).get();
+  return snap.exists;
+}
 
 /**
  * Credit a user's founder-draft promo when their draft has been verified
