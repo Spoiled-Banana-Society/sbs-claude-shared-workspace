@@ -1,0 +1,251 @@
+// Coinbase offramp (cashout) audit log.
+// Mirrors lib/kycAudit.ts. Logs every cashout attempt — when we issue a
+// Coinbase session token, when the user returns with a tx, and the tx's
+// final outcome — so the admin can see who got stuck where.
+//
+// Limitations: we can't see INSIDE Coinbase's popup. We only know:
+//   - they started (session_created)
+//   - whether a tx was created (tx_seen via tx-status)
+//   - the tx's eventual status (pending → completed | failed)
+// "Abandoned" is derived: session_created with no tx_seen update after
+// the threshold below.
+
+import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
+
+const OFFRAMP_COLLECTION = 'offramp_attempts';
+export const ABANDONED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+
+export type OfframpAttemptStatus =
+  | 'session_created'      // We issued a Coinbase session token, popup launched
+  | 'tx_pending'           // Coinbase has a tx for this user, not yet settled
+  | 'tx_completed'         // Coinbase reports tx fully completed
+  | 'tx_failed'            // Coinbase reports tx failed
+  | 'abandoned';           // session_created but no tx after ABANDONED_THRESHOLD_MS
+
+// Distinguishes how the user is offramping. Different code paths log different
+// values, so admin can filter by source.
+//   - 'coinbase_offramp': through Coinbase's hosted offramp (USDC → USD/bank)
+//   - 'direct_usdc':       direct USDC transfer to user's external wallet
+//   - 'direct_bank':       (future) direct ACH bypassing Coinbase
+export type OfframpSource = 'coinbase_offramp' | 'direct_usdc' | 'direct_bank';
+
+export interface OfframpAttempt {
+  userId: string;          // canonical wallet-address-lowercase key
+  walletAddress?: string;
+  source: OfframpSource;
+  partnerUserId?: string;  // what we passed to Coinbase as partnerUserId
+  timestamp: string;       // ISO — when session_created
+  updatedAt: string;       // ISO — last status change
+  status: OfframpAttemptStatus;
+  amount?: number;         // USDC requested
+  paymentMethod?: string;  // ACH_BANK_ACCOUNT / FIAT_WALLET / CRYPTO_ACCOUNT (Coinbase) | usdc / bank (direct)
+  draftId?: string;        // tied prize, if any
+  // Updated when tx-status polling sees a real Coinbase tx
+  coinbaseTxId?: string;
+  coinbaseTxStatus?: string; // raw status string from Coinbase
+  txDetectedAt?: string;
+  txCompletedAt?: string;
+  // For diagnostics
+  errorMessage?: string;
+  // For direct withdrawals — stash the original withdrawal doc id so admin
+  // can cross-reference with /api/admin/withdrawals if needed.
+  withdrawalId?: string;
+}
+
+/**
+ * Log a freshly-created offramp session. Returns the doc id (caller can
+ * stash it in the user's session/localStorage if they want guaranteed
+ * matching later, but lookup-by-most-recent works fine for sequential flows).
+ */
+export async function logOfframpSessionCreated(input: {
+  userId: string;
+  walletAddress?: string;
+  partnerUserId?: string;
+  amount?: number;
+  paymentMethod?: string;
+  draftId?: string;
+}): Promise<string | null> {
+  if (!isFirestoreConfigured()) {
+    console.warn('[Offramp Audit] Firestore not configured, skipping log');
+    return null;
+  }
+  try {
+    const now = new Date().toISOString();
+    const db = getAdminFirestore();
+    const doc: Partial<OfframpAttempt> = {
+      userId: input.userId,
+      source: 'coinbase_offramp',
+      timestamp: now,
+      updatedAt: now,
+      status: 'session_created' as OfframpAttemptStatus,
+    };
+    if (input.walletAddress) doc.walletAddress = input.walletAddress;
+    if (input.partnerUserId) doc.partnerUserId = input.partnerUserId;
+    if (typeof input.amount === 'number') doc.amount = input.amount;
+    if (input.paymentMethod) doc.paymentMethod = input.paymentMethod;
+    if (input.draftId) doc.draftId = input.draftId;
+    const ref = await db.collection(OFFRAMP_COLLECTION).add(doc);
+    return ref.id;
+  } catch (err) {
+    console.error('[Offramp Audit] logOfframpSessionCreated failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Log a direct withdrawal (USDC to user wallet, or future direct bank rail).
+ * These don't go through Coinbase, so they aren't subject to tx-status
+ * polling — they're either already settled at creation or queued for
+ * processing. Status maps to whatever createWithdrawal returned.
+ */
+export async function logDirectWithdrawal(input: {
+  userId: string;
+  walletAddress?: string;
+  amount: number;
+  method: 'usdc' | 'bank';
+  withdrawalId?: string;
+  status: 'tx_pending' | 'tx_completed' | 'tx_failed';
+  errorMessage?: string;
+  draftId?: string;
+}): Promise<string | null> {
+  if (!isFirestoreConfigured()) return null;
+  try {
+    const now = new Date().toISOString();
+    const db = getAdminFirestore();
+    const doc: Partial<OfframpAttempt> = {
+      userId: input.userId,
+      source: input.method === 'bank' ? 'direct_bank' : 'direct_usdc',
+      timestamp: now,
+      updatedAt: now,
+      status: input.status,
+      amount: input.amount,
+      paymentMethod: input.method,
+    };
+    if (input.walletAddress) doc.walletAddress = input.walletAddress;
+    if (input.withdrawalId) doc.withdrawalId = input.withdrawalId;
+    if (input.errorMessage) doc.errorMessage = input.errorMessage;
+    if (input.draftId) doc.draftId = input.draftId;
+    if (input.status === 'tx_completed') doc.txCompletedAt = now;
+    const ref = await db.collection(OFFRAMP_COLLECTION).add(doc);
+    return ref.id;
+  } catch (err) {
+    console.error('[Offramp Audit] logDirectWithdrawal failed:', err);
+    return null;
+  }
+}
+
+/**
+ * When tx-status polling sees a Coinbase tx for a user, find the user's most
+ * recent open attempt and patch it with the tx state. Mapping to a SPECIFIC
+ * attempt requires Coinbase to return a partnerUserId on the tx (it does);
+ * we match by userId + earliest matching open attempt by timestamp.
+ *
+ * Returns the doc id we updated, or null if no open attempt was found.
+ */
+export async function updateOfframpFromTx(input: {
+  userId: string;
+  coinbaseTxId: string;
+  coinbaseTxStatus: string;
+}): Promise<string | null> {
+  if (!isFirestoreConfigured()) return null;
+  try {
+    const db = getAdminFirestore();
+    // Look for the most recent open (non-terminal) attempt for this user.
+    // We don't filter on status server-side because Firestore composite
+    // indexes are a hassle — fetch a few, filter in-memory.
+    const snap = await db
+      .collection(OFFRAMP_COLLECTION)
+      .where('userId', '==', input.userId)
+      .orderBy('timestamp', 'desc')
+      .limit(5)
+      .get();
+
+    const target = snap.docs.find((d) => {
+      const data = d.data() as OfframpAttempt;
+      return data.status === 'session_created' || data.status === 'tx_pending';
+    });
+    if (!target) return null;
+
+    const newStatus: OfframpAttemptStatus = mapCoinbaseStatusToOfframp(input.coinbaseTxStatus);
+    const now = new Date().toISOString();
+    const update: Partial<OfframpAttempt> = {
+      status: newStatus,
+      updatedAt: now,
+      coinbaseTxId: input.coinbaseTxId,
+      coinbaseTxStatus: input.coinbaseTxStatus,
+    };
+    const existing = target.data() as OfframpAttempt;
+    if (!existing.txDetectedAt) update.txDetectedAt = now;
+    if (newStatus === 'tx_completed' && !existing.txCompletedAt) {
+      update.txCompletedAt = now;
+    }
+    await target.ref.set(update, { merge: true });
+    return target.id;
+  } catch (err) {
+    console.error('[Offramp Audit] updateOfframpFromTx failed:', err);
+    return null;
+  }
+}
+
+/**
+ * Map Coinbase's transaction status strings to our offramp status enum.
+ * Coinbase uses things like 'pending', 'in_progress', 'completed',
+ * 'failed', 'declined' depending on the API surface. Be loose on input,
+ * tight on output.
+ */
+function mapCoinbaseStatusToOfframp(s: string): OfframpAttemptStatus {
+  const normalized = (s || '').toLowerCase();
+  if (normalized.includes('complete') || normalized === 'success' || normalized === 'paid') {
+    return 'tx_completed';
+  }
+  if (normalized.includes('fail') || normalized.includes('declin') || normalized === 'cancelled' || normalized === 'rejected') {
+    return 'tx_failed';
+  }
+  return 'tx_pending';
+}
+
+/**
+ * List recent offramp attempts. Default 50, filterable by status + userId.
+ * Side effect: lazily marks old session_created attempts as abandoned
+ * (older than ABANDONED_THRESHOLD_MS with no tx detected). Saves having
+ * to run a separate cron.
+ */
+export async function listOfframpAttempts(opts: {
+  limit?: number;
+  status?: OfframpAttemptStatus;
+  userId?: string;
+}): Promise<Array<OfframpAttempt & { id: string }>> {
+  if (!isFirestoreConfigured()) return [];
+  try {
+    const db = getAdminFirestore();
+    let q = db.collection(OFFRAMP_COLLECTION).orderBy('timestamp', 'desc');
+    if (opts.status) q = q.where('status', '==', opts.status);
+    if (opts.userId) q = q.where('userId', '==', opts.userId);
+    const snap = await q.limit(opts.limit ?? 50).get();
+
+    const now = Date.now();
+    const result: Array<OfframpAttempt & { id: string }> = [];
+    const abandonUpdates: Array<Promise<unknown>> = [];
+
+    for (const doc of snap.docs) {
+      const data = doc.data() as OfframpAttempt;
+      // Lazy abandonment: session_created and old → mark abandoned in-place.
+      if (
+        data.status === 'session_created' &&
+        Date.parse(data.timestamp) < now - ABANDONED_THRESHOLD_MS
+      ) {
+        const updated = { ...data, status: 'abandoned' as OfframpAttemptStatus, updatedAt: new Date().toISOString() };
+        abandonUpdates.push(doc.ref.set(updated, { merge: true }));
+        result.push({ id: doc.id, ...updated });
+      } else {
+        result.push({ id: doc.id, ...data });
+      }
+    }
+    // Don't await abandon writes — they're fire-and-forget on the next read.
+    Promise.all(abandonUpdates).catch(() => { /* ignore */ });
+    return result;
+  } catch (err) {
+    console.error('[Offramp Audit] listOfframpAttempts failed:', err);
+    return [];
+  }
+}

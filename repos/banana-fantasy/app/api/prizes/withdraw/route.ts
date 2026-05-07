@@ -5,6 +5,7 @@ import { json, jsonError, parseBody, requireNumber, requireString } from '@/lib/
 import { getPrivyUser } from '@/lib/auth';
 import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
+import { logDirectWithdrawal } from '@/lib/offrampAudit';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const KYC_THRESHOLD = 2000; // Cumulative withdrawal threshold for full KYC
@@ -98,6 +99,25 @@ export async function POST(req: Request) {
 
     // Track cumulative withdrawals for KYC threshold
     await incrementCumulativeWithdrawals(userId, amount);
+
+    // Audit-log this direct (non-Coinbase) offramp so admin sees ALL cashout
+    // attempts in one place. Status maps tightly to backendStatus when it
+    // came back from the Go API; falls back to 'tx_pending' on creation.
+    const offrampStatus =
+      withdrawal.status === 'completed'
+        ? 'tx_completed'
+        : withdrawal.status === 'failed'
+          ? 'tx_failed'
+          : 'tx_pending';
+    await logDirectWithdrawal({
+      userId: userId.toLowerCase(),
+      walletAddress: userId,
+      amount,
+      method: method as 'usdc' | 'bank',
+      withdrawalId: withdrawal.id,
+      status: offrampStatus,
+      draftId,
+    });
 
     return json({ status: withdrawal.status, withdrawal }, 200);
   } catch (err) {
