@@ -57,8 +57,10 @@ export async function POST(req: Request) {
     }
     const method: PrizeWithdrawal['method'] = methodRaw;
 
-    // Check Persona verification status before processing
-    const verification = await getPersonaVerification(userId);
+    // Check Persona verification status before processing.
+    // Lowercase to match the canonical key verify/submit writes under —
+    // Privy returns wallets in checksum case, which would miss the doc.
+    const verification = await getPersonaVerification(userId.toLowerCase());
 
     // Tier 1: First withdrawal — must have age + geo verification
     if (!verification.tier1.verified) {

@@ -12,7 +12,12 @@ export async function GET(req: Request) {
     const userId = getSearchParam(req, 'userId');
     if (!userId) return jsonError('Missing query param: userId', 400);
 
-    const verification = await getPersonaVerification(userId);
+    // Canonical wallet-key is lowercase. verify/submit saves under
+    // toLowerCase(); without this, Privy's checksum-case wallet (e.g.
+    // 0xD3301bC0…) reads a different Firestore doc than where the
+    // verification was saved (0xd3301bc0…), and the user shows as
+    // unverified forever.
+    const verification = await getPersonaVerification(userId.toLowerCase());
 
     const eligibility: EligibilityStatus = {
       isVerified: verification.tier1.verified,
