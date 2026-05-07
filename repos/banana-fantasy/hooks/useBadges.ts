@@ -62,10 +62,17 @@ export function useBadges(opts?: { userId?: string }) {
 
   const unlockedSet = new Set(swr.data.unlocked.map(u => u.id));
 
+  // Prefer the user's locally-updated equippedBadge for instant click
+  // feedback. Falls back to the server-side value during initial load
+  // (when the user object hasn't been hydrated yet).
+  const equipped = (typeof user?.equippedBadge !== 'undefined')
+    ? user.equippedBadge ?? null
+    : swr.data.equipped;
+
   return {
     catalog: swr.data.catalog,
     unlockedIds: unlockedSet,
-    equipped: swr.data.equipped,
+    equipped,
     isLoading: swr.isLoading,
     refresh: swr.mutate,
     equipBadge,

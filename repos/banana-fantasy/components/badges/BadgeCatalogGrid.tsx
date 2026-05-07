@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
 import { useBadges } from '@/hooks/useBadges';
+import { useToast } from '@/components/ui/Toast';
 import type { Badge, BadgeCategory } from '@/types';
 
 const CATEGORY_LABEL: Record<BadgeCategory, string> = {
@@ -30,6 +31,14 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
   const { catalog, unlockedIds, equipped, equipBadge, isLoading } = useBadges(
     readOnlyForUserId ? { userId: readOnlyForUserId } : undefined,
   );
+  const { show } = useToast();
+
+  const handleEquip = useCallback(async (badgeId: string | null) => {
+    const res = await equipBadge(badgeId);
+    if (!res.ok) {
+      show({ level: 'error', message: `Couldn't equip badge: ${res.reason || 'unknown error'}` });
+    }
+  }, [equipBadge, show]);
 
   const grouped = useMemo(() => {
     const out: Record<BadgeCategory, Badge[]> = {
@@ -61,28 +70,31 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
                   <button
                     type="button"
                     onClick={clickable
-                      ? () => equipBadge(isEquipped ? null : badge.id)
+                      ? () => handleEquip(isEquipped ? null : badge.id)
                       : undefined
                     }
                     disabled={!clickable}
-                    className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition ${
+                    className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition ${
                       isEquipped
-                        ? 'border-banana bg-banana/10'
+                        ? 'border-banana bg-banana/15'
                         : clickable
                           ? 'border-white/10 hover:border-white/30 hover:bg-white/5'
                           : 'border-white/5'
                     } ${!clickable ? 'cursor-default' : 'cursor-pointer'}`}
-                    style={{ width: '100%' }}
+                    style={{
+                      width: '100%',
+                      boxShadow: isEquipped ? '0 0 0 3px rgba(251,191,36,0.35), 0 0 18px rgba(251,191,36,0.45)' : undefined,
+                    }}
                   >
+                    {isEquipped && (
+                      <span className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-banana text-black text-[9px] font-black uppercase tracking-widest whitespace-nowrap">
+                        Equipped
+                      </span>
+                    )}
                     <BadgeIcon badge={badge} size={44} unlocked={isUnlocked} showTooltip={false} />
                     <div className="text-[11px] font-bold text-center leading-tight">
                       {badge.label}
                     </div>
-                    {isEquipped && (
-                      <div className="text-[9px] uppercase tracking-wider font-bold text-banana">
-                        Equipped
-                      </div>
-                    )}
                     {!isUnlocked && (
                       <div className="text-[9px] uppercase tracking-wider text-text-muted">
                         Locked
@@ -124,7 +136,7 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
           {equipped && (
             <button
               type="button"
-              onClick={() => equipBadge(null)}
+              onClick={() => handleEquip(null)}
               className="ml-3 underline hover:text-banana"
             >
               Clear equipped badge
