@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
+import { fetchPrivyUser, linkedWalletsOf } from '@/lib/privyServer';
 import { equipBadge } from '@/lib/db';
 
 /**
@@ -20,14 +21,23 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    const { walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) throw new ApiError(401, 'Authenticated wallet address missing from token');
+    const user = await getPrivyUser(req);
+    let wallet = user.walletAddress;
+
+    // Privy social-login JWTs don't always carry the wallet — fall back
+    // to the server-side Privy user lookup to find any linked wallet.
+    if (!wallet) {
+      const privyUser = await fetchPrivyUser(user.userId);
+      const linked = privyUser ? linkedWalletsOf(privyUser) : [];
+      wallet = linked[0] || null;
+    }
+    if (!wallet) throw new ApiError(401, 'No wallet linked to this account');
 
     const body = await parseBody(req);
     const badgeId = body.badgeId === null ? null : (typeof body.badgeId === 'string' ? body.badgeId : undefined);
     if (badgeId === undefined) throw new ApiError(400, 'badgeId required (string or null)');
 
-    const result = await equipBadge(walletAddress.toLowerCase(), badgeId);
+    const result = await equipBadge(wallet.toLowerCase(), badgeId);
     if (!result.ok) throw new ApiError(400, result.reason || 'equip failed');
 
     return json({ ok: true, equipped: badgeId }, 200);

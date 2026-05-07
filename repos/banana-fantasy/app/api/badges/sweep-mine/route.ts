@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
+import { fetchPrivyUser, linkedWalletsOf } from '@/lib/privyServer';
 import { awardDraftCountBadges, awardLeagueOutcomeBadges } from '@/lib/badges/awards';
 import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
@@ -60,9 +61,15 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    const { walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) throw new ApiError(401, 'Authenticated wallet address missing');
-    const userId = walletAddress.toLowerCase();
+    const user = await getPrivyUser(req);
+    let wallet = user.walletAddress;
+    if (!wallet) {
+      const privyUser = await fetchPrivyUser(user.userId);
+      const linked = privyUser ? linkedWalletsOf(privyUser) : [];
+      wallet = linked[0] || null;
+    }
+    if (!wallet) throw new ApiError(401, 'No wallet linked to this account');
+    const userId = wallet.toLowerCase();
 
     const url = `${getServerDraftsApiUrl()}/owner/${encodeURIComponent(userId)}/draftToken/all`;
     const res = await fetch(url, { cache: 'no-store' });
