@@ -16,16 +16,15 @@ import { checkBlockRules } from '@/lib/verifyBlockRules';
 //
 // Flow:
 //   1. Verify Privy bearer (user is authenticated)
-//   2. Create a Didit session for our ID-only workflow
-//   3. Upload the ID image to Didit's session
-//   4. Wait for Didit to validate the document
-//   5. Compare extracted fields against the form values
-//   6. Run SBS-specific block rules (state/parish/age) on extracted data
-//   7. Save verification + identity to Firestore
-//   8. Return { approved: true } or { approved: false, reason }
+//   2. POST the ID image to Didit's standalone synchronous endpoint
+//      (POST /v3/id-verification/) — no session, no polling, just an
+//      immediate verification result
+//   3. Compare extracted fields against the form values
+//   4. Run SBS-specific block rules (state/parish/age) on extracted data
+//   5. Save verification + identity to Firestore
+//   6. Return { approved: true } or { approved: false, reason }
 
 const DIDIT_API_KEY = process.env.DIDIT_API_KEY || '';
-const DIDIT_WORKFLOW_ID = process.env.DIDIT_WORKFLOW_ID || '';
 const DIDIT_BASE_URL = 'https://verification.didit.me';
 const MAX_ID_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_MIME_TYPES = new Set([
@@ -69,7 +68,6 @@ export async function POST(req: Request) {
   if (limited) return limited;
 
   if (!DIDIT_API_KEY) return jsonError('Didit API key not configured', 500);
-  if (!DIDIT_WORKFLOW_ID) return jsonError('Didit workflow ID not configured', 500);
 
   try {
     const session = await getPrivyUser(req);
@@ -106,90 +104,50 @@ export async function POST(req: Request) {
       return jsonError('ID image must be JPG, PNG, HEIC, or WEBP', 400);
     }
 
-    // Step 1: Create a Didit session bound to our workflow + this user.
-    const sessionRes = await fetch(`${DIDIT_BASE_URL}/v3/session/`, {
+    // Step 1: Send the ID image directly to Didit's standalone synchronous
+    // endpoint. No session, no polling — Didit validates the document and
+    // returns extracted fields in the response body.
+    const diditForm = new FormData();
+    diditForm.append('front_image', idImage, idImage.name || 'id.jpg');
+    diditForm.append('vendor_data', session.userId);
+    diditForm.append('save_api_request', 'true');
+
+    const verifyRes = await fetch(`${DIDIT_BASE_URL}/v3/id-verification/`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'x-api-key': DIDIT_API_KEY,
+        // Don't set Content-Type — fetch sets multipart boundary automatically
       },
-      body: JSON.stringify({
-        workflow_id: DIDIT_WORKFLOW_ID,
-        vendor_data: session.userId,
-      }),
+      body: diditForm,
     });
-    if (!sessionRes.ok) {
-      const text = await sessionRes.text();
-      console.error('[Verify Submit] Session create failed:', sessionRes.status, text);
-      return jsonError('Failed to start verification', 502);
-    }
-    const sessionData = (await sessionRes.json()) as {
-      session_id: string;
-      session_token?: string;
-    };
-    const sessionId = sessionData.session_id;
-
-    // Step 2: Upload the ID image to the session. Didit's document upload
-    // endpoint accepts multipart with the image as `document_front`.
-    const uploadForm = new FormData();
-    uploadForm.append('document_front', idImage, idImage.name || 'id.jpg');
-
-    const uploadRes = await fetch(
-      `${DIDIT_BASE_URL}/v3/session/${encodeURIComponent(sessionId)}/document/upload/`,
-      {
-        method: 'POST',
-        headers: {
-          'x-api-key': DIDIT_API_KEY,
-          // NOTE: don't set Content-Type — fetch sets multipart boundary
-        },
-        body: uploadForm,
-      },
-    );
-    if (!uploadRes.ok) {
-      const text = await uploadRes.text();
-      console.error('[Verify Submit] Document upload failed:', uploadRes.status, text);
-      return jsonError('Failed to upload ID document', 502);
-    }
-
-    // Step 3: Poll session decision. Didit usually completes ID-only
-    // verification in 5-15 seconds; we poll for up to 60s before giving up.
-    let decision: 'Approved' | 'Declined' | 'In Progress' | 'Expired' = 'In Progress';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let extracted: any = {};
-    const deadline = Date.now() + 60_000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 2_000));
-      const statusRes = await fetch(
-        `${DIDIT_BASE_URL}/v3/session/${encodeURIComponent(sessionId)}/decision/`,
-        { headers: { 'x-api-key': DIDIT_API_KEY } },
+    if (!verifyRes.ok) {
+      const text = await verifyRes.text();
+      console.error('[Verify Submit] Didit ID verification failed:', verifyRes.status, text);
+      return jsonError(
+        'Failed to verify ID. Please try a clearer photo of your driver\'s license, passport, or state ID.',
+        502,
       );
-      if (!statusRes.ok) continue;
-      const statusData = await statusRes.json();
-      decision = statusData.status;
-      extracted = statusData;
-      if (decision === 'Approved' || decision === 'Declined' || decision === 'Expired') break;
     }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const verifyData = await verifyRes.json() as any;
+    const idVer = verifyData?.id_verification ?? {};
+    const decision: string = idVer?.status || 'Declined';
+    const requestId: string | undefined = verifyData?.request_id;
 
     if (decision !== 'Approved') {
+      const warnings: string[] = Array.isArray(idVer?.warnings) ? idVer.warnings : [];
+      const detail = warnings.length > 0 ? ` (${warnings.join(', ')})` : '';
       return json({
         approved: false,
-        reason:
-          decision === 'Declined'
-            ? "We couldn't verify the ID you uploaded. Please try a clearer photo of a valid government-issued ID."
-            : 'Verification timed out. Please try again.',
+        reason: `We couldn't verify the ID you uploaded${detail}. Please try a clearer photo of a valid government-issued ID.`,
       });
     }
 
-    // Step 4: Cross-check extracted ID data against the user's form values.
-    const idVer = extracted?.features?.id_verification ?? extracted?.id_verification ?? {};
-    const docData = idVer?.document_data ?? idVer ?? {};
-
-    const idFirstName: string | undefined =
-      docData?.first_name || docData?.firstName || docData?.given_names;
-    const idLastName: string | undefined =
-      docData?.last_name || docData?.lastName || docData?.surname;
-    const idDob: string | undefined =
-      docData?.date_of_birth || docData?.dateOfBirth || docData?.dob;
+    // Step 2: Cross-check extracted ID data against the user's form values.
+    const idFirstName: string | undefined = idVer?.first_name;
+    const idLastName: string | undefined = idVer?.last_name;
+    const idDob: string | undefined = idVer?.date_of_birth;
 
     if (!nameMatches(firstName, idFirstName) || !nameMatches(lastName, idLastName)) {
       return json({
@@ -224,7 +182,7 @@ export async function POST(req: Request) {
         // Future improvement: dedicated parish field for LA.
         parish: undefined,
       },
-      sessionId,
+      sessionId: requestId,
       verifiedAt: new Date().toISOString(),
     };
 
@@ -237,7 +195,7 @@ export async function POST(req: Request) {
       await savePersonaVerification(session.userId, {
         tier1: {
           verified: true,
-          inquiryId: sessionId,
+          inquiryId: requestId,
           verifiedAt: new Date().toISOString(),
           geoState: state,
         },
@@ -254,7 +212,7 @@ export async function POST(req: Request) {
     await savePersonaVerification(session.userId, {
       tier1: {
         verified: true,
-        inquiryId: sessionId,
+        inquiryId: requestId,
         verifiedAt: new Date().toISOString(),
         geoState: state,
       },
