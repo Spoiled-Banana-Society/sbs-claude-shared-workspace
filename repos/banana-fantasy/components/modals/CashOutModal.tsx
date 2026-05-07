@@ -751,6 +751,24 @@ export function CashOutModal({
             ← Change amount
           </button>
         </div>
+
+        {/* Verification gate — fires when sell-session backend returns
+            requiresVerification: 'kyc'. Without this here, launchCoinbase()
+            sets showVerification + setStep('quotes') but the VerificationModal
+            never renders because the original render was scoped to step==='amount'. */}
+        {showVerification && userId && (
+          <VerificationModal
+            isOpen={true}
+            onClose={() => setShowVerification(null)}
+            userId={userId}
+            onComplete={() => {
+              setShowVerification(null);
+              // After verification completes, retry the cashout launch
+              // automatically so the user doesn't have to tap Continue again.
+              launchCoinbase();
+            }}
+          />
+        )}
       </Modal>
     );
   }
