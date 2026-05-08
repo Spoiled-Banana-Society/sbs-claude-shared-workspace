@@ -107,66 +107,47 @@ export default function PrizesPage() {
         <p className="text-text-secondary">View your winnings and eligibility status</p>
       </div>
 
+      {/* Minimal status row. Hides everything that isn't load-bearing.
+          - Pre-verify: yellow dot + "Not verified" + Verify button
+          - Post-verify: green dot + "Verified"
+          - W9 only appears when the user is US-based AND has crossed
+            the $2k cumulative withdrawal threshold (the actual trigger
+            for W9). Keeps the page clean for the 99% of users below it. */}
       <Card className="mb-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <h3 className="font-semibold text-text-primary mb-2">Eligibility Status</h3>
-            <div className="flex items-center gap-2 mb-1">
-              {isEligible ? (
-                <>
-                  <span className="w-3 h-3 bg-success rounded-full" />
-                  <span className="text-success font-medium">Verified ({eligibility?.season} Season)</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-3 h-3 bg-warning rounded-full" />
-                  <span className="text-warning font-medium">Verification Required</span>
-                </>
-              )}
-            </div>
-            <p className="text-text-muted text-sm">
-              {isEligible
-                ? 'Your identity is verified. You can withdraw prize winnings any time.'
-                : 'Complete identity verification to withdraw your prize winnings.'}
-            </p>
-            {!isEligible && (
-              <p className="text-text-muted text-sm mt-1">
-                One-time ID + selfie verification via Coinbase&apos;s identity partner. Required by US law for crypto-to-cash payouts.
-              </p>
-            )}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${isEligible ? 'bg-success' : 'bg-warning'}`} />
+            <span className={`text-sm font-medium ${isEligible ? 'text-success' : 'text-warning'}`}>
+              {isEligible ? 'Withdrawal status: Verified' : 'Withdrawal status: Not verified'}
+            </span>
           </div>
-
-          {!canWithdrawPrizes && (
+          {!isEligible && (
             <Button size="sm" onClick={() => router.push(verificationUrl)}>
-              Verify Now
+              Verify
             </Button>
           )}
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="flex items-center justify-between rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-4 py-3">
-            <div>
-              <p className="text-xs text-text-muted">Identity</p>
-              <p className="text-sm text-text-primary font-medium">Name, DOB, Address, ID</p>
+        {(() => {
+          // Only show the W9 row when the user has actually crossed
+          // the IRS-relevant threshold and is US-based. Otherwise it's
+          // noise — we'd be telling 99% of users about a tax form they
+          // don't need.
+          const needsW9 =
+            !!eligibility?.geoState &&
+            (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
+          if (!needsW9) return null;
+          return (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
+              <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
+              {eligibility?.w9Completed ? (
+                <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
+              ) : (
+                <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
+              )}
             </div>
-            {eligibility?.tier1Verified ? (
-              <Badge type="default" className="bg-success/20 text-success border-success/30">Verified</Badge>
-            ) : (
-              <Badge type="default" className="bg-bg-elevated text-text-muted border-bg-elevated">Required</Badge>
-            )}
-          </div>
-          <div className="flex items-center justify-between rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-4 py-3">
-            <div>
-              <p className="text-xs text-text-muted">Tax Form (US, $2k+ per year)</p>
-              <p className="text-sm text-text-primary font-medium">W9</p>
-            </div>
-            {eligibility?.w9Completed ? (
-              <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
-            ) : (
-              <Badge type="default" className="bg-bg-elevated text-text-muted border-bg-elevated">When Needed</Badge>
-            )}
-          </div>
-        </div>
+          );
+        })()}
       </Card>
 
       <section>
