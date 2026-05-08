@@ -23,6 +23,8 @@ interface CashOutModalProps {
   onSwitchToUsdc?: () => void;
   /** If set, modal opens directly into the status timeline (used after redirect). */
   initialStatusMode?: boolean;
+  /** Fired after the inline KYC modal approves — host page can refetch eligibility. */
+  onVerified?: () => void;
 }
 
 type Step =
@@ -136,6 +138,7 @@ export function CashOutModal({
   walletAddress,
   onSwitchToUsdc,
   initialStatusMode,
+  onVerified,
 }: CashOutModalProps) {
   const privy = usePrivy();
   const { login: triggerLogin, logout: triggerLogout } = useAuth();
@@ -610,6 +613,9 @@ export function CashOutModal({
             userId={userId}
             onComplete={() => {
               setShowVerification(null);
+              // Tell the host page eligibility just changed — it'll
+              // refetch and flip the verified badge at the top of /prizes.
+              onVerified?.();
               fetchQuotes();
             }}
           />
@@ -763,6 +769,9 @@ export function CashOutModal({
             userId={userId}
             onComplete={() => {
               setShowVerification(null);
+              // Tell the host page eligibility just changed (refetch
+              // flips the verified badge at top of /prizes).
+              onVerified?.();
               // After verification completes, retry the cashout launch
               // automatically so the user doesn't have to tap Continue again.
               launchCoinbase();

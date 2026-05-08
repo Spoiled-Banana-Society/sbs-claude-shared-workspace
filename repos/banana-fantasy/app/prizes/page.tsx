@@ -329,6 +329,7 @@ export default function PrizesPage() {
         userId={user?.id}
         walletAddress={user?.walletAddress}
         initialStatusMode={cashOutModal.statusMode}
+        onVerified={() => { eligibilityQuery.mutate(); }}
         onSwitchToUsdc={() => {
           if (cashOutModal.prize) {
             setWithdrawModal({ isOpen: true, prize: cashOutModal.prize });
