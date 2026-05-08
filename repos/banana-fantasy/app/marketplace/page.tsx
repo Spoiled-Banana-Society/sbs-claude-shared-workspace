@@ -344,12 +344,23 @@ export default function MarketplacePage() {
       const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
       if (parseInt(currentChainHex, 16) !== 8453) await selectedWallet.switchChain(8453);
 
+      // Use the actual signing wallet's address everywhere downstream.
+      // walletAddress (from useAuth) may come from a Privy linkedWallets
+      // fallback for social-login users — that wallet exists in the
+      // user's profile but isn't necessarily the active signable
+      // session wallet, which causes Privy to throw "No embedded or
+      // connected wallet found for address." when seaport asks it to
+      // sign typed data on that address's behalf.
+      const provider = new ethers.BrowserProvider(ethereum);
+      const signer = await provider.getSigner();
+      const signerAddress = await signer.getAddress();
+
       const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
       const iface = new ethers.Interface([
         'function isApprovedForAll(address owner, address operator) view returns (bool)',
         'function setApprovalForAll(address operator, bool approved)',
       ]);
-      const checkData = iface.encodeFunctionData('isApprovedForAll', [walletAddress, OPENSEA_CONDUIT]);
+      const checkData = iface.encodeFunctionData('isApprovedForAll', [signerAddress, OPENSEA_CONDUIT]);
       const checkRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -367,11 +378,10 @@ export default function MarketplacePage() {
         logger.debug('[Marketplace] Approval tx:', receipt.hash);
       }
 
-      const provider = new ethers.BrowserProvider(ethereum);
-      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), walletAddress, provider);
+      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), signerAddress, provider);
       logger.debug('[Marketplace] Listed with orderHash:', result.orderHash);
 
-      logActivity({ type: 'list', walletAddress, tokenId: selectedTeam.tokenId, teamName: selectedTeam.name, price: parseFloat(listPrice), orderHash: result.orderHash || null });
+      logActivity({ type: 'list', walletAddress: signerAddress, tokenId: selectedTeam.tokenId, teamName: selectedTeam.name, price: parseFloat(listPrice), orderHash: result.orderHash || null });
       addNotification({
         type: 'listing_created',
         title: 'Team Listed',
