@@ -24,7 +24,7 @@ export interface User {
 }
 
 // Badges
-export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder';
+export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder' | 'legacy';
 
 export interface Badge {
   id: string;
@@ -53,6 +53,9 @@ export interface Badge {
   ringColor?: string;
   /** Visual flair. 'soft' = static drop-shadow. 'pulse' = animated. */
   glow?: 'none' | 'soft' | 'pulse';
+  /** Hidden badges (past-season champions, secret unlocks) don't render
+   *  in the catalog when locked — they only appear once unlocked. */
+  hidden?: boolean;
 }
 
 /** Per-user badge unlock state. Stored at users/{userId}/badges/{badgeId}. */
