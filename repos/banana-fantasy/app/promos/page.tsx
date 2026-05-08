@@ -10,29 +10,27 @@ import { logger } from '@/lib/logger';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
-// Each promo type gets an accent color, gradient, and emoji so the
-// grid reads at a glance (no two cards look identical).
+// Restrained Apple-style treatment: a single accent color per type used
+// only as a small dot in the corner of the card. No gradients, no
+// emoji glows, no pulsing. The card itself is a clean glass panel.
 interface TypeStyle {
   accent: string;
-  glow: string;
-  gradient: string;
-  emoji: string;
   label: string;
 }
 
 const TYPE_STYLES: Record<PromoType, TypeStyle> = {
-  'daily-drafts':       { accent: '#fbbf24', glow: 'rgba(251,191,36,0.35)',  gradient: 'from-yellow-400/20 via-amber-500/10 to-transparent',     emoji: '🔁', label: 'Daily' },
-  'pick-10':            { accent: '#22c55e', glow: 'rgba(34,197,94,0.35)',   gradient: 'from-emerald-400/20 via-green-500/10 to-transparent',     emoji: '🔟', label: 'Pick' },
-  'referral':           { accent: '#3b82f6', glow: 'rgba(59,130,246,0.35)',  gradient: 'from-blue-400/20 via-blue-600/10 to-transparent',         emoji: '🔗', label: 'Referral' },
-  'jackpot':            { accent: '#ef4444', glow: 'rgba(239,68,68,0.45)',   gradient: 'from-red-500/25 via-rose-600/10 to-transparent',          emoji: '💰', label: 'Jackpot' },
-  'hof':                { accent: '#D4AF37', glow: 'rgba(212,175,55,0.45)',  gradient: 'from-yellow-300/25 via-amber-500/10 to-transparent',      emoji: '🏛️', label: 'HOF' },
-  'mint':               { accent: '#a855f7', glow: 'rgba(168,85,247,0.35)',  gradient: 'from-purple-400/20 via-fuchsia-500/10 to-transparent',    emoji: '🪙', label: 'Mint' },
-  'new-user':           { accent: '#ec4899', glow: 'rgba(236,72,153,0.35)',  gradient: 'from-pink-400/20 via-rose-500/10 to-transparent',         emoji: '✨', label: 'New' },
-  'buy-bonus':          { accent: '#f97316', glow: 'rgba(249,115,22,0.35)',  gradient: 'from-orange-400/20 via-amber-500/10 to-transparent',      emoji: '🎁', label: 'Bonus' },
-  'tweet-engagement':   { accent: '#0ea5e9', glow: 'rgba(14,165,233,0.35)',  gradient: 'from-sky-400/20 via-cyan-500/10 to-transparent',          emoji: '𝕏',  label: 'X' },
-  'add-to-home-screen': { accent: '#64748b', glow: 'rgba(100,116,139,0.30)', gradient: 'from-slate-400/15 via-slate-600/10 to-transparent',       emoji: '📱', label: 'Install' },
-  'spin-share':         { accent: '#8b5cf6', glow: 'rgba(139,92,246,0.35)',  gradient: 'from-violet-400/20 via-purple-500/10 to-transparent',     emoji: '🎡', label: 'Share' },
-  'founder-draft':      { accent: '#06b6d4', glow: 'rgba(6,182,212,0.40)',   gradient: 'from-cyan-400/25 via-teal-500/10 to-transparent',         emoji: '👑', label: 'Founder' },
+  'daily-drafts':       { accent: '#fbbf24', label: 'Daily' },
+  'pick-10':            { accent: '#22c55e', label: 'Pick 10' },
+  'referral':           { accent: '#3b82f6', label: 'Referral' },
+  'jackpot':            { accent: '#ef4444', label: 'Jackpot' },
+  'hof':                { accent: '#D4AF37', label: 'HOF' },
+  'mint':               { accent: '#a855f7', label: 'Mint' },
+  'new-user':           { accent: '#ec4899', label: 'New User' },
+  'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
+  'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
+  'add-to-home-screen': { accent: '#64748b', label: 'Install' },
+  'spin-share':         { accent: '#8b5cf6', label: 'Share' },
+  'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
 };
 
 const HIDDEN_PROMO_TYPES = new Set<PromoType>(['spin-share', 'add-to-home-screen']);
@@ -167,13 +165,13 @@ export default function PromosPage() {
   };
 
   return (
-    <div className="w-full min-h-screen px-4 sm:px-8 lg:px-12 py-8 max-w-6xl mx-auto">
+    <div className="w-full min-h-screen px-4 sm:px-8 lg:px-12 py-10 sm:py-14 max-w-5xl mx-auto">
       {/* ── Hero ──────────────────────────────────────────────────────── */}
-      <div className="mb-8 flex items-start justify-between gap-4">
+      <div className="mb-10 sm:mb-14 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Promos</h1>
-          <p className="text-white/40 text-sm">
-            {visiblePromos.length} active rewards · click any card for details
+          <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">Promos</h1>
+          <p className="text-white/40 text-sm sm:text-base mt-2">
+            Earn free spins, drafts, and entries.
           </p>
         </div>
         {claimableCount > 0 && (
@@ -181,59 +179,66 @@ export default function PromosPage() {
             type="button"
             onClick={() => void handleClaimAll()}
             disabled={isClaimingAll}
-            className="shrink-0 px-4 sm:px-5 py-2.5 bg-banana text-black text-sm font-black uppercase tracking-wider rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-60 disabled:hover:scale-100 disabled:cursor-not-allowed"
-            style={{ boxShadow: '0 0 0 1px rgba(251,191,36,0.4), 0 6px 22px rgba(251,191,36,0.45)' }}
+            className="shrink-0 px-5 py-2.5 bg-banana text-black text-sm font-semibold rounded-full hover:bg-banana/90 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isClaimingAll ? 'Claiming…' : `🔥 Claim All (${claimableCount})`}
+            {isClaimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}
           </button>
         )}
       </div>
 
-      {/* ── Stat tiles ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-        <StatTile label="Claimable" value={claimableCount} accent="#fbbf24" pulse={claimableCount > 0} />
-        <StatTile label="Free Spins" value={user?.wheelSpins ?? 0} accent="#a855f7" />
-        <StatTile label="Free Drafts" value={user?.freeDrafts ?? 0} accent="#22c55e" />
-        <StatTile label="JP Entries" value={(user?.jackpotEntries ?? 0) + (user?.hofEntries ?? 0)} accent="#ef4444" sublabel={`${user?.jackpotEntries ?? 0} JP · ${user?.hofEntries ?? 0} HOF`} />
+      {/* ── Stat tiles — minimal, single rounded card with internal dividers ─── */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] mb-10 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-white/[0.06]">
+        <StatTile label="Claimable" value={claimableCount} highlight={claimableCount > 0} />
+        <StatTile label="Free spins" value={user?.wheelSpins ?? 0} />
+        <StatTile label="Free drafts" value={user?.freeDrafts ?? 0} />
+        <StatTile
+          label="Special entries"
+          value={(user?.jackpotEntries ?? 0) + (user?.hofEntries ?? 0)}
+          sublabel={`${user?.jackpotEntries ?? 0} JP · ${user?.hofEntries ?? 0} HOF`}
+        />
       </div>
 
-      {/* ── Filter tabs ────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-1.5 mb-5">
-        {([
-          ['all',       'All',       visiblePromos.length],
-          ['claimable', 'Claimable', claimableCount],
-          ['active',    'In Progress', null],
-          ['locked',    'Locked',    null],
-        ] as [FilterKey, string, number | null][]).map(([key, label, count]) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              filter === key ? 'bg-banana text-black' : 'bg-white/[0.04] text-white/50 hover:text-white/80'
-            }`}
-          >
-            {label}
-            {count !== null && (
-              <span className={`ml-1.5 ${filter === key ? 'opacity-70' : 'opacity-50'}`}>{count}</span>
-            )}
-          </button>
-        ))}
+      {/* ── Filter — Apple segmented control ───────────────────────────── */}
+      <div className="mb-6 flex">
+        <div className="inline-flex items-center bg-white/[0.04] rounded-full p-1 gap-0.5">
+          {([
+            ['all',       'All',       visiblePromos.length],
+            ['claimable', 'Claimable', claimableCount],
+            ['active',    'In progress', null],
+            ['locked',    'Locked',    null],
+          ] as [FilterKey, string, number | null][]).map(([key, label, count]) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
+                filter === key
+                  ? 'bg-white text-black'
+                  : 'text-white/55 hover:text-white/80'
+              }`}
+            >
+              {label}
+              {count !== null && count > 0 && (
+                <span className={`ml-1.5 tabular-nums ${filter === key ? 'opacity-50' : 'opacity-40'}`}>{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Loading state ──────────────────────────────────────────────── */}
       {promosQuery.isLoading && visiblePromos.length === 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-56 rounded-2xl bg-white/[0.03] animate-pulse" />
+            <div key={i} className="h-52 rounded-2xl bg-white/[0.02] animate-pulse" />
           ))}
         </div>
       )}
 
       {/* ── Empty filter state ─────────────────────────────────────────── */}
       {!promosQuery.isLoading && filteredPromos.length === 0 && visiblePromos.length > 0 && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-12 text-center">
-          <p className="text-white/40 text-sm">No promos in this filter.</p>
-          <button onClick={() => setFilter('all')} className="text-banana text-xs mt-2 hover:underline">
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center">
+          <p className="text-white/45 text-sm">Nothing in this filter.</p>
+          <button onClick={() => setFilter('all')} className="text-banana text-xs mt-3 hover:underline">
             Show all
           </button>
         </div>
@@ -241,7 +246,7 @@ export default function PromosPage() {
 
       {/* ── Promo grid ─────────────────────────────────────────────────── */}
       {filteredPromos.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredPromos.map(promo => (
             <PromoCard
               key={promo.id}
@@ -255,15 +260,14 @@ export default function PromosPage() {
         </div>
       )}
 
-      {/* ── Footer hint ────────────────────────────────────────────────── */}
+      {/* ── Footer ─────────────────────────────────────────────────────── */}
       {filteredPromos.length > 0 && (
-        <div className="mt-8 flex flex-wrap gap-2 items-center justify-center text-[11px] text-white/30">
-          <span>Need draft passes?</span>
-          <button onClick={() => router.push('/buy-drafts')} className="text-banana hover:underline">
-            Buy more
+        <div className="mt-12 flex flex-wrap gap-x-4 gap-y-2 items-center justify-center text-xs text-white/40">
+          <button onClick={() => router.push('/buy-drafts')} className="hover:text-white/70 transition-colors">
+            Buy drafts
           </button>
-          <span>·</span>
-          <button onClick={() => router.push('/banana-wheel')} className="text-banana hover:underline">
+          <span className="text-white/15">·</span>
+          <button onClick={() => router.push('/banana-wheel')} className="hover:text-white/70 transition-colors">
             Spin the wheel
           </button>
         </div>
@@ -287,32 +291,28 @@ export default function PromosPage() {
   );
 }
 
-// ─── Stat tile (hero) ────────────────────────────────────────────────
-function StatTile({ label, value, accent, pulse, sublabel }: {
+// ─── Stat tile — Apple-Fitness-style numeric cell, no gradients ───────
+function StatTile({ label, value, sublabel, highlight }: {
   label: string;
   value: number | string;
-  accent: string;
-  pulse?: boolean;
   sublabel?: string;
+  highlight?: boolean;
 }) {
   return (
-    <div
-      className="relative rounded-xl border border-white/[0.06] bg-white/[0.03] px-4 py-3 overflow-hidden"
-      style={{ boxShadow: pulse ? `0 0 0 1px ${accent}40, 0 0 20px ${accent}30` : undefined }}
-    >
-      <div className="absolute inset-0 opacity-30 pointer-events-none" style={{
-        background: `radial-gradient(circle at top right, ${accent}25 0%, transparent 60%)`,
-      }} />
-      <p className="relative text-white/40 text-[10px] uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="relative text-white font-bold text-2xl tabular-nums" style={{ color: pulse ? accent : '#fff' }}>
+    <div className="px-5 py-5">
+      <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1.5">{label}</p>
+      <p
+        className="font-semibold text-3xl tabular-nums tracking-tight"
+        style={{ color: highlight ? '#fbbf24' : '#fff' }}
+      >
         {value}
       </p>
-      {sublabel && <p className="relative text-white/30 text-[10px] mt-0.5">{sublabel}</p>}
+      {sublabel && <p className="text-white/30 text-[11px] mt-1.5">{sublabel}</p>}
     </div>
   );
 }
 
-// ─── Promo card (grid item) ──────────────────────────────────────────
+// ─── Promo card — clean glass surface, single accent dot, no emoji ────
 interface PromoCardProps {
   promo: Promo;
   isClaimed: boolean;
@@ -329,117 +329,97 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
   const showProgress = progressMax > 0;
   const timeRemaining = promo.timerEndTime ? formatTimeRemaining(promo.timerEndTime) : '';
 
-  // Status pill: claimable > claimed > active > default
-  let statusPill: { label: string; color: string; bg: string; pulse?: boolean } | null = null;
-  if (hasVisibleClaim) {
-    statusPill = { label: '🔥 Claimable', color: '#000', bg: '#fbbf24', pulse: true };
-  } else if (isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10') {
-    // daily-drafts/pick-10 reset constantly so don't mark as "claimed"
-    statusPill = { label: '✓ Claimed', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' };
-  } else if (showProgress) {
-    statusPill = { label: 'Active', color: style.accent, bg: `${style.accent}20` };
-  }
+  // Single status indicator. Restrained — small dot + label, no pulsing.
+  const isClaimedPersistent =
+    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10';
 
   return (
     <button
       onClick={onClick}
-      className="relative group w-full text-left rounded-2xl overflow-hidden border border-white/[0.06] bg-[#0d0d12] hover:border-white/20 transition-all duration-200 hover:-translate-y-0.5"
-      style={{
-        boxShadow: hasVisibleClaim
-          ? `0 0 0 1px ${style.accent}55, 0 6px 24px ${style.glow}`
-          : undefined,
-      }}
+      className={`
+        relative group w-full text-left rounded-2xl border bg-white/[0.02] backdrop-blur-xl
+        transition-all duration-200 ease-out
+        ${hasVisibleClaim
+          ? 'border-banana/40 hover:border-banana/60'
+          : 'border-white/[0.06] hover:border-white/[0.12]'}
+        hover:bg-white/[0.04]
+      `}
     >
-      {/* Type-colored gradient background */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${style.gradient} pointer-events-none`} />
-
-      {/* Top accent bar */}
-      <div
-        className="absolute top-0 left-0 right-0 h-0.5"
-        style={{ background: `linear-gradient(90deg, ${style.accent}00, ${style.accent}, ${style.accent}00)` }}
-      />
-
-      {/* NEW ribbon */}
+      {/* NEW indicator — subtle, top-right */}
       {promo.isNew && (
-        <span className="absolute top-3 right-3 z-10 inline-block bg-banana text-black text-[10px] font-bold px-2 py-0.5 rounded-md shadow-lg">
-          NEW
+        <span className="absolute top-4 right-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-banana font-medium">
+          <span className="w-1.5 h-1.5 rounded-full bg-banana" />
+          New
         </span>
       )}
 
-      <div className="relative p-5 flex flex-col h-full min-h-[14rem]">
-        {/* Top row: type label + emoji */}
-        <div className="flex items-center justify-between mb-3">
-          <span
-            className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded"
-            style={{ color: style.accent, background: `${style.accent}15` }}
-          >
+      <div className="p-5 sm:p-6 flex flex-col h-full min-h-[13rem]">
+        {/* Type label — small dot + plain text, color-restrained */}
+        <div className="flex items-center gap-1.5 mb-4">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.accent }} />
+          <span className="text-[11px] uppercase tracking-wider text-white/40 font-medium">
             {style.label}
-          </span>
-          <span
-            className="text-2xl leading-none"
-            style={{ filter: `drop-shadow(0 0 8px ${style.glow})` }}
-          >
-            {style.emoji}
           </span>
         </div>
 
-        {/* Title + description */}
-        <h3 className="text-white font-bold text-base sm:text-lg leading-tight mb-1.5">
+        {/* Title + description — Apple-style typographic hierarchy */}
+        <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.title}
         </h3>
-        <p className="text-white/50 text-xs leading-relaxed mb-4 line-clamp-2">
+        <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}
         </p>
 
-        {/* Progress bar (if applicable) */}
+        {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
         {showProgress && (
-          <div className="mt-auto mb-3">
+          <div className="mt-auto mb-4">
             <div className="flex justify-between items-baseline mb-1.5">
-              <span className="text-white/60 text-xs font-semibold tabular-nums">
-                {progressCurrent}/{progressMax}
+              <span className="text-white/55 text-xs tabular-nums">
+                {progressCurrent} / {progressMax}
               </span>
               {timeRemaining && (
-                <span className="text-white/40 text-[10px] font-mono tabular-nums">{timeRemaining}</span>
+                <span className="text-white/30 text-[11px] tabular-nums">{timeRemaining}</span>
               )}
             </div>
-            <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+            <div className="h-[3px] rounded-full bg-white/[0.06] overflow-hidden">
               <div
                 className="h-full rounded-full transition-all duration-500"
                 style={{
                   width: `${progressPercent}%`,
-                  background: `linear-gradient(90deg, ${style.accent}, ${style.accent}cc)`,
-                  boxShadow: `0 0 8px ${style.glow}`,
+                  background: hasVisibleClaim ? '#fbbf24' : 'rgba(255,255,255,0.45)',
                 }}
               />
             </div>
           </div>
         )}
 
-        {/* Bottom row: status pill + claim button */}
-        <div className={`flex items-center justify-between gap-2 ${showProgress ? '' : 'mt-auto'}`}>
+        {/* Bottom row: status + action */}
+        <div className={`flex items-center justify-between gap-3 ${showProgress ? '' : 'mt-auto'}`}>
+          {/* Status indicator — minimal */}
           <div className="flex-1 min-w-0">
-            {statusPill && (
-              <span
-                className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${statusPill.pulse ? 'animate-pulse' : ''}`}
-                style={{ color: statusPill.color, background: statusPill.bg }}
-              >
-                {statusPill.label}
+            {hasVisibleClaim ? (
+              <span className="text-banana text-xs font-medium">Ready to claim</span>
+            ) : isClaimedPersistent ? (
+              <span className="inline-flex items-center gap-1 text-white/45 text-xs">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                Claimed
               </span>
+            ) : showProgress ? (
+              <span className="text-white/35 text-xs">In progress</span>
+            ) : (
+              <span className="text-white/35 text-xs">Tap for details</span>
             )}
           </div>
 
-          {hasVisibleClaim ? (
+          {hasVisibleClaim && (
             <button
               onClick={(e) => { e.stopPropagation(); onClaim(); }}
-              className="shrink-0 px-3.5 py-2 bg-banana text-black text-xs font-black uppercase tracking-wider rounded-full hover:scale-105 active:scale-95 transition-transform"
-              style={{ boxShadow: `0 0 0 1px ${style.accent}, 0 4px 16px ${style.glow}` }}
+              className="shrink-0 px-4 py-1.5 bg-banana text-black text-xs font-semibold rounded-full hover:bg-banana/90 active:scale-[0.97] transition-all"
             >
-              {promo.claimCount && promo.claimCount > 1 ? `Claim (${promo.claimCount})` : 'Claim'}
+              {promo.claimCount && promo.claimCount > 1 ? `Claim · ${promo.claimCount}` : 'Claim'}
             </button>
-          ) : (
-            <span className="shrink-0 text-white/30 text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-              Details →
-            </span>
           )}
         </div>
       </div>
