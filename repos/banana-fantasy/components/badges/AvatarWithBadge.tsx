@@ -47,7 +47,7 @@ export function AvatarWithBadge({
   // the draft-room cards) doesn't clip the badge.
   return (
     <div
-      className={`relative inline-block flex-shrink-0 ${className}`}
+      className={`relative inline-block flex-shrink-0 rounded-full ${className}`}
       style={{ width: size, height: size }}
     >
       {useNextImage ? (
