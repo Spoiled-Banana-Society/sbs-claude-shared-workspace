@@ -405,6 +405,18 @@ export default function MarketplacePage() {
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] List failed:', error);
+      // Wallet-diagnostic suffix — append a snapshot of the wallets
+      // array + which one we picked when ?walletDebug=1 is set in the
+      // URL. Helps narrow down "No embedded or connected wallet found"
+      // errors when they keep firing despite the wallet-selection
+      // preference logic.
+      if (typeof window !== 'undefined' && window.location.search.includes('walletDebug=1')) {
+        const summary = wallets.map(w => `${w.walletClientType}:${w.address.slice(0,6)}…${w.address.slice(-4)}`).join(' | ');
+        const sel = selectedWallet ? `${selectedWallet.walletClientType}:${selectedWallet.address.slice(0,6)}…${selectedWallet.address.slice(-4)}` : 'null';
+        const errMsg = error instanceof Error ? error.message : String(error);
+        setTxError(`${errMsg} || wallets=[${summary}] selected=${sel} authAddr=${walletAddress?.slice(0,6) ?? '?'}…${walletAddress?.slice(-4) ?? '?'}`);
+        return;
+      }
       setTxError(error instanceof Error ? error.message : 'Listing failed');
     }
   }, [addNotification, listPrice, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTransaction, walletAddress]);
