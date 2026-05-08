@@ -4,12 +4,14 @@ import React from 'react';
 import { SlotMachineOverlay } from '@/components/drafting/SlotMachineOverlay';
 import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
 interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
+  equippedBadge?: string | null;
 }
 
 interface DraftRoomRevealProps {
@@ -174,9 +176,17 @@ export function DraftRoomReveal({
                 }}
               >
                 <div>
-                  {isUser && user?.profilePicture ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={user.profilePicture} alt="You" className="rounded-full w-[30px] h-[30px] mx-auto border border-gray-500 object-cover" />
+                  {isUser ? (
+                    <div className="flex justify-center">
+                      <AvatarWithBadge
+                        imageUrl={user?.profilePicture || '/banana-profile.png'}
+                        alt="You"
+                        size={30}
+                        equippedBadge={user?.equippedBadge}
+                        useNextImage={false}
+                        className="border border-gray-500"
+                      />
+                    </div>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src="/banana-profile.png" alt="Banana" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />
