@@ -163,12 +163,75 @@ async function verifyPrivyJwt(token: string): Promise<{ userId: string; walletAd
   };
 }
 
+// Cache Privy User API lookups per-userId for the lifetime of the lambda
+// instance. Wallets don't change often, and avoiding a Privy round-trip on
+// every request matters for hot endpoints (eligibility, sell-session). Soft
+// 5-minute TTL.
+const privyUserCache = new Map<string, { walletAddress: string | null; expires: number }>();
+const PRIVY_USER_TTL_MS = 5 * 60 * 1000;
+
+interface PrivyLinkedAccount {
+  type?: string;
+  address?: string;
+  wallet_client_type?: string;
+  chain_type?: string;
+}
+
+async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
+  const cached = privyUserCache.get(userId);
+  if (cached && cached.expires > Date.now()) return cached.walletAddress;
+
+  const appId = getPrivyAppId();
+  const appSecret = process.env.PRIVY_APP_SECRET?.trim();
+  if (!appSecret) return null;
+
+  try {
+    const auth = Buffer.from(`${appId}:${appSecret}`).toString('base64');
+    const res = await fetch(`https://auth.privy.io/api/v1/users/${encodeURIComponent(userId)}`, {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'privy-app-id': appId,
+      },
+    });
+    if (!res.ok) {
+      console.warn('[auth] Privy User API non-OK:', res.status);
+      privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_TTL_MS });
+      return null;
+    }
+    const data = (await res.json()) as { linked_accounts?: PrivyLinkedAccount[]; wallet?: { address?: string } };
+    let wallet: string | null = null;
+    // Prefer the first non-Privy embedded wallet (external > embedded)
+    const accounts = Array.isArray(data.linked_accounts) ? data.linked_accounts : [];
+    const external = accounts.find(
+      (a) => a.type === 'wallet' && a.wallet_client_type !== 'privy' && typeof a.address === 'string',
+    );
+    const anyWallet = accounts.find((a) => a.type === 'wallet' && typeof a.address === 'string');
+    wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
+    if (wallet) wallet = wallet.toLowerCase();
+    privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + PRIVY_USER_TTL_MS });
+    return wallet;
+  } catch (err) {
+    console.warn('[auth] Privy User API fetch failed:', err);
+    return null;
+  }
+}
+
 export async function getPrivyUser(req: Request): Promise<{ userId: string; walletAddress: string | null }> {
   const authHeader = req.headers.get('authorization') || '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
   if (!token) throw new ApiError(401, 'Missing authorization token');
 
   const user = await verifyPrivyJwt(token);
+
+  // JWTs from social-login Privy sessions don't carry the wallet claim.
+  // Fall back to the Privy User API so every downstream check (verification
+  // doc key, ban check, audit logging) gets the wallet — without this, all
+  // writes happen under did:privy:… and reads under the wallet, and they
+  // never reconcile.
+  if (!user.walletAddress) {
+    const apiWallet = await fetchWalletFromPrivyUserApi(user.userId);
+    if (apiWallet) user.walletAddress = apiWallet;
+  }
 
   // Enforce bans at the auth gate — every authenticated API request checks
   // the wallet's banned flag. Cached 30s per instance to keep overhead low.

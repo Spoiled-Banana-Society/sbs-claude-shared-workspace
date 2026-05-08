@@ -11,12 +11,60 @@ import {
 
 const STATUS_FILTERS: { value: OfframpAttemptStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
-  { value: 'session_created', label: 'Session created' },
-  { value: 'tx_pending', label: 'Tx pending' },
-  { value: 'tx_completed', label: 'Tx completed' },
-  { value: 'tx_failed', label: 'Tx failed' },
-  { value: 'abandoned', label: 'Abandoned' },
+  { value: 'session_created', label: 'Opened Coinbase' },
+  { value: 'tx_pending', label: 'Cashout in progress' },
+  { value: 'tx_completed', label: 'Money sent' },
+  { value: 'tx_failed', label: 'Cashout failed' },
+  { value: 'abandoned', label: "Didn't transact" },
 ];
+
+// Plain-language explanation of each stage so an operator can tell a user
+// where they are without needing to read the code.
+function statusExplanation(status: OfframpAttemptStatus, source: OfframpSource): string {
+  if (source === 'coinbase_offramp') {
+    switch (status) {
+      case 'session_created':
+        return "User opened Coinbase popup. Hasn't picked an amount or signed the USDC tx yet (or hasn't returned to confirm).";
+      case 'tx_pending':
+        return 'Coinbase saw the USDC arrive. Converting to USD and waiting for bank deposit.';
+      case 'tx_completed':
+        return 'Money has landed in the user’s linked bank or Coinbase wallet. Done.';
+      case 'tx_failed':
+        return 'Coinbase rejected or canceled the cashout. Check error message and ask user to retry or contact Coinbase support.';
+      case 'abandoned':
+        return 'User opened the Coinbase popup but never sent USDC within 1 hour. Probably closed the popup or got stuck on Coinbase verification.';
+    }
+  }
+  // Direct USDC / direct bank
+  switch (status) {
+    case 'session_created':
+      return 'Direct withdrawal record opened (unusual — direct withdrawals normally land at tx_pending or later immediately).';
+    case 'tx_pending':
+      return 'Direct withdrawal queued. Waiting on backend payout job.';
+    case 'tx_completed':
+      return 'USDC sent to user wallet (or bank received funds). Done.';
+    case 'tx_failed':
+      return 'Backend payout failed. Check error message; may need ops intervention.';
+    case 'abandoned':
+      return 'Direct withdrawals shouldn’t be marked abandoned — log a bug if you see this.';
+  }
+  return '';
+}
+
+function statusShortLabel(status: OfframpAttemptStatus): string {
+  switch (status) {
+    case 'session_created':
+      return 'opened coinbase';
+    case 'tx_pending':
+      return 'in progress';
+    case 'tx_completed':
+      return 'money sent';
+    case 'tx_failed':
+      return 'failed';
+    case 'abandoned':
+      return "didn't transact";
+  }
+}
 
 function statusClasses(status: OfframpAttemptStatus): string {
   switch (status) {
@@ -115,7 +163,7 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
                   attempt.status,
                 )}`}
               >
-                {attempt.status.replace(/_/g, ' ')}
+                {statusShortLabel(attempt.status)}
               </span>
               <span
                 className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border ${sourceClasses(
@@ -149,6 +197,12 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
 
       {isExpanded && (
         <div className="mt-3 pt-3 border-t border-gray-700 space-y-2 text-[12px]">
+          <div className="rounded-md bg-blue-500/10 border border-blue-500/30 px-3 py-2">
+            <p className="text-blue-200 text-[12px] leading-relaxed">
+              {statusExplanation(attempt.status, attempt.source)}
+            </p>
+          </div>
+
           {attempt.errorMessage && (
             <div className="rounded-md bg-red-500/10 border border-red-500/30 px-3 py-2">
               <p className="text-red-300 font-medium">{attempt.errorMessage}</p>
@@ -225,6 +279,9 @@ export function OfframpAttemptsViewer({ enabled }: { enabled: boolean }) {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h3 className="text-sm font-semibold text-white">Offramp / Cashout Attempts</h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            Every cashout attempt — Coinbase popup, direct USDC, future bank rail. Click a row for stage explanation.
+          </p>
           <p className="text-[11px] text-gray-500 mt-0.5">
             Auto-refreshes every 30s · {query.isFetching ? 'refreshing…' : `${attempts.length} shown`}
             {summary.completed > 0 && (
