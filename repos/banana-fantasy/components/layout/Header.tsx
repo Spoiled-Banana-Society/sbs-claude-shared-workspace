@@ -28,6 +28,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
     { href: '/rankings', label: 'Rankings', tooltip: 'Custom rankings & auto-draft limits', auth: false },
     { href: '/exposure', label: 'Exposure', tooltip: 'Player & team exposure', auth: true },
     { href: '/marketplace', label: 'Marketplace', tooltip: 'Buy & sell teams', auth: false },
+    { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     { href: '/leaderboard', label: 'Leaderboard', tooltip: 'Top players & teams', auth: false },
     { href: '/faq', label: 'FAQ', tooltip: 'Frequently asked questions', auth: false },
     { href: '/standings', label: 'Standings', tooltip: 'Check standings', auth: true },
