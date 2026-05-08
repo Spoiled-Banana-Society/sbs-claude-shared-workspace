@@ -118,6 +118,15 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [teamLoading, setTeamLoading] = useState(true);
 
+  // Per-owner scores for the standings tab. Populated by parallel
+  // fetches of /owner/{addr}/draftToken/all once playerKeys are known.
+  const [scoresByOwner, setScoresByOwner] = useState<Record<string, {
+    seasonScore: number;
+    weekScore: number;
+    rank: number;
+    leagueRank: number;
+  }>>({});
+
   const handleClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(onClose, 200);
@@ -170,6 +179,50 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     })();
   }, [draftId]);
 
+  // Fetch per-owner scores (season/week + ranks) for the standings tab.
+  // 10 parallel fetches, one per draft participant. Each owner's draft
+  // tokens are filtered to the one matching this league.
+  useEffect(() => {
+    if (!draftId || playerKeys.length === 0) return;
+    (async () => {
+      const results = await Promise.allSettled(
+        playerKeys.map(k => getOwnerDraftTokens(k)),
+      );
+      const map: Record<string, { seasonScore: number; weekScore: number; rank: number; leagueRank: number }> = {};
+      results.forEach((res, i) => {
+        if (res.status !== 'fulfilled') return;
+        const match = res.value.find(
+          t => String(t.leagueId || '').toLowerCase() === draftId.toLowerCase(),
+        );
+        if (!match) return;
+        const raw = match as Record<string, unknown>;
+        const num = (v: unknown): number => {
+          if (typeof v === 'number') return v;
+          if (typeof v === 'string') {
+            const n = parseFloat(v);
+            return Number.isFinite(n) ? n : 0;
+          }
+          return 0;
+        };
+        const intOr = (v: unknown, fallback: number): number => {
+          if (typeof v === 'number') return v;
+          if (typeof v === 'string') {
+            const n = parseInt(v, 10);
+            return Number.isFinite(n) ? n : fallback;
+          }
+          return fallback;
+        };
+        map[playerKeys[i]] = {
+          seasonScore: num(match.seasonScore ?? raw._seasonScore),
+          weekScore: num(match.weekScore ?? raw._weekScore),
+          rank: intOr(match.rank ?? raw._rank, 0),
+          leagueRank: intOr(raw._leagueRank ?? raw.leagueRank, 0),
+        };
+      });
+      setScoresByOwner(map);
+    })();
+  }, [draftId, playerKeys]);
+
   // Fetch team card (for the target player — initialPlayer or current user)
   useEffect(() => {
     if (!cardFetchWallet || !draftId) { setTeamLoading(false); return; }
@@ -209,10 +262,12 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
 
   const roster = allRosters[selectedPlayer];
 
-  // Build standings entries from roster data
+  // Build standings entries from roster data + per-owner scores. Sorted
+  // by leagueRank (season standing) once scores load; falls back to
+  // playerKeys order while scores are pending.
   const standingsEntries = useMemo(() => {
     if (playerKeys.length === 0) return [];
-    return playerKeys.map((key, idx) => {
+    const rows = playerKeys.map((key, idx) => {
       const r = allRosters[key];
       const totalPlayers = r
         ? POSITION_ORDER.reduce((sum, pos) => sum + (r[pos]?.length || 0), 0)
@@ -221,15 +276,26 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
       if (r?.pfpDisplayName) displayName = r.pfpDisplayName;
       else if (key.startsWith('0x')) displayName = truncateAddress(key);
       else if (key.startsWith('bot-')) displayName = key.replace(/^bot-fast-\d+-/, 'Bot ');
+      const score = scoresByOwner[key];
       return {
         ownerKey: key,
         displayName,
         playerCount: totalPlayers,
         isCurrentUser: key.toLowerCase() === walletAddress?.toLowerCase(),
-        rank: idx + 1,
+        rank: score?.leagueRank && score.leagueRank > 0 ? score.leagueRank : idx + 1,
+        seasonScore: score?.seasonScore ?? 0,
+        weekScore: score?.weekScore ?? 0,
+        weeklyRank: score?.rank ?? 0,
+        hasScores: !!score,
       };
     });
-  }, [playerKeys, allRosters, walletAddress]);
+    return rows.sort((a, b) => {
+      if (a.hasScores && b.hasScores) return a.rank - b.rank;
+      if (a.hasScores) return -1;
+      if (b.hasScores) return 1;
+      return 0;
+    });
+  }, [playerKeys, allRosters, walletAddress, scoresByOwner]);
 
   // Build board grid
   const { boardGrid, drafterOrder } = useMemo(() => {
@@ -746,7 +812,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
             </div>
           )}
 
-          {/* STANDINGS TAB */}
+          {/* STANDINGS TAB — mirrors the old draft-web layout: rank +
+              team + weekly rank + weekly score + season score. Trophy on
+              season-rank 1, green text on rank 2 (the playoff cutoff). */}
           {activeTab === 'standings' && (
             <div>
               {rostersLoading ? (
@@ -758,65 +826,87 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
               ) : standingsEntries.length > 0 ? (
                 <>
                   {/* Header */}
-                  <div className="grid grid-cols-[36px_1fr_80px] gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-white/30 font-medium">
+                  <div className="grid grid-cols-[36px_1fr_44px_56px_64px] gap-2 px-3 py-2 text-[10px] uppercase tracking-wider text-white/30 font-medium">
                     <div>#</div>
                     <div>Team</div>
-                    <div className="text-right">Roster</div>
+                    <div className="text-right">Wk #</div>
+                    <div className="text-right">Wk Pts</div>
+                    <div className="text-right">Season</div>
                   </div>
 
                   <div className="space-y-1">
-                    {standingsEntries.map((entry) => (
-                      <React.Fragment key={entry.ownerKey}>
-                        <div
-                          onClick={() => { setSelectedPlayer(entry.ownerKey); setActiveTab('roster'); }}
-                          className={`
-                            grid grid-cols-[36px_1fr_80px] gap-2 px-3 py-2.5 rounded-lg items-center cursor-pointer transition-colors
-                            ${entry.isCurrentUser
-                              ? 'bg-banana/[0.08] ring-1 ring-banana/20 hover:bg-banana/[0.12]'
-                              : 'hover:bg-white/[0.04]'
-                            }
-                          `}
-                        >
-                          {/* Rank */}
-                          <div>
-                            {entry.rank <= 2 ? (
-                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                                entry.rank === 1 ? 'bg-banana text-black' : 'bg-white/80 text-black'
-                              }`}>
-                                {entry.rank}
-                              </span>
-                            ) : (
-                              <span className="text-white/50 text-sm font-medium">{entry.rank}</span>
-                            )}
+                    {standingsEntries.map((entry) => {
+                      const seasonRankColor = entry.rank === 1
+                        ? 'text-banana'
+                        : entry.rank === 2
+                          ? 'text-green-400'
+                          : 'text-white/80';
+                      const weeklyRankColor = entry.weeklyRank === 1
+                        ? 'text-banana'
+                        : 'text-white/60';
+                      return (
+                        <React.Fragment key={entry.ownerKey}>
+                          <div
+                            onClick={() => { setSelectedPlayer(entry.ownerKey); setActiveTab('roster'); }}
+                            className={`
+                              grid grid-cols-[36px_1fr_44px_56px_64px] gap-2 px-3 py-2.5 rounded-lg items-center cursor-pointer transition-colors
+                              ${entry.isCurrentUser
+                                ? 'bg-banana/[0.08] ring-1 ring-banana/20 hover:bg-banana/[0.12]'
+                                : 'hover:bg-white/[0.04]'
+                              }
+                            `}
+                          >
+                            {/* Rank */}
+                            <div className="flex items-center gap-1">
+                              {entry.rank <= 2 ? (
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                                  entry.rank === 1 ? 'bg-banana text-black' : 'bg-green-400 text-black'
+                                }`}>
+                                  {entry.rank}
+                                </span>
+                              ) : (
+                                <span className="text-white/50 text-sm font-medium">{entry.rank}</span>
+                              )}
+                              {entry.rank === 1 && (
+                                <span className="text-banana text-xs leading-none" aria-hidden>🏆</span>
+                              )}
+                            </div>
+
+                            {/* Team name */}
+                            <div className="min-w-0">
+                              <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : seasonRankColor}`}>
+                                {entry.displayName}
+                                {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
+                              </p>
+                            </div>
+
+                            {/* Weekly rank */}
+                            <div className={`text-right text-sm font-medium ${weeklyRankColor}`}>
+                              {entry.weeklyRank > 0 ? entry.weeklyRank : '—'}
+                            </div>
+
+                            {/* Weekly score */}
+                            <div className="text-right text-white/70 text-sm tabular-nums">
+                              {entry.hasScores ? entry.weekScore.toFixed(1) : '—'}
+                            </div>
+
+                            {/* Season score */}
+                            <div className={`text-right text-sm font-bold tabular-nums ${seasonRankColor}`}>
+                              {entry.hasScores ? entry.seasonScore.toFixed(1) : '—'}
+                            </div>
                           </div>
 
-                          {/* Team name */}
-                          <div className="min-w-0">
-                            <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white/80'}`}>
-                              {entry.displayName}
-                              {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
-                            </p>
-                          </div>
-
-                          {/* Player count + chevron */}
-                          <div className="flex items-center justify-end gap-2">
-                            <span className="text-white/30 text-sm">{entry.playerCount > 0 ? `${entry.playerCount} drafted` : '—'}</span>
-                            <svg className="w-3 h-3 text-white/25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path d="M9 5l7 7-7 7" />
-                            </svg>
-                          </div>
-                        </div>
-
-                        {/* Advance line between rank 2 and 3 */}
-                        {entry.rank === 2 && standingsEntries.length > 2 && (
-                          <div className="flex items-center gap-2 px-3 py-1.5">
-                            <div className="flex-1 h-px bg-green-500/30" />
-                            <span className="text-[9px] uppercase tracking-wider text-green-500/50 font-medium">Advance</span>
-                            <div className="flex-1 h-px bg-green-500/30" />
-                          </div>
-                        )}
-                      </React.Fragment>
-                    ))}
+                          {/* Advance line between rank 2 and 3 */}
+                          {entry.rank === 2 && standingsEntries.length > 2 && (
+                            <div className="flex items-center gap-2 px-3 py-1.5">
+                              <div className="flex-1 h-px bg-green-500/30" />
+                              <span className="text-[9px] uppercase tracking-wider text-green-500/50 font-medium">Advance</span>
+                              <div className="flex-1 h-px bg-green-500/30" />
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </div>
 
                   <p className="text-white/20 text-[10px] text-center mt-4">Click a team to view their roster</p>
