@@ -1296,9 +1296,12 @@ export async function recomputeUserExposure(
   diagOut?: ExposureRecomputeDiag,
 ): Promise<UserExposure | null> {
   const lower = userId.toLowerCase();
+  // Staging-only — never fall through to NEXT_PUBLIC_DRAFTS_API_URL,
+  // which on Vercel is set to the production URL and would leak prod
+  // roster data into staging exposure docs. Same pattern the badge
+  // sweep uses (app/api/badges/route.ts).
   const baseUrl = (
     process.env.STAGING_DRAFTS_API_URL ||
-    process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
 
