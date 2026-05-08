@@ -42,6 +42,9 @@ export function AvatarWithBadge({
   const badgeSize = Math.min(32, Math.max(12, Math.round(size * 0.38)));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
 
+  // Badge sits flush at the bottom-right corner INSIDE the avatar's
+  // bounding box. This way an `overflow-hidden` on a parent slot (e.g.
+  // the draft-room cards) doesn't clip the badge.
   return (
     <div
       className={`relative inline-block flex-shrink-0 ${className}`}
@@ -72,8 +75,8 @@ export function AvatarWithBadge({
         <span
           className="absolute pointer-events-auto"
           style={{
-            right: -Math.round(badgeSize * 0.15),
-            bottom: -Math.round(badgeSize * 0.15),
+            right: 0,
+            bottom: 0,
             width: badgeSize,
             height: badgeSize,
           }}
