@@ -371,6 +371,7 @@ export function DraftRoomDrafting({
                   initialPlayer={rosterViewPlayer}
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userName={user?.username ?? undefined}
+                  userEquippedBadge={user?.equippedBadge}
                 />
               )}
               {/* Keep chat mounted across tab switches and through draft

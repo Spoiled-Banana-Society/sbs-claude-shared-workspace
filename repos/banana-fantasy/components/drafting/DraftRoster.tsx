@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { POSITION_COLORS, ALL_POSITIONS } from '@/lib/draftRoomConstants';
 import type { PositionRoster, DraftPick } from '@/lib/draftRoomConstants';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 
 interface DraftRosterProps {
   draftOrder: DraftPlayer[];
@@ -13,11 +14,12 @@ interface DraftRosterProps {
   initialPlayer?: string; // Pre-select a specific player's roster
   userProfilePicture?: string;
   userName?: string;
+  userEquippedBadge?: string | null;
 }
 
 const POSITION_KEYS: (keyof PositionRoster)[] = ['QB', 'RB', 'WR', 'TE', 'DST'];
 
-export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName }: DraftRosterProps) {
+export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge }: DraftRosterProps) {
   const [selectedPlayer, setSelectedPlayer] = useState(
     initialPlayer || draftOrder[userDraftPosition]?.name || draftOrder[0]?.name || ''
   );
@@ -86,9 +88,17 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
       {/* Header section */}
       <div style={{ paddingTop: 30 }}>
         {/* Profile photo */}
-        {selectedDraftPlayer?.isYou && userProfilePicture ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={userProfilePicture} alt="You" style={{ width: 40, height: 40, borderRadius: '50%', margin: '10px auto', border: '1px solid #777', objectFit: 'cover' }} />
+        {selectedDraftPlayer?.isYou ? (
+          <div style={{ margin: '10px auto', display: 'flex', justifyContent: 'center' }}>
+            <AvatarWithBadge
+              imageUrl={userProfilePicture || '/banana-profile.png'}
+              alt="You"
+              size={40}
+              equippedBadge={userEquippedBadge}
+              useNextImage={false}
+              className="border border-[#777]"
+            />
+          </div>
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/banana-profile.png" alt="Player" style={{ width: 40, height: 40, borderRadius: '50%', margin: '10px auto', border: '1px solid #777' }} />
