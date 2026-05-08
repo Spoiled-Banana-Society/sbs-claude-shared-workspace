@@ -65,16 +65,24 @@ export default function ExposurePage() {
   const [modalLeague, setModalLeague] = useState<League | null>(null);
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
 
-  // Leagues whose roster contains the selected exposure's teamPosition
-  // (e.g. "IND RB1"). Roster items already have `teamPosition` matching
-  // the same convention.
-  const selectedTeamPosition = selectedExposure?.teamPosition ?? null;
+  // Leagues whose roster contains the selected team+position. Match by
+  // team + base position group (RB / WR / QB / TE / DST), since roster
+  // entries use "IND RB" / "IND RB2" while exposure aggregation uses
+  // "IND RB1" / "IND RB2" — different first-slot conventions. Matching
+  // by group is also more useful (clicking IND RB1 surfaces every league
+  // where you drafted any IND RB).
   const matchingLeagues = useMemo(() => {
-    if (!selectedTeamPosition) return [] as League[];
+    if (!selectedExposure) return [] as League[];
+    const team = selectedExposure.team;
+    const baseGroup = selectedExposure.position.replace(/\d+$/, '');
     return leagues.filter(l =>
-      l.roster.some(r => r.teamPosition === selectedTeamPosition),
+      l.roster.some(r => {
+        const [rTeam, rSlot = ''] = r.teamPosition.split(' ');
+        const rGroup = rSlot.replace(/\d+$/, '');
+        return rTeam === team && rGroup === baseGroup;
+      }),
     );
-  }, [leagues, selectedTeamPosition]);
+  }, [leagues, selectedExposure]);
 
   const openLeague = (league: League, tab: ModalTab = 'roster') => {
     setModalLeague(league);
