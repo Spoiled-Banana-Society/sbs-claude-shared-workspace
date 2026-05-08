@@ -445,6 +445,10 @@ export interface OfframpAttemptEntry {
   coinbaseTxStatus?: string;
   txDetectedAt?: string;
   txCompletedAt?: string;
+  coinbaseSellUsdc?: number;
+  coinbaseTotalUsd?: number;
+  coinbaseFeeUsd?: number;
+  coinbaseExchangeRate?: number;
   errorMessage?: string;
   withdrawalId?: string;
 }

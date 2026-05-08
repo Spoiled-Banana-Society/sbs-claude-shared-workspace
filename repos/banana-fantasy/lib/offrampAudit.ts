@@ -38,7 +38,7 @@ export interface OfframpAttempt {
   timestamp: string;       // ISO — when session_created
   updatedAt: string;       // ISO — last status change
   status: OfframpAttemptStatus;
-  amount?: number;         // USDC requested
+  amount?: number;         // USDC requested in our UI (what user typed)
   paymentMethod?: string;  // ACH_BANK_ACCOUNT / FIAT_WALLET / CRYPTO_ACCOUNT (Coinbase) | usdc / bank (direct)
   draftId?: string;        // tied prize, if any
   // Updated when tx-status polling sees a real Coinbase tx
@@ -46,6 +46,12 @@ export interface OfframpAttempt {
   coinbaseTxStatus?: string; // raw status string from Coinbase
   txDetectedAt?: string;
   txCompletedAt?: string;
+  // Settled values from Coinbase's tx object — the source of truth for
+  // what the user actually got. Populated when tx-status sees a real tx.
+  coinbaseSellUsdc?: number; // USDC actually sold (sell_amount.value)
+  coinbaseTotalUsd?: number; // USD net to user after fees (total.value)
+  coinbaseFeeUsd?: number;   // Coinbase fee (coinbase_fee.value)
+  coinbaseExchangeRate?: number; // exchange_rate.value
   // For diagnostics
   errorMessage?: string;
   // For direct withdrawals — stash the original withdrawal doc id so admin
@@ -165,6 +171,13 @@ export async function updateOfframpFromTx(input: {
   userId: string;
   coinbaseTxId: string;
   coinbaseTxStatus: string;
+  // Optional precise numbers from Coinbase's tx object — when present,
+  // these become the source of truth for the activity feed (settled USD)
+  // and admin reconciliation (fees, exchange rate).
+  coinbaseSellUsdc?: number;
+  coinbaseTotalUsd?: number;
+  coinbaseFeeUsd?: number;
+  coinbaseExchangeRate?: number;
 }): Promise<string | null> {
   if (!isFirestoreConfigured()) return null;
   try {
@@ -193,6 +206,10 @@ export async function updateOfframpFromTx(input: {
       coinbaseTxId: input.coinbaseTxId,
       coinbaseTxStatus: input.coinbaseTxStatus,
     };
+    if (typeof input.coinbaseSellUsdc === 'number') update.coinbaseSellUsdc = input.coinbaseSellUsdc;
+    if (typeof input.coinbaseTotalUsd === 'number') update.coinbaseTotalUsd = input.coinbaseTotalUsd;
+    if (typeof input.coinbaseFeeUsd === 'number') update.coinbaseFeeUsd = input.coinbaseFeeUsd;
+    if (typeof input.coinbaseExchangeRate === 'number') update.coinbaseExchangeRate = input.coinbaseExchangeRate;
     const existing = target.data() as OfframpAttempt;
     if (!existing.txDetectedAt) update.txDetectedAt = now;
     const isFirstCompletion = newStatus === 'tx_completed' && !existing.txCompletedAt;
@@ -203,15 +220,26 @@ export async function updateOfframpFromTx(input: {
 
     // Surface the completed cashout in the user's activity feed exactly
     // once — guard on the previous doc's txCompletedAt so repeated polls
-    // can't re-emit. Use the requested amount; Coinbase doesn't tell us
-    // the exact settled USD amount on the partner API.
+    // can't re-emit. Prefer Coinbase's reported settled USD (post-fee) —
+    // that's what actually lands in the user's bank, the truthful number
+    // to show. Fall back to the user-requested USDC amount only when
+    // Coinbase didn't report it.
     if (isFirstCompletion) {
+      const settledUsd = input.coinbaseTotalUsd ?? null;
+      const requestedUsdc = existing.amount ?? null;
       logActivityEvent({
         type: 'cashout_completed',
         userId: existing.userId,
         walletAddress: existing.walletAddress ?? null,
         metadata: {
-          amount: existing.amount,
+          // 'amount' is what the activity feed renders. Use settled USD
+          // when Coinbase gave it to us; otherwise the requested USDC.
+          amount: settledUsd ?? requestedUsdc,
+          // Both kept for diagnostics and any future UI that wants to
+          // show "you cashed out 100 USDC and received $99.40".
+          settledUsd,
+          requestedUsdc,
+          coinbaseFeeUsd: input.coinbaseFeeUsd ?? null,
           rail: existing.source,
           method: existing.paymentMethod,
           coinbaseTxId: input.coinbaseTxId,

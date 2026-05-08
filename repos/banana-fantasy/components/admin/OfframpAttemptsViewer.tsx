@@ -221,6 +221,18 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
             {attempt.coinbaseTxStatus && (
               <KvRow label="Coinbase tx status" value={attempt.coinbaseTxStatus} />
             )}
+            {typeof attempt.coinbaseSellUsdc === 'number' && (
+              <KvRow label="USDC sold (Coinbase)" value={`${attempt.coinbaseSellUsdc.toFixed(2)} USDC`} />
+            )}
+            {typeof attempt.coinbaseTotalUsd === 'number' && (
+              <KvRow label="USD net (Coinbase)" value={`$${attempt.coinbaseTotalUsd.toFixed(2)}`} />
+            )}
+            {typeof attempt.coinbaseFeeUsd === 'number' && (
+              <KvRow label="Coinbase fee" value={`$${attempt.coinbaseFeeUsd.toFixed(2)}`} />
+            )}
+            {typeof attempt.coinbaseExchangeRate === 'number' && (
+              <KvRow label="Exchange rate" value={attempt.coinbaseExchangeRate.toFixed(6)} />
+            )}
             {attempt.withdrawalId && <KvRow label="Withdrawal ID" value={attempt.withdrawalId} mono />}
             {attempt.draftId && <KvRow label="Draft ID" value={attempt.draftId} mono />}
             <KvRow label="Started" value={attempt.timestamp} />
