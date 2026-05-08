@@ -2097,7 +2097,21 @@ export async function getPersonaVerification(userId: string): Promise<PersonaVer
   const db = getAdminFirestore();
   const doc = await db.collection(PERSONA_COLLECTION).doc(userId).get();
   if (!doc.exists) return { ...DEFAULT_PERSONA };
-  return doc.data() as PersonaVerificationData;
+  // Defensive merge with DEFAULT_PERSONA. verify/submit only writes
+  // tier1 + verifiedIdentity, so tier2 is missing from real docs on
+  // disk. Without this, /api/eligibility crashes with
+  // "Cannot read properties of undefined (reading 'verified')" on
+  // tier2.verified — which silently 500s and the frontend falls back
+  // to "Verification Required" forever even after a successful KYC.
+  const data = doc.data() as Partial<PersonaVerificationData>;
+  return {
+    tier1: data.tier1 ?? { verified: false },
+    tier2: data.tier2 ?? { verified: false },
+    cumulativeWithdrawals: data.cumulativeWithdrawals ?? 0,
+    ...(data.verifiedIdentity ? { verifiedIdentity: data.verifiedIdentity } : {}),
+    ...(data.withdrawnByYear ? { withdrawnByYear: data.withdrawnByYear } : {}),
+    ...(data.hasW9 ? { hasW9: data.hasW9 } : {}),
+  };
 }
 
 export async function savePersonaVerification(userId: string, data: Partial<PersonaVerificationData>): Promise<void> {
