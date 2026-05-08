@@ -14,7 +14,11 @@ import {
 import { getTeamPosition, getTeamPositionDepthChart } from '@/lib/teamPositions';
 import { mockTeamPositions } from '@/lib/mock/teamPositions';
 import { useExposure } from '@/hooks/useExposure';
+import { useLeagues } from '@/hooks/useLeagues';
+import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
+import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
+import type { League } from '@/types';
 
 // ─── Position colors ─────────────────────────────────────────────────────
 
@@ -50,11 +54,33 @@ export default function ExposurePage() {
   const userExposure = exposureQuery.data ?? { username: '', totalDrafts: 0, exposures: [] };
   const exposures = userExposure.exposures;
   const totalDrafts = userExposure.totalDrafts;
+  const { user } = useAuth();
+  const leaguesQuery = useLeagues({ userId: user?.id, status: 'completed' });
+  const leagues = leaguesQuery.data ?? [];
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<SortField>('exposure');
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
+  const [modalLeague, setModalLeague] = useState<League | null>(null);
+  const [modalTab, setModalTab] = useState<ModalTab>('roster');
+
+  // Leagues whose roster contains the selected exposure's teamPosition
+  // (e.g. "IND RB1"). Roster items already have `teamPosition` matching
+  // the same convention.
+  const selectedTeamPosition = selectedExposure?.teamPosition ?? null;
+  const matchingLeagues = useMemo(() => {
+    if (!selectedTeamPosition) return [] as League[];
+    return leagues.filter(l =>
+      l.roster.some(r => r.teamPosition === selectedTeamPosition),
+    );
+  }, [leagues, selectedTeamPosition]);
+
+  const openLeague = (league: League, tab: ModalTab = 'roster') => {
+    setModalLeague(league);
+    setModalTab(tab);
+    setSelectedExposure(null);
+  };
 
   // ── Computed data ─────────────────────────────────────────────────────
 
@@ -465,8 +491,65 @@ export default function ExposurePage() {
                 </div>
               </div>
             )}
+
+            {/* Your teams with this player — click to open the full
+                draft view (roster / board / standings / scores). */}
+            {matchingLeagues.length > 0 && (
+              <div className="mt-5">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2">
+                  Your Teams ({matchingLeagues.length})
+                </p>
+                <div className="space-y-1.5 max-h-[260px] overflow-y-auto pr-1">
+                  {matchingLeagues.map(l => {
+                    const typeColor = l.type === 'jackpot' ? '#ef4444'
+                      : l.type === 'hof' ? '#D4AF37'
+                      : '#a855f7';
+                    const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : 'Pro';
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => openLeague(l, 'roster')}
+                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left"
+                      >
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                          style={{ color: typeColor, backgroundColor: `${typeColor}20` }}
+                        >
+                          {typeLabel}
+                        </span>
+                        <span className="text-white text-sm font-medium truncate flex-1">
+                          {l.name}
+                        </span>
+                        {l.leagueRank > 0 && (
+                          <span className="text-white/50 text-xs shrink-0">
+                            #{l.leagueRank}
+                          </span>
+                        )}
+                        <span className="text-white/70 text-xs font-semibold shrink-0">
+                          {l.seasonScore.toFixed(1)} pts
+                        </span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/30 shrink-0">
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </Modal>
+      )}
+
+      {/* Full draft view (roster / board / standings / team) */}
+      {modalLeague && (
+        <LeagueDetailModal
+          league={modalLeague}
+          initialTab={modalTab}
+          walletAddress={user?.walletAddress ?? ''}
+          onClose={() => setModalLeague(null)}
+        />
       )}
     </div>
   );
