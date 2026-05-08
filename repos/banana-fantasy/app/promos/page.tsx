@@ -58,6 +58,7 @@ export default function PromosPage() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [claimedLocally, setClaimedLocally] = useState<Set<string>>(new Set());
+  const [isClaimingAll, setIsClaimingAll] = useState(false);
   const [_tick, setTick] = useState(0);
 
   // Refresh timer-based UI every second.
@@ -141,14 +142,51 @@ export default function PromosPage() {
     }
   };
 
+  // Claim every visible-claimable promo, one at a time. Sequential
+  // because each claim mutates user balance fields and the optimistic
+  // updates inside usePromos.claimPromo would race with parallel
+  // requests. Snapshot the list at click time so claims appearing
+  // mid-run aren't auto-grabbed (the user can re-press).
+  const handleClaimAll = async () => {
+    if (!isLoggedIn) {
+      setShowLoginModal(true);
+      return;
+    }
+    if (isClaimingAll) return;
+    const targets = visiblePromos.filter(hasVisibleClaim);
+    if (targets.length === 0) return;
+    setIsClaimingAll(true);
+    try {
+      for (const promo of targets) {
+        // eslint-disable-next-line no-await-in-loop
+        await handleClaim(promo);
+      }
+    } finally {
+      setIsClaimingAll(false);
+    }
+  };
+
   return (
     <div className="w-full min-h-screen px-4 sm:px-8 lg:px-12 py-8 max-w-6xl mx-auto">
       {/* ── Hero ──────────────────────────────────────────────────────── */}
-      <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Promos</h1>
-        <p className="text-white/40 text-sm">
-          {visiblePromos.length} active rewards · click any card for details
-        </p>
+      <div className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Promos</h1>
+          <p className="text-white/40 text-sm">
+            {visiblePromos.length} active rewards · click any card for details
+          </p>
+        </div>
+        {claimableCount > 0 && (
+          <button
+            type="button"
+            onClick={() => void handleClaimAll()}
+            disabled={isClaimingAll}
+            className="shrink-0 px-4 sm:px-5 py-2.5 bg-banana text-black text-sm font-black uppercase tracking-wider rounded-full hover:scale-105 active:scale-95 transition-transform disabled:opacity-60 disabled:hover:scale-100 disabled:cursor-not-allowed"
+            style={{ boxShadow: '0 0 0 1px rgba(251,191,36,0.4), 0 6px 22px rgba(251,191,36,0.45)' }}
+          >
+            {isClaimingAll ? 'Claiming…' : `🔥 Claim All (${claimableCount})`}
+          </button>
+        )}
       </div>
 
       {/* ── Stat tiles ────────────────────────────────────────────────── */}
