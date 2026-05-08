@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import { useAuth } from '@/hooks/useAuth';
@@ -70,12 +70,6 @@ function formatWallet(value: string): string {
   return value.length < 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function statusPill(status: string): string {
-  const s = status.toLowerCase();
-  if (['approved', 'completed', 'finished', 'active'].includes(s)) return 'bg-green-500/10 text-green-300 border-green-500/30';
-  if (['denied', 'failed', 'cancelled', 'banned'].includes(s)) return 'bg-red-500/10 text-red-300 border-red-500/30';
-  return 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30';
-}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -349,78 +343,133 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
             {readyToPay.map((w) => (
               <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-3">
                 <span className="font-mono text-gray-300 text-[11px]">{w.walletAddress}</span>
-                <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
+                  <button
+                    onClick={() => handleMarkPaid(w.id)}
+                    disabled={update.isPending}
+                    className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 text-[10px] disabled:opacity-50"
+                    title="Mark this single payout as paid"
+                  >
+                    Mark paid
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-        <table className="w-full text-left text-sm">
-        <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
-          <tr>
-            <th className="px-4 py-3 font-medium">Created</th>
-            <th className="px-4 py-3 font-medium">Wallet</th>
-            <th className="px-4 py-3 font-medium text-right">Amount</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
+      <WithdrawalSection
+        title="Pending review"
+        subtitle="Newly requested. Approve to queue for the next Gnosis batch, or deny."
+        items={items.filter((w) => w.status === 'pending')}
+        emptyMessage="No pending requests"
+        renderActions={(w) => (
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handle(w.id, 'approved')}
+              disabled={update.isPending}
+              className="px-2.5 py-1 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs disabled:opacity-50"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => handle(w.id, 'denied')}
+              disabled={update.isPending}
+              className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-500 text-white text-xs disabled:opacity-50"
+            >
+              Deny
+            </button>
+          </div>
+        )}
+      />
+
+      <WithdrawalSection
+        title="Paid"
+        subtitle="Completed — USDC delivered. Most recent first."
+        items={items.filter((w) => w.status === 'paid' || w.status === 'completed')}
+        emptyMessage="No paid withdrawals yet"
+        collapsedByDefault
+      />
+
+      <WithdrawalSection
+        title="Denied"
+        subtitle="Rejected by an admin. Kept for audit."
+        items={items.filter((w) => w.status === 'denied')}
+        emptyMessage="No denied withdrawals"
+        collapsedByDefault
+      />
+    </div>
+  );
+}
+
+function WithdrawalSection({
+  title,
+  subtitle,
+  items,
+  emptyMessage,
+  renderActions,
+  collapsedByDefault = false,
+}: {
+  title: string;
+  subtitle?: string;
+  items: AdminWithdrawalItem[];
+  emptyMessage: string;
+  renderActions?: (w: AdminWithdrawalItem) => ReactNode;
+  collapsedByDefault?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(!collapsedByDefault);
+  const total = items.reduce((s, w) => s + (w.amount || 0), 0);
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.02]"
+      >
+        <div>
+          <h3 className="text-sm font-semibold text-gray-100">
+            {title}{' '}
+            <span className="text-gray-500 font-normal">
+              · {items.length} {items.length === 1 ? 'item' : 'items'}{items.length > 0 ? ` · $${total.toLocaleString()}` : ''}
+            </span>
+          </h3>
+          {subtitle && <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>}
+        </div>
+        <span className="text-gray-500 text-sm">{expanded ? '−' : '+'}</span>
+      </button>
+      {expanded && (
+        <table className="w-full text-left text-sm border-t border-white/[0.04]">
+          <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
-                No withdrawals
-              </td>
+              <th className="px-4 py-2.5 font-medium">Created</th>
+              <th className="px-4 py-2.5 font-medium">Wallet</th>
+              <th className="px-4 py-2.5 font-medium text-right">Amount</th>
+              {renderActions && <th className="px-4 py-2.5 font-medium">Actions</th>}
             </tr>
-          ) : (
-            items.map((w) => (
-              <tr key={w.id} className="border-t border-white/[0.04]">
-                <td className="px-4 py-3 text-xs text-gray-500">{formatDate(w.createdAt)}</td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-300">{formatWallet(w.walletAddress)}</td>
-                <td className="px-4 py-3 text-right text-gray-200">${w.amount.toLocaleString()}</td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] border ${statusPill(w.status)}`}>
-                    {w.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {w.status === 'pending' && (
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handle(w.id, 'approved')}
-                        disabled={update.isPending}
-                        className="px-2.5 py-1 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handle(w.id, 'denied')}
-                        disabled={update.isPending}
-                        className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-500 text-white text-xs disabled:opacity-50"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  )}
-                  {w.status === 'approved' && (
-                    <button
-                      onClick={() => handleMarkPaid(w.id)}
-                      disabled={update.isPending}
-                      className="px-2.5 py-1 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-medium disabled:opacity-50"
-                      title="Click after the Gnosis Safe batch has sent USDC and confirmed on-chain. Fires the user's 'Cashed out' activity event."
-                    >
-                      Mark as paid
-                    </button>
-                  )}
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={renderActions ? 4 : 3} className="px-4 py-6 text-center text-gray-500 text-xs">
+                  {emptyMessage}
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-      </div>
+            ) : (
+              items.map((w) => (
+                <tr key={w.id} className="border-t border-white/[0.04]">
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(w.createdAt)}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-300">{formatWallet(w.walletAddress)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-200">${w.amount.toLocaleString()}</td>
+                  {renderActions && <td className="px-4 py-2.5">{renderActions(w)}</td>}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
