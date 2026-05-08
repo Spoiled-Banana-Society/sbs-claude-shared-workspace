@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePrizes, useEligibility } from '@/hooks/usePrizes';
 import { WithdrawModal } from '@/components/modals/WithdrawModal';
 import { CashOutModal } from '@/components/modals/CashOutModal';
+import { VerificationModal } from '@/components/modals/VerificationModal';
 import type { PrizeHistoryItem } from '@/types';
 
 export default function PrizesPage() {
@@ -22,6 +23,7 @@ export default function PrizesPage() {
   const hasPrizeError = Boolean(prizesQuery.error);
   const [withdrawModal, setWithdrawModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
   const [cashOutModal, setCashOutModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem; statusMode?: boolean }>({ isOpen: false });
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
 
   // Auto-open status timeline when redirected back from Coinbase
   useEffect(() => {
@@ -107,48 +109,71 @@ export default function PrizesPage() {
         <p className="text-text-secondary">View your winnings and eligibility status</p>
       </div>
 
-      {/* Minimal status row. Hides everything that isn't load-bearing.
-          - Pre-verify: yellow dot + "Not verified" + Verify button
-          - Post-verify: green dot + "Verified"
-          - W9 only appears when the user is US-based AND has crossed
-            the $2k cumulative withdrawal threshold (the actual trigger
-            for W9). Keeps the page clean for the 99% of users below it. */}
-      <Card className="mb-8">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${isEligible ? 'bg-success' : 'bg-warning'}`} />
-            <span className={`text-sm font-medium ${isEligible ? 'text-success' : 'text-warning'}`}>
-              {isEligible ? 'Withdrawal status: Verified' : 'Withdrawal status: Not verified'}
-            </span>
-          </div>
-          {!isEligible && (
-            <Button size="sm" onClick={() => router.push(verificationUrl)}>
-              Verify
-            </Button>
-          )}
-        </div>
+      {(() => {
+        // Three-state header. Goal: zero noise when there's nothing
+        // load-bearing for the user.
+        //   1. Verified → small confirmation pill (regardless of wins)
+        //   2. Not verified + has unclaimed wins → big yellow clickable
+        //      CTA inviting them to verify (the click target is the
+        //      whole row, no separate button)
+        //   3. Not verified + no unclaimed wins → render nothing.
+        //      No reason to nag a $0 user about a verification they
+        //      don't need yet.
+        const hasUnclaimedWin = prizes.some(
+          (p) => p.type === 'win' && p.status === 'pending',
+        );
+        const needsW9 =
+          !!eligibility?.geoState &&
+          (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
 
-        {(() => {
-          // Only show the W9 row when the user has actually crossed
-          // the IRS-relevant threshold and is US-based. Otherwise it's
-          // noise — we'd be telling 99% of users about a tax form they
-          // don't need.
-          const needsW9 =
-            !!eligibility?.geoState &&
-            (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
-          if (!needsW9) return null;
+        if (isEligible) {
           return (
-            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
-              <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
-              {eligibility?.w9Completed ? (
-                <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
-              ) : (
-                <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
+            <div className="mb-8 space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                <span className="text-sm font-medium text-success">Identity verified</span>
+              </div>
+              {needsW9 && (
+                <div className="flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
+                  <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
+                  {eligibility?.w9Completed ? (
+                    <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
+                  ) : (
+                    <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
+                  )}
+                </div>
               )}
             </div>
           );
-        })()}
-      </Card>
+        }
+
+        if (!hasUnclaimedWin) return null;
+
+        return (
+          <button
+            type="button"
+            onClick={() => setShowVerifyModal(true)}
+            className="group mb-8 w-full text-left rounded-2xl border border-warning/40 bg-warning/[0.06] hover:bg-warning/[0.1] active:scale-[0.99] transition-all px-5 py-4"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="w-2 h-2 rounded-full bg-warning" />
+                <div>
+                  <p className="text-sm font-semibold text-text-primary">
+                    Verify your identity to cash out winnings
+                  </p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    One-time ID verification. Required for crypto-to-cash payouts.
+                  </p>
+                </div>
+              </div>
+              <span className="text-warning text-xl group-hover:translate-x-0.5 transition-transform">
+                →
+              </span>
+            </div>
+          </button>
+        );
+      })()}
 
       <section>
         <h2 className="text-xl font-semibold text-text-primary mb-4">Prize activity</h2>
@@ -354,6 +379,21 @@ export default function PrizesPage() {
           }
         }}
       />
+
+      {/* Direct entry to KYC from the eligibility CTA at the top of
+          the page. Same modal CashOutModal launches inline; sharing it
+          here keeps the post-verify refetch behavior consistent. */}
+      {showVerifyModal && (user?.walletAddress || user?.id) && (
+        <VerificationModal
+          isOpen={true}
+          onClose={() => setShowVerifyModal(false)}
+          userId={(user?.walletAddress || user?.id) as string}
+          onComplete={() => {
+            setShowVerifyModal(false);
+            eligibilityQuery.mutate();
+          }}
+        />
+      )}
     </div>
   );
 }
