@@ -148,28 +148,19 @@ export default function PrizesPage() {
 
         if (!hasUnclaimedWin) return null;
 
+        // Compact pill that matches the verified state's shape — sized
+        // to its content, not the full row width. Same dot + text
+        // pattern, yellow theme, clickable. No arrow, no subtitle.
         return (
           <button
             type="button"
             onClick={() => setShowVerifyModal(true)}
-            className="group mb-8 w-full text-left rounded-2xl border border-warning/40 bg-warning/[0.06] hover:bg-warning/[0.1] active:scale-[0.99] transition-all px-5 py-4"
+            className="mb-8 inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
           >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-warning" />
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">
-                    Verify your identity to cash out winnings
-                  </p>
-                  <p className="text-xs text-text-muted mt-0.5">
-                    One-time ID verification. Required for crypto-to-cash payouts.
-                  </p>
-                </div>
-              </div>
-              <span className="text-warning text-xl group-hover:translate-x-0.5 transition-transform">
-                →
-              </span>
-            </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+            <span className="text-sm font-medium text-warning">
+              Verify your identity to cash out winnings
+            </span>
           </button>
         );
       })()}
