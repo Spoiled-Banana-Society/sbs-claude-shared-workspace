@@ -14,6 +14,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_left: 'Left draft',
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
+  cashout_completed: 'Cashed out',
 };
 
 const TYPE_EMOJI: Record<ActivityEventType, string> = {
@@ -25,6 +26,7 @@ const TYPE_EMOJI: Record<ActivityEventType, string> = {
   draft_left: '↩️',
   draft_won: '🏆',
   marketplace_sold: '💰',
+  cashout_completed: '💸',
 };
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
@@ -36,6 +38,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_left: 'text-gray-400',
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
+  cashout_completed: 'text-green-300',
 };
 
 function formatWhen(ms: number | null, iso: string): string {
@@ -84,6 +87,17 @@ function describe(e: LiveActivityEvent): string {
     case 'marketplace_sold': {
       const price = Number(e.metadata?.price);
       return Number.isFinite(price) ? `Sold for $${price.toLocaleString()}` : 'Marketplace sale';
+    }
+    case 'cashout_completed': {
+      const amount = Number(e.metadata?.amount);
+      const rail = String(e.metadata?.rail ?? '');
+      const railLabel =
+        rail === 'coinbase_offramp' ? 'to bank via Coinbase'
+        : rail === 'direct_usdc' ? 'to USDC wallet'
+        : rail === 'direct_bank' ? 'to bank'
+        : '';
+      const amountStr = Number.isFinite(amount) ? `$${amount.toLocaleString()}` : 'Cashout';
+      return `${amountStr}${railLabel ? ` ${railLabel}` : ''}`;
     }
     default:
       return String(e.type);

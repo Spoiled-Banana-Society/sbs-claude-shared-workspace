@@ -14,6 +14,7 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_left: 'Draft left',
   draft_won: 'Draft won',
   marketplace_sold: 'Marketplace sale',
+  cashout_completed: 'Cashout completed',
 };
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
@@ -25,6 +26,7 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_left: 'text-gray-300 bg-gray-500/10 border-gray-500/30',
   draft_won: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
   marketplace_sold: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
+  cashout_completed: 'text-green-300 bg-green-500/10 border-green-500/30',
 };
 
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {

@@ -24,7 +24,8 @@ export type ActivityEventType =
   | 'draft_entered'       // user entered a draft (a pass is "used")
   | 'draft_left'          // user left a filling draft before start (pass refunded)
   | 'draft_won'           // league finalized, user finished in paying place
-  | 'marketplace_sold';   // team listed → sold
+  | 'marketplace_sold'    // team listed → sold
+  | 'cashout_completed';  // offramp settled — Coinbase or direct USDC/bank
 
 export type WalletType =
   | 'privy_embedded'      // Privy-managed EOA (social/email login)

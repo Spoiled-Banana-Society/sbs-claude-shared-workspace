@@ -11,6 +11,7 @@
 // the threshold below.
 
 import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
+import { logActivityEvent } from './activityEvents';
 
 const OFFRAMP_COLLECTION = 'offramp_attempts';
 export const ABANDONED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
@@ -127,6 +128,24 @@ export async function logDirectWithdrawal(input: {
     if (input.draftId) doc.draftId = input.draftId;
     if (input.status === 'tx_completed') doc.txCompletedAt = now;
     const ref = await db.collection(OFFRAMP_COLLECTION).add(doc);
+
+    // Surface completed cashouts in the user's activity feed. Direct
+    // withdrawals can land 'tx_completed' on creation when the Go API
+    // returns 'completed' synchronously; otherwise it'll be emitted later
+    // when status flips (currently no flip path for direct — backend status
+    // updates would land here in the future).
+    if (input.status === 'tx_completed') {
+      logActivityEvent({
+        type: 'cashout_completed',
+        userId: input.userId,
+        walletAddress: input.walletAddress ?? null,
+        metadata: {
+          amount: input.amount,
+          rail: doc.source,
+          method: input.method,
+        },
+      }).catch(() => { /* non-fatal */ });
+    }
     return ref.id;
   } catch (err) {
     console.error('[Offramp Audit] logDirectWithdrawal failed:', err);
@@ -176,10 +195,29 @@ export async function updateOfframpFromTx(input: {
     };
     const existing = target.data() as OfframpAttempt;
     if (!existing.txDetectedAt) update.txDetectedAt = now;
-    if (newStatus === 'tx_completed' && !existing.txCompletedAt) {
+    const isFirstCompletion = newStatus === 'tx_completed' && !existing.txCompletedAt;
+    if (isFirstCompletion) {
       update.txCompletedAt = now;
     }
     await target.ref.set(update, { merge: true });
+
+    // Surface the completed cashout in the user's activity feed exactly
+    // once — guard on the previous doc's txCompletedAt so repeated polls
+    // can't re-emit. Use the requested amount; Coinbase doesn't tell us
+    // the exact settled USD amount on the partner API.
+    if (isFirstCompletion) {
+      logActivityEvent({
+        type: 'cashout_completed',
+        userId: existing.userId,
+        walletAddress: existing.walletAddress ?? null,
+        metadata: {
+          amount: existing.amount,
+          rail: existing.source,
+          method: existing.paymentMethod,
+          coinbaseTxId: input.coinbaseTxId,
+        },
+      }).catch(() => { /* non-fatal */ });
+    }
     return target.id;
   } catch (err) {
     console.error('[Offramp Audit] updateOfframpFromTx failed:', err);
