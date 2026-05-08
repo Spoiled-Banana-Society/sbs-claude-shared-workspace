@@ -151,117 +151,154 @@ export default function PrizesPage() {
       </Card>
 
       <section>
-        <h2 className="text-xl font-semibold text-text-primary mb-4">Prize History</h2>
+        <h2 className="text-xl font-semibold text-text-primary mb-4">Prize activity</h2>
 
-        {/* Decision tree based on ACTUAL data presence rather than the SWR
-            hook's isLoading flag. Earlier attempt depended on isLoading +
-            isValidating, but isLoading can stick true past first render when
-            the hook mounts late (after isLoggedIn gate flips), and that
-            blocked the prize list from rendering even though prizes were
-            already populated in state.
-            Order: error wins → has data renders list → in-flight shows
-            loader → settled-and-empty shows empty state. */}
         {hasPrizeError && (
           <Card className="text-center py-12">
-            <p className="text-error font-semibold">Unable to load prize history</p>
+            <p className="text-error font-semibold">Unable to load prize activity</p>
             <p className="text-text-muted text-sm mt-2">Please refresh the page to try again.</p>
           </Card>
         )}
 
         {!hasPrizeError && prizes.length === 0 && (prizesQuery.isLoading || prizesQuery.isValidating) && (
           <Card className="text-center py-12">
-            <p className="text-text-muted">Loading prize history...</p>
+            <p className="text-text-muted">Loading…</p>
           </Card>
         )}
 
-        {!hasPrizeError && prizes.length > 0 && (
-          <div className="space-y-4">
-            {prizes.map((item) => (
-              <Card key={`${item.type}-${item.id}`} className="p-0">
-                <div className="p-4 flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">{item.type === 'withdrawal' ? '💸' : '🏆'}</span>
-                    <div>
-                      <h4 className="font-medium text-text-primary">
-                        {item.type === 'withdrawal'
-                          ? `Withdrawal to ${item.method === 'bank' ? 'Bank' : 'USDC'}`
-                          : item.contestName}
-                      </h4>
-                      <p className={`text-2xl font-bold mt-1 ${item.type === 'withdrawal' ? 'text-text-primary' : 'text-banana'}`}>
-                        {item.type === 'withdrawal' ? `-${formatCurrency(item.amount)}` : formatCurrency(item.amount)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right flex flex-col items-end gap-2">
-                    {getStatusBadge(item)}
-                    {item.type === 'withdrawal' ? (
-                      <p className="text-text-muted text-sm">Requested: {item.createdAt?.slice(0, 10)}</p>
-                    ) : (
-                      item.paidDate && (
-                        <p className="text-text-muted text-sm">Paid on: {item.paidDate}</p>
-                      )
-                    )}
-                    {item.type === 'win' && item.status === 'pending' && item.draftId && (
-                      canWithdrawPrizes ? (
-                        <div className="flex flex-col items-end gap-1.5">
-                          <button
-                            onClick={() => setCashOutModal({ isOpen: true, prize: item })}
-                            className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
-                          >
-                            Cash Out to Bank
-                          </button>
-                          <button
-                            onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
-                            className="text-text-muted text-xs hover:text-text-secondary transition-colors"
-                          >
-                            or send USDC to a wallet
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => router.push(verificationUrl)}
-                          className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-bg-tertiary text-text-secondary hover:bg-bg-elevated transition-all"
-                        >
-                          Verify to Withdraw
-                        </button>
-                      )
-                    )}
+        {!hasPrizeError && prizes.length > 0 && (() => {
+          // Three buckets so users see what they need to do, what's
+          // mid-flight, and what's already settled — instead of a single
+          // pile labeled "history" that mixed unclaimed wins in.
+          // We compare statuses as strings because the actual saved
+          // values include 'approved'/'paid'/'denied' set by the admin
+          // endpoint, which aren't on the WithdrawalStatus type.
+          const isAction = (p: PrizeHistoryItem) => p.type === 'win' && p.status === 'pending';
+          const isFinalized = (p: PrizeHistoryItem) => {
+            if (p.type === 'win') return p.status === 'paid' || p.status === 'forfeited';
+            const s = p.status as string;
+            return s === 'completed' || s === 'paid' || s === 'failed' || s === 'denied';
+          };
+          const actionRequired = prizes.filter(isAction);
+          const history = prizes.filter(isFinalized);
+          const inProgress = prizes.filter((p) => !isAction(p) && !isFinalized(p));
+
+          const renderCard = (item: PrizeHistoryItem) => (
+            <Card key={`${item.type}-${item.id}`} className="p-0">
+              <div className="p-4 flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{item.type === 'withdrawal' ? '💸' : '🏆'}</span>
+                  <div>
+                    <h4 className="font-medium text-text-primary">
+                      {item.type === 'withdrawal'
+                        ? `Withdrawal to ${item.method === 'bank' ? 'Bank' : 'USDC'}`
+                        : item.contestName}
+                    </h4>
+                    <p className={`text-2xl font-bold mt-1 ${item.type === 'withdrawal' ? 'text-text-primary' : 'text-banana'}`}>
+                      {item.type === 'withdrawal' ? `-${formatCurrency(item.amount)}` : formatCurrency(item.amount)}
+                    </p>
                   </div>
                 </div>
+                <div className="text-right flex flex-col items-end gap-2">
+                  {getStatusBadge(item)}
+                  {item.type === 'withdrawal' ? (
+                    <p className="text-text-muted text-sm">Requested: {item.createdAt?.slice(0, 10)}</p>
+                  ) : (
+                    item.paidDate && (
+                      <p className="text-text-muted text-sm">Paid on: {item.paidDate}</p>
+                    )
+                  )}
+                  {item.type === 'win' && item.status === 'pending' && item.draftId && (
+                    canWithdrawPrizes ? (
+                      <div className="flex flex-col items-end gap-1.5">
+                        <button
+                          onClick={() => setCashOutModal({ isOpen: true, prize: item })}
+                          className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
+                        >
+                          Cash Out to Bank
+                        </button>
+                        <button
+                          onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
+                          className="text-text-muted text-xs hover:text-text-secondary transition-colors"
+                        >
+                          or send USDC to a wallet
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => router.push(verificationUrl)}
+                        className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-bg-tertiary text-text-secondary hover:bg-bg-elevated transition-all"
+                      >
+                        Verify to Withdraw
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
 
-                {item.type === 'win' && item.status === 'forfeited' && item.forfeitReason && (
-                  <div className="px-4 pb-4">
-                    <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
-                      <p className="text-error text-sm">
-                        <strong>Reason:</strong> {item.forfeitReason}
-                      </p>
-                    </div>
+              {item.type === 'win' && item.status === 'forfeited' && item.forfeitReason && (
+                <div className="px-4 pb-4">
+                  <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
+                    <p className="text-error text-sm">
+                      <strong>Reason:</strong> {item.forfeitReason}
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {item.type === 'win' && item.status === 'processing' && (
-                  <div className="px-4 pb-4">
-                    <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg">
-                      <p className="text-warning text-sm">
-                        Payout scheduled automatically in the next payout run.
-                      </p>
-                    </div>
+              {item.type === 'win' && item.status === 'processing' && (
+                <div className="px-4 pb-4">
+                  <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg">
+                    <p className="text-warning text-sm">
+                      Payout scheduled automatically in the next payout run.
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {item.type === 'withdrawal' && item.status === 'failed' && (
-                  <div className="px-4 pb-4">
-                    <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
-                      <p className="text-error text-sm">
-                        Withdrawal failed. Please try again or contact support.
-                      </p>
-                    </div>
+              {item.type === 'withdrawal' && item.status === 'failed' && (
+                <div className="px-4 pb-4">
+                  <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
+                    <p className="text-error text-sm">
+                      Withdrawal failed. Please try again or contact support.
+                    </p>
                   </div>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
+                </div>
+              )}
+            </Card>
+          );
+
+          return (
+            <div className="space-y-6">
+              {actionRequired.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-warning uppercase tracking-wider mb-3">
+                    Action required
+                  </h3>
+                  <div className="space-y-3">{actionRequired.map(renderCard)}</div>
+                </div>
+              )}
+
+              {inProgress.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">
+                    In progress
+                  </h3>
+                  <div className="space-y-3">{inProgress.map(renderCard)}</div>
+                </div>
+              )}
+
+              {history.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
+                    History
+                  </h3>
+                  <div className="space-y-3">{history.map(renderCard)}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Empty state only when fetch fully settled (not loading + not
             validating + no error) AND prizes truly empty. */}
