@@ -67,6 +67,7 @@ export default function ExposurePage() {
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
   const [stackTeamFilter, setStackTeamFilter] = useState<string>('all');
   const [stackMinSize, setStackMinSize] = useState<2 | 3 | 4>(2);
+  const [stackSearch, setStackSearch] = useState('');
   const [selectedStack, setSelectedStack] = useState<RealStack | null>(null);
 
   // Leagues whose roster contains the selected team+position. Match by
@@ -122,7 +123,21 @@ export default function ExposurePage() {
       });
   }, [exposures, posFilter, search, sortBy]);
 
-  const stacks = useMemo(() => computeStacksFromLeagues(leagues), [leagues]);
+  // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
+  // permutations don't count because in best ball, "stacking" only has
+  // positive correlation when your QB and his pass-catchers / backs
+  // score together.
+  const STACK_SKILL_GROUPS = ['WR', 'TE', 'RB'] as const;
+  const stacks = useMemo(() => {
+    const all = computeStacksFromLeagues(leagues);
+    return all.filter(s =>
+      s.positions.includes('QB') &&
+      s.positions.some(p => (STACK_SKILL_GROUPS as readonly string[]).includes(p)) &&
+      // Drop combos that contain anything OTHER than QB + WR/TE/RB
+      // (e.g. drop QB+DST, QB+WR+DST). DST mixed in dilutes the signal.
+      s.positions.every(p => p === 'QB' || (STACK_SKILL_GROUPS as readonly string[]).includes(p)),
+    );
+  }, [leagues]);
 
   // Teams that appear in any stack — used to populate the team filter
   // dropdown so we don't list NFL teams the user has never stacked.
@@ -133,11 +148,18 @@ export default function ExposurePage() {
   }, [stacks]);
 
   const filteredStacks = useMemo(() => {
-    return stacks.filter(s =>
-      (stackTeamFilter === 'all' || s.team === stackTeamFilter) &&
-      s.size >= stackMinSize,
-    );
-  }, [stacks, stackTeamFilter, stackMinSize]);
+    const q = stackSearch.trim().toLowerCase();
+    return stacks.filter(s => {
+      if (stackTeamFilter !== 'all' && s.team !== stackTeamFilter) return false;
+      if (s.size < stackMinSize) return false;
+      if (!q) return true;
+      // Search matches team code or any position group, with multi-term
+      // AND logic ("kc qb wr" requires team=KC + has-QB + has-WR).
+      const hay = `${s.team.toLowerCase()} ${s.positions.join(' ').toLowerCase()}`;
+      const terms = q.split(/[\s+]+/).filter(Boolean);
+      return terms.every(t => hay.includes(t));
+    });
+  }, [stacks, stackTeamFilter, stackMinSize, stackSearch]);
 
   // Leagues that contain the currently-selected stack — driven by the
   // pre-computed `leagueIds` array on RealStack so we don't re-walk
@@ -353,7 +375,20 @@ export default function ExposurePage() {
                 {stacks.length} combo{stacks.length === 1 ? '' : 's'} you&apos;ve drafted in 2+ leagues. Click for details.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Search */}
+              <div className="relative">
+                <svg className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+                </svg>
+                <input
+                  type="text"
+                  value={stackSearch}
+                  onChange={e => setStackSearch(e.target.value)}
+                  placeholder="Search stacks..."
+                  className="bg-white/[0.04] border border-white/[0.06] rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder:text-white/25 focus:outline-none focus:border-banana/40 w-36 sm:w-44"
+                />
+              </div>
               {/* Team filter */}
               <select
                 value={stackTeamFilter}
@@ -428,7 +463,7 @@ export default function ExposurePage() {
             <div className="text-center py-8 rounded-xl border border-white/[0.04] bg-white/[0.02]">
               <p className="text-white/40 text-sm">No stacks match these filters.</p>
               <button
-                onClick={() => { setStackTeamFilter('all'); setStackMinSize(2); }}
+                onClick={() => { setStackTeamFilter('all'); setStackMinSize(2); setStackSearch(''); }}
                 className="text-banana text-xs mt-2 hover:underline"
               >
                 Reset filters
