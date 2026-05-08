@@ -316,7 +316,13 @@ export async function POST(req: Request) {
     }
 
     // Step 7: All checks passed. Save and approve.
-    await savePersonaVerification(session.userId, {
+    // CRITICAL: save under the canonical key (lowercase wallet from line
+    // 100), NOT session.userId. session.userId is the Privy DID, which
+    // doesn't match what /api/eligibility queries with — that's the bug
+    // that left users showing "Verification Required" after a successful
+    // KYC. Block branch above already does this correctly; success branch
+    // had the leftover.
+    await savePersonaVerification(userId, {
       tier1: {
         verified: true,
         verifiedAt: new Date().toISOString(),
