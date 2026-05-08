@@ -393,6 +393,109 @@ export function computeStacks(exposures: ExposureEntry[]): TeamStack[] {
   return stacks.sort((a, b) => b.positions.length - a.positions.length || b.exposure - a.exposure);
 }
 
+// ─── Real per-draft stack computation ─────────────────────────────────
+// `computeStacks` above operates on the aggregated portfolio summary
+// and reports averages — it does NOT measure actual co-occurrence in
+// any specific draft. The functions below walk individual rosters and
+// return real combo counts (e.g., the exact number of drafts that
+// contain both KC QB and KC WR). Used by the Exposure page's redesigned
+// Team Stacks section.
+
+export interface RealStack {
+  /** NFL team code, e.g. "KC". */
+  team: string;
+  /** Position groups present in this stack, sorted alphabetically. e.g. ["QB", "TE", "WR"]. */
+  positions: string[];
+  /** Number of position groups in this combo (positions.length). */
+  size: number;
+  /** Drafts (leagues) whose roster contains every listed position group from this team. */
+  drafts: number;
+  /** Total number of completed drafts the user has — denominator for `exposure`. */
+  totalDrafts: number;
+  /** Rounded percentage = drafts / totalDrafts × 100. */
+  exposure: number;
+  /** League ids that contain this stack — used to drill into the LeagueDetailModal. */
+  leagueIds: string[];
+}
+
+interface MinimalLeague {
+  id: string;
+  roster: { teamPosition: string }[];
+}
+
+/**
+ * Walk each league's actual roster and emit one entry per unique
+ * (team, sorted-positions) combo, with the real count of drafts that
+ * contain it.
+ *
+ * For a draft where the user has KC QB + KC WR + KC TE, the algorithm
+ * emits all 2+ subsets — `QB+TE`, `QB+WR`, `TE+WR`, and `QB+TE+WR` —
+ * each incrementing its own counter. Subset semantics: a card for
+ * `QB+WR` answers "drafts containing AT LEAST KC QB and KC WR" (the
+ * draft above is counted in both `QB+WR` and `QB+TE+WR`).
+ *
+ * Combos appearing in fewer than 2 drafts are dropped to keep the grid
+ * focused on patterns rather than singletons.
+ */
+export function computeStacksFromLeagues(leagues: MinimalLeague[]): RealStack[] {
+  const totalDrafts = leagues.length;
+  if (totalDrafts === 0) return [];
+
+  const counts = new Map<string, { team: string; positions: string[]; leagueIds: string[] }>();
+
+  for (const league of leagues) {
+    // For this league: team -> set of position groups present.
+    const teamGroups = new Map<string, Set<string>>();
+    for (const r of league.roster ?? []) {
+      const [team, slot = ''] = r.teamPosition.split(' ');
+      if (!team || !slot) continue;
+      const group = slot.replace(/\d+$/, '');
+      if (!group) continue;
+      let set = teamGroups.get(team);
+      if (!set) { set = new Set(); teamGroups.set(team, set); }
+      set.add(group);
+    }
+
+    for (const [team, groups] of teamGroups) {
+      if (groups.size < 2) continue;
+      const sorted = [...groups].sort();
+      // Enumerate all subsets of size >= 2 via bitmask.
+      const n = sorted.length;
+      for (let mask = 1; mask < (1 << n); mask++) {
+        // Count bits in mask
+        let bits = 0;
+        for (let i = 0; i < n; i++) if (mask & (1 << i)) bits++;
+        if (bits < 2) continue;
+        const subset: string[] = [];
+        for (let i = 0; i < n; i++) if (mask & (1 << i)) subset.push(sorted[i]);
+        const key = `${team}|${subset.join('+')}`;
+        let entry = counts.get(key);
+        if (!entry) {
+          entry = { team, positions: subset, leagueIds: [] };
+          counts.set(key, entry);
+        }
+        entry.leagueIds.push(league.id);
+      }
+    }
+  }
+
+  const out: RealStack[] = [];
+  for (const { team, positions, leagueIds } of counts.values()) {
+    if (leagueIds.length < 2) continue;
+    out.push({
+      team,
+      positions,
+      size: positions.length,
+      drafts: leagueIds.length,
+      totalDrafts,
+      exposure: Math.round((leagueIds.length / totalDrafts) * 100),
+      leagueIds,
+    });
+  }
+
+  return out.sort((a, b) => b.drafts - a.drafts || b.size - a.size);
+}
+
 /** Compute bye week risk: total exposure concentration per bye week. */
 export function computeByeWeekRisk(exposures: ExposureEntry[]): {
   week: number;

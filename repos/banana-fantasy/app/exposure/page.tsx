@@ -6,8 +6,9 @@ import {
   getExposureByPosition,
   positions,
   type ExposureEntry,
+  type RealStack,
   teamByeWeeks,
-  computeStacks,
+  computeStacksFromLeagues,
   computeByeWeekRisk,
   computeADPValue,
 } from '@/lib/exposureUtils';
@@ -64,6 +65,9 @@ export default function ExposurePage() {
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
   const [modalLeague, setModalLeague] = useState<League | null>(null);
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
+  const [stackTeamFilter, setStackTeamFilter] = useState<string>('all');
+  const [stackMinSize, setStackMinSize] = useState<2 | 3 | 4>(2);
+  const [selectedStack, setSelectedStack] = useState<RealStack | null>(null);
 
   // Leagues whose roster contains the selected team+position. Match by
   // team + base position group (RB / WR / QB / TE / DST), since roster
@@ -88,6 +92,7 @@ export default function ExposurePage() {
     setModalLeague(league);
     setModalTab(tab);
     setSelectedExposure(null);
+    setSelectedStack(null);
   };
 
   // ── Computed data ─────────────────────────────────────────────────────
@@ -117,7 +122,32 @@ export default function ExposurePage() {
       });
   }, [exposures, posFilter, search, sortBy]);
 
-  const stacks = useMemo(() => computeStacks(exposures), [exposures]);
+  const stacks = useMemo(() => computeStacksFromLeagues(leagues), [leagues]);
+
+  // Teams that appear in any stack — used to populate the team filter
+  // dropdown so we don't list NFL teams the user has never stacked.
+  const stackedTeams = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of stacks) set.add(s.team);
+    return [...set].sort();
+  }, [stacks]);
+
+  const filteredStacks = useMemo(() => {
+    return stacks.filter(s =>
+      (stackTeamFilter === 'all' || s.team === stackTeamFilter) &&
+      s.size >= stackMinSize,
+    );
+  }, [stacks, stackTeamFilter, stackMinSize]);
+
+  // Leagues that contain the currently-selected stack — driven by the
+  // pre-computed `leagueIds` array on RealStack so we don't re-walk
+  // rosters per click.
+  const selectedStackLeagues = useMemo(() => {
+    if (!selectedStack) return [] as League[];
+    const idSet = new Set(selectedStack.leagueIds);
+    return leagues.filter(l => idSet.has(l.id));
+  }, [leagues, selectedStack]);
+
   const byeWeekRisk = useMemo(() => computeByeWeekRisk(exposures), [exposures]);
   const adpValues = useMemo(() => computeADPValue(exposures, mockTeamPositions), [exposures]);
 
@@ -183,8 +213,8 @@ export default function ExposurePage() {
               )}
             </div>
             <div>
-              <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Stacks</p>
-              <p className="text-white font-bold text-2xl">{stacks.length > 0 ? stacks.length : '—'}</p>
+              <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Stacked Teams</p>
+              <p className="text-white font-bold text-2xl">{stackedTeams.length > 0 ? stackedTeams.length : '—'}</p>
             </div>
           </div>
         </div>
@@ -310,36 +340,101 @@ export default function ExposurePage() {
       </div>
 
       {/* ── Section 3: Team Stacks ─────────────────────────────────────── */}
+      {/* Real per-draft co-occurrence — every multi-position combo a
+          user has actually drafted from a team is its own card. Sorted
+          by draft count desc. Filterable by team and minimum size.
+          Click a card to drill into the leagues containing the stack. */}
       {stacks.length > 0 && (
         <div className="mb-10">
-          <h2 className="text-white font-bold text-lg mb-4">Team Stacks</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {stacks.map(stack => (
-              <div key={stack.team} className="glass-card px-4 py-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-white font-bold text-sm">{stack.team}</span>
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50">
-                    {stack.stackType}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 mb-2">
-                  {stack.positions.map(pos => (
-                    <span
-                      key={pos}
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: posColor(pos) + '25', color: posColor(pos) }}
-                    >
-                      {pos}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-white/40">{stack.drafts}/{stack.totalDrafts} drafts</span>
-                  <span className="font-semibold" style={{ color: exposureColor(stack.exposure) }}>{stack.exposure}%</span>
-                </div>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-white font-bold text-lg">Team Stacks</h2>
+              <p className="text-white/40 text-xs">
+                {stacks.length} combo{stacks.length === 1 ? '' : 's'} you've drafted in 2+ leagues. Click for details.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Team filter */}
+              <select
+                value={stackTeamFilter}
+                onChange={e => setStackTeamFilter(e.target.value)}
+                className="bg-white/[0.04] border border-white/[0.06] rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-banana/40"
+              >
+                <option value="all">All teams</option>
+                {stackedTeams.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              {/* Min-size pills */}
+              <div className="flex bg-white/[0.04] rounded-lg p-0.5">
+                {([2, 3, 4] as const).map(size => (
+                  <button
+                    key={size}
+                    onClick={() => setStackMinSize(size)}
+                    className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${
+                      stackMinSize === size ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
+                    }`}
+                  >
+                    {size}+
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
+
+          {filteredStacks.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredStacks.map((stack, i) => {
+                const key = `${stack.team}|${stack.positions.join('+')}`;
+                const isTop = i === 0 && stackTeamFilter === 'all' && stackMinSize === 2;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedStack(stack)}
+                    className="glass-card px-4 py-3 text-left hover:border-banana/40 hover:bg-white/[0.04] transition-colors group"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-white font-bold text-sm">{stack.team}</span>
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/[0.06] text-white/50">
+                        {stack.size}-stack
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                      {stack.positions.map(pos => (
+                        <span
+                          key={pos}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: posColor(pos) + '25', color: posColor(pos) }}
+                        >
+                          {pos}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-white/50">
+                        {isTop && <span className="mr-1">🏆</span>}
+                        {stack.drafts}/{stack.totalDrafts} drafts
+                      </span>
+                      <span className="font-semibold" style={{ color: exposureColor(stack.exposure) }}>
+                        {stack.exposure}%
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-8 rounded-xl border border-white/[0.04] bg-white/[0.02]">
+              <p className="text-white/40 text-sm">No stacks match these filters.</p>
+              <button
+                onClick={() => { setStackTeamFilter('all'); setStackMinSize(2); }}
+                className="text-banana text-xs mt-2 hover:underline"
+              >
+                Reset filters
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -546,6 +641,68 @@ export default function ExposurePage() {
                 </div>
               </div>
             )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Stack drill modal — leagues containing the selected stack. */}
+      {selectedStack && (
+        <Modal isOpen={!!selectedStack} onClose={() => setSelectedStack(null)}>
+          <div className="p-5">
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-white font-bold text-lg">{selectedStack.team}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {selectedStack.positions.map(pos => (
+                  <span
+                    key={pos}
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    style={{ backgroundColor: posColor(pos) + '25', color: posColor(pos) }}
+                  >
+                    {pos}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <p className="text-white/40 text-xs mb-4">
+              {selectedStack.drafts} of {selectedStack.totalDrafts} drafts ({selectedStack.exposure}%) — drafts that contain at least these positions from {selectedStack.team}.
+            </p>
+            <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+              {selectedStackLeagues.map(l => {
+                const typeColor = l.type === 'jackpot' ? '#ef4444'
+                  : l.type === 'hof' ? '#D4AF37'
+                  : '#a855f7';
+                const typeLabel = l.type === 'jackpot' ? 'JP' : l.type === 'hof' ? 'HOF' : 'Pro';
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => openLeague(l, 'roster')}
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] transition-colors text-left"
+                  >
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0"
+                      style={{ color: typeColor, backgroundColor: `${typeColor}20` }}
+                    >
+                      {typeLabel}
+                    </span>
+                    <span className="text-white text-sm font-medium truncate flex-1">
+                      {l.name}
+                    </span>
+                    {l.leagueRank > 0 && (
+                      <span className="text-white/50 text-xs shrink-0">
+                        #{l.leagueRank}
+                      </span>
+                    )}
+                    <span className="text-white/70 text-xs font-semibold shrink-0">
+                      {l.seasonScore.toFixed(1)} pts
+                    </span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/30 shrink-0">
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </Modal>
       )}
