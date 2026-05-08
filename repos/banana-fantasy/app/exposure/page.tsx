@@ -9,8 +9,6 @@ import {
   type RealStack,
   teamByeWeeks,
   computeStacksFromLeagues,
-  computeByeWeekRisk,
-  computeADPValue,
 } from '@/lib/exposureUtils';
 import { getTeamPosition, getTeamPositionDepthChart } from '@/lib/teamPositions';
 import { mockTeamPositions } from '@/lib/mock/teamPositions';
@@ -170,8 +168,6 @@ export default function ExposurePage() {
     return leagues.filter(l => idSet.has(l.id));
   }, [leagues, selectedStack]);
 
-  const byeWeekRisk = useMemo(() => computeByeWeekRisk(exposures), [exposures]);
-  const adpValues = useMemo(() => computeADPValue(exposures, mockTeamPositions), [exposures]);
 
   // ── Portfolio summary stats ───────────────────────────────────────────
 
@@ -191,8 +187,6 @@ export default function ExposurePage() {
   const selectedTP = selectedExposure
     ? getTeamPosition(selectedExposure.team, selectedExposure.position)
     : null;
-
-  const maxByeExposure = byeWeekRisk.length > 0 ? byeWeekRisk[0].totalExposure : 1;
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -470,66 +464,6 @@ export default function ExposurePage() {
               </button>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── Section 4: Bye Week Risk ──────────────────────────────────── */}
-      {byeWeekRisk.length > 0 && (
-        <div className="mb-10">
-          <h2 className="text-white font-bold text-lg mb-4">Bye Week Risk</h2>
-          <div className="glass-card px-4 py-4">
-            <div className="space-y-2">
-              {byeWeekRisk.map(bw => (
-                <div key={bw.week} className="flex items-center gap-3">
-                  <span className="text-white/50 text-xs font-mono w-14 flex-shrink-0">Week {bw.week}</span>
-                  <div className="flex-1 h-3 bg-white/[0.06] rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{
-                        width: `${Math.min((bw.totalExposure / maxByeExposure) * 100, 100)}%`,
-                        backgroundColor: bw.totalExposure > 200 ? '#ff6b6b' : bw.totalExposure > 100 ? '#fbbf24' : '#4ade80',
-                      }}
-                    />
-                  </div>
-                  <span className="text-white/50 text-[10px] w-10 text-right flex-shrink-0">{bw.totalExposure}%</span>
-                  <span className="text-white/25 text-[10px] truncate max-w-[120px] flex-shrink-0">{bw.teams.join(', ')}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Section 5: Projections Preview ─────────────────────────────── */}
-      {adpValues.length > 0 && (
-        <div className="mb-10">
-          <h2 className="text-white font-bold text-lg mb-4">Top Exposures — Projections</h2>
-          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
-            <div className="grid grid-cols-[1fr_64px_64px_80px] gap-2 px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
-              <div>Position</div>
-              <div className="text-right">Exp%</div>
-              <div className="text-right">ADP</div>
-              <div className="text-right">Proj Pts</div>
-            </div>
-            {adpValues.slice(0, 10).map(v => {
-              return (
-                <div key={v.teamPosition} className="grid grid-cols-[1fr_64px_64px_80px] gap-2 px-4 py-2.5 items-center border-b border-white/[0.03] last:border-0 hover:bg-white/[0.03] transition-colors">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                      style={{ backgroundColor: posColor(v.position) + '25', color: posColor(v.position) }}
-                    >
-                      {v.position.replace(/\d/g, '')}
-                    </span>
-                    <span className="text-white text-sm font-medium">{v.team} {v.position}</span>
-                  </div>
-                  <span className="text-right text-sm font-semibold" style={{ color: exposureColor(v.exposure) }}>{v.exposure}%</span>
-                  <span className="text-white/50 text-xs text-right">{v.adp}</span>
-                  <span className="text-banana font-semibold text-sm text-right">{v.projectedPts.toFixed(1)}</span>
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
