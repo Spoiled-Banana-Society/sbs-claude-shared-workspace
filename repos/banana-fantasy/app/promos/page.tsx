@@ -115,6 +115,17 @@ export default function PromosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
 
+  // Total reward count across every claimable promo — sum of each
+  // promo's `claimCount` (i.e. the per-claim multiplier shown on the
+  // card buttons like "Claim · 11"). Used for the Claim All button
+  // label and the Claimable stat tile so the number on the page
+  // matches what the user actually nets when they hit the button.
+  const totalClaimableRewards = useMemo(() => visiblePromos
+    .filter(hasVisibleClaim)
+    .reduce((sum, p) => sum + (p.claimCount || 1), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
+
   const handleClaim = async (promo: Promo) => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
@@ -181,14 +192,19 @@ export default function PromosPage() {
             disabled={isClaimingAll}
             className="shrink-0 px-5 py-2.5 bg-banana text-black text-sm font-semibold rounded-full hover:bg-banana/90 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {isClaimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}
+            {isClaimingAll ? 'Claiming…' : `Claim all · ${totalClaimableRewards}`}
           </button>
         )}
       </div>
 
       {/* ── Stat tiles — minimal, single rounded card with internal dividers ─── */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] mb-10 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-white/[0.06]">
-        <StatTile label="Claimable" value={claimableCount} highlight={claimableCount > 0} />
+        <StatTile
+          label="Claimable"
+          value={totalClaimableRewards}
+          sublabel={claimableCount > 0 ? `from ${claimableCount} promo${claimableCount === 1 ? '' : 's'}` : undefined}
+          highlight={totalClaimableRewards > 0}
+        />
         <StatTile label="Free spins" value={user?.wheelSpins ?? 0} />
         <StatTile label="Free drafts" value={user?.freeDrafts ?? 0} />
         <StatTile
