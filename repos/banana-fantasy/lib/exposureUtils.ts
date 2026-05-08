@@ -434,8 +434,10 @@ interface MinimalLeague {
  * `QB+WR` answers "drafts containing AT LEAST KC QB and KC WR" (the
  * draft above is counted in both `QB+WR` and `QB+TE+WR`).
  *
- * Combos appearing in fewer than 2 drafts are dropped to keep the grid
- * focused on patterns rather than singletons.
+ * Singletons (combos that appear in exactly one draft) are kept — for
+ * users who draft widely, most stacks appear once and dropping them
+ * makes the dashboard feel empty. Callers that want a frequency
+ * threshold can post-filter on `drafts`.
  */
 export function computeStacksFromLeagues(leagues: MinimalLeague[]): RealStack[] {
   const totalDrafts = leagues.length;
@@ -481,7 +483,6 @@ export function computeStacksFromLeagues(leagues: MinimalLeague[]): RealStack[] 
 
   const out: RealStack[] = [];
   for (const { team, positions, leagueIds } of counts.values()) {
-    if (leagueIds.length < 2) continue;
     out.push({
       team,
       positions,
