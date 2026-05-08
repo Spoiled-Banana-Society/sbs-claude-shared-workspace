@@ -13,9 +13,10 @@ const CATEGORY_LABEL: Record<BadgeCategory, string> = {
   finals: 'Playoffs & Finals',
   wheel: 'Wheel',
   founder: 'Founder',
+  legacy: 'Legacy Champions',
 };
 
-const CATEGORY_ORDER: BadgeCategory[] = ['drafts', 'league', 'finals', 'wheel', 'founder'];
+const CATEGORY_ORDER: BadgeCategory[] = ['drafts', 'league', 'finals', 'wheel', 'founder', 'legacy'];
 
 interface BadgeCatalogGridProps {
   /** When set, viewing another user's catalog read-only — equip controls hidden. */
@@ -42,11 +43,16 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
 
   const grouped = useMemo(() => {
     const out: Record<BadgeCategory, Badge[]> = {
-      drafts: [], league: [], finals: [], wheel: [], founder: [],
+      drafts: [], league: [], finals: [], wheel: [], founder: [], legacy: [],
     };
-    for (const b of catalog) out[b.category].push(b);
+    for (const b of catalog) {
+      // Hidden badges (past-season champions) only show once unlocked.
+      // While locked, they're invisible — preserves the surprise.
+      if (b.hidden && !unlockedIds.has(b.id)) continue;
+      out[b.category].push(b);
+    }
     return out;
-  }, [catalog]);
+  }, [catalog, unlockedIds]);
 
   if (isLoading && catalog.length === 0) {
     return <div className="text-sm text-text-secondary">Loading badges…</div>;
