@@ -473,6 +473,11 @@ export interface ExposureEntry {
   drafts: number;
   totalDrafts: number;
   exposure: number; // percentage
+  /** Optional display fields preserved across recomputes. */
+  displayName?: string;
+  bye?: number;
+  adp?: number;
+  projectedPoints?: number;
 }
 
 export interface UserExposure {

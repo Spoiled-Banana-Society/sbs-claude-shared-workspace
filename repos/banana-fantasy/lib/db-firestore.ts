@@ -1263,6 +1263,112 @@ export async function getExposure(userId: string): Promise<UserExposure | null> 
   return exposureSnap.data() as UserExposure;
 }
 
+/**
+ * Recompute the user's exposure dashboard from the Go API's roster data.
+ * Idempotent — safe to call after every draft completion. Pulls
+ * `/owner/{wallet}/draftToken/all`, aggregates team+slot picks across
+ * every active token, and writes the result to
+ * `users/{userId}/metadata/exposure`.
+ *
+ * Slot convention (matches the seed):
+ *  - QB / TE / DST → just the position (e.g. "KC QB")
+ *  - RB / WR → 1-indexed position (e.g. "SF RB1", "MIA WR1", "MIA WR2")
+ *
+ * Existing display fields (adp, projectedPoints, bye, displayName) are
+ * preserved on a per-teamPosition basis so we don't blank them out on
+ * recompute. New combos that didn't exist before show empty for those
+ * fields — that's fine, the Exposure UI handles missing values.
+ */
+export async function recomputeUserExposure(userId: string): Promise<UserExposure | null> {
+  const lower = userId.toLowerCase();
+  const baseUrl = (
+    process.env.STAGING_DRAFTS_API_URL ||
+    process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
+    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
+  ).replace(/\/$/, '');
+
+  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; displayName?: string }> | undefined> }> = [];
+  try {
+    const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { active?: typeof active };
+    active = body.active ?? [];
+  } catch (err) {
+    logger.warn('exposure.recompute.fetch.failed', { userId: lower, err });
+    return null;
+  }
+
+  const counts = new Map<string, { team: string; position: string; drafts: number; displayName?: string }>();
+  let totalDrafts = 0;
+
+  const recordSlot = (positionGroup: 'QB' | 'RB' | 'WR' | 'TE' | 'DST', players: Array<{ team?: string; displayName?: string }> | undefined): boolean => {
+    if (!players?.length) return false;
+    let any = false;
+    players.forEach((p, idx) => {
+      if (!p?.team) return;
+      const slot = positionGroup === 'QB' || positionGroup === 'TE' || positionGroup === 'DST'
+        ? positionGroup
+        : `${positionGroup}${idx + 1}`;
+      const teamPosition = `${p.team} ${slot}`;
+      const prev = counts.get(teamPosition);
+      counts.set(teamPosition, {
+        team: p.team,
+        position: slot,
+        drafts: (prev?.drafts ?? 0) + 1,
+        displayName: prev?.displayName ?? p.displayName,
+      });
+      any = true;
+    });
+    return any;
+  };
+
+  for (const token of active) {
+    const roster = token.roster || {};
+    let hasPicks = false;
+    if (recordSlot('QB', roster.QB)) hasPicks = true;
+    if (recordSlot('RB', roster.RB)) hasPicks = true;
+    if (recordSlot('WR', roster.WR)) hasPicks = true;
+    if (recordSlot('TE', roster.TE)) hasPicks = true;
+    if (recordSlot('DST', roster.DST)) hasPicks = true;
+    if (hasPicks) totalDrafts += 1;
+  }
+
+  if (totalDrafts === 0) return null;
+
+  const db = getAdminFirestore();
+  const userRef = db.collection(USERS_COLLECTION).doc(lower);
+  const exposureRef = userRef.collection('metadata').doc(EXPOSURE_DOC);
+  const [existingSnap, userSnap] = await Promise.all([exposureRef.get(), userRef.get()]);
+  const existing = existingSnap.exists ? (existingSnap.data() as UserExposure) : null;
+  const existingMap = new Map<string, UserExposure['exposures'][number]>();
+  for (const e of existing?.exposures ?? []) existingMap.set(e.teamPosition, e);
+  const username = userSnap.exists ? ((userSnap.data() as User).username || '') : (existing?.username || '');
+
+  const exposures: UserExposure['exposures'] = [];
+  for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
+    const prev = existingMap.get(teamPosition);
+    exposures.push({
+      team,
+      position,
+      teamPosition,
+      drafts,
+      totalDrafts,
+      exposure: Math.round((drafts / totalDrafts) * 100),
+      displayName: displayName ?? prev?.displayName,
+      bye: prev?.bye,
+      adp: prev?.adp,
+      projectedPoints: prev?.projectedPoints,
+    });
+  }
+  exposures.sort((a, b) => b.drafts - a.drafts);
+
+  const newExposure: UserExposure = { username, totalDrafts, exposures };
+  await exposureRef.set(stripUndefined(newExposure));
+  return newExposure;
+}
+
 export async function getDraftHistory(userId: string): Promise<CompletedDraft[]> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);

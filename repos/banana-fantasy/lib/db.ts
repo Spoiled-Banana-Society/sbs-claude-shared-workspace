@@ -21,6 +21,7 @@ export const getContests = db.getContests;
 export const getContest = db.getContest;
 export const getContestStandings = db.getContestStandings;
 export const getExposure = db.getExposure;
+export const recomputeUserExposure = db.recomputeUserExposure;
 export const getDraftHistory = db.getDraftHistory;
 export const getQueueStatus = db.getQueueStatus;
 export const joinQueue = db.joinQueue;

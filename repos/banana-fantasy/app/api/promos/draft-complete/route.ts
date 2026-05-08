@@ -2,7 +2,7 @@ import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { recordDraftCompletion } from '@/lib/db';
+import { recordDraftCompletion, recomputeUserExposure } from '@/lib/db';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -13,6 +13,11 @@ export async function POST(req: Request) {
     const draftId = requireString(body.draftId, 'draftId');
 
     const promo = await recordDraftCompletion(userId, draftId);
+
+    // Fire-and-forget exposure recompute. Idempotent + reads from the Go
+    // API, so runs in the background without blocking the response.
+    void recomputeUserExposure(userId).catch(() => {});
+
     return json({ promo }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
