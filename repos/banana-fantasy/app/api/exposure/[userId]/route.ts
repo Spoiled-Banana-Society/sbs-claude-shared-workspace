@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getExposure, recomputeUserExposure } from '@/lib/db';
+import type { ExposureRecomputeDiag } from '@/lib/db-firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 const RECOMPUTE_THROTTLE_MS = 60_000;
@@ -29,10 +30,11 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
     const last = lastRaw ? Date.parse(lastRaw) : 0;
     const stale = !Number.isFinite(last) || Date.now() - last >= RECOMPUTE_THROTTLE_MS;
 
+    const recomputeDiag: ExposureRecomputeDiag = {};
     let recomputeResult: unknown = null;
     if (force || stale) {
       await userRef.set({ lastExposureRecomputeAt: new Date().toISOString() }, { merge: true });
-      recomputeResult = await recomputeUserExposure(lower);
+      recomputeResult = await recomputeUserExposure(lower, recomputeDiag);
     }
 
     const exposure = await getExposure(lower);
@@ -45,6 +47,7 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
           stale,
           lastRaw,
           recomputeReturned: recomputeResult ? 'non-null' : 'null',
+          recomputeDiag,
         },
       }, 200);
     }

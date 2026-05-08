@@ -1279,7 +1279,22 @@ export async function getExposure(userId: string): Promise<UserExposure | null> 
  * recompute. New combos that didn't exist before show empty for those
  * fields — that's fine, the Exposure UI handles missing values.
  */
-export async function recomputeUserExposure(userId: string): Promise<UserExposure | null> {
+export interface ExposureRecomputeDiag {
+  url?: string;
+  status?: number;
+  tokenCount?: number;
+  tokensWithRoster?: number;
+  sampleKeys?: string[];
+  totalDraftsAfterAgg?: number;
+  distinctSlots?: number;
+  error?: string;
+  reason?: string;
+}
+
+export async function recomputeUserExposure(
+  userId: string,
+  diagOut?: ExposureRecomputeDiag,
+): Promise<UserExposure | null> {
   const lower = userId.toLowerCase();
   const baseUrl = (
     process.env.STAGING_DRAFTS_API_URL ||
@@ -1289,14 +1304,27 @@ export async function recomputeUserExposure(userId: string): Promise<UserExposur
 
   let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; displayName?: string }> | undefined> }> = [];
   try {
-    const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
+    const url = `${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`;
+    if (diagOut) diagOut.url = url;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (diagOut) diagOut.status = res.status;
+    if (!res.ok) {
+      if (diagOut) diagOut.reason = 'go-api-not-ok';
+      return null;
+    }
     const body = (await res.json()) as { active?: typeof active };
     active = body.active ?? [];
+    if (diagOut) {
+      diagOut.tokenCount = active.length;
+      diagOut.tokensWithRoster = active.filter(t => t.roster && Object.values(t.roster).some(p => Array.isArray(p) && p.length > 0)).length;
+      diagOut.sampleKeys = active[0]?.roster ? Object.keys(active[0].roster) : [];
+    }
   } catch (err) {
-    logger.warn('exposure.recompute.fetch.failed', { userId: lower, err });
+    if (diagOut) {
+      diagOut.error = String(err);
+      diagOut.reason = 'fetch-threw';
+    }
+    logger.warn('exposure.recompute.fetch.failed', { userId: lower, err: String(err) });
     return null;
   }
 
@@ -1335,7 +1363,14 @@ export async function recomputeUserExposure(userId: string): Promise<UserExposur
     if (hasPicks) totalDrafts += 1;
   }
 
-  if (totalDrafts === 0) return null;
+  if (diagOut) {
+    diagOut.totalDraftsAfterAgg = totalDrafts;
+    diagOut.distinctSlots = counts.size;
+  }
+  if (totalDrafts === 0) {
+    if (diagOut) diagOut.reason = 'no-rosters-with-team';
+    return null;
+  }
 
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(lower);
