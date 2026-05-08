@@ -16,6 +16,7 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
 
     const lower = userId.toLowerCase();
     const force = req.url.includes('recompute=1');
+    const debug = req.url.includes('debug=1');
 
     // Throttled recompute on every read. Mirrors the badge sweep pattern:
     // a `lastExposureRecomputeAt` timestamp on the user doc gates the
@@ -28,13 +29,25 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
     const last = lastRaw ? Date.parse(lastRaw) : 0;
     const stale = !Number.isFinite(last) || Date.now() - last >= RECOMPUTE_THROTTLE_MS;
 
+    let recomputeResult: unknown = null;
     if (force || stale) {
       await userRef.set({ lastExposureRecomputeAt: new Date().toISOString() }, { merge: true });
-      await recomputeUserExposure(lower);
+      recomputeResult = await recomputeUserExposure(lower);
     }
 
     const exposure = await getExposure(lower);
     if (!exposure) return jsonError('Exposure not found', 404);
+    if (debug) {
+      return json({
+        exposure,
+        debug: {
+          force,
+          stale,
+          lastRaw,
+          recomputeReturned: recomputeResult ? 'non-null' : 'null',
+        },
+      }, 200);
+    }
     return json(exposure, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
