@@ -125,7 +125,7 @@ export function SellTab({
                         onClick={() => onShowFreePassInfo('team')}
                         className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
                       >
-                        Available After Season
+                        Listable Once Season Starts
                       </button>
                     ) : (
                       <button
@@ -227,13 +227,13 @@ export function SellTab({
             <h3 className="text-xl font-bold text-white mb-3">{showFreePassInfo === 'team' ? 'Free Draft Team' : 'Free Draft Pass'}</h3>
             <p className="text-white/60 text-[14px] leading-[1.7] mb-2">
               {showFreePassInfo === 'team'
-                ? 'This team was drafted using a free pass. Free draft teams can be listed on the marketplace after the draft season closes on September 4th.'
+                ? 'This team was drafted using a free pass. Free draft teams can be listed on the marketplace once drafting closes and the season begins.'
                 : 'Free draft passes cannot be sold on the marketplace. They can only be used to enter drafts.'}
             </p>
             <p className="text-white/40 text-[13px] leading-[1.6] mb-6">
               {showFreePassInfo === 'team'
                 ? 'Teams drafted with paid passes can be listed at any time.'
-                : 'Once you draft a team with a free pass, that team becomes listable after the season starts.'}
+                : 'Once you draft a team with a free pass, that team becomes listable once the season starts.'}
             </p>
             <button onClick={() => onShowFreePassInfo(null)} className="w-full px-4 py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all">
               Got It
