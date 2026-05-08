@@ -38,6 +38,14 @@ export default function MarketplacePage() {
 
   const selectedWallet = useMemo(() => {
     if (wallets.length === 0) return null;
+    // Prefer the Privy embedded wallet — it's the only wallet that's
+    // always signable in this browser session. Linked external wallets
+    // (Coinbase, MetaMask) appear in `useWallets()` for social-login
+    // users even when they're not actively connected, and Privy will
+    // throw "No embedded or connected wallet found for address." when
+    // we try to sign typed data through one of those proxies.
+    const embedded = wallets.find(w => w.walletClientType === 'privy');
+    if (embedded) return embedded;
     if (walletAddress) {
       return wallets.find(wallet => wallet.address.toLowerCase() === walletAddress.toLowerCase()) || wallets[0];
     }
