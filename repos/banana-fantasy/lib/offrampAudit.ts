@@ -254,6 +254,107 @@ export async function updateOfframpFromTx(input: {
 }
 
 /**
+ * Mark a direct withdrawal as paid — the Gnosis Safe batch has gone out
+ * and USDC has landed in the user's wallet. Emits the cashout_completed
+ * activity event exactly once (guarded against re-fires) and flips the
+ * matching offramp_attempt to tx_completed.
+ *
+ * Idempotent: calling twice is safe — the activity event will not fire
+ * a second time because we check the offramp_attempt's prior status.
+ */
+export async function markDirectWithdrawalPaid(input: {
+  withdrawalId: string;
+  userId: string;          // canonical lowercase wallet
+  walletAddress?: string;
+  amount: number;
+  method: 'usdc' | 'bank';
+  txHash?: string;         // optional — gnosis batch tx hash, for audit
+}): Promise<{ activityEmitted: boolean }> {
+  if (!isFirestoreConfigured()) return { activityEmitted: false };
+
+  const db = getAdminFirestore();
+  const now = new Date().toISOString();
+
+  // Find the offramp_attempt by withdrawalId. There SHOULD be exactly one;
+  // we take the most recent if somehow multiple. If none exists (legacy
+  // withdrawals from before audit logging), we still emit the activity
+  // event so the user sees "money sent" in their feed.
+  let alreadyCompleted = false;
+  let attemptId: string | null = null;
+  try {
+    const snap = await db
+      .collection(OFFRAMP_COLLECTION)
+      .where('withdrawalId', '==', input.withdrawalId)
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+      .get();
+    if (snap.size > 0) {
+      const doc = snap.docs[0];
+      const data = doc.data() as OfframpAttempt;
+      attemptId = doc.id;
+      alreadyCompleted = data.status === 'tx_completed';
+      if (!alreadyCompleted) {
+        const update: Partial<OfframpAttempt> = {
+          status: 'tx_completed',
+          updatedAt: now,
+          txCompletedAt: now,
+        };
+        await doc.ref.set(update, { merge: true });
+      }
+    } else {
+      // No prior offramp_attempt — backfill one in tx_completed state so
+      // admin still sees this in the offramp dashboard.
+      const newDoc: Partial<OfframpAttempt> = {
+        userId: input.userId,
+        source: input.method === 'bank' ? 'direct_bank' : 'direct_usdc',
+        timestamp: now,
+        updatedAt: now,
+        status: 'tx_completed',
+        amount: input.amount,
+        paymentMethod: input.method,
+        withdrawalId: input.withdrawalId,
+        txCompletedAt: now,
+      };
+      if (input.walletAddress) newDoc.walletAddress = input.walletAddress;
+      const ref = await db.collection(OFFRAMP_COLLECTION).add(newDoc);
+      attemptId = ref.id;
+    }
+  } catch (err) {
+    console.error('[Offramp Audit] markDirectWithdrawalPaid offramp update failed:', err);
+  }
+
+  // Only fire the activity event if we haven't already. Without this guard
+  // an admin double-clicking "Mark paid" would post duplicate activity.
+  if (alreadyCompleted) return { activityEmitted: false };
+
+  try {
+    await logActivityEvent({
+      type: 'cashout_completed',
+      userId: input.userId,
+      walletAddress: input.walletAddress ?? null,
+      txHash: input.txHash ?? null,
+      metadata: {
+        amount: input.amount,
+        // For direct withdrawals, requested USDC = settled value (no fee
+        // or slippage), so we put the same number in both fields for
+        // schema parity with Coinbase events.
+        settledUsd: input.amount,
+        requestedUsdc: input.amount,
+        rail: input.method === 'bank' ? 'direct_bank' : 'direct_usdc',
+        method: input.method,
+        withdrawalId: input.withdrawalId,
+        offrampAttemptId: attemptId,
+      },
+    });
+  } catch (err) {
+    console.error('[Offramp Audit] markDirectWithdrawalPaid activity event failed:', err);
+    return { activityEmitted: false };
+  }
+
+  return { activityEmitted: true };
+}
+
+/**
  * Map Coinbase's transaction status strings to our offramp status enum.
  * Coinbase uses things like 'pending', 'in_progress', 'completed',
  * 'failed', 'declined' depending on the API surface. Be loose on input,

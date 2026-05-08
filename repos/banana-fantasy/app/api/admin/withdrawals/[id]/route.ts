@@ -10,6 +10,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
+import { markDirectWithdrawalPaid } from '@/lib/offrampAudit';
 
 type FirestoreTimestamp = Timestamp | { toDate: () => Date };
 
@@ -46,10 +47,14 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const { id } = params;
     if (!id) throw new ApiError(400, 'Missing withdrawal id');
 
-    const body = await parseBody<{ status?: unknown }>(req);
-    if (body.status !== 'approved' && body.status !== 'denied') {
-      throw new ApiError(400, 'Invalid status. Expected approved or denied');
+    const body = await parseBody<{ status?: unknown; txHash?: unknown }>(req);
+    // 'paid' is the post-Gnosis-batch confirmation: USDC has actually
+    // landed in the user's wallet. That's when the user-facing activity
+    // event fires. 'approved' is the queue gate before the batch send.
+    if (body.status !== 'approved' && body.status !== 'denied' && body.status !== 'paid') {
+      throw new ApiError(400, 'Invalid status. Expected approved, denied, or paid');
     }
+    const txHash = typeof body.txHash === 'string' && body.txHash.trim() ? body.txHash.trim() : undefined;
 
     const db = getAdminFirestore();
     const ref = db.collection('withdrawalRequests').doc(id);
@@ -57,17 +62,45 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     if (!existing.exists) throw new ApiError(404, 'Withdrawal request not found');
     const before = existing.data() ?? {};
 
-    await ref.set({ status: body.status, updatedAt: new Date().toISOString() }, { merge: true });
+    const updatePayload: Record<string, unknown> = { status: body.status, updatedAt: new Date().toISOString() };
+    if (body.status === 'paid' && txHash) updatePayload.paidTxHash = txHash;
+    await ref.set(updatePayload, { merge: true });
 
     const updated = await ref.get();
     const data = updated.data() ?? {};
 
+    // When marking paid, fire the user-facing activity event and update
+    // the matching offramp_attempt. Idempotent — calling twice won't
+    // double-emit. Best-effort: never block the admin response on it.
+    if (body.status === 'paid') {
+      const userId = (typeof data.userId === 'string' ? data.userId : '').toLowerCase();
+      const wallet = typeof data.walletAddress === 'string' ? data.walletAddress : undefined;
+      const amount = toNumber(data.amount);
+      const method = data.method === 'bank' ? 'bank' : 'usdc';
+      if (userId && amount > 0) {
+        markDirectWithdrawalPaid({
+          withdrawalId: id,
+          userId,
+          walletAddress: wallet,
+          amount,
+          method,
+          txHash,
+        }).catch((err) => {
+          logger.warn('admin.mark_paid.audit_failed', { requestId, id, err: (err as Error).message });
+        });
+      }
+    }
+
+    const action: 'approve-withdrawal' | 'deny-withdrawal' | 'mark-paid-withdrawal' =
+      body.status === 'approved' ? 'approve-withdrawal'
+      : body.status === 'denied' ? 'deny-withdrawal'
+      : 'mark-paid-withdrawal';
     await logAdminAction({
       actor,
-      action: body.status === 'approved' ? 'approve-withdrawal' : 'deny-withdrawal',
+      action,
       target: id,
       before: { status: before.status },
-      after: { status: data.status },
+      after: { status: data.status, paidTxHash: data.paidTxHash },
       requestId,
     });
 

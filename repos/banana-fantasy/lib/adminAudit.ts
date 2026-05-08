@@ -7,6 +7,7 @@ export type AdminAction =
   | 'unban-user'
   | 'approve-withdrawal'
   | 'deny-withdrawal'
+  | 'mark-paid-withdrawal'
   | 'set-entries'
   | 'create-promo'
   | 'reset-queue'

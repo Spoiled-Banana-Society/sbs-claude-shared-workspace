@@ -214,10 +214,11 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
   const update = useUpdateWithdrawalStatus();
   const { show } = useToast();
 
-  const handle = async (id: string, status: 'approved' | 'denied') => {
+  const handle = async (id: string, status: 'approved' | 'denied' | 'paid', txHash?: string) => {
     try {
-      const res = await update.mutateAsync({ id, status });
-      show({ level: 'success', message: `Withdrawal ${status}`, requestId: res.requestId });
+      const res = await update.mutateAsync({ id, status, txHash });
+      const verb = status === 'paid' ? 'marked paid' : status;
+      show({ level: 'success', message: `Withdrawal ${verb}`, requestId: res.requestId });
     } catch (err) {
       const e = err as AdminApiError;
       Sentry.captureException(e, {
@@ -228,9 +229,135 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
     }
   };
 
+  const handleMarkPaid = async (id: string) => {
+    // Prompt for the Gnosis batch tx hash so it lands in audit + on the
+    // user's activity event. Optional — admin can skip if they need to.
+    const txHash = window.prompt(
+      'Gnosis Safe tx hash (optional — leave blank if not available):',
+      '',
+    );
+    if (txHash === null) return; // cancelled
+    if (!window.confirm('Confirm: USDC has actually landed in the user\'s wallet on-chain?')) return;
+    await handle(id, 'paid', txHash.trim() || undefined);
+  };
+
+  // Approved-but-not-yet-paid items are the queue ready for the next
+  // Gnosis Safe batch. Helper produces a CSV the admin can paste into
+  // the Gnosis Safe CSV Airdrop tool — the most common batch USDC sender.
+  const readyToPay = items.filter((w) => w.status === 'approved');
+  const readyTotal = readyToPay.reduce((sum, w) => sum + (w.amount || 0), 0);
+  const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+  const copyCsv = async (kind: 'airdrop' | 'simple') => {
+    if (readyToPay.length === 0) {
+      show({ level: 'error', message: 'No approved withdrawals to copy' });
+      return;
+    }
+    const lines: string[] = [];
+    if (kind === 'airdrop') {
+      // Format for Gnosis Safe CSV Airdrop app:
+      //   token_type,token_address,receiver,amount,id
+      lines.push('token_type,token_address,receiver,amount,id');
+      for (const w of readyToPay) {
+        lines.push(`erc20,${USDC_BASE_ADDRESS},${w.walletAddress},${w.amount},`);
+      }
+    } else {
+      // Plain "wallet,amount" — easy to eyeball or paste anywhere.
+      lines.push('wallet,amount');
+      for (const w of readyToPay) {
+        lines.push(`${w.walletAddress},${w.amount}`);
+      }
+    }
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      show({
+        level: 'success',
+        message: `Copied ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}) — ${kind === 'airdrop' ? 'Gnosis CSV Airdrop format' : 'plain CSV'}`,
+      });
+    } catch {
+      // Fallback: open in a new tab so admin can copy manually
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(`<pre style="font-family:monospace;padding:20px;background:#000;color:#fff;">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`);
+      }
+      show({ level: 'error', message: 'Clipboard blocked — opened in new tab to copy manually' });
+    }
+  };
+
+  const handleMarkAllPaid = async () => {
+    if (readyToPay.length === 0) return;
+    const txHash = window.prompt(
+      `Gnosis Safe batch tx hash for all ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}):`,
+      '',
+    );
+    if (txHash === null) return;
+    if (!window.confirm(`Mark all ${readyToPay.length} approved withdrawals as paid? This fires user activity notifications.`)) return;
+    const trimmed = txHash.trim() || undefined;
+    let ok = 0;
+    let fail = 0;
+    for (const w of readyToPay) {
+      try {
+        await update.mutateAsync({ id: w.id, status: 'paid', txHash: trimmed });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    show({
+      level: fail === 0 ? 'success' : 'error',
+      message: `Marked ${ok} paid${fail ? `, ${fail} failed` : ''}`,
+    });
+  };
+
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-      <table className="w-full text-left text-sm">
+    <div className="space-y-4">
+      {readyToPay.length > 0 && (
+        <div className="rounded-xl border border-banana/30 bg-banana/[0.03] p-4">
+          <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-banana">
+                Ready to pay — {readyToPay.length} approved {readyToPay.length === 1 ? 'request' : 'requests'} · ${readyTotal.toLocaleString()} total
+              </h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Approved by an admin, awaiting the next Gnosis Safe batch. Copy as CSV → load into Gnosis CSV Airdrop → execute → come back and mark all paid.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => copyCsv('airdrop')}
+                className="px-3 py-1.5 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-medium"
+              >
+                Copy CSV (Gnosis Airdrop)
+              </button>
+              <button
+                onClick={() => copyCsv('simple')}
+                className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-gray-200 text-xs"
+              >
+                Copy plain (wallet,amount)
+              </button>
+              <button
+                onClick={handleMarkAllPaid}
+                disabled={update.isPending}
+                className="px-3 py-1.5 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs font-medium disabled:opacity-50"
+              >
+                Mark all paid
+              </button>
+            </div>
+          </div>
+          <div className="rounded-md bg-black/30 border border-white/[0.04] divide-y divide-white/[0.04] text-[12px] max-h-64 overflow-y-auto">
+            {readyToPay.map((w) => (
+              <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-3">
+                <span className="font-mono text-gray-300 text-[11px]">{w.walletAddress}</span>
+                <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+        <table className="w-full text-left text-sm">
         <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
           <tr>
             <th className="px-4 py-3 font-medium">Created</th>
@@ -277,12 +404,23 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
                       </button>
                     </div>
                   )}
+                  {w.status === 'approved' && (
+                    <button
+                      onClick={() => handleMarkPaid(w.id)}
+                      disabled={update.isPending}
+                      className="px-2.5 py-1 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-medium disabled:opacity-50"
+                      title="Click after the Gnosis Safe batch has sent USDC and confirmed on-chain. Fires the user's 'Cashed out' activity event."
+                    >
+                      Mark as paid
+                    </button>
+                  )}
                 </td>
               </tr>
             ))
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
