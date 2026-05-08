@@ -3,13 +3,9 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getExposure, recomputeUserExposure } from '@/lib/db';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
-// Stored UserExposure docs that match the static seed shape — totalDrafts=20
-// + the seed sentinel username — get force-recomputed on first read so
-// existing users with stale seed data are backfilled without needing
-// another draft completion.
-const SEED_SENTINEL_USERNAME = 'BananaKing99';
-const SEED_TOTAL_DRAFTS = 20;
+const RECOMPUTE_THROTTLE_MS = 60_000;
 
 export async function GET(req: Request, ctx: { params: { userId: string } }) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -18,17 +14,26 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
     const { userId } = ctx.params;
     if (!userId) return jsonError('Missing route param: userId', 400);
 
-    let exposure = await getExposure(userId);
-    const isSeed = exposure
-      && exposure.username === SEED_SENTINEL_USERNAME
-      && exposure.totalDrafts === SEED_TOTAL_DRAFTS;
+    const lower = userId.toLowerCase();
     const force = req.url.includes('recompute=1');
 
-    if (force || isSeed || !exposure) {
-      const recomputed = await recomputeUserExposure(userId);
-      if (recomputed) exposure = recomputed;
+    // Throttled recompute on every read. Mirrors the badge sweep pattern:
+    // a `lastExposureRecomputeAt` timestamp on the user doc gates the
+    // Go-API hit so concurrent reads share the same throttle. The
+    // recompute is idempotent + writes the doc itself.
+    const db = getAdminFirestore();
+    const userRef = db.collection('v2_users').doc(lower);
+    const userSnap = await userRef.get();
+    const lastRaw = userSnap.exists ? (userSnap.data() as { lastExposureRecomputeAt?: string }).lastExposureRecomputeAt : null;
+    const last = lastRaw ? Date.parse(lastRaw) : 0;
+    const stale = !Number.isFinite(last) || Date.now() - last >= RECOMPUTE_THROTTLE_MS;
+
+    if (force || stale) {
+      await userRef.set({ lastExposureRecomputeAt: new Date().toISOString() }, { merge: true });
+      await recomputeUserExposure(lower);
     }
 
+    const exposure = await getExposure(lower);
     if (!exposure) return jsonError('Exposure not found', 404);
     return json(exposure, 200);
   } catch (err) {
