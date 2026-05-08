@@ -316,6 +316,19 @@ export async function POST(req: Request) {
       }
     }
 
+    // Badge unlocks — fire-and-forget so a Firestore hiccup on the badge
+    // write doesn't roll back the spin reward. unlockBadge is idempotent
+    // (no-op if already unlocked).
+    {
+      const { unlockBadge } = await import('@/lib/db');
+      void unlockBadge(userId.toLowerCase(), 'first-spin', { spinId }).catch(() => {});
+      if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
+        void unlockBadge(userId.toLowerCase(), 'spin-jackpot', { spinId }).catch(() => {});
+      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
+        void unlockBadge(userId.toLowerCase(), 'spin-hof', { spinId }).catch(() => {});
+      }
+    }
+
     // The spin_won activity event was already written atomically with the
     // counter mutation above. If the on-chain mint succeeded after, log a
     // supplementary `pass_granted` event so the user's history shows the

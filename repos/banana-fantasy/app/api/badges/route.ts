@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { getUserBadges } from '@/lib/db';
+import { getUserBadges, unlockBadge } from '@/lib/db';
 import { BADGE_CATALOG } from '@/lib/badges/catalog';
 import { awardDraftCountBadges, awardLeagueOutcomeBadges } from '@/lib/badges/awards';
 import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
@@ -88,6 +88,34 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     const completedCount = leagues.filter(l => l.status === 'completed').length;
     await awardDraftCountBadges(userId, completedCount);
     const { awards } = await awardLeagueOutcomeBadges(userId, leagues);
+
+    // Wheel-spin badges — query the top-level wheelSpins collection for
+    // any spins owned by this user. The wheel-spin endpoint also fires
+    // these unlocks inline; this is the catch-up path for users who
+    // spun before the badge system shipped.
+    try {
+      const spinsSnap = await db
+        .collection('wheelSpins')
+        .where('userId', '==', userId)
+        .limit(50)
+        .get();
+      if (spinsSnap.size > 0) {
+        await unlockBadge(userId, 'first-spin', { source: 'sweep' });
+        for (const doc of spinsSnap.docs) {
+          const spin = doc.data();
+          const prizeType = spin?.prize?.type;
+          const prizeValue = spin?.prize?.value;
+          if (prizeType === 'custom' && prizeValue === 'jackpot') {
+            await unlockBadge(userId, 'spin-jackpot', { spinId: doc.id });
+          } else if (prizeType === 'custom' && prizeValue === 'hof') {
+            await unlockBadge(userId, 'spin-hof', { spinId: doc.id });
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn('badges.read.wheel-sweep.failed', { userId, err });
+    }
+
     return { ran: true, joined, completed: completedCount, awards };
   } catch (err) {
     logger.warn('badges.read.sweep.failed', { userId, err });
