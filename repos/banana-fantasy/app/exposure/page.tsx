@@ -350,7 +350,7 @@ export default function ExposurePage() {
             <div>
               <h2 className="text-white font-bold text-lg">Team Stacks</h2>
               <p className="text-white/40 text-xs">
-                {stacks.length} combo{stacks.length === 1 ? '' : 's'} you've drafted in 2+ leagues. Click for details.
+                {stacks.length} combo{stacks.length === 1 ? '' : 's'} you&apos;ve drafted in 2+ leagues. Click for details.
               </p>
             </div>
             <div className="flex items-center gap-2">
