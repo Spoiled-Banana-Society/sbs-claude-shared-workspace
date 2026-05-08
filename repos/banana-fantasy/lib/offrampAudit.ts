@@ -11,6 +11,7 @@
 // the threshold below.
 
 import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
+import { logActivityEvent } from './activityEvents';
 
 const OFFRAMP_COLLECTION = 'offramp_attempts';
 export const ABANDONED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
@@ -37,7 +38,7 @@ export interface OfframpAttempt {
   timestamp: string;       // ISO — when session_created
   updatedAt: string;       // ISO — last status change
   status: OfframpAttemptStatus;
-  amount?: number;         // USDC requested
+  amount?: number;         // USDC requested in our UI (what user typed)
   paymentMethod?: string;  // ACH_BANK_ACCOUNT / FIAT_WALLET / CRYPTO_ACCOUNT (Coinbase) | usdc / bank (direct)
   draftId?: string;        // tied prize, if any
   // Updated when tx-status polling sees a real Coinbase tx
@@ -45,6 +46,12 @@ export interface OfframpAttempt {
   coinbaseTxStatus?: string; // raw status string from Coinbase
   txDetectedAt?: string;
   txCompletedAt?: string;
+  // Settled values from Coinbase's tx object — the source of truth for
+  // what the user actually got. Populated when tx-status sees a real tx.
+  coinbaseSellUsdc?: number; // USDC actually sold (sell_amount.value)
+  coinbaseTotalUsd?: number; // USD net to user after fees (total.value)
+  coinbaseFeeUsd?: number;   // Coinbase fee (coinbase_fee.value)
+  coinbaseExchangeRate?: number; // exchange_rate.value
   // For diagnostics
   errorMessage?: string;
   // For direct withdrawals — stash the original withdrawal doc id so admin
@@ -127,6 +134,24 @@ export async function logDirectWithdrawal(input: {
     if (input.draftId) doc.draftId = input.draftId;
     if (input.status === 'tx_completed') doc.txCompletedAt = now;
     const ref = await db.collection(OFFRAMP_COLLECTION).add(doc);
+
+    // Surface completed cashouts in the user's activity feed. Direct
+    // withdrawals can land 'tx_completed' on creation when the Go API
+    // returns 'completed' synchronously; otherwise it'll be emitted later
+    // when status flips (currently no flip path for direct — backend status
+    // updates would land here in the future).
+    if (input.status === 'tx_completed') {
+      logActivityEvent({
+        type: 'cashout_completed',
+        userId: input.userId,
+        walletAddress: input.walletAddress ?? null,
+        metadata: {
+          amount: input.amount,
+          rail: doc.source,
+          method: input.method,
+        },
+      }).catch(() => { /* non-fatal */ });
+    }
     return ref.id;
   } catch (err) {
     console.error('[Offramp Audit] logDirectWithdrawal failed:', err);
@@ -146,6 +171,13 @@ export async function updateOfframpFromTx(input: {
   userId: string;
   coinbaseTxId: string;
   coinbaseTxStatus: string;
+  // Optional precise numbers from Coinbase's tx object — when present,
+  // these become the source of truth for the activity feed (settled USD)
+  // and admin reconciliation (fees, exchange rate).
+  coinbaseSellUsdc?: number;
+  coinbaseTotalUsd?: number;
+  coinbaseFeeUsd?: number;
+  coinbaseExchangeRate?: number;
 }): Promise<string | null> {
   if (!isFirestoreConfigured()) return null;
   try {
@@ -174,17 +206,152 @@ export async function updateOfframpFromTx(input: {
       coinbaseTxId: input.coinbaseTxId,
       coinbaseTxStatus: input.coinbaseTxStatus,
     };
+    if (typeof input.coinbaseSellUsdc === 'number') update.coinbaseSellUsdc = input.coinbaseSellUsdc;
+    if (typeof input.coinbaseTotalUsd === 'number') update.coinbaseTotalUsd = input.coinbaseTotalUsd;
+    if (typeof input.coinbaseFeeUsd === 'number') update.coinbaseFeeUsd = input.coinbaseFeeUsd;
+    if (typeof input.coinbaseExchangeRate === 'number') update.coinbaseExchangeRate = input.coinbaseExchangeRate;
     const existing = target.data() as OfframpAttempt;
     if (!existing.txDetectedAt) update.txDetectedAt = now;
-    if (newStatus === 'tx_completed' && !existing.txCompletedAt) {
+    const isFirstCompletion = newStatus === 'tx_completed' && !existing.txCompletedAt;
+    if (isFirstCompletion) {
       update.txCompletedAt = now;
     }
     await target.ref.set(update, { merge: true });
+
+    // Surface the completed cashout in the user's activity feed exactly
+    // once — guard on the previous doc's txCompletedAt so repeated polls
+    // can't re-emit. Prefer Coinbase's reported settled USD (post-fee) —
+    // that's what actually lands in the user's bank, the truthful number
+    // to show. Fall back to the user-requested USDC amount only when
+    // Coinbase didn't report it.
+    if (isFirstCompletion) {
+      const settledUsd = input.coinbaseTotalUsd ?? null;
+      const requestedUsdc = existing.amount ?? null;
+      logActivityEvent({
+        type: 'cashout_completed',
+        userId: existing.userId,
+        walletAddress: existing.walletAddress ?? null,
+        metadata: {
+          // 'amount' is what the activity feed renders. Use settled USD
+          // when Coinbase gave it to us; otherwise the requested USDC.
+          amount: settledUsd ?? requestedUsdc,
+          // Both kept for diagnostics and any future UI that wants to
+          // show "you cashed out 100 USDC and received $99.40".
+          settledUsd,
+          requestedUsdc,
+          coinbaseFeeUsd: input.coinbaseFeeUsd ?? null,
+          rail: existing.source,
+          method: existing.paymentMethod,
+          coinbaseTxId: input.coinbaseTxId,
+        },
+      }).catch(() => { /* non-fatal */ });
+    }
     return target.id;
   } catch (err) {
     console.error('[Offramp Audit] updateOfframpFromTx failed:', err);
     return null;
   }
+}
+
+/**
+ * Mark a direct withdrawal as paid — the Gnosis Safe batch has gone out
+ * and USDC has landed in the user's wallet. Emits the cashout_completed
+ * activity event exactly once (guarded against re-fires) and flips the
+ * matching offramp_attempt to tx_completed.
+ *
+ * Idempotent: calling twice is safe — the activity event will not fire
+ * a second time because we check the offramp_attempt's prior status.
+ */
+export async function markDirectWithdrawalPaid(input: {
+  withdrawalId: string;
+  userId: string;          // canonical lowercase wallet
+  walletAddress?: string;
+  amount: number;
+  method: 'usdc' | 'bank';
+  txHash?: string;         // optional — gnosis batch tx hash, for audit
+}): Promise<{ activityEmitted: boolean }> {
+  if (!isFirestoreConfigured()) return { activityEmitted: false };
+
+  const db = getAdminFirestore();
+  const now = new Date().toISOString();
+
+  // Find the offramp_attempt by withdrawalId. There SHOULD be exactly one;
+  // we take the most recent if somehow multiple. If none exists (legacy
+  // withdrawals from before audit logging), we still emit the activity
+  // event so the user sees "money sent" in their feed.
+  let alreadyCompleted = false;
+  let attemptId: string | null = null;
+  try {
+    const snap = await db
+      .collection(OFFRAMP_COLLECTION)
+      .where('withdrawalId', '==', input.withdrawalId)
+      .orderBy('timestamp', 'desc')
+      .limit(1)
+      .get();
+    if (snap.size > 0) {
+      const doc = snap.docs[0];
+      const data = doc.data() as OfframpAttempt;
+      attemptId = doc.id;
+      alreadyCompleted = data.status === 'tx_completed';
+      if (!alreadyCompleted) {
+        const update: Partial<OfframpAttempt> = {
+          status: 'tx_completed',
+          updatedAt: now,
+          txCompletedAt: now,
+        };
+        await doc.ref.set(update, { merge: true });
+      }
+    } else {
+      // No prior offramp_attempt — backfill one in tx_completed state so
+      // admin still sees this in the offramp dashboard.
+      const newDoc: Partial<OfframpAttempt> = {
+        userId: input.userId,
+        source: input.method === 'bank' ? 'direct_bank' : 'direct_usdc',
+        timestamp: now,
+        updatedAt: now,
+        status: 'tx_completed',
+        amount: input.amount,
+        paymentMethod: input.method,
+        withdrawalId: input.withdrawalId,
+        txCompletedAt: now,
+      };
+      if (input.walletAddress) newDoc.walletAddress = input.walletAddress;
+      const ref = await db.collection(OFFRAMP_COLLECTION).add(newDoc);
+      attemptId = ref.id;
+    }
+  } catch (err) {
+    console.error('[Offramp Audit] markDirectWithdrawalPaid offramp update failed:', err);
+  }
+
+  // Only fire the activity event if we haven't already. Without this guard
+  // an admin double-clicking "Mark paid" would post duplicate activity.
+  if (alreadyCompleted) return { activityEmitted: false };
+
+  try {
+    await logActivityEvent({
+      type: 'cashout_completed',
+      userId: input.userId,
+      walletAddress: input.walletAddress ?? null,
+      txHash: input.txHash ?? null,
+      metadata: {
+        amount: input.amount,
+        // For direct withdrawals, requested USDC = settled value (no fee
+        // or slippage), so we put the same number in both fields for
+        // schema parity with Coinbase events.
+        settledUsd: input.amount,
+        requestedUsdc: input.amount,
+        rail: input.method === 'bank' ? 'direct_bank' : 'direct_usdc',
+        method: input.method,
+        withdrawalId: input.withdrawalId,
+        offrampAttemptId: attemptId,
+      },
+    });
+  } catch (err) {
+    console.error('[Offramp Audit] markDirectWithdrawalPaid activity event failed:', err);
+    return { activityEmitted: false };
+  }
+
+  return { activityEmitted: true };
 }
 
 /**

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import { useAuth } from '@/hooks/useAuth';
@@ -70,12 +70,6 @@ function formatWallet(value: string): string {
   return value.length < 12 ? value : `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function statusPill(status: string): string {
-  const s = status.toLowerCase();
-  if (['approved', 'completed', 'finished', 'active'].includes(s)) return 'bg-green-500/10 text-green-300 border-green-500/30';
-  if (['denied', 'failed', 'cancelled', 'banned'].includes(s)) return 'bg-red-500/10 text-red-300 border-red-500/30';
-  return 'bg-yellow-500/10 text-yellow-300 border-yellow-500/30';
-}
 
 export default function AdminPage() {
   const router = useRouter();
@@ -214,10 +208,11 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
   const update = useUpdateWithdrawalStatus();
   const { show } = useToast();
 
-  const handle = async (id: string, status: 'approved' | 'denied') => {
+  const handle = async (id: string, status: 'approved' | 'denied' | 'paid', txHash?: string) => {
     try {
-      const res = await update.mutateAsync({ id, status });
-      show({ level: 'success', message: `Withdrawal ${status}`, requestId: res.requestId });
+      const res = await update.mutateAsync({ id, status, txHash });
+      const verb = status === 'paid' ? 'marked paid' : status;
+      show({ level: 'success', message: `Withdrawal ${verb}`, requestId: res.requestId });
     } catch (err) {
       const e = err as AdminApiError;
       Sentry.captureException(e, {
@@ -228,61 +223,253 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
     }
   };
 
+  const handleMarkPaid = async (id: string) => {
+    // Prompt for the Gnosis batch tx hash so it lands in audit + on the
+    // user's activity event. Optional — admin can skip if they need to.
+    const txHash = window.prompt(
+      'Gnosis Safe tx hash (optional — leave blank if not available):',
+      '',
+    );
+    if (txHash === null) return; // cancelled
+    if (!window.confirm('Confirm: USDC has actually landed in the user\'s wallet on-chain?')) return;
+    await handle(id, 'paid', txHash.trim() || undefined);
+  };
+
+  // Approved-but-not-yet-paid items are the queue ready for the next
+  // Gnosis Safe batch. Helper produces a CSV the admin can paste into
+  // the Gnosis Safe CSV Airdrop tool — the most common batch USDC sender.
+  const readyToPay = items.filter((w) => w.status === 'approved');
+  const readyTotal = readyToPay.reduce((sum, w) => sum + (w.amount || 0), 0);
+  const USDC_BASE_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+
+  const copyCsv = async (kind: 'airdrop' | 'simple') => {
+    if (readyToPay.length === 0) {
+      show({ level: 'error', message: 'No approved withdrawals to copy' });
+      return;
+    }
+    const lines: string[] = [];
+    if (kind === 'airdrop') {
+      // Format for Gnosis Safe CSV Airdrop app:
+      //   token_type,token_address,receiver,amount,id
+      lines.push('token_type,token_address,receiver,amount,id');
+      for (const w of readyToPay) {
+        lines.push(`erc20,${USDC_BASE_ADDRESS},${w.walletAddress},${w.amount},`);
+      }
+    } else {
+      // Plain "wallet,amount" — easy to eyeball or paste anywhere.
+      lines.push('wallet,amount');
+      for (const w of readyToPay) {
+        lines.push(`${w.walletAddress},${w.amount}`);
+      }
+    }
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      show({
+        level: 'success',
+        message: `Copied ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}) — ${kind === 'airdrop' ? 'Gnosis CSV Airdrop format' : 'plain CSV'}`,
+      });
+    } catch {
+      // Fallback: open in a new tab so admin can copy manually
+      const win = window.open('', '_blank');
+      if (win) {
+        win.document.write(`<pre style="font-family:monospace;padding:20px;background:#000;color:#fff;">${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`);
+      }
+      show({ level: 'error', message: 'Clipboard blocked — opened in new tab to copy manually' });
+    }
+  };
+
+  const handleMarkAllPaid = async () => {
+    if (readyToPay.length === 0) return;
+    const txHash = window.prompt(
+      `Gnosis Safe batch tx hash for all ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}):`,
+      '',
+    );
+    if (txHash === null) return;
+    if (!window.confirm(`Mark all ${readyToPay.length} approved withdrawals as paid? This fires user activity notifications.`)) return;
+    const trimmed = txHash.trim() || undefined;
+    let ok = 0;
+    let fail = 0;
+    for (const w of readyToPay) {
+      try {
+        await update.mutateAsync({ id: w.id, status: 'paid', txHash: trimmed });
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    show({
+      level: fail === 0 ? 'success' : 'error',
+      message: `Marked ${ok} paid${fail ? `, ${fail} failed` : ''}`,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      {readyToPay.length > 0 && (
+        <div className="rounded-xl border border-banana/30 bg-banana/[0.03] p-4">
+          <div className="flex items-start justify-between flex-wrap gap-3 mb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-banana">
+                Ready to pay — {readyToPay.length} approved {readyToPay.length === 1 ? 'request' : 'requests'} · ${readyTotal.toLocaleString()} total
+              </h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">
+                Approved by an admin, awaiting the next Gnosis Safe batch. Copy as CSV → load into Gnosis CSV Airdrop → execute → come back and mark all paid.
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => copyCsv('airdrop')}
+                className="px-3 py-1.5 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-medium"
+              >
+                Copy CSV (Gnosis Airdrop)
+              </button>
+              <button
+                onClick={() => copyCsv('simple')}
+                className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-gray-200 text-xs"
+              >
+                Copy plain (wallet,amount)
+              </button>
+              <button
+                onClick={handleMarkAllPaid}
+                disabled={update.isPending}
+                className="px-3 py-1.5 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs font-medium disabled:opacity-50"
+              >
+                Mark all paid
+              </button>
+            </div>
+          </div>
+          <div className="rounded-md bg-black/30 border border-white/[0.04] divide-y divide-white/[0.04] text-[12px] max-h-64 overflow-y-auto">
+            {readyToPay.map((w) => (
+              <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-3">
+                <span className="font-mono text-gray-300 text-[11px]">{w.walletAddress}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
+                  <button
+                    onClick={() => handleMarkPaid(w.id)}
+                    disabled={update.isPending}
+                    className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 text-[10px] disabled:opacity-50"
+                    title="Mark this single payout as paid"
+                  >
+                    Mark paid
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <WithdrawalSection
+        title="Pending review"
+        subtitle="Newly requested. Approve to queue for the next Gnosis batch, or deny."
+        items={items.filter((w) => w.status === 'pending')}
+        emptyMessage="No pending requests"
+        renderActions={(w) => (
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => handle(w.id, 'approved')}
+              disabled={update.isPending}
+              className="px-2.5 py-1 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs disabled:opacity-50"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => handle(w.id, 'denied')}
+              disabled={update.isPending}
+              className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-500 text-white text-xs disabled:opacity-50"
+            >
+              Deny
+            </button>
+          </div>
+        )}
+      />
+
+      <WithdrawalSection
+        title="Paid"
+        subtitle="Completed — USDC delivered. Most recent first."
+        items={items.filter((w) => w.status === 'paid' || w.status === 'completed')}
+        emptyMessage="No paid withdrawals yet"
+        collapsedByDefault
+      />
+
+      <WithdrawalSection
+        title="Denied"
+        subtitle="Rejected by an admin. Kept for audit."
+        items={items.filter((w) => w.status === 'denied')}
+        emptyMessage="No denied withdrawals"
+        collapsedByDefault
+      />
+    </div>
+  );
+}
+
+function WithdrawalSection({
+  title,
+  subtitle,
+  items,
+  emptyMessage,
+  renderActions,
+  collapsedByDefault = false,
+}: {
+  title: string;
+  subtitle?: string;
+  items: AdminWithdrawalItem[];
+  emptyMessage: string;
+  renderActions?: (w: AdminWithdrawalItem) => ReactNode;
+  collapsedByDefault?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(!collapsedByDefault);
+  const total = items.reduce((s, w) => s + (w.amount || 0), 0);
+
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
-          <tr>
-            <th className="px-4 py-3 font-medium">Created</th>
-            <th className="px-4 py-3 font-medium">Wallet</th>
-            <th className="px-4 py-3 font-medium text-right">Amount</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.length === 0 ? (
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.02]"
+      >
+        <div>
+          <h3 className="text-sm font-semibold text-gray-100">
+            {title}{' '}
+            <span className="text-gray-500 font-normal">
+              · {items.length} {items.length === 1 ? 'item' : 'items'}{items.length > 0 ? ` · $${total.toLocaleString()}` : ''}
+            </span>
+          </h3>
+          {subtitle && <p className="text-[11px] text-gray-500 mt-0.5">{subtitle}</p>}
+        </div>
+        <span className="text-gray-500 text-sm">{expanded ? '−' : '+'}</span>
+      </button>
+      {expanded && (
+        <table className="w-full text-left text-sm border-t border-white/[0.04]">
+          <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
-              <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
-                No withdrawals
-              </td>
+              <th className="px-4 py-2.5 font-medium">Created</th>
+              <th className="px-4 py-2.5 font-medium">Wallet</th>
+              <th className="px-4 py-2.5 font-medium text-right">Amount</th>
+              {renderActions && <th className="px-4 py-2.5 font-medium">Actions</th>}
             </tr>
-          ) : (
-            items.map((w) => (
-              <tr key={w.id} className="border-t border-white/[0.04]">
-                <td className="px-4 py-3 text-xs text-gray-500">{formatDate(w.createdAt)}</td>
-                <td className="px-4 py-3 font-mono text-xs text-gray-300">{formatWallet(w.walletAddress)}</td>
-                <td className="px-4 py-3 text-right text-gray-200">${w.amount.toLocaleString()}</td>
-                <td className="px-4 py-3">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] border ${statusPill(w.status)}`}>
-                    {w.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  {w.status === 'pending' && (
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handle(w.id, 'approved')}
-                        disabled={update.isPending}
-                        className="px-2.5 py-1 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs disabled:opacity-50"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handle(w.id, 'denied')}
-                        disabled={update.isPending}
-                        className="px-2.5 py-1 rounded-md bg-red-600/80 hover:bg-red-500 text-white text-xs disabled:opacity-50"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  )}
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr>
+                <td colSpan={renderActions ? 4 : 3} className="px-4 py-6 text-center text-gray-500 text-xs">
+                  {emptyMessage}
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              items.map((w) => (
+                <tr key={w.id} className="border-t border-white/[0.04]">
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{formatDate(w.createdAt)}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-gray-300">{formatWallet(w.walletAddress)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-200">${w.amount.toLocaleString()}</td>
+                  {renderActions && <td className="px-4 py-2.5">{renderActions(w)}</td>}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

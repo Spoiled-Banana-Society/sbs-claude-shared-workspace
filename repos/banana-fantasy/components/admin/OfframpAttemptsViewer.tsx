@@ -35,16 +35,16 @@ function statusExplanation(status: OfframpAttemptStatus, source: OfframpSource):
         return 'User opened the Coinbase popup but never sent USDC within 1 hour. Probably closed the popup or got stuck on Coinbase verification.';
     }
   }
-  // Direct USDC / direct bank
+  // Direct USDC / direct bank — manual Gnosis Safe batching workflow.
   switch (status) {
     case 'session_created':
       return 'Direct withdrawal record opened (unusual — direct withdrawals normally land at tx_pending or later immediately).';
     case 'tx_pending':
-      return 'Direct withdrawal queued. Waiting on backend payout job.';
+      return "Withdrawal request created. Waiting on admin to approve in the Withdrawals tab and include in the next Gnosis Safe batch.";
     case 'tx_completed':
-      return 'USDC sent to user wallet (or bank received funds). Done.';
+      return "Admin marked this paid — Gnosis Safe batch sent USDC and confirmed on-chain. User has been notified via activity feed.";
     case 'tx_failed':
-      return 'Backend payout failed. Check error message; may need ops intervention.';
+      return 'Withdrawal denied or backend payout failed. Check error message; may need ops intervention.';
     case 'abandoned':
       return 'Direct withdrawals shouldn’t be marked abandoned — log a bug if you see this.';
   }
@@ -220,6 +220,18 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
             {attempt.coinbaseTxId && <KvRow label="Coinbase tx ID" value={attempt.coinbaseTxId} mono />}
             {attempt.coinbaseTxStatus && (
               <KvRow label="Coinbase tx status" value={attempt.coinbaseTxStatus} />
+            )}
+            {typeof attempt.coinbaseSellUsdc === 'number' && (
+              <KvRow label="USDC sold (Coinbase)" value={`${attempt.coinbaseSellUsdc.toFixed(2)} USDC`} />
+            )}
+            {typeof attempt.coinbaseTotalUsd === 'number' && (
+              <KvRow label="USD net (Coinbase)" value={`$${attempt.coinbaseTotalUsd.toFixed(2)}`} />
+            )}
+            {typeof attempt.coinbaseFeeUsd === 'number' && (
+              <KvRow label="Coinbase fee" value={`$${attempt.coinbaseFeeUsd.toFixed(2)}`} />
+            )}
+            {typeof attempt.coinbaseExchangeRate === 'number' && (
+              <KvRow label="Exchange rate" value={attempt.coinbaseExchangeRate.toFixed(6)} />
             )}
             {attempt.withdrawalId && <KvRow label="Withdrawal ID" value={attempt.withdrawalId} mono />}
             {attempt.draftId && <KvRow label="Draft ID" value={attempt.draftId} mono />}

@@ -445,6 +445,10 @@ export interface OfframpAttemptEntry {
   coinbaseTxStatus?: string;
   txDetectedAt?: string;
   txCompletedAt?: string;
+  coinbaseSellUsdc?: number;
+  coinbaseTotalUsd?: number;
+  coinbaseFeeUsd?: number;
+  coinbaseExchangeRate?: number;
   errorMessage?: string;
   withdrawalId?: string;
 }
@@ -591,25 +595,27 @@ export function useBanUser() {
 
 export interface WithdrawalStatusInput {
   id: string;
-  status: 'approved' | 'denied';
+  status: 'approved' | 'denied' | 'paid';
+  txHash?: string;
 }
 export function useUpdateWithdrawalStatus() {
   const getHeaders = useAdminAuthHeaders();
   const qc = useQueryClient();
   return useMutation<AdminWithdrawalItem & { requestId?: string }, AdminApiError, WithdrawalStatusInput>({
-    mutationFn: ({ id, status }) =>
+    mutationFn: ({ id, status, txHash }) =>
       adminFetch<AdminWithdrawalItem & { requestId?: string }>(
         `/api/admin/withdrawals/${encodeURIComponent(id)}`,
         getHeaders,
         {
           method: 'PUT',
-          body: JSON.stringify({ status }),
+          body: JSON.stringify({ status, ...(txHash ? { txHash } : {}) }),
         },
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'withdrawals'] });
       qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'offramp-attempts'] });
     },
   });
 }
