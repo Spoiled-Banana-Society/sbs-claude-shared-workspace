@@ -81,10 +81,24 @@ export async function GET(req: Request) {
     // attempt with whatever Coinbase says about the tx now.
     if (target) {
       const auditUserKey = (session.walletAddress ?? session.userId).toLowerCase();
+      // Pull the settled values straight off Coinbase's tx object.
+      // total.value is USD net to the user (post-fee), sell_amount.value is
+      // USDC actually sold. parseFloat tolerates the string-typed values
+      // Coinbase returns. We forward only finite numbers so a missing or
+      // malformed field doesn't pollute the audit doc.
+      const numOrUndef = (s?: string): number | undefined => {
+        if (!s) return undefined;
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : undefined;
+      };
       updateOfframpFromTx({
         userId: auditUserKey,
         coinbaseTxId: target.id,
         coinbaseTxStatus: target.status,
+        coinbaseSellUsdc: numOrUndef(target.sell_amount?.value),
+        coinbaseTotalUsd: numOrUndef(target.total?.value),
+        coinbaseFeeUsd: numOrUndef(target.coinbase_fee?.value),
+        coinbaseExchangeRate: numOrUndef(target.exchange_rate?.value),
       }).catch(() => { /* ignored — audit is fire-and-forget */ });
     }
 

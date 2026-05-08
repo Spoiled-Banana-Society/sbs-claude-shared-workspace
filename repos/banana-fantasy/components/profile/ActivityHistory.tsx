@@ -89,14 +89,21 @@ function describe(e: LiveActivityEvent): string {
       return Number.isFinite(price) ? `Sold for $${price.toLocaleString()}` : 'Marketplace sale';
     }
     case 'cashout_completed': {
-      const amount = Number(e.metadata?.amount);
+      // Prefer Coinbase's settled USD (what actually landed in the user's
+      // bank); fall back to the canonical 'amount' field. Direct
+      // withdrawals don't have a settled value — requested = actual.
+      const settledUsd = Number(e.metadata?.settledUsd);
+      const fallback = Number(e.metadata?.amount);
+      const value = Number.isFinite(settledUsd) ? settledUsd : fallback;
       const rail = String(e.metadata?.rail ?? '');
       const railLabel =
         rail === 'coinbase_offramp' ? 'to bank via Coinbase'
         : rail === 'direct_usdc' ? 'to USDC wallet'
         : rail === 'direct_bank' ? 'to bank'
         : '';
-      const amountStr = Number.isFinite(amount) ? `$${amount.toLocaleString()}` : 'Cashout';
+      const amountStr = Number.isFinite(value)
+        ? `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : 'Cashout';
       return `${amountStr}${railLabel ? ` ${railLabel}` : ''}`;
     }
     default:
