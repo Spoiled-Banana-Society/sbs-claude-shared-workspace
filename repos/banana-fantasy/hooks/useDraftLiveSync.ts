@@ -170,7 +170,7 @@ export function useDraftLiveSync({
           draftStore.removeDraft(pendingId);
           draftStore.addDraft({
             id: newId,
-            contestName: draftRoom.contestName || `BBB #${newId}`,
+            contestName: draftRoom.contestName || `League #${String(newId).split('-').pop() || newId}`,
             status: 'filling',
             type: null,
             draftSpeed: speedParam || 'fast',
