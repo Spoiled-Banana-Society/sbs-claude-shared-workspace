@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
+import { GrantPrizeForm } from '@/components/admin/GrantPrizeForm';
 import { NftMappingTool } from '@/components/admin/NftMappingTool';
 
 interface WalletStatus {
@@ -332,6 +333,8 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
           One-off operational utilities. Use sparingly and remove the endpoints after they have served their purpose.
         </p>
       </div>
+
+      <GrantPrizeForm />
 
       <NftMappingTool enabled={enabled} />
 
