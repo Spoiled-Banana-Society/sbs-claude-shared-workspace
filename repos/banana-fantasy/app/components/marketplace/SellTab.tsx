@@ -82,17 +82,7 @@ export function SellTab({
             </div>
           ) : (
             <div className="grid gap-4">
-              {myNfts
-                .filter(team => {
-                  // Always show free passes (legitimate pre-draft state) and
-                  // anything currently listed (the user explicitly wants to
-                  // see their listings). Hide ghost paid NFTs that have no
-                  // SBS backend record — those are staging-only artifacts.
-                  if (team.passType === 'free') return true;
-                  if (team.orderHash) return true;
-                  return team.hasBackendRecord !== false;
-                })
-                .map(team => (
+              {myNfts.map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
@@ -102,7 +92,11 @@ export function SellTab({
                     {team.imageUrl ? (
                       <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
                     ) : (
-                      <SbsPassThumb label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`} size={56} />
+                      <SbsPassThumb
+                        label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`}
+                        size={56}
+                        roster={team.roster}
+                      />
                     )}
                     <div>
                       <div className="flex items-center gap-2">
@@ -147,7 +141,7 @@ export function SellTab({
                     )}
                   </div>
                 </Link>
-                ))}
+              ))}
             </div>
           )}
 

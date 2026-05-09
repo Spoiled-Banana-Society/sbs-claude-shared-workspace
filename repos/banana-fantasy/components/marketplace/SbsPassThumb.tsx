@@ -26,15 +26,23 @@ export function SbsPassThumb({ label, size = 56, roster, className = '' }: Props
   const h = Math.round(size * 1.4);
   const isLarge = size > 120;
 
-  // Compact thumbnail rendering — used in Sell tab tiles.
+  // Compact thumbnail rendering — used in Sell tab tiles. Mimics the
+  // real Go-API-generated card art: yellow rounded rectangle, header,
+  // 15 thin roster slot lines (filled if `roster` provided, blank
+  // placeholder dashes otherwise). Same silhouette as actual cards so
+  // tiles look uniform side-by-side.
   if (!isLarge) {
+    const slotCount = 15;
+    const slots = Array.from({ length: slotCount }, (_, i) => roster?.[i] ?? '');
+    const slotStartY = 20;
+    const slotStep = 3.4;
     return (
       <svg
         width={w}
         height={h}
         viewBox="0 0 56 80"
         className={className}
-        aria-label={label ? `BBB IV pass — ${label}` : 'BBB IV pass'}
+        aria-label={label ? `BBB IV team card — ${label}` : 'BBB IV team card'}
       >
         <defs>
           <linearGradient id={`sbsPassGrad-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
@@ -42,33 +50,59 @@ export function SbsPassThumb({ label, size = 56, roster, className = '' }: Props
             <stop offset="100%" stopColor="#D97706" />
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width="56" height="80" rx="8" fill={`url(#sbsPassGrad-${id})`} />
-        <circle cx="0" cy="40" r="5" fill="#1a1a2e" />
-        <circle cx="56" cy="40" r="5" fill="#1a1a2e" />
+        <rect x="0" y="0" width="56" height="80" rx="6" fill={`url(#sbsPassGrad-${id})`} />
         <text
           x="28"
-          y={label ? 33 : 44}
+          y="9"
           textAnchor="middle"
           fill="#1C1C1E"
-          fontSize="7"
+          fontSize="3"
           fontWeight="700"
+          letterSpacing="0.3"
           fontFamily="system-ui, -apple-system, sans-serif"
         >
-          BBB IV
+          BANANA BEST BALL
         </text>
         {label && (
           <text
             x="28"
-            y="50"
+            y="15"
             textAnchor="middle"
             fill="#1C1C1E"
-            fontSize="9"
+            fontSize="3.2"
             fontWeight="800"
             fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
           >
             {label}
           </text>
         )}
+        {slots.map((slot, i) => (
+          <text
+            key={i}
+            x="28"
+            y={slotStartY + i * slotStep}
+            textAnchor="middle"
+            fill={slot ? '#1C1C1E' : '#1C1C1E'}
+            fillOpacity={slot ? 1 : 0.35}
+            fontSize="2.6"
+            fontWeight={slot ? 600 : 400}
+            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+          >
+            {slot || '———'}
+          </text>
+        ))}
+        <text
+          x="28"
+          y="76"
+          textAnchor="middle"
+          fill="#1C1C1E"
+          fillOpacity="0.55"
+          fontSize="2"
+          letterSpacing="0.4"
+          fontFamily="system-ui, -apple-system, sans-serif"
+        >
+          SPOILED BANANA SOCIETY
+        </text>
       </svg>
     );
   }
