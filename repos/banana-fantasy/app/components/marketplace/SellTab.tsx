@@ -87,7 +87,10 @@ export function SellTab({
             </div>
           ) : (
             <div className="grid gap-4">
-              {[...myNfts]
+              {myNfts
+                // Hide orphan stage-mint NFTs (no SBS backend record, not a free pass).
+                // Production can't produce this state — it's leftover from staging test mints.
+                .filter(team => !(team.hasBackendRecord === false && team.passType !== 'free'))
                 .sort((a, b) => {
                   // Free draft passes go last; everything else keeps existing order.
                   const aFree = a.passType === 'free' ? 1 : 0;
