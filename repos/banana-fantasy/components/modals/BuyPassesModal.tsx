@@ -357,12 +357,15 @@ export function BuyPassesModal({
       const { funded, popupAbort } = await waitForUsdc();
       if (!funded) {
         if (popupAbort) {
-          // Coinbase-specific friendly recovery copy. Three common
-          // reasons we land here: user cancelled the popup, hit the
-          // $500/week limit, or card was declined. We can't tell which
-          // (cross-origin), so cover all three with one message.
+          // Neutral copy — we can't read inside the Coinbase popup
+          // (cross-origin), so we don't know whether the user
+          // cancelled, hit the weekly limit, or had their card
+          // declined. Don't assert a cause we can't verify; just
+          // say the purchase didn't go through and offer both paths
+          // (retry Coinbase or switch to MoonPay) so the user can
+          // pick the best fit for whatever actually happened.
           throw new Error(
-            "Coinbase didn't complete. This can happen if you cancelled, hit the weekly $500 Coinbase limit, or your payment was declined. Try MoonPay instead, or try Coinbase again.",
+            "Coinbase didn't go through. You can try again or switch to MoonPay.",
           );
         }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
@@ -878,7 +881,7 @@ export function BuyPassesModal({
                       }}
                       className="text-sm font-semibold text-banana hover:underline"
                     >
-                      Try MoonPay instead
+                      Switch to MoonPay
                     </button>
                   )}
                   <button
