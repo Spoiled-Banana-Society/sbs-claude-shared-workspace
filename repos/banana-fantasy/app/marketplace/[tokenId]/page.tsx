@@ -34,6 +34,15 @@ interface NftDetail {
     price: { current: { value: string; decimals: number } };
     protocol_data: { parameters: { offerer: string } };
   } | null;
+  team?: {
+    leagueId: string;
+    leagueDisplayName: string;
+    level: string;
+    rank: string;
+    seasonScore: string;
+    weekScore: string;
+    source: 'cardid_match' | 'firestore_map';
+  } | null;
 }
 
 const ROSTER_KEYS = [
@@ -757,6 +766,14 @@ export default function NftDetailPage() {
           </div>
           <div className="flex items-center gap-2 text-text-muted text-sm mb-6">
             <span>Token #{tokenId}</span>
+            {nft.team && (
+              <>
+                <span>&middot;</span>
+                <span className="text-banana/80 text-xs" title="Team data sourced from the SBS backend, not OpenSea metadata">
+                  Stats from SBS
+                </span>
+              </>
+            )}
             {nftOwner && (
               <>
                 <span>&middot;</span>

@@ -10,6 +10,7 @@ import {
   type OpenSeaListing,
   type OpenSeaNft,
 } from '@/lib/opensea';
+import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,21 +103,43 @@ export async function GET(req: Request) {
       await Promise.all(nftFetches);
     }
 
+    // SBS-first enrichment: pull team data from our backend for every
+    // listing and inject as synthetic traits on the OpenSea NFT before
+    // mapping. Our backend is the source of truth — OpenSea is just for
+    // ownership/listing orderbook.
+    const ownerByTokenId = new Map<string, string>();
+    for (let i = 0; i < orders.length; i++) {
+      const offerer = orders[i].protocol_data.parameters.offerer;
+      if (offerer) ownerByTokenId.set(tokenIds[i], offerer.toLowerCase());
+    }
+    const teamPairs = [...nftMap.keys()].map(tokenId => ({
+      tokenId,
+      owner: ownerByTokenId.get(tokenId) ?? null,
+    }));
+    const teamsByToken = await getTeamsForTokens(teamPairs);
+
+    for (const [tokenId, nft] of nftMap.entries()) {
+      const team = teamsByToken.get(tokenId);
+      if (!team) continue;
+      const synthetic = teamDataToTraits(team);
+      const existing = Array.isArray(nft.traits) ? nft.traits : [];
+      (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
+      if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
+        (nft as { name: string }).name = team.leagueDisplayName;
+      }
+    }
+
     const allListings = orders.map(order => {
       const tokenId = tokenIds[orders.indexOf(order)];
       const nft = nftMap.get(tokenId) ?? null;
       return mapOpenSeaListingToTeam(order, nft);
     });
 
-    // Fire-and-forget OpenSea metadata refresh for any token whose traits
-    // are missing LEAGUE-NAME / roster. Deduped per process via the module
-    // -level Set so we don't hammer OpenSea on every Buy tab page load.
+    // Fire-and-forget OpenSea metadata refresh for tokens that still have
+    // sparse traits after our backend enrichment. Helps OpenSea catch up
+    // on its end too. Deduped per process via the module-level Set.
     for (const tokenId of nftMap.keys()) {
-      const nft = nftMap.get(tokenId);
-      const traits = Array.isArray(nft?.traits) ? nft!.traits : [];
-      const hasLeagueName = traits.some((t: { trait_type: string }) => t.trait_type === 'LEAGUE-NAME');
-      const hasRoster = traits.some((t: { trait_type: string }) => /^(QB|RB|WR|TE|DST)\d+$/.test(t.trait_type));
-      if (hasLeagueName || hasRoster) continue;
+      if (teamsByToken.has(tokenId)) continue;
       if (refreshedTokenIds.has(tokenId)) continue;
       refreshedTokenIds.add(tokenId);
       void fetch(
