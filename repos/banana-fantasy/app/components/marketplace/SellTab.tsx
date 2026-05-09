@@ -21,12 +21,14 @@ interface SellTabProps {
   successType: SuccessType;
   selectedTeam: MarketplaceTeam | null;
   listPrice: string;
+  listDurationDays: number;
   txError: string | null;
   cancelConfirmTeam: MarketplaceTeam | null;
   cancellingTokenId: string | null;
   onOpenSellModal: (team: MarketplaceTeam) => void;
   onCloseSellModal: () => void;
   onSetListPrice: (value: string) => void;
+  onSetListDurationDays: (value: number) => void;
   onHandleList: () => void;
   onShowFreePassInfo: (value: 'team' | 'pass' | null) => void;
   onHandleCancel: (team: MarketplaceTeam | null) => void;
@@ -46,12 +48,14 @@ export function SellTab({
   successType,
   selectedTeam,
   listPrice,
+  listDurationDays,
   txError,
   cancelConfirmTeam,
   cancellingTokenId,
   onOpenSellModal,
   onCloseSellModal,
   onSetListPrice,
+  onSetListDurationDays,
   onHandleList,
   onShowFreePassInfo,
   onHandleCancel,
@@ -316,6 +320,33 @@ export function SellTab({
                     </button>
                   </div>
                 )}
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-text-secondary text-sm mb-2">Listing duration</label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {[
+                    { days: 1, label: '1 day' },
+                    { days: 3, label: '3 days' },
+                    { days: 7, label: '1 week' },
+                    { days: 30, label: '1 month' },
+                    { days: 90, label: '3 months' },
+                    { days: 180, label: '6 months' },
+                  ].map(({ days, label }) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => onSetListDurationDays(days)}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
+                        listDurationDays === days
+                          ? 'bg-banana/15 border-banana text-banana'
+                          : 'bg-bg-primary border-bg-tertiary text-text-secondary hover:border-bg-elevated hover:text-text-primary'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {txError && (

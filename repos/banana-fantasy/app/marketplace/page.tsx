@@ -96,6 +96,7 @@ export default function MarketplacePage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successType, setSuccessType] = useState<SuccessType>('buy');
   const [listPrice, setListPrice] = useState('');
+  const [listDurationDays, setListDurationDays] = useState(30);
   const [buyStep, setBuyStep] = useState<BuyStep>('confirm');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [txError, setTxError] = useState<string | null>(null);
@@ -410,7 +411,7 @@ export default function MarketplacePage() {
         logger.debug('[Marketplace] Approval tx:', receipt.hash);
       }
 
-      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), signerAddress, provider);
+      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), signerAddress, provider, listDurationDays);
       logger.debug('[Marketplace] Listed with orderHash:', result.orderHash);
 
       logActivity({ type: 'list', walletAddress: signerAddress, tokenId: selectedTeam.tokenId, teamName: selectedTeam.name, price: parseFloat(listPrice), orderHash: result.orderHash || null });
@@ -431,7 +432,7 @@ export default function MarketplacePage() {
       console.error('[Marketplace] List failed:', error);
       setTxError(error instanceof Error ? error.message : 'Failed to create listing');
     }
-  }, [addNotification, listPrice, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
+  }, [addNotification, listPrice, listDurationDays, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -632,12 +633,14 @@ export default function MarketplacePage() {
           successType={successType}
           selectedTeam={selectedTeam}
           listPrice={listPrice}
+          listDurationDays={listDurationDays}
           txError={txError}
           cancelConfirmTeam={cancelConfirmTeam}
           cancellingTokenId={cancellingTokenId}
           onOpenSellModal={openSellModal}
           onCloseSellModal={() => setShowSellModal(false)}
           onSetListPrice={setListPrice}
+          onSetListDurationDays={setListDurationDays}
           onHandleList={handleList}
           onShowFreePassInfo={setShowFreePassInfo}
           onHandleCancel={handleCancel}
