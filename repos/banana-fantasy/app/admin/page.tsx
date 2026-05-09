@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSendUsdcOnBase } from '@/hooks/useSendUsdcOnBase';
 import * as Sentry from '@sentry/nextjs';
 import { useAuth } from '@/hooks/useAuth';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
@@ -207,6 +208,10 @@ export default function AdminPage() {
 function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
   const update = useUpdateWithdrawalStatus();
   const { show } = useToast();
+  const sendUsdc = useSendUsdcOnBase();
+  // Track per-row send state so the row's button can show progress
+  // ("Sending…" → "Confirming…") without blocking other rows.
+  const [sendingRowId, setSendingRowId] = useState<string | null>(null);
 
   const handle = async (id: string, status: 'approved' | 'denied' | 'paid', txHash?: string) => {
     try {
@@ -304,6 +309,83 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
     });
   };
 
+  // ─── One-click send + mark paid ────────────────────────────
+  // Triggers the admin's connected wallet to send USDC on Base for
+  // the exact recipient + amount, waits for the tx receipt, then
+  // marks the withdrawal paid with the hash. Replaces the 5-step
+  // dance of (open MetaMask → find address → send → copy hash →
+  // paste in admin) with a single click.
+
+  const handleSendAndPay = async (w: AdminWithdrawalItem) => {
+    if (!w.walletAddress) {
+      show({ level: 'error', message: 'No recipient wallet on this withdrawal' });
+      return;
+    }
+    if (!window.confirm(
+      `Send $${w.amount.toLocaleString()} USDC to ${w.walletAddress.slice(0, 10)}…${w.walletAddress.slice(-6)} on Base?\n\nThis is a real on-chain transfer from your connected wallet.`,
+    )) return;
+
+    setSendingRowId(w.id);
+    sendUsdc.reset();
+    try {
+      const { txHash } = await sendUsdc.send(w.walletAddress, w.amount);
+      // Tx confirmed on-chain — now record it in the app and fire
+      // the user-facing activity event.
+      await update.mutateAsync({ id: w.id, status: 'paid', txHash });
+      show({
+        level: 'success',
+        message: `Sent $${w.amount.toLocaleString()} → ${w.walletAddress.slice(0, 6)}…${w.walletAddress.slice(-4)} (paid)`,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Send failed';
+      show({ level: 'error', message: msg });
+    } finally {
+      setSendingRowId(null);
+    }
+  };
+
+  const handleSendAllAndPay = async () => {
+    if (readyToPay.length === 0) return;
+    if (!window.confirm(
+      `Send ${readyToPay.length} payouts totalling $${readyTotal.toLocaleString()} USDC on Base?\n\nThis triggers ${readyToPay.length} on-chain transfers from your connected wallet — each will need to be approved in the wallet.`,
+    )) return;
+
+    let ok = 0;
+    let fail = 0;
+    for (const w of readyToPay) {
+      if (!w.walletAddress) {
+        fail += 1;
+        continue;
+      }
+      setSendingRowId(w.id);
+      try {
+        const { txHash } = await sendUsdc.send(w.walletAddress, w.amount);
+        await update.mutateAsync({ id: w.id, status: 'paid', txHash });
+        ok += 1;
+      } catch {
+        fail += 1;
+        // If the user cancels in their wallet, stop the whole batch —
+        // they probably want to abort, not just skip one.
+        if (sendUsdc.error && /cancelled/i.test(sendUsdc.error)) break;
+      }
+    }
+    setSendingRowId(null);
+    show({
+      level: fail === 0 ? 'success' : 'error',
+      message: `Sent ${ok}/${readyToPay.length} payouts${fail ? `, ${fail} failed/skipped` : ''}`,
+    });
+  };
+
+  const sendStatusLabel = (() => {
+    switch (sendUsdc.status) {
+      case 'connecting': return 'Connecting…';
+      case 'switching': return 'Switching to Base…';
+      case 'signing': return 'Sign in wallet…';
+      case 'pending': return 'Confirming on-chain…';
+      default: return 'Send & mark paid';
+    }
+  })();
+
   return (
     <div className="space-y-4">
       {readyToPay.length > 0 && (
@@ -314,48 +396,66 @@ function WithdrawalsPanel({ items }: { items: AdminWithdrawalItem[] }) {
                 Ready to pay — {readyToPay.length} approved {readyToPay.length === 1 ? 'request' : 'requests'} · ${readyTotal.toLocaleString()} total
               </h3>
               <p className="text-[11px] text-gray-400 mt-0.5">
-                Approved by an admin, awaiting the next Gnosis Safe batch. Copy as CSV → load into Gnosis CSV Airdrop → execute → come back and mark all paid.
+                Approved, awaiting payout. Click <span className="text-banana">Send & mark paid</span> to dispatch
+                from your connected wallet. {sendUsdc.walletAddress && (
+                  <span className="font-mono">From {sendUsdc.walletAddress.slice(0, 6)}…{sendUsdc.walletAddress.slice(-4)}</span>
+                )}
               </p>
             </div>
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => copyCsv('airdrop')}
-                className="px-3 py-1.5 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-medium"
+                onClick={handleSendAllAndPay}
+                disabled={sendingRowId !== null}
+                className="px-3 py-1.5 rounded-md bg-banana hover:bg-banana/80 text-black text-xs font-semibold disabled:opacity-50"
+                title="Send USDC from your connected wallet to every recipient sequentially, marking each paid as it confirms"
               >
-                Copy CSV (Gnosis Airdrop)
-              </button>
-              <button
-                onClick={() => copyCsv('simple')}
-                className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.1] text-gray-200 text-xs"
-              >
-                Copy plain (wallet,amount)
+                Send all & mark paid
               </button>
               <button
                 onClick={handleMarkAllPaid}
-                disabled={update.isPending}
-                className="px-3 py-1.5 rounded-md bg-green-600/80 hover:bg-green-500 text-white text-xs font-medium disabled:opacity-50"
+                disabled={update.isPending || sendingRowId !== null}
+                className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-gray-200 text-xs disabled:opacity-50"
+                title="If you've already sent payouts via Gnosis Safe or another tool, mark them paid with a single tx hash"
               >
-                Mark all paid
+                Mark all paid (already sent)
+              </button>
+              <button
+                onClick={() => copyCsv('airdrop')}
+                className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-gray-200 text-xs"
+                title="For Gnosis Safe CSV Airdrop tool"
+              >
+                Copy CSV
               </button>
             </div>
           </div>
-          <div className="rounded-md bg-black/30 border border-white/[0.04] divide-y divide-white/[0.04] text-[12px] max-h-64 overflow-y-auto">
-            {readyToPay.map((w) => (
-              <div key={w.id} className="px-3 py-1.5 flex items-center justify-between gap-3">
-                <span className="font-mono text-gray-300 text-[11px]">{w.walletAddress}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
-                  <button
-                    onClick={() => handleMarkPaid(w.id)}
-                    disabled={update.isPending}
-                    className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 text-[10px] disabled:opacity-50"
-                    title="Mark this single payout as paid"
-                  >
-                    Mark paid
-                  </button>
+          <div className="rounded-md bg-black/30 border border-white/[0.04] divide-y divide-white/[0.04] text-[12px] max-h-72 overflow-y-auto">
+            {readyToPay.map((w) => {
+              const isThisRow = sendingRowId === w.id;
+              return (
+                <div key={w.id} className="px-3 py-2 flex items-center justify-between gap-3">
+                  <span className="font-mono text-gray-300 text-[11px] truncate">{w.walletAddress}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-gray-200 font-medium">${w.amount.toLocaleString()}</span>
+                    <button
+                      onClick={() => handleSendAndPay(w)}
+                      disabled={sendingRowId !== null}
+                      className="px-2.5 py-1 rounded bg-banana hover:bg-banana/80 text-black text-[10px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Send USDC from your connected wallet to this recipient, then mark paid"
+                    >
+                      {isThisRow ? sendStatusLabel : 'Send & mark paid'}
+                    </button>
+                    <button
+                      onClick={() => handleMarkPaid(w.id)}
+                      disabled={update.isPending || sendingRowId !== null}
+                      className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-gray-300 text-[10px] disabled:opacity-50"
+                      title="If you've already sent the USDC outside the app, just mark this paid with the existing tx hash"
+                    >
+                      Mark paid
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
