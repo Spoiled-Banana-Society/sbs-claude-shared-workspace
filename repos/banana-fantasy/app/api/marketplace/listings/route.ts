@@ -10,7 +10,6 @@ import {
   type OpenSeaListing,
   type OpenSeaNft,
 } from '@/lib/opensea';
-import { fetchOwnerTokenMap, syntheticTraitsFromBackend, mergeTraits } from '@/lib/marketplace/enrichTeam';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,34 +95,6 @@ export async function GET(req: Request) {
         }
       });
       await Promise.all(nftFetches);
-    }
-
-    // Build tokenId → owner index, then fetch each owner's draftToken map
-    // in parallel so we can inject synthetic LEAGUE-NAME / RANK / roster traits
-    // when OpenSea metadata is stale.
-    const ownerByTokenId = new Map<string, string>();
-    for (let i = 0; i < orders.length; i++) {
-      const offerer = orders[i].protocol_data.parameters.offerer;
-      if (offerer) ownerByTokenId.set(tokenIds[i], offerer.toLowerCase());
-    }
-    const uniqueListingOwners = [...new Set([...ownerByTokenId.values()])];
-    const tokenMapEntries = await Promise.all(
-      uniqueListingOwners.map(async (owner) => [owner, await fetchOwnerTokenMap(owner)] as const),
-    );
-    const ownerTokenMaps = new Map(tokenMapEntries);
-
-    for (const [tokenId, nft] of nftMap.entries()) {
-      const owner = ownerByTokenId.get(tokenId);
-      if (!owner) continue;
-      const backendToken = ownerTokenMaps.get(owner)?.get(tokenId);
-      if (!backendToken) continue;
-      const synthetic = syntheticTraitsFromBackend(backendToken);
-      const existingTraits = Array.isArray(nft.traits) ? nft.traits : [];
-      (nft as { traits: typeof existingTraits }).traits = mergeTraits(existingTraits, synthetic);
-      const leagueName = backendToken._leagueDisplayName ?? backendToken.leagueDisplayName;
-      if (leagueName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
-        (nft as { name: string }).name = String(leagueName);
-      }
     }
 
     const allListings = orders.map(order => {
