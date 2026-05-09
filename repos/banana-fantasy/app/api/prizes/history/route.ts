@@ -4,9 +4,13 @@ import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
-import { mockPrizeHistory } from '@/lib/mock/prizes';
 import { getWithdrawalsByUser } from '@/lib/db';
-import type { PrizeHistoryItem, PrizeStatus, PrizeWithdrawal, WithdrawalStatus } from '@/types';
+import {
+  applyOverlaysToWins,
+  getPrizeOverlays,
+  getSyntheticPrizesForUser,
+} from '@/lib/prizeOverlay';
+import type { PrizeHistoryItem, PrizeStatus, PrizeWin, PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
 
@@ -123,58 +127,37 @@ function getItemDate(item: PrizeHistoryItem): string | null {
   return item.paidDate || item.createdAt || null;
 }
 
-function buildFallbackHistory(userId: string): PrizeHistoryItem[] {
-  return mockPrizeHistory.map((item) => {
-    if (item.type !== 'withdrawal') return item;
-    return { ...item, userId };
-  });
-}
-
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
   const userId = getSearchParam(req, 'userId');
   if (!userId) return jsonError('Missing query param: userId', 400);
 
-  const fallback = buildFallbackHistory(userId);
+  // Always-on layer: synthetic (admin-granted) prizes + local withdrawals.
+  // These come from our Firestore and surface regardless of whether the Go
+  // API is reachable — important for testing on staging and for the
+  // admin-grant-prize flow to be visible immediately.
+  const synthetic = await getSyntheticPrizesForUser(userId).catch(() => []);
+  const localWithdrawals = await getWithdrawalsByUser(userId).catch(() => []);
 
-  try {
-    if (!API_BASE) {
-      return json(fallback, 200);
-    }
+  const buildResult = async (goApiItems: PrizeHistoryItem[] | null) => {
+    const goApiHasWithdrawals = goApiItems?.some((i) => i.type === 'withdrawal') ?? false;
+    const allItems: PrizeHistoryItem[] = [
+      ...(goApiItems ?? []),
+      ...synthetic,
+    ];
+    if (!goApiHasWithdrawals) allItems.push(...localWithdrawals);
 
-    let res: Response;
-    try {
-      res = await fetch(`${API_BASE}/owner/${userId}/prizes`, { next: { revalidate: 60 } });
-    } catch (err) {
-      console.error('Prize history backend fetch failed:', err);
-      return json(fallback, 200);
-    }
+    // Apply overlays (processing/paid) to wins.
+    const wins = allItems.filter((i): i is PrizeWin => i.type === 'win');
+    const overlayMap = await getPrizeOverlays(wins.map((w) => w.id));
+    const winsWithOverlays = applyOverlaysToWins(wins, overlayMap);
 
-    if (!res.ok) {
-      const message = await readErrorMessage(res);
-      console.error(`Prize history API error: ${res.status}`, message);
-      return json(fallback, 200);
-    }
-
-    let data: unknown;
-    try {
-      data = await res.json();
-    } catch {
-      console.error('Invalid prize history response from backend');
-      return json(fallback, 200);
-    }
-
-    const normalized = normalizePrizeHistory(data, userId);
-    if (!normalized.items) return json(fallback, 200);
-
-    const merged: PrizeHistoryItem[] = [...normalized.items];
-    if (!normalized.hasWithdrawals) {
-      const localWithdrawals = await getWithdrawalsByUser(userId);
-      merged.push(...localWithdrawals);
-    }
-
-    merged.sort((a, b) => {
+    const final: PrizeHistoryItem[] = [
+      ...winsWithOverlays,
+      ...allItems.filter((i) => i.type !== 'win'),
+    ];
+    final.sort((a, b) => {
       const aDate = getItemDate(a);
       const bDate = getItemDate(b);
       if (!aDate && !bDate) return 0;
@@ -182,11 +165,42 @@ export async function GET(req: Request) {
       if (!bDate) return -1;
       return bDate.localeCompare(aDate);
     });
+    return final;
+  };
 
-    return json(merged, 200);
+  try {
+    if (!API_BASE) {
+      // No Go API configured — surface synthetic + local-only.
+      return json(await buildResult(null), 200);
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/owner/${userId}/prizes`, { next: { revalidate: 60 } });
+    } catch (err) {
+      console.error('Prize history backend fetch failed:', err);
+      return json(await buildResult(null), 200);
+    }
+
+    if (!res.ok) {
+      const message = await readErrorMessage(res);
+      console.error(`Prize history API error: ${res.status}`, message);
+      return json(await buildResult(null), 200);
+    }
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      console.error('Invalid prize history response from backend');
+      return json(await buildResult(null), 200);
+    }
+
+    const normalized = normalizePrizeHistory(data, userId);
+    return json(await buildResult(normalized.items), 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('Prize history fetch failed:', err);
-    return json(fallback, 200);
+    return json(await buildResult(null), 200);
   }
 }

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrizes, useEligibility } from '@/hooks/usePrizes';
@@ -20,9 +19,14 @@ export default function PrizesPage() {
   const prizes = prizesQuery.prizes;
   const eligibility = eligibilityQuery.data;
   const hasPrizeError = Boolean(prizesQuery.error);
+  const availableBalance = prizesQuery.availableBalance;
+  const inFlightBalance = prizesQuery.inFlightBalance;
+  const withdrawAll = prizesQuery.withdrawAll;
   const [withdrawModal, setWithdrawModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem }>({ isOpen: false });
   const [cashOutModal, setCashOutModal] = useState<{ isOpen: boolean; prize?: PrizeHistoryItem; statusMode?: boolean }>({ isOpen: false });
   const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
 
   // Auto-open status timeline when redirected back from Coinbase
   useEffect(() => {
@@ -40,6 +44,38 @@ export default function PrizesPage() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
+  };
+
+  const formatBalance = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  const handleWithdrawAll = async () => {
+    if (!withdrawAll || withdrawing) return;
+    if (!confirm(`Withdraw ${formatBalance(availableBalance)} to your wallet? Funds typically arrive within 24 hours.`)) return;
+    setWithdrawing(true);
+    setWithdrawSuccess(null);
+    try {
+      const res = await withdrawAll('usdc');
+      setWithdrawSuccess(
+        `Withdrawing ${formatBalance(res.totalAmount)} (${res.prizeCount} ${res.prizeCount === 1 ? 'prize' : 'prizes'}). You'll see it confirmed in activity once paid.`,
+      );
+    } catch (err) {
+      const isVerificationGate = err && typeof err === 'object' && 'requiresVerification' in err;
+      if (isVerificationGate) {
+        setShowVerifyModal(true);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Withdrawal failed';
+        setWithdrawSuccess(`✗ ${msg}`);
+      }
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   const getStatusBadge = (item: PrizeHistoryItem) => {
@@ -68,21 +104,9 @@ export default function PrizesPage() {
     }
   };
 
-  const totals = useMemo(() => {
-    return {
-      totalWinnings: prizesQuery.totalWinnings,
-      pendingWithdrawals: prizesQuery.pendingWithdrawals,
-    };
-  }, [prizesQuery.totalWinnings, prizesQuery.pendingWithdrawals]);
-
   const isEligible = useMemo(() => {
     return Boolean(eligibility?.tier1Verified);
   }, [eligibility?.tier1Verified]);
-
-  // Users can always attempt withdrawal — Persona verification triggers inline if needed
-  const canWithdrawPrizes = true;
-
-  const verificationUrl = '/verify';
 
   if (!isLoggedIn) {
     return (
@@ -102,11 +126,8 @@ export default function PrizesPage() {
   }
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">Prizes</h1>
-        <p className="text-text-secondary">View your winnings and eligibility status</p>
-      </div>
+    <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-10">
+      <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Prizes</h1>
 
       {(() => {
         // Three-state header. Goal: zero noise when there's nothing
@@ -165,18 +186,68 @@ export default function PrizesPage() {
         );
       })()}
 
+      {/* Balance hero — only renders when there's something to withdraw.
+          Apple-clean: generous padding, soft gradient, big tracked-tight
+          number, single primary action. The most important thing on the
+          page when there are pending winnings. */}
+      {availableBalance > 0 && (
+        <div className="mb-10 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
+          <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
+          <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
+            {formatBalance(availableBalance)}
+          </p>
+          {inFlightBalance > 0 && (
+            <p className="mt-2 text-xs text-text-muted">
+              {formatBalance(inFlightBalance)} in progress
+            </p>
+          )}
+          <div className="mt-6 flex items-center gap-3 flex-wrap">
+            {isEligible ? (
+              <button
+                onClick={handleWithdrawAll}
+                disabled={withdrawing}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+              >
+                {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowVerifyModal(true)}
+                className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+              >
+                Verify to withdraw
+              </button>
+            )}
+            <p className="text-[11px] text-text-muted">
+              {isEligible
+                ? 'Sent as USDC to your wallet'
+                : 'One-time verification required'}
+            </p>
+          </div>
+          {withdrawSuccess && (
+            <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
+              withdrawSuccess.startsWith('✗')
+                ? 'bg-error/10 border border-error/30 text-error'
+                : 'bg-success/10 border border-success/30 text-success'
+            }`}>
+              {withdrawSuccess}
+            </div>
+          )}
+        </div>
+      )}
+
       <section>
         {hasPrizeError && (
-          <Card className="text-center py-12">
-            <p className="text-error font-semibold">Unable to load prize activity</p>
-            <p className="text-text-muted text-sm mt-2">Please refresh the page to try again.</p>
-          </Card>
+          <div className="text-center py-12 rounded-2xl border border-error/20 bg-error/5">
+            <p className="text-error font-medium">Unable to load prize activity</p>
+            <p className="text-text-muted text-sm mt-1">Please refresh the page to try again.</p>
+          </div>
         )}
 
         {!hasPrizeError && prizes.length === 0 && (prizesQuery.isLoading || prizesQuery.isValidating) && (
-          <Card className="text-center py-12">
-            <p className="text-text-muted">Loading…</p>
-          </Card>
+          <div className="text-center py-12">
+            <p className="text-text-muted text-sm">Loading…</p>
+          </div>
         )}
 
         {!hasPrizeError && prizes.length > 0 && (() => {
@@ -196,48 +267,43 @@ export default function PrizesPage() {
           const history = prizes.filter(isFinalized);
           const inProgress = prizes.filter((p) => !isAction(p) && !isFinalized(p));
 
+          // Cleaner row-style cards: less heavy borders, more whitespace,
+          // info hierarchy matches Apple-style list rows. The Withdraw all
+          // hero is the action surface — these are read-only context.
           const renderCard = (item: PrizeHistoryItem) => (
-            <Card key={`${item.type}-${item.id}`} className="p-0">
-              <div className="p-4 flex items-start justify-between">
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{item.type === 'withdrawal' ? '💸' : '🏆'}</span>
-                  <div>
-                    <h4 className="font-medium text-text-primary">
+            <div
+              key={`${item.type}-${item.id}`}
+              className="rounded-2xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.03] transition-colors"
+            >
+              <div className="p-4 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-xl shrink-0">
+                    {item.type === 'withdrawal' ? '💸' : '🏆'}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text-primary truncate">
                       {item.type === 'withdrawal'
-                        ? `Withdrawal to ${item.method === 'bank' ? 'Bank' : 'USDC'}`
+                        ? `Withdrawal to ${item.method === 'bank' ? 'bank' : 'wallet'}`
                         : item.contestName}
-                    </h4>
-                    <p className={`text-2xl font-bold mt-1 ${item.type === 'withdrawal' ? 'text-text-primary' : 'text-banana'}`}>
-                      {item.type === 'withdrawal' ? `-${formatCurrency(item.amount)}` : formatCurrency(item.amount)}
+                    </p>
+                    <p className="text-[11px] text-text-muted mt-0.5">
+                      {item.type === 'withdrawal'
+                        ? `Requested ${item.createdAt?.slice(0, 10) ?? ''}`
+                        : item.paidDate
+                          ? `Paid ${item.paidDate}`
+                          : item.createdAt
+                            ? `Won ${item.createdAt.slice(0, 10)}`
+                            : ''}
                     </p>
                   </div>
                 </div>
-                <div className="text-right flex flex-col items-end gap-2">
+                <div className="flex items-center gap-3 shrink-0">
+                  <p className={`text-base font-semibold ${
+                    item.type === 'withdrawal' ? 'text-text-primary' : 'text-banana'
+                  }`}>
+                    {item.type === 'withdrawal' ? `−${formatCurrency(item.amount)}` : formatCurrency(item.amount)}
+                  </p>
                   {getStatusBadge(item)}
-                  {item.type === 'withdrawal' ? (
-                    <p className="text-text-muted text-sm">Requested: {item.createdAt?.slice(0, 10)}</p>
-                  ) : (
-                    item.paidDate && (
-                      <p className="text-text-muted text-sm">Paid on: {item.paidDate}</p>
-                    )
-                  )}
-                  {item.type === 'win' && item.status === 'pending' && item.draftId && (
-                    canWithdrawPrizes ? (
-                      <button
-                        onClick={() => setCashOutModal({ isOpen: true, prize: item })}
-                        className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
-                      >
-                        Withdraw
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => router.push(verificationUrl)}
-                        className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-bg-tertiary text-text-secondary hover:bg-bg-elevated transition-all"
-                      >
-                        Verify to withdraw
-                      </button>
-                    )
-                  )}
                 </div>
               </div>
 
@@ -270,7 +336,7 @@ export default function PrizesPage() {
                   </div>
                 </div>
               )}
-            </Card>
+            </div>
           );
 
           return (
@@ -308,29 +374,12 @@ export default function PrizesPage() {
         {/* Empty state only when fetch fully settled (not loading + not
             validating + no error) AND prizes truly empty. */}
         {!prizesQuery.error && !prizesQuery.isLoading && !prizesQuery.isValidating && prizes.length === 0 && (
-          <Card className="text-center py-12">
-            <div className="text-4xl mb-4">🎯</div>
-            <p className="text-text-muted">No prizes yet. Start drafting to win!</p>
-          </Card>
+          <div className="text-center py-16">
+            <div className="text-4xl mb-3">🎯</div>
+            <p className="text-text-muted text-sm">No prizes yet. Start drafting to win.</p>
+          </div>
         )}
       </section>
-
-      <Card className="mt-8 bg-gradient-to-br from-banana/10 to-bg-secondary">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-text-secondary mb-1">Total Winnings (Paid)</p>
-            <p className="text-3xl font-bold text-banana">
-              {formatCurrency(totals.totalWinnings)}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-text-secondary mb-1">Pending Withdrawals</p>
-            <p className="text-xl font-medium text-text-primary">
-              {formatCurrency(totals.pendingWithdrawals)}
-            </p>
-          </div>
-        </div>
-      </Card>
 
       <WithdrawModal
         isOpen={withdrawModal.isOpen}

@@ -12,6 +12,12 @@ interface WithdrawResponse {
   withdrawal: PrizeWithdrawal;
 }
 
+interface WithdrawAllResponse {
+  withdrawal: PrizeWithdrawal & { prizeIds?: string[] };
+  totalAmount: number;
+  prizeCount: number;
+}
+
 export function usePrizes(opts?: { userId?: string }) {
   const { user } = useAuth();
   const privy = usePrivy();
@@ -81,15 +87,66 @@ export function usePrizes(opts?: { userId?: string }) {
     [ownerId, privy, refresh],
   );
 
+  // Sum of pending wins — the user-facing balance number rendered at
+  // the top of /prizes. Excludes wins still in 'processing' (mid-flight
+  // withdrawal) so the balance reflects what's still claimable.
+  const availableBalance = useMemo(() => {
+    return prizes
+      .filter((item) => item.type === 'win' && item.status === 'pending')
+      .reduce((sum, item) => sum + item.amount, 0);
+  }, [prizes]);
+
+  // Sum of wins currently mid-withdrawal — admin queue / Gnosis batch.
+  const inFlightBalance = useMemo(() => {
+    return prizes
+      .filter((item) => item.type === 'win' && item.status === 'processing')
+      .reduce((sum, item) => sum + item.amount, 0);
+  }, [prizes]);
+
+  // Withdraw every pending prize as a single unified request. Backend
+  // creates one withdrawalRequests doc with prizeIds covering every
+  // settled prize; admin marks it paid once → all prizes flip atomically.
+  const withdrawAll = useCallback(async (
+    method: PrizeWithdrawal['method'] = 'usdc',
+  ): Promise<WithdrawAllResponse> => {
+    if (!ownerId) throw new Error('Missing user id');
+    setWithdrawError(null);
+    try {
+      const token = await privy.getAccessToken();
+      const response = await fetchJson<WithdrawAllResponse>('/api/prizes/withdraw-all', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: JSON.stringify({ userId: ownerId, method }),
+      });
+      await refresh();
+      return response;
+    } catch (err) {
+      if (err instanceof AppApiError && err.status === 403 && err.body) {
+        const body = err.body as Record<string, unknown>;
+        if (body.requiresVerification) {
+          throw { requiresVerification: body.requiresVerification };
+        }
+      }
+      let message = 'Withdrawal failed. Please try again.';
+      if (err instanceof AppApiError) message = err.message || message;
+      else if (err instanceof Error && err.message) message = err.message;
+      setWithdrawError(message);
+      throw new Error(message);
+    }
+  }, [ownerId, privy, refresh]);
+
   return {
     prizes,
     totalWinnings,
     pendingWithdrawals,
+    availableBalance,
+    inFlightBalance,
     isLoading: query.isLoading,
     isValidating: query.isValidating,
     error: query.error,
     withdrawError,
     withdraw,
+    withdrawAll,
     refresh,
   };
 }

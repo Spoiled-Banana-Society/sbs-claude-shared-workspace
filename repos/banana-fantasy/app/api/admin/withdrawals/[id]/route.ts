@@ -11,6 +11,7 @@ import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { markDirectWithdrawalPaid } from '@/lib/offrampAudit';
+import { markPrizesPaid, clearPrizeOverlays } from '@/lib/prizeOverlay';
 
 type FirestoreTimestamp = Timestamp | { toDate: () => Date };
 
@@ -69,8 +70,10 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const updated = await ref.get();
     const data = updated.data() ?? {};
 
-    // When marking paid, fire the user-facing activity event and update
-    // the matching offramp_attempt. Idempotent — calling twice won't
+    // When marking paid, fire the user-facing activity event, update
+    // the matching offramp_attempt, AND cascade prize-paid status to
+    // every prize this withdrawal settles (via the prizeIds field on
+    // the withdrawal doc). Idempotent — calling twice won't
     // double-emit. Best-effort: never block the admin response on it.
     if (body.status === 'paid') {
       const userId = (typeof data.userId === 'string' ? data.userId : '').toLowerCase();
@@ -87,6 +90,32 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
           txHash,
         }).catch((err) => {
           logger.warn('admin.mark_paid.audit_failed', { requestId, id, err: (err as Error).message });
+        });
+      }
+
+      // Cascade: flip every prize this withdrawal settles to 'paid'.
+      // prizeIds is set by the new /api/prizes/withdraw-all flow. Old
+      // single-prize withdrawals don't have it — no-op there.
+      const prizeIds = Array.isArray(data.prizeIds)
+        ? (data.prizeIds.filter((s): s is string => typeof s === 'string'))
+        : [];
+      if (prizeIds.length > 0 && userId) {
+        markPrizesPaid({ prizeIds, userId, withdrawalId: id }).catch((err) => {
+          logger.warn('admin.mark_paid.prize_cascade_failed', { requestId, id, err: (err as Error).message });
+        });
+      }
+    }
+
+    // If denied, roll back the processing overlay so the user can
+    // re-attempt the withdrawal. Otherwise the prizes get stuck on
+    // 'processing' forever from the frontend's perspective.
+    if (body.status === 'denied') {
+      const prizeIds = Array.isArray(data.prizeIds)
+        ? (data.prizeIds.filter((s): s is string => typeof s === 'string'))
+        : [];
+      if (prizeIds.length > 0) {
+        clearPrizeOverlays(prizeIds).catch((err) => {
+          logger.warn('admin.deny.prize_rollback_failed', { requestId, id, err: (err as Error).message });
         });
       }
     }
