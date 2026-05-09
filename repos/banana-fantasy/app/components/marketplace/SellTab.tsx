@@ -82,9 +82,10 @@ export function SellTab({
           ) : (
             <div className="grid gap-4">
               {myNfts.map(team => (
-                <div
+                <Link
                   key={team.id}
-                  className={`bg-bg-primary border rounded-xl p-4 flex items-center justify-between ${team.isHof ? 'border-hof/30' : 'border-bg-tertiary'}`}
+                  href={`/marketplace/${team.tokenId}`}
+                  className={`bg-bg-primary border rounded-xl p-4 flex items-center justify-between transition-all hover:-translate-y-0.5 hover:border-bg-elevated ${team.isHof ? 'border-hof/30' : 'border-bg-tertiary'}`}
                 >
                   <div className="flex items-center gap-4">
                     {team.imageUrl ? (
@@ -107,13 +108,13 @@ export function SellTab({
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
                     <SellTabOfferBadge tokenId={team.tokenId} />
                     {team.orderHash ? (
                       <>
                         <span className="text-sm text-green-400 font-medium">Listed at ${team.price?.toFixed(2)}</span>
                         <button
-                          onClick={() => onHandleCancel(team)}
+                          onClick={e => { e.preventDefault(); onHandleCancel(team); }}
                           disabled={cancellingTokenId === team.tokenId}
                           className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
                         >
@@ -122,21 +123,21 @@ export function SellTab({
                       </>
                     ) : team.passType === 'free' && isDraftingOpen() ? (
                       <button
-                        onClick={() => onShowFreePassInfo('team')}
+                        onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
                         className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
                       >
                         Listable Once Season Starts
                       </button>
                     ) : (
                       <button
-                        onClick={() => onOpenSellModal(team)}
+                        onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
                         className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-banana text-black hover:brightness-110"
                       >
                         List for Sale
                       </button>
                     )}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}
