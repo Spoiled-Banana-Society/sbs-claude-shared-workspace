@@ -647,6 +647,39 @@ export function useMarkKycVerified() {
   });
 }
 
+export interface GrantPrizeInput {
+  walletAddress: string;
+  amount: number;
+  contestName?: string;
+  draftId?: string;
+  note?: string;
+}
+export interface GrantPrizeResponse {
+  prize: {
+    id: string;
+    userId: string;
+    amount: number;
+    contestName: string;
+    status: string;
+    createdAt: string;
+  };
+  requestId?: string;
+}
+export function useGrantPrize() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<GrantPrizeResponse, AdminApiError, GrantPrizeInput>({
+    mutationFn: (input) =>
+      adminFetch<GrantPrizeResponse>('/api/admin/grant-prize', getHeaders, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+    },
+  });
+}
+
 export interface ResetUserInput {
   userId: string;
 }

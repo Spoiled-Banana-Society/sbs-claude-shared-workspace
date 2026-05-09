@@ -8,6 +8,7 @@ export type AdminAction =
   | 'approve-withdrawal'
   | 'deny-withdrawal'
   | 'mark-paid-withdrawal'
+  | 'grant-prize'
   | 'set-entries'
   | 'create-promo'
   | 'reset-queue'

@@ -471,7 +471,7 @@ export function CashOutModal({
   // ---- intro ----
   if (step === 'intro') {
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
           <div className="rounded-xl bg-banana/10 border border-banana/30 p-4">
             <p className="text-banana font-semibold text-sm mb-1">First-time setup</p>
@@ -528,7 +528,7 @@ export function CashOutModal({
   if (step === 'amount') {
     const setMax = () => setAmountInput(String(maxAmount));
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
           {isReturning && (
             <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 flex items-start gap-2">
@@ -627,7 +627,7 @@ export function CashOutModal({
   // ---- loading_quotes ----
   if (step === 'loading_quotes') {
     return (
-      <Modal isOpen={isOpen} onClose={() => undefined} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={() => undefined} title="Withdraw" size="md">
         <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <svg className="animate-spin h-10 w-10 text-banana" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -643,7 +643,7 @@ export function CashOutModal({
   if (step === 'quotes' && quotes) {
     const usdcReceived = parsedAmount;
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
           <div>
             <p className="text-text-muted text-sm">You&apos;re cashing out</p>
@@ -785,7 +785,7 @@ export function CashOutModal({
   // ---- launching ----
   if (step === 'launching') {
     return (
-      <Modal isOpen={isOpen} onClose={() => undefined} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={() => undefined} title="Withdraw" size="md">
         <div className="flex flex-col items-center justify-center py-12 space-y-4">
           <svg className="animate-spin h-10 w-10 text-banana" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -800,7 +800,7 @@ export function CashOutModal({
   // ---- opened ----
   if (step === 'opened') {
     return (
-      <Modal isOpen={isOpen} onClose={onClose} title="Cash out" size="md">
+      <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
           <div className="flex flex-col items-center pt-2">
             <div className="w-16 h-16 rounded-full bg-banana/20 flex items-center justify-center mb-3">
@@ -1021,7 +1021,7 @@ export function CashOutModal({
 
   // ---- error ----
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Cash out" size="md">
+    <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
       <div className="space-y-5">
         <div className="rounded-xl bg-error/10 border border-error/30 p-4">
           <p className="text-error font-semibold mb-1">
