@@ -103,6 +103,14 @@ export function SellTab({
                         <h4 className="text-text-primary font-semibold font-mono">{team.name}</h4>
                         {team.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[9px] font-bold rounded">HOF</span>}
                         {team.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[9px] font-bold rounded">JP</span>}
+                        {team.hasBackendRecord === false && team.passType !== 'free' && (
+                          <span
+                            className="px-2 py-0.5 bg-white/5 text-white/40 text-[9px] font-bold rounded uppercase tracking-wide"
+                            title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
+                          >
+                            Stage Mint
+                          </span>
+                        )}
                       </div>
                       <p className="text-text-muted text-xs">
                         {team.rank > 0 ? `Rank #${team.rank} • ` : ''}

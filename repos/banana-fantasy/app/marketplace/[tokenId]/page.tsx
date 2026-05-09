@@ -779,6 +779,17 @@ export default function NftDetailPage() {
                 </span>
               </>
             )}
+            {!nft.team && (
+              <>
+                <span>&middot;</span>
+                <span
+                  className="px-2 py-0.5 bg-white/5 text-white/40 text-[10px] font-bold rounded uppercase tracking-wide"
+                  title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
+                >
+                  Stage Mint
+                </span>
+              </>
+            )}
             {nftOwner && (
               <>
                 <span>&middot;</span>
