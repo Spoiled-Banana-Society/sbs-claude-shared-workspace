@@ -103,11 +103,15 @@ export function usePrizes(opts?: { userId?: string }) {
       .reduce((sum, item) => sum + item.amount, 0);
   }, [prizes]);
 
-  // Withdraw every pending prize as a single unified request. Backend
+  // Withdraw pending prizes as a single unified request. Backend
   // creates one withdrawalRequests doc with prizeIds covering every
   // settled prize; admin marks it paid once → all prizes flip atomically.
+  //
+  // Optional `amount` caps the withdrawal (greedy oldest-first
+  // allocation up to that cap). Omit for "withdraw everything".
   const withdrawAll = useCallback(async (
     method: PrizeWithdrawal['method'] = 'usdc',
+    amount?: number,
   ): Promise<WithdrawAllResponse> => {
     if (!ownerId) throw new Error('Missing user id');
     setWithdrawError(null);
@@ -116,7 +120,11 @@ export function usePrizes(opts?: { userId?: string }) {
       const response = await fetchJson<WithdrawAllResponse>('/api/prizes/withdraw-all', {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        body: JSON.stringify({ userId: ownerId, method }),
+        body: JSON.stringify({
+          userId: ownerId,
+          method,
+          ...(typeof amount === 'number' ? { amount } : {}),
+        }),
       });
       await refresh();
       return response;

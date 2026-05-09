@@ -27,6 +27,10 @@ export default function PrizesPage() {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
+  // Amount editor state. `customAmount === null` means "withdraw all"
+  // (the default). When user opens the editor we initialise to the
+  // full balance so they can dial it down.
+  const [customAmount, setCustomAmount] = useState<string | null>(null);
 
   // Auto-open status timeline when redirected back from Coinbase
   useEffect(() => {
@@ -55,16 +59,25 @@ export default function PrizesPage() {
     }).format(amount);
   };
 
-  const handleWithdrawAll = async () => {
+  // Submit a withdrawal. If `amount` provided, backend rounds DOWN
+  // greedy-oldest-first to a clean prize subset (so user sees what
+  // actually got withdrawn in the success message). Omitted = take all.
+  const submitWithdraw = async (amount?: number) => {
     if (!withdrawAll || withdrawing) return;
-    if (!confirm(`Withdraw ${formatBalance(availableBalance)} to your wallet? Funds typically arrive within 24 hours.`)) return;
+    const display = amount != null ? formatBalance(amount) : formatBalance(availableBalance);
+    if (!confirm(`Withdraw ${display} to your wallet? Funds typically arrive within 24 hours.`)) return;
     setWithdrawing(true);
     setWithdrawSuccess(null);
     try {
-      const res = await withdrawAll('usdc');
+      const res = await withdrawAll('usdc', amount);
+      const actual = formatBalance(res.totalAmount);
+      const note = amount != null && res.totalAmount !== amount
+        ? ` (rounded from ${display} to nearest prize boundary)`
+        : '';
       setWithdrawSuccess(
-        `Withdrawing ${formatBalance(res.totalAmount)} (${res.prizeCount} ${res.prizeCount === 1 ? 'prize' : 'prizes'}). You'll see it confirmed in activity once paid.`,
+        `Withdrawing ${actual} (${res.prizeCount} ${res.prizeCount === 1 ? 'prize' : 'prizes'})${note}. You'll see it confirmed in activity once paid.`,
       );
+      setCustomAmount(null);
     } catch (err) {
       const isVerificationGate = err && typeof err === 'object' && 'requiresVerification' in err;
       if (isVerificationGate) {
@@ -76,6 +89,16 @@ export default function PrizesPage() {
     } finally {
       setWithdrawing(false);
     }
+  };
+
+  const handleWithdrawAll = () => submitWithdraw();
+  const handleWithdrawCustom = () => {
+    const parsed = parseFloat(customAmount ?? '');
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setWithdrawSuccess('✗ Enter a valid amount');
+      return;
+    }
+    submitWithdraw(parsed);
   };
 
   const getStatusBadge = (item: PrizeHistoryItem) => {
@@ -96,11 +119,15 @@ export default function PrizesPage() {
       case 'paid':
         return <Badge type="default" className="bg-success/20 text-success border-success/30">Paid</Badge>;
       case 'processing':
-        return <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Processing</Badge>;
+        return <Badge type="default" className="bg-warning/20 text-warning border-warning/30">In progress</Badge>;
       case 'forfeited':
         return <Badge type="default" className="bg-error/20 text-error border-error/30">Forfeited</Badge>;
       default:
-        return <Badge type="default">Pending</Badge>;
+        // 'pending' means the user has won but hasn't actioned a
+        // withdrawal yet. From the user's POV this is "ready to claim",
+        // not "pending" (which sounds like waiting on us). Recolored
+        // to banana yellow to match the Withdraw all CTA up top.
+        return <Badge type="default" className="bg-banana/15 text-banana border-banana/30">Ready</Badge>;
     }
   };
 
@@ -141,97 +168,159 @@ export default function PrizesPage() {
           const hasBalance = availableBalance > 0;
 
           return (
-            <div className="mb-8 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
-              <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
-              <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
-                {formatBalance(availableBalance)}
-              </p>
-              {inFlightBalance > 0 && (
-                <p className="mt-2 text-xs text-text-muted">
-                  {formatBalance(inFlightBalance)} in progress
+            <>
+              <div className="mb-3 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
+                <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
+                <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
+                  {formatBalance(availableBalance)}
                 </p>
-              )}
 
-              <div className="mt-6 flex items-center gap-3 flex-wrap">
-                {hasBalance && isEligible && (
-                  <>
-                    <button
-                      onClick={handleWithdrawAll}
-                      disabled={withdrawing}
-                      className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-                    >
-                      {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
-                    </button>
-                    <p className="text-[11px] text-text-muted">Sent as USDC to your wallet</p>
-                  </>
-                )}
+                {/* Action area. Three states:
+                    - balance > 0 + verified: withdraw all + edit amount
+                    - balance > 0 + unverified: verify to withdraw
+                    - $0: gentle nudge */}
+                <div className="mt-6">
+                  {hasBalance && isEligible && customAmount === null && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={handleWithdrawAll}
+                        disabled={withdrawing}
+                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+                      >
+                        {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
+                      </button>
+                      <button
+                        onClick={() => setCustomAmount(availableBalance.toFixed(2))}
+                        disabled={withdrawing}
+                        className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
+                      >
+                        Edit amount
+                      </button>
+                      <p className="text-[11px] text-text-muted ml-auto">
+                        Sent as USDC, arrives ~24h
+                      </p>
+                    </div>
+                  )}
 
-                {hasBalance && !isEligible && (
-                  <>
-                    <button
-                      onClick={() => setShowVerifyModal(true)}
-                      className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                    >
-                      Verify to withdraw
-                    </button>
-                    <p className="text-[11px] text-text-muted">One-time verification required</p>
-                  </>
-                )}
+                  {hasBalance && isEligible && customAmount !== null && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-base font-medium">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={availableBalance}
+                          autoFocus
+                          value={customAmount}
+                          onChange={(e) => setCustomAmount(e.target.value)}
+                          className="w-32 rounded-full bg-black/30 border border-white/[0.10] focus:border-banana/50 pl-7 pr-3 py-3 text-base font-semibold text-text-primary outline-none transition-colors"
+                        />
+                      </div>
+                      <button
+                        onClick={handleWithdrawCustom}
+                        disabled={withdrawing}
+                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+                      >
+                        {withdrawing ? 'Withdrawing…' : 'Withdraw'}
+                      </button>
+                      <button
+                        onClick={() => setCustomAmount(null)}
+                        disabled={withdrawing}
+                        className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
 
+                  {hasBalance && !isEligible && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button
+                        onClick={() => setShowVerifyModal(true)}
+                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                      >
+                        Verify to withdraw
+                      </button>
+                      <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
+                    </div>
+                  )}
+
+                  {!hasBalance && (
+                    <p className="text-sm text-text-muted">
+                      Win drafts and your prizes will land here.
+                    </p>
+                  )}
+                </div>
+
+                {/* Verify pill when $0 — pre-verify so withdraw is
+                    instant once they win. */}
                 {!hasBalance && (
-                  <p className="text-sm text-text-muted">
-                    Win drafts and your prizes will land here.
-                  </p>
+                  <div className="mt-5">
+                    {isEligible ? (
+                      <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                        <span className="text-sm font-medium text-success">Identity verified</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowVerifyModal(true)}
+                        className="inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                        <span className="text-sm font-medium text-warning">
+                          Verify your identity once to withdraw winnings
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {needsW9 && (
+                  <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
+                    <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
+                    {eligibility?.w9Completed ? (
+                      <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
+                    ) : (
+                      <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
+                    )}
+                  </div>
+                )}
+
+                {withdrawSuccess && (
+                  <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
+                    withdrawSuccess.startsWith('✗')
+                      ? 'bg-error/10 border border-error/30 text-error'
+                      : 'bg-success/10 border border-success/30 text-success'
+                  }`}>
+                    {withdrawSuccess}
+                  </div>
                 )}
               </div>
 
-              {/* Verification status — small pill when balance is $0,
-                  so the user sees it without needing wins to trigger
-                  the verify CTA. Pre-verifying means they can withdraw
-                  instantly when they finally win. */}
-              {!hasBalance && (
-                <div className="mt-5">
-                  {isEligible ? (
-                    <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                      <span className="text-sm font-medium text-success">Identity verified</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowVerifyModal(true)}
-                      className="inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                      <span className="text-sm font-medium text-warning">
-                        Verify your identity once to withdraw winnings
-                      </span>
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {needsW9 && (
-                <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
-                  <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
-                  {eligibility?.w9Completed ? (
-                    <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
-                  ) : (
-                    <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
-                  )}
-                </div>
-              )}
-
-              {withdrawSuccess && (
-                <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
-                  withdrawSuccess.startsWith('✗')
-                    ? 'bg-error/10 border border-error/30 text-error'
-                    : 'bg-success/10 border border-success/30 text-success'
-                }`}>
-                  {withdrawSuccess}
-                </div>
-              )}
-            </div>
+              {/* In-flight money lives in its own row below the hero,
+                  not competing with the headline number. Coinbase /
+                  Robinhood pattern: pending is information, never
+                  visual weight. With ETA so users know when it lands. */}
+              {inFlightBalance > 0 && (() => {
+                const eta = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                const etaLabel = eta.toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                });
+                return (
+                  <div className="mb-8 flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                    <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+                    <p className="text-sm text-text-secondary">
+                      <span className="font-medium text-text-primary">{formatBalance(inFlightBalance)}</span>{' '}
+                      on the way · arrives by {etaLabel}
+                    </p>
+                  </div>
+                );
+              })()}
+            </>
           );
         })()}
 
@@ -342,9 +431,12 @@ export default function PrizesPage() {
             <div className="space-y-6">
               {actionRequired.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-semibold text-warning uppercase tracking-wider mb-3">
-                    Action required
+                  <h3 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1">
+                    Ready to withdraw
                   </h3>
+                  <p className="text-[12px] text-text-muted mb-3">
+                    Use the “Withdraw all” button above to claim these.
+                  </p>
                   <div className="space-y-3">{actionRequired.map(renderCard)}</div>
                 </div>
               )}

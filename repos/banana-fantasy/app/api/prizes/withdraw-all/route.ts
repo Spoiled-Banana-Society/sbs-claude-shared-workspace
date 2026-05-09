@@ -74,6 +74,18 @@ export async function POST(req: Request) {
       ? (body.prizeIds.filter((s: unknown): s is string => typeof s === 'string' && !!s))
       : undefined;
 
+    // Optional partial-amount cap. If provided, allocate prizes greedy
+    // oldest-first up to (but not exceeding) this amount. If the typed
+    // amount falls between prize boundaries (e.g. user typed $125 with
+    // prizes of $100 and $50), the actual withdrawal is rounded DOWN
+    // to the nearest valid sum ($100). Frontend should preview this
+    // before submit so the user isn't surprised. Skipped when not set
+    // (defaults to "withdraw all").
+    const requestedAmount: number | undefined =
+      typeof body.amount === 'number' && Number.isFinite(body.amount) && body.amount > 0
+        ? body.amount
+        : undefined;
+
     // KYC + block rules check.
     const verification = await getPersonaVerification(userId);
     if (!verification.tier1.verified) {
@@ -85,12 +97,46 @@ export async function POST(req: Request) {
 
     // Pull pending wins (Go API + synthetic, with overlays applied).
     const pending = await fetchPendingWins(userId, getOrigin(req));
-    const targets = requestedPrizeIds
+
+    // Sort oldest-first so partial allocations consume the longest-held
+    // prizes first — fairer to the user (they get their old money out
+    // before recent wins).
+    pending.sort((a, b) => {
+      const aDate = a.createdAt ?? '';
+      const bDate = b.createdAt ?? '';
+      return aDate.localeCompare(bDate);
+    });
+
+    const pool = requestedPrizeIds
       ? pending.filter((p) => requestedPrizeIds.includes(p.id))
       : pending;
 
-    if (targets.length === 0) {
+    if (pool.length === 0) {
       return jsonError('No pending prizes to withdraw', 400);
+    }
+
+    // Apply requested-amount cap if given. Take prizes greedy in-order
+    // until adding the next would exceed the cap. Whatever's selected
+    // becomes the actual withdrawal — final amount may be less than
+    // requested if the cap doesn't fall on a prize boundary.
+    let targets = pool;
+    if (typeof requestedAmount === 'number') {
+      const selected: typeof pool = [];
+      let runningTotal = 0;
+      for (const p of pool) {
+        if (runningTotal + p.amount > requestedAmount) break;
+        selected.push(p);
+        runningTotal += p.amount;
+      }
+      if (selected.length === 0) {
+        // Their requested amount is below the smallest prize.
+        const smallest = pool[0]?.amount ?? 0;
+        return jsonError(
+          `Amount too small — smallest available is $${smallest.toFixed(2)}`,
+          400,
+        );
+      }
+      targets = selected;
     }
 
     const totalAmount = targets.reduce((sum, p) => sum + (p.amount || 0), 0);
