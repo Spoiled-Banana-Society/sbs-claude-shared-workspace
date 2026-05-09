@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -142,6 +142,26 @@ export default function NftDetailPage() {
   useEffect(() => {
     fetchNft();
   }, [fetchNft]);
+
+  // Auto-refresh OpenSea metadata once per tokenId when traits look stale
+  // (no LEAGUE-NAME and no roster slots). OpenSea sometimes serves a cached
+  // response from before the draft completed; nudging it to re-pull from
+  // our metadata endpoint usually fixes it within a few seconds.
+  const refreshAttemptedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!tokenId || !nft || isLoading) return;
+    if (refreshAttemptedRef.current.has(tokenId)) return;
+
+    const traits = Array.isArray(nft.traits) ? nft.traits : [];
+    const hasLeagueName = traits.some(t => t.trait_type === 'LEAGUE-NAME');
+    const hasRoster = traits.some(t => /^(QB|RB|WR|TE|DST)\d+$/.test(t.trait_type));
+    if (hasLeagueName || hasRoster) return;
+
+    refreshAttemptedRef.current.add(tokenId);
+    fetch(`/api/marketplace/refresh/${tokenId}`, { method: 'POST' })
+      .then(res => { if (res.ok) setTimeout(() => fetchNft(), 5000); })
+      .catch(() => { /* refresh is best-effort */ });
+  }, [tokenId, nft, isLoading, fetchNft]);
 
   const getShareText = useCallback(() => {
     const url = window.location.href;

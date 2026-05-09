@@ -15,6 +15,11 @@ export const dynamic = 'force-dynamic';
 
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
+// Process-level dedup of refresh-attempts so a hot Buy-tab page doesn't
+// hammer OpenSea on every poll. Resets when the Vercel instance recycles,
+// which is fine — the worst case is one extra refresh per cold start.
+const refreshedTokenIds = new Set<string>();
+
 /**
  * GET /api/marketplace/listings?sort=price&direction=asc&limit=50&cursor=...
  *
@@ -102,6 +107,23 @@ export async function GET(req: Request) {
       const nft = nftMap.get(tokenId) ?? null;
       return mapOpenSeaListingToTeam(order, nft);
     });
+
+    // Fire-and-forget OpenSea metadata refresh for any token whose traits
+    // are missing LEAGUE-NAME / roster. Deduped per process via the module
+    // -level Set so we don't hammer OpenSea on every Buy tab page load.
+    for (const tokenId of nftMap.keys()) {
+      const nft = nftMap.get(tokenId);
+      const traits = Array.isArray(nft?.traits) ? nft!.traits : [];
+      const hasLeagueName = traits.some((t: { trait_type: string }) => t.trait_type === 'LEAGUE-NAME');
+      const hasRoster = traits.some((t: { trait_type: string }) => /^(QB|RB|WR|TE|DST)\d+$/.test(t.trait_type));
+      if (hasLeagueName || hasRoster) continue;
+      if (refreshedTokenIds.has(tokenId)) continue;
+      refreshedTokenIds.add(tokenId);
+      void fetch(
+        `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${tokenId}/refresh`,
+        { method: 'POST', headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY } },
+      ).catch(() => { /* refresh is best-effort */ });
+    }
 
     // Deduplicate — keep only the first (most recent) listing per team
     const seen = new Set<string>();
