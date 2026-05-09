@@ -166,8 +166,6 @@ export default function PrizesPage() {
       })()}
 
       <section>
-        <h2 className="text-xl font-semibold text-text-primary mb-4">Prize activity</h2>
-
         {hasPrizeError && (
           <Card className="text-center py-12">
             <p className="text-error font-semibold">Unable to load prize activity</p>
