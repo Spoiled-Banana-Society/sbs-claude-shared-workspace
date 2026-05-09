@@ -228,7 +228,7 @@ export default function PrizesPage() {
                           onClick={() => setCashOutModal({ isOpen: true, prize: item })}
                           className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
                         >
-                          Cash Out to Bank
+                          Cash out
                         </button>
                         <button
                           onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
