@@ -157,3 +157,57 @@ export async function GET(req: Request) {
     return jsonError('Internal Server Error', 500);
   }
 }
+
+/**
+ * POST /api/marketplace/listings
+ *
+ * Forwards a signed Seaport order to OpenSea's listings endpoint.
+ * Body: { ...order, protocol_address }
+ * Keeps OPENSEA_API_KEY server-side only.
+ */
+export async function POST(req: Request) {
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
+  if (rateLimited) return rateLimited;
+
+  try {
+    if (!OPENSEA_API_KEY) {
+      return jsonError('OpenSea API key not configured', 503);
+    }
+
+    const body = await req.json();
+    if (!body?.parameters || !body?.signature || !body?.protocol_address) {
+      return jsonError('Missing signed order fields', 400);
+    }
+
+    const postRes = await fetch(
+      `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/listings`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'x-api-key': OPENSEA_API_KEY,
+        },
+        body: JSON.stringify(body),
+      },
+    );
+
+    const text = await postRes.text();
+    if (!postRes.ok) {
+      console.error('[marketplace/listings] OpenSea POST failed:', postRes.status, text);
+      let detail = '';
+      try {
+        const errJson = JSON.parse(text);
+        detail = errJson.errors?.[0] || errJson.detail || errJson.message || text;
+      } catch { detail = text; }
+      return jsonError(`OpenSea error: ${detail}`, postRes.status >= 500 ? 502 : postRes.status);
+    }
+
+    const result = JSON.parse(text);
+    return json({ orderHash: result.order?.order_hash || '' });
+  } catch (err) {
+    if (err instanceof ApiError) return jsonError(err.message, err.status);
+    console.error('[marketplace/listings] POST failed:', err);
+    return jsonError('Internal Server Error', 500);
+  }
+}

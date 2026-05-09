@@ -12,8 +12,6 @@ import { CROSS_CHAIN_SEAPORT_V1_6_ADDRESS } from '@opensea/seaport-js/lib/consta
 import { ethers } from 'ethers';
 import { BBB4_CONTRACT, USDC_BASE } from '@/lib/opensea';
 
-// Server-side only. Keep this on `process.env.OPENSEA_API_KEY`, never `NEXT_PUBLIC_*`.
-const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 const OPENSEA_CONDUIT_KEY = '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000';
 const OPENSEA_CONDUIT_ADDRESS = '0x1e0049783f008a0085193e00003d00cd54003c71';
 const OPENSEA_FEE_RECIPIENT = '0x0000a26b00c1f0df003000390027140000faa719';
@@ -90,34 +88,27 @@ export async function createListing(
   // This handles NFT approval (if needed) + EIP-712 signing
   const order = await executeAllActions();
 
-  // Post signed order to OpenSea API
-  const postRes = await fetch(
-    `https://api.opensea.io/api/v2/orders/base/seaport/listings`,
-    {
-      method: 'POST',
-      headers: {
-        'accept': 'application/json',
-        'content-type': 'application/json',
-        'x-api-key': OPENSEA_API_KEY,
-      },
-      body: JSON.stringify({
-        ...order,
-        protocol_address: CROSS_CHAIN_SEAPORT_V1_6_ADDRESS,
-      }),
-    },
-  );
+  // Post signed order through our server route (keeps OPENSEA_API_KEY server-side).
+  const postRes = await fetch('/api/marketplace/listings', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      ...order,
+      protocol_address: CROSS_CHAIN_SEAPORT_V1_6_ADDRESS,
+    }),
+  });
 
   if (!postRes.ok) {
     const text = await postRes.text();
-    console.error('[sell] OpenSea postOrder failed:', postRes.status, text);
+    console.error('[sell] postOrder failed:', postRes.status, text);
     let detail = '';
     try {
       const errJson = JSON.parse(text);
-      detail = errJson.errors?.[0] || errJson.detail || errJson.message || text;
+      detail = errJson.error || errJson.message || text;
     } catch { detail = text; }
-    throw new Error(`OpenSea error: ${detail}`);
+    throw new Error(detail || 'Failed to publish listing');
   }
 
   const result = await postRes.json();
-  return { orderHash: result.order?.order_hash || '' };
+  return { orderHash: result.orderHash || '' };
 }
