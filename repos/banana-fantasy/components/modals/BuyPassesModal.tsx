@@ -64,7 +64,16 @@ export function BuyPassesModal({
   // at the same place — USDC on Base in the user's wallet — but each
   // serves a different audience: MoonPay is faster + more global,
   // Coinbase is familiar to users who already have a Coinbase account.
-  const [cardProvider, setCardProvider] = useState<'moonpay' | 'coinbase'>('moonpay');
+  //
+  // First-time users: cardProvider starts as null → user must explicitly
+  // pick before Continue activates. After their first successful purchase
+  // we stash the choice in localStorage and pre-select it on next open,
+  // so returning users don't get re-prompted. They can still switch.
+  const [cardProvider, setCardProvider] = useState<'moonpay' | 'coinbase' | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = window.localStorage.getItem('sbs:cardProvider');
+    return saved === 'moonpay' || saved === 'coinbase' ? saved : null;
+  });
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
   useEffect(() => {
@@ -247,6 +256,10 @@ export function BuyPassesModal({
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
 
+      // cardProvider can only be null on first use; the Continue button
+      // gates this branch so it should always be set here. Defensive
+      // fallback to moonpay just in case.
+      const provider = cardProvider ?? 'moonpay';
       const result = await fundWallet({
         address: walletAddress,
         options: {
@@ -254,7 +267,7 @@ export function BuyPassesModal({
           amount: fundingAmount,
           asset: 'USDC',
           card: {
-            preferredProvider: cardProvider,
+            preferredProvider: provider,
           },
         },
       });
@@ -291,6 +304,13 @@ export function BuyPassesModal({
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error.
       await mint(quantity, { paymentMethod: 'card' });
+      // Successful purchase — remember the provider for next time so
+      // returning users don't get re-prompted to pick.
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('sbs:cardProvider', provider);
+        }
+      } catch { /* localStorage can be blocked in some browsers; non-fatal */ }
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
@@ -532,38 +552,52 @@ export function BuyPassesModal({
                 </button>
               </div>
 
-              {/* Provider picker — appears only when Card is selected.
-                  Both routes end at the same place (USDC on Base) but
-                  let the user choose between MoonPay (faster, more
-                  global) and Coinbase Onramp (familiar if they already
-                  have a Coinbase account). Apple-style segmented control. */}
-              {paymentMethod === 'card' && (
-                <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-bg-elevated bg-bg-tertiary/50 p-1">
-                  <button
-                    onClick={() => setCardProvider('moonpay')}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      cardProvider === 'moonpay'
-                        ? 'bg-bg-secondary text-text-primary shadow-sm'
-                        : 'text-text-muted hover:text-text-secondary'
-                    }`}
-                  >
-                    MoonPay
-                    <span className="block text-[10px] font-normal text-text-muted mt-0.5">
-                      Card · Apple Pay
+              {/* Provider picker — branches on whether the user has
+                  picked before:
+                    - First-time (cardProvider === null): big segmented
+                      control, neither pre-selected. Continue button
+                      stays disabled until they pick. Forces awareness.
+                    - Returning (cardProvider set): single small
+                      one-liner with an inline switch link. They've
+                      already decided; don't make them stare at it. */}
+              {paymentMethod === 'card' && cardProvider === null && (
+                <div className="mt-3">
+                  <p className="text-[11px] text-text-muted mb-2">Pick a provider</p>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-bg-elevated bg-bg-tertiary/50 p-1">
+                    <button
+                      onClick={() => setCardProvider('moonpay')}
+                      className="px-3 py-2 rounded-lg text-xs font-medium text-text-secondary hover:bg-bg-secondary/50 hover:text-text-primary active:scale-[0.98] transition-all"
+                    >
+                      MoonPay
+                      <span className="block text-[10px] font-normal text-text-muted mt-0.5">
+                        Card · Apple Pay
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => setCardProvider('coinbase')}
+                      className="px-3 py-2 rounded-lg text-xs font-medium text-text-secondary hover:bg-bg-secondary/50 hover:text-text-primary active:scale-[0.98] transition-all"
+                    >
+                      Coinbase
+                      <span className="block text-[10px] font-normal text-text-muted mt-0.5">
+                        Card · Bank · CB account
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {paymentMethod === 'card' && cardProvider !== null && (
+                <div className="mt-2 flex items-center justify-between text-[11px] text-text-muted">
+                  <span>
+                    Paying via <span className="text-text-secondary font-medium">
+                      {cardProvider === 'coinbase' ? 'Coinbase' : 'MoonPay'}
                     </span>
-                  </button>
+                  </span>
                   <button
-                    onClick={() => setCardProvider('coinbase')}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                      cardProvider === 'coinbase'
-                        ? 'bg-bg-secondary text-text-primary shadow-sm'
-                        : 'text-text-muted hover:text-text-secondary'
-                    }`}
+                    onClick={() => setCardProvider(cardProvider === 'coinbase' ? 'moonpay' : 'coinbase')}
+                    className="underline underline-offset-2 hover:text-text-secondary transition-colors"
                   >
-                    Coinbase
-                    <span className="block text-[10px] font-normal text-text-muted mt-0.5">
-                      Card · Bank · CB account
-                    </span>
+                    Use {cardProvider === 'coinbase' ? 'MoonPay' : 'Coinbase'} instead
                   </button>
                 </div>
               )}
@@ -691,13 +725,21 @@ export function BuyPassesModal({
               )}
             </div>
 
-            {/* CTA Button */}
+            {/* CTA Button — disabled when card path is picked but no
+                provider selected yet (first-time users). After they
+                successfully purchase once, the choice is remembered so
+                this gate only shows on first use. */}
             <button
               onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
-              disabled={isProcessing || quantity < 1 || (paymentMethod === 'usdc' && !mintActive)}
+              disabled={
+                isProcessing ||
+                quantity < 1 ||
+                (paymentMethod === 'usdc' && !mintActive) ||
+                (paymentMethod === 'card' && !cardProvider && flowStep === 'idle')
+              }
               className={`
                 w-full py-5 rounded-2xl font-bold text-xl transition-all shadow-lg shadow-banana/20
-                ${isProcessing || quantity < 1
+                ${isProcessing || quantity < 1 || (paymentMethod === 'card' && !cardProvider && flowStep === 'idle')
                   ? 'bg-banana/50 text-black/50 cursor-not-allowed'
                   : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
                 }
