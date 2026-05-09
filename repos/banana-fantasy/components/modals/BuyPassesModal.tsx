@@ -370,9 +370,30 @@ export function BuyPassesModal({
               headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             });
             if (statusRes.ok) {
-              const data = (await statusRes.json()) as { kind: string; reason?: string };
+              const data = (await statusRes.json()) as {
+                kind: string;
+                reason?: string;
+                code?: string;
+                nextAvailableAt?: string;
+              };
               if (data.kind === 'failed' && typeof data.reason === 'string') {
                 reason = data.reason;
+                // For limit-exceeded, append the reset date so the user
+                // knows when they can use Coinbase again. Compute days
+                // remaining from now → friendly relative + absolute.
+                if (data.code === 'LIMIT_EXCEEDED' && data.nextAvailableAt) {
+                  const resetMs = Date.parse(data.nextAvailableAt);
+                  if (Number.isFinite(resetMs)) {
+                    const daysLeft = Math.max(1, Math.ceil((resetMs - Date.now()) / (24 * 60 * 60 * 1000)));
+                    const dateLabel = new Date(resetMs).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    });
+                    const dayWord = daysLeft === 1 ? 'day' : 'days';
+                    reason = `${reason} You can use Coinbase again in ${daysLeft} ${dayWord} (${dateLabel}).`;
+                  }
+                }
               }
             }
           } catch {

@@ -24,7 +24,16 @@ type ClassifiedReason =
   | { kind: 'none' }
   | { kind: 'pending'; txId: string }
   | { kind: 'success'; txId: string }
-  | { kind: 'failed'; reason: string; code: string; txId: string };
+  | {
+      kind: 'failed';
+      reason: string;
+      code: string;
+      txId: string;
+      // ISO timestamp when the user can buy via Coinbase again. Only
+      // populated for LIMIT_EXCEEDED — Coinbase's weekly cap rolls 7
+      // days from the earliest transaction in the active window.
+      nextAvailableAt?: string;
+    };
 
 // Map Coinbase's status_reason enum to user-facing copy. Anything not
 // listed here falls back to a generic message so we never expose raw
@@ -37,7 +46,10 @@ function classifyFailureReason(statusReason: string | undefined): { friendly: st
     case 'BUY_LIMIT_EXCEEDED':
     case 'WEEKLY_LIMIT_EXCEEDED':
       return {
-        friendly: "You've hit Coinbase's $500 weekly purchase limit. Switch to MoonPay to continue, or try Coinbase again next week.",
+        // Frontend appends the reset date when nextAvailableAt is
+        // populated; this base message stands alone if we can't compute
+        // a reset date for any reason.
+        friendly: "You've hit Coinbase's $500 weekly purchase limit. Coinbase's cap is $500 per user, per 7 days. Switch to MoonPay to continue.",
         code: 'LIMIT_EXCEEDED',
       };
     case 'PAYMENT_DECLINED':
@@ -73,14 +85,45 @@ function classifyFailureReason(statusReason: string | undefined): { friendly: st
   }
 }
 
-function classifyTransaction(tx: OnrampTransaction): ClassifiedReason {
+function classifyTransaction(
+  tx: OnrampTransaction,
+  allTransactions: OnrampTransaction[],
+): ClassifiedReason {
   const status = (tx.status || '').toUpperCase();
   if (status.includes('SUCCESS') || status.includes('COMPLETE')) {
     return { kind: 'success', txId: tx.id };
   }
   if (status.includes('FAIL') || status.includes('CANCEL') || status.includes('DECLIN')) {
     const { friendly, code } = classifyFailureReason(tx.status_reason);
-    return { kind: 'failed', reason: friendly, code, txId: tx.id };
+    let nextAvailableAt: string | undefined;
+    if (code === 'LIMIT_EXCEEDED') {
+      // Coinbase's weekly buy limit rolls 7 days from the earliest
+      // SUCCESSFUL transaction in the user's active 7-day window. We
+      // approximate by finding the oldest non-failed tx in the last
+      // 7 days and adding 7 days to its timestamp. If we can't find
+      // one (e.g. all failures in our sample), fall back to "now + 7d".
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const eligible = allTransactions.filter((t) => {
+        const ts = Date.parse(t.created_at);
+        if (!Number.isFinite(ts) || ts < sevenDaysAgo) return false;
+        const s = (t.status || '').toUpperCase();
+        return !s.includes('FAIL') && !s.includes('CANCEL') && !s.includes('DECLIN');
+      });
+      const oldest = eligible.sort((a, b) =>
+        Date.parse(a.created_at) - Date.parse(b.created_at),
+      )[0];
+      const baseMs = oldest
+        ? Date.parse(oldest.created_at)
+        : Date.now();
+      nextAvailableAt = new Date(baseMs + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+    return {
+      kind: 'failed',
+      reason: friendly,
+      code,
+      txId: tx.id,
+      ...(nextAvailableAt ? { nextAvailableAt } : {}),
+    };
   }
   // Pending / in-progress
   return { kind: 'pending', txId: tx.id };
@@ -106,7 +149,7 @@ export async function GET(req: Request) {
 
     // Most recent first per Coinbase response order.
     const latest = result.transactions[0];
-    return json(classifyTransaction(latest));
+    return json(classifyTransaction(latest, result.transactions));
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('CDP buy-status error:', err);
