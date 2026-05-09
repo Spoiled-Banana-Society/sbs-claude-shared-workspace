@@ -462,8 +462,8 @@ const PRESETS: Array<{ label: string; seconds: number }> = [
   { label: 'No expiry', seconds: NO_EXPIRY_SECONDS },
 ];
 
-type CustomUnit = 'hours' | 'days' | 'weeks';
-const UNIT_SECONDS: Record<CustomUnit, number> = { hours: HOUR, days: DAY, weeks: 7 * DAY };
+type CustomUnit = 'minutes' | 'hours' | 'days' | 'weeks';
+const UNIT_SECONDS: Record<CustomUnit, number> = { minutes: 60, hours: HOUR, days: DAY, weeks: 7 * DAY };
 
 function ListingDurationPicker({
   durationSeconds,
@@ -478,12 +478,14 @@ function ListingDurationPicker({
     if (matchedPreset) return '1';
     if (durationSeconds % (7 * DAY) === 0) return String(durationSeconds / (7 * DAY));
     if (durationSeconds % DAY === 0) return String(durationSeconds / DAY);
-    return String(Math.round(durationSeconds / HOUR));
+    if (durationSeconds % HOUR === 0) return String(durationSeconds / HOUR);
+    return String(Math.max(1, Math.round(durationSeconds / 60)));
   });
   const [customUnit, setCustomUnit] = useState<CustomUnit>(() => {
     if (durationSeconds % (7 * DAY) === 0) return 'weeks';
     if (durationSeconds % DAY === 0) return 'days';
-    return 'hours';
+    if (durationSeconds % HOUR === 0) return 'hours';
+    return 'minutes';
   });
 
   const applyCustom = (amount: string, unit: CustomUnit) => {
@@ -537,6 +539,7 @@ function ListingDurationPicker({
             onChange={e => { const u = e.target.value as CustomUnit; setCustomUnit(u); applyCustom(customAmount, u); }}
             className="bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-banana"
           >
+            <option value="minutes">Minutes</option>
             <option value="hours">Hours</option>
             <option value="days">Days</option>
             <option value="weeks">Weeks</option>
