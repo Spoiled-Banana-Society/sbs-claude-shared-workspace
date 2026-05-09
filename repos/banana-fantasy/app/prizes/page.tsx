@@ -126,35 +126,93 @@ export default function PrizesPage() {
   }
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Prizes</h1>
+    <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
+      <div className="max-w-5xl mx-auto">
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Prizes</h1>
 
-      {(() => {
-        // Three-state header. Goal: zero noise when there's nothing
-        // load-bearing for the user.
-        //   1. Verified → small confirmation pill (regardless of wins)
-        //   2. Not verified + has unclaimed wins → big yellow clickable
-        //      CTA inviting them to verify (the click target is the
-        //      whole row, no separate button)
-        //   3. Not verified + no unclaimed wins → render nothing.
-        //      No reason to nag a $0 user about a verification they
-        //      don't need yet.
-        const hasUnclaimedWin = prizes.some(
-          (p) => p.type === 'win' && p.status === 'pending',
-        );
-        const needsW9 =
-          !!eligibility?.geoState &&
-          (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
+        {/* Balance hero — always renders, even at $0. Apple-clean:
+            generous padding, soft gradient, big tracked-tight number,
+            single primary action. The verification + withdraw state
+            adapts inside the same card so the page never looks empty. */}
+        {(() => {
+          const needsW9 =
+            !!eligibility?.geoState &&
+            (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
+          const hasBalance = availableBalance > 0;
 
-        if (isEligible) {
           return (
-            <div className="mb-8 space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                <span className="text-sm font-medium text-success">Identity verified</span>
+            <div className="mb-8 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
+              <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
+              <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
+                {formatBalance(availableBalance)}
+              </p>
+              {inFlightBalance > 0 && (
+                <p className="mt-2 text-xs text-text-muted">
+                  {formatBalance(inFlightBalance)} in progress
+                </p>
+              )}
+
+              <div className="mt-6 flex items-center gap-3 flex-wrap">
+                {hasBalance && isEligible && (
+                  <>
+                    <button
+                      onClick={handleWithdrawAll}
+                      disabled={withdrawing}
+                      className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+                    >
+                      {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
+                    </button>
+                    <p className="text-[11px] text-text-muted">Sent as USDC to your wallet</p>
+                  </>
+                )}
+
+                {hasBalance && !isEligible && (
+                  <>
+                    <button
+                      onClick={() => setShowVerifyModal(true)}
+                      className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                    >
+                      Verify to withdraw
+                    </button>
+                    <p className="text-[11px] text-text-muted">One-time verification required</p>
+                  </>
+                )}
+
+                {!hasBalance && (
+                  <p className="text-sm text-text-muted">
+                    Win drafts and your prizes will land here.
+                  </p>
+                )}
               </div>
+
+              {/* Verification status — small pill when balance is $0,
+                  so the user sees it without needing wins to trigger
+                  the verify CTA. Pre-verifying means they can withdraw
+                  instantly when they finally win. */}
+              {!hasBalance && (
+                <div className="mt-5">
+                  {isEligible ? (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                      <span className="text-sm font-medium text-success">Identity verified</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowVerifyModal(true)}
+                      className="inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                      <span className="text-sm font-medium text-warning">
+                        Verify your identity once to withdraw winnings
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+
               {needsW9 && (
-                <div className="flex items-center justify-between gap-2 rounded-lg bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
+                <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
                   <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
                   {eligibility?.w9Completed ? (
                     <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
@@ -163,78 +221,19 @@ export default function PrizesPage() {
                   )}
                 </div>
               )}
+
+              {withdrawSuccess && (
+                <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
+                  withdrawSuccess.startsWith('✗')
+                    ? 'bg-error/10 border border-error/30 text-error'
+                    : 'bg-success/10 border border-success/30 text-success'
+                }`}>
+                  {withdrawSuccess}
+                </div>
+              )}
             </div>
           );
-        }
-
-        if (!hasUnclaimedWin) return null;
-
-        // Compact pill that matches the verified state's shape — sized
-        // to its content, not the full row width. Same dot + text
-        // pattern, yellow theme, clickable. No arrow, no subtitle.
-        return (
-          <button
-            type="button"
-            onClick={() => setShowVerifyModal(true)}
-            className="mb-8 inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-            <span className="text-sm font-medium text-warning">
-              Verify your identity once to withdraw winnings
-            </span>
-          </button>
-        );
-      })()}
-
-      {/* Balance hero — only renders when there's something to withdraw.
-          Apple-clean: generous padding, soft gradient, big tracked-tight
-          number, single primary action. The most important thing on the
-          page when there are pending winnings. */}
-      {availableBalance > 0 && (
-        <div className="mb-10 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
-          <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
-          <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
-            {formatBalance(availableBalance)}
-          </p>
-          {inFlightBalance > 0 && (
-            <p className="mt-2 text-xs text-text-muted">
-              {formatBalance(inFlightBalance)} in progress
-            </p>
-          )}
-          <div className="mt-6 flex items-center gap-3 flex-wrap">
-            {isEligible ? (
-              <button
-                onClick={handleWithdrawAll}
-                disabled={withdrawing}
-                className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-              >
-                {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
-              </button>
-            ) : (
-              <button
-                onClick={() => setShowVerifyModal(true)}
-                className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-              >
-                Verify to withdraw
-              </button>
-            )}
-            <p className="text-[11px] text-text-muted">
-              {isEligible
-                ? 'Sent as USDC to your wallet'
-                : 'One-time verification required'}
-            </p>
-          </div>
-          {withdrawSuccess && (
-            <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
-              withdrawSuccess.startsWith('✗')
-                ? 'bg-error/10 border border-error/30 text-error'
-                : 'bg-success/10 border border-success/30 text-success'
-            }`}>
-              {withdrawSuccess}
-            </div>
-          )}
-        </div>
-      )}
+        })()}
 
       <section>
         {hasPrizeError && (
@@ -423,6 +422,7 @@ export default function PrizesPage() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }
