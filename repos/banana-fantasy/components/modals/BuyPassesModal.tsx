@@ -269,6 +269,7 @@ export function BuyPassesModal({
       // buy-session endpoint that mints a CDP session token directly.
       // This sidesteps Privy's Coinbase routing which requires per-app
       // backend whitelisting from Privy support.
+      let coinbasePopup: Window | null = null;
       if (provider === 'coinbase') {
         const cryptoAmount = Number(fundingAmount);
         const token = await getAccessToken();
@@ -290,8 +291,8 @@ export function BuyPassesModal({
         // offramp uses. If the popup is blocked we fall back to
         // a same-tab navigation; the redirectUrl will bring them
         // back here once they finish.
-        const popup = window.open(url, 'coinbase-onramp', 'width=480,height=720');
-        if (!popup) {
+        coinbasePopup = window.open(url, 'coinbase-onramp', 'width=480,height=720');
+        if (!coinbasePopup) {
           window.location.href = url;
           return;
         }
@@ -325,19 +326,45 @@ export function BuyPassesModal({
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
       const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
       const pollIntervalMs = 3_000; // check every 3s
+      // Coinbase early-exit: if user closes the popup without sending
+      // USDC (cancel, declined card, hit $500/week limit, etc), don't
+      // make them wait the full 5 minutes — give them a recovery path
+      // ~30s after the popup closes.
+      const popupCloseGraceMs = 30_000;
 
-      const waitForUsdc = async () => {
+      const waitForUsdc = async (): Promise<{ funded: boolean; popupAbort: boolean }> => {
         const startTime = Date.now();
+        let popupClosedAt: number | null = null;
         while (Date.now() - startTime < maxWaitMs) {
           const balance = await getUsdcBalance(walletAddress as Address);
-          if (balance >= totalCostUsdc) return true;
+          if (balance >= totalCostUsdc) return { funded: true, popupAbort: false };
+
+          // Early-exit logic only matters for the Coinbase popup we own.
+          // MoonPay's popup is managed by Privy and we don't have a ref.
+          if (coinbasePopup) {
+            if (coinbasePopup.closed && popupClosedAt === null) {
+              popupClosedAt = Date.now();
+            }
+            if (popupClosedAt !== null && Date.now() - popupClosedAt > popupCloseGraceMs) {
+              return { funded: false, popupAbort: true };
+            }
+          }
           await new Promise((r) => setTimeout(r, pollIntervalMs));
         }
-        return false;
+        return { funded: false, popupAbort: false };
       };
 
-      const funded = await waitForUsdc();
+      const { funded, popupAbort } = await waitForUsdc();
       if (!funded) {
+        if (popupAbort) {
+          // Coinbase-specific friendly recovery copy. Three common
+          // reasons we land here: user cancelled the popup, hit the
+          // $500/week limit, or card was declined. We can't tell which
+          // (cross-origin), so cover all three with one message.
+          throw new Error(
+            "Coinbase didn't complete. This can happen if you cancelled, hit the weekly $500 Coinbase limit, or your payment was declined. Try MoonPay instead, or try Coinbase again.",
+          );
+        }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
 
@@ -832,15 +859,37 @@ export function BuyPassesModal({
               </button>
             )}
 
-            {/* Error retry */}
-            {flowStep === 'error' && (
-              <button
-                onClick={() => { setFlowStep('idle'); setFlowError(null); }}
-                className="w-full text-sm text-banana hover:underline text-center"
-              >
-                Try again
-              </button>
-            )}
+            {/* Error retry. When the failure mentions Coinbase
+                specifically, surface a one-tap "Switch to MoonPay"
+                fallback alongside the generic Try again. Saves the
+                user from manually reopening the picker. */}
+            {flowStep === 'error' && (() => {
+              const isCoinbaseFailure =
+                cardProvider === 'coinbase' &&
+                (flowError?.toLowerCase().includes('coinbase') ?? false);
+              return (
+                <div className="flex items-center justify-center gap-3">
+                  {isCoinbaseFailure && (
+                    <button
+                      onClick={() => {
+                        setCardProvider('moonpay');
+                        setFlowStep('idle');
+                        setFlowError(null);
+                      }}
+                      className="text-sm font-semibold text-banana hover:underline"
+                    >
+                      Try MoonPay instead
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setFlowStep('idle'); setFlowError(null); }}
+                    className="text-sm text-text-muted hover:text-text-secondary hover:underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* Promo */}
             <div className="pt-2 border-t border-bg-elevated/40">
