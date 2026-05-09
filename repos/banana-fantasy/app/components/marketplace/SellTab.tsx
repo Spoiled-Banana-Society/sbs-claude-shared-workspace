@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { isDraftingOpen } from '@/lib/draftTypes';
+import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 
 type SuccessType = 'buy' | 'sell' | 'list';
 
@@ -91,9 +92,7 @@ export function SellTab({
                     {team.imageUrl ? (
                       <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
                     ) : (
-                      <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${team.color} flex items-center justify-center`}>
-                        <span className="text-xl">🍌</span>
-                      </div>
+                      <SbsPassThumb label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`} size={56} />
                     )}
                     <div>
                       <div className="flex items-center gap-2">
@@ -189,9 +188,7 @@ export function SellTab({
                     {offer.imageUrl ? (
                       <Image src={offer.imageUrl} alt={offer.teamName} width={48} height={48} className="rounded-xl" />
                     ) : (
-                      <div className="w-12 h-12 rounded-xl bg-bg-tertiary flex items-center justify-center">
-                        <span className="text-lg">🍌</span>
-                      </div>
+                      <SbsPassThumb label={offer.teamName?.startsWith('BBB') ? offer.teamName.replace('BBB ', '') : `#${offer.tokenId}`} size={48} />
                     )}
                     <div>
                       <h4 className="text-text-primary font-semibold font-mono text-sm">{offer.teamName}</h4>
@@ -263,9 +260,7 @@ export function SellTab({
                 {selectedTeam.imageUrl ? (
                   <Image src={selectedTeam.imageUrl} alt={selectedTeam.name} width={56} height={56} className="rounded-xl" />
                 ) : (
-                  <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${selectedTeam.color} flex items-center justify-center`}>
-                    <span className="text-2xl">🍌</span>
-                  </div>
+                  <SbsPassThumb label={selectedTeam.name?.startsWith('BBB') ? selectedTeam.name.replace('BBB ', '') : `#${selectedTeam.tokenId}`} size={56} />
                 )}
                 <div>
                   <h3 className="text-text-primary font-semibold font-mono">{selectedTeam.name}</h3>

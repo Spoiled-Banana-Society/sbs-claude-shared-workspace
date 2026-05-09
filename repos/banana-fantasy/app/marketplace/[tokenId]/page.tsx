@@ -8,6 +8,7 @@ import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-a
 import { useAuth } from '@/hooks/useAuth';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useNotifications } from '@/components/NotificationCenter';
+import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
@@ -692,7 +693,10 @@ export default function NftDetailPage() {
                 : draftType === 'hof' ? 'from-hof/20 to-bg-secondary'
                 : 'from-pro/20 to-bg-secondary'
               } flex items-center justify-center`}>
-                <span className="text-8xl">🍌</span>
+                <SbsPassThumb
+                  label={leagueName?.startsWith('BBB') ? leagueName.replace('BBB ', '') : `#${tokenId}`}
+                  size={240}
+                />
               </div>
             )}
 
