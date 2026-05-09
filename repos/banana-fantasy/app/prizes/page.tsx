@@ -435,7 +435,9 @@ export default function PrizesPage() {
                     Ready to withdraw
                   </h3>
                   <p className="text-[12px] text-text-muted mb-3">
-                    Use the “Withdraw all” button above to claim these.
+                    {isEligible
+                      ? 'Use the “Withdraw all” button above to claim these.'
+                      : 'Use the “Withdraw all” button above to claim prizes once you verify identity.'}
                   </p>
                   <div className="space-y-3">{actionRequired.map(renderCard)}</div>
                 </div>
