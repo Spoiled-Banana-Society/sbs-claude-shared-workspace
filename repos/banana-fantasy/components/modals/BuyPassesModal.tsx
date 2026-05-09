@@ -568,25 +568,23 @@ export function BuyPassesModal({
                       already decided; don't make them stare at it. */}
               {paymentMethod === 'card' && cardProvider === null && (
                 <div className="mt-3">
-                  <p className="text-[11px] text-text-muted mb-2">Pick a provider</p>
-                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-bg-elevated bg-bg-tertiary/50 p-1">
+                  <p className="text-xs font-medium text-text-secondary mb-2">
+                    Pick a provider to continue
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
                     <button
                       onClick={() => setCardProvider('moonpay')}
-                      className="px-3 py-2 rounded-lg text-xs font-medium text-text-secondary hover:bg-bg-secondary/50 hover:text-text-primary active:scale-[0.98] transition-all"
+                      className="p-3 rounded-xl border-2 border-bg-elevated bg-bg-tertiary hover:border-banana/50 active:scale-[0.98] transition-all text-center"
                     >
-                      MoonPay
-                      <span className="block text-[10px] font-normal text-text-muted mt-0.5">
-                        Card · Apple Pay
-                      </span>
+                      <p className="font-semibold text-sm text-text-primary">MoonPay</p>
+                      <p className="text-[11px] text-text-muted mt-0.5">Card · Apple Pay</p>
                     </button>
                     <button
                       onClick={() => setCardProvider('coinbase')}
-                      className="px-3 py-2 rounded-lg text-xs font-medium text-text-secondary hover:bg-bg-secondary/50 hover:text-text-primary active:scale-[0.98] transition-all"
+                      className="p-3 rounded-xl border-2 border-bg-elevated bg-bg-tertiary hover:border-banana/50 active:scale-[0.98] transition-all text-center"
                     >
-                      Coinbase
-                      <span className="block text-[10px] font-normal text-text-muted mt-0.5">
-                        Card · Apple Pay · Bank
-                      </span>
+                      <p className="font-semibold text-sm text-text-primary">Coinbase</p>
+                      <p className="text-[11px] text-text-muted mt-0.5">Card · Apple Pay · Bank</p>
                     </button>
                   </div>
                 </div>
