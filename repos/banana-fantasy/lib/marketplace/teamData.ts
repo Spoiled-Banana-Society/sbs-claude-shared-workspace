@@ -5,13 +5,18 @@
  * roster, scores). OpenSea is only authoritative for ownership and the
  * listing orderbook. This module reconciles tokenId → team data via:
  *
- *   1. Manual override:   Firestore  `nft_league_map/{tokenId}` (admin-set)
- *   2. cardId match:      Go API     `/owner/{wallet}/draftToken/all`,
- *                         match record where `_cardId === tokenId`
+ *   1. Manual override:   Firestore `nft_league_map/{tokenId}` (admin-set,
+ *                         used when an explicit override is needed).
+ *   2. cardId match:      Go API `/owner/{wallet}/draftToken/all`, where
+ *                         the cardId is *deterministically* derived from
+ *                         the on-chain tokenId — either as an exact match
+ *                         (production) or as `<10-digit unix-seconds mint
+ *                         timestamp><tokenId>` (staging encoding).
  *
- * Path 2 covers production where mint stores the on-chain tokenId as
- * `_cardId`. Path 1 is the escape hatch for cases where the IDs aren't
- * linked (staging admin mints, future trades that desync, etc.).
+ * No heuristics, no guessing. If the Go API has no record matching the
+ * tokenId via these encodings, the marketplace shows "Draft Pass #N" —
+ * which is honest: the NFT exists on-chain but hasn't been linked to a
+ * league.
  *
  * Output is OpenSea-shaped synthetic traits the existing trait-reading
  * UI picks up automatically (LEAGUE-NAME, LEVEL, RANK, SEASON-SCORE,
@@ -19,18 +24,11 @@
  */
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
 
 const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
 const NFT_LEAGUE_MAP_COLLECTION = 'nft_league_map';
-
-// Per-process dedup so we don't re-run auto-sync for the same owner on every
-// route invocation. Resets on Vercel cold starts, which is fine — the worst
-// case is one redundant sync per cold start.
-const autoSyncedOwners = new Set<string>();
 
 export interface NftTrait {
   trait_type: string;
@@ -68,8 +66,28 @@ export interface TeamData {
 const ROSTER_POS_ORDER = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
 
 /**
- * Fetch a single draft token from Go API by exact `_cardId === tokenId`.
- * Returns null if no match — common in staging where cardIds are timestamps.
+ * Does this Go-API cardId correspond to the given on-chain tokenId?
+ *
+ * Two encodings supported:
+ *   1. Exact match: `_cardId === tokenId` (production — the on-chain
+ *      tokenId is stored verbatim as the cardId).
+ *   2. Staging encoding: `<10-digit unix-seconds mint timestamp><tokenId>`.
+ *      The Go API's mint helper concatenates a per-batch timestamp prefix
+ *      with the on-chain tokenId, e.g. `1776734420` + `292` = `1776734420292`.
+ *      This deterministically links cardId → tokenId without any heuristic.
+ */
+function cardIdMatchesTokenId(cardId: string, tokenId: string): boolean {
+  if (!cardId || !tokenId) return false;
+  if (cardId === tokenId) return true;
+  if (cardId.length !== 10 + tokenId.length) return false;
+  if (!cardId.endsWith(tokenId)) return false;
+  return /^\d{10}$/.test(cardId.slice(0, 10));
+}
+
+/**
+ * Fetch a single draft token from Go API for the given on-chain tokenId.
+ * Returns null if the Go API has no draft record for this NFT — happens
+ * for newly minted passes that haven't entered a draft yet.
  */
 async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<BackendDraftToken | null> {
   if (!owner) return null;
@@ -83,7 +101,7 @@ async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<B
       ...(Array.isArray(data?.active) ? data.active : []),
       ...(Array.isArray(data?.available) ? data.available : []),
     ];
-    return tokens.find(t => String(t._cardId ?? '') === tokenId) ?? null;
+    return tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId)) ?? null;
   } catch {
     return null;
   }
@@ -109,107 +127,6 @@ async function findTokenByLeagueId(owner: string | null, leagueId: string): Prom
     return tokens.find(t => String(t._leagueId ?? '') === leagueId) ?? null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Auto-pair an owner's unmapped NFTs with their unmapped active draft
- * tokens. Used when staging mints decouple `_cardId` from the on-chain
- * tokenId — without this, the marketplace would just show "Draft Pass #N"
- * for every NFT until an admin manually maps each one.
- *
- * Heuristic: tokenId asc → leagueId asc. Not provably correct (the join
- * order may not match the mint order), but produces a complete coverage
- * the user can correct via the admin tool if anything is wrong.
- *
- * Best-effort: silently bails on any error so it never blocks enrichment.
- */
-async function autoSyncOwnerMappings(owner: string): Promise<void> {
-  if (!owner) return;
-  const lower = owner.toLowerCase();
-  if (autoSyncedOwners.has(lower)) return;
-  autoSyncedOwners.add(lower);
-
-  if (!isFirestoreConfigured() || !OPENSEA_API_KEY) return;
-
-  try {
-    // 1. Fetch the owner's NFTs from OpenSea (by contract+owner).
-    const nftRes = await fetch(
-      `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/account/${lower}/nfts?collection=${COLLECTION_SLUG}&limit=200`,
-      {
-        headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
-        signal: AbortSignal.timeout(4000),
-      },
-    );
-    if (!nftRes.ok) return;
-    const nftData = await nftRes.json();
-    const nfts: Array<{ identifier: string; contract?: string }> = (nftData.nfts ?? []).filter(
-      (n: { contract?: string }) => !n.contract || n.contract.toLowerCase() === BBB4_CONTRACT.toLowerCase(),
-    );
-    const tokenIds = nfts
-      .map(n => String(n.identifier))
-      .filter(t => /^\d+$/.test(t))
-      .sort((a, b) => Number(a) - Number(b));
-    if (tokenIds.length === 0) return;
-
-    // 2. Fetch the owner's active draft tokens from the Go API.
-    const tokensRes = await fetch(`${DRAFTS_API_BASE}/owner/${lower}/draftToken/all`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!tokensRes.ok) return;
-    const tokensJson = await tokensRes.json();
-    const activeRaw: BackendDraftToken[] = Array.isArray(tokensJson?.active) ? tokensJson.active : [];
-    // Pair only with drafts that have a league + non-empty roster. Slow drafts
-    // mid-draft have a leagueDisplayName but no roster yet — pairing with one
-    // of those gives us a name with nothing else to show. Better to leave the
-    // NFT as "Draft Pass #N" than display a hollow team.
-    const hasRoster = (t: BackendDraftToken) => {
-      const r = t.roster ?? {};
-      return ROSTER_POS_ORDER.some(pos => {
-        const players = r[pos];
-        return Array.isArray(players) && players.length > 0;
-      });
-    };
-    const activeWithLeague = activeRaw
-      .filter(t => String(t._leagueDisplayName ?? '').trim() !== '' && String(t._leagueId ?? '').trim() !== '')
-      .filter(hasRoster)
-      // Sort by leagueId asc so pairing is stable across runs.
-      .sort((a, b) => String(a._leagueId ?? '').localeCompare(String(b._leagueId ?? '')));
-    if (activeWithLeague.length === 0) return;
-
-    // 3. Read existing mappings for these tokenIds and figure out which
-    //    leagueIds are already claimed by other tokens.
-    const db = getAdminFirestore();
-    const existing = await Promise.all(
-      tokenIds.map(async (tokenId) => {
-        const snap = await db.collection(NFT_LEAGUE_MAP_COLLECTION).doc(tokenId).get();
-        return { tokenId, leagueId: snap.exists ? (snap.get('leagueId') as string | undefined) : undefined };
-      }),
-    );
-    const claimedLeagueIds = new Set(existing.map(e => e.leagueId).filter(Boolean) as string[]);
-    const unmappedTokenIds = existing.filter(e => !e.leagueId).map(e => e.tokenId);
-    const availableLeagues = activeWithLeague.filter(l => !claimedLeagueIds.has(String(l._leagueId)));
-
-    if (unmappedTokenIds.length === 0 || availableLeagues.length === 0) return;
-
-    // 4. Pair tokenId asc → leagueId asc and write the mappings.
-    const writes = Math.min(unmappedTokenIds.length, availableLeagues.length);
-    const batch = db.batch();
-    for (let i = 0; i < writes; i++) {
-      const tokenId = unmappedTokenIds[i];
-      const league = availableLeagues[i];
-      const ref = db.collection(NFT_LEAGUE_MAP_COLLECTION).doc(tokenId);
-      batch.set(ref, {
-        tokenId,
-        leagueId: String(league._leagueId),
-        ownerAtMap: lower,
-        mappedAt: Date.now(),
-        mappedBy: 'auto-sync',
-      }, { merge: true });
-    }
-    await batch.commit();
-  } catch {
-    // Silent — auto-sync is best-effort. Admin tool covers manual override.
   }
 }
 
@@ -267,13 +184,7 @@ function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']
  * data is linked yet.
  */
 export async function getTeamForToken(tokenId: string, owner: string | null): Promise<TeamData | null> {
-  // 0. First-touch auto-sync: pair owner's unmapped NFTs with their active
-  //    drafts so subsequent lookups have something to read. No-op in prod
-  //    (cardId match already works there) and on subsequent calls within
-  //    the same Vercel instance.
-  if (owner) await autoSyncOwnerMappings(owner);
-
-  // 1. Manual Firestore override always wins (admin-set or auto-synced)
+  // 1. Manual Firestore override always wins (admin-set)
   const mapped = await readNftLeagueMap(tokenId);
   if (mapped) {
     const lookupOwner = mapped.ownerAtMap || owner;
@@ -317,10 +228,6 @@ export async function getTeamsForTokens(
 ): Promise<Map<string, TeamData>> {
   const result = new Map<string, TeamData>();
 
-  // First-touch auto-sync per unique owner (deduped per process)
-  const uniqueOwners = [...new Set(pairs.map(p => p.owner).filter(Boolean) as string[])];
-  await Promise.all(uniqueOwners.map(o => autoSyncOwnerMappings(o)));
-
   // Pre-fetch all manual mappings in parallel
   const mappings = await Promise.all(
     pairs.map(async (p) => ({ tokenId: p.tokenId, mapping: await readNftLeagueMap(p.tokenId) })),
@@ -359,7 +266,7 @@ export async function getTeamsForTokens(
   // cardId-match path
   for (const { tokenIds, tokens } of ownerTokenLists) {
     for (const tokenId of tokenIds) {
-      const found = tokens.find(t => String(t._cardId ?? '') === tokenId);
+      const found = tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId));
       if (!found) continue;
       const data = backendTokenToTeamData(found, 'cardid_match');
       if (data) result.set(tokenId, data);
