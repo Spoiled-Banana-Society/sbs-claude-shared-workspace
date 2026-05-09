@@ -158,6 +158,44 @@ export async function getUserOfframpTransactions(
   return cdpRequest<UserTransactionsResponse>('GET', path);
 }
 
+// Onramp (buy) transaction record. Mirrors OfframpTransaction but the
+// fields Coinbase returns for a buy differ slightly — fiat goes IN,
+// crypto comes OUT. status_reason is the field that surfaces specific
+// failure causes like 'limit_exceeded' or 'payment_declined'.
+export interface OnrampTransaction {
+  id: string;
+  asset: string;
+  status: string;          // e.g. 'ONRAMP_TRANSACTION_STATUS_SUCCESS', 'ONRAMP_TRANSACTION_STATUS_FAILED'
+  status_reason?: string;  // e.g. 'LIMIT_EXCEEDED', 'PAYMENT_DECLINED', 'CANCELED' (when status is FAILED)
+  network: string;
+  purchase_amount: { value: string; currency: string };  // fiat paid in
+  purchase_currency: { code: string };
+  payment_total: { value: string; currency: string };    // total user paid
+  payment_subtotal: { value: string; currency: string };
+  coinbase_fee: { value: string; currency: string };
+  network_fee: { value: string; currency: string };
+  exchange_rate: { value: string; currency: string };
+  tx_hash: string;
+  wallet_address: string;
+  type: string;            // payment method type (CARD, ACH, etc.)
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OnrampTransactionsResponse {
+  transactions: OnrampTransaction[];
+  next_page_key?: string;
+  total_count: number;
+}
+
+export async function getUserOnrampTransactions(
+  partnerUserId: string,
+  pageSize = 5,
+): Promise<OnrampTransactionsResponse> {
+  const path = `/onramp/v1/buy/user/${encodeURIComponent(partnerUserId)}/transactions?page_size=${pageSize}`;
+  return cdpRequest<OnrampTransactionsResponse>('GET', path);
+}
+
 export interface BuildSellUrlInput {
   sessionToken: string;
   partnerUserId: string;

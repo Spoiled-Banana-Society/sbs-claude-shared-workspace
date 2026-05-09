@@ -357,16 +357,29 @@ export function BuyPassesModal({
       const { funded, popupAbort } = await waitForUsdc();
       if (!funded) {
         if (popupAbort) {
-          // Neutral copy — we can't read inside the Coinbase popup
-          // (cross-origin), so we don't know whether the user
-          // cancelled, hit the weekly limit, or had their card
-          // declined. Don't assert a cause we can't verify; just
-          // say the purchase didn't go through and offer both paths
-          // (retry Coinbase or switch to MoonPay) so the user can
-          // pick the best fit for whatever actually happened.
-          throw new Error(
-            "Coinbase didn't go through. You can try again or switch to MoonPay.",
-          );
+          // Ask Coinbase what actually happened. Their /onramp/v1/buy
+          // transactions endpoint returns the user's most recent buy
+          // attempt with a status_reason like LIMIT_EXCEEDED,
+          // PAYMENT_DECLINED, CANCELED, etc. We use that to surface a
+          // truthful, specific message — only mention the $500/week
+          // limit when Coinbase actually says that's what failed.
+          let reason = "Coinbase didn't go through. You can try again or switch to MoonPay.";
+          try {
+            const token = await getAccessToken();
+            const statusRes = await fetch('/api/coinbase/buy-status', {
+              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+            if (statusRes.ok) {
+              const data = (await statusRes.json()) as { kind: string; reason?: string };
+              if (data.kind === 'failed' && typeof data.reason === 'string') {
+                reason = data.reason;
+              }
+            }
+          } catch {
+            // Status lookup is best-effort. If it fails, fall back to
+            // the neutral copy — better than nothing.
+          }
+          throw new Error(reason);
         }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
