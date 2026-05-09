@@ -38,12 +38,6 @@ export default function MarketplacePage() {
 
   const selectedWallet = useMemo(() => {
     if (wallets.length === 0) return null;
-    // Prefer the Privy embedded wallet — it's the only wallet that's
-    // always signable in this browser session. Linked external wallets
-    // (Coinbase, MetaMask) appear in `useWallets()` for social-login
-    // users even when they're not actively connected, and Privy will
-    // throw "No embedded or connected wallet found for address." when
-    // we try to sign typed data through one of those proxies.
     const embedded = wallets.find(w => w.walletClientType === 'privy');
     if (embedded) return embedded;
     if (walletAddress) {
@@ -51,6 +45,43 @@ export default function MarketplacePage() {
     }
     return wallets[0];
   }, [walletAddress, wallets]);
+
+  // Route transactions by wallet type. Privy's useSendTransaction with
+  // sponsor:true is gasless but only works for embedded Privy wallets.
+  // External wallets (MetaMask, Coinbase) sign via their own provider
+  // and pay their own gas — calling Privy's hook on them throws
+  // "No embedded or connected wallet found for address."
+  const sendTx = useCallback(async (
+    txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
+    opts: { description: string; waitForReceipt?: boolean },
+  ): Promise<{ hash: string }> => {
+    if (!selectedWallet) throw new Error('No wallet connected');
+
+    if (selectedWallet.walletClientType === 'privy') {
+      const receipt = await sendTransaction(
+        txRequest,
+        { sponsor: true, uiOptions: { description: opts.description } },
+      );
+      const r = receipt as Record<string, unknown>;
+      return { hash: String(r.hash ?? r.transactionHash ?? '') };
+    }
+
+    const ethereum = await selectedWallet.getEthereumProvider();
+    const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
+    if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
+      await selectedWallet.switchChain(txRequest.chainId);
+    }
+    const { ethers } = await import('ethers');
+    const provider = new ethers.BrowserProvider(ethereum);
+    const signer = await provider.getSigner();
+    const tx = await signer.sendTransaction({
+      to: txRequest.to,
+      data: txRequest.data,
+      value: txRequest.value,
+    });
+    if (opts.waitForReceipt) await tx.wait();
+    return { hash: tx.hash };
+  }, [selectedWallet, sendTransaction]);
 
   const [activeTab, setActiveTab] = useState<TabKey>('buy');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
@@ -220,11 +251,11 @@ export default function MarketplacePage() {
 
     const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
     const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
-    const receipt = await sendTransaction(
-      { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { sponsor: true, uiOptions: { description: 'Purchase NFT — gas fees covered by SBS' } },
+    const receipt = await sendTx(
+      { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+      { description: 'Purchase NFT — gas fees covered by SBS' },
     );
-    const txHash = (receipt as Record<string, unknown>).transactionHash ?? (receipt as Record<string, unknown>).hash;
+    const txHash = receipt.hash;
     logger.debug('[Marketplace] Buy tx:', txHash);
 
     if (selectedTeam.ownerAddress) {
@@ -250,7 +281,7 @@ export default function MarketplacePage() {
     });
 
     return txHash;
-  }, [addNotification, selectedTeam, sendTransaction, walletAddress]);
+  }, [addNotification, selectedTeam, sendTx, walletAddress]);
 
   const handleBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
@@ -352,13 +383,6 @@ export default function MarketplacePage() {
       const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
       if (parseInt(currentChainHex, 16) !== 8453) await selectedWallet.switchChain(8453);
 
-      // Use the actual signing wallet's address everywhere downstream.
-      // walletAddress (from useAuth) may come from a Privy linkedWallets
-      // fallback for social-login users — that wallet exists in the
-      // user's profile but isn't necessarily the active signable
-      // session wallet, which causes Privy to throw "No embedded or
-      // connected wallet found for address." when seaport asks it to
-      // sign typed data on that address's behalf.
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
       const signerAddress = await signer.getAddress();
@@ -379,9 +403,9 @@ export default function MarketplacePage() {
 
       if (!isApproved) {
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
-        const receipt = await sendTransaction(
+        const receipt = await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: 'Approve marketplace to list your NFTs — no cost to you, fees covered by SBS' } },
+          { description: 'Approve marketplace to list your NFTs', waitForReceipt: true },
         );
         logger.debug('[Marketplace] Approval tx:', receipt.hash);
       }
@@ -405,16 +429,9 @@ export default function MarketplacePage() {
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] List failed:', error);
-      // Wallet-diagnostic suffix — always on while we're tracking down
-      // "No embedded or connected wallet found for address." errors.
-      // Strip back to plain `error.message` once listing is confirmed
-      // working.
-      const summary = wallets.map(w => `${w.walletClientType}:${w.address.slice(0,6)}…${w.address.slice(-4)}`).join(' | ');
-      const sel = selectedWallet ? `${selectedWallet.walletClientType}:${selectedWallet.address.slice(0,6)}…${selectedWallet.address.slice(-4)}` : 'null';
-      const errMsg = error instanceof Error ? error.message : String(error);
-      setTxError(`${errMsg} || wallets=[${summary || 'empty'}] selected=${sel} authAddr=${walletAddress?.slice(0,6) ?? '?'}…${walletAddress?.slice(-4) ?? '?'}`);
+      setTxError(error instanceof Error ? error.message : 'Failed to create listing');
     }
-  }, [addNotification, listPrice, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTransaction, walletAddress, wallets]);
+  }, [addNotification, listPrice, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -433,9 +450,9 @@ export default function MarketplacePage() {
       }
 
       const tx = await response.json();
-      await sendTransaction(
+      await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: 'Cancel your listing — fees covered by SBS' } },
+        { description: 'Cancel your listing' },
       );
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
@@ -450,7 +467,7 @@ export default function MarketplacePage() {
       setCancellingTokenId(null);
       setCancelConfirmTeam(null);
     }
-  }, [refetchActivity, refetchListings, refetchMyNfts, sendTransaction, walletAddress]);
+  }, [refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress]);
 
   const executeSweep = useCallback(async () => {
     if (sweepTeams.length === 0 || !walletAddress) return;
@@ -506,11 +523,11 @@ export default function MarketplacePage() {
       try {
         if (!team.orderHash || !team.protocolAddress) throw new Error('Missing order data');
         const tx = await getFulfillmentTx(team.orderHash, walletAddress, team.protocolAddress);
-        const receipt = await sendTransaction(
-          { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: `Purchase ${team.name} — gas fees covered by SBS` } },
+        const receipt = await sendTx(
+          { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+          { description: `Purchase ${team.name}` },
         );
-        const txHash = (receipt as Record<string, unknown>).transactionHash ?? (receipt as Record<string, unknown>).hash;
+        const txHash = receipt.hash;
 
         if (team.ownerAddress) {
           notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress });
@@ -532,7 +549,7 @@ export default function MarketplacePage() {
     refetchListings();
     refetchMyNfts();
     refetchActivity();
-  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTransaction, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress]);
+  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress]);
 
   const handleCancel = useCallback((team: MarketplaceTeam | null) => setCancelConfirmTeam(team), []);
 
@@ -616,7 +633,6 @@ export default function MarketplacePage() {
           selectedTeam={selectedTeam}
           listPrice={listPrice}
           txError={txError}
-          walletDebug={`wallets=[${wallets.map(w => `${w.walletClientType}:${w.address.slice(0,6)}…${w.address.slice(-4)}`).join(' | ') || 'empty'}] selected=${selectedWallet ? `${selectedWallet.walletClientType}:${selectedWallet.address.slice(0,6)}…${selectedWallet.address.slice(-4)}` : 'null'} authAddr=${walletAddress?.slice(0,6) ?? '?'}…${walletAddress?.slice(-4) ?? '?'}`}
           cancelConfirmTeam={cancelConfirmTeam}
           cancellingTokenId={cancellingTokenId}
           onOpenSellModal={openSellModal}
