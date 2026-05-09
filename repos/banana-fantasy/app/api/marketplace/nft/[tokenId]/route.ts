@@ -2,6 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
+import { fetchOwnerTokenMap, syntheticTraitsFromBackend, mergeTraits, type NftTrait } from '@/lib/marketplace/enrichTeam';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,9 +78,11 @@ export async function GET(
     // Get owner from the NFT data already fetched above
     const owner = nft.owners?.[0]?.address ?? null;
 
-    // Enrich owner with SBS profile
+    // Enrich owner with SBS profile + inject team traits from backend draftToken record
     let ownerName: string | null = null;
     let ownerPfp: string | null = null;
+    let traits: NftTrait[] = Array.isArray(nft.traits) ? nft.traits : [];
+    let leagueName: string | null = null;
     if (owner) {
       const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
         || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -93,9 +96,25 @@ export async function GET(
           if (profile?.pfp?.imageUrl) ownerPfp = profile.pfp.imageUrl;
         }
       } catch { /* enrichment optional */ }
+
+      const tokenMap = await fetchOwnerTokenMap(owner);
+      const backendToken = tokenMap.get(String(tokenId));
+      if (backendToken) {
+        const synthetic = syntheticTraitsFromBackend(backendToken);
+        traits = mergeTraits(traits, synthetic);
+        leagueName = backendToken._leagueDisplayName ?? backendToken.leagueDisplayName ?? null;
+      }
     }
 
-    return json({ ...nft, owner, ownerName, ownerPfp, listing });
+    return json({
+      ...nft,
+      traits,
+      name: nft.name || leagueName || null,
+      owner,
+      ownerName,
+      ownerPfp,
+      listing,
+    });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/nft] GET failed:', err);
