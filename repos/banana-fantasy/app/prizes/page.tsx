@@ -431,14 +431,14 @@ export default function PrizesPage() {
             <div className="space-y-6">
               {actionRequired.length > 0 && (
                 <div>
-                  <h3 className="text-xs font-semibold text-warning uppercase tracking-wider mb-1">
+                  <h3 className={`text-xs font-semibold text-warning uppercase tracking-wider ${isEligible ? 'mb-3' : 'mb-1'}`}>
                     Ready to withdraw
                   </h3>
-                  <p className="text-[12px] text-text-muted mb-3">
-                    {isEligible
-                      ? 'Use the “Withdraw all” button above to claim these.'
-                      : 'Use the “Withdraw all” button above to claim prizes once you verify identity.'}
-                  </p>
+                  {!isEligible && (
+                    <p className="text-[12px] text-text-muted mb-3">
+                      Verify identity above to withdraw.
+                    </p>
+                  )}
                   <div className="space-y-3">{actionRequired.map(renderCard)}</div>
                 </div>
               )}
