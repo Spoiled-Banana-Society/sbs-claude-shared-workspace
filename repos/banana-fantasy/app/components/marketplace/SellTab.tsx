@@ -21,6 +21,7 @@ interface SellTabProps {
   selectedTeam: MarketplaceTeam | null;
   listPrice: string;
   txError: string | null;
+  walletDebug?: string | null;
   cancelConfirmTeam: MarketplaceTeam | null;
   cancellingTokenId: string | null;
   onOpenSellModal: (team: MarketplaceTeam) => void;
@@ -46,6 +47,7 @@ export function SellTab({
   selectedTeam,
   listPrice,
   txError,
+  walletDebug,
   cancelConfirmTeam,
   cancellingTokenId,
   onOpenSellModal,
@@ -300,6 +302,11 @@ export function SellTab({
                 )}
               </div>
 
+              {walletDebug && (
+                <div className="p-2 bg-white/5 border border-white/10 rounded-lg mb-3">
+                  <p className="text-white/60 text-[10px] font-mono break-all">{walletDebug}</p>
+                </div>
+              )}
               {txError && (
                 <div className="p-3 bg-error/10 border border-error/30 rounded-xl mb-4">
                   <p className="text-error text-sm">{txError}</p>

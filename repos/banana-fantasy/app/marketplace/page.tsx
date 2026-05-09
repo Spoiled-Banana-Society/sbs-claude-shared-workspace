@@ -616,6 +616,7 @@ export default function MarketplacePage() {
           selectedTeam={selectedTeam}
           listPrice={listPrice}
           txError={txError}
+          walletDebug={`wallets=[${wallets.map(w => `${w.walletClientType}:${w.address.slice(0,6)}…${w.address.slice(-4)}`).join(' | ') || 'empty'}] selected=${selectedWallet ? `${selectedWallet.walletClientType}:${selectedWallet.address.slice(0,6)}…${selectedWallet.address.slice(-4)}` : 'null'} authAddr=${walletAddress?.slice(0,6) ?? '?'}…${walletAddress?.slice(-4) ?? '?'}`}
           cancelConfirmTeam={cancelConfirmTeam}
           cancellingTokenId={cancellingTokenId}
           onOpenSellModal={openSellModal}
