@@ -2,6 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
+import { getTeamForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,9 +78,12 @@ export async function GET(
     // Get owner from the NFT data already fetched above
     const owner = nft.owners?.[0]?.address ?? null;
 
-    // Enrich owner with SBS profile
+    // Enrich owner with SBS profile + inject team data from our backend
     let ownerName: string | null = null;
     let ownerPfp: string | null = null;
+    let traits: NftTrait[] = Array.isArray(nft.traits) ? nft.traits : [];
+    let team: TeamData | null = null;
+
     if (owner) {
       const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
         || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -95,7 +99,21 @@ export async function GET(
       } catch { /* enrichment optional */ }
     }
 
-    return json({ ...nft, owner, ownerName, ownerPfp, listing });
+    team = await getTeamForToken(tokenId, owner);
+    if (team) {
+      traits = mergeTraits(traits, teamDataToTraits(team));
+    }
+
+    return json({
+      ...nft,
+      traits,
+      name: nft.name || team?.leagueDisplayName || null,
+      owner,
+      ownerName,
+      ownerPfp,
+      team,
+      listing,
+    });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/nft] GET failed:', err);
