@@ -159,7 +159,7 @@ export default function PrizesPage() {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-warning" />
             <span className="text-sm font-medium text-warning">
-              Verify your identity once to cash out winnings
+              Verify your identity once to withdraw winnings
             </span>
           </button>
         );
@@ -223,26 +223,18 @@ export default function PrizesPage() {
                   )}
                   {item.type === 'win' && item.status === 'pending' && item.draftId && (
                     canWithdrawPrizes ? (
-                      <div className="flex flex-col items-end gap-1.5">
-                        <button
-                          onClick={() => setCashOutModal({ isOpen: true, prize: item })}
-                          className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
-                        >
-                          Cash out
-                        </button>
-                        <button
-                          onClick={() => setWithdrawModal({ isOpen: true, prize: item })}
-                          className="text-text-muted text-xs hover:text-text-secondary transition-colors"
-                        >
-                          or send USDC to a wallet
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => setCashOutModal({ isOpen: true, prize: item })}
+                        className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-banana text-black hover:brightness-110 transition-all"
+                      >
+                        Withdraw
+                      </button>
                     ) : (
                       <button
                         onClick={() => router.push(verificationUrl)}
                         className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-bg-tertiary text-text-secondary hover:bg-bg-elevated transition-all"
                       >
-                        Verify to Withdraw
+                        Verify to withdraw
                       </button>
                     )
                   )}
