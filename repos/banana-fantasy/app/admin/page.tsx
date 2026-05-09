@@ -19,6 +19,7 @@ import {
 import { UsersTable } from '@/components/admin/UsersTable';
 import { KycAttemptsViewer } from '@/components/admin/KycAttemptsViewer';
 import { OfframpAttemptsViewer } from '@/components/admin/OfframpAttemptsViewer';
+import { OnrampAttemptsViewer } from '@/components/admin/OnrampAttemptsViewer';
 import { ActivityCombined } from '@/components/admin/ActivityCombined';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { MetricsDashboard } from '@/components/admin/MetricsDashboard';
@@ -31,7 +32,7 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 
-type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'offramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
+type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'offramp' | 'onramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
 
 interface NavItem {
   key: TabKey;
@@ -46,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'support', label: 'Support', group: 'Monitoring' },
   { key: 'kyc', label: 'KYC Attempts', group: 'Monitoring' },
   { key: 'offramp', label: 'Offramps', group: 'Monitoring' },
+  { key: 'onramp', label: 'Onramps', group: 'Monitoring' },
   { key: 'users', label: 'Users', group: 'Manage' },
   { key: 'drafts', label: 'Drafts', group: 'Manage' },
   { key: 'withdrawals', label: 'Withdrawals', group: 'Manage' },
@@ -247,6 +249,7 @@ export default function AdminPage() {
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
           {activeTab === 'kyc' && <KycAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'offramp' && <OfframpAttemptsViewer enabled={isAuthorized} />}
+          {activeTab === 'onramp' && <OnrampAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
           {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}
           {activeTab === 'withdrawals' && <WithdrawalsPanel items={withdrawalsQuery.data ?? []} />}

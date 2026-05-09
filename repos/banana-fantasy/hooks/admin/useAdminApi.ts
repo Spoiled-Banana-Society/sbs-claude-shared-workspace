@@ -475,6 +475,60 @@ export function useOfframpAttempts(
   });
 }
 
+export type OnrampAttemptStatus =
+  | 'session_created'
+  | 'tx_pending'
+  | 'tx_completed'
+  | 'tx_failed'
+  | 'abandoned';
+
+export type OnrampProvider = 'coinbase' | 'moonpay';
+
+export interface OnrampAttemptEntry {
+  id: string;
+  userId: string;
+  walletAddress?: string;
+  provider: OnrampProvider;
+  partnerUserId?: string;
+  timestamp: string;
+  updatedAt: string;
+  status: OnrampAttemptStatus;
+  amount?: number;
+  paymentMethod?: string;
+  coinbaseTxId?: string;
+  coinbaseTxStatus?: string;
+  failureReason?: string;
+  failureMessage?: string;
+  nextAvailableAt?: string;
+  txDetectedAt?: string;
+  txCompletedAt?: string;
+  mintTxHash?: string;
+  passQuantity?: number;
+  errorMessage?: string;
+}
+
+export function useOnrampAttempts(
+  enabled: boolean,
+  status: OnrampAttemptStatus | '' = '',
+  limit = 100,
+) {
+  const getHeaders = useAdminAuthHeaders();
+  const qs = new URLSearchParams();
+  if (status) qs.set('status', status);
+  qs.set('limit', String(limit));
+  return useQuery<{ attempts: OnrampAttemptEntry[]; count: number }>({
+    queryKey: ['admin', 'onramp-attempts', status, limit],
+    enabled,
+    queryFn: () =>
+      adminFetch<{ attempts: OnrampAttemptEntry[]; count: number }>(
+        `/api/admin/onramp-attempts?${qs.toString()}`,
+        getHeaders,
+      ),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
 export function useSentryIssues(enabled: boolean) {
   const getHeaders = useAdminAuthHeaders();
   return useQuery<{ issues: SentryIssueEntry[]; configured: boolean; requestId?: string }>({

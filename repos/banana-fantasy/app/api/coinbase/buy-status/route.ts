@@ -19,6 +19,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { getUserOnrampTransactions, type OnrampTransaction } from '@/lib/cdpAuth';
+import { logOnrampFailure } from '@/lib/onrampAudit';
 
 type ClassifiedReason =
   | { kind: 'none' }
@@ -149,7 +150,23 @@ export async function GET(req: Request) {
 
     // Most recent first per Coinbase response order.
     const latest = result.transactions[0];
-    return json(classifyTransaction(latest, result.transactions));
+    const classified = classifyTransaction(latest, result.transactions);
+
+    // Failures get logged to onramp_attempts for the admin dashboard
+    // so support can see exactly why a user got stuck. Fire-and-forget.
+    if (classified.kind === 'failed') {
+      const userKey = (session.walletAddress ?? session.userId).toLowerCase();
+      logOnrampFailure({
+        userId: userKey,
+        failureReason: classified.code,
+        failureMessage: classified.reason,
+        ...(classified.nextAvailableAt ? { nextAvailableAt: classified.nextAvailableAt } : {}),
+        coinbaseTxId: latest.id,
+        coinbaseTxStatus: latest.status,
+      }).catch(() => { /* non-fatal */ });
+    }
+
+    return json(classified);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('CDP buy-status error:', err);

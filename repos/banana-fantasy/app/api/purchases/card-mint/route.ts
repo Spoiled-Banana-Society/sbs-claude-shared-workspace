@@ -345,6 +345,26 @@ export async function POST(req: Request) {
       }
     }
 
+    // Onramp audit: log a tx_completed entry so admin dashboard
+    // shows successful purchases alongside failures. Updates the
+    // existing Coinbase session record if open; creates a fresh
+    // record for MoonPay (which has no session_created step).
+    if (paymentMethod === 'card' && cardProvider) {
+      try {
+        const { logOnrampCompleted } = await import('@/lib/onrampAudit');
+        await logOnrampCompleted({
+          userId,
+          walletAddress: userId,
+          provider: cardProvider,
+          amount: Number(value) / 1_000_000,
+          passQuantity: quantity,
+          mintTxHash: mintResult.txHash,
+        });
+      } catch (err) {
+        logger.warn('card-mint.onramp_audit_failed', { userId, err: (err as Error).message });
+      }
+    }
+
     return json({
       success: true,
       minted: quantity,

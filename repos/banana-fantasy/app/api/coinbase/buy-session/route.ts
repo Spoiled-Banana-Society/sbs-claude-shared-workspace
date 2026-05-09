@@ -19,6 +19,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { buildOnrampUrl, createCdpSessionToken } from '@/lib/cdpAuth';
+import { logOnrampSessionCreated } from '@/lib/onrampAudit';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -93,6 +94,16 @@ export async function POST(req: Request) {
       presetCryptoAmount,
       fiatCurrency: 'USD',
     });
+
+    // Log the session for the admin onramp dashboard. Fire-and-forget;
+    // never block the response on it.
+    logOnrampSessionCreated({
+      userId: walletAddress,
+      walletAddress,
+      provider: 'coinbase',
+      partnerUserId,
+      amount: presetCryptoAmount,
+    }).catch(() => { /* non-fatal */ });
 
     return json({ url, sessionToken: token, redirectUrl });
   } catch (err) {
