@@ -141,7 +141,8 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
             <div className="px-4 py-2 bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 font-medium border-b border-white/[0.04]">
               Special Drafts ({specialRounds.length})
             </div>
-            <table className="w-full text-left text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[640px]">
               <thead className="bg-white/[0.02] text-[11px] uppercase text-gray-500 tracking-wider">
                 <tr>
                   <th className="px-4 py-3 font-medium">Type</th>
@@ -209,12 +210,14 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         );
       })()}
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[720px]">
           <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
               <th className="px-4 py-3 font-medium">Draft</th>
@@ -282,6 +285,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <p className="text-[11px] text-gray-500">

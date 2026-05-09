@@ -44,7 +44,8 @@ export function UserActivity({ enabled }: { enabled: boolean }) {
       )}
 
       <div className="rounded-xl border border-gray-700 overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[640px]">
           <thead className="bg-gray-800/80 text-gray-400 text-xs uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3">When</th>
@@ -74,6 +75,7 @@ export function UserActivity({ enabled }: { enabled: boolean }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

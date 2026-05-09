@@ -101,7 +101,8 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
       </div>
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[640px]">
           <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
               <th className="px-4 py-3 font-medium">Draft</th>
@@ -152,6 +153,7 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <p className="text-[11px] text-gray-500">

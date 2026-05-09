@@ -205,7 +205,8 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
 
       {/* Events table */}
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-        <table className="w-full text-left text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm min-w-[720px]">
           <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
               <th className="px-4 py-3 font-medium">When</th>
@@ -260,6 +261,7 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
