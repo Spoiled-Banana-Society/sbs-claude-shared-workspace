@@ -771,6 +771,16 @@ export default function NftDetailPage() {
           </div>
           <div className="flex items-center gap-2 text-text-muted text-sm mb-6">
             <span>Token #{tokenId}</span>
+            <span>&middot;</span>
+            <a
+              href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${tokenId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-muted hover:text-text-primary text-xs underline-offset-4 hover:underline"
+              title="View on OpenSea"
+            >
+              OpenSea ↗
+            </a>
             {nft.team && (
               <>
                 <span>&middot;</span>
