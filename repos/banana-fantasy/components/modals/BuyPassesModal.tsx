@@ -579,7 +579,7 @@ export function BuyPassesModal({
                     >
                       Coinbase
                       <span className="block text-[10px] font-normal text-text-muted mt-0.5">
-                        Card · Bank · CB account
+                        Card · Apple Pay · Bank
                       </span>
                     </button>
                   </div>
