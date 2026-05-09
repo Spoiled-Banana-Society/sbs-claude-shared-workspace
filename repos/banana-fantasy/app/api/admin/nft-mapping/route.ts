@@ -84,6 +84,10 @@ export async function POST(req: Request) {
  * DELETE /api/admin/nft-mapping?tokenId=...
  *
  * Removes a mapping. Admin only.
+ *
+ * Bulk variants (mutually exclusive with `tokenId`):
+ *   ?clearAutoSynced=1      → delete every doc where mappedBy='auto-sync'
+ *   ?clearOwner=0x...&autoOnly=1 → delete auto-synced docs for one owner
  */
 export async function DELETE(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -95,9 +99,33 @@ export async function DELETE(req: Request) {
 
     const url = new URL(req.url);
     const tokenId = url.searchParams.get('tokenId');
-    if (!tokenId || !/^\d+$/.test(tokenId)) return jsonError('Invalid tokenId', 400);
+    const clearAutoSynced = url.searchParams.get('clearAutoSynced') === '1';
+    const clearOwner = url.searchParams.get('clearOwner');
+    const autoOnly = url.searchParams.get('autoOnly') === '1';
 
     const db = getAdminFirestore();
+
+    if (clearAutoSynced) {
+      const snap = await db.collection(COLLECTION).where('mappedBy', '==', 'auto-sync').get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      return json({ ok: true, deleted: snap.size });
+    }
+
+    if (clearOwner) {
+      const owner = clearOwner.toLowerCase();
+      let q = db.collection(COLLECTION).where('ownerAtMap', '==', owner);
+      if (autoOnly) q = q.where('mappedBy', '==', 'auto-sync');
+      const snap = await q.get();
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      return json({ ok: true, deleted: snap.size, owner });
+    }
+
+    if (!tokenId || !/^\d+$/.test(tokenId)) return jsonError('Invalid tokenId', 400);
+
     await db.collection(COLLECTION).doc(tokenId).delete();
     return json({ ok: true, tokenId });
   } catch (err) {

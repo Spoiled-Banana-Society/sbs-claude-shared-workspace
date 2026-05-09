@@ -87,19 +87,44 @@ export function NftMappingTool({ enabled }: { enabled: boolean }) {
     }
   };
 
+  const handleClearAutoSynced = async () => {
+    if (!confirm('Delete every auto-sync mapping (manual entries are kept)? Marketplace will re-pair on next visit.')) return;
+    setError(null); setSuccess(null);
+    try {
+      const res = await fetch('/api/admin/nft-mapping?clearAutoSynced=1', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const data = await res.json();
+      setSuccess(`Cleared ${data.deleted ?? 0} auto-sync mapping(s). Reload marketplace to re-pair.`);
+      void refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to clear');
+    }
+  };
+
   if (!enabled) return null;
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-xs font-semibold text-white uppercase tracking-wider">NFT → League Mapping</h4>
-        <button
-          onClick={() => void refresh()}
-          disabled={loading}
-          className="text-[11px] text-gray-400 hover:text-white underline underline-offset-2 disabled:opacity-50"
-        >
-          {loading ? 'Refreshing…' : '↻ Refresh'}
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => void handleClearAutoSynced()}
+            className="text-[11px] text-red-400 hover:text-red-300 underline underline-offset-2"
+          >
+            Clear auto-synced
+          </button>
+          <button
+            onClick={() => void refresh()}
+            disabled={loading}
+            className="text-[11px] text-gray-400 hover:text-white underline underline-offset-2 disabled:opacity-50"
+          >
+            {loading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
       </div>
 
       <p className="text-[11px] text-gray-500 mb-3">

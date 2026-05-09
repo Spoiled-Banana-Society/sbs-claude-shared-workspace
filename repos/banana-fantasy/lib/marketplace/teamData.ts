@@ -159,9 +159,20 @@ async function autoSyncOwnerMappings(owner: string): Promise<void> {
     if (!tokensRes.ok) return;
     const tokensJson = await tokensRes.json();
     const activeRaw: BackendDraftToken[] = Array.isArray(tokensJson?.active) ? tokensJson.active : [];
-    // Only consider drafts that have actually completed/joined (have a league name).
+    // Pair only with drafts that have a league + non-empty roster. Slow drafts
+    // mid-draft have a leagueDisplayName but no roster yet — pairing with one
+    // of those gives us a name with nothing else to show. Better to leave the
+    // NFT as "Draft Pass #N" than display a hollow team.
+    const hasRoster = (t: BackendDraftToken) => {
+      const r = t.roster ?? {};
+      return ROSTER_POS_ORDER.some(pos => {
+        const players = r[pos];
+        return Array.isArray(players) && players.length > 0;
+      });
+    };
     const activeWithLeague = activeRaw
       .filter(t => String(t._leagueDisplayName ?? '').trim() !== '' && String(t._leagueId ?? '').trim() !== '')
+      .filter(hasRoster)
       // Sort by leagueId asc so pairing is stable across runs.
       .sort((a, b) => String(a._leagueId ?? '').localeCompare(String(b._leagueId ?? '')));
     if (activeWithLeague.length === 0) return;
