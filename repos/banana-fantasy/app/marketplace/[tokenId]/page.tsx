@@ -692,10 +692,11 @@ export default function NftDetailPage() {
                 draftType === 'jackpot' ? 'from-error/20 to-bg-secondary'
                 : draftType === 'hof' ? 'from-hof/20 to-bg-secondary'
                 : 'from-pro/20 to-bg-secondary'
-              } flex items-center justify-center`}>
+              } flex items-center justify-center p-8`}>
                 <SbsPassThumb
                   label={leagueName?.startsWith('BBB') ? leagueName.replace('BBB ', '') : `#${tokenId}`}
-                  size={240}
+                  size={320}
+                  roster={roster.map(r => r.value)}
                 />
               </div>
             )}

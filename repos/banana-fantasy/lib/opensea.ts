@@ -108,6 +108,10 @@ export interface MarketplaceTeam {
   orderHash: string | null;
   protocolAddress: string | null;
   passType?: 'paid' | 'free';
+  /** True iff our SBS Go API has a draft-token record for this NFT
+   *  (deterministic cardId match). Lets the Sell tab hide ghost NFTs
+   *  that exist on-chain but have no backend purpose. */
+  hasBackendRecord?: boolean;
 }
 
 export interface CollectionStats {

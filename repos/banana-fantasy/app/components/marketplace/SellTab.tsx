@@ -82,7 +82,17 @@ export function SellTab({
             </div>
           ) : (
             <div className="grid gap-4">
-              {myNfts.map(team => (
+              {myNfts
+                .filter(team => {
+                  // Always show free passes (legitimate pre-draft state) and
+                  // anything currently listed (the user explicitly wants to
+                  // see their listings). Hide ghost paid NFTs that have no
+                  // SBS backend record — those are staging-only artifacts.
+                  if (team.passType === 'free') return true;
+                  if (team.orderHash) return true;
+                  return team.hasBackendRecord !== false;
+                })
+                .map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
@@ -137,7 +147,7 @@ export function SellTab({
                     )}
                   </div>
                 </Link>
-              ))}
+                ))}
             </div>
           )}
 

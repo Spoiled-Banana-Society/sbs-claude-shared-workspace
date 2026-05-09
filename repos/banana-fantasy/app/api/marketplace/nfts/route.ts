@@ -116,12 +116,13 @@ export async function GET(req: Request) {
 
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);
+      const hasBackendRecord = teamsByToken.has(nft.identifier);
       // Merge listing data if this token is actively listed
       const listing = listingMap.get(nft.identifier);
       if (listing) {
-        return { ...rest, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress };
+        return { ...rest, hasBackendRecord, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress };
       }
-      return rest;
+      return { ...rest, hasBackendRecord };
     });
 
     return json({ nfts });
