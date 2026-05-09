@@ -469,8 +469,13 @@ const PRESETS: Array<{ label: string; seconds: number }> = [
   { label: 'No expiry', seconds: NO_EXPIRY_SECONDS },
 ];
 
-type CustomUnit = 'minutes' | 'hours' | 'days' | 'weeks';
-const UNIT_SECONDS: Record<CustomUnit, number> = { minutes: 60, hours: HOUR, days: DAY, weeks: 7 * DAY };
+function splitDuration(totalSeconds: number): { days: number; hours: number; minutes: number } {
+  let s = Math.max(0, Math.floor(totalSeconds));
+  const days = Math.floor(s / DAY); s -= days * DAY;
+  const hours = Math.floor(s / HOUR); s -= hours * HOUR;
+  const minutes = Math.floor(s / 60);
+  return { days, hours, minutes };
+}
 
 function ListingDurationPicker({
   durationSeconds,
@@ -481,25 +486,23 @@ function ListingDurationPicker({
 }) {
   const matchedPreset = PRESETS.find(p => p.seconds === durationSeconds);
   const [showCustom, setShowCustom] = useState(!matchedPreset);
-  const [customAmount, setCustomAmount] = useState<string>(() => {
-    if (matchedPreset) return '1';
-    if (durationSeconds % (7 * DAY) === 0) return String(durationSeconds / (7 * DAY));
-    if (durationSeconds % DAY === 0) return String(durationSeconds / DAY);
-    if (durationSeconds % HOUR === 0) return String(durationSeconds / HOUR);
-    return String(Math.max(1, Math.round(durationSeconds / 60)));
-  });
-  const [customUnit, setCustomUnit] = useState<CustomUnit>(() => {
-    if (durationSeconds % (7 * DAY) === 0) return 'weeks';
-    if (durationSeconds % DAY === 0) return 'days';
-    if (durationSeconds % HOUR === 0) return 'hours';
-    return 'minutes';
-  });
+  const initial = splitDuration(durationSeconds === NO_EXPIRY_SECONDS ? 30 * DAY : durationSeconds);
+  const [days, setDays] = useState<string>(String(initial.days));
+  const [hours, setHours] = useState<string>(String(initial.hours));
+  const [minutes, setMinutes] = useState<string>(String(initial.minutes));
 
-  const applyCustom = (amount: string, unit: CustomUnit) => {
-    const n = parseFloat(amount);
-    if (!Number.isFinite(n) || n <= 0) return;
-    onChange(Math.round(n * UNIT_SECONDS[unit]));
+  const applyCustom = (d: string, h: string, m: string) => {
+    const dn = Math.max(0, Math.floor(parseFloat(d) || 0));
+    const hn = Math.max(0, Math.floor(parseFloat(h) || 0));
+    const mn = Math.max(0, Math.floor(parseFloat(m) || 0));
+    const seconds = dn * DAY + hn * HOUR + mn * 60;
+    if (seconds < 60) return; // Seaport floor; createListing also enforces this
+    onChange(seconds);
   };
+
+  const totalSeconds = (Math.max(0, parseInt(days) || 0) * DAY)
+    + (Math.max(0, parseInt(hours) || 0) * HOUR)
+    + (Math.max(0, parseInt(minutes) || 0) * 60);
 
   return (
     <div className="mb-6">
@@ -531,27 +534,39 @@ function ListingDurationPicker({
           ))}
         </div>
       ) : (
-        <div className="flex items-center gap-2">
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={customAmount}
-            onChange={e => { setCustomAmount(e.target.value); applyCustom(e.target.value, customUnit); }}
-            className="flex-1 bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-banana"
-            placeholder="Amount"
-          />
-          <select
-            value={customUnit}
-            onChange={e => { const u = e.target.value as CustomUnit; setCustomUnit(u); applyCustom(customAmount, u); }}
-            className="bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-banana"
-          >
-            <option value="minutes">Minutes</option>
-            <option value="hours">Hours</option>
-            <option value="days">Days</option>
-            <option value="weeks">Weeks</option>
-          </select>
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              ['Days', days, setDays, '0'],
+              ['Hours', hours, setHours, '0'],
+              ['Minutes', minutes, setMinutes, '0'],
+            ] as const).map(([label, value, setter, placeholder]) => (
+              <label key={label} className="block">
+                <span className="block text-[10px] uppercase tracking-wider text-text-muted mb-1">{label}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={value}
+                  placeholder={placeholder}
+                  onChange={e => {
+                    const next = e.target.value;
+                    setter(next);
+                    if (label === 'Days') applyCustom(next, hours, minutes);
+                    else if (label === 'Hours') applyCustom(days, next, minutes);
+                    else applyCustom(days, hours, next);
+                  }}
+                  className="w-full bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-banana"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="text-text-muted text-[11px] mt-2">
+            {totalSeconds < 60
+              ? 'Minimum 1 minute.'
+              : `Listing will end ${new Date(Date.now() + totalSeconds * 1000).toLocaleString()}`}
+          </p>
+        </>
       )}
     </div>
   );
