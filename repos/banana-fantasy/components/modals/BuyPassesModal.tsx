@@ -266,6 +266,12 @@ export function BuyPassesModal({
           chain: BASE_SEPOLIA,
           amount: fundingAmount,
           asset: 'USDC',
+          // defaultFundingMethod: 'card' skips Privy's "Pay with card /
+          // Transfer / Receive" chooser and goes straight to the card
+          // flow. Combined with preferredProvider this routes the
+          // user directly into MoonPay or Coinbase Onramp without
+          // an extra menu in between.
+          defaultFundingMethod: 'card',
           card: {
             preferredProvider: provider,
           },
