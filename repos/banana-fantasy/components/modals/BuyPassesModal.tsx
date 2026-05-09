@@ -60,6 +60,11 @@ export function BuyPassesModal({
 
   const loggedInWithWallet = user?.loginMethod === 'wallet';
   const [paymentMethod, setPaymentMethod] = useState<'usdc' | 'card'>('card');
+  // Card path can route through MoonPay or Coinbase Onramp. Both end
+  // at the same place — USDC on Base in the user's wallet — but each
+  // serves a different audience: MoonPay is faster + more global,
+  // Coinbase is familiar to users who already have a Coinbase account.
+  const [cardProvider, setCardProvider] = useState<'moonpay' | 'coinbase'>('moonpay');
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
   useEffect(() => {
@@ -249,7 +254,7 @@ export function BuyPassesModal({
           amount: fundingAmount,
           asset: 'USDC',
           card: {
-            preferredProvider: 'moonpay',
+            preferredProvider: cardProvider,
           },
         },
       });
@@ -411,7 +416,7 @@ export function BuyPassesModal({
       }
     : {
         idle: '',
-        funding: 'Purchasing USDC via MoonPay…',
+        funding: `Purchasing USDC via ${cardProvider === 'coinbase' ? 'Coinbase' : 'MoonPay'}…`,
         'waiting-for-usdc': 'Waiting for USDC to arrive…',
         signing: 'Waiting for your wallet signature…',
         processing: 'Processing on-chain…',
@@ -521,11 +526,47 @@ export function BuyPassesModal({
                     </svg>
                   </div>
                   <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card / Apple Pay</p>
-                    <p className="text-text-muted text-xs">Instant checkout</p>
+                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Pay with cash</p>
+                    <p className="text-text-muted text-xs">Card · Apple Pay · Coinbase</p>
                   </div>
                 </button>
               </div>
+
+              {/* Provider picker — appears only when Card is selected.
+                  Both routes end at the same place (USDC on Base) but
+                  let the user choose between MoonPay (faster, more
+                  global) and Coinbase Onramp (familiar if they already
+                  have a Coinbase account). Apple-style segmented control. */}
+              {paymentMethod === 'card' && (
+                <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-bg-elevated bg-bg-tertiary/50 p-1">
+                  <button
+                    onClick={() => setCardProvider('moonpay')}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      cardProvider === 'moonpay'
+                        ? 'bg-bg-secondary text-text-primary shadow-sm'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    MoonPay
+                    <span className="block text-[10px] font-normal text-text-muted mt-0.5">
+                      Card · Apple Pay
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setCardProvider('coinbase')}
+                    className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                      cardProvider === 'coinbase'
+                        ? 'bg-bg-secondary text-text-primary shadow-sm'
+                        : 'text-text-muted hover:text-text-secondary'
+                    }`}
+                  >
+                    Coinbase
+                    <span className="block text-[10px] font-normal text-text-muted mt-0.5">
+                      Card · Bank · CB account
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Card Purchase Rewards banner */}
