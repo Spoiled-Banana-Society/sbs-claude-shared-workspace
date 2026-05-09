@@ -104,6 +104,15 @@ export async function POST(req: Request) {
     const paymentMethodRaw = body.paymentMethod;
     const paymentMethod: 'card' | 'usdc' =
       paymentMethodRaw === 'card' ? 'card' : 'usdc';
+    // Which onramp provider the card path went through. Optional —
+    // when missing we fall back to 'moonpay' for backward compat
+    // since that was the only option before the Coinbase route was
+    // added. Used to label the activity-feed event source.
+    const cardProviderRaw = body.cardProvider;
+    const cardProvider: 'moonpay' | 'coinbase' | null =
+      cardProviderRaw === 'coinbase' ? 'coinbase'
+      : cardProviderRaw === 'moonpay' ? 'moonpay'
+      : null;
 
     const adminWallet = getAdminWalletAddress();
     if (!adminWallet) {
@@ -252,7 +261,16 @@ export async function POST(req: Request) {
       tokenIds: mintResult.tokenIds,
       txHash: mintResult.txHash,
       metadata: {
-        source: paymentMethod === 'card' ? 'card_moonpay_permit' : 'usdc_permit',
+        // 'source' encodes both the rail and the onramp partner so admin
+        // reporting can split MoonPay vs Coinbase volume without joining
+        // tables. Falls back to MoonPay when paymentMethod is 'card' but
+        // no provider was specified (backward compat for older clients).
+        source: paymentMethod === 'card'
+          ? (cardProvider === 'coinbase' ? 'card_coinbase_permit' : 'card_moonpay_permit')
+          : 'usdc_permit',
+        ...(paymentMethod === 'card' && cardProvider
+          ? { cardProvider }
+          : {}),
         permitDeadline: deadlineNum,
         permitTxHash,
         transferTxHash,

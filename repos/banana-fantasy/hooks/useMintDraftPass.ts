@@ -19,7 +19,17 @@ import {
 } from '@/lib/contracts/bbb4';
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 
-type MintFn = (quantity: number, opts?: { paymentMethod?: 'usdc' | 'card' }) => Promise<Hex>;
+type MintFn = (
+  quantity: number,
+  opts?: {
+    paymentMethod?: 'usdc' | 'card';
+    // Which onramp provider the card flow went through. Used by the
+    // server to label the activity-feed event source so admin can
+    // distinguish MoonPay vs Coinbase purchases. Ignored when
+    // paymentMethod === 'usdc'.
+    cardProvider?: 'moonpay' | 'coinbase';
+  },
+) => Promise<Hex>;
 
 export type MintStep = 'idle' | 'signing' | 'processing' | 'success' | 'error';
 
@@ -253,6 +263,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
             deadline: Number(deadline),
             signature,
             paymentMethod: opts?.paymentMethod ?? 'usdc',
+            ...(opts?.cardProvider ? { cardProvider: opts.cardProvider } : {}),
           }),
         });
         const data = (await res.json().catch(() => ({}))) as {

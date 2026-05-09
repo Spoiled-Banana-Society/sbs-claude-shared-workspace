@@ -344,7 +344,7 @@ export function BuyPassesModal({
       setWaitingForUsdcStartedAt(null);
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error.
-      await mint(quantity, { paymentMethod: 'card' });
+      await mint(quantity, { paymentMethod: 'card', cardProvider: provider });
       // Successful purchase — remember the provider for next time so
       // returning users don't get re-prompted to pick.
       try {
