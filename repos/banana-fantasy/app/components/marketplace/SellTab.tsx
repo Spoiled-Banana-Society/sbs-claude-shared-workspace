@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
@@ -21,14 +22,14 @@ interface SellTabProps {
   successType: SuccessType;
   selectedTeam: MarketplaceTeam | null;
   listPrice: string;
-  listDurationDays: number;
+  listDurationSeconds: number;
   txError: string | null;
   cancelConfirmTeam: MarketplaceTeam | null;
   cancellingTokenId: string | null;
   onOpenSellModal: (team: MarketplaceTeam) => void;
   onCloseSellModal: () => void;
   onSetListPrice: (value: string) => void;
-  onSetListDurationDays: (value: number) => void;
+  onSetListDurationSeconds: (value: number) => void;
   onHandleList: () => void;
   onShowFreePassInfo: (value: 'team' | 'pass' | null) => void;
   onHandleCancel: (team: MarketplaceTeam | null) => void;
@@ -48,14 +49,14 @@ export function SellTab({
   successType,
   selectedTeam,
   listPrice,
-  listDurationDays,
+  listDurationSeconds,
   txError,
   cancelConfirmTeam,
   cancellingTokenId,
   onOpenSellModal,
   onCloseSellModal,
   onSetListPrice,
-  onSetListDurationDays,
+  onSetListDurationSeconds,
   onHandleList,
   onShowFreePassInfo,
   onHandleCancel,
@@ -322,32 +323,10 @@ export function SellTab({
                 )}
               </div>
 
-              <div className="mb-6">
-                <label className="block text-text-secondary text-sm mb-2">Listing duration</label>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {[
-                    { days: 1, label: '1 day' },
-                    { days: 3, label: '3 days' },
-                    { days: 7, label: '1 week' },
-                    { days: 30, label: '1 month' },
-                    { days: 90, label: '3 months' },
-                    { days: 180, label: '6 months' },
-                  ].map(({ days, label }) => (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => onSetListDurationDays(days)}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
-                        listDurationDays === days
-                          ? 'bg-banana/15 border-banana text-banana'
-                          : 'bg-bg-primary border-bg-tertiary text-text-secondary hover:border-bg-elevated hover:text-text-primary'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ListingDurationPicker
+                durationSeconds={listDurationSeconds}
+                onChange={onSetListDurationSeconds}
+              />
 
               {txError && (
                 <div className="p-3 bg-error/10 border border-error/30 rounded-xl mb-4">
@@ -465,6 +444,105 @@ function TipRow({ number, title, description }: { number: string; title: string;
         <h4 className="text-text-primary font-medium text-sm">{title}</h4>
         <p className="text-text-secondary text-xs">{description}</p>
       </div>
+    </div>
+  );
+}
+
+const HOUR = 60 * 60;
+const DAY = 24 * HOUR;
+// ~100 years — Seaport orderbook treats this as effectively permanent.
+const NO_EXPIRY_SECONDS = 100 * 365 * DAY;
+
+const PRESETS: Array<{ label: string; seconds: number }> = [
+  { label: '1 hour', seconds: HOUR },
+  { label: '24 hours', seconds: DAY },
+  { label: '3 days', seconds: 3 * DAY },
+  { label: '1 week', seconds: 7 * DAY },
+  { label: '1 month', seconds: 30 * DAY },
+  { label: 'No expiry', seconds: NO_EXPIRY_SECONDS },
+];
+
+type CustomUnit = 'hours' | 'days' | 'weeks';
+const UNIT_SECONDS: Record<CustomUnit, number> = { hours: HOUR, days: DAY, weeks: 7 * DAY };
+
+function ListingDurationPicker({
+  durationSeconds,
+  onChange,
+}: {
+  durationSeconds: number;
+  onChange: (seconds: number) => void;
+}) {
+  const matchedPreset = PRESETS.find(p => p.seconds === durationSeconds);
+  const [showCustom, setShowCustom] = useState(!matchedPreset);
+  const [customAmount, setCustomAmount] = useState<string>(() => {
+    if (matchedPreset) return '1';
+    if (durationSeconds % (7 * DAY) === 0) return String(durationSeconds / (7 * DAY));
+    if (durationSeconds % DAY === 0) return String(durationSeconds / DAY);
+    return String(Math.round(durationSeconds / HOUR));
+  });
+  const [customUnit, setCustomUnit] = useState<CustomUnit>(() => {
+    if (durationSeconds % (7 * DAY) === 0) return 'weeks';
+    if (durationSeconds % DAY === 0) return 'days';
+    return 'hours';
+  });
+
+  const applyCustom = (amount: string, unit: CustomUnit) => {
+    const n = parseFloat(amount);
+    if (!Number.isFinite(n) || n <= 0) return;
+    onChange(Math.round(n * UNIT_SECONDS[unit]));
+  };
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <label className="block text-text-secondary text-sm">Listing duration</label>
+        <button
+          type="button"
+          onClick={() => setShowCustom(s => !s)}
+          className="text-banana hover:underline text-xs"
+        >
+          {showCustom ? 'Use preset' : 'Custom'}
+        </button>
+      </div>
+      {!showCustom ? (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {PRESETS.map(({ label, seconds }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => onChange(seconds)}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-all border ${
+                durationSeconds === seconds
+                  ? 'bg-banana/15 border-banana text-banana'
+                  : 'bg-bg-primary border-bg-tertiary text-text-secondary hover:border-bg-elevated hover:text-text-primary'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={customAmount}
+            onChange={e => { setCustomAmount(e.target.value); applyCustom(e.target.value, customUnit); }}
+            className="flex-1 bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary font-mono text-sm focus:outline-none focus:border-banana"
+            placeholder="Amount"
+          />
+          <select
+            value={customUnit}
+            onChange={e => { const u = e.target.value as CustomUnit; setCustomUnit(u); applyCustom(customAmount, u); }}
+            className="bg-bg-primary border border-bg-tertiary rounded-lg px-3 py-2 text-text-primary text-sm focus:outline-none focus:border-banana"
+          >
+            <option value="hours">Hours</option>
+            <option value="days">Days</option>
+            <option value="weeks">Weeks</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 }

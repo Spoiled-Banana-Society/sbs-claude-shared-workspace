@@ -96,7 +96,10 @@ export default function MarketplacePage() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successType, setSuccessType] = useState<SuccessType>('buy');
   const [listPrice, setListPrice] = useState('');
-  const [listDurationDays, setListDurationDays] = useState(30);
+  // Seconds until the Seaport listing expires. Defaults to 30 days. The
+  // 'no expiry' option uses ~100y so OpenSea shows the listing as
+  // effectively permanent without us having to special-case zero.
+  const [listDurationSeconds, setListDurationSeconds] = useState(30 * 24 * 60 * 60);
   const [buyStep, setBuyStep] = useState<BuyStep>('confirm');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card');
   const [txError, setTxError] = useState<string | null>(null);
@@ -411,7 +414,7 @@ export default function MarketplacePage() {
         logger.debug('[Marketplace] Approval tx:', receipt.hash);
       }
 
-      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), signerAddress, provider, listDurationDays);
+      const result = await createListing(selectedTeam.tokenId, parseFloat(listPrice), signerAddress, provider, listDurationSeconds);
       logger.debug('[Marketplace] Listed with orderHash:', result.orderHash);
 
       logActivity({ type: 'list', walletAddress: signerAddress, tokenId: selectedTeam.tokenId, teamName: selectedTeam.name, price: parseFloat(listPrice), orderHash: result.orderHash || null });
@@ -432,7 +435,7 @@ export default function MarketplacePage() {
       console.error('[Marketplace] List failed:', error);
       setTxError(error instanceof Error ? error.message : 'Failed to create listing');
     }
-  }, [addNotification, listPrice, listDurationDays, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
+  }, [addNotification, listPrice, listDurationSeconds, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -633,14 +636,14 @@ export default function MarketplacePage() {
           successType={successType}
           selectedTeam={selectedTeam}
           listPrice={listPrice}
-          listDurationDays={listDurationDays}
+          listDurationSeconds={listDurationSeconds}
           txError={txError}
           cancelConfirmTeam={cancelConfirmTeam}
           cancellingTokenId={cancellingTokenId}
           onOpenSellModal={openSellModal}
           onCloseSellModal={() => setShowSellModal(false)}
           onSetListPrice={setListPrice}
-          onSetListDurationDays={setListDurationDays}
+          onSetListDurationSeconds={setListDurationSeconds}
           onHandleList={handleList}
           onShowFreePassInfo={setShowFreePassInfo}
           onHandleCancel={handleCancel}

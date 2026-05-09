@@ -29,7 +29,7 @@ export async function createListing(
   priceUsd: number,
   sellerAddress: string,
   provider: ethers.BrowserProvider,
-  expirationDays: number = 30,
+  expirationSeconds: number = 30 * 24 * 60 * 60,
 ): Promise<ListingResult> {
   const signer = await provider.getSigner();
 
@@ -52,7 +52,7 @@ export async function createListing(
   const feeAmount = (priceWei * BigInt(OPENSEA_FEE_BPS)) / BigInt(10000);
   const sellerAmount = priceWei - feeAmount;
 
-  const endTime = Math.floor(Date.now() / 1000) + expirationDays * 24 * 60 * 60;
+  const endTime = Math.floor(Date.now() / 1000) + Math.max(60, Math.floor(expirationSeconds));
 
   const { executeAllActions } = await seaport.createOrder(
     {
