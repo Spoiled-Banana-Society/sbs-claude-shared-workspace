@@ -159,7 +159,7 @@ export default function PrizesPage() {
           >
             <span className="w-1.5 h-1.5 rounded-full bg-warning" />
             <span className="text-sm font-medium text-warning">
-              Verify your identity to cash out winnings
+              Verify your identity once to cash out winnings
             </span>
           </button>
         );
