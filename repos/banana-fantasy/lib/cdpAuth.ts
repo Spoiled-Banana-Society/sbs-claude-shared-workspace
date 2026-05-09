@@ -190,3 +190,50 @@ export function buildOfframpUrl(input: BuildSellUrlInput): string {
   // (no suffix) returns 404 from pay.coinbase.com.
   return `https://pay.coinbase.com/v3/sell/input?${params.toString()}`;
 }
+
+export interface BuildBuyUrlInput {
+  sessionToken: string;
+  partnerUserId: string;
+  redirectUrl: string;
+  defaultAsset?: string;
+  defaultNetwork?: string;
+  // Preset USDC amount the buyer wants. Coinbase will lock the input
+  // to this so the user can't accidentally pay for the wrong total.
+  presetCryptoAmount?: number;
+  presetFiatAmount?: number;
+  fiatCurrency?: string;
+  // Force the user into a specific payment rail (card, Apple Pay, ACH).
+  // Without this Coinbase shows their default for the user's region.
+  defaultPaymentMethod?: 'CARD' | 'APPLE_PAY' | 'GOOGLE_PAY' | 'ACH_BANK_ACCOUNT' | 'FIAT_WALLET';
+}
+
+/**
+ * Build a hosted Coinbase Onramp URL for buying USDC.
+ *
+ * Mirrors buildOfframpUrl. Pattern is `/v3/buy/input` — same URL family
+ * as offramp's `/v3/sell/input`, just the inverse direction. Coinbase's
+ * official onramp demo (coinbase/onramp-demo-application) uses this
+ * exact path.
+ *
+ * Direct integration via this URL skips Privy's Coinbase routing
+ * entirely — we mint the session token with our CDP keys and embed
+ * it ourselves, so the popup loads directly without depending on
+ * Privy's backend whitelist for Coinbase Onramp.
+ */
+export function buildOnrampUrl(input: BuildBuyUrlInput): string {
+  const params = new URLSearchParams();
+  params.set('sessionToken', input.sessionToken);
+  params.set('partnerUserId', input.partnerUserId);
+  params.set('redirectUrl', input.redirectUrl);
+  if (input.defaultAsset) params.set('defaultAsset', input.defaultAsset);
+  if (input.defaultNetwork) params.set('defaultNetwork', input.defaultNetwork);
+  if (input.defaultPaymentMethod) params.set('defaultPaymentMethod', input.defaultPaymentMethod);
+  if (typeof input.presetCryptoAmount === 'number') {
+    params.set('presetCryptoAmount', input.presetCryptoAmount.toString());
+  }
+  if (typeof input.presetFiatAmount === 'number') {
+    params.set('presetFiatAmount', input.presetFiatAmount.toString());
+  }
+  if (input.fiatCurrency) params.set('fiatCurrency', input.fiatCurrency);
+  return `https://pay.coinbase.com/v3/buy/input?${params.toString()}`;
+}

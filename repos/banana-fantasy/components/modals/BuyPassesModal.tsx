@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet } from '@privy-io/react-auth';
+import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
@@ -43,6 +43,9 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
+  // For the direct-Coinbase route we hit our own /api/coinbase/buy-session
+  // endpoint which requires a Privy access token (admin auth gate).
+  const { getAccessToken } = usePrivy();
 
   // Purchase flow state lives in a module-level store so it survives modal
   // close/reopen — the card path opens MoonPay externally and a remount
@@ -260,27 +263,59 @@ export function BuyPassesModal({
       // gates this branch so it should always be set here. Defensive
       // fallback to moonpay just in case.
       const provider = cardProvider ?? 'moonpay';
-      const result = await fundWallet({
-        address: walletAddress,
-        options: {
-          chain: BASE_SEPOLIA,
-          amount: fundingAmount,
-          asset: 'USDC',
-          // defaultFundingMethod: 'card' skips Privy's "Pay with card /
-          // Transfer / Receive" chooser and goes straight to the card
-          // flow. Combined with preferredProvider this routes the
-          // user directly into MoonPay or Coinbase Onramp without
-          // an extra menu in between.
-          defaultFundingMethod: 'card',
-          card: {
-            preferredProvider: provider,
-          },
-        },
-      });
 
-      if (result.status === 'cancelled') {
-        setFlowStep('idle');
-        return;
+      // MoonPay route: Privy handles it (works via dashboard config).
+      // Coinbase route: bypass Privy and hit our own /api/coinbase/
+      // buy-session endpoint that mints a CDP session token directly.
+      // This sidesteps Privy's Coinbase routing which requires per-app
+      // backend whitelisting from Privy support.
+      if (provider === 'coinbase') {
+        const cryptoAmount = Number(fundingAmount);
+        const token = await getAccessToken();
+        const res = await fetch('/api/coinbase/buy-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ walletAddress, cryptoAmount }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || 'Failed to start Coinbase Onramp');
+        }
+        const { url } = (await res.json()) as { url: string };
+
+        // Open Coinbase Onramp in a popup. Same width/height the
+        // offramp uses. If the popup is blocked we fall back to
+        // a same-tab navigation; the redirectUrl will bring them
+        // back here once they finish.
+        const popup = window.open(url, 'coinbase-onramp', 'width=480,height=720');
+        if (!popup) {
+          window.location.href = url;
+          return;
+        }
+      } else {
+        const result = await fundWallet({
+          address: walletAddress,
+          options: {
+            chain: BASE_SEPOLIA,
+            amount: fundingAmount,
+            asset: 'USDC',
+            // defaultFundingMethod: 'card' skips Privy's "Pay with card /
+            // Transfer / Receive" chooser and goes straight to the card
+            // flow with the picked provider (MoonPay).
+            defaultFundingMethod: 'card',
+            card: {
+              preferredProvider: provider,
+            },
+          },
+        });
+
+        if (result.status === 'cancelled') {
+          setFlowStep('idle');
+          return;
+        }
       }
 
       // Poll for USDC arrival before minting
