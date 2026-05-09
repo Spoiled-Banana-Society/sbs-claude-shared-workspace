@@ -87,7 +87,14 @@ export function SellTab({
             </div>
           ) : (
             <div className="grid gap-4">
-              {myNfts.map(team => (
+              {[...myNfts]
+                .sort((a, b) => {
+                  // Free draft passes go last; everything else keeps existing order.
+                  const aFree = a.passType === 'free' ? 1 : 0;
+                  const bFree = b.passType === 'free' ? 1 : 0;
+                  return aFree - bFree;
+                })
+                .map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
@@ -164,7 +171,7 @@ export function SellTab({
                     )}
                   </div>
                 </Link>
-              ))}
+                ))}
             </div>
           )}
 

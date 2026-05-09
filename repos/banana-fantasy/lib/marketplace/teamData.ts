@@ -29,6 +29,25 @@ const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 const NFT_LEAGUE_MAP_COLLECTION = 'nft_league_map';
+const TEAM_NICKNAMES_COLLECTION = 'userTeamNicknames';
+
+/**
+ * Read a user's per-league nickname (if any) from Firestore. The owner
+ * sets this via /api/owner/team-nicknames; once set, it's the team's
+ * canonical name everywhere on our site.
+ */
+async function readOwnerNicknames(owner: string): Promise<Record<string, string>> {
+  if (!isFirestoreConfigured() || !owner) return {};
+  try {
+    const db = getAdminFirestore();
+    const snap = await db.collection(TEAM_NICKNAMES_COLLECTION).doc(owner.toLowerCase()).get();
+    if (!snap.exists) return {};
+    const data = snap.data();
+    return (data?.nicknames as Record<string, string> | undefined) ?? {};
+  } catch {
+    return {};
+  }
+}
 
 export interface NftTrait {
   trait_type: string;
@@ -197,13 +216,21 @@ function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']
  * data is linked yet.
  */
 export async function getTeamForToken(tokenId: string, owner: string | null): Promise<TeamData | null> {
+  // Pre-load owner's custom team nicknames (one lookup, applied to whichever
+  // path resolves the team below).
+  const nicknames = owner ? await readOwnerNicknames(owner) : {};
+  const applyNickname = (data: TeamData): TeamData => {
+    const nickname = nicknames[data.leagueId];
+    return nickname ? { ...data, leagueDisplayName: nickname } : data;
+  };
+
   // 1. Deterministic cardId match — this is the ground truth from the
   //    Go API and always wins. Either exact (production) or staging-encoded.
   if (owner) {
     const token = await findTokenByCardIdMatch(owner, tokenId);
     if (token) {
       const data = backendTokenToTeamData(token, 'cardid_match');
-      if (data) return data;
+      if (data) return applyNickname(data);
     }
   }
 
@@ -216,7 +243,7 @@ export async function getTeamForToken(tokenId: string, owner: string | null): Pr
     const token = await findTokenByLeagueId(lookupOwner ?? null, mapped.leagueId);
     if (token) {
       const data = backendTokenToTeamData(token, 'firestore_map');
-      if (data) return data;
+      if (data) return applyNickname(data);
     }
   }
 
@@ -245,28 +272,31 @@ export async function getTeamsForTokens(
   const ownerTokenLists = await Promise.all(
     [...ownersToTokens.entries()].map(async ([owner, tokenIds]) => {
       try {
-        const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner}/draftToken/all`, {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (!res.ok) return { owner, tokenIds, tokens: [] as BackendDraftToken[] };
+        const [res, nicknames] = await Promise.all([
+          fetch(`${DRAFTS_API_BASE}/owner/${owner}/draftToken/all`, { signal: AbortSignal.timeout(3000) }),
+          readOwnerNicknames(owner),
+        ]);
+        if (!res.ok) return { owner, tokenIds, tokens: [] as BackendDraftToken[], nicknames };
         const data = await res.json();
         const tokens: BackendDraftToken[] = [
           ...(Array.isArray(data?.active) ? data.active : []),
           ...(Array.isArray(data?.available) ? data.available : []),
         ];
-        return { owner, tokenIds, tokens };
+        return { owner, tokenIds, tokens, nicknames };
       } catch {
-        return { owner, tokenIds, tokens: [] as BackendDraftToken[] };
+        return { owner, tokenIds, tokens: [] as BackendDraftToken[], nicknames: {} as Record<string, string> };
       }
     }),
   );
 
-  for (const { tokenIds, tokens } of ownerTokenLists) {
+  for (const { tokenIds, tokens, nicknames } of ownerTokenLists) {
     for (const tokenId of tokenIds) {
       const found = tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId));
       if (!found) continue;
       const data = backendTokenToTeamData(found, 'cardid_match');
-      if (data) result.set(tokenId, data);
+      if (!data) continue;
+      const nickname = nicknames[data.leagueId];
+      result.set(tokenId, nickname ? { ...data, leagueDisplayName: nickname } : data);
     }
   }
 
@@ -279,10 +309,16 @@ export async function getTeamsForTokens(
       const mapping = await readNftLeagueMap(p.tokenId);
       if (!mapping) return;
       const lookupOwner = mapping.ownerAtMap || p.owner;
-      const token = lookupOwner ? await findTokenByLeagueId(lookupOwner, mapping.leagueId) : null;
+      if (!lookupOwner) return;
+      const [token, nicknames] = await Promise.all([
+        findTokenByLeagueId(lookupOwner, mapping.leagueId),
+        readOwnerNicknames(lookupOwner),
+      ]);
       if (!token) return;
       const data = backendTokenToTeamData(token, 'firestore_map');
-      if (data) result.set(p.tokenId, data);
+      if (!data) return;
+      const nickname = nicknames[data.leagueId];
+      result.set(p.tokenId, nickname ? { ...data, leagueDisplayName: nickname } : data);
     }),
   );
 
