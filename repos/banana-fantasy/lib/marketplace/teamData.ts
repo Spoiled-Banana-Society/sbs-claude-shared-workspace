@@ -132,8 +132,9 @@ async function findTokenByLeagueId(owner: string | null, leagueId: string): Prom
 
 /**
  * Read the manual `nft_league_map/{tokenId}` override from Firestore.
- * Returns null if Firestore isn't configured, the doc is missing, or it
- * doesn't carry a leagueId.
+ * Returns null if Firestore isn't configured, the doc is missing, doesn't
+ * carry a leagueId, or was written by the (now-deprecated) heuristic
+ * auto-sync — those entries are stale and ignored.
  */
 async function readNftLeagueMap(tokenId: string): Promise<{ leagueId: string; ownerAtMap?: string } | null> {
   if (!isFirestoreConfigured()) return null;
@@ -143,6 +144,8 @@ async function readNftLeagueMap(tokenId: string): Promise<{ leagueId: string; ow
     if (!snap.exists) return null;
     const leagueId = snap.get('leagueId') as string | undefined;
     if (!leagueId) return null;
+    const mappedBy = snap.get('mappedBy') as string | undefined;
+    if (mappedBy === 'auto-sync') return null;
     return { leagueId, ownerAtMap: snap.get('ownerAtMap') as string | undefined };
   } catch {
     return null;
@@ -184,34 +187,25 @@ function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']
  * data is linked yet.
  */
 export async function getTeamForToken(tokenId: string, owner: string | null): Promise<TeamData | null> {
-  // 1. Manual Firestore override always wins (admin-set)
+  // 1. Deterministic cardId match — this is the ground truth from the
+  //    Go API and always wins. Either exact (production) or staging-encoded.
+  if (owner) {
+    const token = await findTokenByCardIdMatch(owner, tokenId);
+    if (token) {
+      const data = backendTokenToTeamData(token, 'cardid_match');
+      if (data) return data;
+    }
+  }
+
+  // 2. Manual Firestore override — used only when the deterministic match
+  //    can't find a record (e.g. NFT was traded and the new owner hasn't
+  //    yet had their draft list refreshed, or staging-only edge cases).
   const mapped = await readNftLeagueMap(tokenId);
   if (mapped) {
     const lookupOwner = mapped.ownerAtMap || owner;
     const token = await findTokenByLeagueId(lookupOwner ?? null, mapped.leagueId);
     if (token) {
       const data = backendTokenToTeamData(token, 'firestore_map');
-      if (data) return data;
-    }
-    // We know the leagueId but couldn't find the full record. Return minimal
-    // data so the UI still gets a name.
-    return {
-      leagueId: mapped.leagueId,
-      leagueDisplayName: '',
-      level: 'Pro',
-      rank: '',
-      seasonScore: '',
-      weekScore: '',
-      roster: [],
-      source: 'firestore_map',
-    };
-  }
-
-  // 2. cardId match (production path)
-  if (owner) {
-    const token = await findTokenByCardIdMatch(owner, tokenId);
-    if (token) {
-      const data = backendTokenToTeamData(token, 'cardid_match');
       if (data) return data;
     }
   }
@@ -228,16 +222,10 @@ export async function getTeamsForTokens(
 ): Promise<Map<string, TeamData>> {
   const result = new Map<string, TeamData>();
 
-  // Pre-fetch all manual mappings in parallel
-  const mappings = await Promise.all(
-    pairs.map(async (p) => ({ tokenId: p.tokenId, mapping: await readNftLeagueMap(p.tokenId) })),
-  );
-  const mappingByToken = new Map(mappings.map(m => [m.tokenId, m.mapping]));
-
-  // Group remaining (no manual mapping) by owner for one fetch each
+  // 1. Group all (tokenId, owner) by owner so we hit /draftToken/all once
+  //    per owner, then run the deterministic cardId match.
   const ownersToTokens = new Map<string, string[]>();
   for (const p of pairs) {
-    if (mappingByToken.get(p.tokenId)) continue;
     if (!p.owner) continue;
     const lower = p.owner.toLowerCase();
     if (!ownersToTokens.has(lower)) ownersToTokens.set(lower, []);
@@ -263,7 +251,6 @@ export async function getTeamsForTokens(
     }),
   );
 
-  // cardId-match path
   for (const { tokenIds, tokens } of ownerTokenLists) {
     for (const tokenId of tokenIds) {
       const found = tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId));
@@ -273,27 +260,19 @@ export async function getTeamsForTokens(
     }
   }
 
-  // Firestore-map path
+  // 2. Firestore manual override — only fills in tokens the cardId match
+  //    couldn't resolve. Stale auto-sync entries are filtered out by
+  //    readNftLeagueMap.
+  const stillMissing = pairs.filter(p => !result.has(p.tokenId));
   await Promise.all(
-    pairs.map(async (p) => {
-      const mapping = mappingByToken.get(p.tokenId);
+    stillMissing.map(async (p) => {
+      const mapping = await readNftLeagueMap(p.tokenId);
       if (!mapping) return;
       const lookupOwner = mapping.ownerAtMap || p.owner;
       const token = lookupOwner ? await findTokenByLeagueId(lookupOwner, mapping.leagueId) : null;
-      if (token) {
-        const data = backendTokenToTeamData(token, 'firestore_map');
-        if (data) { result.set(p.tokenId, data); return; }
-      }
-      result.set(p.tokenId, {
-        leagueId: mapping.leagueId,
-        leagueDisplayName: '',
-        level: 'Pro',
-        rank: '',
-        seasonScore: '',
-        weekScore: '',
-        roster: [],
-        source: 'firestore_map',
-      });
+      if (!token) return;
+      const data = backendTokenToTeamData(token, 'firestore_map');
+      if (data) result.set(p.tokenId, data);
     }),
   );
 
