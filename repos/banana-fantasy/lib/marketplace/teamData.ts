@@ -49,6 +49,7 @@ interface BackendDraftToken {
   _rank?: string | number;
   _seasonScore?: string | number;
   _weekScore?: string | number;
+  _imageUrl?: string;
   roster?: Record<string, RosterPlayer[] | null | undefined>;
 }
 
@@ -59,6 +60,7 @@ export interface TeamData {
   rank: string;
   seasonScore: string;
   weekScore: string;
+  imageUrl: string;
   roster: RosterPlayer[];
   source: 'cardid_match' | 'firestore_map';
 }
@@ -169,6 +171,13 @@ function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']
     }
   }
 
+  // Skip the default placeholder image — that's just the pre-draft token
+  // graphic, not the actual team card. Empty string lets the UI fall back
+  // to OpenSea's image (which is also typically the same placeholder, but
+  // we don't want to falsely advertise this as the real card).
+  const rawImage = String(t._imageUrl ?? '');
+  const imageUrl = rawImage.includes('draft-token-image-default') ? '' : rawImage;
+
   return {
     leagueId,
     leagueDisplayName,
@@ -176,6 +185,7 @@ function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']
     rank: t._rank != null ? String(t._rank) : '',
     seasonScore: t._seasonScore != null ? String(t._seasonScore) : '',
     weekScore: t._weekScore != null ? String(t._weekScore) : '',
+    imageUrl,
     roster,
     source,
   };

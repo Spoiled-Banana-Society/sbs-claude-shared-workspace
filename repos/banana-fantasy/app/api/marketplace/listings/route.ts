@@ -127,6 +127,10 @@ export async function GET(req: Request) {
       if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
         (nft as { name: string }).name = team.leagueDisplayName;
       }
+      if (team.imageUrl) {
+        (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl;
+        (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl;
+      }
     }
 
     const allListings = orders.map(order => {

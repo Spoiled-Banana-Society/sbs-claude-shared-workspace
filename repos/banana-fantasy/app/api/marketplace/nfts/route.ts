@@ -10,6 +10,7 @@ import {
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
+import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,6 +93,26 @@ export async function GET(req: Request) {
     const bbb4Nfts = rawNfts.filter(
       nft => nft.contract?.toLowerCase() === BBB4_CONTRACT.toLowerCase(),
     );
+
+    // SBS-first enrichment: pull team data from our backend for each owned
+    // NFT and inject as synthetic traits + image override before mapping.
+    const teamsByToken = await getTeamsForTokens(
+      bbb4Nfts.map(nft => ({ tokenId: nft.identifier, owner })),
+    );
+    for (const nft of bbb4Nfts) {
+      const team = teamsByToken.get(nft.identifier);
+      if (!team) continue;
+      const synthetic = teamDataToTraits(team);
+      const existing = Array.isArray(nft.traits) ? nft.traits : [];
+      (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
+      if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
+        (nft as { name: string }).name = team.leagueDisplayName;
+      }
+      if (team.imageUrl) {
+        (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl;
+        (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl;
+      }
+    }
 
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);

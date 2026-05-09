@@ -104,10 +104,15 @@ export async function GET(
       traits = mergeTraits(traits, teamDataToTraits(team));
     }
 
+    // SBS team card image (when available) wins over OpenSea's default
+    // banana placeholder. OpenSea image is kept as ultimate fallback.
+    const teamImage = team?.imageUrl ?? '';
     return json({
       ...nft,
       traits,
       name: nft.name || team?.leagueDisplayName || null,
+      image_url: teamImage || nft.image_url,
+      display_image_url: teamImage || nft.display_image_url,
       owner,
       ownerName,
       ownerPfp,
