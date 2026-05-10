@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet, usePrivy } from '@privy-io/react-auth';
+import { useFundWallet } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
@@ -43,9 +43,6 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
-  // For the direct-Coinbase route we hit our own /api/coinbase/buy-session
-  // endpoint which requires a Privy access token (admin auth gate).
-  const { getAccessToken } = usePrivy();
 
   // Purchase flow state lives in a module-level store so it survives modal
   // close/reopen — the card path opens MoonPay externally and a remount
@@ -63,20 +60,12 @@ export function BuyPassesModal({
 
   const loggedInWithWallet = user?.loginMethod === 'wallet';
   const [paymentMethod, setPaymentMethod] = useState<'usdc' | 'card'>('card');
-  // Card path can route through MoonPay or Coinbase Onramp. Both end
-  // at the same place — USDC on Base in the user's wallet — but each
-  // serves a different audience: MoonPay is faster + more global,
-  // Coinbase is familiar to users who already have a Coinbase account.
-  //
-  // First-time users: cardProvider starts as null → user must explicitly
-  // pick before Continue activates. After their first successful purchase
-  // we stash the choice in localStorage and pre-select it on next open,
-  // so returning users don't get re-prompted. They can still switch.
-  const [cardProvider, setCardProvider] = useState<'moonpay' | 'coinbase' | null>(() => {
-    if (typeof window === 'undefined') return null;
-    const saved = window.localStorage.getItem('sbs:cardProvider');
-    return saved === 'moonpay' || saved === 'coinbase' ? saved : null;
-  });
+  // Card path = MoonPay only for now. Coinbase Onramp was wired in
+  // earlier but pulled until our CDP project gets approved out of
+  // trial mode (default $5/transaction cap blocks $25 draft passes).
+  // The plumbing (audit log, buy-session/buy-status endpoints) is
+  // still in the codebase — easy to re-enable later by restoring
+  // the picker UI + the Coinbase route in handlePurchase.
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
   useEffect(() => {
@@ -259,64 +248,28 @@ export function BuyPassesModal({
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
 
-      // cardProvider can only be null on first use; the Continue button
-      // gates this branch so it should always be set here. Defensive
-      // fallback to moonpay just in case.
-      const provider = cardProvider ?? 'moonpay';
-
-      // MoonPay route: Privy handles it (works via dashboard config).
-      // Coinbase route: bypass Privy and hit our own /api/coinbase/
-      // buy-session endpoint that mints a CDP session token directly.
-      // This sidesteps Privy's Coinbase routing which requires per-app
-      // backend whitelisting from Privy support.
-      let coinbasePopup: Window | null = null;
-      if (provider === 'coinbase') {
-        const cryptoAmount = Number(fundingAmount);
-        const token = await getAccessToken();
-        const res = await fetch('/api/coinbase/buy-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // MoonPay-only path: Privy handles the popup, opens straight into
+      // MoonPay via defaultFundingMethod='card' + preferredProvider.
+      // Coinbase path is wired in the codebase (lib/cdpAuth.buildOnrampUrl,
+      // /api/coinbase/buy-session, /api/coinbase/buy-status) but disabled
+      // here until the CDP project is approved out of trial mode — the
+      // default $5/transaction cap blocks $25 draft passes.
+      const result = await fundWallet({
+        address: walletAddress,
+        options: {
+          chain: BASE_SEPOLIA,
+          amount: fundingAmount,
+          asset: 'USDC',
+          defaultFundingMethod: 'card',
+          card: {
+            preferredProvider: 'moonpay',
           },
-          body: JSON.stringify({ walletAddress, cryptoAmount }),
-        });
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || 'Failed to start Coinbase Onramp');
-        }
-        const { url } = (await res.json()) as { url: string };
+        },
+      });
 
-        // Open Coinbase Onramp in a popup. Same width/height the
-        // offramp uses. If the popup is blocked we fall back to
-        // a same-tab navigation; the redirectUrl will bring them
-        // back here once they finish.
-        coinbasePopup = window.open(url, 'coinbase-onramp', 'width=480,height=720');
-        if (!coinbasePopup) {
-          window.location.href = url;
-          return;
-        }
-      } else {
-        const result = await fundWallet({
-          address: walletAddress,
-          options: {
-            chain: BASE_SEPOLIA,
-            amount: fundingAmount,
-            asset: 'USDC',
-            // defaultFundingMethod: 'card' skips Privy's "Pay with card /
-            // Transfer / Receive" chooser and goes straight to the card
-            // flow with the picked provider (MoonPay).
-            defaultFundingMethod: 'card',
-            card: {
-              preferredProvider: provider,
-            },
-          },
-        });
-
-        if (result.status === 'cancelled') {
-          setFlowStep('idle');
-          return;
-        }
+      if (result.status === 'cancelled') {
+        setFlowStep('idle');
+        return;
       }
 
       // Poll for USDC arrival before minting
@@ -326,96 +279,27 @@ export function BuyPassesModal({
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
       const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
       const pollIntervalMs = 3_000; // check every 3s
-      // Coinbase early-exit: if user closes the popup without sending
-      // USDC (cancel, declined card, hit $500/week limit, etc), don't
-      // make them wait the full 5 minutes — give them a recovery path
-      // ~30s after the popup closes.
-      const popupCloseGraceMs = 30_000;
 
-      const waitForUsdc = async (): Promise<{ funded: boolean; popupAbort: boolean }> => {
+      const waitForUsdc = async () => {
         const startTime = Date.now();
-        let popupClosedAt: number | null = null;
         while (Date.now() - startTime < maxWaitMs) {
           const balance = await getUsdcBalance(walletAddress as Address);
-          if (balance >= totalCostUsdc) return { funded: true, popupAbort: false };
-
-          // Early-exit logic only matters for the Coinbase popup we own.
-          // MoonPay's popup is managed by Privy and we don't have a ref.
-          if (coinbasePopup) {
-            if (coinbasePopup.closed && popupClosedAt === null) {
-              popupClosedAt = Date.now();
-            }
-            if (popupClosedAt !== null && Date.now() - popupClosedAt > popupCloseGraceMs) {
-              return { funded: false, popupAbort: true };
-            }
-          }
+          if (balance >= totalCostUsdc) return true;
           await new Promise((r) => setTimeout(r, pollIntervalMs));
         }
-        return { funded: false, popupAbort: false };
+        return false;
       };
 
-      const { funded, popupAbort } = await waitForUsdc();
+      const funded = await waitForUsdc();
       if (!funded) {
-        if (popupAbort) {
-          // Ask Coinbase what actually happened. Their /onramp/v1/buy
-          // transactions endpoint returns the user's most recent buy
-          // attempt with a status_reason like LIMIT_EXCEEDED,
-          // PAYMENT_DECLINED, CANCELED, etc. We use that to surface a
-          // truthful, specific message — only mention the $500/week
-          // limit when Coinbase actually says that's what failed.
-          let reason = "Coinbase didn't go through. You can try again or switch to MoonPay.";
-          try {
-            const token = await getAccessToken();
-            const statusRes = await fetch('/api/coinbase/buy-status', {
-              headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            });
-            if (statusRes.ok) {
-              const data = (await statusRes.json()) as {
-                kind: string;
-                reason?: string;
-                code?: string;
-                nextAvailableAt?: string;
-              };
-              if (data.kind === 'failed' && typeof data.reason === 'string') {
-                reason = data.reason;
-                // For limit-exceeded, append the reset date so the user
-                // knows when they can use Coinbase again. Compute days
-                // remaining from now → friendly relative + absolute.
-                if (data.code === 'LIMIT_EXCEEDED' && data.nextAvailableAt) {
-                  const resetMs = Date.parse(data.nextAvailableAt);
-                  if (Number.isFinite(resetMs)) {
-                    const daysLeft = Math.max(1, Math.ceil((resetMs - Date.now()) / (24 * 60 * 60 * 1000)));
-                    const dateLabel = new Date(resetMs).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    });
-                    const dayWord = daysLeft === 1 ? 'day' : 'days';
-                    reason = `${reason} You can use Coinbase again in ${daysLeft} ${dayWord} (${dateLabel}).`;
-                  }
-                }
-              }
-            }
-          } catch {
-            // Status lookup is best-effort. If it fails, fall back to
-            // the neutral copy — better than nothing.
-          }
-          throw new Error(reason);
-        }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
 
       setWaitingForUsdcStartedAt(null);
       // mint() drives flowStep from here on via mintStep → useEffect above:
-      // signing → processing → success / error.
-      await mint(quantity, { paymentMethod: 'card', cardProvider: provider });
-      // Successful purchase — remember the provider for next time so
-      // returning users don't get re-prompted to pick.
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('sbs:cardProvider', provider);
-        }
-      } catch { /* localStorage can be blocked in some browsers; non-fatal */ }
+      // signing → processing → success / error. cardProvider passed for
+      // admin onramp_attempts logging — currently always 'moonpay'.
+      await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
@@ -541,7 +425,7 @@ export function BuyPassesModal({
       }
     : {
         idle: '',
-        funding: `Purchasing USDC via ${cardProvider === 'coinbase' ? 'Coinbase' : 'MoonPay'}…`,
+        funding: 'Purchasing USDC via MoonPay…',
         'waiting-for-usdc': 'Waiting for USDC to arrive…',
         signing: 'Waiting for your wallet signature…',
         processing: 'Processing on-chain…',
@@ -651,59 +535,12 @@ export function BuyPassesModal({
                     </svg>
                   </div>
                   <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Pay with cash</p>
-                    <p className="text-text-muted text-xs">Card · Apple Pay · Coinbase</p>
+                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card / Apple Pay</p>
+                    <p className="text-text-muted text-xs">Instant checkout</p>
                   </div>
                 </button>
               </div>
 
-              {/* Provider picker — branches on whether the user has
-                  picked before:
-                    - First-time (cardProvider === null): big segmented
-                      control, neither pre-selected. Continue button
-                      stays disabled until they pick. Forces awareness.
-                    - Returning (cardProvider set): single small
-                      one-liner with an inline switch link. They've
-                      already decided; don't make them stare at it. */}
-              {paymentMethod === 'card' && cardProvider === null && (
-                <div className="mt-3">
-                  <p className="text-xs font-medium text-text-secondary mb-2">
-                    Pick a provider to continue
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => setCardProvider('moonpay')}
-                      className="p-3 rounded-xl border-2 border-bg-elevated bg-bg-tertiary hover:border-banana/50 active:scale-[0.98] transition-all text-center"
-                    >
-                      <p className="font-semibold text-sm text-text-primary">MoonPay</p>
-                      <p className="text-[11px] text-text-muted mt-0.5">Card · Apple Pay</p>
-                    </button>
-                    <button
-                      onClick={() => setCardProvider('coinbase')}
-                      className="p-3 rounded-xl border-2 border-bg-elevated bg-bg-tertiary hover:border-banana/50 active:scale-[0.98] transition-all text-center"
-                    >
-                      <p className="font-semibold text-sm text-text-primary">Coinbase</p>
-                      <p className="text-[11px] text-text-muted mt-0.5">Card · Apple Pay · Bank</p>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {paymentMethod === 'card' && cardProvider !== null && (
-                <div className="mt-2 flex items-center justify-between text-[11px] text-text-muted">
-                  <span>
-                    Paying via <span className="text-text-secondary font-medium">
-                      {cardProvider === 'coinbase' ? 'Coinbase' : 'MoonPay'}
-                    </span>
-                  </span>
-                  <button
-                    onClick={() => setCardProvider(cardProvider === 'coinbase' ? 'moonpay' : 'coinbase')}
-                    className="underline underline-offset-2 hover:text-text-secondary transition-colors"
-                  >
-                    Use {cardProvider === 'coinbase' ? 'MoonPay' : 'Coinbase'} instead
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Card Purchase Rewards banner */}
@@ -828,21 +665,13 @@ export function BuyPassesModal({
               )}
             </div>
 
-            {/* CTA Button — disabled when card path is picked but no
-                provider selected yet (first-time users). After they
-                successfully purchase once, the choice is remembered so
-                this gate only shows on first use. */}
+            {/* CTA Button */}
             <button
               onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
-              disabled={
-                isProcessing ||
-                quantity < 1 ||
-                (paymentMethod === 'usdc' && !mintActive) ||
-                (paymentMethod === 'card' && !cardProvider && flowStep === 'idle')
-              }
+              disabled={isProcessing || quantity < 1 || (paymentMethod === 'usdc' && !mintActive)}
               className={`
                 w-full py-5 rounded-2xl font-bold text-xl transition-all shadow-lg shadow-banana/20
-                ${isProcessing || quantity < 1 || (paymentMethod === 'card' && !cardProvider && flowStep === 'idle')
+                ${isProcessing || quantity < 1
                   ? 'bg-banana/50 text-black/50 cursor-not-allowed'
                   : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
                 }
@@ -896,37 +725,15 @@ export function BuyPassesModal({
               </button>
             )}
 
-            {/* Error retry. When the failure mentions Coinbase
-                specifically, surface a one-tap "Switch to MoonPay"
-                fallback alongside the generic Try again. Saves the
-                user from manually reopening the picker. */}
-            {flowStep === 'error' && (() => {
-              const isCoinbaseFailure =
-                cardProvider === 'coinbase' &&
-                (flowError?.toLowerCase().includes('coinbase') ?? false);
-              return (
-                <div className="flex items-center justify-center gap-3">
-                  {isCoinbaseFailure && (
-                    <button
-                      onClick={() => {
-                        setCardProvider('moonpay');
-                        setFlowStep('idle');
-                        setFlowError(null);
-                      }}
-                      className="text-sm font-semibold text-banana hover:underline"
-                    >
-                      Switch to MoonPay
-                    </button>
-                  )}
-                  <button
-                    onClick={() => { setFlowStep('idle'); setFlowError(null); }}
-                    className="text-sm text-text-muted hover:text-text-secondary hover:underline"
-                  >
-                    Try again
-                  </button>
-                </div>
-              );
-            })()}
+            {/* Error retry */}
+            {flowStep === 'error' && (
+              <button
+                onClick={() => { setFlowStep('idle'); setFlowError(null); }}
+                className="w-full text-sm text-banana hover:underline text-center"
+              >
+                Try again
+              </button>
+            )}
 
             {/* Promo */}
             <div className="pt-2 border-t border-bg-elevated/40">
