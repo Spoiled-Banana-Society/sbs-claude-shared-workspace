@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { TeamCard } from '@/components/standings/TeamCard';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import { LeaderboardView } from '@/components/standings/LeaderboardView';
+import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
@@ -34,7 +35,7 @@ export default function StandingsPage() {
   }, [isLoggedIn]);
 
   const [gameweek, setGameweek] = useState<string>(currentGameweek);
-  const [teamSearch, setTeamSearch] = useState('');
+  const [teamSearch, setTeamSearch] = useState<string[]>([]);
   const [teamsPage, setTeamsPage] = useState(0);
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
   const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro'>('all');
@@ -83,9 +84,9 @@ export default function StandingsPage() {
       result = result.filter((league) => league.type === typeFilter);
     }
 
-    if (teamSearch.trim()) {
-      // Split by comma for multi-term search (AND logic)
-      const terms = teamSearch.split(',').map(t => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean);
+    if (teamSearch.length > 0) {
+      // AND across chips: every chip must match something on the league.
+      const terms = teamSearch.map(t => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean);
 
       const typeAliases: Record<string, string> = {
         'jp': 'jackpot', 'jackpot': 'jackpot',
@@ -295,29 +296,15 @@ export default function StandingsPage() {
 
           {/* Search bar */}
           {leagues.length > 0 && (
-            <div className="relative mb-5">
-              <svg className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
-              </svg>
-              <input
-                type="text"
-                value={teamSearch}
-                onChange={(e) => setTeamSearch(e.target.value)}
-                placeholder="Search roster, type, or league # — use commas for AND (e.g. CIN QB, CIN WR)"
-                className="w-full bg-white/[0.04] border border-white/[0.06] rounded-xl pl-9 pr-9 py-2.5 text-sm text-white placeholder:text-white/25 focus:outline-none focus:border-banana/40 focus:ring-1 focus:ring-banana/20 transition-colors"
+            <div className="mb-5">
+              <MultiChipSearch
+                chips={teamSearch}
+                onChange={setTeamSearch}
+                placeholder="Add roster slot, type, or league # (e.g. CIN QB, then CIN WR)"
+                className="w-full"
               />
-              {teamSearch && (
-                <button
-                  onClick={() => setTeamSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path d="M6 18L18 6M6 6l12 12"/>
-                  </svg>
-                </button>
-              )}
-              {teamSearch && teamSearch.includes(',') && (
-                <p className="text-white/20 text-[10px] mt-1 ml-1">Showing teams that match ALL terms</p>
+              {teamSearch.length > 1 && (
+                <p className="text-white/20 text-[10px] mt-1 ml-1">Showing teams that match ALL filters</p>
               )}
             </div>
           )}
@@ -408,8 +395,8 @@ export default function StandingsPage() {
                 </>
               ) : (
                 <div className="text-center py-8 rounded-xl border border-white/[0.04] bg-white/[0.02]">
-                  <p className="text-white/40 text-sm">No teams match &ldquo;{teamSearch}&rdquo;</p>
-                  <button onClick={() => setTeamSearch('')} className="text-banana text-xs mt-1 hover:underline">Clear search</button>
+                  <p className="text-white/40 text-sm">No teams match {teamSearch.map(t => `“${t}”`).join(' + ')}</p>
+                  <button onClick={() => setTeamSearch([])} className="text-banana text-xs mt-1 hover:underline">Clear search</button>
                 </div>
               )}
             </div>

@@ -16,6 +16,7 @@ import { useExposure } from '@/hooks/useExposure';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
+import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import type { League } from '@/types';
 
@@ -58,7 +59,7 @@ export default function ExposurePage() {
   const leagues = leaguesQuery.data ?? [];
 
   const [posFilter, setPosFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortField>('exposure');
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
   const [modalLeague, setModalLeague] = useState<League | null>(null);
@@ -101,11 +102,15 @@ export default function ExposurePage() {
       ? getTopExposures(exposures, 100)
       : getExposureByPosition(exposures, posFilter);
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      data = data.filter(e =>
-        e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q),
-      );
+    if (search.length > 0) {
+      // OR across chips: a row is one team-position, so multiple chips
+      // restrict the row set to anything matching any chip.
+      const queries = search.map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (queries.length > 0) {
+        data = data.filter(e =>
+          queries.some(q => e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q)),
+        );
+      }
     }
 
     // Enrich with ADP/projected for sorting
@@ -277,18 +282,12 @@ export default function ExposurePage() {
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <svg className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-              </svg>
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search..."
-                className="bg-white/[0.04] border border-white/[0.06] rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder:text-white/25 focus:outline-none focus:border-banana/40 w-32 sm:w-40"
-              />
-            </div>
+            <MultiChipSearch
+              chips={search}
+              onChange={setSearch}
+              placeholder="Search..."
+              className="w-40 sm:w-56"
+            />
           </div>
         </div>
 

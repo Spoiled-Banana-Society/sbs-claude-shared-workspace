@@ -87,7 +87,7 @@ export default function MarketplacePage() {
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
   const [hofFilter] = useState(false);
   const [jackpotFilter] = useState(false);
-  const [rosterFilter, setRosterFilter] = useState('');
+  const [rosterFilter, setRosterFilter] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState('price-low');
   const [selectedTeam, setSelectedTeam] = useState<MarketplaceTeam | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -166,18 +166,21 @@ export default function MarketplacePage() {
       if (jackpotFilter && !team.isJackpot) return false;
     }
 
-    if (rosterFilter) {
-      const query = rosterFilter.trim().replace(/^#/, '');
-      if (/^\d+$/.test(query)) {
-        const matchesTokenId = team.tokenId === query;
-        const matchesName = team.name.includes(query);
-        if (!matchesTokenId && !matchesName) return false;
-      } else {
+    // AND across chips: every chip must match either the team #/name or
+    // a roster slot. Numeric chips (#292) match the tokenId/name; text
+    // chips like "KC QB" match against roster slots (case + space insensitive).
+    if (rosterFilter.length > 0) {
+      const allMatch = rosterFilter.every(raw => {
+        const query = raw.trim().replace(/^#/, '');
+        if (/^\d+$/.test(query)) {
+          return team.tokenId === query || team.name.includes(query);
+        }
         const normalized = query.toUpperCase().replace(/\s+/g, '');
         const matchesName = team.name.toUpperCase().replace(/\s+/g, '').includes(normalized);
         const hasRosterMatch = team.roster.some(slot => slot.toUpperCase().replace(/\s+/g, '').includes(normalized));
-        if (!matchesName && !hasRosterMatch) return false;
-      }
+        return matchesName || hasRosterMatch;
+      });
+      if (!allMatch) return false;
     }
     return true;
   }).sort((a, b) => {
