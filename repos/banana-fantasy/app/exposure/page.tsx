@@ -390,7 +390,7 @@ export default function ExposurePage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-lg font-semibold text-white">
-                {search.length === 1 ? 'Drafts with this slot' : 'Drafts with all selected slots'}
+                {search.length === 1 ? 'Drafts with this team position' : 'Drafts with these team positions'}
               </h2>
               <p className="text-white/40 text-xs mt-0.5">
                 {comboMatchingLeagues.length} of {leagues.length} drafts contain {search.map(s => s.toUpperCase()).join(' + ')}
