@@ -167,7 +167,7 @@ export function BadgeIcon({
         filter: unlocked ? undefined : 'grayscale(0.6)',
       }}
     >
-      {badge.glyph}
+      {glyphContent}
     </span>
   );
 
