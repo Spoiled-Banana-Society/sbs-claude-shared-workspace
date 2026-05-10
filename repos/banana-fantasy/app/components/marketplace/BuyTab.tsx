@@ -43,7 +43,6 @@ interface BuyTabProps {
   onClearSweep: () => void;
   onOpenSweepModal: () => void;
   onLoadMore: () => void;
-  onSearchToken: (tokenId: string) => void;
   onToggleWatchlist: (tokenId: string, price?: number | null) => void;
   onShare: (team: { name: string; tokenId: string; price?: number | null }, event?: React.MouseEvent) => void;
   onOpenBuyModal: (team: MarketplaceTeam) => void;
@@ -87,7 +86,6 @@ export function BuyTab({
   onClearSweep,
   onOpenSweepModal,
   onLoadMore,
-  onSearchToken,
   onToggleWatchlist,
   onShare,
   onOpenBuyModal,

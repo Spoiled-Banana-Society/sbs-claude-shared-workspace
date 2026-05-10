@@ -613,7 +613,6 @@ export default function MarketplacePage() {
             setShowSweepModal(true);
           }}
           onLoadMore={viewFilter === 'listed' ? loadMore : loadMoreAllNfts}
-          onSearchToken={(tokenId) => router.push(`/marketplace/${tokenId}`)}
           onToggleWatchlist={(tokenId, price) => requireLogin(() => toggleWatchlist(tokenId, price))}
           onShare={handleShare}
           onOpenBuyModal={openBuyModal}
