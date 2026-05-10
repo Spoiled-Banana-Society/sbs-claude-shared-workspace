@@ -69,7 +69,10 @@ export async function joinDraft(
 
   const maxPlayers: number = Number(obj.maxPlayers ?? obj.maxDrafters ?? 10) || 10;
   const players: number = Number(obj.players ?? obj.numPlayers ?? 1) || 1;
-  const contestName: string = String(obj._leagueDisplayName ?? obj.displayName ?? obj.leagueDisplayName ?? 'Draft');
+  // Server returns "BBB #N" by default; user-facing label is "BBB League #N"
+  // to avoid collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+  const rawName: string = String(obj._leagueDisplayName ?? obj.displayName ?? obj.leagueDisplayName ?? 'Draft');
+  const contestName = rawName.replace(/^BBB\s*#/, 'BBB League #');
   const cardId: string = String(obj._cardId ?? obj.cardId ?? obj.tokenId ?? '');
 
   return {

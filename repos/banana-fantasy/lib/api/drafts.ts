@@ -51,7 +51,10 @@ export function mapDraftInfoToDraftRoom(info: ApiDraftInfo, opts?: { walletAddre
 
   const infoObj = info as Record<string, unknown>;
   const draftId = info.draftId || String(infoObj.id ?? '');
-  const contestName = info.displayName || draftId || 'Draft';
+  // Server returns "BBB #N"; user-facing label is "BBB League #N" to avoid
+  // collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+  const rawName = info.displayName || draftId || 'Draft';
+  const contestName = rawName.replace(/^BBB\s*#/, 'BBB League #');
 
   const maxPlayers = info.draftOrder?.length || 10;
   const draftSpeed = (info.pickLength || 30) > 60 ? 'slow' : 'fast';

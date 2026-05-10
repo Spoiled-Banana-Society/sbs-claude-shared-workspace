@@ -16,6 +16,7 @@ import { useExposure } from '@/hooks/useExposure';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
+import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import type { League } from '@/types';
 
@@ -58,7 +59,7 @@ export default function ExposurePage() {
   const leagues = leaguesQuery.data ?? [];
 
   const [posFilter, setPosFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortField>('exposure');
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
   const [modalLeague, setModalLeague] = useState<League | null>(null);
@@ -87,6 +88,35 @@ export default function ExposurePage() {
     );
   }, [leagues, selectedExposure]);
 
+  // Drafts that contain EVERY chip in the search bar. Matches any roster
+  // entry whose teamPosition (e.g. "IND RB", "MIN WR") includes the chip
+  // text — case + whitespace insensitive. Drives the "Matching Drafts"
+  // panel that surfaces when a user combines two or more slots.
+  const comboMatchingLeagues = useMemo(() => {
+    if (search.length < 1) return [] as League[];
+    const queries = search.map(c => c.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean);
+    return leagues.filter(l =>
+      queries.every(q =>
+        l.roster.some(r => r.teamPosition.toUpperCase().replace(/\s+/g, '').includes(q)),
+      ),
+    );
+  }, [leagues, search]);
+
+  // Closed list of valid slot/team filters derived from the user's actual
+  // roster data. Suggestions in the chip search are restricted to this
+  // list — typing a non-existent slot is rejected.
+  const slotOptions = useMemo(() => {
+    const set = new Set<string>();
+    leagues.forEach(l => {
+      l.roster.forEach(r => {
+        if (r.teamPosition) set.add(r.teamPosition);
+        const team = r.teamPosition.split(' ')[0];
+        if (team) set.add(team);
+      });
+    });
+    return [...set].sort();
+  }, [leagues]);
+
   const openLeague = (league: League, tab: ModalTab = 'roster') => {
     setModalLeague(league);
     setModalTab(tab);
@@ -101,11 +131,15 @@ export default function ExposurePage() {
       ? getTopExposures(exposures, 100)
       : getExposureByPosition(exposures, posFilter);
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      data = data.filter(e =>
-        e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q),
-      );
+    if (search.length > 0) {
+      // OR across chips: a row is one team-position, so multiple chips
+      // restrict the row set to anything matching any chip.
+      const queries = search.map(c => c.trim().toLowerCase()).filter(Boolean);
+      if (queries.length > 0) {
+        data = data.filter(e =>
+          queries.some(q => e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q)),
+        );
+      }
     }
 
     // Enrich with ADP/projected for sorting
@@ -277,18 +311,13 @@ export default function ExposurePage() {
                 </button>
               ))}
             </div>
-            <div className="relative">
-              <svg className="w-3 h-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-              </svg>
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search..."
-                className="bg-white/[0.04] border border-white/[0.06] rounded-lg pl-7 pr-3 py-1.5 text-xs text-white placeholder:text-white/25 focus:outline-none focus:border-banana/40 w-32 sm:w-40"
-              />
-            </div>
+            <MultiChipSearch
+              chips={search}
+              onChange={setSearch}
+              options={slotOptions}
+              placeholder="IND RB, MIN WR…"
+              className="w-44 sm:w-64"
+            />
           </div>
         </div>
 
@@ -355,12 +384,69 @@ export default function ExposurePage() {
         )}
       </div>
 
+      {/* ── Matching Drafts (any chip search) ───────────────────────────── */}
+      {search.length > 0 && comboMatchingLeagues.length > 0 && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                {search.length === 1 ? 'Drafts with this team position' : 'Drafts with these team positions'}
+              </h2>
+              <p className="text-white/40 text-xs mt-0.5">
+                {comboMatchingLeagues.length} of {leagues.length} drafts contain {search.map(s => s.toUpperCase()).join(' + ')}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+            {comboMatchingLeagues.map(league => (
+              <button
+                key={league.id}
+                onClick={() => openLeague(league, 'roster')}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.04] border-b border-white/[0.04] last:border-b-0 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+                    style={{
+                      color: league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7',
+                      backgroundColor: (league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7') + '20',
+                    }}
+                  >
+                    {league.type === 'jackpot' ? 'JP' : league.type.toUpperCase()}
+                  </span>
+                  <span className="text-white text-sm font-mono">{league.name}</span>
+                  {league.leagueRank > 0 && (
+                    <span className="text-white/30 text-xs">#{league.leagueRank}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-white/60 text-sm font-mono">{league.seasonScore.toFixed(1)} pts</span>
+                  <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {search.length > 0 && comboMatchingLeagues.length === 0 && (
+        <div className="mb-10 rounded-xl border border-white/[0.06] bg-white/[0.02] px-6 py-8 text-center">
+          <p className="text-white/50 text-sm">No drafts contain {search.map(s => s.toUpperCase()).join(' + ')}.</p>
+          <button onClick={() => setSearch([])} className="text-banana text-xs mt-2 hover:underline">
+            Clear filters
+          </button>
+        </div>
+      )}
+
       {/* ── Section 3: Team Stacks ─────────────────────────────────────── */}
       {/* Real per-draft co-occurrence — every multi-position combo a
           user has actually drafted from a team is its own card. Sorted
           by draft count desc. Filterable by team and minimum size.
-          Click a card to drill into the leagues containing the stack. */}
-      {stacks.length > 0 && (
+          Click a card to drill into the leagues containing the stack.
+          Hidden once a chip search is active — drill into Matching
+          Drafts above instead. */}
+      {search.length === 0 && stacks.length > 0 && (
         <div className="mb-10">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>

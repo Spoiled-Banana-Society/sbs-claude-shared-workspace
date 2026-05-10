@@ -4,6 +4,7 @@ import type React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
+import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 
 type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
 type BuyStep = 'confirm' | 'processing' | 'complete';
@@ -14,7 +15,8 @@ interface BuyTabProps {
   collectionStats: CollectionStats | null;
   statsLoading: boolean;
   viewFilter: ViewFilter;
-  rosterFilter: string;
+  rosterFilter: string[];
+  rosterFilterOptions: string[];
   sortBy: string;
   sweepMode: boolean;
   sweepSelected: Set<string>;
@@ -35,14 +37,13 @@ interface BuyTabProps {
   txError: string | null;
   userUsdcBalance?: number | null;
   onSetViewFilter: (filter: ViewFilter) => void;
-  onSetRosterFilter: (value: string) => void;
+  onSetRosterFilter: (chips: string[]) => void;
   onSetSortBy: (value: string) => void;
   onToggleSweepMode: () => void;
   onToggleSweepSelect: (tokenId: string) => void;
   onClearSweep: () => void;
   onOpenSweepModal: () => void;
   onLoadMore: () => void;
-  onSearchToken: (tokenId: string) => void;
   onToggleWatchlist: (tokenId: string, price?: number | null) => void;
   onShare: (team: { name: string; tokenId: string; price?: number | null }, event?: React.MouseEvent) => void;
   onOpenBuyModal: (team: MarketplaceTeam) => void;
@@ -59,6 +60,7 @@ export function BuyTab({
   statsLoading,
   viewFilter,
   rosterFilter,
+  rosterFilterOptions,
   sortBy,
   sweepMode,
   sweepSelected,
@@ -86,7 +88,6 @@ export function BuyTab({
   onClearSweep,
   onOpenSweepModal,
   onLoadMore,
-  onSearchToken,
   onToggleWatchlist,
   onShare,
   onOpenBuyModal,
@@ -191,35 +192,13 @@ export function BuyTab({
             ))}
           </div>
 
-          <div className="relative">
-            <svg className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <circle cx="11" cy="11" r="8" />
-              <path d="m21 21-4.3-4.3" />
-            </svg>
-            <input
-              type="text"
-              value={rosterFilter}
-              onChange={event => onSetRosterFilter(event.target.value)}
-              onKeyDown={event => {
-                if (event.key === 'Enter' && rosterFilter.trim()) {
-                  const query = rosterFilter.trim().replace(/^#/, '');
-                  if (/^\d+$/.test(query)) onSearchToken(query);
-                }
-              }}
-              placeholder="Search by team #, league name, or roster"
-              className="bg-bg-secondary border border-bg-tertiary rounded-full pl-9 pr-4 py-2 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-banana w-72"
-            />
-            {rosterFilter && (
-              <button
-                onClick={() => onSetRosterFilter('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
+          <MultiChipSearch
+            chips={rosterFilter}
+            onChange={onSetRosterFilter}
+            options={rosterFilterOptions}
+            placeholder="Type a roster slot (e.g. KC QB)"
+            className="w-72"
+          />
         </div>
 
         <div className="flex items-center gap-3">
@@ -265,8 +244,8 @@ export function BuyTab({
                 ? 'No Hall of Fame teams found in this view.'
                 : viewFilter === 'top'
                   ? 'No top performing teams found yet.'
-                  : rosterFilter
-                    ? 'No teams match your search. Try entering a team # and pressing Enter to look up any team.'
+                  : rosterFilter.length > 0
+                    ? 'No teams match all your filters. Remove a chip to broaden the search.'
                     : 'No BBB4 teams are currently listed for sale. Check back later!'}
           </p>
         </div>

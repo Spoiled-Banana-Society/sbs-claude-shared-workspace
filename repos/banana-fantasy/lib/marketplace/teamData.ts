@@ -175,7 +175,10 @@ async function readNftLeagueMap(tokenId: string): Promise<{ leagueId: string; ow
 
 function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']): TeamData | null {
   const leagueId = String(t._leagueId ?? '');
-  const leagueDisplayName = String(t._leagueDisplayName ?? '');
+  // Server returns "BBB #N"; user-facing label is "BBB League #N" to avoid
+  // collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+  const rawDisplayName = String(t._leagueDisplayName ?? '');
+  const leagueDisplayName = rawDisplayName.replace(/^BBB\s*#/, 'BBB League #');
   if (!leagueDisplayName && !leagueId) return null;
 
   const roster: RosterPlayer[] = [];
