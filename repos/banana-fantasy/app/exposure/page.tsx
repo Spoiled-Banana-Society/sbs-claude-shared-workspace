@@ -93,7 +93,7 @@ export default function ExposurePage() {
   // text — case + whitespace insensitive. Drives the "Matching Drafts"
   // panel that surfaces when a user combines two or more slots.
   const comboMatchingLeagues = useMemo(() => {
-    if (search.length < 2) return [] as League[];
+    if (search.length < 1) return [] as League[];
     const queries = search.map(c => c.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean);
     return leagues.filter(l =>
       queries.every(q =>
@@ -270,59 +270,6 @@ export default function ExposurePage() {
         </div>
       )}
 
-      {/* ── Matching Drafts (combo of 2+ chips) ─────────────────────────── */}
-      {comboMatchingLeagues.length > 0 && (
-        <div className="mb-10">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Drafts with all selected slots</h2>
-              <p className="text-white/40 text-xs mt-0.5">
-                {comboMatchingLeagues.length} of {leagues.length} drafts contain {search.map(s => s.toUpperCase()).join(' + ')}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
-            {comboMatchingLeagues.map(league => (
-              <button
-                key={league.id}
-                onClick={() => openLeague(league, 'roster')}
-                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.04] border-b border-white/[0.04] last:border-b-0 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
-                    style={{
-                      color: league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7',
-                      backgroundColor: (league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7') + '20',
-                    }}
-                  >
-                    {league.type === 'jackpot' ? 'JP' : league.type.toUpperCase()}
-                  </span>
-                  <span className="text-white text-sm font-mono">{league.name}</span>
-                  {league.leagueRank > 0 && (
-                    <span className="text-white/30 text-xs">#{league.leagueRank}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-white/60 text-sm font-mono">{league.seasonScore.toFixed(1)} pts</span>
-                  <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {search.length >= 2 && comboMatchingLeagues.length === 0 && (
-        <div className="mb-10 rounded-xl border border-white/[0.06] bg-white/[0.02] px-6 py-8 text-center">
-          <p className="text-white/50 text-sm">No drafts contain all of {search.map(s => s.toUpperCase()).join(' + ')}.</p>
-          <button onClick={() => setSearch([])} className="text-banana text-xs mt-2 hover:underline">
-            Clear filters
-          </button>
-        </div>
-      )}
-
       {/* ── Section 2: Position Exposure Table ─────────────────────────── */}
       <div className="mb-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -437,12 +384,69 @@ export default function ExposurePage() {
         )}
       </div>
 
+      {/* ── Matching Drafts (any chip search) ───────────────────────────── */}
+      {search.length > 0 && comboMatchingLeagues.length > 0 && (
+        <div className="mb-10">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                {search.length === 1 ? 'Drafts with this slot' : 'Drafts with all selected slots'}
+              </h2>
+              <p className="text-white/40 text-xs mt-0.5">
+                {comboMatchingLeagues.length} of {leagues.length} drafts contain {search.map(s => s.toUpperCase()).join(' + ')}
+              </p>
+            </div>
+          </div>
+          <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+            {comboMatchingLeagues.map(league => (
+              <button
+                key={league.id}
+                onClick={() => openLeague(league, 'roster')}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-white/[0.04] border-b border-white/[0.04] last:border-b-0 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wide"
+                    style={{
+                      color: league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7',
+                      backgroundColor: (league.type === 'jackpot' ? '#ef4444' : league.type === 'hof' ? '#D4AF37' : '#a855f7') + '20',
+                    }}
+                  >
+                    {league.type === 'jackpot' ? 'JP' : league.type.toUpperCase()}
+                  </span>
+                  <span className="text-white text-sm font-mono">{league.name}</span>
+                  {league.leagueRank > 0 && (
+                    <span className="text-white/30 text-xs">#{league.leagueRank}</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-white/60 text-sm font-mono">{league.seasonScore.toFixed(1)} pts</span>
+                  <svg className="w-3.5 h-3.5 text-white/30" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {search.length > 0 && comboMatchingLeagues.length === 0 && (
+        <div className="mb-10 rounded-xl border border-white/[0.06] bg-white/[0.02] px-6 py-8 text-center">
+          <p className="text-white/50 text-sm">No drafts contain {search.map(s => s.toUpperCase()).join(' + ')}.</p>
+          <button onClick={() => setSearch([])} className="text-banana text-xs mt-2 hover:underline">
+            Clear filters
+          </button>
+        </div>
+      )}
+
       {/* ── Section 3: Team Stacks ─────────────────────────────────────── */}
       {/* Real per-draft co-occurrence — every multi-position combo a
           user has actually drafted from a team is its own card. Sorted
           by draft count desc. Filterable by team and minimum size.
-          Click a card to drill into the leagues containing the stack. */}
-      {stacks.length > 0 && (
+          Click a card to drill into the leagues containing the stack.
+          Hidden once a chip search is active — drill into Matching
+          Drafts above instead. */}
+      {search.length === 0 && stacks.length > 0 && (
         <div className="mb-10">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
