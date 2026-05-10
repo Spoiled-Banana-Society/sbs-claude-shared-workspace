@@ -321,6 +321,54 @@ export const BADGE_CATALOG: Badge[] = [
     glyph: '③',
     hidden: true,
   },
+
+  // ── NFL team flair ───────────────────────────────────────────────────
+  // Cosmetic only. Available to everyone immediately — no unlock criteria.
+  // Glyph is the team's 3-letter code; color is the team's primary brand
+  // color so the disc reads as that team at a glance.
+  ...([
+    ['team-ari', 'Cardinals', 'ARI', '#97233F'],
+    ['team-atl', 'Falcons', 'ATL', '#A71930'],
+    ['team-bal', 'Ravens', 'BAL', '#241773'],
+    ['team-buf', 'Bills', 'BUF', '#00338D'],
+    ['team-car', 'Panthers', 'CAR', '#0085CA'],
+    ['team-chi', 'Bears', 'CHI', '#0B162A'],
+    ['team-cin', 'Bengals', 'CIN', '#FB4F14'],
+    ['team-cle', 'Browns', 'CLE', '#311D00'],
+    ['team-dal', 'Cowboys', 'DAL', '#003594'],
+    ['team-den', 'Broncos', 'DEN', '#FB4F14'],
+    ['team-det', 'Lions', 'DET', '#0076B6'],
+    ['team-gb', 'Packers', 'GB', '#203731'],
+    ['team-hou', 'Texans', 'HOU', '#03202F'],
+    ['team-ind', 'Colts', 'IND', '#002C5F'],
+    ['team-jax', 'Jaguars', 'JAX', '#006778'],
+    ['team-kc', 'Chiefs', 'KC', '#E31837'],
+    ['team-lac', 'Chargers', 'LAC', '#0080C6'],
+    ['team-lar', 'Rams', 'LAR', '#003594'],
+    ['team-lv', 'Raiders', 'LV', '#000000'],
+    ['team-mia', 'Dolphins', 'MIA', '#008E97'],
+    ['team-min', 'Vikings', 'MIN', '#4F2683'],
+    ['team-ne', 'Patriots', 'NE', '#002244'],
+    ['team-no', 'Saints', 'NO', '#9F8958'],
+    ['team-nyg', 'Giants', 'NYG', '#0B2265'],
+    ['team-nyj', 'Jets', 'NYJ', '#125740'],
+    ['team-phi', 'Eagles', 'PHI', '#004C54'],
+    ['team-pit', 'Steelers', 'PIT', '#FFB612'],
+    ['team-sea', 'Seahawks', 'SEA', '#002244'],
+    ['team-sf', '49ers', 'SF', '#AA0000'],
+    ['team-tb', 'Buccaneers', 'TB', '#D50A0A'],
+    ['team-ten', 'Titans', 'TEN', '#0C2340'],
+    ['team-was', 'Commanders', 'WAS', '#5A1414'],
+  ] as const).map(([id, name, code, color]): Badge => ({
+    id,
+    label: name,
+    description: `${name} fan flair.`,
+    criteria: 'Always available — pick your team',
+    category: 'team',
+    color,
+    glyph: code,
+    alwaysUnlocked: true,
+  })),
 ];
 
 /** Lookup helper used by the catalog UI and the seed function. */
@@ -328,7 +376,11 @@ export const BADGE_BY_ID: Record<string, Badge> = Object.fromEntries(
   BADGE_CATALOG.map(b => [b.id, b]),
 );
 
-/** Initial UserBadge docs seeded into a new user — every badge starts locked. */
+/** Initial UserBadge docs seeded into a new user — every badge starts locked.
+ *  Skips alwaysUnlocked cosmetics (NFL team flair) since their unlock state
+ *  is implicit in the catalog and doesn't need a per-user Firestore doc. */
 export function seedUserBadges(): { id: string; unlocked: false }[] {
-  return BADGE_CATALOG.map(b => ({ id: b.id, unlocked: false as const }));
+  return BADGE_CATALOG
+    .filter(b => !b.alwaysUnlocked)
+    .map(b => ({ id: b.id, unlocked: false as const }));
 }

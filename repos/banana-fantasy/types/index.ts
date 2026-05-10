@@ -24,7 +24,7 @@ export interface User {
 }
 
 // Badges
-export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder' | 'legacy';
+export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder' | 'legacy' | 'team';
 
 export interface Badge {
   id: string;
@@ -58,6 +58,9 @@ export interface Badge {
   /** Hidden badges (past-season champions, secret unlocks) don't render
    *  in the catalog when locked — they only appear once unlocked. */
   hidden?: boolean;
+  /** Cosmetic badges (e.g. NFL team flair) anyone can equip without
+   *  earning. Bypasses the unlock check on equip. */
+  alwaysUnlocked?: boolean;
 }
 
 /** Per-user badge unlock state. Stored at users/{userId}/badges/{badgeId}. */

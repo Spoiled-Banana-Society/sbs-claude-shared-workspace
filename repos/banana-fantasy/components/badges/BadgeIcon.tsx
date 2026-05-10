@@ -37,7 +37,12 @@ export function BadgeIcon({
   showTooltip = true,
   ringWidth,
 }: BadgeIconProps) {
-  const fontSize = Math.max(8, Math.round(size * 0.55));
+  // Multi-character glyphs (e.g. NFL team 3-letter codes) need a smaller
+  // font so they fit inside the disc; single-char glyphs keep the larger
+  // emoji-friendly sizing.
+  const glyphLen = [...badge.glyph].length;
+  const fontScale = glyphLen >= 3 ? 0.32 : glyphLen === 2 ? 0.42 : 0.55;
+  const fontSize = Math.max(7, Math.round(size * fontScale));
   const ring = ringWidth ?? Math.max(1, Math.round(size * 0.1));
   const color = unlocked ? badge.color : LOCKED_GREY;
   const accent = unlocked ? (badge.accentColor || badge.color) : LOCKED_GREY;

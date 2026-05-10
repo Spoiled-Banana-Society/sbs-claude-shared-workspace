@@ -60,7 +60,13 @@ export function useBadges(opts?: { userId?: string }) {
     return { ok: true };
   }, [getAccessToken, swr, updateUser]);
 
-  const unlockedSet = new Set(swr.data.unlocked.map(u => u.id));
+  // Server tells us which earned badges are unlocked. Layer on
+  // `alwaysUnlocked` cosmetics (e.g. NFL team flair) from the catalog so
+  // they're equippable without per-user Firestore writes.
+  const unlockedSet = new Set([
+    ...swr.data.unlocked.map(u => u.id),
+    ...swr.data.catalog.filter(b => b.alwaysUnlocked).map(b => b.id),
+  ]);
 
   // Prefer the user's locally-updated equippedBadge for instant click
   // feedback. Falls back to the server-side value during initial load

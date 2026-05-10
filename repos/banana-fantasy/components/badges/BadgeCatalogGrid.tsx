@@ -14,9 +14,10 @@ const CATEGORY_LABEL: Record<BadgeCategory, string> = {
   wheel: 'Wheel',
   founder: 'Founder',
   legacy: 'Legacy Champions',
+  team: 'NFL Team Flair',
 };
 
-const CATEGORY_ORDER: BadgeCategory[] = ['drafts', 'league', 'finals', 'wheel', 'founder', 'legacy'];
+const CATEGORY_ORDER: BadgeCategory[] = ['drafts', 'league', 'finals', 'wheel', 'founder', 'legacy', 'team'];
 
 interface BadgeCatalogGridProps {
   /** When set, viewing another user's catalog read-only — equip controls hidden. */
@@ -43,7 +44,7 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
 
   const grouped = useMemo(() => {
     const out: Record<BadgeCategory, Badge[]> = {
-      drafts: [], league: [], finals: [], wheel: [], founder: [], legacy: [],
+      drafts: [], league: [], finals: [], wheel: [], founder: [], legacy: [], team: [],
     };
     for (const b of catalog) {
       // Hidden badges (past-season champions) only show once unlocked.

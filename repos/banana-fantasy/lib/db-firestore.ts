@@ -2026,11 +2026,16 @@ export async function equipBadge(
     return { ok: true };
   }
 
-  if (!BADGE_BY_ID[badgeId]) return { ok: false, reason: 'unknown badge id' };
+  const badge = BADGE_BY_ID[badgeId];
+  if (!badge) return { ok: false, reason: 'unknown badge id' };
 
-  const badgeSnap = await userRef.collection(BADGES_SUBCOLLECTION).doc(badgeId).get();
-  const data = badgeSnap.exists ? (badgeSnap.data() as UserBadge) : null;
-  if (!data?.unlocked) return { ok: false, reason: 'badge not unlocked' };
+  // Cosmetic badges (NFL team flair etc.) bypass the per-user unlock
+  // check — they're available to everyone by design.
+  if (!badge.alwaysUnlocked) {
+    const badgeSnap = await userRef.collection(BADGES_SUBCOLLECTION).doc(badgeId).get();
+    const data = badgeSnap.exists ? (badgeSnap.data() as UserBadge) : null;
+    if (!data?.unlocked) return { ok: false, reason: 'badge not unlocked' };
+  }
 
   await userRef.set({ equippedBadge: badgeId }, { merge: true });
   return { ok: true };
