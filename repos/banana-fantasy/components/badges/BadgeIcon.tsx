@@ -43,6 +43,23 @@ export function BadgeIcon({
   const glyphLen = [...badge.glyph].length;
   const fontScale = glyphLen >= 3 ? 0.32 : glyphLen === 2 ? 0.42 : 0.55;
   const fontSize = Math.max(7, Math.round(size * fontScale));
+  const iconSize = Math.round(size * 0.78);
+
+  // When badge.iconUrl is set, render the image inside the disc;
+  // otherwise fall back to the text/emoji glyph.
+  const glyphContent = badge.iconUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={badge.iconUrl}
+      alt=""
+      width={iconSize}
+      height={iconSize}
+      style={{ objectFit: 'contain', display: 'block' }}
+      draggable={false}
+    />
+  ) : (
+    badge.glyph
+  );
   const ring = ringWidth ?? Math.max(1, Math.round(size * 0.1));
   const color = unlocked ? badge.color : LOCKED_GREY;
   const accent = unlocked ? (badge.accentColor || badge.color) : LOCKED_GREY;
@@ -96,7 +113,7 @@ export function BadgeIcon({
             boxShadow: baseGlow,
           }}
         >
-          {badge.glyph}
+          {glyphContent}
         </span>
       </span>
     </span>
@@ -128,7 +145,7 @@ export function BadgeIcon({
           filter: unlocked ? undefined : 'grayscale(0.6)',
         }}
       >
-        {badge.glyph}
+        {glyphContent}
       </span>
     </span>
   ) : (

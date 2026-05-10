@@ -366,7 +366,8 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Always available — pick your team',
     category: 'team',
     color,
-    glyph: code,
+    glyph: code, // fallback if image fails to load
+    iconUrl: `https://a.espncdn.com/i/teamlogos/nfl/500/${code.toLowerCase()}.png`,
     alwaysUnlocked: true,
   })),
 ];
