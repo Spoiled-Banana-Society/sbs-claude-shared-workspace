@@ -39,6 +39,24 @@ export default function StandingsPage() {
   const [teamsPage, setTeamsPage] = useState(0);
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
   const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro'>('all');
+
+  // Closed list of valid filter chips: every team-position seen across
+  // leagues + the type aliases (Jackpot/HOF/Pro). Restricts the chip
+  // search so users can't type something that doesn't exist.
+  const searchOptions = useMemo(() => {
+    const set = new Set<string>();
+    leagues.forEach(l => {
+      l.roster.forEach(r => {
+        if (r.teamPosition) set.add(r.teamPosition);
+        const team = r.teamPosition.split(' ')[0];
+        if (team) set.add(team);
+      });
+    });
+    set.add('Jackpot');
+    set.add('HOF');
+    set.add('Pro');
+    return [...set].sort();
+  }, [leagues]);
   const TEAMS_PER_PAGE = 20;
 
   // Modal state
@@ -300,7 +318,8 @@ export default function StandingsPage() {
               <MultiChipSearch
                 chips={teamSearch}
                 onChange={setTeamSearch}
-                placeholder="Add roster slot, type, or league # (e.g. CIN QB, then CIN WR)"
+                options={searchOptions}
+                placeholder="Type a roster slot or type (e.g. CIN QB)"
                 className="w-full"
               />
               {teamSearch.length > 1 && (

@@ -157,6 +157,21 @@ export default function MarketplacePage() {
     return enrichedListings;
   }, [viewFilter, enrichedListings, allNfts]);
 
+  // Closed list of valid filter chips: every roster slot seen across the
+  // currently visible team set + bare team codes. Restricts the chip
+  // search so users can't type something that doesn't exist.
+  const rosterFilterOptions = useMemo(() => {
+    const set = new Set<string>();
+    baseTeams.forEach(team => {
+      team.roster.forEach(slot => {
+        if (slot) set.add(slot);
+        const code = slot.split(' ')[0];
+        if (code) set.add(code);
+      });
+    });
+    return [...set].sort();
+  }, [baseTeams]);
+
   const filteredTeams = useMemo(() => baseTeams.filter(team => {
     if (viewFilter === 'jackpot' && !team.isJackpot) return false;
     if (viewFilter === 'hof' && !team.isHof) return false;
@@ -580,6 +595,7 @@ export default function MarketplacePage() {
           statsLoading={statsLoading}
           viewFilter={viewFilter}
           rosterFilter={rosterFilter}
+          rosterFilterOptions={rosterFilterOptions}
           sortBy={sortBy}
           sweepMode={sweepMode}
           sweepSelected={sweepSelected}

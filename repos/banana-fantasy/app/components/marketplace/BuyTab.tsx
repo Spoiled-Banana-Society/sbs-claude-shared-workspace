@@ -16,6 +16,7 @@ interface BuyTabProps {
   statsLoading: boolean;
   viewFilter: ViewFilter;
   rosterFilter: string[];
+  rosterFilterOptions: string[];
   sortBy: string;
   sweepMode: boolean;
   sweepSelected: Set<string>;
@@ -59,6 +60,7 @@ export function BuyTab({
   statsLoading,
   viewFilter,
   rosterFilter,
+  rosterFilterOptions,
   sortBy,
   sweepMode,
   sweepSelected,
@@ -193,7 +195,8 @@ export function BuyTab({
           <MultiChipSearch
             chips={rosterFilter}
             onChange={onSetRosterFilter}
-            placeholder="Search by team #, league name, or roster"
+            options={rosterFilterOptions}
+            placeholder="Type a roster slot (e.g. KC QB)"
             className="w-72"
           />
         </div>

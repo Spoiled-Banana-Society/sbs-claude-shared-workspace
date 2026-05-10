@@ -102,6 +102,21 @@ export default function ExposurePage() {
     );
   }, [leagues, search]);
 
+  // Closed list of valid slot/team filters derived from the user's actual
+  // roster data. Suggestions in the chip search are restricted to this
+  // list — typing a non-existent slot is rejected.
+  const slotOptions = useMemo(() => {
+    const set = new Set<string>();
+    leagues.forEach(l => {
+      l.roster.forEach(r => {
+        if (r.teamPosition) set.add(r.teamPosition);
+        const team = r.teamPosition.split(' ')[0];
+        if (team) set.add(team);
+      });
+    });
+    return [...set].sort();
+  }, [leagues]);
+
   const openLeague = (league: League, tab: ModalTab = 'roster') => {
     setModalLeague(league);
     setModalTab(tab);
@@ -352,8 +367,9 @@ export default function ExposurePage() {
             <MultiChipSearch
               chips={search}
               onChange={setSearch}
-              placeholder="Search..."
-              className="w-40 sm:w-56"
+              options={slotOptions}
+              placeholder="IND RB, MIN WR…"
+              className="w-44 sm:w-64"
             />
           </div>
         </div>
