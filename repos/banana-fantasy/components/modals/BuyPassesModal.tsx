@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet } from '@privy-io/react-auth';
+import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
@@ -43,6 +43,10 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
     },
   });
+  // Used to authenticate the session-beacon call (MoonPay path) so admin
+  // sees opened-popup attempts even when the user closes Privy's flow
+  // mid-purchase.
+  const { getAccessToken } = usePrivy();
 
   // Purchase flow state lives in a module-level store so it survives modal
   // close/reopen — the card path opens MoonPay externally and a remount
@@ -247,6 +251,29 @@ export function BuyPassesModal({
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
+
+      // Beacon a session_created record before opening the MoonPay popup
+      // so admin sees opened-popup attempts even when the user closes
+      // Privy's flow without completing. Fire-and-forget; never block
+      // the purchase on it. The eventual completion (in card-mint route)
+      // updates this same session to tx_completed.
+      void (async () => {
+        try {
+          const token = await getAccessToken();
+          await fetch('/api/onramp/log-session', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              walletAddress,
+              provider: 'moonpay',
+              amount: Number(fundingAmount),
+            }),
+          });
+        } catch { /* logging is best-effort */ }
+      })();
 
       // MoonPay-only path: Privy handles the popup, opens straight into
       // MoonPay via defaultFundingMethod='card' + preferredProvider.

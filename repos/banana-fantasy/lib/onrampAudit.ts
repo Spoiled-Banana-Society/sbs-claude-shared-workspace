@@ -179,35 +179,36 @@ export async function logOnrampCompleted(input: {
     const db = getAdminFirestore();
     const now = new Date().toISOString();
 
-    if (input.provider === 'coinbase') {
-      // Update the user's most recent open session.
-      const snap = await db
-        .collection(ONRAMP_COLLECTION)
-        .where('userId', '==', input.userId)
-        .where('provider', '==', 'coinbase')
-        .orderBy('timestamp', 'desc')
-        .limit(5)
-        .get();
-      const target = snap.docs.find((d) => {
-        const data = d.data() as OnrampAttempt;
-        return data.status === 'session_created' || data.status === 'tx_pending';
-      });
-      if (target) {
-        const update: Partial<OnrampAttempt> = {
-          status: 'tx_completed',
-          updatedAt: now,
-          txCompletedAt: now,
-          passQuantity: input.passQuantity,
-        };
-        if (input.mintTxHash) update.mintTxHash = input.mintTxHash;
-        if (input.walletAddress) update.walletAddress = input.walletAddress;
-        await target.ref.set(update, { merge: true });
-        return target.id;
-      }
+    // Try to update the user's most recent open session for this provider.
+    // Works for both Coinbase (server-logged in buy-session) and MoonPay
+    // (client-logged via /api/onramp/log-session before fundWallet).
+    const snap = await db
+      .collection(ONRAMP_COLLECTION)
+      .where('userId', '==', input.userId)
+      .where('provider', '==', input.provider)
+      .orderBy('timestamp', 'desc')
+      .limit(5)
+      .get();
+    const target = snap.docs.find((d) => {
+      const data = d.data() as OnrampAttempt;
+      return data.status === 'session_created' || data.status === 'tx_pending';
+    });
+    if (target) {
+      const update: Partial<OnrampAttempt> = {
+        status: 'tx_completed',
+        updatedAt: now,
+        txCompletedAt: now,
+        passQuantity: input.passQuantity,
+      };
+      if (input.mintTxHash) update.mintTxHash = input.mintTxHash;
+      if (input.walletAddress) update.walletAddress = input.walletAddress;
+      await target.ref.set(update, { merge: true });
+      return target.id;
     }
 
-    // MoonPay path OR Coinbase with no open session — create a new
-    // tx_completed record from scratch.
+    // No open session found — create a new tx_completed record from
+    // scratch. Happens when the session_created beacon was missed
+    // (offline / blocked) or for Coinbase if buy-session never fired.
     const newDoc: Partial<OnrampAttempt> = {
       userId: input.userId,
       provider: input.provider,
