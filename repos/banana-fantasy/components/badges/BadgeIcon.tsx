@@ -50,14 +50,19 @@ export function BadgeIcon({
   const baseGlow = unlocked
     ? badge.glow === 'soft'
       ? `0 0 8px ${color}88`
-      : badge.glow === 'pulse'
-        ? undefined // handled via .badge-pulse animation
+      : badge.glow === 'pulse' || badge.glow === 'spin'
+        ? undefined // handled via .badge-pulse / .badge-spin animation
         : `0 0 4px ${color}44`
     : 'none';
 
-  const wrapperClass = unlocked && badge.glow === 'pulse'
-    ? 'inline-flex items-center justify-center select-none badge-pulse'
-    : 'inline-flex items-center justify-center select-none';
+  const animationClass = unlocked
+    ? badge.glow === 'pulse'
+      ? ' badge-pulse'
+      : badge.glow === 'spin'
+        ? ' badge-spin'
+        : ''
+    : '';
+  const wrapperClass = `inline-flex items-center justify-center select-none${animationClass}`;
 
   const inner = badge.ringStyle === 'rainbow' && unlocked ? (
     // Rainbow-ring tier: outer rotating gradient ring with the badge
