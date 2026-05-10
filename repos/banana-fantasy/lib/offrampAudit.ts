@@ -12,6 +12,7 @@
 
 import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
 import { logActivityEvent } from './activityEvents';
+import { getUserOfframpTransactions, type OfframpTransaction } from './cdpAuth';
 
 const OFFRAMP_COLLECTION = 'offramp_attempts';
 export const ABANDONED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
@@ -372,10 +373,95 @@ function mapCoinbaseStatusToOfframp(s: string): OfframpAttemptStatus {
 }
 
 /**
+ * Reconcile session_created Coinbase offramp entries against Coinbase's
+ * actual sell-transaction state. Lets admin see real outcomes (failed
+ * / completed / pending) on rows where the user closed our modal
+ * before tx-status polling could update.
+ */
+async function reconcileSessionCreatedOfframps(
+  attempts: Array<OfframpAttempt & { id: string }>,
+  maxReconciliations = 20,
+): Promise<Array<OfframpAttempt & { id: string }>> {
+  if (!isFirestoreConfigured()) return attempts;
+
+  const candidates = attempts
+    .filter((a) =>
+      a.source === 'coinbase_offramp' &&
+      a.status === 'session_created' &&
+      !!a.partnerUserId,
+    )
+    .slice(0, maxReconciliations);
+  if (candidates.length === 0) return attempts;
+
+  const byPartner = new Map<string, Array<OfframpAttempt & { id: string }>>();
+  for (const a of candidates) {
+    const key = a.partnerUserId!;
+    if (!byPartner.has(key)) byPartner.set(key, []);
+    byPartner.get(key)!.push(a);
+  }
+
+  const db = getAdminFirestore();
+  const updates: Array<Promise<unknown>> = [];
+  const updatedById = new Map<string, OfframpAttempt & { id: string }>();
+
+  await Promise.all(Array.from(byPartner.entries()).map(async ([partnerUserId, group]) => {
+    let txs: OfframpTransaction[] = [];
+    try {
+      const res = await getUserOfframpTransactions(partnerUserId, 10);
+      txs = res.transactions;
+    } catch (err) {
+      console.warn('[Offramp Audit] reconcile fetch failed for', partnerUserId, (err as Error).message);
+      return;
+    }
+
+    for (const attempt of group) {
+      const sessionMs = Date.parse(attempt.timestamp);
+      const candidate = txs.find((t) => {
+        const ts = Date.parse(t.created_at);
+        return Number.isFinite(ts) && ts >= sessionMs - 60_000;
+      });
+      if (!candidate) continue;
+
+      const newStatus = mapCoinbaseStatusToOfframp(candidate.status);
+      const now = new Date().toISOString();
+      const numOrUndef = (s?: string): number | undefined => {
+        if (!s) return undefined;
+        const n = parseFloat(s);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      const update: Partial<OfframpAttempt> = {
+        status: newStatus,
+        updatedAt: now,
+        coinbaseTxId: candidate.id,
+        coinbaseTxStatus: candidate.status,
+        coinbaseSellUsdc: numOrUndef(candidate.sell_amount?.value),
+        coinbaseTotalUsd: numOrUndef(candidate.total?.value),
+        coinbaseFeeUsd: numOrUndef(candidate.coinbase_fee?.value),
+        coinbaseExchangeRate: numOrUndef(candidate.exchange_rate?.value),
+      };
+      if (!attempt.txDetectedAt) update.txDetectedAt = now;
+      if (newStatus === 'tx_completed' && !attempt.txCompletedAt) {
+        update.txCompletedAt = now;
+      }
+
+      updates.push(
+        db.collection(OFFRAMP_COLLECTION).doc(attempt.id).set(update, { merge: true }),
+      );
+      updatedById.set(attempt.id, { ...attempt, ...update } as OfframpAttempt & { id: string });
+    }
+  }));
+
+  Promise.all(updates).catch(() => { /* best-effort */ });
+  return attempts.map((a) => updatedById.get(a.id) ?? a);
+}
+
+/**
  * List recent offramp attempts. Default 50, filterable by status + userId.
- * Side effect: lazily marks old session_created attempts as abandoned
- * (older than ABANDONED_THRESHOLD_MS with no tx detected). Saves having
- * to run a separate cron.
+ * Side effects:
+ *  - Lazily marks old session_created attempts as abandoned (1h+).
+ *  - Reconciles session_created Coinbase rows against Coinbase's
+ *    actual sell-transaction state — so admin sees real outcomes
+ *    even when users closed the modal before tx-status could update.
  */
 export async function listOfframpAttempts(opts: {
   limit?: number;
@@ -396,7 +482,6 @@ export async function listOfframpAttempts(opts: {
 
     for (const doc of snap.docs) {
       const data = doc.data() as OfframpAttempt;
-      // Lazy abandonment: session_created and old → mark abandoned in-place.
       if (
         data.status === 'session_created' &&
         Date.parse(data.timestamp) < now - ABANDONED_THRESHOLD_MS
@@ -408,9 +493,9 @@ export async function listOfframpAttempts(opts: {
         result.push({ id: doc.id, ...data });
       }
     }
-    // Don't await abandon writes — they're fire-and-forget on the next read.
     Promise.all(abandonUpdates).catch(() => { /* ignore */ });
-    return result;
+
+    return await reconcileSessionCreatedOfframps(result);
   } catch (err) {
     console.error('[Offramp Audit] listOfframpAttempts failed:', err);
     return [];

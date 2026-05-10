@@ -21,6 +21,7 @@
 //                             "did the purchase land?" admin view.
 
 import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
+import { getUserOnrampTransactions, type OnrampTransaction } from './cdpAuth';
 
 const ONRAMP_COLLECTION = 'onramp_attempts';
 export const ABANDONED_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
@@ -227,9 +228,142 @@ export async function logOnrampCompleted(input: {
   }
 }
 
+// Map raw Coinbase status enums to user-facing copy. Mirrors the
+// classifier in /api/coinbase/buy-status — kept in sync so admin
+// sees the same explanation the user got. Worth dedoping eventually
+// but not blocking ship.
+function classifyCoinbaseFailure(statusReason: string | undefined): { friendly: string; code: string } {
+  const code = (statusReason || '').toUpperCase();
+  switch (code) {
+    case 'LIMIT_EXCEEDED':
+    case 'BUY_LIMIT_EXCEEDED':
+    case 'WEEKLY_LIMIT_EXCEEDED':
+      return { friendly: "Hit Coinbase's $500 weekly purchase limit.", code: 'LIMIT_EXCEEDED' };
+    case 'PAYMENT_DECLINED':
+    case 'CARD_DECLINED':
+      return { friendly: 'Card was declined by Coinbase.', code: 'PAYMENT_DECLINED' };
+    case 'CANCELED':
+    case 'CANCELLED':
+    case 'USER_CANCELED':
+      return { friendly: 'Cancelled the Coinbase popup before paying.', code: 'CANCELED' };
+    case 'KYC_REQUIRED':
+    case 'IDENTITY_VERIFICATION_REQUIRED':
+      return { friendly: 'Coinbase required additional identity verification.', code: 'KYC_REQUIRED' };
+    case 'GEO_RESTRICTED':
+    case 'REGION_NOT_SUPPORTED':
+      return { friendly: "Coinbase isn't available in user's region.", code: 'GEO_RESTRICTED' };
+    default:
+      return { friendly: `Coinbase reported failure: ${code || 'UNKNOWN'}`, code: code || 'UNKNOWN' };
+  }
+}
+
+/**
+ * Pull Coinbase's actual transaction state for a partnerUserId and
+ * update the matching attempt doc. This is the "reconcile" path —
+ * runs lazily when admin views the dashboard so session_created rows
+ * with no follow-up get filled in with whatever Coinbase says
+ * happened, even if the user closed the browser before our frontend
+ * could report back.
+ *
+ * Best-effort: errors are swallowed (admin still sees the un-updated
+ * row). Limited to 20 reconciliations per call to keep latency sane.
+ */
+async function reconcileSessionCreatedAttempts(
+  attempts: Array<OnrampAttempt & { id: string }>,
+  maxReconciliations = 20,
+): Promise<Array<OnrampAttempt & { id: string }>> {
+  if (!isFirestoreConfigured()) return attempts;
+
+  // Only Coinbase entries can be reconciled — MoonPay tx state is
+  // owned by Privy, no API access from us.
+  const candidates = attempts
+    .filter((a) =>
+      a.provider === 'coinbase' &&
+      a.status === 'session_created' &&
+      !!a.partnerUserId,
+    )
+    .slice(0, maxReconciliations);
+
+  if (candidates.length === 0) return attempts;
+
+  // Group by partnerUserId so we make one Coinbase call per user even
+  // if they have multiple session_created rows.
+  const byPartner = new Map<string, Array<OnrampAttempt & { id: string }>>();
+  for (const a of candidates) {
+    const key = a.partnerUserId!;
+    if (!byPartner.has(key)) byPartner.set(key, []);
+    byPartner.get(key)!.push(a);
+  }
+
+  const db = getAdminFirestore();
+  const updates: Array<Promise<unknown>> = [];
+  const updatedById = new Map<string, OnrampAttempt & { id: string }>();
+
+  await Promise.all(Array.from(byPartner.entries()).map(async ([partnerUserId, group]) => {
+    let txs: OnrampTransaction[] = [];
+    try {
+      const res = await getUserOnrampTransactions(partnerUserId, 10);
+      txs = res.transactions;
+    } catch (err) {
+      console.warn('[Onramp Audit] reconcile fetch failed for', partnerUserId, (err as Error).message);
+      return;
+    }
+
+    // For each session_created attempt, find a Coinbase tx that was
+    // created at or after our session timestamp. Coinbase's response
+    // is most-recent-first; we take the closest match.
+    for (const attempt of group) {
+      const sessionMs = Date.parse(attempt.timestamp);
+      const candidate = txs.find((t) => {
+        const ts = Date.parse(t.created_at);
+        // Allow a small grace before the session timestamp (clock skew).
+        return Number.isFinite(ts) && ts >= sessionMs - 60_000;
+      });
+      if (!candidate) continue;
+
+      const status = (candidate.status || '').toUpperCase();
+      const now = new Date().toISOString();
+      const update: Partial<OnrampAttempt> = {
+        coinbaseTxId: candidate.id,
+        coinbaseTxStatus: candidate.status,
+        updatedAt: now,
+      };
+
+      if (status.includes('SUCCESS') || status.includes('COMPLETE')) {
+        update.status = 'tx_completed';
+        update.txCompletedAt = now;
+      } else if (status.includes('FAIL') || status.includes('CANCEL') || status.includes('DECLIN')) {
+        const { friendly, code } = classifyCoinbaseFailure(candidate.status_reason);
+        update.status = 'tx_failed';
+        update.failureReason = code;
+        update.failureMessage = friendly;
+      } else {
+        // PENDING / IN_PROGRESS — promote session_created → tx_pending
+        // so admin sees something is happening.
+        update.status = 'tx_pending';
+        update.txDetectedAt = now;
+      }
+
+      updates.push(
+        db.collection(ONRAMP_COLLECTION).doc(attempt.id).set(update, { merge: true }),
+      );
+      updatedById.set(attempt.id, { ...attempt, ...update } as OnrampAttempt & { id: string });
+    }
+  }));
+
+  // Don't block on writes — fire-and-forget. Return the merged in-memory
+  // version so the admin sees fresh data on this load.
+  Promise.all(updates).catch(() => { /* best-effort */ });
+
+  return attempts.map((a) => updatedById.get(a.id) ?? a);
+}
+
 /**
  * List recent onramp attempts. Lazy-marks stale session_created docs
- * as abandoned so admin doesn't have to run a cron.
+ * as abandoned so admin doesn't have to run a cron, and reconciles
+ * Coinbase session_created rows against Coinbase's actual transaction
+ * state so admin sees real outcomes even when the user closed the
+ * browser before our frontend reported back.
  */
 export async function listOnrampAttempts(opts: {
   limit?: number;
@@ -268,7 +402,12 @@ export async function listOnrampAttempts(opts: {
       }
     }
     Promise.all(abandonUpdates).catch(() => { /* fire-and-forget */ });
-    return result;
+
+    // Reconcile session_created Coinbase entries against the real
+    // Coinbase transaction state. Lets admin see actual outcomes
+    // (failed / completed / pending) even when the user never came
+    // back to our modal. Best-effort.
+    return await reconcileSessionCreatedAttempts(result);
   } catch (err) {
     console.error('[Onramp Audit] listOnrampAttempts failed:', err);
     return [];
