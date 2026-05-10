@@ -273,5 +273,8 @@ export function buildOnrampUrl(input: BuildBuyUrlInput): string {
     params.set('presetFiatAmount', input.presetFiatAmount.toString());
   }
   if (input.fiatCurrency) params.set('fiatCurrency', input.fiatCurrency);
-  return `https://pay.coinbase.com/v3/buy/input?${params.toString()}`;
+  // Onramp uses /buy/select-asset (NOT /v3/buy/input — that 404s).
+  // The /v3/sell/input pattern is offramp-only. Confirmed via
+  // Coinbase's hosted-onramp docs + their official demo app.
+  return `https://pay.coinbase.com/buy/select-asset?${params.toString()}`;
 }
