@@ -53,11 +53,11 @@ export function SupportChatButton() {
         className="flex items-center justify-center w-14 h-14 rounded-full bg-banana shadow-[0_8px_24px_rgba(0,0,0,0.35)] hover:scale-105 active:scale-95 transition-transform"
       >
         <Image
-          src="/sbs-logo.png"
+          src="/sbs-logo-black.png"
           alt="SBS"
           width={32}
           height={32}
-          className="w-8 h-8 object-contain"
+          className="w-7 h-7 object-contain"
           priority={false}
         />
       </button>
