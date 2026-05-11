@@ -51,20 +51,32 @@ export async function listConversations(opts: {
   if (opts.filterResolved === false) params.set('filter_resolved', '0');
   const url = `${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversations/${page}${params.toString() ? `?${params}` : ''}`;
 
+  // Tier can be overridden via env so you can switch between a User
+  // Token (default — generated in Profile → Settings → User Tokens)
+  // and a Plugin Token (Marketplace) without redeploying code.
+  const tier = (process.env.CRISP_TIER ?? 'user').trim();
+
   try {
     const res = await fetch(url, {
       headers: {
         Authorization: authHeader(creds),
-        'X-Crisp-Tier': 'plugin',
+        'X-Crisp-Tier': tier,
       },
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      logger.warn('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200) });
+      logger.warn('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200), tier });
       return { conversations: [], configured: true };
     }
     const data = await res.json();
-    return { conversations: (data.data ?? []) as CrispConversation[], configured: true };
+    const conversations = (data.data ?? []) as CrispConversation[];
+    // Quiet diagnostic — surfaces in admin error log if zero results
+    // come back so we can tell the difference between "API rejected"
+    // and "API returned empty."
+    if (conversations.length === 0) {
+      logger.warn('crisp.list_conversations.empty', { tier, dataKeys: Object.keys(data || {}).join(',') });
+    }
+    return { conversations, configured: true };
   } catch (err) {
     logger.error('crisp.list_conversations.failed', { err });
     return { conversations: [], configured: true };
