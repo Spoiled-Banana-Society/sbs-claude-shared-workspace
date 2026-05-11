@@ -73,8 +73,24 @@ export function CrispChat() {
 
     const style = document.createElement('style');
     style.id = 'crisp-hide';
+    // Hide the default Crisp launcher across every version of the
+    // widget we've seen — class names change between releases so we
+    // target multiple known prefixes plus the aria-label fallback.
+    // The chat WINDOW itself (`.cc-1ada2`/`.cc-1pj2x` etc.) is not
+    // hidden — Crisp renders it inside the same container but our
+    // chat:open call brings it forward when the SBS button is clicked.
     style.textContent = `
-      .crisp-client .cc-1brb6 { display: none !important; visibility: hidden !important; }
+      .crisp-client .cc-1brb6,
+      .crisp-client .cc-1m2mf,
+      .crisp-client a[aria-label*="hat" i],
+      #crisp-chatbox .cc-1brb6,
+      #crisp-chatbox .cc-1m2mf,
+      #crisp-chatbox a[aria-label*="hat" i] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
     `;
     document.head.appendChild(style);
 
@@ -108,9 +124,19 @@ export function CrispChat() {
       if (lastWallet === currentWallet) return;
 
       // Wallet changed — reset the Crisp session and re-identify.
+      // session:reset re-shows the default bubble, so immediately push
+      // chat:hide again (with retries since Crisp may re-render after
+      // reset finishes) so the SBS yellow button stays the only entry.
       const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
       if (w.$crisp) {
         try { w.$crisp.push(['do', 'session:reset']); } catch {}
+        // Hide aggressively for the first few seconds post-reset
+        let hides = 0;
+        const hideInterval = setInterval(() => {
+          try { w.$crisp!.push(['do', 'chat:hide']); } catch {}
+          hides += 1;
+          if (hides > 10) clearInterval(hideInterval);
+        }, 300);
       }
       if (currentWallet) localStorage.setItem(STORAGE_KEY, currentWallet);
       else localStorage.removeItem(STORAGE_KEY);
