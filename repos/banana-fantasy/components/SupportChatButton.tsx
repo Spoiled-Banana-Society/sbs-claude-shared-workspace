@@ -61,9 +61,9 @@ export function SupportChatButton() {
         <Image
           src="/sbs-logo-black.png"
           alt="SBS"
-          width={32}
-          height={32}
-          className="w-7 h-7 object-contain"
+          width={40}
+          height={40}
+          className="w-10 h-10 object-contain"
           priority={false}
         />
       </button>
