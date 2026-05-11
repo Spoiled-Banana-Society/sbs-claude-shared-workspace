@@ -125,13 +125,10 @@ export default function AdminPage() {
     useAuthHeaders: useAdminAuthHeaders,
   });
 
-  // Clear a tab's badge when the admin opens it. Side-effect runs on
-  // every activeTab change.
-  useEffect(() => {
-    const cat = TAB_NOTIF_CATEGORY[activeTab];
-    if (cat) markNotifSeen(cat);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  // Note: opening a tab does NOT auto-clear the badge — Boris wants to
+  // press an explicit "Mark as read" button inside each tab page after
+  // he's actually looked at the data. Implicit clear made it ambiguous
+  // whether the badge meant "unseen" or "already-clicked-but-not-read."
 
   const groups = useMemo(() => {
     const seen = new Map<string, NavItem[]>();
@@ -196,7 +193,27 @@ export default function AdminPage() {
           <p className="text-sm font-semibold truncate">{current.label}</p>
           <p className="text-[10px] text-gray-500 -mt-0.5">{current.group}</p>
         </div>
-        <span className="text-lg shrink-0">🍌</span>
+        {(() => {
+          const cat = TAB_NOTIF_CATEGORY[activeTab];
+          const badge = cat ? notifCounts[cat] : 0;
+          const dismissable = cat !== undefined
+            && cat !== 'support'
+            && cat !== 'withdrawals'
+            && badge > 0;
+          if (!dismissable) {
+            return <span className="text-lg shrink-0">🍌</span>;
+          }
+          return (
+            <button
+              type="button"
+              onClick={() => markNotifSeen(cat!)}
+              className="shrink-0 px-2 py-1 rounded-md bg-banana text-black text-[10px] font-semibold"
+              aria-label={`Mark ${badge} as read`}
+            >
+              Read {badge > 99 ? '99+' : badge}
+            </button>
+          );
+        })()}
       </header>
 
       <div className="flex">
@@ -264,59 +281,28 @@ export default function AdminPage() {
                   {items.map((item) => {
                     const cat = TAB_NOTIF_CATEGORY[item.key];
                     const badge = cat ? notifCounts[cat] : 0;
-                    // Visit-clearable categories also get an inline "×"
-                    // so Boris can dismiss without navigating. Support
-                    // and withdrawals are state-driven — no × for them.
-                    const dismissable = badge > 0
-                      && cat !== undefined
-                      && cat !== 'support'
-                      && cat !== 'withdrawals';
                     return (
-                      <div
+                      <button
                         key={item.key}
-                        className={`group relative flex items-center rounded-md transition-colors ${
+                        onClick={() => {
+                          setActiveTab(item.key);
+                          // Auto-close drawer on mobile after selecting.
+                          // No-op on desktop where the sidebar is always visible.
+                          setSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 rounded-md text-sm transition-colors ${
                           activeTab === item.key
-                            ? 'bg-white/[0.08]'
-                            : 'hover:bg-white/[0.03]'
+                            ? 'bg-white/[0.08] text-white font-medium'
+                            : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
                         }`}
                       >
-                        <button
-                          onClick={() => {
-                            setActiveTab(item.key);
-                            // Auto-close drawer on mobile after selecting.
-                            // No-op on desktop where the sidebar is always visible.
-                            setSidebarOpen(false);
-                          }}
-                          className={`flex-1 min-w-0 flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 text-sm transition-colors ${
-                            activeTab === item.key
-                              ? 'text-white font-medium'
-                              : 'text-gray-400 group-hover:text-white'
-                          }`}
-                        >
-                          <span className="truncate">{item.label}</span>
-                          {badge > 0 && (
-                            <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
-                              {badge > 99 ? '99+' : badge}
-                            </span>
-                          )}
-                        </button>
-                        {dismissable && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              markNotifSeen(cat);
-                            }}
-                            title="Mark as read"
-                            aria-label={`Mark ${item.label} as read`}
-                            className="shrink-0 w-6 h-6 mr-1 flex items-center justify-center rounded text-gray-500 hover:text-white hover:bg-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
-                          >
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                              <line x1="6" y1="6" x2="18" y2="18" />
-                              <line x1="18" y1="6" x2="6" y2="18" />
-                            </svg>
-                          </button>
+                        <span className="truncate">{item.label}</span>
+                        {badge > 0 && (
+                          <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
+                            {badge > 99 ? '99+' : badge}
+                          </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -337,9 +323,32 @@ export default function AdminPage() {
         {/* ─── Main ─── */}
         <main className="flex-1 min-w-0">
           {/* Desktop-only sticky header. Mobile uses the top bar above. */}
-          <header className="hidden md:block sticky top-0 z-10 border-b border-white/[0.06] bg-[#0a0a0b]/80 backdrop-blur px-8 py-4">
-            <h1 className="text-xl font-semibold tracking-tight">{current.label}</h1>
-            <p className="text-[12px] text-gray-500 mt-0.5">{current.group}</p>
+          <header className="hidden md:flex sticky top-0 z-10 border-b border-white/[0.06] bg-[#0a0a0b]/80 backdrop-blur px-8 py-4 items-center justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-semibold tracking-tight">{current.label}</h1>
+              <p className="text-[12px] text-gray-500 mt-0.5">{current.group}</p>
+            </div>
+            {(() => {
+              const cat = TAB_NOTIF_CATEGORY[activeTab];
+              const badge = cat ? notifCounts[cat] : 0;
+              // "Mark as read" only on tabs where it's meaningful —
+              // categories Boris controls (errors, kyc, etc.). Support
+              // and withdrawals clear from their own real state.
+              const dismissable = cat !== undefined
+                && cat !== 'support'
+                && cat !== 'withdrawals'
+                && badge > 0;
+              if (!dismissable) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => markNotifSeen(cat!)}
+                  className="shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-white/[0.08] hover:border-banana text-xs text-gray-300 hover:text-white transition-colors"
+                >
+                  Mark {badge > 99 ? '99+' : badge} as read
+                </button>
+              );
+            })()}
           </header>
 
           <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 max-w-[1400px]">
