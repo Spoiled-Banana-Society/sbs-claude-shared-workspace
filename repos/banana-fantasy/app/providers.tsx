@@ -12,6 +12,7 @@ import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { EditProfileModal } from '@/components/modals/EditProfileModal';
 import { OnboardingTutorial } from '@/components/onboarding/OnboardingTutorial';
 import { CrispChat } from '@/components/CrispChat';
+import { SupportChatButton } from '@/components/SupportChatButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
@@ -62,6 +63,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
         {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
         <CrispChat />
+        {!isDraftRoom && <SupportChatButton />}
         <NotificationOptIn
           show={notif.showPrompt}
           isLoading={notif.isLoading}
