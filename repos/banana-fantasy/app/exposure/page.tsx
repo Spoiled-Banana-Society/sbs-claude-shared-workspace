@@ -286,17 +286,24 @@ export default function ExposurePage() {
             >
               All
             </button>
-            {positions.map(pos => (
-              <button
-                key={pos}
-                onClick={() => setPosFilter(pos)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                  posFilter === pos ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
-                }`}
-              >
-                {pos}
-              </button>
-            ))}
+            {positions.map(pos => {
+              const color = posColor(pos);
+              const active = posFilter === pos;
+              return (
+                <button
+                  key={pos}
+                  onClick={() => setPosFilter(pos)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
+                  style={{
+                    color,
+                    backgroundColor: active ? `${color}26` : 'transparent',
+                    opacity: active ? 1 : 0.75,
+                  }}
+                >
+                  {pos}
+                </button>
+              );
+            })}
           </div>
 
           {/* Sort + Search */}
