@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useSendUsdcOnBase } from '@/hooks/useSendUsdcOnBase';
 import * as Sentry from '@sentry/nextjs';
 import { useAuth } from '@/hooks/useAuth';
@@ -76,10 +76,32 @@ function formatWallet(value: string): string {
 
 export default function AdminPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { walletAddress, isLoading } = useAuth();
   const { show } = useToast();
 
-  const [activeTab, setActiveTab] = useState<TabKey>('metrics');
+  // Hydrate the active tab from the URL (?tab=onramp) so a refresh
+  // keeps the admin on the page they were on. Falls back to 'metrics'
+  // when the param is missing or doesn't match a known tab.
+  const isValidTabKey = (v: string | null): v is TabKey => {
+    if (!v) return false;
+    return NAV_ITEMS.some((n) => n.key === v);
+  };
+  const initialTab: TabKey = (() => {
+    const fromUrl = searchParams?.get('tab') ?? null;
+    return isValidTabKey(fromUrl) ? fromUrl : 'metrics';
+  })();
+  const [activeTab, setActiveTabRaw] = useState<TabKey>(initialTab);
+
+  // Wrap setActiveTab so every click also updates the URL. router.replace
+  // (not push) keeps the back button useful — pressing back leaves admin
+  // entirely instead of cycling through every tab the user visited.
+  const setActiveTab = (key: TabKey) => {
+    setActiveTabRaw(key);
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    params.set('tab', key);
+    router.replace(`/admin?${params.toString()}`, { scroll: false });
+  };
   const [isAuthorized, setIsAuthorized] = useState(false);
   // Mobile drawer state. Closed by default; tapping the hamburger opens
   // it as an overlay. Tapping the backdrop or a nav item closes it.
