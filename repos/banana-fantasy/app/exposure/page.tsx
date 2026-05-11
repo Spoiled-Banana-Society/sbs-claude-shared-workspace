@@ -19,19 +19,22 @@ import { Modal } from '@/components/ui/Modal';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import type { League } from '@/types';
+import { COLORS } from '@/utils/helpers';
 
 // ─── Position colors ─────────────────────────────────────────────────────
+// Match the draft room exactly — single source of truth in utils/helpers.ts
+// (COLORS.qb/rb/wr/te/dst). Keep this map in lockstep with positionColor().
 
 const POS_COLORS: Record<string, string> = {
-  QB: '#FF474C',
-  RB: '#22c55e',
-  RB1: '#22c55e',
-  RB2: '#22c55e',
-  WR: '#a855f7',
-  WR1: '#a855f7',
-  WR2: '#a855f7',
-  TE: '#3b82f6',
-  DST: '#f97316',
+  QB: COLORS.qb,
+  RB: COLORS.rb,
+  RB1: COLORS.rb,
+  RB2: COLORS.rb,
+  WR: COLORS.wr,
+  WR1: COLORS.wr,
+  WR2: COLORS.wr,
+  TE: COLORS.te,
+  DST: COLORS.dst,
 };
 
 function posColor(pos: string): string {
