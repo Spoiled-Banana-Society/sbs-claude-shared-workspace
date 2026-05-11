@@ -10,6 +10,35 @@ import { useEffect, useState } from 'react';
 
 export function SupportChatButton() {
   const [open, setOpen] = useState(false);
+  // Pixels to lift the button when the footer enters view so it sits
+  // above the "Terms · FAQ · Support" links instead of covering them.
+  // Tracked as state so we can animate the shift smoothly.
+  const [liftPx, setLiftPx] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const footer = document.querySelector('footer');
+    if (!footer) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        if (entry.isIntersecting) {
+          // Overlap = how many px of the footer are visible from the
+          // bottom of the viewport. Lift the button by that + a small
+          // gap so it always clears the footer text.
+          const rect = entry.boundingClientRect;
+          const overlap = window.innerHeight - rect.top;
+          setLiftPx(Math.max(0, overlap + 8));
+        } else {
+          setLiftPx(0);
+        }
+      },
+      { threshold: [0, 0.01, 0.1, 0.25, 0.5, 0.75, 1] },
+    );
+    observer.observe(footer);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -47,7 +76,10 @@ export function SupportChatButton() {
   };
 
   return (
-    <div className="hidden lg:block fixed bottom-6 right-6 z-50 group">
+    <div
+      className="hidden lg:block fixed bottom-6 right-6 z-50 group transition-transform duration-200"
+      style={{ transform: `translateY(-${liftPx}px)` }}
+    >
       {/* Tooltip — shows on hover */}
       <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-black/90 text-white text-xs font-medium whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg">
         Chat with us
