@@ -69,7 +69,13 @@ export function SupportChatButton() {
     if (!w.$crisp) return;
     if (open) {
       w.$crisp.push(['do', 'chat:close']);
+      document.documentElement.classList.remove('crisp-open');
     } else {
+      // Add the gate class BEFORE asking Crisp to open — CrispChat
+      // hides the container by default and only un-hides it when the
+      // html element has `crisp-open`. Without this the window would
+      // try to render while still hidden.
+      document.documentElement.classList.add('crisp-open');
       w.$crisp.push(['do', 'chat:show']);
       w.$crisp.push(['do', 'chat:open']);
     }

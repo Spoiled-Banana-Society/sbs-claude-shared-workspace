@@ -73,26 +73,43 @@ export function CrispChat() {
 
     const style = document.createElement('style');
     style.id = 'crisp-hide';
-    // Hide the default Crisp launcher across every version of the
-    // widget we've seen — class names change between releases so we
-    // target multiple known prefixes plus the aria-label fallback.
-    // The chat WINDOW itself (`.cc-1ada2`/`.cc-1pj2x` etc.) is not
-    // hidden — Crisp renders it inside the same container but our
-    // chat:open call brings it forward when the SBS button is clicked.
+    // Bulletproof approach: hide the ENTIRE Crisp container by
+    // default. The yellow SBS button is the only entry. When it's
+    // clicked, we add `crisp-open` to <html> so the container becomes
+    // visible (and Crisp's chat:open then renders the chat window).
+    // Class names inside the container vary by Crisp release; targeting
+    // the container itself bypasses that whole problem.
     style.textContent = `
-      .crisp-client .cc-1brb6,
-      .crisp-client .cc-1m2mf,
-      .crisp-client a[aria-label*="hat" i],
-      #crisp-chatbox .cc-1brb6,
-      #crisp-chatbox .cc-1m2mf,
-      #crisp-chatbox a[aria-label*="hat" i] {
-        display: none !important;
+      #crisp-chatbox,
+      .crisp-client {
         visibility: hidden !important;
-        opacity: 0 !important;
         pointer-events: none !important;
+      }
+      html.crisp-open #crisp-chatbox,
+      html.crisp-open .crisp-client {
+        visibility: visible !important;
+        pointer-events: auto !important;
       }
     `;
     document.head.appendChild(style);
+
+    // Mirror Crisp's open/close into the <html> class so the CSS gate
+    // above can swap the container in and out.
+    const waitForEvents = setInterval(() => {
+      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+      if (w.$crisp && typeof w.$crisp.push === 'function') {
+        try {
+          w.$crisp.push(['on', 'chat:opened', () => {
+            document.documentElement.classList.add('crisp-open');
+          }]);
+          w.$crisp.push(['on', 'chat:closed', () => {
+            document.documentElement.classList.remove('crisp-open');
+          }]);
+        } catch {}
+        clearInterval(waitForEvents);
+      }
+    }, 500);
+    setTimeout(() => clearInterval(waitForEvents), 15000);
 
     // Once Crisp loads, hide the bubble via API too
     const waitForCrisp = setInterval(() => {

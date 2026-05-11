@@ -283,6 +283,9 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
               onClick={() => {
                 try {
                   if (window.$crisp) {
+                    // CrispChat hides the container until <html> has
+                    // `crisp-open` — add it before asking Crisp to open.
+                    document.documentElement.classList.add('crisp-open');
                     (window.$crisp as unknown[]).push(['do', 'chat:show']);
                     (window.$crisp as unknown[]).push(['do', 'chat:open']);
                   }
