@@ -17,7 +17,13 @@ export function SupportChatButton() {
       if (w.$crisp && typeof w.$crisp.push === 'function') {
         try {
           w.$crisp.push(['on', 'chat:opened', () => setOpen(true)]);
-          w.$crisp.push(['on', 'chat:closed', () => setOpen(false)]);
+          // When the user closes the chat, Crisp would normally surface
+          // its own bubble launcher. We want our SBS-logo button to
+          // remain the only entry point, so re-hide Crisp entirely.
+          w.$crisp.push(['on', 'chat:closed', () => {
+            setOpen(false);
+            try { w.$crisp!.push(['do', 'chat:hide']); } catch {}
+          }]);
         } catch {}
         clearInterval(id);
       }
