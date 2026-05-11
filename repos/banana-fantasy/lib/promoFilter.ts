@@ -23,7 +23,7 @@ import type { Promo, PromoType } from '@/types';
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'new-user',
-  'buy-bonus',     // "Buy 10" — buy passes, earn free spins
+  'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
   'daily-drafts',  // "4 drafts daily"
   'pick-10',
   'jackpot',
