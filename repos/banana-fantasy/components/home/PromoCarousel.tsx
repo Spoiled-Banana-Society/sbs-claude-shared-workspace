@@ -6,6 +6,7 @@ import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { reservePromoDraftType } from '@/lib/promoDraftType';
+import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 
 interface PromoCarouselProps {
   promos: Promo[];
@@ -64,35 +65,13 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     return true;
   };
 
-  // Promos hidden from the carousel for now — data + claim routes remain
-  // so we can flip them back on by removing the type from this set.
-  const HIDDEN_PROMO_TYPES = new Set(['spin-share', 'add-to-home-screen']);
-
-  // Filter out new-user promo for returning BB3 holders + hidden types, then sort
-  const sortedPromos = [...promos].filter(promo =>
-    !(promo.type === 'new-user' && isBB3Holder) && !HIDDEN_PROMO_TYPES.has(promo.type),
-  ).sort((a, b) => {
-    // Promos with visible CLAIM button come first
-    const aClaim = hasVisibleClaim(a);
-    const bClaim = hasVisibleClaim(b);
-    if (aClaim && !bClaim) return -1;
-    if (!aClaim && bClaim) return 1;
-
-    // Pin the unclaimed new-user bonus near the top — it's the user's first
-    // call to action and the card has interactive state (Connect button)
-    // even when not yet claimable, so it shouldn't fall behind static promos.
-    const aIsNewUser = a.type === 'new-user' && !(claimedPromos.has(a.id) || newUserPromoClaimed);
-    const bIsNewUser = b.type === 'new-user' && !(claimedPromos.has(b.id) || newUserPromoClaimed);
-    if (aIsNewUser && !bIsNewUser) return -1;
-    if (!aIsNewUser && bIsNewUser) return 1;
-
-    // Then by progress percent (higher first)
-    const aProgress = a.progressMax ? (a.progressCurrent || 0) / a.progressMax : 0;
-    const bProgress = b.progressMax ? (b.progressCurrent || 0) / b.progressMax : 0;
-    if (bProgress !== aProgress) return bProgress - aProgress;
-
-    // Stable tiebreaker: keep original seed order (by id)
-    return Number(a.id) - Number(b.id);
+  // Shared filter + sort: whitelist of 6 visible promo types, in
+  // Boris's fixed order, with in-progress / claimable promos bubbled
+  // to position 1. See lib/promoFilter.ts.
+  const sortedPromos = filterAndSortVisiblePromos(promos, {
+    isBB3Holder,
+    newUserPromoClaimed,
+    hasVisibleClaim: (p) => hasVisibleClaim(p),
   });
 
   // Create extended array with clones for infinite loop

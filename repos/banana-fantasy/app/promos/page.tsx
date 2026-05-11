@@ -7,6 +7,7 @@ import { usePromos } from '@/hooks/usePromos';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { logger } from '@/lib/logger';
+import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -32,8 +33,6 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
 };
-
-const HIDDEN_PROMO_TYPES = new Set<PromoType>(['spin-share', 'add-to-home-screen']);
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked';
 
@@ -82,32 +81,31 @@ export default function PromosPage() {
   };
 
   const visiblePromos = useMemo(() => {
-    return promos
-      .filter(p => !(p.type === 'new-user' && isBB3Holder))
-      .filter(p => !HIDDEN_PROMO_TYPES.has(p.type));
-  }, [promos, isBB3Holder]);
+    return filterAndSortVisiblePromos(promos, {
+      isBB3Holder,
+      newUserPromoClaimed,
+      hasVisibleClaim,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally]);
 
   const filteredPromos = useMemo(() => {
-    let result = [...visiblePromos];
+    // visiblePromos is already filter + sorted by the shared helper
+    // (claimable first, then Boris's fixed order). The tab-filter
+    // here just narrows the list further — order is preserved.
     if (filter === 'claimable') {
-      result = result.filter(hasVisibleClaim);
-    } else if (filter === 'active') {
-      result = result.filter(p => !hasVisibleClaim(p) && !isClaimed(p) && (p.progressMax || p.timerEndTime));
-    } else if (filter === 'locked') {
-      result = result.filter(p =>
+      return visiblePromos.filter(hasVisibleClaim);
+    }
+    if (filter === 'active') {
+      return visiblePromos.filter(p => !hasVisibleClaim(p) && !isClaimed(p) && (p.progressMax || p.timerEndTime));
+    }
+    if (filter === 'locked') {
+      return visiblePromos.filter(p =>
         ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) ||
         !isLoggedIn,
       );
     }
-    return result.sort((a, b) => {
-      const aClaim = hasVisibleClaim(a) ? 1 : 0;
-      const bClaim = hasVisibleClaim(b) ? 1 : 0;
-      if (aClaim !== bClaim) return bClaim - aClaim;
-      const aProgress = a.progressMax ? (a.progressCurrent || 0) / a.progressMax : 0;
-      const bProgress = b.progressMax ? (b.progressCurrent || 0) / b.progressMax : 0;
-      if (bProgress !== aProgress) return bProgress - aProgress;
-      return Number(a.id) - Number(b.id);
-    });
+    return visiblePromos;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visiblePromos, filter, isTwitterVerified, isLoggedIn, claimedLocally, newUserPromoClaimed]);
 

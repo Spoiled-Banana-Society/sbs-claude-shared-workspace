@@ -14,6 +14,7 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
+import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
@@ -105,12 +106,11 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function useDraftingPageState() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified } = useAuth();
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
-  const promos = promosQuery.promos ?? [];
-  const promoCount = promos.length;
+  const rawPromos = promosQuery.promos ?? [];
   const localDrafts = useActiveDrafts();
   const isLive = isStagingMode() && !!user?.walletAddress;
 
@@ -127,6 +127,20 @@ export function useDraftingPageState() {
   const [showBuyPasses, setShowBuyPasses] = useState(false);
   const [selectedPromo, setSelectedPromo] = useState<Promo | null>(null);
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
+  // Apply shared whitelist + ordering. Sidebar shows the same 6-promo
+  // set as the homepage carousel and /promos page.
+  const promos = useMemo(() => {
+    return filterAndSortVisiblePromos(rawPromos, {
+      isBB3Holder,
+      newUserPromoClaimed,
+      hasVisibleClaim: (p) => {
+        if (!p.claimable || claimedPromos.has(p.id)) return false;
+        if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
+        return true;
+      },
+    });
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos]);
+  const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [promoIndex, setPromoIndex] = useState(0);
   const [promoAutoRotate, setPromoAutoRotate] = useState(true);
