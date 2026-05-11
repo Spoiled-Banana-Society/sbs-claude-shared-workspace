@@ -120,7 +120,7 @@ export default function AdminPage() {
     withdrawals: 'withdrawals',
     drafts: 'drafts',
   };
-  const { counts: notifCounts, markSeen: markNotifSeen } = useAdminNotifications({
+  const { counts: notifCounts, total: notifTotal, markSeen: markNotifSeen, markAllSeen: markAllNotifSeen } = useAdminNotifications({
     enabled: isAuthorized,
     useAuthHeaders: useAdminAuthHeaders,
   });
@@ -242,6 +242,18 @@ export default function AdminPage() {
             </button>
           </div>
 
+          {notifTotal > 0 && (
+            <div className="px-5 pt-3">
+              <button
+                type="button"
+                onClick={markAllNotifSeen}
+                className="w-full text-[11px] text-gray-400 hover:text-white py-1.5 rounded-md border border-white/[0.06] hover:border-white/[0.15] transition-colors"
+              >
+                Mark all {notifTotal > 99 ? '99+' : notifTotal} as read
+              </button>
+            </div>
+          )}
+
           <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
             {groups.map(([group, items]) => (
               <div key={group}>
@@ -252,28 +264,59 @@ export default function AdminPage() {
                   {items.map((item) => {
                     const cat = TAB_NOTIF_CATEGORY[item.key];
                     const badge = cat ? notifCounts[cat] : 0;
+                    // Visit-clearable categories also get an inline "×"
+                    // so Boris can dismiss without navigating. Support
+                    // and withdrawals are state-driven — no × for them.
+                    const dismissable = badge > 0
+                      && cat !== undefined
+                      && cat !== 'support'
+                      && cat !== 'withdrawals';
                     return (
-                      <button
+                      <div
                         key={item.key}
-                        onClick={() => {
-                          setActiveTab(item.key);
-                          // Auto-close drawer on mobile after selecting.
-                          // No-op on desktop where the sidebar is always visible.
-                          setSidebarOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 rounded-md text-sm transition-colors ${
+                        className={`group relative flex items-center rounded-md transition-colors ${
                           activeTab === item.key
-                            ? 'bg-white/[0.08] text-white font-medium'
-                            : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
+                            ? 'bg-white/[0.08]'
+                            : 'hover:bg-white/[0.03]'
                         }`}
                       >
-                        <span className="truncate">{item.label}</span>
-                        {badge > 0 && (
-                          <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
+                        <button
+                          onClick={() => {
+                            setActiveTab(item.key);
+                            // Auto-close drawer on mobile after selecting.
+                            // No-op on desktop where the sidebar is always visible.
+                            setSidebarOpen(false);
+                          }}
+                          className={`flex-1 min-w-0 flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 text-sm transition-colors ${
+                            activeTab === item.key
+                              ? 'text-white font-medium'
+                              : 'text-gray-400 group-hover:text-white'
+                          }`}
+                        >
+                          <span className="truncate">{item.label}</span>
+                          {badge > 0 && (
+                            <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
+                              {badge > 99 ? '99+' : badge}
+                            </span>
+                          )}
+                        </button>
+                        {dismissable && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              markNotifSeen(cat);
+                            }}
+                            title="Mark as read"
+                            aria-label={`Mark ${item.label} as read`}
+                            className="shrink-0 w-6 h-6 mr-1 flex items-center justify-center rounded text-gray-500 hover:text-white hover:bg-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                              <line x1="6" y1="6" x2="18" y2="18" />
+                              <line x1="18" y1="6" x2="6" y2="18" />
+                            </svg>
+                          </button>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

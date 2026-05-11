@@ -26,6 +26,11 @@ const VISIT_CLEARED: NotifCategory[] = ['errors', 'kyc', 'offramp', 'onramp', 'p
 
 const STORAGE_KEY = 'admin.notifications.lastSeen.v1';
 const POLL_MS = 30_000;
+// Custom event name for cross-component sync within the same browser
+// tab. The native `storage` event only fires across tabs, so without
+// this the Header's hook instance would lag the Admin sidebar's by
+// up to 30s after marking a tab seen.
+const SAME_TAB_SYNC_EVENT = 'admin-notifications-changed';
 
 interface LastSeenMap {
   errors?: number;
@@ -48,7 +53,11 @@ function readLastSeen(): LastSeenMap {
 
 function writeLastSeen(map: LastSeenMap): void {
   if (typeof window === 'undefined') return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); } catch {}
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(map));
+    // Broadcast to other hook instances in the same tab so they re-read.
+    window.dispatchEvent(new CustomEvent(SAME_TAB_SYNC_EVENT));
+  } catch {}
 }
 
 interface UseAdminAuthHeadersFn {
@@ -74,6 +83,12 @@ interface UseAdminNotificationsResult {
    * State-driven categories (support, withdrawals) ignore this.
    */
   markSeen: (cat: NotifCategory) => void;
+  /**
+   * Mark every visit-clearable category as seen in one shot. Escape
+   * hatch for blowing out the badge when there's too much backlog to
+   * walk tab-by-tab. Does not touch state-driven categories.
+   */
+  markAllSeen: () => void;
 }
 
 export function useAdminNotifications({ enabled, useAuthHeaders }: Options): UseAdminNotificationsResult {
@@ -116,16 +131,31 @@ export function useAdminNotifications({ enabled, useAuthHeaders }: Options): Use
     });
   }, []);
 
-  // Sync across tabs — if another admin tab marks a category seen,
-  // re-read from localStorage so this tab's badges drop too.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setLastSeen(readLastSeen());
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+  const markAllSeen = useCallback(() => {
+    const now = Date.now();
+    const next: LastSeenMap = {};
+    for (const cat of VISIT_CLEARED) next[cat as keyof LastSeenMap] = now;
+    setLastSeen(next);
+    writeLastSeen(next);
   }, []);
 
-  return { counts, total, markSeen };
+  // Sync across tabs AND within the same tab. The native `storage`
+  // event covers other tabs; the custom `admin-notifications-changed`
+  // event covers other hook instances inside this tab (e.g. Header
+  // + Admin sidebar both reading the same state).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sync = () => setLastSeen(readLastSeen());
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) sync();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(SAME_TAB_SYNC_EVENT, sync);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(SAME_TAB_SYNC_EVENT, sync);
+    };
+  }, []);
+
+  return { counts, total, markSeen, markAllSeen };
 }
