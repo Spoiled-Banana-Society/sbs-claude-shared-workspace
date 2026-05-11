@@ -74,13 +74,19 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   });
 
   return filtered.sort((a, b) => {
-    // In-progress / actionable promos first
+    // 1. Claimable / actionable promos first — user can hit the button now.
     if (opts.hasVisibleClaim) {
       const aClaim = opts.hasVisibleClaim(a) ? 1 : 0;
       const bClaim = opts.hasVisibleClaim(b) ? 1 : 0;
       if (aClaim !== bClaim) return bClaim - aClaim;
     }
-    // Then the fixed display order from VISIBLE_PROMO_TYPES_ORDER
+    // 2. Closest-to-claim next: a promo at 9/10 sits above one at 1/10.
+    //    Only applies to promos with progressMax; non-progress promos
+    //    fall through to the fixed type order below.
+    const aProgress = a.progressMax ? (a.progressCurrent || 0) / a.progressMax : 0;
+    const bProgress = b.progressMax ? (b.progressCurrent || 0) / b.progressMax : 0;
+    if (bProgress !== aProgress) return bProgress - aProgress;
+    // 3. Then the fixed display order from VISIBLE_PROMO_TYPES_ORDER.
     const aIdx = VISIBLE_PROMO_TYPES_ORDER.indexOf(a.type);
     const bIdx = VISIBLE_PROMO_TYPES_ORDER.indexOf(b.type);
     return aIdx - bIdx;
