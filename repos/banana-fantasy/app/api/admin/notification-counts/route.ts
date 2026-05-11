@@ -45,6 +45,42 @@ const STUCK_DRAFT_MS = 24 * 60 * 60 * 1000;
 
 const KYC_REVIEW_STATUSES = ['name_mismatch', 'dob_mismatch', 'blocked', 'error'];
 
+// Error events worth waking the admin up for. Anything matching these
+// patterns counts toward the badge; everything else still shows in the
+// full Server Errors tab but doesn't trigger a notification.
+//
+// Rules of thumb:
+//   - User-money flows (mints, prizes, withdrawals) are always important
+//   - "unhandled" by definition = unexpected = important
+//   - Webhook / config errors that break inbound flows
+//   - Anything blocking treasury operations
+//
+// Noise we explicitly skip:
+//   - admin.* read-endpoint failures (called by bots, scrapers, transient)
+//   - crisp.* (Crisp API hiccups, retries handle it)
+//   - [team-nicknames] / [user-positional-limits] / [WS] (UI/transport flake)
+//   - debug.*, spectate.*, founder-schedule.* (internal tooling)
+const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
+  /mint_failed/i,
+  /transferFrom_failed/i,
+  /\.unhandled$/i,
+  /admin_wallet_low_balance/i,
+  /skim\.(transfer|withdraw)_failed/i,
+  /alchemy\.webhook/i,
+  /jackpot[-_]reveal\.failed/i,
+  /^batches\.(current|proof)\.failed$/i,
+  /^card-mint\./i,
+  /^wheel\.spin\./i,
+  /^promo\.claim\./i,
+  /privy\.fetch_user\.error/i,
+  /^admin\.(grant_drafts|grant_prize|kyc_verify|reconcile_passes|retry_purchase|withdrawal_status|transfer_batchproof|deploy_batch_proof|revoke7702|user_ban|set_entries|zero_free_drafts|reset_user|reset_queue)\.failed$/i,
+];
+
+function isImportantError(source: string | undefined): boolean {
+  if (!source) return false;
+  return IMPORTANT_ERROR_PATTERNS.some((p) => p.test(source));
+}
+
 export async function GET(req: Request) {
   const requestId = getRequestId(req);
   const start = Date.now();
@@ -117,10 +153,14 @@ async function countSupport(): Promise<number> {
 
 async function countErrors(since: number): Promise<number> {
   try {
-    const records = await fetchRecentErrors(200);
+    const records = await fetchRecentErrors(500);
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
-      return t > since;
+      if (t <= since) return false;
+      // Only "important" errors (real bugs / user-money / ops issues)
+      // trigger the badge. Noisy admin-read and Crisp-API failures
+      // still show in the Error Log tab but don't ping the admin.
+      return isImportantError(r.source);
     }).length;
   } catch { return 0; }
 }
