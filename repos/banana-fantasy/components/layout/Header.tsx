@@ -11,6 +11,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { BatchProgressIndicator } from './BatchProgressIndicator';
 import { NotificationWidget } from '../NotificationCenter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
+import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 
 interface HeaderProps {
   onEditProfile: () => void;
@@ -21,6 +23,13 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   const { user, walletAddress, isLoggedIn, isLoading, isBalanceLoaded, login } = useAuth();
   const pathname = usePathname();
   const isAdminWallet = isWalletAdmin(walletAddress);
+
+  // Yellow badge next to the Admin link. Only polls when this wallet
+  // is on the admin allowlist; non-admin sessions never hit the API.
+  const { total: adminNotifTotal } = useAdminNotifications({
+    enabled: isAdminWallet,
+    useAuthHeaders: useAdminAuthHeaders,
+  });
 
   // Nav items — desktop only
   const navItems = [
@@ -47,20 +56,31 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
             {/* Desktop Navigation — hidden on mobile */}
             <nav aria-label="Main navigation" className="hidden md:flex items-center flex-shrink min-w-0">
-              {navItems.map((item) => (
-                <Tooltip key={item.href} content={item.tooltip}>
-                  <Link
-                    href={item.href}
-                    className={`px-1.5 lg:px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216] ${
-                      isActive(item.href)
-                        ? 'text-white'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                </Tooltip>
-              ))}
+              {navItems.map((item) => {
+                const showAdminBadge = item.href === '/admin' && adminNotifTotal > 0;
+                return (
+                  <Tooltip key={item.href} content={item.tooltip}>
+                    <Link
+                      href={item.href}
+                      className={`relative inline-flex items-center gap-1.5 px-1.5 lg:px-3 py-2 rounded-lg text-xs lg:text-sm font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216] ${
+                        isActive(item.href)
+                          ? 'text-white'
+                          : 'text-text-secondary hover:text-text-primary hover:bg-bg-tertiary'
+                      }`}
+                    >
+                      {item.label}
+                      {showAdminBadge && (
+                        <span
+                          aria-label={`${adminNotifTotal} items need attention`}
+                          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold"
+                        >
+                          {adminNotifTotal > 99 ? '99+' : adminNotifTotal}
+                        </span>
+                      )}
+                    </Link>
+                  </Tooltip>
+                );
+              })}
             </nav>
           </div>
 

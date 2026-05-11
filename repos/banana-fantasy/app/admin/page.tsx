@@ -12,10 +12,12 @@ import {
   useAdminDrafts,
   useAdminPromos,
   useUpdateWithdrawalStatus,
+  useAdminAuthHeaders,
   AdminApiError,
   type AdminWithdrawalItem,
   type AdminPromoItem,
 } from '@/hooks/admin/useAdminApi';
+import { useAdminNotifications, type NotifCategory } from '@/hooks/admin/useAdminNotifications';
 import { UsersTable } from '@/components/admin/UsersTable';
 import { KycAttemptsViewer } from '@/components/admin/KycAttemptsViewer';
 import { OfframpAttemptsViewer } from '@/components/admin/OfframpAttemptsViewer';
@@ -106,6 +108,30 @@ export default function AdminPage() {
   // Mobile drawer state. Closed by default; tapping the hamburger opens
   // it as an overlay. Tapping the backdrop or a nav item closes it.
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Notification badges next to each nav item. Tab → category map; tabs
+  // not in the map get no badge.
+  const TAB_NOTIF_CATEGORY: Partial<Record<TabKey, NotifCategory>> = {
+    support: 'support',
+    errors: 'errors',
+    kyc: 'kyc',
+    offramp: 'offramp',
+    onramp: 'onramp',
+    withdrawals: 'withdrawals',
+    drafts: 'drafts',
+  };
+  const { counts: notifCounts, markSeen: markNotifSeen } = useAdminNotifications({
+    enabled: isAuthorized,
+    useAuthHeaders: useAdminAuthHeaders,
+  });
+
+  // Clear a tab's badge when the admin opens it. Side-effect runs on
+  // every activeTab change.
+  useEffect(() => {
+    const cat = TAB_NOTIF_CATEGORY[activeTab];
+    if (cat) markNotifSeen(cat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   const groups = useMemo(() => {
     const seen = new Map<string, NavItem[]>();
@@ -223,24 +249,33 @@ export default function AdminPage() {
                   {group}
                 </p>
                 <div className="space-y-0.5">
-                  {items.map((item) => (
-                    <button
-                      key={item.key}
-                      onClick={() => {
-                        setActiveTab(item.key);
-                        // Auto-close drawer on mobile after selecting.
-                        // No-op on desktop where the sidebar is always visible.
-                        setSidebarOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 md:py-1.5 rounded-md text-sm transition-colors ${
-                        activeTab === item.key
-                          ? 'bg-white/[0.08] text-white font-medium'
-                          : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
-                      }`}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+                  {items.map((item) => {
+                    const cat = TAB_NOTIF_CATEGORY[item.key];
+                    const badge = cat ? notifCounts[cat] : 0;
+                    return (
+                      <button
+                        key={item.key}
+                        onClick={() => {
+                          setActiveTab(item.key);
+                          // Auto-close drawer on mobile after selecting.
+                          // No-op on desktop where the sidebar is always visible.
+                          setSidebarOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 rounded-md text-sm transition-colors ${
+                          activeTab === item.key
+                            ? 'bg-white/[0.08] text-white font-medium'
+                            : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
+                        }`}
+                      >
+                        <span className="truncate">{item.label}</span>
+                        {badge > 0 && (
+                          <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
+                            {badge > 99 ? '99+' : badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
