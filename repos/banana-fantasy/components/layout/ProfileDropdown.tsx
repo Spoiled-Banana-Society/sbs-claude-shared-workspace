@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { useExportWallet } from '@privy-io/react-auth';
-import { getNflTeamLogo } from '@/lib/nflTeams';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { InstallAppButton } from '@/components/home/AddToHomeScreenCard';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
@@ -97,17 +95,6 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
               </a>
             )}
             <p className="text-sm text-text-muted">{user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}</p>
-            {user.nflTeam && getNflTeamLogo(user.nflTeam) && (
-              <div className="mt-1.5">
-                <Image
-                  src={getNflTeamLogo(user.nflTeam)!}
-                  alt={user.nflTeam}
-                  width={24}
-                  height={24}
-                  className="w-6 h-6 object-contain"
-                />
-              </div>
-            )}
           </div>
 
           {/* Wallet Balance */}
