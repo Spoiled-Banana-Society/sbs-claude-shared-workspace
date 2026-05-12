@@ -89,6 +89,37 @@ export function CrispChat() {
     };
   }, []);
 
+  // Outside-click to close: when the chat is open (<html> has the
+  // crisp-open class), clicks anywhere outside the chat container —
+  // and outside the SBS launcher button — fire chat:close. Listener
+  // runs always but short-circuits when chat is closed.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleClick = (e: MouseEvent) => {
+      if (!document.documentElement.classList.contains('crisp-open')) return;
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // Click inside Crisp's container — let Crisp handle it.
+      if (target.closest('#crisp-chatbox')) return;
+      if (target.closest('.crisp-client')) return;
+      // Click on the SBS launcher — its own onClick already toggles,
+      // don't race it.
+      if (target.closest('[aria-label="Open support chat"]')) return;
+      // Click on the profile dropdown "Chat with us" entry.
+      if (target.closest('[aria-label="Chat with us"]')) return;
+
+      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+      if (w.$crisp) {
+        try { w.$crisp.push(['do', 'chat:close']); } catch {}
+      }
+      // Mirror the close into the html class immediately so the CSS
+      // gate hides the container without waiting for Crisp's event.
+      document.documentElement.classList.remove('crisp-open');
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   // Whenever we have a logged-in user, tag the Crisp session with
   // their wallet + username so the operator inbox shows who's writing
   // instead of an opaque visitor ID. This is the bit that actually
