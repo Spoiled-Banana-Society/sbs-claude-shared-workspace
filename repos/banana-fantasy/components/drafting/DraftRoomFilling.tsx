@@ -99,7 +99,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
                         alt="You"
-                        size={30}
+                        size={48}
                         equippedBadge={user?.equippedBadge}
                         useNextImage={false}
                         className="border border-gray-500"
@@ -110,7 +110,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={otherPfp}
                         alt={otherDisplayName || 'Player'}
-                        size={30}
+                        size={48}
                         equippedBadge={otherBadge}
                         useNextImage={false}
                         className="border border-gray-500"
@@ -121,17 +121,17 @@ export function DraftRoomFilling({
                     <img
                       src="/banana-profile.png"
                       alt="Banana"
-                      className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500 animate-pulse"
+                      className="rounded-full w-[48px] mx-auto h-[48px] border border-gray-500 animate-pulse"
                       style={{ opacity: 0.4 }}
                     />
                   )}
 
-                  <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
-                    <span style={{ fontSize: '15px', fontWeight: 800, color: isFilled ? textColor : '#444' }}>#{i + 1}</span>
-                  </div>
-
                   <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
                     {truncatedName}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: isFilled ? textColor : '#444', opacity: 0.7 }}>#{i + 1}</span>
                   </div>
 
                   {!isFilled ? (

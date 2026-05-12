@@ -194,7 +194,7 @@ export function DraftRoomReveal({
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
                         alt="You"
-                        size={30}
+                        size={48}
                         equippedBadge={user?.equippedBadge}
                         useNextImage={false}
                         className="border border-gray-500"
@@ -205,7 +205,7 @@ export function DraftRoomReveal({
                       <AvatarWithBadge
                         imageUrl={otherPfp}
                         alt={displayName}
-                        size={30}
+                        size={48}
                         equippedBadge={otherBadge}
                         useNextImage={false}
                         className="border border-gray-500"
@@ -213,19 +213,19 @@ export function DraftRoomReveal({
                     </div>
                   )}
 
-                  {showCountdown ? (
-                    <div style={{ fontWeight: 'bold', fontSize: '18px', margin: '5px auto 0px auto', textAlign: 'center', color: textColor }}>
-                      {formatTime(mainCountdown)}
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
-                      <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>#{i + 1}</span>
-                    </div>
-                  )}
-
                   <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
                     {truncatedName}
                   </div>
+
+                  {showCountdown ? (
+                    <div style={{ fontWeight: 'bold', fontSize: '16px', margin: '2px auto 0px auto', textAlign: 'center', color: textColor }}>
+                      {formatTime(mainCountdown)}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: textColor, opacity: 0.7 }}>#{i + 1}</span>
+                    </div>
+                  )}
 
                   {showCountdown ? (
                     <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%', minHeight: '54px' }}>
