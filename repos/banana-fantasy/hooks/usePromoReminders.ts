@@ -5,21 +5,21 @@ import type { Promo } from '@/types';
 import { pushNotification } from '@/components/NotificationCenter';
 
 const REMINDER_COOLDOWN_MS = 72 * 60 * 60 * 1000; // 72 hours
-// Only nudge a partially-complete promo when the user is at least
-// this fraction of the way done. Below this they're not actually
-// "almost there" and the noti is just noise.
-const ALMOST_THERE_THRESHOLD = 0.75;
-// Cap "Almost There" pings to one per session even if multiple
-// promos qualify — too many "do this now" pings in one shot feels
-// spammy. New-promo and ready-to-claim notifications are still
-// uncapped because they're individually actionable.
-const MAX_ALMOST_THERE_PER_SESSION = 1;
+// "Last Chance" reminder for the daily-drafts promo only. Fires when
+// the user is ≥50% done AND the timer is about to expire within 3h.
+// 50% means they engaged meaningfully (not a single accidental click);
+// 3h is enough breathing room to actually finish without feeling
+// panicky. Other progress promos (Buy 10, etc.) no longer trigger
+// any partial-completion notification.
+const LAST_CHANCE_PROGRESS_THRESHOLD = 0.5;
+const LAST_CHANCE_TIME_REMAINING_MS = 3 * 60 * 60 * 1000; // 3 hours
+const LAST_CHANCE_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4h — fits inside one close-to-deadline window
 
-function wasRemindedRecently(key: string): boolean {
+function wasRemindedRecently(key: string, windowMs = REMINDER_COOLDOWN_MS): boolean {
   try {
     const ts = localStorage.getItem(key);
     if (!ts) return false;
-    return Date.now() - Number(ts) < REMINDER_COOLDOWN_MS;
+    return Date.now() - Number(ts) < windowMs;
   } catch { return false; }
 }
 
@@ -42,17 +42,7 @@ export function usePromoReminders(promos: Promo[]) {
     if (!promos || promos.length === 0 || checkedRef.current) return;
     checkedRef.current = true;
 
-    // Sort partially-complete promos by closest-to-done so the one
-    // we surface (under the per-session cap) is the most likely to
-    // actually be finished.
-    const sorted = [...promos].sort((a, b) => {
-      const aPct = (a.progressMax ?? 0) > 0 ? (a.progressCurrent ?? 0) / a.progressMax! : 0;
-      const bPct = (b.progressMax ?? 0) > 0 ? (b.progressCurrent ?? 0) / b.progressMax! : 0;
-      return bPct - aPct;
-    });
-
-    let almostThereCount = 0;
-    for (const promo of sorted) {
+    for (const promo of promos) {
       // New promo the user hasn't seen
       if (promo.isNew) {
         const key = `sbs-promo-new-seen-${promo.id}`;
@@ -83,31 +73,34 @@ export function usePromoReminders(promos: Promo[]) {
         continue;
       }
 
-      // Partially complete — nudge to finish, but only when the user
-      // is genuinely close (≥75% done) and we haven't already pinged
-      // for another promo this session. Message intentionally omits
-      // the live count so a stale notification doesn't lie when the
-      // user's progress changes after the noti was queued.
-      const current = promo.progressCurrent ?? 0;
-      const max = promo.progressMax ?? 0;
-      if (
-        current > 0
-        && max > 0
-        && current < max
-        && !promo.claimable
-        && current / max >= ALMOST_THERE_THRESHOLD
-        && almostThereCount < MAX_ALMOST_THERE_PER_SESSION
-      ) {
-        const key = `sbs-promo-reminded-${promo.id}`;
-        if (!wasRemindedRecently(key)) {
-          pushNotification({
-            type: 'promo',
-            title: 'Almost There!',
-            message: `Finish ${promo.title} to claim your reward.`,
-            link: promo.ctaLink || '/promos',
-          });
-          markReminded(key);
-          almostThereCount += 1;
+      // Last-chance reminder for the daily drafts promo — only fires
+      // when (a) the user is ≥50% of the way done, (b) the timer is
+      // about to expire within 3h, and (c) the reward isn't already
+      // claimable. Other progress promos no longer trigger any
+      // partial-completion notification (low signal, mostly noise).
+      if (promo.type === 'daily-drafts' && !promo.claimable && promo.timerEndTime) {
+        const current = promo.progressCurrent ?? 0;
+        const max = promo.progressMax ?? 0;
+        const timeRemaining = new Date(promo.timerEndTime).getTime() - Date.now();
+        if (
+          max > 0
+          && current > 0
+          && current < max
+          && current / max >= LAST_CHANCE_PROGRESS_THRESHOLD
+          && timeRemaining > 0
+          && timeRemaining <= LAST_CHANCE_TIME_REMAINING_MS
+        ) {
+          const key = `sbs-promo-lastchance-${promo.id}`;
+          if (!wasRemindedRecently(key, LAST_CHANCE_COOLDOWN_MS)) {
+            const drafts = max - current;
+            pushNotification({
+              type: 'promo',
+              title: 'Last Chance!',
+              message: `Draft ${drafts} more before the timer resets to claim your free spin.`,
+              link: promo.ctaLink || '/drafting',
+            });
+            markReminded(key);
+          }
         }
       }
     }
