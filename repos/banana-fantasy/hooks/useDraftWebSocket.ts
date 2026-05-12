@@ -74,6 +74,13 @@ export interface UseDraftWebSocketOptions {
   walletAddress: string;
   draftName: string;
   enabled: boolean;
+  /**
+   * Async resolver for the Privy access token. The Go WS server
+   * verifies this JWT before upgrading the connection — without it
+   * every WS request returns 401 and the draft is stuck since no
+   * timer / pick events ever reach the client.
+   */
+  getToken?: () => Promise<string | null>;
   onCountdownUpdate?: (payload: CountdownPayload) => void;
   onTimerUpdate?: (payload: TimerPayload) => void;
   onNewPick?: (payload: NewPickPayload) => void;
@@ -109,6 +116,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     walletAddress,
     draftName,
     enabled,
+    getToken,
     onCountdownUpdate,
     onTimerUpdate,
     onNewPick,
@@ -162,7 +170,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     }
   }, []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!mountedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN || wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
@@ -176,7 +184,20 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     // which calls normalizeWalletAddress(). The Go server does case-sensitive comparison
     // between c.address (from URL) and newPick.OwnerAddress (from payload), so they MUST match.
     const normalizedAddress = walletAddress.trim().toLowerCase();
-    const url = `${serverUrl}/ws?address=${encodeURIComponent(normalizedAddress)}&draftName=${encodeURIComponent(draftName)}`;
+    // Fetch the Privy access token — Go WS server verifies this JWT
+    // before upgrading. Without it the connection returns 401 and
+    // every pick / timer event is silently dropped.
+    let token: string | null = null;
+    if (getToken) {
+      try {
+        token = await getToken();
+      } catch (err) {
+        console.warn('[ws] failed to get access token:', err);
+      }
+    }
+    if (!mountedRef.current) return;
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    const url = `${serverUrl}/ws?address=${encodeURIComponent(normalizedAddress)}&draftName=${encodeURIComponent(draftName)}${tokenParam}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -263,7 +284,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     ws.onerror = () => {
       // The close event will fire after error, which handles reconnection
     };
-  }, [walletAddress, draftName, clearTimers]);
+  }, [walletAddress, draftName, clearTimers, getToken]);
 
   // Connect/disconnect based on `enabled`
   useEffect(() => {

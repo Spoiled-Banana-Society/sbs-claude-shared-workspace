@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
 import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
@@ -63,6 +64,7 @@ export function useDraftLiveSync({
   setShowSlotMachine,
   draftIdRef,
 }: UseDraftLiveSyncParams) {
+  const { getAccessToken } = usePrivy();
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
@@ -275,6 +277,7 @@ export function useDraftLiveSync({
     walletAddress: walletParam,
     draftName: draftId,
     enabled: wsEnabled,
+    getToken: getAccessToken,
     onCountdownUpdate: (payload) => {
       engine.handleCountdownUpdate(payload);
     },
