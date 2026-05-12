@@ -2058,6 +2058,39 @@ export async function getEquippedBadgesBatch(userIds: string[]): Promise<Record<
   return out;
 }
 
+/**
+ * Batch read display fields (username, profilePicture, equippedBadge)
+ * for a list of users. Used by the draft room so all 10 slot cards
+ * can render real names + avatars + badges in one round-trip.
+ *
+ * Returns `null` username when the v2_users doc doesn't exist OR the
+ * stored username is just the wallet — caller falls back to Go API.
+ */
+export async function getUserDisplayBatch(userIds: string[]): Promise<Record<string, {
+  username: string | null;
+  profilePicture: string | null;
+  equippedBadge: string | null;
+}>> {
+  if (userIds.length === 0) return {};
+  const db = getAdminFirestore();
+  const refs = userIds.map(id => db.collection(USERS_COLLECTION).doc(id));
+  const snaps = await db.getAll(...refs);
+  const out: Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null }> = {};
+  for (let i = 0; i < userIds.length; i++) {
+    const data = snaps[i].exists ? (snaps[i].data() as User) : null;
+    const id = userIds[i];
+    const u = (data?.username || '').trim();
+    // A username equal to the raw wallet means the user never set one.
+    const username = u && u.toLowerCase() !== id ? u : null;
+    out[id] = {
+      username,
+      profilePicture: data?.profilePicture || null,
+      equippedBadge: data?.equippedBadge ?? null,
+    };
+  }
+  return out;
+}
+
 // ── Persona Verification ──────────────────────────────────────────────
 
 export interface VerifiedIdentityAddress {

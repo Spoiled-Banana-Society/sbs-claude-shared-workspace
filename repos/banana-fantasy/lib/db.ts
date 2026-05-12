@@ -39,5 +39,6 @@ export const getUserBadges = db.getUserBadges;
 export const unlockBadge = db.unlockBadge;
 export const equipBadge = db.equipBadge;
 export const getEquippedBadgesBatch = db.getEquippedBadgesBatch;
+export const getUserDisplayBatch = db.getUserDisplayBatch;
 export const incrementMintPromos = db.incrementMintPromos;
 export const incrementReferralPromos = db.incrementReferralPromos;
