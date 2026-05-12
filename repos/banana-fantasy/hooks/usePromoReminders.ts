@@ -4,7 +4,16 @@ import { useEffect, useRef } from 'react';
 import type { Promo } from '@/types';
 import { pushNotification } from '@/components/NotificationCenter';
 
-const REMINDER_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+const REMINDER_COOLDOWN_MS = 72 * 60 * 60 * 1000; // 72 hours
+// Only nudge a partially-complete promo when the user is at least
+// this fraction of the way done. Below this they're not actually
+// "almost there" and the noti is just noise.
+const ALMOST_THERE_THRESHOLD = 0.75;
+// Cap "Almost There" pings to one per session even if multiple
+// promos qualify — too many "do this now" pings in one shot feels
+// spammy. New-promo and ready-to-claim notifications are still
+// uncapped because they're individually actionable.
+const MAX_ALMOST_THERE_PER_SESSION = 1;
 
 function wasRemindedRecently(key: string): boolean {
   try {
@@ -33,7 +42,17 @@ export function usePromoReminders(promos: Promo[]) {
     if (!promos || promos.length === 0 || checkedRef.current) return;
     checkedRef.current = true;
 
-    for (const promo of promos) {
+    // Sort partially-complete promos by closest-to-done so the one
+    // we surface (under the per-session cap) is the most likely to
+    // actually be finished.
+    const sorted = [...promos].sort((a, b) => {
+      const aPct = (a.progressMax ?? 0) > 0 ? (a.progressCurrent ?? 0) / a.progressMax! : 0;
+      const bPct = (b.progressMax ?? 0) > 0 ? (b.progressCurrent ?? 0) / b.progressMax! : 0;
+      return bPct - aPct;
+    });
+
+    let almostThereCount = 0;
+    for (const promo of sorted) {
       // New promo the user hasn't seen
       if (promo.isNew) {
         const key = `sbs-promo-new-seen-${promo.id}`;
@@ -64,19 +83,31 @@ export function usePromoReminders(promos: Promo[]) {
         continue;
       }
 
-      // Partially complete — nudge to finish
+      // Partially complete — nudge to finish, but only when the user
+      // is genuinely close (≥75% done) and we haven't already pinged
+      // for another promo this session. Message intentionally omits
+      // the live count so a stale notification doesn't lie when the
+      // user's progress changes after the noti was queued.
       const current = promo.progressCurrent ?? 0;
       const max = promo.progressMax ?? 0;
-      if (current > 0 && max > 0 && current < max && !promo.claimable) {
+      if (
+        current > 0
+        && max > 0
+        && current < max
+        && !promo.claimable
+        && current / max >= ALMOST_THERE_THRESHOLD
+        && almostThereCount < MAX_ALMOST_THERE_PER_SESSION
+      ) {
         const key = `sbs-promo-reminded-${promo.id}`;
         if (!wasRemindedRecently(key)) {
           pushNotification({
             type: 'promo',
             title: 'Almost There!',
-            message: `${promo.title} — ${current}/${max} complete.`,
+            message: `Finish ${promo.title} to claim your reward.`,
             link: promo.ctaLink || '/promos',
           });
           markReminded(key);
+          almostThereCount += 1;
         }
       }
     }
