@@ -205,7 +205,7 @@ export function DraftRoomDrafting({
                           <AvatarWithBadge
                             imageUrl={user?.profilePicture || '/banana-profile.png'}
                             alt="You"
-                            size={30}
+                            size={48}
                             equippedBadge={user?.equippedBadge}
                             useNextImage={false}
                             className="border border-gray-500"
@@ -216,7 +216,7 @@ export function DraftRoomDrafting({
                           <AvatarWithBadge
                             imageUrl={otherPfp}
                             alt={displayName}
-                            size={30}
+                            size={48}
                             equippedBadge={otherBadge}
                             useNextImage={false}
                             className="border border-gray-500"
@@ -224,26 +224,26 @@ export function DraftRoomDrafting({
                         </div>
                       )}
 
+                      <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                        {truncatedName}
+                      </div>
+
                       {isCurrent && engine.draftStatus !== 'completed' ? (
                         <div style={{
                           fontWeight: 'bold',
-                          fontSize: '18px',
-                          margin: '5px auto 0px auto',
+                          fontSize: '16px',
+                          margin: '2px auto 0px auto',
                           textAlign: 'center',
                           color: bestTimeRemaining > 10 ? '#fff' : (visibleDraftType === 'jackpot' ? 'yellow' : 'red'),
                         }}>
                           {formatTime(bestTimeRemaining)}
                         </div>
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 15, marginTop: 5, paddingBottom: 3 }}>
-                          <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>R{slot.round}</span>
-                          <span style={{ fontSize: '15px', fontWeight: 800, color: textColor }}>P{slot.pickNum}</span>
+                        <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: textColor, opacity: 0.7 }}>R{slot.round}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 700, color: textColor, opacity: 0.7 }}>P{slot.pickNum}</span>
                         </div>
                       )}
-
-                      <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
-                        {truncatedName}
-                      </div>
 
                       {isUpcoming && (
                         <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
