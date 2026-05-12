@@ -5,6 +5,7 @@ import { SlotMachineOverlay } from '@/components/drafting/SlotMachineOverlay';
 import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -38,6 +39,7 @@ interface DraftRoomRevealProps {
   /** Forwarded into the slot-machine overlay so the post-spin
    *  VerifiedBadge links to /proof/[draftId]. */
   draftId?: string;
+  usersMap?: DraftRoomUsersMap;
 }
 
 export function DraftRoomReveal({
@@ -62,6 +64,7 @@ export function DraftRoomReveal({
   slotAnimationDone,
   onCloseSlotMachine,
   draftId,
+  usersMap,
 }: DraftRoomRevealProps) {
   const myName = user?.username && !user.username.startsWith('0x') ? user.username : 'You';
 
@@ -147,8 +150,18 @@ export function DraftRoomReveal({
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
+            const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
+            const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
+            const otherBadge = playerUser?.equippedBadge ?? null;
+            // Prefer the resolved username (already applied to displayName upstream),
+            // then fall back to truncated wallet.
+            const rawName = player ? (player.displayName || player.name || '') : '???';
             const displayName = player
-              ? (player.isYou ? myName : ((player.name || player.displayName || '').length > 14 ? `${(player.name || player.displayName || '').slice(0, 6)}...${(player.name || player.displayName || '').slice(-4)}` : (player.name || player.displayName || '')))
+              ? (player.isYou
+                  ? myName
+                  : (playerUser?.displayName
+                      ? playerUser.displayName
+                      : (rawName.length > 14 ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}` : rawName)))
               : '???';
             const truncatedName = displayName.length > 14 ? `${displayName.substring(0, 12)}...` : displayName;
             const showCountdown = i === 0;
@@ -188,8 +201,16 @@ export function DraftRoomReveal({
                       />
                     </div>
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src="/banana-profile.png" alt="Banana" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />
+                    <div className="flex justify-center">
+                      <AvatarWithBadge
+                        imageUrl={otherPfp}
+                        alt={displayName}
+                        size={30}
+                        equippedBadge={otherBadge}
+                        useNextImage={false}
+                        className="border border-gray-500"
+                      />
+                    </div>
                   )}
 
                   {showCountdown ? (

@@ -29,6 +29,7 @@ import { useNotifOptIn } from '@/app/providers';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -210,6 +211,23 @@ function DraftRoomContent() {
     if (stored?.userDraftPosition !== undefined) return stored.userDraftPosition;
     return 0;
   });
+
+  // Resolve every player in the draftOrder to {username, pfp, equippedBadge}
+  // via the Go API + Firestore. Lets the slot cards show real names + badges
+  // instead of truncated wallet addresses. Bots are filtered out by the hook.
+  const draftRoomUsers = useDraftRoomUsers(draftOrder.map(p => p.name));
+
+  // Apply resolved usernames to draftOrder.displayName so the existing
+  // text-label code paths show real names. Avatars + badges are passed
+  // separately as `usersMap` to the child components.
+  const enrichedDraftOrder = React.useMemo(() => {
+    return draftOrder.map(p => {
+      if (p.isYou) return p;
+      const u = draftRoomUsers[p.name?.toLowerCase() ?? ''];
+      if (u?.displayName) return { ...p, displayName: u.displayName };
+      return p;
+    });
+  }, [draftOrder, draftRoomUsers]);
 
   const [autoDraft, setAutoDraft] = useState(false);
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
@@ -1778,7 +1796,7 @@ function DraftRoomContent() {
         <>
           {phase === 'filling' && (
             <DraftRoomFilling
-              draftOrder={draftOrder}
+              draftOrder={enrichedDraftOrder}
               playerCount={playerCount}
               waitingForServer={waitingForServer}
               isRandomizingFromStore={isRandomizingFromStore}
@@ -1787,13 +1805,15 @@ function DraftRoomContent() {
               user={user}
               visibleDraftType={visibleDraftType}
               controls={bannerControls}
+              usersMap={draftRoomUsers}
             />
           )}
 
           {(phase === 'pre-spin' || phase === 'countdown' || phase === 'spinning' || phase === 'result') && (
             <>
               <DraftRoomReveal
-                draftOrder={draftOrder}
+                draftOrder={enrichedDraftOrder}
+                usersMap={draftRoomUsers}
                 phase={phase}
                 user={user}
                 visibleDraftType={visibleDraftType}
@@ -1842,6 +1862,7 @@ function DraftRoomContent() {
 
           <DraftRoomDrafting
             engine={engine}
+            usersMap={draftRoomUsers}
             phase={phase}
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}

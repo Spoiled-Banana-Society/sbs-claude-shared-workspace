@@ -19,6 +19,7 @@ import {
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 interface UserLike {
   username?: string | null;
@@ -53,6 +54,7 @@ interface DraftRoomDraftingProps {
    *  copy ("Your turn", "My Team") with drafter-aware copy and points
    *  the sidebar at whichever drafter the user clicked on. */
   spectator?: boolean;
+  usersMap?: DraftRoomUsersMap;
 }
 
 export function DraftRoomDrafting({
@@ -79,6 +81,7 @@ export function DraftRoomDrafting({
   onSortChange,
   showBanner = true,
   spectator = false,
+  usersMap,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -148,10 +151,17 @@ export function DraftRoomDrafting({
                   : '#fff';
 
                 const playerData = engine.draftOrder[slot.ownerIndex];
+                const playerUser = !isUserCard && playerData?.name
+                  ? usersMap?.[playerData.name.toLowerCase()]
+                  : null;
+                const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
+                const otherBadge = playerUser?.equippedBadge ?? null;
                 let displayName = '';
                 if (playerData) {
                   if (playerData.isYou) {
                     displayName = (user?.username && !user.username.startsWith('0x')) ? user.username : 'You';
+                  } else if (playerUser?.displayName) {
+                    displayName = playerUser.displayName;
                   } else {
                     const raw = playerData.name || playerData.displayName || '';
                     displayName = raw.length > 14 ? `${raw.slice(0, 6)}...${raw.slice(-4)}` : raw;
@@ -202,8 +212,16 @@ export function DraftRoomDrafting({
                           />
                         </div>
                       ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src="/banana-profile.png" alt="Banana" className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500" />
+                        <div className="flex justify-center">
+                          <AvatarWithBadge
+                            imageUrl={otherPfp}
+                            alt={displayName}
+                            size={30}
+                            equippedBadge={otherBadge}
+                            useNextImage={false}
+                            className="border border-gray-500"
+                          />
+                        </div>
                       )}
 
                       {isCurrent && engine.draftStatus !== 'completed' ? (

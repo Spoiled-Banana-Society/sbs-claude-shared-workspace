@@ -4,6 +4,7 @@ import React from 'react';
 import { DRAFT_PLAYERS } from '@/lib/draftRoomConstants';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -23,6 +24,7 @@ interface DraftRoomFillingProps {
   user?: UserLike | null;
   visibleDraftType: DraftType | null;
   controls?: React.ReactNode;
+  usersMap?: DraftRoomUsersMap;
 }
 
 export function DraftRoomFilling({
@@ -35,6 +37,7 @@ export function DraftRoomFilling({
   user,
   visibleDraftType,
   controls,
+  usersMap,
 }: DraftRoomFillingProps) {
   const isRandomizing = waitingForServer || isRandomizingFromStore;
   const randomizingProgress = Math.max(serverWaitProgress, randomizingProgressFromStore);
@@ -50,12 +53,18 @@ export function DraftRoomFilling({
             const isFilled = isRandomizing ? true : (isUser || i < playerCount);
             const borderColor = isUser ? '#F3E216' : isFilled ? '#444' : '#333';
             const hasWalletData = player && !player.isYou && player.name && player.name.length > 10;
+            const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
+            const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
+            const otherBadge = playerUser?.equippedBadge ?? null;
+            const otherDisplayName = playerUser?.displayName || null;
 
             let displayName = '';
             if (isRandomizing) {
-              displayName = isUser ? myName : (hasWalletData ? `${player!.name.slice(0, 6)}...${player!.name.slice(-4)}` : `Player ${i + 1}`);
+              displayName = isUser
+                ? myName
+                : (otherDisplayName || (hasWalletData ? `${player!.name.slice(0, 6)}...${player!.name.slice(-4)}` : `Player ${i + 1}`));
             } else if (isFilled) {
-              displayName = isUser ? myName : `Player ${i + 1}`;
+              displayName = isUser ? myName : (otherDisplayName || `Player ${i + 1}`);
             } else {
               displayName = '---';
             }
@@ -96,13 +105,24 @@ export function DraftRoomFilling({
                         className="border border-gray-500"
                       />
                     </div>
+                  ) : isFilled ? (
+                    <div className="flex justify-center" style={{ opacity: 1 }}>
+                      <AvatarWithBadge
+                        imageUrl={otherPfp}
+                        alt={otherDisplayName || 'Player'}
+                        size={30}
+                        equippedBadge={otherBadge}
+                        useNextImage={false}
+                        className="border border-gray-500"
+                      />
+                    </div>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src="/banana-profile.png"
                       alt="Banana"
-                      className={`rounded-full w-[30px] mx-auto h-[30px] border border-gray-500 ${!isFilled ? 'animate-pulse' : ''}`}
-                      style={{ opacity: isFilled ? 1 : 0.4 }}
+                      className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500 animate-pulse"
+                      style={{ opacity: 0.4 }}
                     />
                   )}
 
