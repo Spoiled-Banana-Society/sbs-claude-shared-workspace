@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useAuth } from '@/hooks/useAuth';
-import { getNflTeamLogo } from '@/lib/nflTeams';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
 
@@ -14,17 +12,9 @@ interface EditProfileModalProps {
   onClose: () => void;
 }
 
-const nflTeams = [
-  'Cardinals', 'Falcons', 'Ravens', 'Bills', 'Panthers', 'Bears', 'Bengals', 'Browns',
-  'Cowboys', 'Broncos', 'Lions', 'Packers', 'Texans', 'Colts', 'Jaguars', 'Chiefs',
-  'Raiders', 'Chargers', 'Rams', 'Dolphins', 'Vikings', 'Patriots', 'Saints', 'Giants',
-  'Jets', 'Eagles', 'Steelers', '49ers', 'Seahawks', 'Buccaneers', 'Titans', 'Commanders'
-];
-
 export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
   const { user, updateUser } = useAuth();
   const [username, setUsername] = useState('');
-  const [nflTeam, setNflTeam] = useState('');
   const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -33,7 +23,6 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
   useEffect(() => {
     if (user) {
       setUsername(user.username);
-      setNflTeam(user.nflTeam || '');
       setProfilePicturePreview(user.profilePicture || null);
       setPendingFile(null);
     }
@@ -73,7 +62,6 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
 
     updateUser({
       username,
-      nflTeam: nflTeam || undefined,
       profilePicture: pic,
     });
     setSaving(false);
@@ -123,37 +111,6 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
             className="w-full input"
             placeholder="Enter username"
           />
-        </div>
-
-        {/* NFL Team */}
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">
-            Favorite NFL Team
-            {nflTeam && <span className="text-text-muted ml-2">({nflTeam})</span>}
-          </label>
-          <div className="grid grid-cols-8 gap-2 p-3 bg-bg-tertiary rounded-lg max-h-48 overflow-y-auto">
-            {nflTeams.map((team) => (
-              <button
-                key={team}
-                type="button"
-                onClick={() => setNflTeam(team)}
-                className={`p-1.5 rounded-lg transition-all hover:bg-bg-secondary ${
-                  nflTeam === team
-                    ? 'bg-banana/20 ring-2 ring-banana'
-                    : 'hover:scale-110'
-                }`}
-                title={team}
-              >
-                <Image
-                  src={getNflTeamLogo(team)!}
-                  alt={team}
-                  width={24}
-                  height={24}
-                  className="w-6 h-6 object-contain"
-                />
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* X (Twitter) Connection */}
