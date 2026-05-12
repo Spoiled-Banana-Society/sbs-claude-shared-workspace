@@ -36,15 +36,17 @@ function clearCrispStorage(): void {
 }
 
 export function CrispChat() {
-  const { walletAddress, user } = useAuth();
+  const { walletAddress, user, isLoading: authLoading } = useAuth();
   const initializedRef = useRef(false);
+  const scriptLoadedRef = useRef(false);
 
-  // First mount: decide if we need to nuke Crisp storage BEFORE the
-  // script loads. If the previously-stored wallet doesn't match the
-  // current one, the prior visitor's chat history would carry over
-  // unless we wipe Crisp's local state first.
+  // Wait for auth to finish loading before deciding whether to wipe
+  // Crisp storage. On refresh, walletAddress is briefly null while
+  // Privy boots — without this guard we'd mistake the boot-time null
+  // for "wallet changed" and nuke the chat history on every reload.
   useEffect(() => {
     if (initializedRef.current) return;
+    if (authLoading) return;
     initializedRef.current = true;
 
     try {
@@ -125,16 +127,21 @@ export function CrispChat() {
       if (crispScript) crispScript.remove();
       style.remove();
     };
-  // Intentionally only runs once — wallet changes after mount are
-  // handled by the effect below.
+  // Re-runs when authLoading flips so we can initialize Crisp once
+  // auth has resolved (initializedRef guards against multi-runs).
+  // walletAddress is read in the closure but doesn't need to be a
+  // dep — it's only checked at first-run time.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authLoading]);
 
   // React to wallet/user changes AFTER initial mount. If the wallet
   // address changes (different login, logout), reset Crisp's session
   // so the prior chat history doesn't leak into the new identity.
+  // Skip while auth is still loading — Privy briefly reports null
+  // before resolving the real wallet, which is not a real change.
   useEffect(() => {
     if (!initializedRef.current) return;
+    if (authLoading) return;
     try {
       const lastWallet = localStorage.getItem(STORAGE_KEY);
       const currentWallet = walletAddress?.toLowerCase() ?? null;
@@ -158,7 +165,7 @@ export function CrispChat() {
       if (currentWallet) localStorage.setItem(STORAGE_KEY, currentWallet);
       else localStorage.removeItem(STORAGE_KEY);
     } catch {}
-  }, [walletAddress]);
+  }, [walletAddress, authLoading]);
 
   // Whenever we have a logged-in user, tag the Crisp session with
   // their wallet + username so the operator inbox knows who's writing
