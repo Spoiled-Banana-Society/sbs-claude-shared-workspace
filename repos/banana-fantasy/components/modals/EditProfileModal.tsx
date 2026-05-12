@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
-import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -142,19 +142,20 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
           )}
         </div>
 
-        {/* Badges — pick which badge to show next to your avatar */}
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">
-            Badges
-          </label>
-          <p className="text-xs text-text-muted mb-3">
-            Earn badges by drafting, winning leagues, hitting JP/HOF on the wheel, and more. Click an
-            unlocked badge to show it next to your avatar everywhere.
-          </p>
-          <div className="max-h-[420px] overflow-y-auto p-3 bg-bg-tertiary rounded-lg border border-white/10">
-            <BadgeCatalogGrid />
+        {/* Badges live on /profile so there's a single canonical source.
+            This is just a deep link so users can still get there from
+            the edit-profile modal without duplicating the catalog UI. */}
+        <Link
+          href="/profile?tab=badges"
+          onClick={onClose}
+          className="flex items-center justify-between p-3 bg-bg-tertiary rounded-lg border border-white/10 hover:border-banana/40 transition-colors"
+        >
+          <div>
+            <p className="text-sm font-medium text-text-primary">Badges</p>
+            <p className="text-xs text-text-muted mt-0.5">Manage equipped badge & see locked rewards</p>
           </div>
-        </div>
+          <span className="text-text-muted">→</span>
+        </Link>
 
         <div className="p-4 bg-bg-tertiary rounded-lg border border-white/10">
           <p className="text-sm font-medium text-text-primary">Wallet Address</p>
