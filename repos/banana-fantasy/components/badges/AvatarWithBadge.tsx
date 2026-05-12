@@ -41,6 +41,13 @@ export function AvatarWithBadge({
   const src = imageUrl || fallbackSrc;
   const badgeSize = Math.min(32, Math.max(12, Math.round(size * 0.38)));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
+  // The fallback banana PNG is cropped edge-to-edge so it looks visually
+  // larger than custom PFPs (which typically have whitespace padding in
+  // the source). Shrink the fallback so it sits at the same visual weight
+  // as a normal user-uploaded avatar.
+  const isFallback = !imageUrl;
+  const innerSize = isFallback ? Math.round(size * 0.85) : size;
+  const innerOffset = Math.round((size - innerSize) / 2);
 
   // Badge sits flush at the bottom-right corner INSIDE the avatar's
   // bounding box. This way an `overflow-hidden` on a parent slot (e.g.
@@ -54,10 +61,10 @@ export function AvatarWithBadge({
         <Image
           src={src}
           alt={alt}
-          width={size}
-          height={size}
+          width={innerSize}
+          height={innerSize}
           className="rounded-full object-cover"
-          style={{ width: size, height: size }}
+          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset }}
           unoptimized
         />
       ) : (
@@ -65,10 +72,10 @@ export function AvatarWithBadge({
         <img
           src={src}
           alt={alt}
-          width={size}
-          height={size}
+          width={innerSize}
+          height={innerSize}
           className="rounded-full object-cover"
-          style={{ width: size, height: size }}
+          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset }}
         />
       )}
       {badge && (
