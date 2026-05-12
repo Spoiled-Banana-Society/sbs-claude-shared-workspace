@@ -10,56 +10,18 @@ declare global {
   }
 }
 
-const STORAGE_KEY = 'sbs.crisp.lastWallet';
-
-// localStorage key Crisp itself uses internally — clearing them on
-// wallet change forces a fresh visitor session so two wallets in the
-// same browser don't share a chat history. Keys are versioned by Crisp
-// but always start with these prefixes.
-function clearCrispStorage(): void {
-  try {
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (key.startsWith('crisp-client/') || key.startsWith('crisp_client/')) {
-        localStorage.removeItem(key);
-      }
-    }
-    // Also nuke any crisp cookies on this domain
-    document.cookie.split(';').forEach((c) => {
-      const name = c.split('=')[0]?.trim();
-      if (name && name.startsWith('crisp-client/')) {
-        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
-      }
-    });
-  } catch {}
-}
-
 export function CrispChat() {
-  const { walletAddress, user, isLoading: authLoading } = useAuth();
+  const { walletAddress, user } = useAuth();
   const initializedRef = useRef(false);
-  const scriptLoadedRef = useRef(false);
 
-  // Wait for auth to finish loading before deciding whether to wipe
-  // Crisp storage. On refresh, walletAddress is briefly null while
-  // Privy boots — without this guard we'd mistake the boot-time null
-  // for "wallet changed" and nuke the chat history on every reload.
+  // One-time Crisp script + container-hide setup. We don't try to
+  // separate Crisp sessions per SBS wallet — real users stick to one
+  // wallet per browser, and the cost of getting fancy (clearing
+  // storage, calling session:reset) was nuking everyone's chat
+  // history on every page refresh while Privy auth was still booting.
   useEffect(() => {
     if (initializedRef.current) return;
-    if (authLoading) return;
     initializedRef.current = true;
-
-    try {
-      const lastWallet = localStorage.getItem(STORAGE_KEY);
-      const currentWallet = walletAddress?.toLowerCase() ?? null;
-      // If the wallet changed (or one side is null while the other isn't),
-      // clear the prior Crisp session so this browser starts fresh.
-      if (lastWallet !== currentWallet) {
-        clearCrispStorage();
-        if (currentWallet) localStorage.setItem(STORAGE_KEY, currentWallet);
-        else localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {}
 
     window.$crisp = [];
     window.CRISP_WEBSITE_ID = 'ed386428-a6f2-435a-a3e1-043f0a078093';
@@ -69,18 +31,15 @@ export function CrispChat() {
     script.async = true;
     document.head.appendChild(script);
 
-    // Hide Crisp floating bubble entirely — chat opens via profile dropdown "Support" button
-    // The chat window itself still shows when opened programmatically
     window.$crisp.push(['config', 'hide:on:initial:load', true]);
 
     const style = document.createElement('style');
     style.id = 'crisp-hide';
-    // Bulletproof approach: hide the ENTIRE Crisp container by
-    // default. The yellow SBS button is the only entry. When it's
-    // clicked, we add `crisp-open` to <html> so the container becomes
-    // visible (and Crisp's chat:open then renders the chat window).
-    // Class names inside the container vary by Crisp release; targeting
-    // the container itself bypasses that whole problem.
+    // Hide the entire Crisp container by default — the yellow SBS
+    // button is the only entry. Adding `crisp-open` to <html> reveals
+    // the container so chat:open can render the chat window inside.
+    // Class names inside the container vary by Crisp release; gating
+    // at the container level is class-name-agnostic.
     style.textContent = `
       #crisp-chatbox,
       .crisp-client {
@@ -95,8 +54,9 @@ export function CrispChat() {
     `;
     document.head.appendChild(style);
 
-    // Mirror Crisp's open/close into the <html> class so the CSS gate
-    // above can swap the container in and out.
+    // Mirror Crisp's open/close events into the <html> class so the
+    // CSS gate above can swap the container in and out without
+    // duplicating state.
     const waitForEvents = setInterval(() => {
       const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
       if (w.$crisp && typeof w.$crisp.push === 'function') {
@@ -113,7 +73,7 @@ export function CrispChat() {
     }, 500);
     setTimeout(() => clearInterval(waitForEvents), 15000);
 
-    // Once Crisp loads, hide the bubble via API too
+    // Belt-and-suspenders: once Crisp is wired up, push chat:hide too.
     const waitForCrisp = setInterval(() => {
       if (window.$crisp && typeof (window.$crisp as unknown[]).push === 'function') {
         try { (window.$crisp as unknown[]).push(['do', 'chat:hide']); } catch {}
@@ -127,49 +87,13 @@ export function CrispChat() {
       if (crispScript) crispScript.remove();
       style.remove();
     };
-  // Re-runs when authLoading flips so we can initialize Crisp once
-  // auth has resolved (initializedRef guards against multi-runs).
-  // walletAddress is read in the closure but doesn't need to be a
-  // dep — it's only checked at first-run time.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading]);
-
-  // React to wallet/user changes AFTER initial mount. If the wallet
-  // address changes (different login, logout), reset Crisp's session
-  // so the prior chat history doesn't leak into the new identity.
-  // Skip while auth is still loading — Privy briefly reports null
-  // before resolving the real wallet, which is not a real change.
-  useEffect(() => {
-    if (!initializedRef.current) return;
-    if (authLoading) return;
-    try {
-      const lastWallet = localStorage.getItem(STORAGE_KEY);
-      const currentWallet = walletAddress?.toLowerCase() ?? null;
-      if (lastWallet === currentWallet) return;
-
-      // Wallet changed — reset the Crisp session and re-identify.
-      // session:reset re-shows the default bubble, so immediately push
-      // chat:hide again (with retries since Crisp may re-render after
-      // reset finishes) so the SBS yellow button stays the only entry.
-      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
-      if (w.$crisp) {
-        try { w.$crisp.push(['do', 'session:reset']); } catch {}
-        // Hide aggressively for the first few seconds post-reset
-        let hides = 0;
-        const hideInterval = setInterval(() => {
-          try { w.$crisp!.push(['do', 'chat:hide']); } catch {}
-          hides += 1;
-          if (hides > 10) clearInterval(hideInterval);
-        }, 300);
-      }
-      if (currentWallet) localStorage.setItem(STORAGE_KEY, currentWallet);
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-  }, [walletAddress, authLoading]);
+  }, []);
 
   // Whenever we have a logged-in user, tag the Crisp session with
-  // their wallet + username so the operator inbox knows who's writing
-  // and conversations are properly attributed per identity.
+  // their wallet + username so the operator inbox shows who's writing
+  // instead of an opaque visitor ID. This is the bit that actually
+  // helps support — the operator sees "0xab12..." or the username
+  // instead of "visitor1934".
   useEffect(() => {
     if (!walletAddress) return;
     const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
