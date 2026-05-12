@@ -5,10 +5,38 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getUserDisplayBatch } from '@/lib/db';
-import { getOwnerProfile } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
 const MAX_BATCH = 30;
+const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+
+// Server-side fetches must explicitly target the staging Go API. The
+// shared `getDraftsApiUrl()` reads `isStagingMode()` which is window-only
+// (returns prod URL on the server), so use the staging env var pattern
+// the badges route already follows.
+function getServerDraftsApiUrl(): string {
+  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
+}
+
+interface OwnerPfp {
+  displayName?: string;
+  imageUrl?: string;
+}
+interface OwnerResponse {
+  pfp?: OwnerPfp;
+}
+
+async function fetchGoApiPfp(wallet: string): Promise<OwnerPfp | null> {
+  try {
+    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as OwnerResponse;
+    return body.pfp ?? null;
+  } catch (err) {
+    logger.warn('users.display-batch.go-api-failed', { wallet, err });
+    return null;
+  }
+}
 
 interface UserDisplay {
   displayName: string | null;
@@ -55,26 +83,26 @@ export async function POST(req: Request) {
     // 1. Pull v2_users data for everyone (one Firestore getAll).
     const v2 = await getUserDisplayBatch(realWallets);
 
-    // 2. For wallets missing a username in v2_users, fall back to Go API.
-    const needsGoApi = realWallets.filter(w => !v2[w]?.username);
+    // 2. For wallets missing username OR pfp in v2_users, fall back to
+    //    the Go API pfp record (legacy users who set their identity in
+    //    the old draft frontend and haven't touched the new app yet).
+    const needsGoApi = realWallets.filter(w => !v2[w]?.username || !v2[w]?.profilePicture);
     const goApiResults = await Promise.all(needsGoApi.map(async w => {
-      try {
-        const p = await getOwnerProfile(w);
-        const dn = p?.pfp?.displayName?.trim();
-        return [w, dn && dn.toLowerCase() !== w ? dn : null] as const;
-      } catch (err) {
-        logger.warn('users.display-batch.go-api-failed', { wallet: w, err });
-        return [w, null] as const;
-      }
+      const pfp = await fetchGoApiPfp(w);
+      const dn = pfp?.displayName?.trim();
+      return [w, {
+        displayName: dn && dn.toLowerCase() !== w ? dn : null,
+        imageUrl: pfp?.imageUrl || null,
+      }] as const;
     }));
-    const goApiNames = Object.fromEntries(goApiResults);
+    const goApiData = Object.fromEntries(goApiResults);
 
     const out: Record<string, UserDisplay> = {};
     for (const w of realWallets) {
       const v = v2[w];
       out[w] = {
-        displayName: v?.username || goApiNames[w] || null,
-        imageUrl: v?.profilePicture || null,
+        displayName: v?.username || goApiData[w]?.displayName || null,
+        imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
         equippedBadge: v?.equippedBadge ?? null,
       };
     }
