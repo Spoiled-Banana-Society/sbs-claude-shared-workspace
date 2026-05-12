@@ -174,19 +174,6 @@ body {
     animation: badge-rainbow 4s linear infinite;
   }
 
-  /* Lucky-spin badges: idle, then a quick 360° spin with glow burst every
-     few seconds. Tied to the wheel theme without being as distracting as
-     a continuous spinner. */
-  @keyframes badge-spin-kick {
-    0%, 65% { transform: rotate(0deg); filter: drop-shadow(0 0 4px currentColor); }
-    85% { transform: rotate(360deg); filter: drop-shadow(0 0 12px currentColor); }
-    100% { transform: rotate(360deg); filter: drop-shadow(0 0 4px currentColor); }
-  }
-  .badge-spin {
-    animation: badge-spin-kick 5s ease-in-out infinite;
-    transform-origin: center;
-  }
-
   /* HOF gold filter - turns red logo to gold */
   .hof-gold-filter {
     filter: sepia(100%) saturate(400%) brightness(110%) hue-rotate(10deg);

@@ -190,7 +190,7 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Land on Jackpot on a wheel spin',
     category: 'wheel',
     color: '#ef4444',
-    glow: 'spin',
+    glow: 'soft',
     glyph: '🎰',
   },
   {
@@ -200,7 +200,7 @@ export const BADGE_CATALOG: Badge[] = [
     criteria: 'Land on HOF on a wheel spin',
     category: 'wheel',
     color: '#D4AF37',
-    glow: 'spin',
+    glow: 'soft',
     glyph: '🪙', // coin — distinct from slot machine
   },
 

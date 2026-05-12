@@ -51,10 +51,8 @@ export interface Badge {
   /** Override ring color independently from fill. Useful for HOF-tier
    *  variants of base medals. */
   ringColor?: string;
-  /** Visual flair. 'soft' = static drop-shadow. 'pulse' = scale + glow throb.
-   *  'spin' = idle + periodic 360° rotation with a glow burst (lucky-spin
-   *  badges that thematically reference the wheel). */
-  glow?: 'none' | 'soft' | 'pulse' | 'spin';
+  /** Visual flair. 'soft' = static drop-shadow. 'pulse' = animated. */
+  glow?: 'none' | 'soft' | 'pulse';
   /** Hidden badges (past-season champions, secret unlocks) don't render
    *  in the catalog when locked — they only appear once unlocked. */
   hidden?: boolean;
