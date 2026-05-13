@@ -149,6 +149,13 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
   const callbacksRef = useRef(options);
   callbacksRef.current = options;
 
+  // Privy's getAccessToken returns a new function reference each render. Keep
+  // it in a ref so the `connect` callback below doesn't have to list it in
+  // its deps — otherwise every Privy token refresh would tear down the WS and
+  // re-open it (~5s gap = the "20s glitch" Boris reported on 2026-05-12).
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
   const clearTimers = useCallback(() => {
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
@@ -192,11 +199,13 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     const normalizedAddress = walletAddress.trim().toLowerCase();
     // Fetch the Privy access token — Go WS server verifies this JWT
     // before upgrading. Without it the connection returns 401 and
-    // every pick / timer event is silently dropped.
+    // every pick / timer event is silently dropped. Pulled from a ref
+    // so token-refresh doesn't cause the WS to reconnect.
     let token: string | null = null;
-    if (getToken) {
+    const tokenFn = getTokenRef.current;
+    if (tokenFn) {
       try {
-        token = await getToken();
+        token = await tokenFn();
       } catch (err) {
         console.warn('[ws] failed to get access token:', err);
       }
@@ -314,7 +323,9 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     ws.onerror = () => {
       // The close event will fire after error, which handles reconnection
     };
-  }, [walletAddress, draftName, clearTimers, getToken]);
+    // getToken intentionally NOT in deps — it's pulled from getTokenRef.
+    // See ref declaration above for why.
+  }, [walletAddress, draftName, clearTimers]);
 
   // Connect/disconnect based on `enabled`
   useEffect(() => {

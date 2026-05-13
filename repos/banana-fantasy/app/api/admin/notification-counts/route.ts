@@ -82,6 +82,13 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Bridged Go-service errors from /api/crons/sync-cloud-errors. The
+  // bridge already filters to severity>=ERROR and tries to classify
+  // common Go failure modes — anything that gets through is worth a
+  // badge. Added after the 2026-05-12 outage where a 1.92 MB Firestore
+  // doc-size error logged loudly to Cloud Logging but never reached
+  // admin because there was no Go→admin bridge.
+  /^backend\./i,
 ];
 
 function isImportantError(source: string | undefined): boolean {
