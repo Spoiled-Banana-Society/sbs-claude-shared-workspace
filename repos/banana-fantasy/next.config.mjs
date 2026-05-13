@@ -1,4 +1,5 @@
 import webpack from 'next/dist/compiled/webpack/webpack-lib.js';
+import { withSentryConfig } from '@sentry/nextjs';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -52,4 +53,21 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry to upload source maps on production builds.
+// Without this, Sentry sees minified bundle line numbers instead
+// of the actual TS source, so stack traces are unreadable. SENTRY_AUTH_TOKEN
+// must be set in Vercel env for the upload to succeed; if missing the
+// build proceeds but maps aren't uploaded (no fatal error).
+export default withSentryConfig(nextConfig, {
+  org: 'sbs-ti',
+  project: 'javascript-nextjs',
+  // Quieter build logs — Sentry's defaults are noisy. Errors still surface.
+  silent: !process.env.CI,
+  // Source maps need to be uploaded but NOT served publicly (privacy).
+  widenClientFileUpload: true,
+  hideSourceMaps: true,
+  disableLogger: true,
+  // Tunnel Sentry client-side traffic through a Next route to bypass
+  // ad blockers (no-op if Sentry isn't loaded by the user).
+  tunnelRoute: '/api/sentry-tunnel',
+});
