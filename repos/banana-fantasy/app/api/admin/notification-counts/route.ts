@@ -282,38 +282,74 @@ async function countFailedPurchases(db: Firestore, since: number): Promise<numbe
 }
 
 async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<number> {
-  // Stuck = "filling state, has at least 1 player, started filling >24h ago".
-  // We probe the same collections /admin/drafts probes (drafts, v2_drafts,
-  // draftRooms) and union any matches. Filling-state field names vary, so
-  // we accept pending / waiting / lobby / filling.
+  // Two distinct stall modes both flow into the same `drafts` badge:
+  //
+  // 1. Lobby never filled: status in {filling}, ≥1 player joined,
+  //    sat there >24h. (stuckBeforeIso = now - 24h)
+  // 2. Active draft stalled: status in {in_progress, drafting, active},
+  //    last pick (or updatedAt) older than 5 minutes. This is the
+  //    signal that would catch a WS-401-frozen draft like today's.
   const FILLING = ['pending', 'waiting', 'lobby', 'filling'];
+  const ACTIVE = ['active', 'in_progress', 'drafting'];
+  const stalledBeforeMs = Date.now() - 5 * 60 * 1000;
+  const stalledBeforeIso = new Date(stalledBeforeMs).toISOString();
   const collections = ['drafts', 'v2_drafts', 'draftRooms'];
   let total = 0;
   await Promise.all(
     collections.map(async (col) => {
       try {
-        const snap = await db
+        // Mode 1: stuck filling lobby
+        const fillingSnap = await db
           .collection(col)
           .where('status', 'in', FILLING)
           .limit(200)
           .get();
-        const count = snap.docs.filter((d) => {
+        for (const d of fillingSnap.docs) {
           const data = d.data();
           const playerCount: number = data.playerCount
             || (Array.isArray(data.participants) ? data.participants.length : 0);
-          if (playerCount < 1) return false;
-          const created = data.createdAt;
-          const createdIso = typeof created === 'string'
-            ? created
-            : (created?.toDate?.().toISOString?.() ?? null);
-          if (!createdIso) return false;
-          return createdIso < stuckBeforeIso;
-        }).length;
-        total += count;
-      } catch {
-        // Collection missing or different schema — skip
-      }
+          if (playerCount < 1) continue;
+          const createdIso = toIsoString(data.createdAt);
+          if (!createdIso) continue;
+          if (createdIso < stuckBeforeIso) total += 1;
+        }
+      } catch { /* schema mismatch — skip collection */ }
+
+      try {
+        // Mode 2: active draft with no recent activity
+        const activeSnap = await db
+          .collection(col)
+          .where('status', 'in', ACTIVE)
+          .limit(200)
+          .get();
+        for (const d of activeSnap.docs) {
+          const data = d.data();
+          // updatedAt / lastPickAt / lastActivityAt — pick whichever
+          // the draft writes. If none exists, fall back to createdAt
+          // (catches drafts that started but never advanced).
+          const recencyIso = toIsoString(data.updatedAt)
+            ?? toIsoString(data.lastPickAt)
+            ?? toIsoString(data.lastActivityAt)
+            ?? toIsoString(data.startedAt)
+            ?? toIsoString(data.createdAt);
+          if (!recencyIso) continue;
+          if (recencyIso < stalledBeforeIso) total += 1;
+        }
+      } catch { /* schema mismatch — skip collection */ }
     }),
   );
   return total;
+}
+
+// Coerce common Firestore date shapes into an ISO string, or null.
+function toIsoString(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value || null;
+  if (typeof (value as { toDate?: () => Date }).toDate === 'function') {
+    try {
+      const d = (value as { toDate: () => Date }).toDate();
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    } catch { return null; }
+  }
+  return null;
 }

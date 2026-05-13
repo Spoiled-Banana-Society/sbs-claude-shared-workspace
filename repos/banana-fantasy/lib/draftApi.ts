@@ -276,12 +276,29 @@ export async function submitPickREST(
     position: string;
   },
 ): Promise<unknown> {
-  return apiFetch<unknown>(
-    `/draft-actions/${draftId}/owner/${walletAddress}/actions/pick`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pick),
-    },
-  );
+  try {
+    return await apiFetch<unknown>(
+      `/draft-actions/${draftId}/owner/${walletAddress}/actions/pick`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pick),
+      },
+    );
+  } catch (err) {
+    // Report failed pick submissions so admin sees them in real-time.
+    // Anything blocking the user from advancing the draft is high
+    // signal — clientErrors throttles per-source so retries don't spam.
+    try {
+      const { reportClientError } = await import('@/lib/clientErrors');
+      reportClientError({
+        source: 'draft.pick_submit_failed',
+        message: `submitPickREST threw: ${err instanceof Error ? err.message : String(err)}`,
+        route: 'draft-room',
+        actor: walletAddress,
+        context: { draftId, playerId: pick.playerId, position: pick.position },
+      });
+    } catch { /* swallow */ }
+    throw err;
+  }
 }
