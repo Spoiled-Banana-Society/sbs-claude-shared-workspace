@@ -114,6 +114,7 @@ export default function AdminPage() {
   const TAB_NOTIF_CATEGORY: Partial<Record<TabKey, NotifCategory>> = {
     support: 'support',
     errors: 'errors',
+    sentry: 'sentry',
     kyc: 'kyc',
     offramp: 'offramp',
     onramp: 'onramp',

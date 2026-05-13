@@ -18,6 +18,7 @@ import { logger } from '@/lib/logger';
 // state-driven (unread / pending) and ignore `since`.
 interface Since {
   errors?: number;
+  sentry?: number;
   kyc?: number;
   offramp?: number;
   onramp?: number;
@@ -27,7 +28,8 @@ interface Since {
 
 export interface NotificationCounts {
   support: number;       // Crisp unread conversations
-  errors: number;        // v2_error_events since `errors`
+  errors: number;        // v2_error_events since `errors` (important pattern matches)
+  sentry: number;        // unresolved Sentry issues seen since `sentry`
   kyc: number;           // kyc_attempts in review states since `kyc`
   offramp: number;       // offramp_attempts with failure status since `offramp`
   onramp: number;        // onramp_attempts tx_failed since `onramp`
@@ -74,6 +76,12 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^promo\.claim\./i,
   /privy\.fetch_user\.error/i,
   /^admin\.(grant_drafts|grant_prize|kyc_verify|reconcile_passes|retry_purchase|withdrawal_status|transfer_batchproof|deploy_batch_proof|revoke7702|user_ban|set_entries|zero_free_drafts|reset_user|reset_queue)\.failed$/i,
+  // Draft-room user-impact signals — anything WS/REST related to
+  // drafts blocking play. ws.connect_failed catches the kind of
+  // 401 freeze we hit on May 12, 2026.
+  /^ws\./i,
+  /^draft\.(pick|state)_error/i,
+  /^draft\.autopick_failed/i,
 ];
 
 function isImportantError(source: string | undefined): boolean {
@@ -104,6 +112,7 @@ export async function GET(req: Request) {
     const [
       support,
       errors,
+      sentry,
       kyc,
       offramp,
       onramp,
@@ -113,6 +122,7 @@ export async function GET(req: Request) {
     ] = await Promise.all([
       countSupport(),
       countErrors(since.errors ?? 0),
+      countSentryUnresolved(since.sentry ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
       countOnramp(db, since.onramp ?? 0),
@@ -122,7 +132,7 @@ export async function GET(req: Request) {
     ]);
 
     const counts: NotificationCounts = {
-      support, errors, kyc, offramp, onramp, withdrawals, purchases, drafts,
+      support, errors, sentry, kyc, offramp, onramp, withdrawals, purchases, drafts,
     };
 
     logger.info('admin.notif_counts.ok', {
@@ -148,6 +158,28 @@ async function countSupport(): Promise<number> {
       const unread = typeof c.unread === 'number' ? c.unread : (c.unread?.operator ?? 0);
       return sum + (unread > 0 ? 1 : 0);
     }, 0);
+  } catch { return 0; }
+}
+
+async function countSentryUnresolved(since: number): Promise<number> {
+  try {
+    const token = process.env.SENTRY_AUTH_TOKEN;
+    if (!token) return 0;
+    const org = process.env.SENTRY_ORG || 'sbs-ti';
+    const project = process.env.SENTRY_PROJECT_SLUG || 'javascript-nextjs';
+    // Last 24h of unresolved issues — keeps the badge bounded to
+    // "recently broken" instead of every issue ever logged.
+    const url = `https://sentry.io/api/0/projects/${encodeURIComponent(org)}/${encodeURIComponent(project)}/issues/?statsPeriod=24h&limit=100&query=is%3Aunresolved`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    if (!res.ok) return 0;
+    const raw = (await res.json()) as Array<{ lastSeen?: string }>;
+    return raw.filter((r) => {
+      const t = r.lastSeen ? new Date(r.lastSeen).getTime() : 0;
+      return t > since;
+    }).length;
   } catch { return 0; }
 }
 

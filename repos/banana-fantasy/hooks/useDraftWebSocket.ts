@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getDraftServerUrl } from '@/lib/staging';
+import { reportClientError } from '@/lib/clientErrors';
 import { logger } from '@/lib/logger';
 
 // ==================== PAYLOAD TYPES ====================
@@ -138,6 +139,11 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
   const intentionalCloseRef = useRef(false);
   const mountedRef = useRef(true);
   const lastMessageRef = useRef(Date.now());
+  // Counts consecutive failed connects. Reset to 0 on successful open.
+  // After N in a row, report a client-error so admin gets a badge —
+  // exactly what would have caught the WS-401 bug today.
+  const failedConnectsRef = useRef(0);
+  const FAILED_CONNECTS_REPORT_THRESHOLD = 3;
 
   // Store callbacks in refs so the WebSocket message handler always sees latest
   const callbacksRef = useRef(options);
@@ -206,6 +212,7 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
       if (!mountedRef.current) { ws.close(); return; }
       setIsConnected(true);
       backoffRef.current = INITIAL_BACKOFF_MS;
+      failedConnectsRef.current = 0;
       callbacksRef.current.onOpen?.();
 
       // Start keepalive pings
@@ -261,14 +268,37 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (!mountedRef.current) return;
+      const wasConnected = isConnected;
       setIsConnected(false);
       callbacksRef.current.onClose?.();
 
       if (pingTimerRef.current) {
         clearInterval(pingTimerRef.current);
         pingTimerRef.current = null;
+      }
+
+      // If we never reached the open state, this counts as a failed
+      // connect (network rejection, auth failure, etc). After N in a
+      // row, fire a client-error so admin gets a badge — caught the
+      // WS-401 freeze that locked drafts on pick 1.
+      if (!wasConnected && !intentionalCloseRef.current) {
+        failedConnectsRef.current += 1;
+        if (failedConnectsRef.current === FAILED_CONNECTS_REPORT_THRESHOLD) {
+          reportClientError({
+            source: 'ws.connect_failed',
+            message: `WebSocket failed to connect after ${FAILED_CONNECTS_REPORT_THRESHOLD} attempts (code ${event.code})`,
+            route: 'draft-room',
+            actor: walletAddress,
+            context: {
+              draftName,
+              closeCode: event.code,
+              closeReason: event.reason || null,
+              attempts: failedConnectsRef.current,
+            },
+          });
+        }
       }
 
       // Reconnect unless intentionally closed
