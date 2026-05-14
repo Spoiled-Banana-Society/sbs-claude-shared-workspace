@@ -204,9 +204,25 @@ export default function DraftResultsPage() {
   const roster = allRosters[selectedPlayer];
   const cardImageUrl = cardImages[selectedPlayer.toLowerCase()]?.imageUrl || null;
   const cardId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
-  // Pick position in the snake draft (1-10). Renders as "Pick #N" instead
-  // of the raw card-id timestamp, which is meaningless to users.
-  const pickPosition = pickPositionByOwner[selectedPlayer.toLowerCase()] || 0;
+  // Snake-draft pick position (1-10) — currently unused for rendering but
+  // kept in state since it's cheap to compute from draftOrder and useful
+  // for future UI (e.g. "Pick #5" alongside the team identity).
+  void pickPositionByOwner[selectedPlayer.toLowerCase()];
+
+  // "Team #N" is the user's BBB4 NFT token ID (sequential 1-800 per
+  // season). For legacy cards minted via test paths that used a Unix-ms
+  // timestamp as the id, render nothing — there is no meaningful "team
+  // number" for those, and showing a 13-digit number is worse than
+  // showing nothing. Real onchain tokenIds won't exceed ~100k for years.
+  const teamNumber = (() => {
+    if (!cardId) return '';
+    // Legacy `staging-X-N` ids: keep just the suffix.
+    const candidate = cardId.includes('-') ? (cardId.split('-').pop() ?? '') : cardId;
+    if (!candidate || !/^\d+$/.test(candidate)) return '';
+    const n = Number(candidate);
+    if (!Number.isFinite(n) || n <= 0 || n > 100_000) return '';
+    return String(n);
+  })();
 
   // Fetch card image for selected player on demand
   useEffect(() => {
@@ -288,7 +304,7 @@ export default function DraftResultsPage() {
           ctx.fillText('SBS', W / 2, 75);
         }
 
-        // League · Pick · Level
+        // League · Team · Level
         const leagueNum = (title).replace(/\D/g, '') || title;
         const levelColor = draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7';
 
@@ -299,9 +315,9 @@ export default function DraftResultsPage() {
         const parts: Array<{ text: string; color: string }> = [
           { text: `League #${leagueNum}`, color: '#ffffff' },
         ];
-        if (pickPosition > 0) {
+        if (teamNumber) {
           parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
-          parts.push({ text: `Pick #${pickPosition}`, color: '#ffffff' });
+          parts.push({ text: `Team #${teamNumber}`, color: '#ffffff' });
         }
         parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
         parts.push({ text: draftLevel, color: levelColor });
@@ -415,7 +431,7 @@ export default function DraftResultsPage() {
         logo.onerror = render; // Render without logo if load fails
       }
     });
-  }, [roster, selectedPlayer, title, cardId, draftLevel, pickPosition]);
+  }, [roster, selectedPlayer, title, cardId, draftLevel, teamNumber]);
 
   // Save roster image
   const [rosterSaved, setRosterSaved] = useState(false);
@@ -491,16 +507,16 @@ export default function DraftResultsPage() {
         <div className="text-center mb-4">
           <h1 className="text-white text-2xl font-bold">League #{title.replace(/\D/g, '') || title}</h1>
 
-          {/* Pick position + Draft Level. Use the snake-draft pick slot
-              (1-10) instead of the raw card timestamp — the cardId is just
-              a Firestore/NFT identifier and means nothing to humans. */}
+          {/* Team # = the user's BBB4 NFT token ID (sequential 1-800).
+              Skipped entirely for legacy cards with timestamp-shaped ids
+              that would otherwise render as a 13-digit number. */}
           <div className="flex items-center justify-center gap-2 mt-2">
-            {pickPosition > 0 && (
+            {teamNumber && (
               <span className="text-white/70 text-sm font-medium">
-                Pick #{pickPosition}
+                Team #{teamNumber}
               </span>
             )}
-            {pickPosition > 0 && <span className="text-white/10 text-xs">·</span>}
+            {teamNumber && <span className="text-white/10 text-xs">·</span>}
             <span
               className="text-sm font-semibold"
               style={{
