@@ -232,7 +232,7 @@ function DraftRoomContent() {
 
   const [autoDraft, setAutoDraft] = useState(false);
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
-  const [_sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
+  const [sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
   const { preference: defaultSortPreference, loaded: defaultSortPreferenceLoaded } = useAutoPickSortPreference();
   const [missedPicksCount, setMissedPicksCount] = useState(0);
   const [showAutoDraftNotification, _setShowAutoDraftNotification] = useState(false);
@@ -788,7 +788,7 @@ function DraftRoomContent() {
   }, [engine.draftStatus, triggerOptIn]);
 
   useEffect(() => {
-    if (!isLiveMode || !draftId || !walletParam || phase !== 'drafting') return;
+    if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
 
     draftApi.getDraftPreferences(draftId, walletParam)
@@ -835,7 +835,7 @@ function DraftRoomContent() {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveMode, draftId, walletParam, phase]);
+  }, [isLiveMode, draftId, walletParam, defaultSortPreferenceLoaded, defaultSortPreference]);
 
   const handleToggleAutoDraft = useCallback(async () => {
     if (!isLiveMode || !draftId || !walletParam || autoDraftLoading) return;
@@ -1920,6 +1920,7 @@ function DraftRoomContent() {
               if (isLiveMode && phase === 'drafting') handleLiveQueueSync(queue);
             }}
             onSortChange={handleSortChange}
+            sortPreference={sortPreference}
             showBanner={phase === 'drafting'}
             spectator={spectateParam}
           />
