@@ -97,12 +97,20 @@ export function WheelProofBanner() {
             </div>
           </div>
         </div>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="text-banana text-[11px] font-semibold hover:underline shrink-0"
-        >
-          {open ? 'Hide' : 'Verify'} →
-        </button>
+        <div className="flex items-center gap-3 shrink-0">
+          <a
+            href="/wheel-batches"
+            className="text-white/40 hover:text-banana text-[11px] font-semibold"
+          >
+            Receipts
+          </a>
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="text-banana text-[11px] font-semibold hover:underline"
+          >
+            {open ? 'Hide' : 'Verify'} →
+          </button>
+        </div>
       </div>
 
       <div className="mt-2 w-full h-1 bg-white/10 rounded-full overflow-hidden">

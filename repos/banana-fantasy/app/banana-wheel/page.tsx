@@ -277,12 +277,20 @@ export default function BananaWheelPage() {
                 className="space-y-3.5 max-h-[200px] overflow-y-auto text-[13px] pr-6 [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#3a3a3a] [&::-webkit-scrollbar-thumb]:rounded-full"
               >
                 {spinHistory.slice(0, 10).map((spin) => (
-                  <div key={spin.id} className="flex justify-between">
+                  <a
+                    key={spin.id}
+                    href={`/spin-proof/${spin.spinId}`}
+                    className="flex justify-between items-center hover:bg-white/5 rounded -mx-2 px-2 py-0.5 group"
+                    title="View proof"
+                  >
                     <span className="text-white">{spin.date}</span>
-                    <span className="font-medium" style={{ color: getPrizeColor(spin.result) }}>
-                      {getPrizeLabel(spin.result)}
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-medium" style={{ color: getPrizeColor(spin.result) }}>
+                        {getPrizeLabel(spin.result)}
+                      </span>
+                      <span className="text-white/30 group-hover:text-banana text-[10px]">↗</span>
                     </span>
-                  </div>
+                  </a>
                 ))}
               </div>
             ) : (
