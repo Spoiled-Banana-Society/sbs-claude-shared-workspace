@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { getPositionColorHex, positionFromPlayerId, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { PlayerData } from '@/lib/draftRoomConstants';
 
@@ -12,6 +12,7 @@ interface DraftPlayerListProps {
   onRemoveFromQueue: (playerId: string) => void;
   isInQueue: (playerId: string) => boolean;
   onSortChange?: (sort: 'adp' | 'rank') => void;
+  sortPreference?: 'adp' | 'rank';
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -25,9 +26,16 @@ export function DraftPlayerList({
   onRemoveFromQueue,
   isInQueue,
   onSortChange,
+  sortPreference,
 }: DraftPlayerListProps) {
   const [filter, setFilter] = useState<PositionFilter>('ALL');
-  const [sortField, setSortFieldRaw] = useState<SortField>('adp');
+  const [sortField, setSortFieldRaw] = useState<SortField>(sortPreference ?? 'adp');
+  useEffect(() => {
+    if (sortPreference && sortPreference !== sortField) {
+      setSortFieldRaw(sortPreference);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortPreference]);
   const setSortField = (field: SortField) => {
     setSortFieldRaw(field);
     onSortChange?.(field);
