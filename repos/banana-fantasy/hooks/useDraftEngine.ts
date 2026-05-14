@@ -718,7 +718,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     playerRoster: PositionRoster,
     queue: PlayerData[],
     available: PlayerData[],
-    round: number,
+    _round: number,
     sortBy: 'adp' | 'rank' = 'adp',
     positionLimits: PositionLimits = DEFAULT_POSITION_LIMITS,
   ): string => {
@@ -732,29 +732,21 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     const sortByMetric = (a: PlayerData, b: PlayerData) =>
       sortBy === 'adp' ? a.adp - b.adp : a.rank - b.rank;
 
+    // 1. Queue first — if the user queued players that are still available
+    //    and not at cap, those pick before anything else.
     if (queue.length > 0) {
       const queuePick = queue.find(q =>
         available.some(a => a.playerId === q.playerId) && !isAtCap(q.playerId),
       );
       if (queuePick) return queuePick.playerId;
     }
-    if (round < 12) {
-      const sorted = available.filter(p => !isAtCap(p.playerId)).sort(sortByMetric);
-      if (sorted.length > 0) return sorted[0].playerId;
-    }
-    const needOrder: (keyof PositionRoster)[] = ['RB', 'WR', 'QB', 'TE', 'DST'];
-    for (const pos of needOrder) {
-      const cap = positionLimits[pos as Position];
-      const belowCap = typeof cap === 'number' ? playerRoster[pos].length < cap : true;
-      if (belowCap) {
-        const match = available.find(p => positionFromPlayerId(p.playerId) === pos);
-        if (match) return match.playerId;
-      }
-    }
-    const filtered = [...available].filter(p => !isAtCap(p.playerId)).sort(sortByMetric);
+
+    // 2. Best player available filtered by position caps — every round.
+    const filtered = available.filter(p => !isAtCap(p.playerId)).sort(sortByMetric);
     if (filtered.length > 0) return filtered[0].playerId;
-    // RELAX: every position is at cap and the cap-passing pool is empty.
-    // Fall back to unconstrained BPA so the draft progresses.
+
+    // 3. RELAX: every position is at cap. Fall back to unconstrained BPA
+    //    so the draft never stalls.
     const sorted = [...available].sort(sortByMetric);
     return sorted[0]?.playerId || '';
   }, []);
