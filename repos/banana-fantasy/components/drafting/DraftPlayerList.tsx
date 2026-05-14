@@ -16,6 +16,8 @@ interface DraftPlayerListProps {
   /** Override rank values for sort + display when the live per-draft
    *  ranking data isn't available yet (e.g. draft hasn't started). */
   userRankMap?: Map<string, number>;
+  /** Override stats (adp, byeWeek) for sort + display, same fallback. */
+  userStatsMap?: Map<string, { rank?: number; adp?: number; byeWeek?: number }>;
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -31,11 +33,22 @@ export function DraftPlayerList({
   onSortChange,
   sortPreference,
   userRankMap,
+  userStatsMap,
 }: DraftPlayerListProps) {
   const resolveRank = (player: PlayerData): number => {
     const custom = userRankMap?.get(player.playerId);
     if (typeof custom === 'number' && custom > 0) return custom;
     return player.rank || 999;
+  };
+  const resolveAdp = (player: PlayerData): number => {
+    const custom = userStatsMap?.get(player.playerId)?.adp;
+    if (typeof custom === 'number' && custom > 0) return custom;
+    return player.adp || 0;
+  };
+  const resolveBye = (player: PlayerData): number | string => {
+    const custom = userStatsMap?.get(player.playerId)?.byeWeek;
+    if (typeof custom === 'number' && custom > 0) return custom;
+    return player.byeWeek;
   };
   const [filter, setFilter] = useState<PositionFilter>('ALL');
   const [sortField, setSortFieldRaw] = useState<SortField>(sortPreference ?? 'adp');
@@ -73,8 +86,8 @@ export function DraftPlayerList({
     // Apply sort
     players.sort((a, b) => {
       if (sortField === 'adp') {
-        const aVal = a.adp || resolveRank(a);
-        const bVal = b.adp || resolveRank(b);
+        const aVal = resolveAdp(a) || resolveRank(a);
+        const bVal = resolveAdp(b) || resolveRank(b);
         return aVal - bVal;
       }
       return resolveRank(a) - resolveRank(b);
@@ -82,7 +95,7 @@ export function DraftPlayerList({
 
     return players;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlayers, filter, sortField, searchQuery, userRankMap]);
+  }, [availablePlayers, filter, sortField, searchQuery, userRankMap, userStatsMap]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
@@ -349,7 +362,7 @@ export function DraftPlayerList({
                       className="font-primary font-bold"
                       style={{ fontSize: 12, color: '#fff', marginTop: 2 }}
                     >
-                      BYE {player.byeWeek}
+                      BYE {resolveBye(player)}
                     </span>
                   </div>
                 </div>
@@ -358,7 +371,7 @@ export function DraftPlayerList({
                 <div style={{ display: 'flex', flexDirection: 'row', paddingRight: 15, gap: 15 }}>
                   <div style={{ width: 40, textAlign: 'center' }}>
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#fff' }}>
-                      {player.adp || resolveRank(player) || 'N/A'}
+                      {resolveAdp(player) || resolveRank(player) || 'N/A'}
                     </div>
                   </div>
                   <div style={{ width: 40, textAlign: 'center' }}>

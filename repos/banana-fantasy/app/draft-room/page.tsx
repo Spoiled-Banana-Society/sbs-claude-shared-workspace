@@ -235,7 +235,7 @@ function DraftRoomContent() {
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
   const { preference: defaultSortPreference, loaded: defaultSortPreferenceLoaded } = useAutoPickSortPreference();
-  const { rankMap: userRankMap } = useUserRankings(walletParam);
+  const { rankMap: userRankMap, overrideMap: userStatsMap } = useUserRankings(walletParam);
   const [missedPicksCount, setMissedPicksCount] = useState(0);
   const [showAutoDraftNotification, _setShowAutoDraftNotification] = useState(false);
   const [generatedCardUrl, setGeneratedCardUrl] = useState<string | null>(null);
@@ -1923,6 +1923,7 @@ function DraftRoomContent() {
             onSortChange={handleSortChange}
             sortPreference={sortPreference}
             userRankMap={userRankMap}
+            userStatsMap={userStatsMap}
             showBanner={phase === 'drafting'}
             spectator={spectateParam}
           />

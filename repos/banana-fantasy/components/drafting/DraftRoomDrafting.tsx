@@ -51,6 +51,7 @@ interface DraftRoomDraftingProps {
   onSortChange: (sort: 'adp' | 'rank') => void;
   sortPreference?: 'adp' | 'rank';
   userRankMap?: Map<string, number>;
+  userStatsMap?: Map<string, { rank?: number; adp?: number; byeWeek?: number }>;
   showBanner?: boolean;
   /** Spectator mode — viewer is not in the draft. Replaces user-centric
    *  copy ("Your turn", "My Team") with drafter-aware copy and points
@@ -83,6 +84,7 @@ export function DraftRoomDrafting({
   onSortChange,
   sortPreference,
   userRankMap,
+  userStatsMap,
   showBanner = true,
   spectator = false,
   usersMap,
@@ -358,6 +360,7 @@ export function DraftRoomDrafting({
                   onSortChange={onSortChange}
                   sortPreference={sortPreference}
                   userRankMap={userRankMap}
+                  userStatsMap={userStatsMap}
                 />
               )}
               {activeTab === 'queue' && (
