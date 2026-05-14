@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import crypto from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
@@ -281,112 +282,106 @@ export async function POST(req: Request) {
       addActivityEventToTx(tx, spinActivityDoc);
     });
 
-    // On-chain mint for draft_pass wins — happens outside the tx so a failed
-    // mint doesn't roll back the spin counter.
-    let mintTxHash: string | undefined;
-    let mintedTokenIds: string[] = [];
-    if (mintOnChain) {
-      try {
-        const res = await reserveTokensToWallet({ to: userId, count: draftPassCount });
-        mintTxHash = res.txHash;
-        mintedTokenIds = res.tokenIds;
-        await recordPassOrigins({
-          tokenIds: mintedTokenIds,
-          origin: 'spin_reward',
-          ownerAtMint: userId,
-          txHash: mintTxHash,
-          reason: `wheel_spin:${spinId}`,
-        });
-        logger.info('wheel.spin.mint_ok', { spinId, userId, count: draftPassCount, txHash: mintTxHash, tokenIds: mintedTokenIds });
-      } catch (mintErr) {
-        logger.error('wheel.spin.mint_failed', { spinId, userId, count: draftPassCount, err: mintErr });
+    // Everything below runs AFTER the response is sent. The Firestore tx
+    // above already credited freeDrafts/jackpotEntries/hofEntries — the
+    // user has their prize. The on-chain mint just delivers the NFT, and
+    // the frontend polls via refreshBalanceUntil to catch up. Awaiting
+    // any of this inline made the wheel wait ~10s before spinning.
+    waitUntil((async () => {
+      let mintTxHash: string | undefined;
+      let mintedTokenIds: string[] = [];
+
+      if (mintOnChain) {
         try {
-          await db.collection('failed_mints').doc(spinId).set({
-            spinId,
-            userId,
-            count: draftPassCount,
+          const res = await reserveTokensToWallet({ to: userId, count: draftPassCount });
+          mintTxHash = res.txHash;
+          mintedTokenIds = res.tokenIds;
+          await recordPassOrigins({
+            tokenIds: mintedTokenIds,
+            origin: 'spin_reward',
+            ownerAtMint: userId,
+            txHash: mintTxHash,
             reason: `wheel_spin:${spinId}`,
-            error: (mintErr as Error)?.message ?? String(mintErr),
-            createdAt: FieldValue.serverTimestamp(),
-            retryable: true,
           });
-        } catch (logErr) {
-          logger.error('wheel.spin.failed_mint_record_error', { spinId, err: logErr });
+          logger.info('wheel.spin.mint_ok', { spinId, userId, count: draftPassCount, txHash: mintTxHash, tokenIds: mintedTokenIds });
+        } catch (mintErr) {
+          logger.error('wheel.spin.mint_failed', { spinId, userId, count: draftPassCount, err: mintErr });
+          try {
+            await db.collection('failed_mints').doc(spinId).set({
+              spinId,
+              userId,
+              count: draftPassCount,
+              reason: `wheel_spin:${spinId}`,
+              error: (mintErr as Error)?.message ?? String(mintErr),
+              createdAt: FieldValue.serverTimestamp(),
+              retryable: true,
+            });
+          } catch (logErr) {
+            logger.error('wheel.spin.failed_mint_record_error', { spinId, err: logErr });
+          }
         }
       }
-    }
 
-    // Badge unlocks — fire-and-forget so a Firestore hiccup on the badge
-    // write doesn't roll back the spin reward. unlockBadge is idempotent
-    // (no-op if already unlocked).
-    {
-      const { unlockBadge } = await import('@/lib/db');
-      void unlockBadge(userId.toLowerCase(), 'first-spin', { spinId }).catch(() => {});
-      if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-        void unlockBadge(userId.toLowerCase(), 'spin-jackpot', { spinId }).catch(() => {});
-      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-        void unlockBadge(userId.toLowerCase(), 'spin-hof', { spinId }).catch(() => {});
-      }
-    }
-
-    // The spin_won activity event was already written atomically with the
-    // counter mutation above. If the on-chain mint succeeded after, log a
-    // supplementary `pass_granted` event so the user's history shows the
-    // mint tx hash + tokenIds (the spin event records what they won; this
-    // records the on-chain delivery).
-    if (mintOnChain && mintedTokenIds.length > 0) {
-      await logActivityEvent({
-        type: 'pass_granted',
-        userId,
-        paymentMethod: 'free',
-        quantity: draftPassCount,
-        tokenIds: mintedTokenIds,
-        txHash: mintTxHash ?? null,
-        metadata: {
-          source: 'wheel_spin_mint',
-          spinId,
-        },
-      });
-    }
-
-    // Referral milestone — fire 'verified' on the referrer's referral promo
-    // once the friend has (a) claimed the New User Bonus SPIN
-    // (newUserPromoClaimed === true on their twitter link) AND (b) actually
-    // used a wheel spin (this route). Idempotent: updateReferralRewards
-    // only flips a 'pending' reward to 'claim'.
-    try {
-      const twitterSnap = await db
-        .collection('v2_twitter_links')
-        .where('walletAddress', '==', userId.toLowerCase())
-        .limit(1)
-        .get();
-      if (!twitterSnap.empty && twitterSnap.docs[0].data().newUserPromoClaimed) {
-        const userDoc = await userRef.get();
-        if (userDoc.exists && userDoc.data()?.referredBy) {
-          const { updateReferralRewards } = await import('@/lib/db');
-          await updateReferralRewards(userId, 'verified');
-        }
-      }
-    } catch (refErr) {
-      logger.warn('wheel.spin.referral_milestone_failed', {
-        userId,
-        err: (refErr as Error).message,
-      });
-    }
-
-    // Auto-queue for Jackpot/HOF — happens server-side so it can't be interrupted
-    if (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof')) {
       try {
-        const { joinQueue } = await import('@/lib/db');
-        await joinQueue(userId, segment.prizeValue as 'jackpot' | 'hof');
-        logger.debug(`[wheel/spin] Auto-queued ${userId} for ${segment.prizeValue}`);
-      } catch (qErr) {
-        console.warn(`[wheel/spin] Auto-queue failed (entry still awarded):`, qErr);
+        const { unlockBadge } = await import('@/lib/db');
+        await unlockBadge(userId.toLowerCase(), 'first-spin', { spinId }).catch(() => {});
+        if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
+          await unlockBadge(userId.toLowerCase(), 'spin-jackpot', { spinId }).catch(() => {});
+        } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
+          await unlockBadge(userId.toLowerCase(), 'spin-hof', { spinId }).catch(() => {});
+        }
+      } catch (badgeErr) {
+        logger.warn('wheel.spin.badge_unlock_failed', { spinId, err: (badgeErr as Error).message });
       }
-    }
+
+      if (mintOnChain && mintedTokenIds.length > 0) {
+        await logActivityEvent({
+          type: 'pass_granted',
+          userId,
+          paymentMethod: 'free',
+          quantity: draftPassCount,
+          tokenIds: mintedTokenIds,
+          txHash: mintTxHash ?? null,
+          metadata: {
+            source: 'wheel_spin_mint',
+            spinId,
+          },
+        }).catch((err) => logger.warn('wheel.spin.pass_granted_log_failed', { spinId, err: (err as Error).message }));
+      }
+
+      try {
+        const twitterSnap = await db
+          .collection('v2_twitter_links')
+          .where('walletAddress', '==', userId.toLowerCase())
+          .limit(1)
+          .get();
+        if (!twitterSnap.empty && twitterSnap.docs[0].data().newUserPromoClaimed) {
+          const userDoc = await userRef.get();
+          if (userDoc.exists && userDoc.data()?.referredBy) {
+            const { updateReferralRewards } = await import('@/lib/db');
+            await updateReferralRewards(userId, 'verified');
+          }
+        }
+      } catch (refErr) {
+        logger.warn('wheel.spin.referral_milestone_failed', {
+          userId,
+          err: (refErr as Error).message,
+        });
+      }
+
+      if (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof')) {
+        try {
+          const { joinQueue } = await import('@/lib/db');
+          await joinQueue(userId, segment.prizeValue as 'jackpot' | 'hof');
+          logger.debug(`[wheel/spin] Auto-queued ${userId} for ${segment.prizeValue}`);
+        } catch (qErr) {
+          logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
+        }
+      }
+    })());
 
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain, txHash: mintTxHash, tokenIds: mintedTokenIds },
+      { spinId, result: segment.id, prize, angle, mintOnChain },
       200,
     );
   } catch (err) {
