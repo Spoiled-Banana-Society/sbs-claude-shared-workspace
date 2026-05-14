@@ -69,10 +69,12 @@ export async function joinDraft(
 
   const maxPlayers: number = Number(obj.maxPlayers ?? obj.maxDrafters ?? 10) || 10;
   const players: number = Number(obj.players ?? obj.numPlayers ?? 1) || 1;
-  // Server returns "BBB #N" by default; user-facing label is "BBB League #N"
-  // to avoid collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+  // Server returns "BBB #N"; user-facing label is plain "League #N".
+  // "BBB" is internal jargon for Banana Best Ball — confusing in the UI,
+  // and stripping it doesn't collide with the BBB pass NFTs because those
+  // are now labeled "Team #N" (the on-chain tokenId), not "BBB #N".
   const rawName: string = String(obj._leagueDisplayName ?? obj.displayName ?? obj.leagueDisplayName ?? 'Draft');
-  const contestName = rawName.replace(/^BBB\s*#/, 'BBB League #');
+  const contestName = rawName.replace(/^BBB\s*#/, 'League #');
   const cardId: string = String(obj._cardId ?? obj.cardId ?? obj.tokenId ?? '');
 
   return {

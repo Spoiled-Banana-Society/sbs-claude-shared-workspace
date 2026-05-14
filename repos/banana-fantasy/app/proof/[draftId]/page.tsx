@@ -169,11 +169,11 @@ export default function ProofPage() {
       <div>
         <Link href="/drafting" className="text-xs text-white/50 hover:text-white/80">← Back</Link>
         <h1 className="text-2xl font-semibold text-white mt-2">
-          Provably Fair · BBB #{locator.batchStartDraftNumber}–#{locator.batchStartDraftNumber + 99}
+          Provably Fair · League #{locator.batchStartDraftNumber}–#{locator.batchStartDraftNumber + 99}
         </h1>
         <p className="text-sm text-white/60 mt-1">
-          Batch #{locator.batchNumber} — randomization for drafts BBB #{locator.batchStartDraftNumber} through BBB #{locator.batchStartDraftNumber + 99}.
-          Viewing from BBB #{locator.draftNumber}.
+          Batch #{locator.batchNumber} — randomization for League #{locator.batchStartDraftNumber} through League #{locator.batchStartDraftNumber + 99}.
+          Viewing from League #{locator.draftNumber}.
         </p>
         {proof && proof.status !== 'pre-launch' && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -267,11 +267,11 @@ export default function ProofPage() {
 
         {isMidFlight && (
           <p className="text-xs text-amber-200/80 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 mb-2">
-            <span className="font-semibold">Slot positions are sealed</span> until this batch closes (BBB #{lastDraftInBatch}).
+            <span className="font-semibold">Slot positions are sealed</span> until this batch closes (League #{lastDraftInBatch}).
             {' '}
             {isVRFCommit ? (
               <>Chainlink VRF has delivered, and the salt was committed at the same moment. The 6 positions are
-              locked in but the salt stays sealed until BBB #{lastDraftInBatch} fills — so no one can compute
+              locked in but the salt stays sealed until League #{lastDraftInBatch} fills — so no one can compute
               which draft is which type during the batch. After close, the salt is revealed and anyone can
               re-derive every position.</>
             ) : isVRF ? (

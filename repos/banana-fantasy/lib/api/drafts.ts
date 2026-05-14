@@ -51,10 +51,10 @@ export function mapDraftInfoToDraftRoom(info: ApiDraftInfo, opts?: { walletAddre
 
   const infoObj = info as Record<string, unknown>;
   const draftId = info.draftId || String(infoObj.id ?? '');
-  // Server returns "BBB #N"; user-facing label is "BBB League #N" to avoid
-  // collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+  // Server returns "BBB #N"; in-app label is plain "League #N". The "BBB"
+  // prefix is internal jargon — the app already shows brand chrome.
   const rawName = info.displayName || draftId || 'Draft';
-  const contestName = rawName.replace(/^BBB\s*#/, 'BBB League #');
+  const contestName = rawName.replace(/^BBB\s*#/, 'League #');
 
   const maxPlayers = info.draftOrder?.length || 10;
   const draftSpeed = (info.pickLength || 30) > 60 ? 'slow' : 'fast';

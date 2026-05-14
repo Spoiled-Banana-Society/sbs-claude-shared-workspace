@@ -104,10 +104,9 @@ function normalizePrizeHistory(payload: unknown, userId: string) {
 
     const amount = asNumber(record.amount) ?? asNumber(record.prizeAmount) ?? 0;
     const status = normalizePrizeStatus(record.status);
-    // Server returns "BBB #N"; user-facing label is "BBB League #N" to avoid
-    // collision with the BBB pass NFTs (e.g. "BBB Draft Pass #743").
+    // Server returns "BBB #N"; in-app label is plain "League #N".
     const rawContestName = asString(record.contestName) || asString(record.displayName) || asString(record.leagueDisplayName) || 'Contest Prize';
-    const contestName = rawContestName.replace(/^BBB\s*#/, 'BBB League #');
+    const contestName = rawContestName.replace(/^BBB\s*#/, 'League #');
     const win: PrizeHistoryItem = {
       id: asString(record.id) || asString(record.prizeId) || crypto.randomUUID(),
       type: 'win',

@@ -76,14 +76,14 @@ export function subscribe(listener: Listener): () => void {
   };
 }
 
-// Migrate older cached display names. Server returns "BBB #N"; user-facing
-// label is "BBB League #N". Older builds wrote "BBB #N" or briefly "League #N"
-// to the cache — normalize on read so the UI doesn't show stale names.
+// Migrate older cached display names to the current "League #N" shape.
+// Earlier builds cached "BBB #N" or "BBB League #N" — both flatten to
+// "League #N" so the UI is consistent regardless of when the entry was
+// first cached.
 function normalizeContestName(name: string | undefined): string {
   if (!name) return '';
-  if (name.startsWith('BBB League #')) return name;
-  if (name.startsWith('BBB #')) return name.replace(/^BBB\s*#/, 'BBB League #');
-  if (/^League #/.test(name)) return name.replace(/^League #/, 'BBB League #');
+  if (name.startsWith('BBB League #')) return name.replace(/^BBB League\s*#/, 'League #');
+  if (name.startsWith('BBB #')) return name.replace(/^BBB\s*#/, 'League #');
   return name;
 }
 
