@@ -802,7 +802,10 @@ function DraftRoomContent() {
         // the system default 'ADP' AND the user's global default is 'rank',
         // apply 'rank' and push it to the Go API so it sticks. localStorage
         // marker stops the override from firing on subsequent reloads —
-        // otherwise the in-draft ADP toggle would never persist.
+        // otherwise the in-draft ADP toggle would never persist. Only mark
+        // applied when we actually apply the override — marking on the else
+        // path races with the initial 'adp' default returned before the user
+        // preference has truly loaded.
         const appliedKey = `sortDefaultApplied:${draftId}`;
         const alreadyApplied = typeof window !== 'undefined' && localStorage.getItem(appliedKey) === '1';
         if (
@@ -813,10 +816,6 @@ function DraftRoomContent() {
         ) {
           newSort = 'rank';
           draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch(() => {});
-          try { localStorage.setItem(appliedKey, '1'); } catch {}
-        } else if (!alreadyApplied && defaultSortPreferenceLoaded) {
-          // User has no rank preference, or sortBy was already explicit.
-          // Mark applied so we don't re-evaluate later.
           try { localStorage.setItem(appliedKey, '1'); } catch {}
         }
 

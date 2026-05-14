@@ -33,10 +33,14 @@ export function useAutoPickSortPreference(): UseAutoPickSortPreferenceResult {
 
   useEffect(() => {
     if (!walletAddress) {
+      // Wallet hasn't been wired up yet — keep loaded=false so consumers
+      // that gate on 'loaded' don't act on the placeholder default before
+      // the real user pref is known.
       setPreferenceState(DEFAULT_PREFERENCE);
-      setLoaded(true);
+      setLoaded(false);
       return;
     }
+    setLoaded(false);
     let cancelled = false;
     (async () => {
       try {
