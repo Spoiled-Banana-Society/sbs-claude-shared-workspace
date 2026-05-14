@@ -107,6 +107,10 @@ export default function DraftResultsPage() {
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [displayName, setDisplayName] = useState('');
   const [cardImages, setCardImages] = useState<Record<string, { imageUrl: string; cardId: string }>>({});
+  // ownerId → 1-indexed pick position in the draft order. Renders as the
+  // "Pick #N" badge in the header + share image. Falls back to nothing when
+  // we couldn't resolve the draft order (e.g., very old draft missing info).
+  const [pickPositionByOwner, setPickPositionByOwner] = useState<Record<string, number>>({});
   const [fetchedPlayers, setFetchedPlayers] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +137,19 @@ export default function DraftResultsPage() {
           setDraftLevel(String(info.draftLevel ?? info.level ?? info.draftType ?? 'Pro'));
           const name = String(info.displayName ?? '');
           if (name) setDisplayName(name);
+
+          // Build owner → pick-position map from draftOrder (1-indexed).
+          // draftOrder is an array of { ownerId, tokenId } in pick order.
+          const order = info.draftOrder;
+          if (Array.isArray(order)) {
+            const map: Record<string, number> = {};
+            for (let i = 0; i < order.length; i++) {
+              const entry = order[i] as Record<string, unknown>;
+              const id = String(entry.ownerId || '').toLowerCase();
+              if (id) map[id] = i + 1;
+            }
+            setPickPositionByOwner(map);
+          }
         }
 
         // Owner tokens → card image for current user
@@ -187,6 +204,9 @@ export default function DraftResultsPage() {
   const roster = allRosters[selectedPlayer];
   const cardImageUrl = cardImages[selectedPlayer.toLowerCase()]?.imageUrl || null;
   const cardId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
+  // Pick position in the snake draft (1-10). Renders as "Pick #N" instead
+  // of the raw card-id timestamp, which is meaningless to users.
+  const pickPosition = pickPositionByOwner[selectedPlayer.toLowerCase()] || 0;
 
   // Fetch card image for selected player on demand
   useEffect(() => {
@@ -268,9 +288,8 @@ export default function DraftResultsPage() {
           ctx.fillText('SBS', W / 2, 75);
         }
 
-        // League · Team · Level
+        // League · Pick · Level
         const leagueNum = (title).replace(/\D/g, '') || title;
-        const teamNum = cardId ? (cardId.includes('-') ? cardId.split('-').pop() : cardId) : '';
         const levelColor = draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7';
 
         ctx.font = '22px system-ui, sans-serif';
@@ -280,9 +299,9 @@ export default function DraftResultsPage() {
         const parts: Array<{ text: string; color: string }> = [
           { text: `League #${leagueNum}`, color: '#ffffff' },
         ];
-        if (teamNum) {
+        if (pickPosition > 0) {
           parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
-          parts.push({ text: `Team #${teamNum}`, color: '#ffffff' });
+          parts.push({ text: `Pick #${pickPosition}`, color: '#ffffff' });
         }
         parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
         parts.push({ text: draftLevel, color: levelColor });
@@ -396,7 +415,7 @@ export default function DraftResultsPage() {
         logo.onerror = render; // Render without logo if load fails
       }
     });
-  }, [roster, selectedPlayer, title, cardId, draftLevel]);
+  }, [roster, selectedPlayer, title, cardId, draftLevel, pickPosition]);
 
   // Save roster image
   const [rosterSaved, setRosterSaved] = useState(false);
@@ -472,14 +491,16 @@ export default function DraftResultsPage() {
         <div className="text-center mb-4">
           <h1 className="text-white text-2xl font-bold">League #{title.replace(/\D/g, '') || title}</h1>
 
-          {/* Team ID + Draft Level */}
+          {/* Pick position + Draft Level. Use the snake-draft pick slot
+              (1-10) instead of the raw card timestamp — the cardId is just
+              a Firestore/NFT identifier and means nothing to humans. */}
           <div className="flex items-center justify-center gap-2 mt-2">
-            {cardId && (
+            {pickPosition > 0 && (
               <span className="text-white/70 text-sm font-medium">
-                Team #{cardId.includes('-') ? cardId.split('-').pop() : cardId}
+                Pick #{pickPosition}
               </span>
             )}
-            {cardId && <span className="text-white/10 text-xs">·</span>}
+            {pickPosition > 0 && <span className="text-white/10 text-xs">·</span>}
             <span
               className="text-sm font-semibold"
               style={{
