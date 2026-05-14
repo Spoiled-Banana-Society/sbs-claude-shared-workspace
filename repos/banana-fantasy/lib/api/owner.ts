@@ -150,12 +150,29 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
   const seasonScore = token.seasonScore ? Number(token.seasonScore) : 0;
   const weeklyScore = token.weekScore ? Number(token.weekScore) : 0;
 
-  // Derive league name from league ID (e.g. "2025-fast-draft-1201" → "League #1201")
-  // The backend displayName field has a bug where multiple leagues get the same name,
-  // so we use the league ID number as the source of truth.
+  // League name = backend displayName ("BBB #N" → "League #N"), which uses
+  // the GLOBAL FilledLeaguesCount that increments across both fast and slow
+  // drafts. That's the number a user sees on the draft-results page header,
+  // on their NFT in OpenSea, and in the 764/800 counter on /standings.
+  //
+  // The old workaround derived the number from the draftId trailing digits
+  // (e.g. "2024-fast-draft-753" → "League #753"), but that's the per-type
+  // counter — it diverges from the BBB # number as soon as any slow drafts
+  // fill. Same draft labelled "League #764" on one page and "League #753"
+  // on another. Fixed: trust the displayName. Verified May 14 2026: no
+  // duplicate displayNames across recent drafts (the older race the
+  // workaround feared was fixed by the txHash-as-doc-id work in Phase 15).
   const leagueId = token.leagueId || token.cardId;
-  const leagueNum = leagueId.match(/(\d+)$/)?.[1];
-  const name = leagueNum ? `League #${leagueNum}` : (token.leagueDisplayName || `League ${leagueId}`);
+  const rawDisplayName = (token.leagueDisplayName || '').trim();
+  const name = rawDisplayName
+    ? rawDisplayName.replace(/^BBB\s*#/, 'League #')
+    : (() => {
+        // Defensive fallback only — should never hit for a well-formed
+        // backend response. Pull the number off the draftId if there's
+        // truly no displayName.
+        const num = leagueId.match(/(\d+)$/)?.[1];
+        return num ? `League #${num}` : `League ${leagueId}`;
+      })();
 
   // Real chronology comes from the timestamp embedded in cardId — modern
   // cards use a 13-digit Unix ms (e.g. "1777581797653" or
