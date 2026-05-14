@@ -72,11 +72,6 @@ export default function BananaWheelPage() {
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
-        // Auto-queue for jackpot draft
-        fetchJson('/api/queues', {
-          method: 'POST',
-          body: JSON.stringify({ userId: user.id, queueType: 'jackpot' }),
-        }).catch(() => {});
         pushNotification({
           type: 'jackpot_queue',
           title: '🔥 Jackpot Draft Queued!',
@@ -85,10 +80,6 @@ export default function BananaWheelPage() {
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
-        fetchJson('/api/queues', {
-          method: 'POST',
-          body: JSON.stringify({ userId: user.id, queueType: 'hof' }),
-        }).catch(() => {});
         pushNotification({
           type: 'hof_queue',
           title: '🏆 HOF Draft Queued!',
