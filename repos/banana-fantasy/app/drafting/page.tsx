@@ -57,7 +57,7 @@ const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string
     items: [
       { q: 'What is a Pro Draft?', a: 'Pro is the standard draft type, making up 94% of all drafts. Compete against 9 other players for your share of the prize pool.' },
       { q: 'How do I win?', a: 'Top 2 in your 10-person league make it to the playoffs to compete for the grand prize pool. The better you finish, the further you go.' },
-      { q: 'How is the distribution guaranteed?', a: 'Every 100 drafts contains exactly 94 Pro, 5 HOF, and 1 Jackpot. The order is randomized but the distribution is guaranteed — it\'s not random odds.' },
+      { q: 'How is the distribution guaranteed?', a: 'Every 100 paid drafts contains exactly 94 Pro, 5 HOF, and 1 Jackpot. The order is randomized but the distribution is guaranteed — it\'s not random odds. On top of this, players can also win extra Jackpot and HOF entries on the Banana Wheel.' },
     ],
   },
   hof: {

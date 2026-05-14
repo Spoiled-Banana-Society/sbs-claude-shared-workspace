@@ -169,6 +169,10 @@ export default function JackpotHofPage() {
                 <div className="mt-4 text-sm text-text-muted text-center">
                   Guaranteed 1 per 100 drafts — not random chance
                 </div>
+                <div className="mt-2 text-xs text-text-muted/80 text-center">
+                  You can also win a Jackpot entry on the{' '}
+                  <Link href="/banana-wheel" className="text-banana hover:underline">Banana Wheel</Link>.
+                </div>
               </div>
             </div>
           </motion.div>
@@ -229,6 +233,10 @@ export default function JackpotHofPage() {
                 </div>
                 <div className="mt-4 text-sm text-text-muted text-center">
                   Guaranteed 5 per 100 drafts — the more you draft, the more you earn
+                </div>
+                <div className="mt-2 text-xs text-text-muted/80 text-center">
+                  You can also win an HOF entry on the{' '}
+                  <Link href="/banana-wheel" className="text-banana hover:underline">Banana Wheel</Link>.
                 </div>
               </div>
             </div>

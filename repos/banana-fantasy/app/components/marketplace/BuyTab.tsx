@@ -239,7 +239,7 @@ export function BuyTab({
           </h3>
           <p className="text-text-secondary text-sm">
             {viewFilter === 'jackpot'
-              ? 'No Jackpot teams found. These are rare — only 1 per 100 drafts!'
+              ? 'No Jackpot teams found. These are rare — 1 in 100 paid drafts, plus wheel wins.'
               : viewFilter === 'hof'
                 ? 'No Hall of Fame teams found in this view.'
                 : viewFilter === 'top'

@@ -86,7 +86,7 @@ export function ContestDetailsModal({
         {/* Guaranteed Distribution */}
         <div className="bg-bg-tertiary/50 rounded-xl p-3 border border-bg-tertiary">
           <p className="text-text-secondary text-xs text-center">
-            <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed.
+            <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel.
           </p>
         </div>
 

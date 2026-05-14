@@ -84,11 +84,11 @@ const FAQS = [
   },
   {
     q: 'What is a Jackpot draft?',
-    a: 'Every batch of 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro. The position of the Jackpot within the batch is derived from a server seed whose hash is committed on Base mainnet before any draft in the batch fills. Anyone can verify the assignment after the seed is revealed at batch close — see the Verified badge on any drafted league.',
+    a: 'Every batch of 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro. The position of the Jackpot within the batch is derived from a server seed whose hash is committed on Base mainnet before any draft in the batch fills. Anyone can verify the assignment after the seed is revealed at batch close — see the Verified badge on any drafted league. You can also win a Jackpot entry on the Banana Wheel.',
   },
   {
     q: 'What are Hall of Fame (HOF) entries?',
-    a: 'The same batch commit that decides Jackpot placement also fixes the 5 HOF positions. Winners of HOF leagues compete in an end-of-season tournament for bonus prizes.',
+    a: 'The same batch commit that decides Jackpot placement also fixes the 5 HOF positions. Winners of HOF leagues compete in an end-of-season tournament for bonus prizes. You can also win an HOF entry on the Banana Wheel.',
   },
   {
     q: 'How does scoring work?',

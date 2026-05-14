@@ -56,10 +56,11 @@ export default function JackpotWinnerPreviewPage() {
           {!revealing && (
             <>
               <div className="text-sm text-text-secondary leading-relaxed">
-                <p>• 1 Jackpot draft in every 100 drafts</p>
+                <p>• 1 Jackpot draft in every 100 paid drafts</p>
                 <p>• Hit within first 25 → 10 free spins</p>
                 <p>• Hit within first 50 → 5 free spins</p>
                 <p>• Cycle resets after every 100 drafts</p>
+                <p>• Plus bonus Jackpot wins on the Banana Wheel</p>
               </div>
 
               <div className="bg-bg-tertiary rounded-xl p-4">
