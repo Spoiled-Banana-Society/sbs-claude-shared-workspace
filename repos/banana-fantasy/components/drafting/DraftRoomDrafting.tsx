@@ -387,6 +387,9 @@ export function DraftRoomDrafting({
                   currentPickNumber={engine.currentPickNumber}
                   userDraftPosition={engine.userDraftPosition}
                   onViewRoster={onViewRoster}
+                  usersMap={usersMap}
+                  userProfilePicture={user?.profilePicture ?? undefined}
+                  userEquippedBadge={user?.equippedBadge}
                 />
               )}
               {activeTab === 'roster' && (

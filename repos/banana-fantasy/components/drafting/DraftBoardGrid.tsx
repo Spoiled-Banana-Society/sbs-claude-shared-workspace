@@ -4,6 +4,8 @@ import React, { useRef } from 'react';
 import { getPositionColorHex, TOTAL_ROUNDS } from '@/lib/draftRoomConstants';
 import type { DraftSummarySlot } from '@/hooks/useDraftEngine';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 interface DraftBoardGridProps {
   draftOrder: DraftPlayer[];
@@ -11,6 +13,9 @@ interface DraftBoardGridProps {
   currentPickNumber: number;
   userDraftPosition: number;
   onViewRoster: (playerName: string) => void;
+  usersMap?: DraftRoomUsersMap;
+  userProfilePicture?: string;
+  userEquippedBadge?: string | null;
 }
 
 export function DraftBoardGrid({
@@ -19,6 +24,9 @@ export function DraftBoardGrid({
   currentPickNumber: _currentPickNumber,
   userDraftPosition,
   onViewRoster,
+  usersMap,
+  userProfilePicture,
+  userEquippedBadge,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -59,13 +67,25 @@ export function DraftBoardGrid({
       >
         {headings.map((slot, idx) => {
           const isUser = slot.ownerIndex === userDraftPosition;
-          // Use display name from draftOrder if available, otherwise truncate ownerName
           const player = draftOrder[idx];
-          const displayLabel = player
+          const resolvedUser = !player?.isYou && player?.name
+            ? usersMap?.[player.name.toLowerCase()]
+            : null;
+          const rawName = player
             ? (player.isYou
                 ? (player.displayName || 'You')
-                : (player.displayName || player.name))
+                : (resolvedUser?.displayName || player.displayName || player.name))
             : slot.ownerName;
+          const displayLabel = rawName && rawName.startsWith('0x') && rawName.length > 12
+            ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}`
+            : rawName;
+
+          const avatarUrl = player?.isYou
+            ? (userProfilePicture || '/banana-profile.png')
+            : (resolvedUser?.imageUrl || '/banana-profile.png');
+          const badge = player?.isYou
+            ? userEquippedBadge
+            : (resolvedUser?.equippedBadge ?? null);
 
           return (
             <div
@@ -80,12 +100,31 @@ export function DraftBoardGrid({
                 fontFamily: "'Montserrat', Arial, sans-serif",
                 color: isUser ? '#F3E216' : '#fff',
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
                 boxSizing: 'content-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4,
               }}
             >
-              {displayLabel}
+              <AvatarWithBadge
+                imageUrl={avatarUrl}
+                alt={displayLabel}
+                size={32}
+                equippedBadge={badge}
+                useNextImage={false}
+                className="border border-gray-500"
+              />
+              <div
+                style={{
+                  width: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {displayLabel}
+              </div>
             </div>
           );
         })}
