@@ -30,6 +30,7 @@ import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -232,6 +233,7 @@ function DraftRoomContent() {
   const [autoDraft, setAutoDraft] = useState(false);
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [_sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
+  const { preference: defaultSortPreference, loaded: defaultSortPreferenceLoaded } = useAutoPickSortPreference();
   const [missedPicksCount, setMissedPicksCount] = useState(0);
   const [showAutoDraftNotification, _setShowAutoDraftNotification] = useState(false);
   const [generatedCardUrl, setGeneratedCardUrl] = useState<string | null>(null);
@@ -794,7 +796,30 @@ function DraftRoomContent() {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
         const sortOrder = (prefs.sortBy || 'ADP').toUpperCase();
-        const newSort = sortOrder === 'RANK' ? 'rank' as const : 'adp' as const;
+        let newSort = sortOrder === 'RANK' ? 'rank' as const : 'adp' as const;
+
+        // First-time entry into this draft: if the per-draft sortBy is still
+        // the system default 'ADP' AND the user's global default is 'rank',
+        // apply 'rank' and push it to the Go API so it sticks. localStorage
+        // marker stops the override from firing on subsequent reloads —
+        // otherwise the in-draft ADP toggle would never persist.
+        const appliedKey = `sortDefaultApplied:${draftId}`;
+        const alreadyApplied = typeof window !== 'undefined' && localStorage.getItem(appliedKey) === '1';
+        if (
+          !alreadyApplied
+          && defaultSortPreferenceLoaded
+          && defaultSortPreference === 'rank'
+          && newSort === 'adp'
+        ) {
+          newSort = 'rank';
+          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch(() => {});
+          try { localStorage.setItem(appliedKey, '1'); } catch {}
+        } else if (!alreadyApplied && defaultSortPreferenceLoaded) {
+          // User has no rank preference, or sortBy was already explicit.
+          // Mark applied so we don't re-evaluate later.
+          try { localStorage.setItem(appliedKey, '1'); } catch {}
+        }
+
         setSortPreference(newSort);
         engine.setAutoPickSortPreference(newSort);
         setMissedPicksCount(prefs.numPicksMissedConsecutive || 0);

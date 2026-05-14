@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { TeamPosition } from '@/types';
 import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
+import { DefaultSortToggle } from '@/components/rankings/DefaultSortToggle';
 import { useAuth } from '@/hooks/useAuth';
 import { Rankings } from '@/utils/api';
 
@@ -253,6 +254,7 @@ export default function RankingsPage() {
         <p className="text-text-secondary">Draft team positions, not players. Each week you score the highest-scoring player at that position.</p>
       </div>
 
+      <DefaultSortToggle />
       <PositionLimitsPanel />
 
       {/* CSV Controls + save status */}
