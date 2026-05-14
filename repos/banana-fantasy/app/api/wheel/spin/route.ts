@@ -15,7 +15,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 
-const WHEEL_SPINS_COLLECTION = 'wheelSpins';
+const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
 const JWKS_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -210,7 +210,7 @@ export async function POST(req: Request) {
     const timestamp = nowIso();
 
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
-    const spinRef = db.collection(WHEEL_SPINS_COLLECTION).doc(spinId);
+    const spinRef = userRef.collection(WHEEL_SPINS_SUBCOLLECTION).doc(spinId);
 
     const draftPassCount =
       segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number'
