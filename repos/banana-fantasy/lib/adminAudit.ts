@@ -19,7 +19,11 @@ export type AdminAction =
   | 'revoke-7702'
   | 'deploy-batch-proof'
   | 'transfer-batchproof-ownership'
-  | 'recover-draft-card';
+  | 'recover-draft-card'
+  | 'deploy-wheel-proof'
+  | 'wheel-period-open'
+  | 'wheel-period-finalize'
+  | 'wheel-period-reveal';
 
 export interface AdminActionRecord {
   actor: string;          // wallet address of admin who performed action

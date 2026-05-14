@@ -14,6 +14,7 @@ import { logger } from '@/lib/logger';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
+import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
@@ -181,6 +182,18 @@ export async function POST(req: Request) {
     let segment: typeof segments[number];
     let index: number;
 
+    // If a VRF + Merkle period is currently active, claim a spin index inside
+    // the same transaction that decrements `wheelSpins`. The outcome is
+    // deterministically derived from the period's (salt, vrf, spinIndex) so
+    // the user gets the result already locked in by the on-chain Merkle root.
+    // Forced results bypass the period (staging-only override). Periods are
+    // optional during rollout — if none exists, we fall back to legacy RNG so
+    // the wheel keeps working until the admin opens period 1.
+    const currentPeriod = forceResult ? null : await getCurrentPeriod();
+    const usePeriod = currentPeriod && currentPeriod.status === 'active' && currentPeriod.spinCount < currentPeriod.maxSpins;
+    let periodNumber: number | null = null;
+    let spinIndexInPeriod: number | null = null;
+
     if (forceResult) {
       const forcedIdx = segments.findIndex(s => s.id === forceResult);
       if (forcedIdx >= 0) {
@@ -192,11 +205,16 @@ export async function POST(req: Request) {
           seed,
         ));
       }
-    } else {
+    } else if (!usePeriod) {
+      // Legacy fallback — period not yet bootstrapped or already exhausted.
       ({ value: segment, index } = pickWeighted(
         segments.map((s) => ({ value: s, probability: s.probability })),
         seed,
       ));
+    } else {
+      // Outcome derived inside the user-balance transaction below.
+      segment = segments[0];
+      index = 0;
     }
 
     const segmentCenter = index * segmentAngle + segmentAngle / 2;
@@ -246,6 +264,23 @@ export async function POST(req: Request) {
         throw new ApiError(429, 'No spins remaining');
       }
 
+      // Period-aware path: atomically claim the next index in the active
+      // period and derive the deterministic outcome. Done inside the same
+      // tx as the user-balance decrement so concurrent spins can't double-
+      // claim an index. Forced/legacy paths skip this and use the segment
+      // chosen above.
+      if (usePeriod && currentPeriod) {
+        const claim = await claimSpinIndex(currentPeriod.periodNumber, tx);
+        spinIndexInPeriod = claim.spinIndex;
+        periodNumber = currentPeriod.periodNumber;
+        const found = segments.find((s) => s.id === claim.segmentId);
+        if (!found) {
+          throw new ApiError(500, `Period derived segmentId=${claim.segmentId} not present in current wheel config`);
+        }
+        segment = found;
+        index = segments.findIndex((s) => s.id === claim.segmentId);
+      }
+
       tx.set(spinRef, {
         userId,
         spinId,
@@ -254,6 +289,8 @@ export async function POST(req: Request) {
         timestamp,
         seed,
         nonce,
+        periodNumber,
+        spinIndexInPeriod,
       });
 
       // Atomic counter update with floor-of-0 on every counter so legacy
@@ -380,8 +417,34 @@ export async function POST(req: Request) {
       }
     })());
 
+    // V2 verification payload: if this spin was assigned by an active
+    // wheel-proof period, attach the Merkle proof so the client can verify
+    // it against the on-chain root immediately. Generation rebuilds the
+    // tree from stored leaves (~10-20ms for 10k leaves) — cheap enough to
+    // do per-spin without caching.
+    let proof: { periodNumber: number; spinIndex: number; leaf: string; path: string[]; root: string } | null = null;
+    if (periodNumber !== null && spinIndexInPeriod !== null) {
+      try {
+        const p = await generateSpinProof(periodNumber, spinIndexInPeriod);
+        proof = {
+          periodNumber,
+          spinIndex: spinIndexInPeriod,
+          leaf: p.leaf,
+          path: p.proof,
+          root: p.root,
+        };
+      } catch (proofErr) {
+        logger.warn('wheel.spin.proof_generation_failed', {
+          spinId,
+          periodNumber,
+          spinIndex: spinIndexInPeriod,
+          err: (proofErr as Error).message,
+        });
+      }
+    }
+
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain },
+      { spinId, result: segment.id, prize, angle, mintOnChain, proof },
       200,
     );
   } catch (err) {

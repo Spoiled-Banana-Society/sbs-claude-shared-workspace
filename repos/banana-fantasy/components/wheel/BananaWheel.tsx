@@ -7,6 +7,7 @@ import type { WheelSpinOutcome } from '@/hooks/useWheelData';
 import { startSpinSound, playWinSound, getWinTier } from '@/lib/wheelSounds';
 import { ShareWinButton } from '@/components/share/ShareWinButton';
 import { buildWheelShareCopy } from '@/lib/shareUtils';
+import { verifySpinProof } from '@/lib/wheelMerkleClient';
 
 interface BananaWheelProps {
   spinsAvailable: number;
@@ -96,6 +97,8 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const [rotation, setRotation] = useState(0);
   const [wonSegment, setWonSegment] = useState<WheelSegment | null>(null);
   const [wonSpinId, setWonSpinId] = useState<string | null>(null);
+  const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verified' | 'failed'>('unverified');
+  const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string } | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
   const wheelRef = useRef<HTMLDivElement>(null);
@@ -201,6 +204,27 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
 
     // Start spinning tick sounds
     const stopSpinSound = startSpinSound();
+
+    // Verify the Merkle proof now (before the result modal shows) so the
+    // "Verified ✓" badge can render alongside the prize. Pure crypto in
+    // the browser, no network — runs in <1ms.
+    if (outcome.proof) {
+      const ok = verifySpinProof({
+        spinIndex: outcome.proof.spinIndex,
+        segmentId: outcome.result,
+        proof: outcome.proof.path,
+        root: outcome.proof.root,
+      });
+      setWonProofStatus(ok ? 'verified' : 'failed');
+      setWonProofMeta({
+        periodNumber: outcome.proof.periodNumber,
+        spinIndex: outcome.proof.spinIndex,
+        root: outcome.proof.root,
+      });
+    } else {
+      setWonProofStatus('unverified');
+      setWonProofMeta(null);
+    }
 
     setTimeout(() => {
       stopSpinSound();
@@ -478,6 +502,24 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               >
                 {getPrizeMessage(wonSegment)}
               </p>
+
+              {wonProofStatus === 'verified' && wonProofMeta && (
+                <div
+                  className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
+                  style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
+                  title={`Verified against on-chain Merkle root for period ${wonProofMeta.periodNumber}, spin index ${wonProofMeta.spinIndex}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  Verified · Period {wonProofMeta.periodNumber} · spin #{wonProofMeta.spinIndex}
+                </div>
+              )}
+              {wonProofStatus === 'failed' && (
+                <div className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-300 text-[12px] font-semibold">
+                  ⚠ Proof verification failed
+                </div>
+              )}
 
               {/* Info for Jackpot/HOF wins — auto-queued */}
               {(wonSegment.id === 'jackpot' || wonSegment.id === 'hof') && (

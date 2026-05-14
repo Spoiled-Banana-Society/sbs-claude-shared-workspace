@@ -8,6 +8,7 @@ const BananaWheel = dynamic(() => import('@/components/wheel/BananaWheel').then(
   loading: () => <div className="w-[300px] h-[300px] mx-auto bg-bg-tertiary rounded-full animate-pulse" />,
 });
 import { PromoCarousel } from '@/components/home/PromoCarousel';
+import { WheelProofBanner } from '@/components/wheel/WheelProofBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchJson } from '@/lib/appApiClient';
 import { pushNotification } from '@/components/NotificationCenter';
@@ -159,6 +160,8 @@ export default function BananaWheelPage() {
         <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
         <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
       </div>
+
+      <WheelProofBanner />
 
       {/* Main Layout - Wheel in center, info on sides */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">

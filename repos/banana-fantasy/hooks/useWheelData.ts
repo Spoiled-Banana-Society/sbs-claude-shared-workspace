@@ -12,6 +12,16 @@ export type WheelSpinOutcome = {
     value?: number | string;
   };
   angle: number;
+  // Present when the spin was assigned by an active wheel-proof period.
+  // The browser verifies `path` against the on-chain `root` for instant
+  // "Verified ✓" status.
+  proof?: {
+    periodNumber: number;
+    spinIndex: number;
+    leaf: `0x${string}`;
+    path: Array<`0x${string}`>;
+    root: `0x${string}`;
+  } | null;
 };
 
 export interface WheelHistoryEntry {

@@ -35,6 +35,13 @@ const TARGETS = [
     bytecodeConst: 'BBB4_BATCH_PROOF_VRF_COMMIT_BYTECODE',
     abiConst: 'BBB4_BATCH_PROOF_VRF_COMMIT_ABI',
   },
+  {
+    sourceFile: 'BananaWheelProof.sol',
+    contractName: 'BananaWheelProof',
+    outRel: 'lib/contracts/bananaWheelProofArtifact.ts',
+    bytecodeConst: 'BANANA_WHEEL_PROOF_BYTECODE',
+    abiConst: 'BANANA_WHEEL_PROOF_ABI',
+  },
 ];
 
 for (const t of TARGETS) {
