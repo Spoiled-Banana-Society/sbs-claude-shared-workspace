@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { GrantPrizeForm } from '@/components/admin/GrantPrizeForm';
 import { NftMappingTool } from '@/components/admin/NftMappingTool';
+import { RecoverDraftCardForm } from '@/components/admin/RecoverDraftCardForm';
 
 interface WalletStatus {
   address: string;
@@ -337,6 +338,8 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
       <GrantPrizeForm />
 
       <NftMappingTool enabled={enabled} />
+
+      <RecoverDraftCardForm />
 
       {/* Wallet status card */}
       <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4">

@@ -8,6 +8,10 @@
     {
       "path": "/api/crons/sync-cloud-errors",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/crons/reconcile-stuck-cards",
+      "schedule": "30 * * * *"
     }
   ]
 }

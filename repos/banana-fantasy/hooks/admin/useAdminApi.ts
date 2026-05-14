@@ -767,4 +767,29 @@ export function useResetUser() {
   });
 }
 
+export interface RecoverDraftCardInput {
+  draftId: string;
+  walletAddress: string;
+}
+export interface RecoverDraftCardResponse {
+  ok: boolean;
+  draftId: string;
+  walletAddress: string;
+  requestId?: string;
+}
+export function useRecoverDraftCard() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<RecoverDraftCardResponse, AdminApiError, RecoverDraftCardInput>({
+    mutationFn: (input) =>
+      adminFetch<RecoverDraftCardResponse>('/api/admin/recover-draft-card', getHeaders, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+    },
+  });
+}
+
 export { AdminApiError };
