@@ -31,6 +31,7 @@ import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
+import { useUserRankings } from '@/hooks/useUserRankings';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -234,6 +235,7 @@ function DraftRoomContent() {
   const [autoDraftLoading, setAutoDraftLoading] = useState(false);
   const [sortPreference, setSortPreference] = useState<'adp' | 'rank'>('adp');
   const { preference: defaultSortPreference, loaded: defaultSortPreferenceLoaded } = useAutoPickSortPreference();
+  const { rankMap: userRankMap } = useUserRankings(walletParam);
   const [missedPicksCount, setMissedPicksCount] = useState(0);
   const [showAutoDraftNotification, _setShowAutoDraftNotification] = useState(false);
   const [generatedCardUrl, setGeneratedCardUrl] = useState<string | null>(null);
@@ -1920,6 +1922,7 @@ function DraftRoomContent() {
             }}
             onSortChange={handleSortChange}
             sortPreference={sortPreference}
+            userRankMap={userRankMap}
             showBanner={phase === 'drafting'}
             spectator={spectateParam}
           />

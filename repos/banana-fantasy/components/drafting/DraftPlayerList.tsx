@@ -13,6 +13,9 @@ interface DraftPlayerListProps {
   isInQueue: (playerId: string) => boolean;
   onSortChange?: (sort: 'adp' | 'rank') => void;
   sortPreference?: 'adp' | 'rank';
+  /** Override rank values for sort + display when the live per-draft
+   *  ranking data isn't available yet (e.g. draft hasn't started). */
+  userRankMap?: Map<string, number>;
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -27,7 +30,13 @@ export function DraftPlayerList({
   isInQueue,
   onSortChange,
   sortPreference,
+  userRankMap,
 }: DraftPlayerListProps) {
+  const resolveRank = (player: PlayerData): number => {
+    const custom = userRankMap?.get(player.playerId);
+    if (typeof custom === 'number' && custom > 0) return custom;
+    return player.rank || 999;
+  };
   const [filter, setFilter] = useState<PositionFilter>('ALL');
   const [sortField, setSortFieldRaw] = useState<SortField>(sortPreference ?? 'adp');
   useEffect(() => {
@@ -64,15 +73,16 @@ export function DraftPlayerList({
     // Apply sort
     players.sort((a, b) => {
       if (sortField === 'adp') {
-        const aVal = a.adp || a.rank || 999;
-        const bVal = b.adp || b.rank || 999;
+        const aVal = a.adp || resolveRank(a);
+        const bVal = b.adp || resolveRank(b);
         return aVal - bVal;
       }
-      return (a.rank || 999) - (b.rank || 999);
+      return resolveRank(a) - resolveRank(b);
     });
 
     return players;
-  }, [availablePlayers, filter, sortField, searchQuery]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availablePlayers, filter, sortField, searchQuery, userRankMap]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
@@ -348,12 +358,12 @@ export function DraftPlayerList({
                 <div style={{ display: 'flex', flexDirection: 'row', paddingRight: 15, gap: 15 }}>
                   <div style={{ width: 40, textAlign: 'center' }}>
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#fff' }}>
-                      {player.adp || player.rank || 'N/A'}
+                      {player.adp || resolveRank(player) || 'N/A'}
                     </div>
                   </div>
                   <div style={{ width: 40, textAlign: 'center' }}>
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#fff' }}>
-                      {player.rank || 'N/A'}
+                      {resolveRank(player) || 'N/A'}
                     </div>
                   </div>
                 </div>
