@@ -6,6 +6,7 @@ import { GrantPrizeForm } from '@/components/admin/GrantPrizeForm';
 import { NftMappingTool } from '@/components/admin/NftMappingTool';
 import { RecoverDraftCardForm } from '@/components/admin/RecoverDraftCardForm';
 import { WheelProofAdminPanel } from '@/components/admin/WheelProofAdminPanel';
+import { DraftMerkleAdminPanel } from '@/components/admin/DraftMerkleAdminPanel';
 
 interface WalletStatus {
   address: string;
@@ -343,6 +344,8 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
       <RecoverDraftCardForm />
 
       <WheelProofAdminPanel getHeaders={getHeaders} enabled={enabled} />
+
+      <DraftMerkleAdminPanel getHeaders={getHeaders} enabled={enabled} />
 
       {/* Wallet status card */}
       <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4">
