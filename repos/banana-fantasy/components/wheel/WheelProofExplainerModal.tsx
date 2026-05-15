@@ -96,8 +96,8 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
           />
           <Step
             num="4"
-            title="Public receipts every 100 spins"
-            body="A public batch is posted to /wheel-batches every 100 spins. Anyone can audit any outcome independently."
+            title="Every spin appears in the public feed"
+            body="The live feed at /wheel-batches shows every spin as it happens, with a verifiable proof link for each. Anyone can audit any outcome independently."
           />
         </div>
 

@@ -65,14 +65,11 @@ export function WheelProofBanner() {
   const isActive = p.status === 'active' || p.status === 'revealed';
   const isPreparing = p.status === 'requested' || p.status === 'fulfilled';
 
-  // Progress to the NEXT public receipt drop, not to round-close. Each
-  // receipt covers 100 spins, drops on /wheel-batches when complete.
-  // Round-close (10k spins, full salt reveal) lives in the Details section
-  // since most users will never experience it directly.
-  const spinsInBatch = p.spinCount % 100;
-  const nextReceiptNumber = Math.floor(p.spinCount / 100) + 1;
-  const pct = (spinsInBatch / 100) * 100;
-  const spinsUntilReceipt = 100 - spinsInBatch;
+  // Every spin is independently verifiable the moment it happens — the
+  // live feed at /wheel-batches surfaces them all. Round close (10k spins,
+  // full salt reveal) lives in the Details section since most users will
+  // never experience it directly.
+  const pct = (p.spinCount / p.maxSpins) * 100;
 
   const headline = isActive
     ? 'Verified Fair'
@@ -112,18 +109,18 @@ export function WheelProofBanner() {
       <p className="text-white/55 text-[12px] mb-3 leading-snug">{sub}</p>
 
       <div className="text-white/35 text-[10px] uppercase tracking-wider mb-1">
-        Next public receipt in {spinsUntilReceipt} {spinsUntilReceipt === 1 ? 'spin' : 'spins'}
+        {p.spinCount.toLocaleString()} spins verified
       </div>
       <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
         <div className={`h-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(2, pct)}%` }} />
       </div>
       <div className="text-white/35 text-[10px] mt-1">
-        Receipt #{nextReceiptNumber} in progress
+        Every spin publicly auditable · live feed
       </div>
 
       <div className="mt-3 flex items-center justify-between text-[11px]">
         <a href="/wheel-batches" className="text-banana hover:underline font-medium">
-          Public receipts →
+          Live feed →
         </a>
         <button
           onClick={() => setOpen((v) => !v)}

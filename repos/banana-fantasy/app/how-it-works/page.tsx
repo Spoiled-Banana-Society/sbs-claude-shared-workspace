@@ -115,8 +115,8 @@ const FAQS = [
     a: 'A round is a batch of 10,000 spins, all locked in by a single Merkle root committed on Base mainnet. When the round fills, the secret salt is published on-chain — at that point anyone can re-derive every outcome from scratch using the public Chainlink VRF randomness + the now-revealed salt, rebuild the Merkle tree, and confirm the root matches what we committed at the start. A fresh round opens automatically so spins never pause.',
   },
   {
-    q: 'What are the public receipts every 100 spins?',
-    a: 'Every 100 spins forms a public receipt batch on the /wheel-batches page. Anyone (not just the person who spun) can scroll through, see all 100 outcomes side-by-side, and click any spin to verify its Merkle proof against the on-chain root. Auditors, journalists, suspicious users — anyone can confirm the wheel is honest, without trusting us. Receipts drop continuously; you don\'t wait for round-close.',
+    q: 'Where can anyone see all the spins publicly?',
+    a: 'The /wheel-batches page shows a live feed of every spin as it happens — newest at the top, auto-refreshing. Anyone (not just the person who spun) can scroll through, click any spin to see its Merkle proof against the on-chain root, and confirm the outcome is legit. Auditors, journalists, suspicious users — anyone can audit the wheel without trusting SBS.',
   },
   {
     q: 'How can I prove a specific spin was fair?',
