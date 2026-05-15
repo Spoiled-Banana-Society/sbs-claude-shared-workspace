@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Promo } from '@/types';
 import { pushNotification } from '@/components/NotificationCenter';
+import { VISIBLE_PROMO_TYPES } from '@/lib/promoFilter';
 
 const REMINDER_COOLDOWN_MS = 72 * 60 * 60 * 1000; // 72 hours
 // "Last Chance" reminder for the daily-drafts promo only. Fires when
@@ -43,6 +44,13 @@ export function usePromoReminders(promos: Promo[]) {
     checkedRef.current = true;
 
     for (const promo of promos) {
+      // Skip promos that aren't in the visible-types whitelist — keeps
+      // reminders in sync with what users actually see in the carousel.
+      // Seed.ts still has a few retired/hidden promos (Install SBS,
+      // Buy 2 → 1 Free) that shouldn't push "New Promo Available"
+      // notifications since users never see them in the UI.
+      if (!VISIBLE_PROMO_TYPES.has(promo.type)) continue;
+
       // New promo the user hasn't seen
       if (promo.isNew) {
         const key = `sbs-promo-new-seen-${promo.id}`;

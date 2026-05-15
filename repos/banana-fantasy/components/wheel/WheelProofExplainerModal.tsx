@@ -74,37 +74,37 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
             How your spins are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            All 10,000 outcomes for this round were already randomized and locked on Base before you got here.
+            Every outcome was randomized by Chainlink VRF and committed to Base mainnet before any spin happened.
           </p>
         </div>
 
         <div className="px-8 pb-6 overflow-y-auto space-y-5">
           <Step
             num="1"
-            title="Chainlink VRF randomized 10,000 spins"
-            body="A decentralized oracle picked the random outcomes for the round — SBS never saw or chose the randomness."
+            title="Chainlink VRF generated 10,000 outcomes"
+            body="A decentralized oracle supplied the randomness. SBS never saw or chose it."
           />
           <Step
             num="2"
-            title="The full list was locked on Base mainnet"
-            body="A cryptographic fingerprint of all 10,000 outcomes was committed on-chain before any spin happened. Nothing can be changed after."
+            title="The full list was committed to Base mainnet"
+            body="A cryptographic fingerprint of all 10,000 outcomes was published on-chain before any spin happened. Outcomes are immutable after commit."
           />
           <Step
             num="3"
-            title="Every spin includes a proof"
-            body="Each spin returns a personal receipt — your browser verifies it in milliseconds. That's the green Verified ✓ badge."
+            title="Every spin returns its own proof"
+            body="Each spin response includes a Merkle proof tying its outcome to the on-chain fingerprint. Verified in your browser in milliseconds."
           />
           <Step
             num="4"
             title="Public receipts every 100 spins"
-            body="A public batch drops on /wheel-batches every 100 spins. Anyone can audit any spin, no trust required."
+            body="A public batch is posted to /wheel-batches every 100 spins. Anyone can audit any outcome independently."
           />
         </div>
 
         <div className="px-8 py-5 border-t border-white/[0.07] shrink-0">
-          <p className="text-white/75 text-[13.5px] leading-relaxed">
-            <span className="text-emerald-400 font-semibold">SBS can&apos;t change an outcome after you spin.</span>{' '}
-            You don&apos;t have to trust us — the math proves it.
+          <p className="text-white/80 text-[13.5px] leading-relaxed">
+            <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
+            Outcomes are cryptographically immutable from the moment of commit, and independently verifiable on-chain.
           </p>
           {contractAddress && (
             <a
