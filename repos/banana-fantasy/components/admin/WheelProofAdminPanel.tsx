@@ -128,7 +128,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
     [getHeaders, refresh],
   );
 
-  const handleDeploy = useCallback(() => {
+  const handleDeploy = useCallback((forceRedeploy = false) => {
     return runPost(
       '/api/admin/deploy-banana-wheel-proof',
       {
@@ -136,8 +136,11 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
         subscriptionId: vrfSubId.trim(),
         keyHash: vrfKeyHash.trim(),
         initialOwner: vrfInitialOwner.trim(),
+        forceRedeploy,
       },
-      `Deploy BananaWheelProof to Base mainnet?\n\n• coordinator: ${vrfCoordinator}\n• subscription: ${vrfSubId}\n• keyHash: ${vrfKeyHash}\n• owner: ${vrfInitialOwner}\n\nAfter deploy, add the new address as a Consumer on the Chainlink VRF subscription.`,
+      forceRedeploy
+        ? `FORCE redeploy BananaWheelProof? The old contract address will be discarded — make sure you re-add the new one as a VRF consumer afterward.`
+        : `Deploy BananaWheelProof to Base mainnet?\n\n• coordinator: ${vrfCoordinator}\n• subscription: ${vrfSubId}\n• keyHash: ${vrfKeyHash}\n\nServer auto-uses the deployer wallet as the contract owner so subsequent calls don't revert on onlyOwner. After deploy, add the new address as a Consumer on the Chainlink VRF subscription.`,
     );
   }, [runPost, vrfCoordinator, vrfSubId, vrfKeyHash, vrfInitialOwner]);
 
@@ -233,7 +236,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
           />
           <button
             disabled={loading}
-            onClick={handleDeploy}
+            onClick={() => handleDeploy(false)}
             className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-semibold"
           >
             Deploy
@@ -249,6 +252,13 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
             className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white text-[11px] font-semibold"
           >
             {period ? `Open period ${period.periodNumber + 1}` : 'Open period 1'}
+          </button>
+          <button
+            disabled={loading}
+            onClick={() => handleDeploy(true)}
+            className="px-3 py-1.5 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-[11px] font-semibold"
+          >
+            Force redeploy
           </button>
           <button
             disabled={loading || !(period?.status === 'requested' || period?.status === 'fulfilled')}

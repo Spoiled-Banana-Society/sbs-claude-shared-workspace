@@ -81,13 +81,10 @@ export async function POST(req: Request) {
     const vrfCoordinatorRaw = typeof body.vrfCoordinator === 'string' ? body.vrfCoordinator.trim() : '';
     const subscriptionIdRaw = typeof body.subscriptionId === 'string' ? body.subscriptionId.trim() : '';
     const keyHashRaw = typeof body.keyHash === 'string' ? body.keyHash.trim() : '';
-    const initialOwnerRaw = typeof body.initialOwner === 'string' ? body.initialOwner.trim() : '';
+    const forceRedeploy = body.forceRedeploy === true;
 
     if (!isAddress(vrfCoordinatorRaw)) {
       throw new ApiError(400, `Invalid vrfCoordinator: ${vrfCoordinatorRaw}`);
-    }
-    if (!isAddress(initialOwnerRaw)) {
-      throw new ApiError(400, `Invalid initialOwner: ${initialOwnerRaw}`);
     }
     if (!isHex(keyHashRaw) || keyHashRaw.length !== 66) {
       throw new ApiError(400, `Invalid keyHash (need 0x + 64 hex chars): ${keyHashRaw}`);
@@ -101,7 +98,6 @@ export async function POST(req: Request) {
     if (subscriptionId <= 0n) throw new ApiError(400, 'subscriptionId must be > 0');
 
     const vrfCoordinator = vrfCoordinatorRaw as Address;
-    const initialOwner = initialOwnerRaw as Address;
     const keyHash = keyHashRaw as Hex;
 
     const key = loadPrivateKey();
@@ -110,7 +106,14 @@ export async function POST(req: Request) {
     const account = privateKeyToAccount(key);
     const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
 
-    if (isFirestoreConfigured()) {
+    // Force the contract's owner to be the deployer wallet — the same one
+    // that signs subsequent requestRandomnessAndCommit / commitMerkleRoot /
+    // revealSalt calls from this Next.js app. Mismatching owner causes
+    // every subsequent op to revert on `onlyOwner`. The body field is
+    // ignored entirely.
+    const initialOwner = account.address;
+
+    if (isFirestoreConfigured() && !forceRedeploy) {
       const db = getAdminFirestore();
       const snap = await db.collection(SYSTEM_CONFIG).doc(WHEEL_PROOF_DOC).get();
       if (snap.exists) {
@@ -122,7 +125,7 @@ export async function POST(req: Request) {
               success: true,
               alreadyDeployed: true,
               contractAddress: existing.contractAddress,
-              note: 'A wheel proof contract is already deployed. Delete system_config/wheelProof in Firestore to force a fresh deploy.',
+              note: 'A wheel proof contract is already deployed. Pass forceRedeploy:true to deploy a fresh one.',
               requestId,
             });
           }
