@@ -182,7 +182,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
         <div>
           <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Banana Wheel Proof (VRF + Merkle)</h4>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Provable-fair spin outcomes. 10,000 spins per period, Merkle root committed on-chain at open, salt revealed at close.
+            Provable-fair spin outcomes verified by Chainlink VRF. 10,000 spins per round, Merkle root committed on-chain at open, salt revealed at close.
           </p>
         </div>
         <button
@@ -197,7 +197,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
         <KV label="Contract" value={contractAddress ? (
           <a className="text-banana hover:underline font-mono" href={`https://basescan.org/address/${contractAddress}`} target="_blank" rel="noreferrer">{contractAddress}</a>
         ) : <span className="text-amber-300">not deployed</span>} />
-        <KV label="Current period" value={period ? `#${period.periodNumber}` : '—'} />
+        <KV label="Current round" value={period ? `#${period.periodNumber}` : '—'} />
         <KV label="Status" value={stage ? <Pill status={stage} /> : '—'} />
         <KV label="Spins used" value={period ? `${period.spinCount.toLocaleString()} / ${period.maxSpins.toLocaleString()}` : '—'} />
         <KV label="Merkle root" value={period?.merkleRoot ? <span className="font-mono">{period.merkleRoot.slice(0, 14)}…</span> : '—'} />
@@ -251,7 +251,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
             onClick={handleOpen}
             className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-30 text-white text-[11px] font-semibold"
           >
-            {period ? `Open period ${period.periodNumber + 1}` : 'Open period 1'}
+            {period ? `Open round ${period.periodNumber + 1}` : 'Open round 1'}
           </button>
           <button
             disabled={loading}

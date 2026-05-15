@@ -95,7 +95,7 @@ export default function WheelBatchesPage() {
       <div className="mb-8">
         <Link href="/banana-wheel" className="text-banana hover:underline text-sm">← Banana Wheel</Link>
         <h1 className="text-[28px] font-semibold text-white tracking-tight mt-2">Public spin receipts</h1>
-        <p className="text-white/60 text-sm mt-1">Every 100 spins, a public receipt batch goes up. Anyone can verify any spin against the on-chain Merkle root committed when the period opened.</p>
+        <p className="text-white/60 text-sm mt-1">Every 100 spins, a public receipt batch goes up. Anyone can verify any spin against the on-chain Merkle root committed when the round opened.</p>
       </div>
 
       {!period && !error && <div className="text-white/40 text-sm">Loading…</div>}
@@ -106,8 +106,8 @@ export default function WheelBatchesPage() {
           <div className="rounded-2xl border border-white/10 bg-bg-secondary/80 backdrop-blur-md p-5 mb-6">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-white/40 text-[11px] uppercase tracking-wider">Current period</div>
-                <div className="text-white text-xl font-semibold mt-1">Period #{period.periodNumber}</div>
+                <div className="text-white/40 text-[11px] uppercase tracking-wider">Current round</div>
+                <div className="text-white text-xl font-semibold mt-1">Round #{period.periodNumber}</div>
                 <div className="text-white/50 text-[12px] mt-1">{period.spinCount.toLocaleString()} / {period.maxSpins.toLocaleString()} spins · {totalBatches} {totalBatches === 1 ? 'receipt' : 'receipts'} so far</div>
               </div>
               <div className="text-[11px] text-white/40 font-mono break-all max-w-[300px] text-right">

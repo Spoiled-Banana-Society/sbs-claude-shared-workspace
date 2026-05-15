@@ -507,12 +507,12 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 <div
                   className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[12px] font-semibold"
                   style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
-                  title={`Verified against on-chain Merkle root for period ${wonProofMeta.periodNumber}, spin index ${wonProofMeta.spinIndex}`}
+                  title={`Verified by Chainlink VRF · Round ${wonProofMeta.periodNumber} · spin #${wonProofMeta.spinIndex}`}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
-                  Verified · Period {wonProofMeta.periodNumber} · spin #{wonProofMeta.spinIndex}
+                  Verified by Chainlink VRF · spin #{wonProofMeta.spinIndex}
                 </div>
               )}
               {wonProofStatus === 'failed' && (

@@ -117,9 +117,9 @@ export default function SpinProofPage() {
 
             {data.verifiable && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-[12px] mt-4">
-                <KV label="Period" value={`#${data.periodNumber}`} />
+                <KV label="Round" value={`#${data.periodNumber}`} />
                 <KV label="Spin index" value={`${data.spinIndex} of ${data.period?.maxSpins ?? '?'}`} />
-                <KV label="Period status" value={<StatusPill status={data.period?.status ?? 'requested'} />} />
+                <KV label="Round status" value={<StatusPill status={data.period?.status ?? 'requested'} />} />
                 <KV label="Spins used" value={`${data.period?.spinCount ?? 0} / ${data.period?.maxSpins ?? 0}`} />
               </div>
             )}
@@ -151,7 +151,7 @@ export default function SpinProofPage() {
                 <Link2
                   label="Salt reveal tx"
                   href={data.period?.revealTxHash ? `https://basescan.org/tx/${data.period.revealTxHash}` : null}
-                  display={data.period?.revealTxHash ?? 'sealed until period close'}
+                  display={data.period?.revealTxHash ?? 'sealed until round close'}
                 />
               </div>
 

@@ -68,16 +68,16 @@ export function WheelProofBanner() {
   const palette = (() => {
     switch (p.status) {
       case 'active':
-        return { ring: 'border-emerald-500/40', bg: 'from-emerald-500/10 to-emerald-700/5', dot: 'bg-emerald-400', label: 'Verifying every spin' };
+        return { ring: 'border-emerald-500/30', bg: 'from-emerald-500/[0.08] to-emerald-700/[0.03]', dot: 'bg-emerald-400', icon: '✓', copy: 'Verified by Chainlink VRF' };
       case 'revealed':
-        return { ring: 'border-emerald-500/40', bg: 'from-emerald-500/10 to-emerald-700/5', dot: 'bg-emerald-400', label: 'Period revealed' };
+        return { ring: 'border-emerald-500/30', bg: 'from-emerald-500/[0.08] to-emerald-700/[0.03]', dot: 'bg-emerald-400', icon: '✓', copy: 'Verified by Chainlink VRF · salt revealed' };
       case 'closed':
-        return { ring: 'border-blue-500/40', bg: 'from-blue-500/10 to-blue-700/5', dot: 'bg-blue-400', label: 'Period closed — reveal pending' };
+        return { ring: 'border-blue-500/30', bg: 'from-blue-500/[0.08] to-blue-700/[0.03]', dot: 'bg-blue-400', icon: '◌', copy: 'Verified by Chainlink VRF · reveal pending' };
       case 'fulfilled':
-        return { ring: 'border-amber-500/40', bg: 'from-amber-500/10 to-amber-700/5', dot: 'bg-amber-400', label: 'Preparing period' };
+        return { ring: 'border-amber-500/30', bg: 'from-amber-500/[0.08] to-amber-700/[0.03]', dot: 'bg-amber-400', icon: '🎲', copy: 'Committing Merkle root on-chain…' };
       case 'requested':
       default:
-        return { ring: 'border-amber-500/40', bg: 'from-amber-500/10 to-amber-700/5', dot: 'bg-amber-400', label: 'Awaiting VRF' };
+        return { ring: 'border-amber-500/30', bg: 'from-amber-500/[0.08] to-amber-700/[0.03]', dot: 'bg-amber-400', icon: '🎲', copy: 'Randomizing with Chainlink VRF…' };
     }
   })();
 
@@ -90,25 +90,26 @@ export function WheelProofBanner() {
           <span className={`inline-block w-2 h-2 rounded-full ${palette.dot} animate-pulse`} />
           <div className="min-w-0">
             <div className="text-white text-[13px] font-semibold tracking-tight">
-              Period {p.periodNumber} · {palette.label}
+              <span aria-hidden className="mr-1.5">{palette.icon}</span>
+              {palette.copy}
             </div>
-            <div className="text-white/60 text-[11px] mt-0.5">
-              {p.spinCount.toLocaleString()} / {p.maxSpins.toLocaleString()} spins · Chainlink VRF + on-chain Merkle root
+            <div className="text-white/55 text-[11px] mt-0.5">
+              {p.spinCount.toLocaleString()} / {p.maxSpins.toLocaleString()} spins this round · on-chain Merkle root locks every outcome before you spin
             </div>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <a
             href="/wheel-batches"
-            className="text-white/40 hover:text-banana text-[11px] font-semibold"
+            className="text-white/55 hover:text-banana text-[11px] font-semibold underline-offset-2 hover:underline"
           >
-            Receipts
+            view receipts
           </a>
           <button
             onClick={() => setOpen((v) => !v)}
-            className="text-banana text-[11px] font-semibold hover:underline"
+            className="text-white/55 hover:text-white text-[11px] font-semibold underline-offset-2 hover:underline"
           >
-            {open ? 'Hide' : 'Verify'} →
+            {open ? 'hide proof' : 'view proof'} →
           </button>
         </div>
       </div>
@@ -120,7 +121,7 @@ export function WheelProofBanner() {
       {open && (
         <div className="mt-3 pt-3 border-t border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[11px]">
           <Row label="Status" value={p.status} />
-          <Row label="Period #" value={String(p.periodNumber)} />
+          <Row label="Round" value={`#${p.periodNumber}`} />
           <Row label="Salt hash" value={shortHex(p.saltHash)} />
           <Row label="Merkle root" value={shortHex(p.merkleRoot)} />
           <Row label="VRF randomness" value={shortHex(p.vrfRandomness)} />
