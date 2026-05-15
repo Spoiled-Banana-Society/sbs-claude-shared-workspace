@@ -31,9 +31,10 @@ type ProofStatus =
   | 'revealed'
   | 'requested'
   | 'fulfilled'
+  | 'merkleCommitted'
   | 'pre-launch';
 
-type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit';
+type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
 
 interface BatchProofDoc {
   batchNumber: number;
@@ -66,6 +67,11 @@ interface BatchProofDoc {
   serverSalt?: string;       // gated until revealed
   commitTxHashVrf?: string;  // tx that submitted requestRandomnessAndCommit
   revealSaltTxHash?: string;
+
+  // VRF + commit + Merkle (per-draft instant verification)
+  merkleRoot?: string;            // 0x-prefixed root; public from merkleCommitted onward
+  merkleRootTxHash?: string;      // tx that committed the root
+  merkleRootCommittedAt?: number; // unix sec
 
   // Common (gated)
   jackpotPositions?: number[];
@@ -113,6 +119,7 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
     //                    on-chain reality.
     const variant: ProofVariant =
       data.variant === 'vrf' ? 'vrf'
+      : data.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
       : data.variant === 'vrf-commit' ? 'vrf-commit'
       : 'commit-reveal';
 
@@ -147,6 +154,14 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
         ? effectiveStatus === 'fulfilled'
         : effectiveStatus === 'revealed';
 
+    // For the Merkle variant, the root + commit tx are public the moment
+    // status reaches merkleCommitted (they're already on-chain anyway).
+    // Per-draft proofs are exposed via /api/drafts/{draftId}/merkle-proof
+    // — this endpoint just publishes the root so clients can verify proofs.
+    const merkleReadyForProofs =
+      variant === 'vrf-commit-merkle' &&
+      (effectiveStatus === 'merkleCommitted' || effectiveStatus === 'revealed');
+
     return json({
       batchNumber,
       status: effectiveStatus,
@@ -179,12 +194,31 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
       vrfFulfilledAt: effectiveFulfilledAt,
       vrfCoordinator: data.vrfCoordinator,
 
-      // VRF+commit fields. SaltHash is public from request time;
-      // serverSalt is gated until reveal.
-      saltHash: variant === 'vrf-commit' ? data.saltHash : undefined,
-      commitTxHashVrf: variant === 'vrf-commit' ? data.commitTxHashVrf : undefined,
-      serverSalt: variant === 'vrf-commit' && isPubliclyVerifiable ? data.serverSalt : undefined,
-      revealSaltTxHash: variant === 'vrf-commit' ? data.revealSaltTxHash : undefined,
+      // VRF+commit and VRF+commit+merkle share the same salt-hash + salt
+      // semantics. SaltHash is public from request time; serverSalt is
+      // gated until reveal.
+      saltHash:
+        variant === 'vrf-commit' || variant === 'vrf-commit-merkle'
+          ? data.saltHash
+          : undefined,
+      commitTxHashVrf:
+        variant === 'vrf-commit' || variant === 'vrf-commit-merkle'
+          ? data.commitTxHashVrf
+          : undefined,
+      serverSalt:
+        (variant === 'vrf-commit' || variant === 'vrf-commit-merkle') && isPubliclyVerifiable
+          ? data.serverSalt
+          : undefined,
+      revealSaltTxHash:
+        variant === 'vrf-commit' || variant === 'vrf-commit-merkle'
+          ? data.revealSaltTxHash
+          : undefined,
+
+      // Merkle fields (only for vrf-commit-merkle variant). Root + tx
+      // become public the moment they're committed on-chain.
+      merkleRoot: merkleReadyForProofs ? data.merkleRoot : undefined,
+      merkleRootTxHash: merkleReadyForProofs ? data.merkleRootTxHash : undefined,
+      merkleRootCommittedAt: merkleReadyForProofs ? data.merkleRootCommittedAt : undefined,
 
       // Common (gated)
       jackpotPositions: isPubliclyVerifiable ? data.jackpotPositions : undefined,

@@ -13,6 +13,10 @@ import {
   sha256Hex,
   type BatchSlots,
 } from '@/lib/batchProof';
+import {
+  verifyDraftMerkleProof,
+  type DraftType as MerkleDraftType,
+} from '@/lib/batchMerkleClient';
 
 type ProofStatus =
   | 'pending'
@@ -20,9 +24,10 @@ type ProofStatus =
   | 'revealed'
   | 'requested'
   | 'fulfilled'
+  | 'merkleCommitted'
   | 'pre-launch';
 
-type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit';
+type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
 
 interface BatchProofPayload {
   batchNumber: number;
@@ -53,10 +58,30 @@ interface BatchProofPayload {
   commitTxHashVrf?: string;   // tx that submitted requestRandomnessAndCommit
   revealSaltTxHash?: string;
 
+  // VRF + commit + merkle (vrf-commit-merkle). Per-draft Merkle proofs
+  // available the moment the root is committed on-chain.
+  merkleRoot?: string;
+  merkleRootTxHash?: string;
+  merkleRootCommittedAt?: number;
+
   // Common (gated until publicly verifiable)
   jackpotPositions?: number[];
   hofPositions?: number[];
   preLaunchNote?: string;
+}
+
+interface DraftMerkleProofPayload {
+  draftId: string;
+  draftNumber: number;
+  batchNumber: number;
+  positionInBatch: number;
+  roundNumber: number;
+  positionInRound: number;
+  draftType: MerkleDraftType;
+  leaf: `0x${string}`;
+  proof: Array<`0x${string}`>;
+  root: `0x${string}`;
+  rootTxHash: string | null;
 }
 
 const BASESCAN_TX = (hash: string) =>
@@ -75,6 +100,38 @@ export default function ProofPage() {
   const [recomputed, setRecomputed] = useState<BatchSlots | null>(null);
   const [recomputeError, setRecomputeError] = useState<string | null>(null);
   const [hashMatch, setHashMatch] = useState<boolean | null>(null);
+
+  // Merkle variant: per-draft proof fetched from /api/drafts/{draftId}/merkle-proof
+  // and verified live in the browser. Renders an instant Verified ✓ panel.
+  const [merkleProof, setMerkleProof] = useState<DraftMerkleProofPayload | null>(null);
+  const [merkleVerified, setMerkleVerified] = useState<'pending' | 'verified' | 'failed' | null>(null);
+
+  useEffect(() => {
+    if (!proof || proof.variant !== 'vrf-commit-merkle') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/merkle-proof`);
+        if (!res.ok) {
+          if (!cancelled) setMerkleVerified(null);
+          return;
+        }
+        const body = (await res.json()) as DraftMerkleProofPayload;
+        if (cancelled) return;
+        setMerkleProof(body);
+        const ok = verifyDraftMerkleProof({
+          position: body.positionInRound,
+          draftType: body.draftType,
+          proof: body.proof,
+          root: body.root,
+        });
+        setMerkleVerified(ok ? 'verified' : 'failed');
+      } catch {
+        if (!cancelled) setMerkleVerified(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [proof, draftId]);
 
   useEffect(() => {
     if (!locator) return;
@@ -105,6 +162,7 @@ export default function ProofPage() {
     if (!proof || !locator) return;
     const variant: ProofVariant =
       proof.variant === 'vrf' ? 'vrf'
+      : proof.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
       : proof.variant === 'vrf-commit' ? 'vrf-commit'
       : 'commit-reveal';
 
@@ -116,7 +174,12 @@ export default function ProofPage() {
           seedHex = proof.vrfRandomness;
         } else if (variant === 'commit-reveal' && proof.status === 'revealed') {
           seedHex = proof.serverSeed;
-        } else if (variant === 'vrf-commit' && proof.status === 'revealed' && proof.serverSalt && proof.vrfRandomness) {
+        } else if (
+          (variant === 'vrf-commit' || variant === 'vrf-commit-merkle') &&
+          proof.status === 'revealed' &&
+          proof.serverSalt &&
+          proof.vrfRandomness
+        ) {
           seedHex = await combinedSeedHex(proof.serverSalt, proof.vrfRandomness);
         }
         if (!seedHex) return;
@@ -150,17 +213,20 @@ export default function ProofPage() {
 
   const variant: ProofVariant =
     proof?.variant === 'vrf' ? 'vrf'
+    : proof?.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
     : proof?.variant === 'vrf-commit' ? 'vrf-commit'
     : 'commit-reveal';
   const isVRF = variant === 'vrf';
   const isVRFCommit = variant === 'vrf-commit';
-  const showsVRFBadge = isVRF || isVRFCommit;
+  const isMerkle = variant === 'vrf-commit-merkle';
+  const showsVRFBadge = isVRF || isVRFCommit || isMerkle;
   const isPubliclyVerifiable =
     isVRF ? proof?.status === 'fulfilled' : proof?.status === 'revealed';
   // Mid-flight = math is locked but positions are still hidden from the public.
   const isMidFlight =
     isVRF ? proof?.status === 'requested'
     : isVRFCommit ? (proof?.status === 'requested' || proof?.status === 'fulfilled')
+    : isMerkle ? (proof?.status === 'requested' || proof?.status === 'fulfilled' || proof?.status === 'merkleCommitted')
     : proof?.status === 'committed';
   const lastDraftInBatch = ((locator.batchNumber - 1) * 100) + 100;
 
@@ -195,6 +261,65 @@ export default function ProofPage() {
           </div>
         )}
       </div>
+
+      {isMerkle && merkleVerified !== null && (
+        <section
+          className={`rounded-xl p-5 space-y-2 border ${
+            merkleVerified === 'verified' ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+            : merkleVerified === 'failed' ? 'border-red-500/40 bg-red-500/[0.06]'
+            : 'border-amber-500/30 bg-amber-500/[0.04]'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
+                merkleVerified === 'verified' ? 'text-emerald-300'
+                : merkleVerified === 'failed' ? 'text-red-300'
+                : 'text-amber-300'
+              }`}>
+                {merkleVerified === 'verified' ? 'Verified by Chainlink VRF' : merkleVerified === 'failed' ? 'Verification failed' : 'Verifying…'}
+              </div>
+              <p className="text-white/75 text-[13.5px] leading-relaxed">
+                {merkleVerified === 'verified'
+                  ? <>This draft&apos;s outcome was committed to Base mainnet <em>before</em> any draft in the round filled. Cryptographically proven, no SBS trust required.</>
+                  : merkleVerified === 'failed'
+                  ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
+                  : <>Fetching Merkle proof and verifying against the on-chain root…</>}
+              </p>
+            </div>
+            {merkleVerified === 'verified' && (
+              <div className="shrink-0 w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            )}
+          </div>
+
+          {merkleProof && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] mt-3 pt-3 border-t border-white/[0.07]">
+              <Row label="Draft type" value={
+                <span className="font-semibold" style={{ color:
+                  merkleProof.draftType === 'jackpot' ? '#ef4444'
+                  : merkleProof.draftType === 'hof' ? '#D4AF37'
+                  : '#a855f7'
+                }}>{merkleProof.draftType.toUpperCase()}</span>
+              } />
+              <Row label="Position in round" value={`${merkleProof.positionInRound} / ${10000}`} />
+              <Row label="Round" value={`#${merkleProof.roundNumber}`} />
+              <Row label="Proof depth" value={`${merkleProof.proof.length} hashes`} />
+              <Row label="On-chain root" value={<span className="font-mono">{merkleProof.root.slice(0, 10)}…{merkleProof.root.slice(-6)}</span>} />
+              {merkleProof.rootTxHash && (
+                <Row label="Root commit tx" value={
+                  <a href={BASESCAN_TX(merkleProof.rootTxHash)} target="_blank" rel="noreferrer" className="text-banana hover:underline font-mono">
+                    {merkleProof.rootTxHash.slice(0, 10)}…
+                  </a>
+                } />
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
         <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Distribution rule</h2>
@@ -601,6 +726,15 @@ export default function ProofPage() {
           )}
         </ul>
       </section>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex justify-between items-center gap-2">
+      <span className="text-white/40">{label}</span>
+      <span className="text-white/80">{value}</span>
     </div>
   );
 }

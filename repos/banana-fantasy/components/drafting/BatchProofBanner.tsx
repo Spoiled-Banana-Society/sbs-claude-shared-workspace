@@ -22,7 +22,7 @@ type ProofStatus =
   | 'fulfilled'
   | 'pre-launch';
 
-type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit';
+type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
 
 interface BatchSummary {
   batchNumber: number;
@@ -73,9 +73,11 @@ export function BatchProofBanner() {
 
   const variant: ProofVariant =
     proof.variant === 'vrf' ? 'vrf'
+    : proof.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
     : proof.variant === 'vrf-commit' ? 'vrf-commit'
     : 'commit-reveal';
 
+  const isMerkle = variant === 'vrf-commit-merkle';
   const isVRFCommit = variant === 'vrf-commit';
   const isVRF = variant === 'vrf';
 
@@ -83,7 +85,8 @@ export function BatchProofBanner() {
   const isAwaiting =
     proof.status === 'pending' ||
     (isVRF && proof.status === 'requested') ||
-    (isVRFCommit && proof.status === 'requested');
+    (isVRFCommit && proof.status === 'requested') ||
+    (isMerkle && (proof.status === 'requested' || proof.status === 'fulfilled'));
 
   const batchStart = (info.currentBatchNumber - 1) * 100 + 1;
   const sampleDraftId = `2025-fast-draft-${batchStart}`;
@@ -105,6 +108,10 @@ export function BatchProofBanner() {
         <AnimatedEllipsis />
       </>
     );
+  } else if (isMerkle) {
+    // Merkle variant: every draft instantly verified at slot reveal.
+    icon = '✓';
+    copy = <>Every draft in Batch #{info.currentBatchNumber} verified by Chainlink VRF</>;
   } else {
     icon = '✓';
     copy = <>Batch #{info.currentBatchNumber} done randomizing · verified by Chainlink VRF</>;
