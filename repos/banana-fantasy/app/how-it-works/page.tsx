@@ -99,6 +99,22 @@ const FAQS = [
     a: 'Yes. Both draft order and draft type use a commit-reveal scheme: a server seed is generated, its hash is committed (on Base for batch type, in our audit log for draft order), and the seed is revealed after the event. Anyone can recompute the outcome from the revealed seed using the algorithm published in lib/batchProof.ts and verify it matches the committed hash.',
   },
   {
+    q: 'How are Banana Wheel spins verified?',
+    a: 'Each verification round covers 10,000 spins. When the round opens, our server asks Chainlink VRF for a random number, generates a secret salt, and uses both to pre-compute every spin outcome for the round. We then build a Merkle tree of all 10,000 outcomes and commit the root to Base mainnet. From that moment on, every outcome is locked — SBS can\'t change them and didn\'t pick them (Chainlink did the randomization). When you spin, you receive a tiny cryptographic proof that your outcome was in the original committed tree. Your browser verifies it instantly. That\'s the green "Verified by Chainlink VRF" badge.',
+  },
+  {
+    q: 'What\'s a "verification round" on the wheel?',
+    a: 'A round is a batch of 10,000 spins, all locked in by a single Merkle root committed on Base mainnet. When the round fills, the secret salt is published on-chain — at that point anyone can re-derive every outcome from scratch and confirm the math. A fresh round opens automatically so spins never pause.',
+  },
+  {
+    q: 'What are the public receipts every 100 spins?',
+    a: 'Every 100 spins forms a public receipt batch on the /wheel-batches page. Anyone (not just the person who spun) can scroll through, see all 100 outcomes side-by-side, and click any spin to verify its Merkle proof against the on-chain root. Auditors, journalists, suspicious users — anyone can confirm the wheel is honest, without trusting us.',
+  },
+  {
+    q: 'How can I prove a specific spin was fair?',
+    a: 'Click any spin in your Spin History on /banana-wheel — you\'ll land on /spin-proof/{spinId} showing the outcome, your Merkle proof, the salt-hash committed on-chain, the Chainlink VRF transaction, and links to every relevant Basescan tx. You can verify the math yourself or share the link with anyone.',
+  },
+  {
     q: 'When does the season run?',
     a: 'BBB4 drafts open in June 2026. Scoring runs through the full NFL regular season (September–January). Playoffs and final prizes are distributed after the season ends.',
   },
@@ -316,7 +332,7 @@ export default function HowItWorksPage() {
       </section>
 
       {/* ═══ FAQ ═══ */}
-      <section className="py-16 sm:py-24 px-4">
+      <section id="wheel-fairness" className="py-16 sm:py-24 px-4 scroll-mt-24">
         <div className="max-w-3xl mx-auto">
           <Reveal>
             <div className="text-center mb-10">
