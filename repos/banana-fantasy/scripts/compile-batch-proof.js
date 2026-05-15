@@ -42,6 +42,13 @@ const TARGETS = [
     bytecodeConst: 'BANANA_WHEEL_PROOF_BYTECODE',
     abiConst: 'BANANA_WHEEL_PROOF_ABI',
   },
+  {
+    sourceFile: 'BBB4BatchProofMerkle.sol',
+    contractName: 'BBB4BatchProofMerkle',
+    outRel: 'lib/contracts/bbb4BatchProofMerkleArtifact.ts',
+    bytecodeConst: 'BBB4_BATCH_PROOF_MERKLE_BYTECODE',
+    abiConst: 'BBB4_BATCH_PROOF_MERKLE_ABI',
+  },
 ];
 
 for (const t of TARGETS) {
