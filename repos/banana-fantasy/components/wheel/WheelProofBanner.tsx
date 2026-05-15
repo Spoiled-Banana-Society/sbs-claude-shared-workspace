@@ -118,7 +118,7 @@ export function WheelProofBanner() {
         <div className={`h-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(2, pct)}%` }} />
       </div>
       <div className="text-white/35 text-[10px] mt-1">
-        Round {p.periodNumber} · Receipt #{nextReceiptNumber} in progress
+        Receipt #{nextReceiptNumber} in progress
       </div>
 
       <div className="mt-3 flex items-center justify-between text-[11px]">
@@ -136,7 +136,7 @@ export function WheelProofBanner() {
       {open && (
         <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5 text-[11px]">
           <Row label="Status" value={p.status} />
-          <Row label="Round progress" value={`${p.spinCount.toLocaleString()} / ${p.maxSpins.toLocaleString()} spins`} />
+          <Row label="Progress" value={`${p.spinCount.toLocaleString()} / ${p.maxSpins.toLocaleString()} spins`} />
           <Row label="Salt hash" value={shortHex(p.saltHash)} />
           <Row label="Merkle root" value={shortHex(p.merkleRoot)} />
           <Row label="VRF" value={shortHex(p.vrfRandomness)} />
