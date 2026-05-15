@@ -125,17 +125,12 @@ export function WheelProofBanner() {
         <a href="/wheel-batches" className="text-banana hover:underline font-medium">
           Public receipts →
         </a>
-        <div className="flex items-center gap-3">
-          <a href="/how-it-works#wheel-fairness" className="text-white/55 hover:text-white">
-            How it works
-          </a>
-          <button
-            onClick={() => setOpen((v) => !v)}
-            className="text-white/55 hover:text-white"
-          >
-            {open ? 'Hide' : 'Details'}
-          </button>
-        </div>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="text-white/55 hover:text-white"
+        >
+          {open ? 'Hide' : 'Details'}
+        </button>
       </div>
 
       {open && (
