@@ -161,8 +161,6 @@ export default function BananaWheelPage() {
         <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
       </div>
 
-      <WheelProofBanner />
-
       {/* Main Layout - Wheel in center, info on sides */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
         {/* Left Column */}
@@ -260,6 +258,8 @@ export default function BananaWheelPage() {
               ))}
             </div>
           </div>
+
+          <WheelProofBanner />
 
           {/* Spin History */}
           <div
