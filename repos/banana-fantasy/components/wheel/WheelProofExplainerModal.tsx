@@ -74,20 +74,20 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
             How your spins are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            Chainlink VRF randomizes all 10,000 outcomes before anyone clicks. End-to-end auditable.
+            All 10,000 outcomes for this round were already randomized and locked on Base before you got here.
           </p>
         </div>
 
         <div className="px-8 pb-6 overflow-y-auto space-y-5">
           <Step
             num="1"
-            title="Chainlink VRF randomizes 10,000 spins"
-            body="A decentralized oracle picks the random outcomes — SBS never sees or chooses the randomness."
+            title="Chainlink VRF randomized 10,000 spins"
+            body="A decentralized oracle picked the random outcomes for the round — SBS never saw or chose the randomness."
           />
           <Step
             num="2"
-            title="The full list locks on Base mainnet"
-            body="A cryptographic fingerprint of all 10,000 outcomes is committed on-chain before anyone spins. Outcomes can't be changed after."
+            title="The full list was locked on Base mainnet"
+            body="A cryptographic fingerprint of all 10,000 outcomes was committed on-chain before any spin happened. Nothing can be changed after."
           />
           <Step
             num="3"
