@@ -1,5 +1,7 @@
 export const dynamic = 'force-dynamic';
 
+import type { Hex } from 'viem';
+
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
@@ -7,15 +9,19 @@ import {
   computePeriodMerkleTree,
   getCurrentPeriod,
   generatePeriodSalt,
+  getPeriod,
   recordPeriodActivated,
+  recordPeriodClosed,
   recordPeriodFulfilled,
   recordPeriodRequested,
+  recordPeriodRevealed,
   saltHashOf,
   storePeriodLeaves,
 } from '@/lib/wheelPeriod';
 import {
   callCommitMerkleRoot,
   callRequestRandomnessAndCommit,
+  callRevealSalt,
   getWheelProofContractAddress,
   readPeriodOnchain,
 } from '@/lib/wheelProofContract';
@@ -51,10 +57,25 @@ export async function GET(req: Request) {
     }
 
     const summary: Record<string, unknown> = { ok: true };
-    const period = await getCurrentPeriod();
+    let period = await getCurrentPeriod();
 
+    // (0) Bootstrap period 1 if no period exists yet. Contract must be
+    // deployed (checked above) — admin only has to do the deploy once;
+    // the cron starts the first period automatically.
     if (!period) {
-      return json({ ...summary, skipped: 'no-period' }, 200);
+      const salt = generatePeriodSalt();
+      const saltHash = saltHashOf(salt);
+      const { txHash, requestId } = await callRequestRandomnessAndCommit(contractAddress, 1, saltHash);
+      await recordPeriodRequested({
+        periodNumber: 1,
+        salt,
+        saltHash,
+        vrfRequestId: requestId,
+        commitTxHash: txHash,
+      });
+      summary.bootstrapped = { periodNumber: 1, commitTxHash: txHash };
+      period = await getCurrentPeriod();
+      if (!period) return json(summary, 200);
     }
 
     summary.periodNumber = period.periodNumber;
@@ -82,7 +103,7 @@ export async function GET(req: Request) {
           if (onchain.merkleRoot.toLowerCase() !== tree.root.toLowerCase()) {
             throw new ApiError(500, `Computed root ${tree.root} disagrees with on-chain ${onchain.merkleRoot}`);
           }
-          rootCommitTxHash = '0x' + onchain.randomness.toString(16); // unused, just needs a non-null value
+          rootCommitTxHash = fresh.rootCommitTxHash ?? '0x';
         } else {
           rootCommitTxHash = await callCommitMerkleRoot(contractAddress, fresh.periodNumber, tree.root);
         }
@@ -91,9 +112,13 @@ export async function GET(req: Request) {
       }
     }
 
-    // (3) Auto-roll: if period is full, open the next one.
+    // (3) Auto-roll: if period is full, open the next one AND auto-reveal
+    //     the salt of the full period so the public can audit. Both happen
+    //     server-side so no human intervention is needed once the contract
+    //     is deployed — the wheel runs forever from one deploy.
     const post = await getCurrentPeriod();
     if (post && post.spinCount >= post.maxSpins && (post.status === 'active' || post.status === 'closed')) {
+      // Open next period first so spins don't stall while the old one reveals.
       const nextNumber = post.periodNumber + 1;
       const salt = generatePeriodSalt();
       const saltHash = saltHashOf(salt);
@@ -106,6 +131,25 @@ export async function GET(req: Request) {
         commitTxHash: txHash,
       });
       summary.rolled = { newPeriodNumber: nextNumber, commitTxHash: txHash };
+
+      // Now reveal the salt of the freshly-full period so it's publicly auditable.
+      try {
+        if (post.status === 'active') {
+          await recordPeriodClosed(post.periodNumber);
+        }
+        const filled = await getPeriod(post.periodNumber);
+        if (filled?.salt) {
+          const revealTxHash = await callRevealSalt(contractAddress, post.periodNumber, filled.salt as Hex);
+          await recordPeriodRevealed({ periodNumber: post.periodNumber, revealTxHash });
+          summary.revealed = { periodNumber: post.periodNumber, revealTxHash };
+        }
+      } catch (revealErr) {
+        logger.warn('cron.wheel_period_keeper.reveal_failed', {
+          periodNumber: post.periodNumber,
+          err: (revealErr as Error).message,
+        });
+        summary.revealError = (revealErr as Error).message;
+      }
     }
 
     return json(summary, 200);

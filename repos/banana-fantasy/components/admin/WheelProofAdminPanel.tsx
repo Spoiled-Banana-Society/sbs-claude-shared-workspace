@@ -54,6 +54,41 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
     return () => clearInterval(id);
   }, [enabled, refresh]);
 
+  // Prefill the deploy form from the existing draft batch-proof config so
+  // the wheel deploys to the same Chainlink VRF subscription with a single
+  // click. Only fires once on mount.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    async function prefill() {
+      try {
+        const headers = await getHeaders();
+        const merged: Record<string, string> = {};
+        if (headers instanceof Headers) headers.forEach((v, k) => { merged[k] = v; });
+        else if (Array.isArray(headers)) headers.forEach(([k, v]) => { merged[k] = v; });
+        else if (headers && typeof headers === 'object') Object.assign(merged, headers);
+        const res = await fetch('/api/admin/wheel-proof-defaults', { headers: merged });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          found: boolean;
+          vrfCoordinator?: string | null;
+          subscriptionId?: string | null;
+          keyHash?: string | null;
+          initialOwner?: string | null;
+        };
+        if (cancelled || !body.found) return;
+        if (body.vrfCoordinator) setVrfCoordinator(body.vrfCoordinator);
+        if (body.subscriptionId) setVrfSubId(body.subscriptionId);
+        if (body.keyHash) setVrfKeyHash(body.keyHash);
+        if (body.initialOwner) setVrfInitialOwner(body.initialOwner);
+      } catch {
+        // best-effort
+      }
+    }
+    prefill();
+    return () => { cancelled = true; };
+  }, [enabled, getHeaders]);
+
   const runPost = useCallback(
     async (url: string, body?: unknown, confirmMsg?: string): Promise<unknown | null> => {
       if (confirmMsg && !confirm(confirmMsg)) return null;
