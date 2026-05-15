@@ -100,19 +100,27 @@ const FAQS = [
   },
   {
     q: 'How are Banana Wheel spins verified?',
-    a: 'Each verification round covers 10,000 spins. When the round opens, our server asks Chainlink VRF for a random number, generates a secret salt, and uses both to pre-compute every spin outcome for the round. We then build a Merkle tree of all 10,000 outcomes and commit the root to Base mainnet. From that moment on, every outcome is locked — SBS can\'t change them and didn\'t pick them (Chainlink did the randomization). When you spin, you receive a tiny cryptographic proof that your outcome was in the original committed tree. Your browser verifies it instantly. That\'s the green "Verified by Chainlink VRF" badge.',
+    a: 'Every single spin on the Banana Wheel is individually verified. Here\'s the full flow: at the start of a round (10,000 spins), our server asks Chainlink VRF — a decentralized oracle, not us — for a verifiable random number. We combine that with a secret salt and pre-compute every outcome for the next 10,000 spins, respecting the wheel\'s probabilities. We build a Merkle tree of all 10,000 outcomes and commit the root to Base mainnet BEFORE anyone spins. From that moment, the outcomes are mathematically locked. When you spin, the server hands back your outcome plus a cryptographic proof that your specific outcome was in the original committed tree. Your browser verifies the proof against the on-chain root in milliseconds — that\'s the green "Verified by Chainlink VRF" badge. You don\'t have to trust us; the math proves it.',
+  },
+  {
+    q: 'How is wheel verification different from draft verification?',
+    a: 'Drafts use a "guaranteed distribution" model: every 100 drafts must contain exactly 1 Jackpot, 5 HOF, 94 Pro. We commit the random seed at batch start and reveal it at batch close — anyone can recompute draft type assignments. The wheel is different because outcomes are independent probability draws (jackpots are RARER but variable per round). For the wheel we pre-randomize ALL 10,000 outcomes upfront via Chainlink VRF, commit a cryptographic fingerprint of the full list on-chain, and hand each spinner a personal proof their outcome was in that list. That means each spin is verifiable instantly — drafts batch-verify, the wheel spin-verifies.',
+  },
+  {
+    q: 'What does it mean that outcomes are "pre-randomized"?',
+    a: 'Before any user spins the wheel, all 10,000 outcomes for the round are already determined. Chainlink VRF supplies the randomness; we combine it with a secret salt; we run the wheel\'s probability distribution 10,000 times to produce 10,000 outcomes; we Merkle-tree the whole list and commit the root on-chain. SBS literally cannot change which spin gets which outcome after this commit — the on-chain fingerprint would no longer match. Users can\'t peek either, because the salt is hidden until round close. The system is locked from both sides.',
   },
   {
     q: 'What\'s a "verification round" on the wheel?',
-    a: 'A round is a batch of 10,000 spins, all locked in by a single Merkle root committed on Base mainnet. When the round fills, the secret salt is published on-chain — at that point anyone can re-derive every outcome from scratch and confirm the math. A fresh round opens automatically so spins never pause.',
+    a: 'A round is a batch of 10,000 spins, all locked in by a single Merkle root committed on Base mainnet. When the round fills, the secret salt is published on-chain — at that point anyone can re-derive every outcome from scratch using the public Chainlink VRF randomness + the now-revealed salt, rebuild the Merkle tree, and confirm the root matches what we committed at the start. A fresh round opens automatically so spins never pause.',
   },
   {
     q: 'What are the public receipts every 100 spins?',
-    a: 'Every 100 spins forms a public receipt batch on the /wheel-batches page. Anyone (not just the person who spun) can scroll through, see all 100 outcomes side-by-side, and click any spin to verify its Merkle proof against the on-chain root. Auditors, journalists, suspicious users — anyone can confirm the wheel is honest, without trusting us.',
+    a: 'Every 100 spins forms a public receipt batch on the /wheel-batches page. Anyone (not just the person who spun) can scroll through, see all 100 outcomes side-by-side, and click any spin to verify its Merkle proof against the on-chain root. Auditors, journalists, suspicious users — anyone can confirm the wheel is honest, without trusting us. Receipts drop continuously; you don\'t wait for round-close.',
   },
   {
     q: 'How can I prove a specific spin was fair?',
-    a: 'Click any spin in your Spin History on /banana-wheel — you\'ll land on /spin-proof/{spinId} showing the outcome, your Merkle proof, the salt-hash committed on-chain, the Chainlink VRF transaction, and links to every relevant Basescan tx. You can verify the math yourself or share the link with anyone.',
+    a: 'Click any spin in your Spin History on /banana-wheel — you\'ll land on /spin-proof/{spinId} showing the outcome, your Merkle proof, the salt-hash committed on-chain, the Chainlink VRF transaction, the Merkle root commit transaction, and (after round-close) the salt reveal transaction. You can verify the math yourself, share the link with anyone, or hand it to a journalist. The proof is portable.',
   },
   {
     q: 'When does the season run?',

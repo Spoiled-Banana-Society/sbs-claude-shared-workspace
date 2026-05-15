@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { WheelProofExplainerModal } from '@/components/wheel/WheelProofExplainerModal';
 
 interface PeriodSummary {
   periodNumber: number;
@@ -36,6 +37,7 @@ function shortHex(h: string | null | undefined, chars = 4): string {
 export function WheelProofBanner() {
   const [data, setData] = useState<ResponseData | null>(null);
   const [open, setOpen] = useState(false);
+  const [explainerOpen, setExplainerOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,9 +95,19 @@ export function WheelProofBanner() {
         fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif',
       }}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`inline-block w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
-        <h3 className="text-[15px] font-semibold text-white tracking-tight">{headline}</h3>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'} animate-pulse`} />
+          <h3 className="text-[15px] font-semibold text-white tracking-tight truncate">{headline}</h3>
+        </div>
+        <button
+          onClick={() => setExplainerOpen(true)}
+          aria-label="How verification works"
+          className="shrink-0 w-5 h-5 rounded-full border border-white/20 text-white/55 hover:text-white hover:border-white/40 transition-colors flex items-center justify-center text-[11px] font-semibold italic"
+          title="How does this verification work?"
+        >
+          i
+        </button>
       </div>
       <p className="text-white/55 text-[12px] mb-3 leading-snug">{sub}</p>
 
@@ -181,6 +193,11 @@ export function WheelProofBanner() {
           )}
         </div>
       )}
+      <WheelProofExplainerModal
+        open={explainerOpen}
+        onClose={() => setExplainerOpen(false)}
+        contractAddress={data.contractAddress}
+      />
     </div>
   );
 }
