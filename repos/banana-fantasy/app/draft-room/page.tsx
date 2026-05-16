@@ -1881,6 +1881,7 @@ function DraftRoomContent() {
                   secondsElapsed={batchProof.secondsElapsed}
                   status={batchProof.status}
                   commitTxHash={batchProof.commitTxHashVrf || batchProof.vrfRequestTxHash}
+                  variant={batchProof.variant as 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle' | undefined}
                 />
               )}
             </>

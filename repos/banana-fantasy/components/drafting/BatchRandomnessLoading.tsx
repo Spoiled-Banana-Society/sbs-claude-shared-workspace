@@ -8,9 +8,11 @@ interface BatchRandomnessLoadingProps {
   /** Seconds elapsed since we started waiting. Drives the live counter. */
   secondsElapsed: number;
   /** Best-known status from useBatchProofReady — mostly cosmetic. */
-  status: 'requested' | 'pending' | 'fulfilled' | 'revealed' | 'pre-launch' | string | null;
+  status: 'requested' | 'pending' | 'fulfilled' | 'revealed' | 'merkleCommitted' | 'pre-launch' | string | null;
   /** Once the on-chain commit + VRF request tx exists, link to it. */
   commitTxHash?: string;
+  /** Contract variant. 'vrf-commit-merkle' shifts copy from "the batch" to "the round" since the round covers 10k drafts. */
+  variant?: 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
 }
 
 /**
@@ -31,7 +33,9 @@ export function BatchRandomnessLoading({
   secondsElapsed,
   status,
   commitTxHash,
+  variant,
 }: BatchRandomnessLoadingProps) {
+  const isMerkle = variant === 'vrf-commit-merkle';
   // ~60s is our happy path; show that as a soft target. Past 60s we shift
   // copy to "any moment now" so users don't feel like the hard timeout
   // (~120s) is approaching.
@@ -53,15 +57,24 @@ export function BatchRandomnessLoading({
         </div>
 
         <h2 className="text-xl font-semibold text-white mb-2">
-          🎲 Randomizing Batch #{batchNumber}<AnimatedEllipsis />
+          🎲 {isMerkle ? <>Randomizing the next round<AnimatedEllipsis /></> : <>Randomizing Batch #{batchNumber}<AnimatedEllipsis /></>}
         </h2>
 
         <p className="text-sm text-white/70 leading-relaxed mb-4">
-          Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
-          <span className="text-hof font-semibold">5 HOF</span>, and{' '}
-          <span className="text-red-400 font-semibold">1 Jackpot</span>. Which slot is which type is being
-          randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span>, the same
-          oracle network Polymarket and Aave use. Once Chainlink delivers, your draft type reveals.
+          {isMerkle ? (
+            <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
+            <span className="text-hof font-semibold">5 HOF</span>, and{' '}
+            <span className="text-red-400 font-semibold">1 Jackpot</span>. All 10,000 outcomes for this round
+            are being randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span>{' '}
+            and committed to Base mainnet — once done, every draft in the round reveals instantly with its own
+            cryptographic proof. This is a one-time event per round.</>
+          ) : (
+            <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
+            <span className="text-hof font-semibold">5 HOF</span>, and{' '}
+            <span className="text-red-400 font-semibold">1 Jackpot</span>. Which slot is which type is being
+            randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span>, the same
+            oracle network Polymarket and Aave use. Once Chainlink delivers, your draft type reveals.</>
+          )}
         </p>
 
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 mb-4">
@@ -133,8 +146,9 @@ export function BatchRandomnessLoading({
         )}
 
         <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
-          This only happens at the very start of a new 100-draft batch. Once randomness lands, the next 99 drafts
-          in this batch reveal instantly.
+          {isMerkle
+            ? 'This only happens at the very start of a new 10,000-draft round. Once randomness lands and the on-chain commit fires, every draft in the round reveals instantly with its own cryptographic proof.'
+            : 'This only happens at the very start of a new 100-draft batch. Once randomness lands, the next 99 drafts in this batch reveal instantly.'}
         </p>
       </div>
     </div>

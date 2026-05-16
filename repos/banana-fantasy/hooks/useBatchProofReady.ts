@@ -28,9 +28,10 @@ type ProofStatus =
   | 'revealed'
   | 'requested'
   | 'fulfilled'
+  | 'merkleCommitted'
   | 'pre-launch';
 
-type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit';
+type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
 
 export interface BatchProofReadyState {
   ready: boolean;
@@ -94,6 +95,9 @@ export function useBatchProofReady(batchNumber: number | null): BatchProofReadyS
           status === 'pre-launch' ||
           status === 'fulfilled' ||
           status === 'revealed' ||
+          // Merkle: 'merkleCommitted' (the new terminal-for-active state)
+          // means root is on-chain and per-draft proofs can be served.
+          status === 'merkleCommitted' ||
           // On commit-reveal, 'committed' is also fine to proceed — slots
           // are derived server-side immediately.
           (variant === 'commit-reveal' && status === 'committed');

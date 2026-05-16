@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AnimatedEllipsis } from '@/components/ui/AnimatedEllipsis';
+import { DraftProofExplainerModal } from '@/components/drafting/DraftProofExplainerModal';
 
 /**
  * BatchProofBanner — small inline status chip on /drafting indicating
@@ -37,6 +38,23 @@ interface CurrentBatchInfo {
 export function BatchProofBanner() {
   const [info, setInfo] = useState<CurrentBatchInfo | null>(null);
   const [proof, setProof] = useState<BatchSummary | null>(null);
+  const [explainerOpen, setExplainerOpen] = useState(false);
+  const [merkleContractAddress, setMerkleContractAddress] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/batch-proof-merkle-contract');
+        if (!r.ok) return;
+        const body = (await r.json()) as { contractAddress: string | null };
+        if (!cancelled) setMerkleContractAddress(body.contractAddress);
+      } catch {
+        /* silent */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +148,25 @@ export function BatchProofBanner() {
             </Link>
           </>
         )}
+        {isMerkle && (
+          <>
+            <span className="text-white/25">·</span>
+            <button
+              onClick={() => setExplainerOpen(true)}
+              aria-label="How draft verification works"
+              className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-white/25 text-white/55 hover:text-white hover:border-white/45 transition-colors text-[9px] font-semibold italic leading-none"
+              title="How does this verification work?"
+            >
+              i
+            </button>
+          </>
+        )}
       </div>
+      <DraftProofExplainerModal
+        open={explainerOpen}
+        onClose={() => setExplainerOpen(false)}
+        contractAddress={merkleContractAddress}
+      />
     </div>
   );
 }
