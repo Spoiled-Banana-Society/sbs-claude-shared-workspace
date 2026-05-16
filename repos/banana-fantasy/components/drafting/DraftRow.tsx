@@ -80,7 +80,17 @@ export function DraftRow({
               <span className="text-sm font-semibold" style={{ color: accentColor }}>
                 {resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}
               </span>
-              <VerifiedBadge type="draft-type" draftType={resolvedType} size="sm" draftId={draft.id} />
+              {/* Queue drafts (queue-jackpot-1, queue-hof-1, …) are won
+                  via the wheel — they don't fit the standard {year}-{speed}-
+                  draft-{N} pattern and there's no per-draft Merkle proof
+                  until the queue fills and a real draft starts. Show the
+                  badge as a non-interactive trust signal in that case. */}
+              <VerifiedBadge
+                type="draft-type"
+                draftType={resolvedType}
+                size="sm"
+                draftId={/^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id) ? draft.id : undefined}
+              />
             </>
           ) : (
             <span className="text-white/30 text-sm italic">Unrevealed</span>

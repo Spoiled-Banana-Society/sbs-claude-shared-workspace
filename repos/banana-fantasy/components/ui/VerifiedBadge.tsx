@@ -99,6 +99,11 @@ export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', si
           ref={buttonRef as unknown as React.Ref<HTMLAnchorElement>}
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
+          // Stop the click from bubbling to a parent row's onClick — e.g.
+          // DraftRow wraps the whole row in a click-to-enter handler, so
+          // without this the badge click would simultaneously navigate to
+          // /proof AND fire the enter-draft action.
+          onClick={(e) => e.stopPropagation()}
           className={className}
           // Allow opening in a new tab via cmd-click; the verify page is a
           // self-contained recomputation, no router state required.
