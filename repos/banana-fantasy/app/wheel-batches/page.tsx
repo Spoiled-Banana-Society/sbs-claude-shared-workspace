@@ -10,8 +10,23 @@ interface PeriodSummary {
   status: 'requested' | 'fulfilled' | 'active' | 'closed' | 'revealed';
   spinCount: number;
   maxSpins: number;
+  saltHash: string;
   merkleRoot: string | null;
+  vrfRandomness: string | null;
+  salt: string | null;
+  commitTxHash: string | null;
+  rootCommitTxHash: string | null;
+  revealTxHash: string | null;
 }
+
+interface PeriodResponse {
+  active: boolean;
+  period: PeriodSummary | null;
+  contractAddress: string | null;
+}
+
+const BASESCAN_TX = (h: string) => `https://basescan.org/tx/${h.startsWith('0x') ? h : '0x' + h}`;
+const BASESCAN_ADDRESS = (a: string) => `https://basescan.org/address/${a}`;
 
 interface FeedSpin {
   spinId: string;
@@ -37,6 +52,7 @@ const PAGE_SIZE = 50;
  */
 export default function WheelBatchesPage() {
   const [period, setPeriod] = useState<PeriodSummary | null>(null);
+  const [contractAddress, setContractAddress] = useState<string | null>(null);
   const [spins, setSpins] = useState<FeedSpin[]>([]);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -47,8 +63,9 @@ export default function WheelBatchesPage() {
     async function loadPeriod() {
       try {
         const res = await fetch('/api/wheel/period', { cache: 'no-store' });
-        const body = (await res.json()) as { period: PeriodSummary | null };
+        const body = (await res.json()) as PeriodResponse;
         setPeriod(body.period);
+        setContractAddress(body.contractAddress);
       } catch (err) {
         setError((err as Error).message);
       }
@@ -143,21 +160,80 @@ export default function WheelBatchesPage() {
 
       {period && (
         <>
-          <div className="rounded-2xl border border-white/10 bg-bg-secondary/80 backdrop-blur-md p-5 mb-6">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <div className="text-white/40 text-[11px] uppercase tracking-wider">Verification active</div>
-                <div className="text-white text-xl font-semibold mt-1">{period.spinCount.toLocaleString()} spins committed</div>
-                <div className="text-white/50 text-[12px] mt-1">
-                  Chainlink VRF + on-chain Merkle root · all outcomes locked before any spin
-                </div>
-              </div>
-              <div className="text-[11px] text-white/40 font-mono break-all max-w-[300px] text-right">
-                <div className="text-white/30 uppercase tracking-wider mb-1">Merkle root</div>
-                {period.merkleRoot ? `${period.merkleRoot.slice(0, 14)}…${period.merkleRoot.slice(-8)}` : 'pending'}
-              </div>
+          <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5 mb-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
+                On-chain commit · live
+              </h2>
             </div>
-          </div>
+            <p className="text-xs text-white/60 leading-relaxed">
+              All outcomes for this round were locked on Base mainnet before any spin happened. Click any tx to verify on BaseScan — no SBS server involved.
+            </p>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
+              {period.merkleRoot && (
+                <>
+                  <dt className="text-white/50">Merkle root</dt>
+                  <dd className="font-mono text-white break-all">{period.merkleRoot}</dd>
+                </>
+              )}
+              {period.rootCommitTxHash && (
+                <>
+                  <dt className="text-white/50">Root commit tx</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_TX(period.rootCommitTxHash)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {period.rootCommitTxHash}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {period.commitTxHash && (
+                <>
+                  <dt className="text-white/50">Chainlink VRF request tx</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_TX(period.commitTxHash)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {period.commitTxHash}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {period.saltHash && (
+                <>
+                  <dt className="text-white/50">Salt hash {period.salt ? '' : '(sealed)'}</dt>
+                  <dd className="font-mono text-white break-all">{period.saltHash}</dd>
+                </>
+              )}
+              {period.vrfRandomness && (
+                <>
+                  <dt className="text-white/50">VRF randomness</dt>
+                  <dd className="font-mono text-white break-all">{period.vrfRandomness}</dd>
+                </>
+              )}
+              {period.revealTxHash && (
+                <>
+                  <dt className="text-white/50">Salt reveal tx</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_TX(period.revealTxHash)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {period.revealTxHash}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {contractAddress && (
+                <>
+                  <dt className="text-white/50">Contract</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_ADDRESS(contractAddress)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {contractAddress}
+                    </a>
+                  </dd>
+                </>
+              )}
+            </dl>
+            <p className="text-[11px] text-white/40">
+              {period.spinCount.toLocaleString()} spin{period.spinCount === 1 ? '' : 's'} confirmed against the root above.
+            </p>
+          </section>
 
           <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md overflow-hidden">
             {spins.length === 0 && !loading && (

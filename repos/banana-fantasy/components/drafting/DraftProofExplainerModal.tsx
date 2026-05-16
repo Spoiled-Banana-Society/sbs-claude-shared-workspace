@@ -108,12 +108,18 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
             <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
             Outcomes are cryptographically immutable from the moment of commit, and independently verifiable on-chain.
           </p>
+          <a
+            href="/proof-feed"
+            className="inline-block mt-3 text-banana hover:underline text-[12px] font-medium"
+          >
+            See on-chain proof →
+          </a>
           {contractAddress && (
             <a
               href={`https://basescan.org/address/${contractAddress}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-block mt-3 text-white/40 hover:text-white text-[11px] font-mono"
+              className="block mt-2 text-white/40 hover:text-white text-[11px] font-mono"
             >
               Contract: {contractAddress.slice(0, 8)}…{contractAddress.slice(-4)}
             </a>
