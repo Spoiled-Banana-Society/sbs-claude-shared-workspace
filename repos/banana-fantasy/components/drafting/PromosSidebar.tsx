@@ -27,7 +27,7 @@ export function PromosSidebar({
   onNext,
 }: PromosSidebarProps) {
   return (
-    <div className="w-56 shrink-0 hidden lg:block">
+    <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider">Promos</h3>
         <span className="text-xs text-white/30">

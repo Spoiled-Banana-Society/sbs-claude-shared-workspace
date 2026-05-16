@@ -66,10 +66,9 @@ export function WheelProofBanner() {
   const isPreparing = p.status === 'requested' || p.status === 'fulfilled';
 
   // Every spin is independently verifiable the moment it happens — the
-  // live feed at /wheel-batches surfaces them all. Round close (10k spins,
-  // full salt reveal) lives in the Details section since most users will
-  // never experience it directly.
-  const pct = (p.spinCount / p.maxSpins) * 100;
+  // live feed at /wheel-batches surfaces them all. Round close (full salt
+  // reveal) lives in the Details section since most users will never
+  // experience it directly.
 
   const headline = isActive
     ? 'Verified Fair'
@@ -77,10 +76,10 @@ export function WheelProofBanner() {
       ? 'Preparing round…'
       : 'Reveal pending';
   const sub = isActive
-    ? 'Every spin verified by Chainlink VRF'
+    ? 'Every spin verified by Chainlink VRF on Base.'
     : isPreparing
-      ? 'Chainlink VRF randomizing the next round'
-      : 'Salt reveal coming';
+      ? 'Chainlink VRF randomizing the next round.'
+      : 'Salt reveal coming.';
 
   return (
     <div
@@ -108,17 +107,7 @@ export function WheelProofBanner() {
       </div>
       <p className="text-white/55 text-[12px] mb-3 leading-snug">{sub}</p>
 
-      <div className="text-white/35 text-[10px] uppercase tracking-wider mb-1">
-        {p.spinCount.toLocaleString()} spins verified
-      </div>
-      <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-        <div className={`h-full ${isActive ? 'bg-emerald-400' : 'bg-amber-400'}`} style={{ width: `${Math.max(2, pct)}%` }} />
-      </div>
-      <div className="text-white/35 text-[10px] mt-1">
-        Every spin publicly auditable · live feed
-      </div>
-
-      <div className="mt-3 flex items-center justify-between text-[11px]">
+      <div className="flex items-center justify-between text-[11px]">
         <a href="/wheel-batches" className="text-banana hover:underline font-medium">
           Live feed →
         </a>

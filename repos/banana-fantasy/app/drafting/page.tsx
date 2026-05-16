@@ -170,8 +170,6 @@ export default function DraftingPage() {
         <div className="flex-1 min-w-0">
           {true ? (
             <>
-              <BatchProofBanner />
-
               <ActiveDraftsList
                 regularDrafts={regularDrafts}
                 specialDrafts={specialDrafts}
@@ -298,28 +296,31 @@ export default function DraftingPage() {
           ) : null}
         </div>
 
-        <PromosSidebar
-          promos={promos}
-          promoIndex={promoIndex}
-          promoCount={promoCount}
-          claimedPromos={claimedPromos}
-          onSelectPromo={setSelectedPromo}
-          onClaim={handleClaim}
-          onSelectIndex={(index) => {
-            setPromoIndex(index);
-            setPromoAutoRotate(false);
-          }}
-          onPrev={() => {
-            if (promoCount === 0) return;
-            setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
-            setPromoAutoRotate(false);
-          }}
-          onNext={() => {
-            if (promoCount === 0) return;
-            setPromoIndex((promoIndex + 1) % promoCount);
-            setPromoAutoRotate(false);
-          }}
-        />
+        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4">
+          <PromosSidebar
+            promos={promos}
+            promoIndex={promoIndex}
+            promoCount={promoCount}
+            claimedPromos={claimedPromos}
+            onSelectPromo={setSelectedPromo}
+            onClaim={handleClaim}
+            onSelectIndex={(index) => {
+              setPromoIndex(index);
+              setPromoAutoRotate(false);
+            }}
+            onPrev={() => {
+              if (promoCount === 0) return;
+              setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
+              setPromoAutoRotate(false);
+            }}
+            onNext={() => {
+              if (promoCount === 0) return;
+              setPromoIndex((promoIndex + 1) % promoCount);
+              setPromoAutoRotate(false);
+            }}
+          />
+          <BatchProofBanner />
+        </aside>
       </div>
 
       {/* Buy Passes Modal — only mount when open to prevent useFundWallet crash */}

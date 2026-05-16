@@ -76,30 +76,30 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
             How draft types are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            10,000 draft outcomes were randomized by Chainlink VRF and committed to Base mainnet before any draft happened.
+            Draft outcomes were randomized by Chainlink VRF and committed to Base before any draft happened.
           </p>
         </div>
 
         <div className="px-8 pb-6 overflow-y-auto space-y-5">
           <Step
             num="1"
-            title="Chainlink VRF generated 10,000 outcomes"
-            body="A decentralized oracle supplied the randomness for the next 10,000 drafts. SBS never saw or chose it."
+            title="Chainlink VRF generated the outcomes"
+            body="A decentralized oracle supplied the randomness. SBS never saw or chose it."
           />
           <Step
             num="2"
             title="1 in 100 = Jackpot, 5 in 100 = HOF, 94 in 100 = Pro"
-            body="Each 100-draft window contains exactly that distribution — the constraint holds across all 10,000."
+            body="Every 100-draft window contains exactly that distribution."
           />
           <Step
             num="3"
-            title="The full list was committed to Base mainnet"
-            body="A cryptographic fingerprint of all 10,000 (position, draft type) pairs was published on-chain before any draft happened. Outcomes are immutable after commit."
+            title="The full list was committed to Base"
+            body="A cryptographic fingerprint of every (position, draft type) pair was published on-chain before any draft happened. Outcomes are immutable after commit."
           />
           <Step
             num="4"
-            title="Every slot reveal includes a proof"
-            body="When your draft fills and the slot machine stops, the result comes with a Merkle proof — verified in your browser in milliseconds. That's the green Verified ✓ badge."
+            title="Every draft includes a proof"
+            body="When your draft fills, the result comes with a Merkle proof — verified in your browser in milliseconds. That's the green Verified ✓ badge."
           />
         </div>
 

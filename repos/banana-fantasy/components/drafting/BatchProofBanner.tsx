@@ -105,7 +105,6 @@ export function BatchProofBanner() {
   // batch was pre-launch/end-of-legacy). Past-tense copy reflects that
   // the randomization for the next 10k drafts has already happened.
   const merkleActive = !!merkleContractAddress;
-  const onMerkleBatch = variant === 'vrf-commit-merkle';
 
   const isPrelaunch = proof?.status === 'pre-launch';
   const isAwaiting = variant && (
@@ -124,7 +123,7 @@ export function BatchProofBanner() {
   if (merkleActive) {
     return (
       <div
-        className="rounded-2xl p-4 backdrop-blur-md mb-3"
+        className="rounded-2xl p-4 backdrop-blur-md"
         style={{
           background: 'rgba(20, 20, 20, 0.7)',
           border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -149,30 +148,12 @@ export function BatchProofBanner() {
           </button>
         </div>
         <p className="text-white/55 text-[12px] mb-3 leading-snug">
-          10,000 draft outcomes were randomized by Chainlink VRF and locked on Base mainnet — every draft verifies the moment your slot machine stops.
+          Draft outcomes were randomized by Chainlink VRF and locked on Base. Every draft is instantly verifiable.
         </p>
 
-        <div className="text-white/35 text-[10px] uppercase tracking-wider mb-1">
-          Every draft instantly verifiable
-        </div>
-        <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-emerald-400"
-            style={{ width: onMerkleBatch ? '100%' : '6%' }}
-          />
-        </div>
-
-        <div className="mt-3 flex items-center justify-between text-[11px]">
-          <Link href={`/proof/${sampleDraftId}`} className="text-banana hover:underline font-medium">
-            View proof →
-          </Link>
-          <button
-            onClick={() => setExplainerOpen(true)}
-            className="text-white/55 hover:text-white"
-          >
-            How it works
-          </button>
-        </div>
+        <Link href={`/proof/${sampleDraftId}`} className="text-banana hover:underline font-medium text-[11px]">
+          View proof →
+        </Link>
 
         <DraftProofExplainerModal
           open={explainerOpen}
