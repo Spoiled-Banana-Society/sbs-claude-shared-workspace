@@ -76,7 +76,7 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
             How draft types are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            Every draft's type was randomized by Chainlink VRF and committed to Base before any draft happened.
+            Every draft&apos;s type was randomized by Chainlink VRF and committed to Base before any draft happened.
           </p>
         </div>
 
