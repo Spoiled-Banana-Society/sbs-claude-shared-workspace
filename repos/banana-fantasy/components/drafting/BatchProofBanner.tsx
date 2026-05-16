@@ -114,9 +114,6 @@ export function BatchProofBanner() {
     (variant === 'vrf-commit-merkle' && (proof?.status === 'requested' || proof?.status === 'fulfilled'))
   );
 
-  const batchStart = (info.currentBatchNumber - 1) * 100 + 1;
-  const sampleDraftId = `2025-fast-draft-${batchStart}`;
-
   // Merkle-style card. Used whenever the merkle contract is configured —
   // signals to users that the new system is live regardless of which
   // specific batch they're currently looking at.
@@ -151,8 +148,8 @@ export function BatchProofBanner() {
           Draft types randomized by Chainlink VRF. Each draft is instantly verifiable.
         </p>
 
-        <Link href={`/proof/${sampleDraftId}`} className="text-banana hover:underline font-medium text-[11px]">
-          View proof →
+        <Link href="/proof-feed" className="text-banana hover:underline font-medium text-[11px]">
+          Live feed →
         </Link>
 
         <DraftProofExplainerModal
@@ -168,9 +165,10 @@ export function BatchProofBanner() {
   // deployed yet (e.g. prod before cutover).
   if (!proof) return null;
 
+  const batchStart = (info.currentBatchNumber - 1) * 100 + 1;
   let icon: string;
   let copy: React.ReactNode;
-  let proofLink: string | null = `/proof/${sampleDraftId}`;
+  let proofLink: string | null = `/proof/2025-fast-draft-${batchStart}`;
   if (isPrelaunch) {
     icon = '·';
     copy = <>Chainlink VRF verification starts next batch.</>;

@@ -23,11 +23,6 @@ interface ResponseData {
   contractAddress: string | null;
 }
 
-function shortHex(h: string | null | undefined, chars = 4): string {
-  if (!h) return '—';
-  return `${h.slice(0, 2 + chars)}…${h.slice(-chars)}`;
-}
-
 /**
  * Compact verification card. Lives in the right column of /banana-wheel
  * (above Spin History). Communicates "this wheel is provably fair" in
@@ -36,7 +31,6 @@ function shortHex(h: string | null | undefined, chars = 4): string {
  */
 export function WheelProofBanner() {
   const [data, setData] = useState<ResponseData | null>(null);
-  const [open, setOpen] = useState(false);
   const [explainerOpen, setExplainerOpen] = useState(false);
 
   useEffect(() => {
@@ -107,87 +101,15 @@ export function WheelProofBanner() {
       </div>
       <p className="text-white/55 text-[12px] mb-3 leading-snug">{sub}</p>
 
-      <div className="flex items-center justify-between text-[11px]">
-        <a href="/wheel-batches" className="text-banana hover:underline font-medium">
-          Live feed →
-        </a>
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="text-white/55 hover:text-white"
-        >
-          {open ? 'Hide' : 'Details'}
-        </button>
-      </div>
+      <a href="/wheel-batches" className="text-banana hover:underline font-medium text-[11px]">
+        Live feed →
+      </a>
 
-      {open && (
-        <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5 text-[11px]">
-          <Row label="Status" value={p.status} />
-          <Row label="Progress" value={`${p.spinCount.toLocaleString()} / ${p.maxSpins.toLocaleString()} spins`} />
-          <Row label="Salt hash" value={shortHex(p.saltHash)} />
-          <Row label="Merkle root" value={shortHex(p.merkleRoot)} />
-          <Row label="VRF" value={shortHex(p.vrfRandomness)} />
-          <Row label="Salt" value={p.salt ? shortHex(p.salt) : 'sealed'} />
-          {data.contractAddress && (
-            <Row
-              label="Contract"
-              value={(
-                <a
-                  href={`https://basescan.org/address/${data.contractAddress}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-banana hover:underline"
-                >
-                  {shortHex(data.contractAddress, 3)}
-                </a>
-              )}
-            />
-          )}
-          {p.commitTxHash && (
-            <Row
-              label="Commit"
-              value={(
-                <a
-                  href={`https://basescan.org/tx/${p.commitTxHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-banana hover:underline"
-                >
-                  {shortHex(p.commitTxHash, 3)}
-                </a>
-              )}
-            />
-          )}
-          {p.rootCommitTxHash && (
-            <Row
-              label="Root"
-              value={(
-                <a
-                  href={`https://basescan.org/tx/${p.rootCommitTxHash}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-banana hover:underline"
-                >
-                  {shortHex(p.rootCommitTxHash, 3)}
-                </a>
-              )}
-            />
-          )}
-        </div>
-      )}
       <WheelProofExplainerModal
         open={explainerOpen}
         onClose={() => setExplainerOpen(false)}
         contractAddress={data.contractAddress}
       />
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between items-center gap-2">
-      <span className="text-white/40">{label}</span>
-      <span className="text-white/80 font-mono">{value}</span>
     </div>
   );
 }
