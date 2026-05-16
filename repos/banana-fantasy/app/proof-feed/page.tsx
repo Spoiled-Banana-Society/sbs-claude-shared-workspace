@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 interface FeedDraft {
@@ -42,29 +42,49 @@ export default function ProofFeedPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchFeed = useCallback(async () => {
-    try {
-      const res = await fetch('/api/drafts/proof-feed', { cache: 'no-store' });
-      if (!res.ok) {
-        setError(`Request failed (${res.status})`);
-        return;
-      }
-      const body = (await res.json()) as FeedResponse;
-      setDrafts(body.drafts);
-      setRound(body.round);
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Live feed via SSE — server pushes whenever drafts/draftTracker
+  // updates (i.e. the moment a slot machine reveals a draft type). The
+  // stream auto-closes after ~55s; we transparently reconnect with a
+  // bumping `epoch` so EventSource cleans up its old connection.
   useEffect(() => {
-    void fetchFeed();
-    const id = setInterval(fetchFeed, 15_000);
-    return () => clearInterval(id);
-  }, [fetchFeed]);
+    let cancelled = false;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyPayload = (raw: string) => {
+      try {
+        const body = JSON.parse(raw) as FeedResponse;
+        setDrafts(body.drafts);
+        setRound(body.round);
+        setError(null);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const connect = () => {
+      if (cancelled) return;
+      es = new EventSource('/api/drafts/proof-feed/stream');
+      es.addEventListener('snapshot', (ev) => applyPayload((ev as MessageEvent).data));
+      es.addEventListener('update', (ev) => applyPayload((ev as MessageEvent).data));
+      es.onerror = () => {
+        // SSE errors on intended close + on disconnects. Either way, the
+        // stream is done — reconnect after a short backoff.
+        try { es?.close(); } catch { /* ignore */ }
+        if (cancelled) return;
+        reconnectTimer = setTimeout(connect, 1500);
+      };
+    };
+
+    connect();
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { es?.close(); } catch { /* ignore */ }
+    };
+  }, []);
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-3xl mx-auto space-y-6">

@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
-import { logErrorEvent } from '@/lib/errorEvents';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -65,13 +64,12 @@ export async function GET(req: Request) {
       const msg = (err as { message?: string })?.message ?? String(err);
       const code = (err as { code?: number })?.code;
       if (code === 9 || /FAILED_PRECONDITION|requires an index/i.test(msg)) {
-        logErrorEvent({
-          source: 'wheel.feed.missing_index',
+        // logger.error auto-forwards to v2_error_events for admin visibility.
+        logger.error('wheel.feed.missing_index', {
           route: '/api/wheel/feed',
-          message: msg,
-          context: { periodNumber, hint: 'Create the composite index from the Firebase URL in the error message' },
+          periodNumber,
+          err: new Error(msg),
         });
-        logger.warn('wheel.feed.missing_index', { periodNumber, msg });
         return json({ periodNumber, count: 0, nextCursor: null, spins: [] }, 200);
       }
       throw err;
@@ -101,13 +99,8 @@ export async function GET(req: Request) {
       spins,
     }, 200);
   } catch (err) {
-    logger.error('wheel.feed.failed', { err });
-    logErrorEvent({
-      source: 'wheel.feed.failed',
-      route: '/api/wheel/feed',
-      message: (err as Error)?.message ?? String(err),
-      stack: (err as Error)?.stack,
-    });
+    // logger.error auto-forwards to v2_error_events for admin visibility.
+    logger.error('wheel.feed.failed', { route: '/api/wheel/feed', err });
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     return jsonError('Internal Server Error', 500);
   }

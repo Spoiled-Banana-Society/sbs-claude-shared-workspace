@@ -58,32 +58,51 @@ export default function WheelBatchesPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Initial feed load + 15s auto-refresh for the top of the list.
-  const fetchHead = useCallback(async (periodNumber: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/wheel/feed?period=${periodNumber}&limit=${PAGE_SIZE}`, { cache: 'no-store' });
-      const body = (await res.json()) as FeedResponse & { error?: string };
-      if (!res.ok) {
-        setError(body.error || `Request failed (${res.status})`);
-        return;
-      }
-      setSpins(body.spins);
-      setNextCursor(body.nextCursor);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Live spin feed via SSE — server pushes the moment a spin completes
+  // (wheel_periods/{N}.spinCount increments). Pagination still uses the
+  // REST endpoint for "load older spins" since SSE only streams the head.
+  // The stream auto-closes after ~55s; we transparently reconnect.
   useEffect(() => {
     if (!period) return;
-    fetchHead(period.periodNumber);
-    const id = setInterval(() => fetchHead(period.periodNumber), 15_000);
-    return () => clearInterval(id);
-  }, [period, fetchHead]);
+    let cancelled = false;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyPayload = (raw: string) => {
+      try {
+        const body = JSON.parse(raw) as { spins: FeedSpin[] };
+        setSpins(body.spins);
+        // SSE only delivers the head — pagination cursor needs PAGE_SIZE-level
+        // resolution. Use null when we have less than PAGE_SIZE; otherwise
+        // last index lets users keep paginating back via the REST endpoint.
+        setNextCursor(body.spins.length === PAGE_SIZE ? body.spins[body.spins.length - 1].spinIndex : null);
+        setError(null);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const connect = () => {
+      if (cancelled) return;
+      es = new EventSource(`/api/wheel/feed/stream?period=${period.periodNumber}`);
+      es.addEventListener('snapshot', (ev) => applyPayload((ev as MessageEvent).data));
+      es.addEventListener('update', (ev) => applyPayload((ev as MessageEvent).data));
+      es.onerror = () => {
+        try { es?.close(); } catch { /* ignore */ }
+        if (cancelled) return;
+        reconnectTimer = setTimeout(connect, 1500);
+      };
+    };
+
+    connect();
+    return () => {
+      cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { es?.close(); } catch { /* ignore */ }
+    };
+  }, [period]);
 
   const loadMore = useCallback(async () => {
     if (!period || nextCursor === null || loading) return;
@@ -185,7 +204,7 @@ export default function WheelBatchesPage() {
           </div>
 
           <p className="text-white/35 text-[11px] mt-4 text-center">
-            Feed refreshes every 15 seconds. Verify any spin independently — no SBS trust required.
+            Live — new spins appear the moment they happen. Verify any spin independently — no SBS trust required.
           </p>
         </>
       )}
