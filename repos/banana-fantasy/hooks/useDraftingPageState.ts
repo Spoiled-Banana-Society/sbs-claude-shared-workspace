@@ -169,7 +169,7 @@ export function useDraftingPageState() {
 
     const poll = () => {
       fetchJson<Record<string, DraftQueue>>('/api/queues')
-        .then((queues) => {
+        .then(async (queues) => {
           const drafts: Draft[] = [];
           let totalRounds = 0;
 
@@ -205,6 +205,31 @@ export function useDraftingPageState() {
               });
             }
           }
+
+          // Reconcile against Go API: Firestore queue state can lag behind the
+          // actual draft (e.g. fill-bots ran on the Go side but the queue's
+          // status/members weren't synced). For any round that already has a
+          // draftId, trust the Go API's draftOrder length + pickNumber over the
+          // queue's stale "filling" / member-count view.
+          await Promise.all(drafts.map(async (d) => {
+            if (!d.queueDraftId) return;
+            try {
+              const { getDraftInfo } = await import('@/lib/api/drafts');
+              const info = await getDraftInfo(d.queueDraftId);
+              const orderLen = info.draftOrder?.length ?? 0;
+              const pickNum = info.pickNumber ?? 0;
+              if (orderLen >= 10) {
+                d.players = 10;
+                d.maxPlayers = 10;
+                if (pickNum > 0) {
+                  d.status = 'drafting';
+                  d.currentPick = pickNum;
+                }
+              }
+            } catch {
+              // Go API unavailable / no state yet → leave queue data as-is.
+            }
+          }));
 
           logger.debug('[Queue] Found', drafts.length, 'matching queue drafts out of', totalRounds, 'total rounds');
           setQueueDrafts(drafts);
@@ -258,6 +283,15 @@ export function useDraftingPageState() {
   const handleDraftClick = async (draft: Draft) => {
     if (draft.specialType && draft.id.startsWith('queue-')) {
       if ((draft.players || 0) < 10) {
+        router.push(buildDraftRoomUrl(draft));
+        return;
+      }
+
+      // Reconciled to 10/10 with a draftId already on file → the actual draft
+      // exists, just open it. Skips a redundant /api/queues/create-draft call
+      // (which itself short-circuits to the same id, but we don't need the
+      // round trip + bot-fill retry path).
+      if (draft.queueDraftId) {
         router.push(buildDraftRoomUrl(draft));
         return;
       }
