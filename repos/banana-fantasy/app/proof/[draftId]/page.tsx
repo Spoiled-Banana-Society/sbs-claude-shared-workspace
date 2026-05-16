@@ -141,7 +141,7 @@ export default function ProofPage() {
         const res = await fetch(`/api/batches/${locator.batchNumber}/proof`);
         if (!res.ok) {
           if (cancelled) return;
-          setProofError(`Could not load proof for batch #${locator.batchNumber} (HTTP ${res.status})`);
+          setProofError(`Could not load proof for League #${locator.draftNumber} (HTTP ${res.status})`);
           return;
         }
         const body = (await res.json()) as BatchProofPayload;
@@ -238,7 +238,7 @@ export default function ProofPage() {
           Provably Fair · League #{locator.draftNumber}
         </h1>
         <p className="text-sm text-white/60 mt-1">
-          Part of batch #{locator.batchNumber} (Leagues #{locator.batchStartDraftNumber}–#{locator.batchStartDraftNumber + 99}).
+          Independently verifiable on Base mainnet.
         </p>
         {proof && proof.status !== 'pre-launch' && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -287,10 +287,10 @@ export default function ProofPage() {
                 </div>
                 <p className="text-white/75 text-[13.5px] leading-relaxed">
                   {merkleVerified === 'verified'
-                    ? <>This draft&apos;s type was committed on Base before any draft in batch #{locator.batchNumber} filled. The Merkle proof below was verified in your browser against the on-chain root — no SBS trust required.</>
+                    ? <>This draft&apos;s type was committed on Base before any draft filled. The Merkle proof below was verified in your browser against the on-chain root — no SBS trust required.</>
                     : merkleVerified === 'failed'
                     ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
-                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization for batch #{locator.batchNumber} is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
+                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
                 </p>
               </div>
               {merkleVerified === 'verified' && (
@@ -324,7 +324,7 @@ export default function ProofPage() {
           <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
             <h2 className="text-sm font-semibold text-white uppercase tracking-wider">On-chain commit</h2>
             <p className="text-xs text-white/55 leading-relaxed">
-              The randomization for batch #{locator.batchNumber} was published on Base mainnet before any draft in this batch filled. Anyone can read it directly from the contract — no SBS server involved.
+              The randomization that determines this draft&apos;s type was published on Base mainnet before any draft filled. Anyone can read it directly from the contract — no SBS server involved.
             </p>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
               {proof?.merkleRoot && (
