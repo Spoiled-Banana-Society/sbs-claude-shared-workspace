@@ -51,7 +51,9 @@ export function usePromoReminders(promos: Promo[]) {
       // notifications since users never see them in the UI.
       if (!VISIBLE_PROMO_TYPES.has(promo.type)) continue;
 
-      // New promo the user hasn't seen
+      // New promo the user hasn't seen — open the promo's modal directly
+      // so they see what it is before being asked to act. Going straight
+      // to the ctaLink (e.g. /buy-drafts) is action-without-context.
       if (promo.isNew) {
         const key = `sbs-promo-new-seen-${promo.id}`;
         if (!wasRemindedRecently(key)) {
@@ -59,14 +61,17 @@ export function usePromoReminders(promos: Promo[]) {
             type: 'promo',
             title: 'New Promo Available!',
             message: promo.title,
-            link: promo.ctaLink || '/promos',
+            link: `/promos?promo=${encodeURIComponent(promo.id)}`,
           });
           markReminded(key);
         }
         continue;
       }
 
-      // Ready to claim
+      // Ready to claim — link directly to the promo modal on /promos so
+      // the user lands on the claim button, not the "make progress" CTA
+      // (which for Buy 10 → FREE SPIN is /buy-drafts and gives no path
+      // to actually claim the reward they already earned).
       if (promo.claimable && (promo.claimCount ?? 0) > 0) {
         const key = `sbs-promo-claim-${promo.id}`;
         if (!wasRemindedRecently(key)) {
@@ -74,7 +79,7 @@ export function usePromoReminders(promos: Promo[]) {
             type: 'promo',
             title: 'Ready to Claim!',
             message: `${promo.title} — your reward is waiting.`,
-            link: promo.ctaLink || '/promos',
+            link: `/promos?promo=${encodeURIComponent(promo.id)}`,
           });
           markReminded(key);
         }

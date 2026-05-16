@@ -102,7 +102,19 @@ function loadNotifications(): Notification[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : getDefaultNotifications();
+    if (!raw) return getDefaultNotifications();
+    const parsed = JSON.parse(raw) as Notification[];
+    // Backfill: legacy promo-discovery / claim notifications were created
+    // with promo.ctaLink (typically /buy-drafts) — wrong destination for
+    // "go see what this is" or "claim your reward". Rewrite them to
+    // /promos so the click lands somewhere the user can actually act.
+    const PROMO_REDIRECT_TITLES = new Set(['Ready to Claim!', 'New Promo Available!']);
+    return parsed.map((n) => {
+      if (PROMO_REDIRECT_TITLES.has(n.title) && n.link && !n.link.startsWith('/promos')) {
+        return { ...n, link: '/promos' };
+      }
+      return n;
+    });
   } catch {
     return getDefaultNotifications();
   }

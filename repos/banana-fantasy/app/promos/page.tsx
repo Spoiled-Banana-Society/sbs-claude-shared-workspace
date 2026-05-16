@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { PromoModal } from '@/components/modals/PromoModal';
@@ -48,6 +48,10 @@ function formatTimeRemaining(endTime?: string): string {
 
 export default function PromosPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const promoQueryId = searchParams?.get('promo') ?? null;
+  const autoOpenedRef = useRef<string | null>(null);
+
   const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed } = useAuth();
   const promosQuery = usePromos({ userId: user?.id });
   const promos = promosQuery.promos;
@@ -70,6 +74,18 @@ export default function PromosPage() {
     const updated = promos.find(p => p.id === selectedPromo.id);
     if (updated && updated !== selectedPromo) setSelectedPromo(updated);
   }, [promos, selectedPromo]);
+
+  // Auto-open a promo modal when arriving with ?promo={id} (e.g. from a
+  // "Ready to Claim" notification). Tracked per-id so closing the modal
+  // doesn't re-open it on the next promos refresh.
+  useEffect(() => {
+    if (!promoQueryId || promos.length === 0) return;
+    if (autoOpenedRef.current === promoQueryId) return;
+    const match = promos.find(p => p.id === promoQueryId);
+    if (!match) return;
+    autoOpenedRef.current = promoQueryId;
+    setSelectedPromo(match);
+  }, [promoQueryId, promos]);
 
   const isClaimed = (p: Promo) =>
     claimedLocally.has(p.id) || (p.type === 'new-user' && newUserPromoClaimed);
