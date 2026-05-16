@@ -53,13 +53,13 @@ export function DraftRow({
       }`}
     >
       <div className="flex items-center justify-between px-5 py-3">
-        <div className="w-20 flex-shrink-0 flex items-center gap-1">
+        <div className="w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
