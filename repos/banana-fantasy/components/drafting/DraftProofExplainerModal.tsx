@@ -76,7 +76,7 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
             How draft types are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            All 10,000 draft outcomes for the round were randomized by Chainlink VRF and committed to Base mainnet before any draft happened.
+            10,000 draft outcomes were randomized by Chainlink VRF and committed to Base mainnet before any draft happened.
           </p>
         </div>
 
@@ -84,12 +84,12 @@ export function DraftProofExplainerModal({ open, onClose, contractAddress }: Dra
           <Step
             num="1"
             title="Chainlink VRF generated 10,000 outcomes"
-            body="A decentralized oracle supplied the randomness for the round (= 100 batches of 100 drafts each). SBS never saw or chose it."
+            body="A decentralized oracle supplied the randomness for the next 10,000 drafts. SBS never saw or chose it."
           />
           <Step
             num="2"
             title="1 in 100 = Jackpot, 5 in 100 = HOF, 94 in 100 = Pro"
-            body="Each 100-draft window contains exactly that distribution — the constraint holds across the entire round."
+            body="Each 100-draft window contains exactly that distribution — the constraint holds across all 10,000."
           />
           <Step
             num="3"

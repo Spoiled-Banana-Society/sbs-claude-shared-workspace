@@ -57,17 +57,17 @@ export function BatchRandomnessLoading({
         </div>
 
         <h2 className="text-xl font-semibold text-white mb-2">
-          🎲 {isMerkle ? <>Randomizing the next round<AnimatedEllipsis /></> : <>Randomizing Batch #{batchNumber}<AnimatedEllipsis /></>}
+          🎲 {isMerkle ? <>Randomizing the next 10,000 drafts<AnimatedEllipsis /></> : <>Randomizing Batch #{batchNumber}<AnimatedEllipsis /></>}
         </h2>
 
         <p className="text-sm text-white/70 leading-relaxed mb-4">
           {isMerkle ? (
             <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
             <span className="text-hof font-semibold">5 HOF</span>, and{' '}
-            <span className="text-red-400 font-semibold">1 Jackpot</span>. All 10,000 outcomes for this round
-            are being randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span>{' '}
-            and committed to Base mainnet — once done, every draft in the round reveals instantly with its own
-            cryptographic proof. This is a one-time event per round.</>
+            <span className="text-red-400 font-semibold">1 Jackpot</span>. All 10,000 upcoming outcomes are being
+            randomized right now by <span className="text-blue-300 font-semibold">Chainlink VRF</span> and
+            committed to Base mainnet — once done, every draft reveals instantly with its own cryptographic
+            proof. This only happens once per 10,000 drafts.</>
           ) : (
             <>Every 100 drafts has exactly <span className="text-purple-300 font-semibold">94 Pro</span>,{' '}
             <span className="text-hof font-semibold">5 HOF</span>, and{' '}
@@ -147,7 +147,7 @@ export function BatchRandomnessLoading({
 
         <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
           {isMerkle
-            ? 'This only happens at the very start of a new 10,000-draft round. Once randomness lands and the on-chain commit fires, every draft in the round reveals instantly with its own cryptographic proof.'
+            ? 'This only happens once per 10,000 drafts. Once randomness lands and the on-chain commit fires, every draft reveals instantly with its own cryptographic proof.'
             : 'This only happens at the very start of a new 100-draft batch. Once randomness lands, the next 99 drafts in this batch reveal instantly.'}
         </p>
       </div>

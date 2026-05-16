@@ -6,13 +6,12 @@ import { AnimatedEllipsis } from '@/components/ui/AnimatedEllipsis';
 import { DraftProofExplainerModal } from '@/components/drafting/DraftProofExplainerModal';
 
 /**
- * BatchProofBanner — small inline status chip on /drafting indicating
- * the current batch's randomization state.
- *
- * Deliberately compact: one line of low-contrast text + a "view proof"
- * link. Drafting is the focal point of the page; this just lets users
- * notice "oh — there's an on-chain proof" without ever pulling attention
- * away from Enter Draft / draft cards.
+ * BatchProofBanner — card-style trust panel on /drafting and in the
+ * draft room. Mirrors the wheel's `WheelProofBanner` shape: small
+ * card with headline, sub, progress indicator, action links, and (i)
+ * icon that opens the explainer modal. Copy is past-tense for the
+ * Merkle variant — randomization already happened, every draft
+ * verifies as its slot reveals.
  */
 
 type ProofStatus =
@@ -21,6 +20,7 @@ type ProofStatus =
   | 'revealed'
   | 'requested'
   | 'fulfilled'
+  | 'merkleCommitted'
   | 'pre-launch';
 
 type ProofVariant = 'commit-reveal' | 'vrf' | 'vrf-commit' | 'vrf-commit-merkle';
@@ -33,6 +33,8 @@ interface BatchSummary {
 
 interface CurrentBatchInfo {
   currentBatchNumber: number;
+  filledLeaguesCount?: number;
+  positionInBatch?: number;
 }
 
 export function BatchProofBanner() {
@@ -58,17 +60,19 @@ export function BatchProofBanner() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       try {
-        const r = await fetch('/api/batches/current');
+        const r = await fetch('/api/batches/current', { cache: 'no-store' });
         if (!r.ok) return;
         const body = (await r.json()) as CurrentBatchInfo;
         if (!cancelled) setInfo(body);
       } catch {
         /* silent — banner is optional */
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    load();
+    const id = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
   useEffect(() => {
@@ -87,33 +91,105 @@ export function BatchProofBanner() {
     return () => { cancelled = true; };
   }, [info]);
 
-  if (!info || !proof) return null;
+  if (!info) return null;
 
-  const variant: ProofVariant =
-    proof.variant === 'vrf' ? 'vrf'
-    : proof.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
-    : proof.variant === 'vrf-commit' ? 'vrf-commit'
-    : 'commit-reveal';
+  const variant: ProofVariant | null = proof
+    ? (proof.variant === 'vrf' ? 'vrf'
+       : proof.variant === 'vrf-commit-merkle' ? 'vrf-commit-merkle'
+       : proof.variant === 'vrf-commit' ? 'vrf-commit'
+       : 'commit-reveal')
+    : null;
 
-  const isMerkle = variant === 'vrf-commit-merkle';
-  const isVRFCommit = variant === 'vrf-commit';
-  const isVRF = variant === 'vrf';
+  // Show the merkle UX whenever a merkle contract is deployed AND we're
+  // either already on a merkle batch OR about to roll into one (current
+  // batch was pre-launch/end-of-legacy). Past-tense copy reflects that
+  // the randomization for the next 10k drafts has already happened.
+  const merkleActive = !!merkleContractAddress;
+  const onMerkleBatch = variant === 'vrf-commit-merkle';
 
-  const isPrelaunch = proof.status === 'pre-launch';
-  const isAwaiting =
-    proof.status === 'pending' ||
-    (isVRF && proof.status === 'requested') ||
-    (isVRFCommit && proof.status === 'requested') ||
-    (isMerkle && (proof.status === 'requested' || proof.status === 'fulfilled'));
+  const isPrelaunch = proof?.status === 'pre-launch';
+  const isAwaiting = variant && (
+    proof?.status === 'pending' ||
+    (variant === 'vrf' && proof?.status === 'requested') ||
+    (variant === 'vrf-commit' && proof?.status === 'requested') ||
+    (variant === 'vrf-commit-merkle' && (proof?.status === 'requested' || proof?.status === 'fulfilled'))
+  );
 
   const batchStart = (info.currentBatchNumber - 1) * 100 + 1;
   const sampleDraftId = `2025-fast-draft-${batchStart}`;
 
-  // Single-line copy + a single inline link. Low contrast on purpose.
+  // Merkle-style card. Used whenever the merkle contract is configured —
+  // signals to users that the new system is live regardless of which
+  // specific batch they're currently looking at.
+  if (merkleActive) {
+    return (
+      <div
+        className="rounded-2xl p-4 backdrop-blur-md mb-3"
+        style={{
+          background: 'rgba(20, 20, 20, 0.7)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif',
+        }}
+      >
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <h3 className="text-[14px] font-semibold text-white tracking-tight truncate">
+              Verified Fair
+            </h3>
+          </div>
+          <button
+            onClick={() => setExplainerOpen(true)}
+            aria-label="How draft verification works"
+            className="shrink-0 w-5 h-5 rounded-full border border-white/20 text-white/55 hover:text-white hover:border-white/40 transition-colors flex items-center justify-center text-[11px] font-semibold italic"
+            title="How does this verification work?"
+          >
+            i
+          </button>
+        </div>
+        <p className="text-white/55 text-[12px] mb-3 leading-snug">
+          10,000 draft outcomes were randomized by Chainlink VRF and locked on Base mainnet — every draft verifies the moment your slot machine stops.
+        </p>
+
+        <div className="text-white/35 text-[10px] uppercase tracking-wider mb-1">
+          Every draft instantly verifiable
+        </div>
+        <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-emerald-400"
+            style={{ width: onMerkleBatch ? '100%' : '6%' }}
+          />
+        </div>
+
+        <div className="mt-3 flex items-center justify-between text-[11px]">
+          <Link href={`/proof/${sampleDraftId}`} className="text-banana hover:underline font-medium">
+            View proof →
+          </Link>
+          <button
+            onClick={() => setExplainerOpen(true)}
+            className="text-white/55 hover:text-white"
+          >
+            How it works
+          </button>
+        </div>
+
+        <DraftProofExplainerModal
+          open={explainerOpen}
+          onClose={() => setExplainerOpen(false)}
+          contractAddress={merkleContractAddress}
+        />
+      </div>
+    );
+  }
+
+  // Legacy chip fallback — kept for envs where the merkle contract isn't
+  // deployed yet (e.g. prod before cutover).
+  if (!proof) return null;
+
   let icon: string;
   let copy: React.ReactNode;
   let proofLink: string | null = `/proof/${sampleDraftId}`;
-
   if (isPrelaunch) {
     icon = '·';
     copy = <>Chainlink VRF verification starts next batch.</>;
@@ -126,15 +202,10 @@ export function BatchProofBanner() {
         <AnimatedEllipsis />
       </>
     );
-  } else if (isMerkle) {
-    // Merkle variant: every draft instantly verified at slot reveal.
-    icon = '✓';
-    copy = <>Every draft in Batch #{info.currentBatchNumber} verified by Chainlink VRF</>;
   } else {
     icon = '✓';
     copy = <>Batch #{info.currentBatchNumber} done randomizing · verified by Chainlink VRF</>;
   }
-
   return (
     <div className="mb-3">
       <div className="inline-flex items-center gap-1.5 flex-wrap text-[11px] text-white/55 px-2.5 py-1 rounded-md border border-white/10 bg-white/[0.03]">
@@ -148,25 +219,7 @@ export function BatchProofBanner() {
             </Link>
           </>
         )}
-        {isMerkle && (
-          <>
-            <span className="text-white/25">·</span>
-            <button
-              onClick={() => setExplainerOpen(true)}
-              aria-label="How draft verification works"
-              className="inline-flex items-center justify-center w-4 h-4 rounded-full border border-white/25 text-white/55 hover:text-white hover:border-white/45 transition-colors text-[9px] font-semibold italic leading-none"
-              title="How does this verification work?"
-            >
-              i
-            </button>
-          </>
-        )}
       </div>
-      <DraftProofExplainerModal
-        open={explainerOpen}
-        onClose={() => setExplainerOpen(false)}
-        contractAddress={merkleContractAddress}
-      />
     </div>
   );
 }
