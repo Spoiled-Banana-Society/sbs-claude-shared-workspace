@@ -75,6 +75,11 @@ export async function GET(req: Request) {
       throw err;
     }
 
+    // Grace period: spins older than this auto-count as revealed (covers
+    // spins from before confirm-reveal existed + cases where the call
+    // failed e.g. tab closed mid-celebration). Mirrors the SSE endpoint.
+    const REVEAL_BACKSTOP_MS = 30_000;
+    const cutoff = Date.now() - REVEAL_BACKSTOP_MS;
     const spins: Array<{ spinId: string; spinIndex: number; result: string; timestamp: string }> = [];
     for (const d of snap.docs) {
       const data = d.data() as {
@@ -84,9 +89,9 @@ export async function GET(req: Request) {
         spinIndexInPeriod: number;
         feedRevealedAt?: number | null;
       };
-      // Skip spins still mid-animation on the spinner's side — watchers
-      // see results only after the spinner sees their own wheel land.
-      if (!data.feedRevealedAt) continue;
+      const isExplicitlyRevealed = !!data.feedRevealedAt;
+      const isOldEnough = data.timestamp ? new Date(data.timestamp).getTime() < cutoff : false;
+      if (!isExplicitlyRevealed && !isOldEnough) continue;
       spins.push({
         spinId: data.spinId,
         spinIndex: data.spinIndexInPeriod,

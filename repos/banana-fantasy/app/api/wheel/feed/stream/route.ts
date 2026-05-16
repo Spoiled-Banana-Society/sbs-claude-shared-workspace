@@ -71,6 +71,14 @@ export async function GET(req: Request) {
         .orderBy('spinIndexInPeriod', 'desc')
         .limit(FEED_LIMIT * 2)
         .get();
+      // Hide spins that are still mid-animation on the spinner's side —
+      // watchers should only see results after the spinner has seen them.
+      // Grace period: spins older than REVEAL_BACKSTOP_MS are treated as
+      // implicitly revealed (covers spins from before confirm-reveal
+      // existed, and the rare case where confirm-reveal didn't fire e.g.
+      // tab closed mid-celebration).
+      const REVEAL_BACKSTOP_MS = 30_000;
+      const cutoff = Date.now() - REVEAL_BACKSTOP_MS;
       const revealed: FeedSpin[] = [];
       for (const d of snap.docs) {
         const data = d.data() as {
@@ -80,10 +88,9 @@ export async function GET(req: Request) {
           spinIndexInPeriod: number;
           feedRevealedAt?: number | null;
         };
-        // Skip spins whose wheel animation hasn't finished yet on the
-        // spinner's side — otherwise watchers would see results before
-        // the spinner does. confirm-reveal flips feedRevealedAt to now.
-        if (!data.feedRevealedAt) continue;
+        const isExplicitlyRevealed = !!data.feedRevealedAt;
+        const isOldEnough = data.timestamp ? new Date(data.timestamp).getTime() < cutoff : false;
+        if (!isExplicitlyRevealed && !isOldEnough) continue;
         revealed.push({
           spinId: data.spinId,
           spinIndex: data.spinIndexInPeriod,

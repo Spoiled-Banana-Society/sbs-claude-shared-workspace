@@ -19,7 +19,10 @@ import { getWheelProofContractAddress } from '@/lib/wheelProofContract';
  * verification system.
  */
 export async function GET(_req: Request, ctx: { params: { spinId: string } }) {
-  const rateLimited = rateLimit(_req, RATE_LIMITS.wheel);
+  // Public read of an already-recorded proof. Use the general limit (60/min);
+  // RATE_LIMITS.wheel (5/min) is for the actual spin write and was too tight
+  // for someone just navigating around proof pages.
+  const rateLimited = rateLimit(_req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
     const spinId = ctx.params.spinId?.trim();
