@@ -63,26 +63,36 @@ export async function GET(req: Request) {
 
   const fetchSpins = async (): Promise<FeedSpin[]> => {
     try {
+      // Fetch a generous buffer because we filter to revealed-only in code.
+      // Cheaper than adding a composite index that filters on feedRevealedAt.
       const snap = await db
         .collectionGroup('wheelSpins')
         .where('periodNumber', '==', periodNumber)
         .orderBy('spinIndexInPeriod', 'desc')
-        .limit(FEED_LIMIT)
+        .limit(FEED_LIMIT * 2)
         .get();
-      return snap.docs.map((d) => {
+      const revealed: FeedSpin[] = [];
+      for (const d of snap.docs) {
         const data = d.data() as {
           spinId: string;
           result: string;
           timestamp: string;
           spinIndexInPeriod: number;
+          feedRevealedAt?: number | null;
         };
-        return {
+        // Skip spins whose wheel animation hasn't finished yet on the
+        // spinner's side — otherwise watchers would see results before
+        // the spinner does. confirm-reveal flips feedRevealedAt to now.
+        if (!data.feedRevealedAt) continue;
+        revealed.push({
           spinId: data.spinId,
           spinIndex: data.spinIndexInPeriod,
           result: data.result,
           timestamp: data.timestamp,
-        };
-      });
+        });
+        if (revealed.length >= FEED_LIMIT) break;
+      }
+      return revealed;
     } catch (err) {
       const msg = (err as { message?: string })?.message ?? String(err);
       const code = (err as { code?: number })?.code;
@@ -111,13 +121,13 @@ export async function GET(req: Request) {
       };
 
       let firstSnapshotSent = false;
-      let lastSpinCount = -1;
+      let lastRevealCount = -1;
 
       try {
         const initial = await fetchSpins();
         const periodSnap = await periodRef.get();
-        const spinCount = Number((periodSnap.data() as { spinCount?: number } | undefined)?.spinCount ?? 0);
-        lastSpinCount = spinCount;
+        const revealCount = Number((periodSnap.data() as { feedRevealCount?: number } | undefined)?.feedRevealCount ?? 0);
+        lastRevealCount = revealCount;
         send('snapshot', { periodNumber, count: initial.length, spins: initial });
         firstSnapshotSent = true;
       } catch (err) {
@@ -128,9 +138,12 @@ export async function GET(req: Request) {
         });
       }
 
-      // Listen on the period doc — spinCount increments on each completed
-      // spin, which is our cheap "something happened" signal. On each
-      // change, re-query the feed and push.
+      // Listen on the period doc — feedRevealCount bumps when the user's
+      // wheel finishes spinning + they've seen their prize (via the
+      // confirm-reveal endpoint). On each change, re-query the feed and
+      // push. spinCount (which bumps at spin-request time) is intentionally
+      // NOT the trigger: it would surface results to watchers before the
+      // spinner sees their own wheel land.
       const unsubscribe = periodRef.onSnapshot(
         async (snap) => {
           if (!firstSnapshotSent) {
@@ -138,9 +151,9 @@ export async function GET(req: Request) {
             return;
           }
           const data = snap.exists ? (snap.data() ?? {}) : {};
-          const spinCount = Number((data as { spinCount?: number }).spinCount ?? 0);
-          if (spinCount === lastSpinCount) return;
-          lastSpinCount = spinCount;
+          const revealCount = Number((data as { feedRevealCount?: number }).feedRevealCount ?? 0);
+          if (revealCount === lastRevealCount) return;
+          lastRevealCount = revealCount;
           try {
             const fresh = await fetchSpins();
             send('update', { periodNumber, count: fresh.length, spins: fresh });

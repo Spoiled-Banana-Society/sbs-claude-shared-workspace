@@ -75,20 +75,26 @@ export async function GET(req: Request) {
       throw err;
     }
 
-    const spins = snap.docs.map((d) => {
+    const spins: Array<{ spinId: string; spinIndex: number; result: string; timestamp: string }> = [];
+    for (const d of snap.docs) {
       const data = d.data() as {
         spinId: string;
         result: string;
         timestamp: string;
         spinIndexInPeriod: number;
+        feedRevealedAt?: number | null;
       };
-      return {
+      // Skip spins still mid-animation on the spinner's side — watchers
+      // see results only after the spinner sees their own wheel land.
+      if (!data.feedRevealedAt) continue;
+      spins.push({
         spinId: data.spinId,
         spinIndex: data.spinIndexInPeriod,
         result: data.result,
         timestamp: data.timestamp,
-      };
-    });
+      });
+      if (spins.length >= limit) break;
+    }
 
     const nextCursor = spins.length === limit ? spins[spins.length - 1].spinIndex : null;
 

@@ -54,6 +54,16 @@ export default function BananaWheelPage() {
       // syncs the user's wheelSpins count so spinsAvailable updates without a local offset.
       refreshBalance().catch(() => {});
 
+      // Tell the server the spinner has seen their prize. This bumps
+      // wheel_periods.feedRevealCount, which is the trigger /wheel-batches'
+      // live feed listens to. Without this call, the spin would never
+      // appear in the public feed.
+      if (_outcome?.spinId) {
+        fetch(`/api/wheel/spin/${encodeURIComponent(_outcome.spinId)}/confirm-reveal`, {
+          method: 'POST',
+        }).catch(() => { /* silent — feed will self-heal on next confirmed spin */ });
+      }
+
       if (!user || !segment) return;
       if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
         const expectedDraftPasses = (user.draftPasses ?? 0) + segment.prizeValue;
