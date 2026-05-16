@@ -69,6 +69,26 @@ export function DraftMerkleAdminPanel({ getHeaders, enabled }: DraftMerkleAdminP
     return () => { cancelled = true; };
   }, [enabled, mergeHeaders]);
 
+  // Surface the currently-deployed merkle contract address so the
+  // Transfer / Force redeploy buttons appear without requiring a Deploy
+  // click first.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/batch-proof-merkle-contract');
+        if (!res.ok) return;
+        const body = (await res.json()) as { contractAddress: string | null };
+        if (cancelled || !body.contractAddress) return;
+        setConfig((c) => ({ ...(c ?? {}), contractAddress: body.contractAddress ?? undefined }));
+      } catch {
+        // best-effort
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [enabled]);
+
   const handleDeploy = useCallback(async (forceRedeploy = false) => {
     if (loading) return;
     if (!confirm(forceRedeploy
@@ -159,6 +179,37 @@ export function DraftMerkleAdminPanel({ getHeaders, enabled }: DraftMerkleAdminP
 
       {config?.contractAddress && (
         <div className="flex flex-wrap gap-2">
+          <button
+            disabled={loading}
+            onClick={async () => {
+              if (loading) return;
+              if (!confirm('Transfer merkle contract ownership to the Go API signer (0xe0d0…67e3)?\n\nRequired before the Go API can call requestRandomnessAndCommit / commitMerkleRoot / revealSalt without onlyOwner reverts.')) return;
+              setLoading(true);
+              setError(null);
+              setInfo(null);
+              try {
+                const headers = await mergeHeaders();
+                const res = await fetch('/api/admin/transfer-merkle-ownership', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({ newOwner: '0xe0d0C8ad893aD6F5fa0a51A43260c169C87b67e3' }),
+                });
+                const body = (await res.json()) as { success?: boolean; error?: string } & Record<string, unknown>;
+                if (!res.ok || body.success === false) {
+                  setError(body.error || `Request failed (${res.status})`);
+                } else {
+                  setInfo(JSON.stringify(body, null, 2));
+                }
+              } catch (err) {
+                setError((err as Error).message);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-[11px] font-semibold"
+          >
+            Transfer ownership → Go API signer
+          </button>
           <button
             disabled={loading}
             onClick={() => handleDeploy(true)}
