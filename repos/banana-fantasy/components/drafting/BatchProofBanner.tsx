@@ -148,7 +148,7 @@ export function BatchProofBanner() {
           </button>
         </div>
         <p className="text-white/55 text-[12px] mb-3 leading-snug">
-          Draft types randomized by Chainlink VRF and locked on Base. Each draft is instantly verifiable.
+          Draft types randomized by Chainlink VRF. Each draft is instantly verifiable.
         </p>
 
         <Link href={`/proof/${sampleDraftId}`} className="text-banana hover:underline font-medium text-[11px]">

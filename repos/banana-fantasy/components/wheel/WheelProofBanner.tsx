@@ -76,7 +76,7 @@ export function WheelProofBanner() {
       ? 'Preparing round…'
       : 'Reveal pending';
   const sub = isActive
-    ? 'Every spin verified by Chainlink VRF on Base.'
+    ? 'Every spin verified by Chainlink VRF.'
     : isPreparing
       ? 'Chainlink VRF randomizing the next round.'
       : 'Salt reveal coming.';
