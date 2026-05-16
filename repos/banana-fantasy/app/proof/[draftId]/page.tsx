@@ -235,11 +235,10 @@ export default function ProofPage() {
       <div>
         <Link href="/drafting" className="text-xs text-white/50 hover:text-white/80">← Back</Link>
         <h1 className="text-2xl font-semibold text-white mt-2">
-          Provably Fair · League #{locator.batchStartDraftNumber}–#{locator.batchStartDraftNumber + 99}
+          Provably Fair · League #{locator.draftNumber}
         </h1>
         <p className="text-sm text-white/60 mt-1">
-          Batch #{locator.batchNumber} — randomization for League #{locator.batchStartDraftNumber} through League #{locator.batchStartDraftNumber + 99}.
-          Viewing from League #{locator.draftNumber}.
+          Part of batch #{locator.batchNumber} (Leagues #{locator.batchStartDraftNumber}–#{locator.batchStartDraftNumber + 99}).
         </p>
         {proof && proof.status !== 'pre-launch' && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -262,65 +261,139 @@ export default function ProofPage() {
         )}
       </div>
 
-      {isMerkle && merkleVerified !== null && (
-        <section
-          className={`rounded-xl p-5 space-y-2 border ${
-            merkleVerified === 'verified' ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
-            : merkleVerified === 'failed' ? 'border-red-500/40 bg-red-500/[0.06]'
-            : 'border-amber-500/30 bg-amber-500/[0.04]'
-          }`}
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
-                merkleVerified === 'verified' ? 'text-emerald-300'
-                : merkleVerified === 'failed' ? 'text-red-300'
-                : 'text-amber-300'
-              }`}>
-                {merkleVerified === 'verified' ? 'Verified by Chainlink VRF' : merkleVerified === 'failed' ? 'Verification failed' : 'Verifying…'}
+      {isMerkle && (
+        <>
+          {/* Per-draft verification panel. Three states:
+              - 'verified': per-draft Merkle proof matched on-chain root
+              - 'failed': proof mismatch (should never happen — surface loudly)
+              - null/pending: draft hasn't filled yet (no per-draft proof) OR fetch in flight */}
+          <section
+            className={`rounded-xl p-5 border ${
+              merkleVerified === 'verified' ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+              : merkleVerified === 'failed' ? 'border-red-500/40 bg-red-500/[0.06]'
+              : 'border-white/10 bg-white/[0.03]'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className={`text-[11px] font-semibold uppercase tracking-wider mb-1 ${
+                  merkleVerified === 'verified' ? 'text-emerald-300'
+                  : merkleVerified === 'failed' ? 'text-red-300'
+                  : 'text-white/60'
+                }`}>
+                  {merkleVerified === 'verified' ? 'Verified ✓'
+                    : merkleVerified === 'failed' ? 'Verification failed'
+                    : 'Outcome locked in'}
+                </div>
+                <p className="text-white/75 text-[13.5px] leading-relaxed">
+                  {merkleVerified === 'verified'
+                    ? <>This draft&apos;s type was committed on Base before any draft in batch #{locator.batchNumber} filled. The Merkle proof below was verified in your browser against the on-chain root — no SBS trust required.</>
+                    : merkleVerified === 'failed'
+                    ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
+                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization for batch #{locator.batchNumber} is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
+                </p>
               </div>
-              <p className="text-white/75 text-[13.5px] leading-relaxed">
-                {merkleVerified === 'verified'
-                  ? <>This draft&apos;s outcome was committed to Base mainnet <em>before</em> any draft in the round filled. Cryptographically proven, no SBS trust required.</>
-                  : merkleVerified === 'failed'
-                  ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
-                  : <>Fetching Merkle proof and verifying against the on-chain root…</>}
-              </p>
-            </div>
-            {merkleVerified === 'verified' && (
-              <div className="shrink-0 w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-            )}
-          </div>
-
-          {merkleProof && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] mt-3 pt-3 border-t border-white/[0.07]">
-              <Row label="Draft type" value={
-                <span className="font-semibold" style={{ color:
-                  merkleProof.draftType === 'jackpot' ? '#ef4444'
-                  : merkleProof.draftType === 'hof' ? '#D4AF37'
-                  : '#a855f7'
-                }}>{merkleProof.draftType.toUpperCase()}</span>
-              } />
-              <Row label="Position in round" value={`${merkleProof.positionInRound} / ${10000}`} />
-              <Row label="Round" value={`#${merkleProof.roundNumber}`} />
-              <Row label="Proof depth" value={`${merkleProof.proof.length} hashes`} />
-              <Row label="On-chain root" value={<span className="font-mono">{merkleProof.root.slice(0, 10)}…{merkleProof.root.slice(-6)}</span>} />
-              {merkleProof.rootTxHash && (
-                <Row label="Root commit tx" value={
-                  <a href={BASESCAN_TX(merkleProof.rootTxHash)} target="_blank" rel="noreferrer" className="text-banana hover:underline font-mono">
-                    {merkleProof.rootTxHash.slice(0, 10)}…
-                  </a>
-                } />
+              {merkleVerified === 'verified' && (
+                <div className="shrink-0 w-9 h-9 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
               )}
             </div>
-          )}
-        </section>
+
+            {merkleProof && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px] mt-3 pt-3 border-t border-white/[0.07]">
+                <Row label="Draft type" value={
+                  <span className="font-semibold" style={{ color:
+                    merkleProof.draftType === 'jackpot' ? '#ef4444'
+                    : merkleProof.draftType === 'hof' ? '#D4AF37'
+                    : '#a855f7'
+                  }}>{merkleProof.draftType.toUpperCase()}</span>
+                } />
+                <Row label="Proof depth" value={`${merkleProof.proof.length} hashes`} />
+                <Row label="Leaf hash" value={<span className="font-mono">{merkleProof.leaf.slice(0, 10)}…{merkleProof.leaf.slice(-6)}</span>} />
+                <Row label="On-chain root" value={<span className="font-mono">{merkleProof.root.slice(0, 10)}…{merkleProof.root.slice(-6)}</span>} />
+              </div>
+            )}
+          </section>
+
+          {/* Round-level on-chain proof — always visible the moment the
+              merkle root is committed, regardless of whether this specific
+              draft has filled yet. */}
+          <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
+            <h2 className="text-sm font-semibold text-white uppercase tracking-wider">On-chain commit</h2>
+            <p className="text-xs text-white/55 leading-relaxed">
+              The randomization for batch #{locator.batchNumber} was published on Base mainnet before any draft in this batch filled. Anyone can read it directly from the contract — no SBS server involved.
+            </p>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
+              {proof?.merkleRoot && (
+                <>
+                  <dt className="text-white/50">Merkle root</dt>
+                  <dd className="font-mono text-white break-all">{proof.merkleRoot}</dd>
+                </>
+              )}
+              {proof?.merkleRootTxHash && (
+                <>
+                  <dt className="text-white/50">Root commit tx</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_TX(proof.merkleRootTxHash)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {proof.merkleRootTxHash}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {proof?.commitTxHashVrf && (
+                <>
+                  <dt className="text-white/50">Chainlink VRF request tx</dt>
+                  <dd className="font-mono break-all">
+                    <a href={BASESCAN_TX(proof.commitTxHashVrf)} target="_blank" rel="noreferrer" className="text-blue-300 hover:text-blue-200 underline">
+                      {proof.commitTxHashVrf}
+                    </a>
+                  </dd>
+                </>
+              )}
+              {proof?.saltHash && (
+                <>
+                  <dt className="text-white/50">Salt hash (sealed)</dt>
+                  <dd className="font-mono text-white break-all">{proof.saltHash}</dd>
+                </>
+              )}
+              {proof?.vrfRandomness && (
+                <>
+                  <dt className="text-white/50">VRF randomness</dt>
+                  <dd className="font-mono text-white break-all">{proof.vrfRandomness}</dd>
+                </>
+              )}
+            </dl>
+          </section>
+
+          {/* Distribution rule — clean, no algorithm jargon */}
+          <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-2">
+            <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Distribution</h2>
+            <p className="text-sm text-white/70 leading-relaxed">
+              Every 100 drafts contains exactly{' '}
+              <span className="font-semibold text-purple-300">94 Pro</span>,{' '}
+              <span className="font-semibold text-hof">5 HOF</span>,{' '}
+              and <span className="font-semibold text-red-400">1 Jackpot</span>.
+              {' '}The exact slots were determined by Chainlink VRF before any draft filled — so the type for each draft is locked in but stays sealed until your slot machine spins.
+            </p>
+          </section>
+
+          {/* Why this is real proof — merkle version */}
+          <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-2">
+            <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Why this is real proof</h2>
+            <ul className="text-xs text-white/60 space-y-1.5 leading-relaxed list-disc list-inside">
+              <li><strong className="text-white/80">Chainlink VRF</strong> — the same oracle network Polymarket, Aave, and OpenSea use — supplied the randomness before any draft happened.</li>
+              <li>A cryptographic fingerprint (Merkle root) covering every draft type was published on Base mainnet before any draft filled. Outcomes are immutable from that moment on.</li>
+              <li>When your draft fills, the result comes with a Merkle proof — verified in your browser in milliseconds, no SBS server involved.</li>
+              <li>If SBS ever swapped a result, the in-browser verification would fail and show <span className="text-red-300">Verification failed</span>.</li>
+            </ul>
+          </section>
+        </>
       )}
 
+      {!isMerkle && (
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
         <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Distribution rule</h2>
         <p className="text-sm text-white/70 leading-relaxed">
@@ -346,12 +419,13 @@ export default function ProofPage() {
           )}
         </p>
         <p className="text-xs text-white/40">
-          See <Link href="/how-it-works#fairness" className="text-banana hover:underline">/how-it-works#fairness</Link>{' '}
-          for the full algorithm. Client-side verification implementation:{' '}
+          Client-side verification implementation:{' '}
           <code className="font-mono">lib/batchProof.ts</code>.
         </p>
       </section>
+      )}
 
+      {!isMerkle && (
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
         <h2 className="text-sm font-semibold text-white uppercase tracking-wider">
           {isVRFCommit ? 'Verifiable randomness + salt commit' : isVRF ? 'Verifiable randomness request' : 'Provably-fair commit'}
@@ -558,9 +632,10 @@ export default function ProofPage() {
           </dl>
         )}
       </section>
+      )}
 
       {/* Reveal / fulfillment recomputation panel */}
-      {isPubliclyVerifiable && (
+      {!isMerkle && isPubliclyVerifiable && (
         <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.03] p-5 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-200 uppercase tracking-wider">
             {isVRFCommit ? 'Reveal · live recomputation'
@@ -696,6 +771,7 @@ export default function ProofPage() {
         </section>
       )}
 
+      {!isMerkle && (
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-2">
         <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Why this is real proof</h2>
         <ul className="text-xs text-white/60 space-y-1.5 leading-relaxed list-disc list-inside">
@@ -726,6 +802,7 @@ export default function ProofPage() {
           )}
         </ul>
       </section>
+      )}
     </div>
   );
 }

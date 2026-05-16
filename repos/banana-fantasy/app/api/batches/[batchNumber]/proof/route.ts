@@ -96,6 +96,12 @@ export async function GET(req: Request, ctx: { params: { batchNumber: string } }
     const db = getAdminFirestore();
     const snap = await db.collection('batch_proofs').doc(String(batchNumber)).get();
     if (!snap.exists) {
+      // Pre-flight on merkle: the batch hasn't been touched yet, but a
+      // merkle round may already be opened and committed for it. Surface
+      // the round-level proof so the user can see the on-chain commit
+      // before their draft fills.
+      const merkleSynth = await tryMerkleRoundFallback(db, batchNumber);
+      if (merkleSynth) return json(merkleSynth);
       return json(prelaunch(batchNumber));
     }
 
@@ -239,6 +245,73 @@ function prelaunch(batchNumber: number, note?: string) {
       note ??
       'Batch fills predate the Chainlink VRF rollout. Distribution constraint (94/5/1 per 100) was enforced in code.',
   };
+}
+
+/**
+ * When batch_proofs/{N} doesn't exist yet (no draft has filled in this
+ * batch), check whether a merkle round is opened that will serve this
+ * batch. If so, return a synthesized vrf-commit-merkle proof carrying the
+ * round-level on-chain info — so the proof page can show the merkle
+ * root + VRF tx before any draft in this batch fills.
+ *
+ * Returns null when merkle isn't active or no round serves this batch.
+ */
+async function tryMerkleRoundFallback(
+  db: FirebaseFirestore.Firestore,
+  batchNumber: number,
+): Promise<BatchProofDoc | null> {
+  try {
+    const cfgSnap = await db.collection('system_config').doc('batchProofMerkle').get();
+    if (!cfgSnap.exists) return null;
+
+    const stateSnap = await db.collection('system_config').doc('merkleRoundState').get();
+    if (!stateSnap.exists) return null;
+    const state = stateSnap.data() as { currentRoundNumber?: number } | undefined;
+    if (!state?.currentRoundNumber) return null;
+
+    const roundSnap = await db.collection('merkle_rounds').doc(String(state.currentRoundNumber)).get();
+    if (!roundSnap.exists) return null;
+    const round = roundSnap.data() as {
+      roundNumber?: number;
+      status?: string;
+      firstBatchNumber?: number;
+      saltHash?: string;
+      vrfRandomness?: string;
+      merkleRoot?: string;
+      merkleRootTxHash?: string;
+      commitTxHashVrf?: string;
+      openedAt?: number;
+      merkleRootCommittedAt?: number;
+    } | undefined;
+    if (!round?.firstBatchNumber) return null;
+
+    // Bounds check: this batch must fall within the round's window.
+    const lastBatchInRound = round.firstBatchNumber + 100 - 1;
+    if (batchNumber < round.firstBatchNumber || batchNumber > lastBatchInRound) {
+      return null;
+    }
+
+    const status: ProofStatus =
+      round.status === 'merkleCommitted' ? 'merkleCommitted'
+      : round.status === 'fulfilled' ? 'fulfilled'
+      : round.status === 'requested' ? 'requested'
+      : 'pending';
+
+    return {
+      batchNumber,
+      status,
+      variant: 'vrf-commit-merkle',
+      saltHash: round.saltHash,
+      commitTxHashVrf: round.commitTxHashVrf,
+      vrfRandomness: round.vrfRandomness,
+      vrfRequestedAt: round.openedAt,
+      merkleRoot: round.merkleRoot,
+      merkleRootTxHash: round.merkleRootTxHash,
+      merkleRootCommittedAt: round.merkleRootCommittedAt,
+    } as BatchProofDoc;
+  } catch {
+    return null;
+  }
 }
 
 interface OnChainBatchState {

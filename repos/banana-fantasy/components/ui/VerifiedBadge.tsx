@@ -68,12 +68,12 @@ export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', si
 
       <p className="text-[11px] text-white/70 mb-2 leading-relaxed">
         Every 100 drafts has exactly <span className="font-semibold text-white">94 Pro, 5 HOF, 1 Jackpot</span>.
-        The 6 special slots are randomized by <span className="font-semibold text-white">Chainlink VRF</span> —
-        the same oracle network Polymarket and Aave use. Anyone can verify.
+        The exact slots were randomized by <span className="font-semibold text-white">Chainlink VRF</span> —
+        the same oracle network Polymarket and Aave use — and committed on Base before any draft filled.
       </p>
 
       <div className="text-[10px] text-white/40 text-center mt-2 pt-2 border-t border-white/10">
-        {interactive ? 'Click to view this draft’s Chainlink VRF proof' : 'Chainlink VRF verification rolling out — see /how-it-works'}
+        {interactive ? 'Click to view this draft’s proof' : 'Chainlink VRF verification active'}
       </div>
     </div>,
     document.body

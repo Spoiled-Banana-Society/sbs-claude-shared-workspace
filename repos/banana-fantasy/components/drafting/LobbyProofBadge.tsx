@@ -33,8 +33,9 @@ export function LobbyProofBadge({ batchNumber, draftId }: LobbyProofBadgeProps) 
 
   if (!status || status === 'pre-launch') return null;
 
+  const isMerkle = variant === 'vrf-commit-merkle';
   const isVRFCommit = variant === 'vrf-commit';
-  const isVRF = variant === 'vrf' || isVRFCommit;
+  const isVRF = variant === 'vrf' || isVRFCommit || isMerkle;
   if (!isVRF && !(variant === 'commit-reveal' && (status === 'committed' || status === 'revealed'))) return null;
 
   const requestTx = commitTxHashVrf || vrfRequestTxHash;
@@ -43,7 +44,11 @@ export function LobbyProofBadge({ batchNumber, draftId }: LobbyProofBadgeProps) 
   let labelColor: string;
   let icon: string;
 
-  if (status === 'revealed') {
+  if (isMerkle && (status === 'merkleCommitted' || status === 'revealed')) {
+    label = 'Verified · Chainlink VRF';
+    labelColor = 'text-emerald-300';
+    icon = '✓';
+  } else if (status === 'revealed') {
     label = isVRFCommit
       ? 'Verified · Chainlink VRF + salt commit'
       : isVRF
@@ -61,8 +66,8 @@ export function LobbyProofBadge({ batchNumber, draftId }: LobbyProofBadgeProps) 
     icon = '🔒';
   } else {
     // requested / pending
-    label = isVRFCommit
-      ? 'Randomizing batch · Chainlink VRF + salt commit'
+    label = isVRFCommit || isMerkle
+      ? 'Randomizing · Chainlink VRF'
       : 'Randomizing batch · Chainlink VRF';
     labelColor = 'text-amber-200';
     icon = '🎲';
