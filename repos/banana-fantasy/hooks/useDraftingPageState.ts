@@ -210,11 +210,14 @@ export function useDraftingPageState() {
           // actual draft (e.g. fill-bots ran on the Go side but the queue's
           // status/members weren't synced). For any round that already has a
           // draftId, trust the Go API's draftOrder length + pickNumber over the
-          // queue's stale "filling" / member-count view.
+          // queue's stale "filling" / member-count view. If the draft is fully
+          // done (all 150 picks made), mark completed so the activeDrafts
+          // filter at line 928 removes it from the lobby.
+          const TOTAL_PICKS = 150;
           await Promise.all(drafts.map(async (d) => {
             if (!d.queueDraftId) return;
             try {
-              const { getDraftInfo } = await import('@/lib/api/drafts');
+              const { getDraftInfo, getDraftSummary } = await import('@/lib/api/drafts');
               const info = await getDraftInfo(d.queueDraftId);
               const orderLen = info.draftOrder?.length ?? 0;
               const pickNum = info.pickNumber ?? 0;
@@ -223,7 +226,19 @@ export function useDraftingPageState() {
                 d.maxPlayers = 10;
                 if (pickNum > 0) {
                   d.status = 'drafting';
-                  d.currentPick = pickNum;
+                  // intentionally NOT setting d.currentPick — it's "turns
+                  // until user's next pick", not absolute pick number, and
+                  // we don't compute that here. Leaving it undefined keeps
+                  // DraftRoomCard / LeagueTable from rendering bogus "N picks
+                  // away" copy.
+                }
+                // Only check completion when pickNumber is at or past the end.
+                if (pickNum >= TOTAL_PICKS) {
+                  try {
+                    const summary = await getDraftSummary(d.queueDraftId);
+                    const made = summary.filter(p => p?.playerId).length;
+                    if (made >= TOTAL_PICKS) d.status = 'completed';
+                  } catch {}
                 }
               }
             } catch {
