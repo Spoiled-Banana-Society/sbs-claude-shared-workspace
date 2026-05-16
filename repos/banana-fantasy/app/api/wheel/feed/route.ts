@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
+import { logErrorEvent } from '@/lib/errorEvents';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -51,7 +52,30 @@ export async function GET(req: Request) {
         .limit(limit);
     }
 
-    const snap = await query.get();
+    let snap;
+    try {
+      snap = await query.get();
+    } catch (err) {
+      // Missing-index errors return FAILED_PRECONDITION. Don't 500 — let
+      // the page render an empty feed, surface the failure to the admin
+      // error log, and include a hint so the on-call sees the create-index
+      // URL in their logs. Without this, the entire /wheel-batches and
+      // /proof-feed pages break the moment a new query path is introduced
+      // before its composite index exists.
+      const msg = (err as { message?: string })?.message ?? String(err);
+      const code = (err as { code?: number })?.code;
+      if (code === 9 || /FAILED_PRECONDITION|requires an index/i.test(msg)) {
+        logErrorEvent({
+          source: 'wheel.feed.missing_index',
+          route: '/api/wheel/feed',
+          message: msg,
+          context: { periodNumber, hint: 'Create the composite index from the Firebase URL in the error message' },
+        });
+        logger.warn('wheel.feed.missing_index', { periodNumber, msg });
+        return json({ periodNumber, count: 0, nextCursor: null, spins: [] }, 200);
+      }
+      throw err;
+    }
 
     const spins = snap.docs.map((d) => {
       const data = d.data() as {
@@ -78,6 +102,12 @@ export async function GET(req: Request) {
     }, 200);
   } catch (err) {
     logger.error('wheel.feed.failed', { err });
+    logErrorEvent({
+      source: 'wheel.feed.failed',
+      route: '/api/wheel/feed',
+      message: (err as Error)?.message ?? String(err),
+      stack: (err as Error)?.stack,
+    });
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     return jsonError('Internal Server Error', 500);
   }

@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "wheelSpins",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "periodNumber", "order": "ASCENDING" },
+        { "fieldPath": "spinIndexInPeriod", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
