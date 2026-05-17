@@ -557,8 +557,17 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
+    // Poll for new drafts every 5s + on window focus. Without this, a
+    // freshly-created draft (e.g. user hits 'New Draft' and a new league
+    // is assigned a higher number) doesn't show up in My Drafts until
+    // the user reloads — they'd keep seeing a stale older draft.
+    const focusHandler = () => { void loadLiveDrafts(); };
+    window.addEventListener('focus', focusHandler);
+    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 5000);
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', focusHandler);
+      clearInterval(intervalId);
     };
   }, [hiddenDraftIds, isLive, user]);
 
@@ -1012,7 +1021,10 @@ export function useDraftingPageState() {
       return (a.currentPick || 99) - (b.currentPick || 99);
     }
 
-    return (a.joinedAt || 0) - (b.joinedAt || 0);
+    // Newest first. Match user mental model: 'I just started a draft, it
+    // should appear at the top.' Previously sorted ascending which buried
+    // freshly-created drafts under older ones still in queue.
+    return (b.joinedAt || 0) - (a.joinedAt || 0);
   });
 
   const specialDrafts = sortedDrafts.filter(d => d.id.startsWith('queue-'));
