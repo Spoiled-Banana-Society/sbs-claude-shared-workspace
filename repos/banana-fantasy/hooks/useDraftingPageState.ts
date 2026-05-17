@@ -492,6 +492,22 @@ export function useDraftingPageState() {
           };
         });
 
+        // Garbage-collect: any wallet-owned drafts that are NOT in the
+        // current API response have either completed (roster fully built →
+        // filtered out by the active-tokens check above) or been left.
+        // Remove them so they stop showing in My Drafts. Without this,
+        // a completed draft sits in localStorage forever and shows up as
+        // a stale row above the actual current draft.
+        const apiIds = new Set(mapped.map((d) => d.id));
+        const currentWalletLc = user!.walletAddress!.toLowerCase();
+        for (const stored of draftStore.getActiveDrafts()) {
+          if (stored.specialType) continue; // queue drafts tracked separately
+          if (apiIds.has(stored.id)) continue;
+          if (!stored.liveWalletAddress) continue;
+          if (stored.liveWalletAddress.toLowerCase() !== currentWalletLc) continue;
+          draftStore.removeDraft(stored.id);
+        }
+
         for (const d of mapped) {
           if (hiddenDraftIds.has(d.id)) continue;
           const existing = draftStore.getDraft(d.id);
