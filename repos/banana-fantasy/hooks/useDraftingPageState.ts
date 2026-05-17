@@ -573,17 +573,41 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
-    // Poll every 2s + on window focus. Freshly-filled drafts show up
-    // within ~2s. Per-row league # resolution (useLeagueNumberForSlot)
-    // happens in parallel as soon as the row mounts, so the displayed
-    // label is correct within another ~200ms. True real-time would
-    // require SSE on the user's token list — 2s polling is the simpler
-    // pragmatic floor that 'feels live' without the SSE complexity.
+
+    // SSE: server pushes the user's token list whenever it changes
+    // (joined a new draft, league name written, roster updated,
+    // completion). Sub-200ms updates with zero polling overhead — far
+    // better than the 2s poll we used to do.
+    //
+    // Polling is kept as a safety net at a slow cadence (15s) in case
+    // SSE drops and reconnect fails repeatedly. Vercel streams have a
+    // ~55s lifetime — frontend auto-reconnects on close.
+    const wallet = user?.walletAddress;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connectSSE = () => {
+      if (cancelled || !wallet) return;
+      es = new EventSource(`/api/drafts/my-drafts/stream?wallet=${encodeURIComponent(wallet)}`);
+      const onPayload = () => { void loadLiveDrafts(); };
+      es.addEventListener('snapshot', onPayload);
+      es.addEventListener('update', onPayload);
+      es.onerror = () => {
+        try { es?.close(); } catch { /* ignore */ }
+        if (cancelled) return;
+        reconnectTimer = setTimeout(connectSSE, 1500);
+      };
+    };
+    connectSSE();
+
     const focusHandler = () => { void loadLiveDrafts(); };
     window.addEventListener('focus', focusHandler);
-    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 2000);
+    // Safety-net poll at 15s in case SSE drops repeatedly.
+    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 15_000);
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { es?.close(); } catch { /* ignore */ }
       window.removeEventListener('focus', focusHandler);
       clearInterval(intervalId);
     };
