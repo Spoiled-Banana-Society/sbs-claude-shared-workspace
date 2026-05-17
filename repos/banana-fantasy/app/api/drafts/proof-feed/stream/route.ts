@@ -68,21 +68,20 @@ export async function GET(req: Request) {
       return { drafts: [], round: await loadRound(db) };
     }
 
-    const recentSnap = await db
-      .collection('drafts')
-      .orderBy('__name__', 'desc')
-      .limit(20)
-      .get()
-      .catch(() => null);
-    const sampleDraftId = recentSnap?.docs.map((d) => d.id).find((id) => /^\d{4}-(fast|slow)-draft-\d+$/.test(id));
-    const yearPrefix = sampleDraftId ? sampleDraftId.split('-')[0] : new Date().getUTCFullYear().toString();
+    // Try multiple year prefixes per candidate — see the non-stream
+    // route for the rationale (orderBy __name__ desc on `drafts` needs
+    // a descending single-field index that isn't worth creating).
+    const currentYear = new Date().getUTCFullYear();
+    const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
     for (let i = 0; i < FEED_LIMIT; i++) {
       const num = filled - i;
       if (num <= 0) break;
       for (const speed of SPEEDS) {
-        candidates.push({ draftId: `${yearPrefix}-${speed}-draft-${num}`, draftNumber: num, speed });
+        for (const year of yearPrefixes) {
+          candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
+        }
       }
     }
 

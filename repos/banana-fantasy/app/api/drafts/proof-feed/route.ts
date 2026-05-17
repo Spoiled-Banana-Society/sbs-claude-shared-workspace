@@ -52,27 +52,23 @@ export async function GET(req: Request) {
       return json({ drafts: [], round: await loadRound(db) });
     }
 
-    // Resolve the season-year prefix from a recent doc id (matches the
-    // pattern "YYYY-{fast|slow}-draft-N").
-    const recentSnap = await db
-      .collection('drafts')
-      .orderBy('__name__', 'desc')
-      .limit(20)
-      .get()
-      .catch(() => null);
-    const sampleDraftId = recentSnap?.docs.map((d) => d.id).find((id) => /^\d{4}-(fast|slow)-draft-\d+$/.test(id));
-    const yearPrefix = sampleDraftId ? sampleDraftId.split('-')[0] : new Date().getUTCFullYear().toString();
+    // Probe the last FEED_LIMIT league numbers across both speeds AND a
+    // handful of recent year prefixes. We can't reliably orderBy __name__
+    // desc on the `drafts` collection (needs a descending single-field
+    // index that isn't worth creating just for this), and the season
+    // year can change mid-feed when a season transitions. Trying 3 years
+    // back covers any realistic transition window.
+    const currentYear = new Date().getUTCFullYear();
+    const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
-    // Probe the last FEED_LIMIT league numbers across both speeds. We
-    // dedupe by league number — fast and slow share the league counter,
-    // so only one of (yearPrefix-fast-draft-N, yearPrefix-slow-draft-N)
-    // actually exists per N.
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
     for (let i = 0; i < FEED_LIMIT; i++) {
       const num = filled - i;
       if (num <= 0) break;
       for (const speed of SPEEDS) {
-        candidates.push({ draftId: `${yearPrefix}-${speed}-draft-${num}`, draftNumber: num, speed });
+        for (const year of yearPrefixes) {
+          candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
+        }
       }
     }
 
