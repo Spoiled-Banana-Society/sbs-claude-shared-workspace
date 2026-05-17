@@ -557,13 +557,15 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
-    // Poll for new drafts every 5s + on window focus. Without this, a
-    // freshly-created draft (e.g. user hits 'New Draft' and a new league
-    // is assigned a higher number) doesn't show up in My Drafts until
-    // the user reloads — they'd keep seeing a stale older draft.
+    // Poll every 2s + on window focus. Freshly-filled drafts show up
+    // within ~2s. Per-row league # resolution (useLeagueNumberForSlot)
+    // happens in parallel as soon as the row mounts, so the displayed
+    // label is correct within another ~200ms. True real-time would
+    // require SSE on the user's token list — 2s polling is the simpler
+    // pragmatic floor that 'feels live' without the SSE complexity.
     const focusHandler = () => { void loadLiveDrafts(); };
     window.addEventListener('focus', focusHandler);
-    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 5000);
+    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 2000);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', focusHandler);
