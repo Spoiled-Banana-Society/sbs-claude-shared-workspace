@@ -89,6 +89,11 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   // doc-size error logged loudly to Cloud Logging but never reached
   // admin because there was no Go→admin bridge.
   /^backend\./i,
+  // Legacy Go bridge format (`go:{service}/{revision}`). Older entries
+  // and any future writer that hasn't been updated to the new
+  // `backend.api.error` shape still light up the badge — better to be
+  // noisy than miss a real outage. Added 2026-05-17.
+  /^go:/i,
 ];
 
 function isImportantError(source: string | undefined): boolean {
