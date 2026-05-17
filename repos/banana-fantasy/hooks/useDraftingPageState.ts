@@ -654,10 +654,20 @@ export function useDraftingPageState() {
         // Early completion exit — bypasses the heartbeat skip so a
         // freshly-completed draft disappears the instant the next 3s
         // sync runs, not after the WS heartbeat goes stale.
+        // ALSO adds the id to hiddenDraftIds (persisted in localStorage)
+        // so the next loadLiveDrafts() can't re-add it via the user's
+        // active-token list — completed drafts stay completed.
         {
           const totalPicks = (info.draftOrder?.length || 10) * 15;
           if ((info.pickNumber ?? 0) >= totalPicks) {
             draftStore.removeDraft(draft.id);
+            setHiddenDraftIds((prev) => {
+              if (prev.has(draft.id)) return prev;
+              const next = new Set(prev);
+              next.add(draft.id);
+              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+              return next;
+            });
             continue;
           }
         }
@@ -1009,6 +1019,17 @@ export function useDraftingPageState() {
     );
   }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
 
+  // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
+  // → 804). Within the same speed/year the slot counter increments per
+  // fill, so highest slot = most recently filled = should be at top.
+  // This is deterministic and doesn't depend on the contestName, which
+  // can be stale (backend sometimes returns a fallback "League #{slot}"
+  // before the real DisplayName lands).
+  const slotNumberOf = (d: Draft): number => {
+    const m = /-draft-(\d+)$/.exec(d.id || '');
+    return m ? Number(m[1]) : 0;
+  };
+
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
     if (a.isYourTurn && !b.isYourTurn) return -1;
     if (!a.isYourTurn && b.isYourTurn) return 1;
@@ -1021,9 +1042,11 @@ export function useDraftingPageState() {
       return (a.currentPick || 99) - (b.currentPick || 99);
     }
 
-    // Newest first. Match user mental model: 'I just started a draft, it
-    // should appear at the top.' Previously sorted ascending which buried
-    // freshly-created drafts under older ones still in queue.
+    // Newest fill first. Slot # is monotonic per speed/year — works for
+    // the common case where a user's active drafts share a season.
+    const aSlot = slotNumberOf(a);
+    const bSlot = slotNumberOf(b);
+    if (aSlot !== bSlot) return bSlot - aSlot;
     return (b.joinedAt || 0) - (a.joinedAt || 0);
   });
 

@@ -40,10 +40,17 @@ export function DraftRow({
   const resolvedType = draft.type || draft.draftType || draft.specialType || null;
   const isRevealed = resolvedType !== null;
   const accentColor = isRevealed ? getDraftTypeColor(resolvedType) : '#888';
-  // Live-resolved global league number for the badge URL. Falls back
-  // to the slot id until the API resolves (the proof page handles
-  // either format), then updates as soon as we know the real league #.
+  // Live-resolved global league number — single source of truth from
+  // the doc's DisplayName via /api/drafts/{slotId}/league-number.
+  // Used both for the badge URL AND the displayed row label so a
+  // stale/wrong contestName (e.g. backend fallback that extracts the
+  // slot number from the id) can't show the wrong league number.
   const liveLeagueNumber = useLeagueNumberForSlot(draft.id);
+  // Compose the displayed league name. Prefer live-resolved number; fall
+  // back to contestName from the data layer if the resolve is in flight.
+  const displayedLeagueName = liveLeagueNumber != null
+    ? `League #${liveLeagueNumber}`
+    : draft.contestName;
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
@@ -61,10 +68,10 @@ export function DraftRow({
         <div className="w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : draft.contestName}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
