@@ -279,6 +279,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [walletAddress, privy.user, verifyTwitterWithBackend, checkExistingTwitterLink]);
 
+  // Tag Sentry with the current user so every frontend error / breadcrumb
+  // is attributable to a specific wallet. Without this, admin sees
+  // 'X events · 1 users' but no way to know WHICH user. With this, the
+  // Sentry issue detail shows the wallet — and "all errors for user X"
+  // becomes a 1-click filter in Sentry.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
+    void import('@sentry/nextjs').then((Sentry) => {
+      if (walletAddress) {
+        Sentry.setUser({ id: walletAddress.toLowerCase(), username: walletAddress });
+      } else {
+        Sentry.setUser(null);
+      }
+    }).catch(() => { /* silent — Sentry is optional */ });
+  }, [walletAddress]);
+
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode

@@ -1,6 +1,7 @@
 'use client';
 
-import { useSentryIssues, AdminApiError, type SentryIssueEntry } from '@/hooks/admin/useAdminApi';
+import { useState } from 'react';
+import { useSentryIssues, useAdminAuthHeaders, AdminApiError, type SentryIssueEntry } from '@/hooks/admin/useAdminApi';
 
 function formatRelative(iso: string) {
   if (!iso) return '—';
@@ -21,7 +22,32 @@ function levelClasses(level: string): string {
   return 'bg-gray-500/10 text-gray-300 border-gray-500/30';
 }
 
-function IssueRow({ issue }: { issue: SentryIssueEntry }) {
+function IssueRow({ issue, onResolved }: { issue: SentryIssueEntry; onResolved: (id: string) => void }) {
+  const getHeaders = useAdminAuthHeaders();
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const handleResolve = async () => {
+    if (resolving) return;
+    setResolving(true);
+    setResolveError(null);
+    try {
+      const headers = await getHeaders();
+      const res = await fetch(`/api/admin/sentry-issues/${encodeURIComponent(issue.id)}/resolve`, {
+        method: 'POST',
+        headers,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: 'Resolve failed' }));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      onResolved(issue.id);
+    } catch (err) {
+      setResolveError((err as Error).message);
+      setResolving(false);
+    }
+  };
+
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4 hover:bg-gray-800/80 transition-colors">
       <div className="flex items-start justify-between gap-3">
@@ -49,17 +75,30 @@ function IssueRow({ issue }: { issue: SentryIssueEntry }) {
             </span>
             <span>last {formatRelative(issue.lastSeen)}</span>
           </div>
+          {resolveError && (
+            <p className="text-[11px] text-red-300 mt-2">{resolveError}</p>
+          )}
         </div>
-        {issue.permalink ? (
-          <a
-            href={issue.permalink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2 shrink-0"
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={handleResolve}
+            disabled={resolving}
+            className="text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50 disabled:cursor-not-allowed underline underline-offset-2"
+            title="Mark resolved in Sentry — permanently clears it from this list and the admin badge"
           >
-            View →
-          </a>
-        ) : null}
+            {resolving ? 'Resolving…' : 'Resolve'}
+          </button>
+          {issue.permalink ? (
+            <a
+              href={issue.permalink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-amber-400 hover:text-amber-300 underline underline-offset-2"
+            >
+              View →
+            </a>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -67,8 +106,19 @@ function IssueRow({ issue }: { issue: SentryIssueEntry }) {
 
 export function SentryIssues({ enabled }: { enabled: boolean }) {
   const query = useSentryIssues(enabled);
-  const issues = query.data?.issues ?? [];
+  const [locallyResolved, setLocallyResolved] = useState<Set<string>>(new Set());
+  const allIssues = query.data?.issues ?? [];
+  // Hide locally-resolved issues immediately for snappy UX (Sentry's
+  // server-side state takes a few seconds to reflect; refetch will
+  // catch up after the resolve POST returns 200).
+  const issues = allIssues.filter((i) => !locallyResolved.has(i.id));
   const configured = query.data?.configured ?? true;
+
+  const handleResolved = (issueId: string) => {
+    setLocallyResolved((prev) => new Set(prev).add(issueId));
+    // Refetch in the background to confirm + clear the cache.
+    void query.refetch();
+  };
 
   return (
     <div className="space-y-3">
@@ -76,7 +126,7 @@ export function SentryIssues({ enabled }: { enabled: boolean }) {
         <div>
           <h3 className="text-sm font-semibold text-white">Frontend Errors (Sentry) — last 24h</h3>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Auto-refreshes every 30s · {query.isFetching ? 'refreshing…' : `${issues.length} unresolved`}
+            Auto-refreshes every 60s (paused when tab inactive) · {query.isFetching ? 'refreshing…' : `${issues.length} unresolved`}
           </p>
         </div>
         <button
@@ -106,7 +156,7 @@ export function SentryIssues({ enabled }: { enabled: boolean }) {
       ) : (
         <div className="space-y-2">
           {issues.map((issue) => (
-            <IssueRow key={issue.id} issue={issue} />
+            <IssueRow key={issue.id} issue={issue} onResolved={handleResolved} />
           ))}
         </div>
       )}

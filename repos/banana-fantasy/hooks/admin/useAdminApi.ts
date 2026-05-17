@@ -539,7 +539,10 @@ export function useSentryIssues(enabled: boolean) {
         '/api/admin/sentry-issues?limit=25&statsPeriod=24h',
         getHeaders,
       ),
-    refetchInterval: 30_000,
+    // 60s when tab visible; paused when tab inactive (refetchIntervalInBackground:false).
+    // The notification badge already pings every 30s for new-error counts so
+    // you don't miss spikes — the page itself doesn't need a tighter cadence.
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 }

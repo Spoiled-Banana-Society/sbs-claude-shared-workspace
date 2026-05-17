@@ -12,7 +12,15 @@ declare module '@sentry/nextjs' {
     level?: 'fatal' | 'error' | 'warning' | 'info' | 'debug';
   }
 
+  export interface SentryUser {
+    id?: string;
+    username?: string;
+    email?: string;
+    ip_address?: string;
+  }
+
   export function init(options: BrowserOptions): void;
   export function captureException(exception: unknown, context?: CaptureContext): string;
   export function captureMessage(message: string, context?: CaptureContext): string;
+  export function setUser(user: SentryUser | null): void;
 }
