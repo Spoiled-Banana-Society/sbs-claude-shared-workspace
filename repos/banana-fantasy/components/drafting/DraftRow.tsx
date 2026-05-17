@@ -5,6 +5,7 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import { getDraftTypeColor } from '@/lib/draftTypes';
+import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import type { DraftState } from '@/lib/draftStore';
 
 export type Draft = DraftState;
@@ -39,6 +40,10 @@ export function DraftRow({
   const resolvedType = draft.type || draft.draftType || draft.specialType || null;
   const isRevealed = resolvedType !== null;
   const accentColor = isRevealed ? getDraftTypeColor(resolvedType) : '#888';
+  // Live-resolved global league number for the badge URL. Falls back
+  // to the slot id until the API resolves (the proof page handles
+  // either format), then updates as soon as we know the real league #.
+  const liveLeagueNumber = useLeagueNumberForSlot(draft.id);
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
@@ -80,29 +85,23 @@ export function DraftRow({
               <span className="text-sm font-semibold" style={{ color: accentColor }}>
                 {resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}
               </span>
-              {/* Use the global league number from contestName ("BBB #N"
-                  / "League #N") as the proof URL — NOT draft.id. The
-                  slot-id counter (per-speed-per-year) has desynced from
-                  the global FilledLeaguesCount, so passing draft.id
-                  leads to the wrong batch's proof.
-                  contestName comes in several shapes ("BBB #802",
-                  "League #802", and per-queue forms like "Jackpot #5").
-                  Match the trailing "#N" — but exclude queue drafts
-                  via draft.id since their N is a queue ordinal, not a
-                  league number. */}
+              {/* Prefer the live-resolved global league number for the
+                  badge URL. Falls back to the slot id (which the proof
+                  page itself can resolve) while the API call is in
+                  flight. Queue drafts (no slot pattern) get a
+                  non-interactive badge. */}
               {(() => {
-                const isQueueDraft = !/^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id);
-                let leagueDraftId: string | undefined;
-                if (!isQueueDraft) {
-                  const m = /#\s*(\d+)\s*$/.exec(draft.contestName || '');
-                  if (m) leagueDraftId = m[1];
+                const isLeagueSlot = /^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id);
+                if (!isLeagueSlot) {
+                  return <VerifiedBadge type="draft-type" draftType={resolvedType} size="sm" draftId={undefined} />;
                 }
+                const linkTarget = liveLeagueNumber != null ? String(liveLeagueNumber) : draft.id;
                 return (
                   <VerifiedBadge
                     type="draft-type"
                     draftType={resolvedType}
                     size="sm"
-                    draftId={leagueDraftId}
+                    draftId={linkTarget}
                   />
                 );
               })()}
