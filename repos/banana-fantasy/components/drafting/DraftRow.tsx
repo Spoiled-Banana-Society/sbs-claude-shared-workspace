@@ -80,17 +80,26 @@ export function DraftRow({
               <span className="text-sm font-semibold" style={{ color: accentColor }}>
                 {resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}
               </span>
-              {/* Queue drafts (queue-jackpot-1, queue-hof-1, …) are won
-                  via the wheel — they don't fit the standard {year}-{speed}-
-                  draft-{N} pattern and there's no per-draft Merkle proof
-                  until the queue fills and a real draft starts. Show the
-                  badge as a non-interactive trust signal in that case. */}
-              <VerifiedBadge
-                type="draft-type"
-                draftType={resolvedType}
-                size="sm"
-                draftId={/^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id) ? draft.id : undefined}
-              />
+              {/* Use the global league number from contestName ("BBB #N")
+                  as the proof URL — NOT draft.id. The slot-id counter
+                  (per-speed-per-year) has desynced from the global
+                  FilledLeaguesCount, so passing draft.id leads to the
+                  wrong batch's proof.
+                  Queue drafts (queue-jackpot-1, queue-hof-1, …) are won
+                  via the wheel and have no per-draft proof — render the
+                  badge as a non-interactive trust signal. */}
+              {(() => {
+                const m = /^BBB\s*#(\d+)$/i.exec(draft.contestName || '');
+                const leagueDraftId = m ? m[1] : undefined;
+                return (
+                  <VerifiedBadge
+                    type="draft-type"
+                    draftType={resolvedType}
+                    size="sm"
+                    draftId={leagueDraftId}
+                  />
+                );
+              })()}
             </>
           ) : (
             <span className="text-white/30 text-sm italic">Unrevealed</span>

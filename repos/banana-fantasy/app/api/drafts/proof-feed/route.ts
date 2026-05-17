@@ -76,26 +76,34 @@ export async function GET(req: Request) {
       candidates.map((c) => db.collection('drafts').doc(c.draftId).get().catch(() => null)),
     );
 
+    // Source of truth for the global league number is DisplayName
+    // ("BBB #N"), NOT the slot id (per-speed-per-year counter that
+    // desyncs from the global FilledLeaguesCount over time). Dedupe by
+    // the parsed global number so feed entries don't double-show when
+    // the same league shows up under multiple year-prefix candidates.
     const seen = new Set<number>();
     const drafts: FeedDraft[] = [];
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const snap = snaps[i];
       if (!snap?.exists) continue;
-      if (seen.has(c.draftNumber)) continue;
-      seen.add(c.draftNumber);
       const data = snap.data() as { Level?: string; DisplayName?: string } | undefined;
-      const level = normalizeLevel(data?.Level);
+      const dn = data?.DisplayName ?? '';
+      const m = /^BBB\s*#(\d+)$/i.exec(dn);
+      const globalNumber = m ? Number(m[1]) : c.draftNumber;
+      if (seen.has(globalNumber)) continue;
+      seen.add(globalNumber);
       drafts.push({
-        draftId: c.draftId,
-        draftNumber: c.draftNumber,
-        level,
-        displayName: data?.DisplayName ?? c.draftId,
+        draftId: String(globalNumber), // proof URL = /proof/{globalNum}
+        draftNumber: globalNumber,
+        level: normalizeLevel(data?.Level),
+        displayName: dn || `BBB #${globalNumber}`,
         speed: c.speed,
       });
     }
 
     drafts.sort((a, b) => b.draftNumber - a.draftNumber);
+    if (drafts.length > FEED_LIMIT) drafts.length = FEED_LIMIT;
 
     return json({ drafts, round: await loadRound(db) });
   } catch (err) {
