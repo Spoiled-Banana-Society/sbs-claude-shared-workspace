@@ -714,11 +714,13 @@ function DraftRoomContent() {
   useEffect(() => {
     const id = getPersistId();
     if (!id) return;
-    const existing = draftStore.getDraft(id);
-    if (existing && localStorage.getItem(`airplane:${id}`) === '1') {
+    // Read localStorage synchronously so airplane mode is correct from
+    // the first render. Prefs fetch will reconcile if server disagrees.
+    const stored = localStorage.getItem(`airplane:${id}`);
+    if (stored === '1') {
       engine.setAirplaneMode(true);
-    } else {
-      localStorage.removeItem(`airplane:${id}`);
+    } else if (stored === '0') {
+      engine.setAirplaneMode(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId]);
@@ -826,16 +828,23 @@ function DraftRoomContent() {
         setMissedPicksCount(prefs.numPicksMissedConsecutive || 0);
 
         // Sync local airplaneMode with server autoDraft preference.
-        // Plus: auto-enable airplane mode on re-entry if the server has
-        // already logged 2+ consecutive missed picks. The engine's
-        // consecutive-timeout counter is in-memory only and resets on
-        // mount — without this server-side recovery, a user who closed
-        // the tab after auto-picks fired would come back to airplane
-        // toggle OFF even though they should still be auto-drafting.
-        const serverMissedCount = prefs.numPicksMissedConsecutive || 0;
-        const desiredAirplane = prefs.autoDraft || serverMissedCount >= 2;
-        if (desiredAirplane !== engine.airplaneMode) {
-          engine.setAirplaneMode(desiredAirplane);
+        // Also mirror to localStorage so the next page-mount picks up
+        // the correct value SYNCHRONOUSLY (via the line 714 effect)
+        // instead of flickering through OFF → prefs-fetch → ON. This
+        // means "re-enter the draft" looks identical to "stayed in the
+        // draft": airplane mode is already on from t=0.
+        logger.info('[Airplane] Prefs loaded', {
+          draftId,
+          serverAutoDraft: prefs.autoDraft,
+          serverMissedCount: prefs.numPicksMissedConsecutive,
+          engineAirplane: engine.airplaneMode,
+        });
+        const persistId = getPersistId();
+        if (persistId) {
+          localStorage.setItem(`airplane:${persistId}`, prefs.autoDraft ? '1' : '0');
+        }
+        if (prefs.autoDraft !== engine.airplaneMode) {
+          engine.setAirplaneMode(prefs.autoDraft);
         }
       })
       .catch((e) => {
