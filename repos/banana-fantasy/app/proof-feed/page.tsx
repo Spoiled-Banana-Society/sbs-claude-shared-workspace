@@ -9,6 +9,21 @@ interface FeedDraft {
   level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
+  filledAt: string | null;
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
 }
 
 interface RoundSummary {
@@ -158,7 +173,7 @@ export default function ProofFeedPage() {
               <tr>
                 <th className="text-left px-4 py-2.5">League</th>
                 <th className="text-left px-4 py-2.5">Type</th>
-                <th className="text-left px-4 py-2.5">Speed</th>
+                <th className="text-left px-4 py-2.5">Filled</th>
                 <th className="text-right px-4 py-2.5">Proof</th>
               </tr>
             </thead>
@@ -170,7 +185,7 @@ export default function ProofFeedPage() {
                   <tr key={d.draftId} className="border-t border-white/5 hover:bg-white/5">
                     <td className="px-4 py-2 text-white/80 font-mono">#{d.draftNumber}</td>
                     <td className="px-4 py-2 font-semibold" style={{ color: colors.color }}>{colors.label}</td>
-                    <td className="px-4 py-2 text-white/50 capitalize">{d.speed}</td>
+                    <td className="px-4 py-2 text-white/50">{relativeTime(d.filledAt)}</td>
                     <td className="px-4 py-2 text-right">
                       <Link href={`/proof/${d.draftId}`} className="text-banana hover:underline">Verify →</Link>
                     </td>

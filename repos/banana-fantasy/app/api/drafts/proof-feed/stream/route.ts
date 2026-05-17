@@ -15,6 +15,7 @@ interface FeedDraft {
   level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
+  filledAt: string | null;
 }
 
 interface RoundSummary {
@@ -106,7 +107,7 @@ export async function GET(req: Request) {
       const c = candidates[i];
       const snap = snaps[i];
       if (!snap?.exists) continue;
-      const data = snap.data() as { Level?: string; DisplayName?: string } | undefined;
+      const data = snap.data() as { Level?: string; DisplayName?: string; StartDate?: unknown } | undefined;
       const dn = data?.DisplayName ?? '';
       const m = /^BBB\s*#(\d+)$/i.exec(dn);
       const globalNumber = m ? Number(m[1]) : c.draftNumber;
@@ -119,6 +120,7 @@ export async function GET(req: Request) {
         level: normalizeLevel(data?.Level),
         displayName: dn || `BBB #${globalNumber}`,
         speed: c.speed,
+        filledAt: toIsoTimestamp(data?.StartDate),
       });
     }
     drafts.sort((a, b) => b.draftNumber - a.draftNumber);
@@ -223,6 +225,25 @@ export async function GET(req: Request) {
       'X-Accel-Buffering': 'no',
     },
   });
+}
+
+function toIsoTimestamp(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === 'object' && raw !== null && typeof (raw as { toDate?: () => Date }).toDate === 'function') {
+    try {
+      return (raw as { toDate: () => Date }).toDate().toISOString();
+    } catch { return null; }
+  }
+  if (typeof raw === 'number') {
+    const ms = raw > 1e12 ? raw : raw * 1000;
+    const d = new Date(ms);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  }
+  if (typeof raw === 'string') {
+    const d = new Date(raw);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  }
+  return null;
 }
 
 function normalizeLevel(raw: string | undefined): FeedDraft['level'] {
