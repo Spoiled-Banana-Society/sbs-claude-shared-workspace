@@ -80,17 +80,23 @@ export function DraftRow({
               <span className="text-sm font-semibold" style={{ color: accentColor }}>
                 {resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}
               </span>
-              {/* Use the global league number from contestName ("BBB #N")
-                  as the proof URL — NOT draft.id. The slot-id counter
-                  (per-speed-per-year) has desynced from the global
-                  FilledLeaguesCount, so passing draft.id leads to the
-                  wrong batch's proof.
-                  Queue drafts (queue-jackpot-1, queue-hof-1, …) are won
-                  via the wheel and have no per-draft proof — render the
-                  badge as a non-interactive trust signal. */}
+              {/* Use the global league number from contestName ("BBB #N"
+                  / "League #N") as the proof URL — NOT draft.id. The
+                  slot-id counter (per-speed-per-year) has desynced from
+                  the global FilledLeaguesCount, so passing draft.id
+                  leads to the wrong batch's proof.
+                  contestName comes in several shapes ("BBB #802",
+                  "League #802", and per-queue forms like "Jackpot #5").
+                  Match the trailing "#N" — but exclude queue drafts
+                  via draft.id since their N is a queue ordinal, not a
+                  league number. */}
               {(() => {
-                const m = /^BBB\s*#(\d+)$/i.exec(draft.contestName || '');
-                const leagueDraftId = m ? m[1] : undefined;
+                const isQueueDraft = !/^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id);
+                let leagueDraftId: string | undefined;
+                if (!isQueueDraft) {
+                  const m = /#\s*(\d+)\s*$/.exec(draft.contestName || '');
+                  if (m) leagueDraftId = m[1];
+                }
                 return (
                   <VerifiedBadge
                     type="draft-type"
