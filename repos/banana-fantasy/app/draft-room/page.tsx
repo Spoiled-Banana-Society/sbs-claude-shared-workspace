@@ -825,9 +825,17 @@ function DraftRoomContent() {
         engine.setAutoPickSortPreference(newSort);
         setMissedPicksCount(prefs.numPicksMissedConsecutive || 0);
 
-        // Sync local airplaneMode with server autoDraft preference
-        if (prefs.autoDraft !== engine.airplaneMode) {
-          engine.setAirplaneMode(prefs.autoDraft);
+        // Sync local airplaneMode with server autoDraft preference.
+        // Plus: auto-enable airplane mode on re-entry if the server has
+        // already logged 2+ consecutive missed picks. The engine's
+        // consecutive-timeout counter is in-memory only and resets on
+        // mount — without this server-side recovery, a user who closed
+        // the tab after auto-picks fired would come back to airplane
+        // toggle OFF even though they should still be auto-drafting.
+        const serverMissedCount = prefs.numPicksMissedConsecutive || 0;
+        const desiredAirplane = prefs.autoDraft || serverMissedCount >= 2;
+        if (desiredAirplane !== engine.airplaneMode) {
+          engine.setAirplaneMode(desiredAirplane);
         }
       })
       .catch((e) => {
