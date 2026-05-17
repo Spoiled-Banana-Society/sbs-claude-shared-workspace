@@ -79,8 +79,9 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     const url = `${getServerDraftsApiUrl()}/owner/${encodeURIComponent(userId)}/draftToken/all`;
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return { ran: true, reason: 'go-api-not-ok', goApiStatus: res.status };
-    const body = await res.json() as { active?: RawApiToken[] };
+    const body = await res.json() as { active?: RawApiToken[]; available?: RawApiToken[] };
     const active = body.active ?? [];
+    const available = body.available ?? [];
     const joined = active.filter(t => (t._leagueId || t.leagueId)).length;
     const leagues = active
       .filter(t => (t._leagueId || t.leagueId))
@@ -88,6 +89,15 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     const completedCount = leagues.filter(l => l.status === 'completed').length;
     await awardDraftCountBadges(userId, completedCount);
     const { awards } = await awardLeagueOutcomeBadges(userId, leagues);
+
+    // BBB4 participant — any active or available draft token implies the
+    // user holds at least one BBB4 pass (current season is the only thing
+    // the Go API tracks token-side). Cheap idempotent unlock.
+    if (active.length > 0 || available.length > 0) {
+      if (await unlockBadge(userId, 'bbb4-participant', { source: 'sweep' })) {
+        awards.push('bbb4-participant');
+      }
+    }
 
     // Wheel-spin badges — query the top-level wheelSpins collection for
     // any spins owned by this user. The wheel-spin endpoint also fires

@@ -10,6 +10,7 @@ import type { League } from '@/types';
 export async function awardDraftCountBadges(userId: string, completedDrafts: number): Promise<void> {
   if (completedDrafts >= 1) await unlockBadge(userId, 'first-draft', { completedDrafts });
   if (completedDrafts >= 20) await unlockBadge(userId, 'drafts-20', { completedDrafts });
+  if (completedDrafts >= 50) await unlockBadge(userId, 'drafts-50', { completedDrafts });
   if (completedDrafts >= 100) await unlockBadge(userId, 'drafts-100', { completedDrafts });
 }
 

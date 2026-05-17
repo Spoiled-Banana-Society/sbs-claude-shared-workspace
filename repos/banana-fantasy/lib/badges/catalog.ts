@@ -37,6 +37,17 @@ export const BADGE_CATALOG: Badge[] = [
     glyph: '⚔️',
   },
   {
+    id: 'drafts-50',
+    label: 'Grinder',
+    description: '50 drafts in. The grind is paying off.',
+    criteria: 'Complete 50 drafts',
+    category: 'drafts',
+    color: '#6366f1', // indigo — between blue Veteran and purple Centurion
+    accentColor: '#8b5cf6', // violet
+    gradient: true,
+    glyph: '🎖️',
+  },
+  {
     id: 'drafts-100',
     label: 'Centurion',
     description: '100 drafts. Certified degenerate.',
@@ -89,6 +100,18 @@ export const BADGE_CATALOG: Badge[] = [
     category: 'league',
     color: '#22c55e', // green
     glyph: '🏈',
+  },
+  {
+    id: 'week-winner',
+    label: 'Week Champion',
+    description: 'Highest-scoring team across the entire contest in a single week.',
+    criteria: 'Finish #1 overall in any week (1–14)',
+    category: 'league',
+    color: '#fbbf24', // banana yellow
+    accentColor: '#fb923c', // orange — separates from league-pod wins
+    gradient: true,
+    glow: 'soft',
+    glyph: '🔥',
   },
 
   // ── Finals (BBB main bracket) ────────────────────────────────────────
@@ -228,6 +251,50 @@ export const BADGE_CATALOG: Badge[] = [
     ringStyle: 'double',
     glow: 'pulse',
     glyph: '🎟️',
+  },
+
+  // ── Season participation ─────────────────────────────────────────────
+  // BBB4 is the current season — earned by anyone who owns a BBB4 pass,
+  // visible/unlockable as you go. BBB1/2/3 are retroactive — hidden until
+  // admin-granted based on on-chain holders of those past collections.
+  {
+    id: 'bbb4-participant',
+    label: 'BBB4 Participant',
+    description: 'Held a Banana Best Ball Season 4 draft pass.',
+    criteria: 'Own a BBB4 draft pass',
+    category: 'legacy',
+    color: '#fbbf24', // banana yellow — current season
+    glyph: '④',
+  },
+  {
+    id: 'bbb1-participant',
+    label: 'BBB1 Participant',
+    description: 'Held a Banana Best Ball Season 1 draft pass.',
+    criteria: 'Past-season participant',
+    category: 'legacy',
+    color: '#22c55e', // S1 emerald — matches bbb1-champion accent
+    glyph: '①',
+    hidden: true,
+  },
+  {
+    id: 'bbb2-participant',
+    label: 'BBB2 Participant',
+    description: 'Held a Banana Best Ball Season 2 draft pass.',
+    criteria: 'Past-season participant',
+    category: 'legacy',
+    color: '#3b82f6', // S2 blue
+    glyph: '②',
+    hidden: true,
+  },
+  {
+    id: 'bbb3-participant',
+    label: 'BBB3 Participant',
+    description: 'Held a Banana Best Ball Season 3 draft pass.',
+    criteria: 'Past-season participant',
+    category: 'legacy',
+    color: '#ec4899', // S3 pink
+    glyph: '③',
+    hidden: true,
   },
 
   // ── Legacy / past-season champions (HIDDEN until unlocked) ────────────
