@@ -63,8 +63,14 @@ export async function GET(req: Request) {
   const trackerRef = db.collection('drafts').doc('draftTracker');
   const encoder = new TextEncoder();
 
+  // Earliest league # that's part of a merkle round. Drafts below this
+  // used the legacy commit-reveal system and don't belong in a feed
+  // branded "Chainlink VRF + on-chain Merkle root". Computed once per
+  // stream connection (cheap — the cutoff is static for a given round).
+  const earliestMerkleDraft = await getEarliestMerkleDraftNumber(db);
+
   const buildPayload = async (filled: number): Promise<FeedPayload> => {
-    if (filled <= 0) {
+    if (filled <= 0 || earliestMerkleDraft === null) {
       return { drafts: [], round: await loadRound(db) };
     }
 
@@ -77,7 +83,7 @@ export async function GET(req: Request) {
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
     for (let i = 0; i < FEED_LIMIT; i++) {
       const num = filled - i;
-      if (num <= 0) break;
+      if (num < earliestMerkleDraft) break; // pre-merkle era — different proof system
       for (const speed of SPEEDS) {
         for (const year of yearPrefixes) {
           candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
@@ -221,6 +227,27 @@ function normalizeLevel(raw: string | undefined): FeedDraft['level'] {
   if (v.includes('jackpot')) return 'Jackpot';
   if (v.includes('hall of fame') || v === 'hof') return 'Hall of Fame';
   return 'Pro';
+}
+
+/**
+ * Earliest league # that's part of a merkle round. See the non-stream
+ * route for full rationale — drafts below this used commit-reveal, not
+ * the Chainlink VRF + Merkle system this feed surfaces.
+ */
+async function getEarliestMerkleDraftNumber(db: FirebaseFirestore.Firestore): Promise<number | null> {
+  try {
+    const snap = await db
+      .collection('merkle_rounds')
+      .orderBy('roundNumber', 'asc')
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    const data = snap.docs[0].data() as { firstBatchNumber?: number };
+    if (!data.firstBatchNumber) return null;
+    return (data.firstBatchNumber - 1) * 100 + 1;
+  } catch {
+    return null;
+  }
 }
 
 async function loadRound(db: FirebaseFirestore.Firestore): Promise<RoundSummary | null> {
