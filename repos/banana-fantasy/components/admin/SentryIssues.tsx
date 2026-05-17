@@ -107,11 +107,26 @@ function IssueRow({ issue, onResolved }: { issue: SentryIssueEntry; onResolved: 
 export function SentryIssues({ enabled }: { enabled: boolean }) {
   const query = useSentryIssues(enabled);
   const [locallyResolved, setLocallyResolved] = useState<Set<string>>(new Set());
-  const allIssues = query.data?.issues ?? [];
-  // Hide locally-resolved issues immediately for snappy UX (Sentry's
-  // server-side state takes a few seconds to reflect; refetch will
-  // catch up after the resolve POST returns 200).
-  const issues = allIssues.filter((i) => !locallyResolved.has(i.id));
+  const [filter, setFilter] = useState('');
+  const rawIssues = query.data?.issues ?? [];
+
+  // Hide locally-resolved issues immediately for snappy UX.
+  const visible = rawIssues.filter((i) => !locallyResolved.has(i.id));
+
+  // Text filter against title / culprit / shortId / level. For per-user
+  // filtering: Sentry's aggregated issue list doesn't carry the user
+  // wallet (each issue is a group of events). Drill into "View →" to
+  // see per-user data for that specific issue.
+  const norm = filter.trim().toLowerCase();
+  const issues = norm
+    ? visible.filter((i) =>
+        (i.title || '').toLowerCase().includes(norm) ||
+        (i.culprit || '').toLowerCase().includes(norm) ||
+        (i.shortId || '').toLowerCase().includes(norm) ||
+        (i.level || '').toLowerCase().includes(norm),
+      )
+    : visible;
+
   const configured = query.data?.configured ?? true;
 
   const handleResolved = (issueId: string) => {
@@ -122,11 +137,11 @@ export function SentryIssues({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h3 className="text-sm font-semibold text-white">Frontend Errors (Sentry) — last 24h</h3>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Auto-refreshes every 60s (paused when tab inactive) · {query.isFetching ? 'refreshing…' : `${issues.length} unresolved`}
+            Auto-refreshes every 60s (paused when tab inactive) · {query.isFetching ? 'refreshing…' : norm ? `${issues.length} of ${visible.length} match` : `${issues.length} unresolved`}
           </p>
         </div>
         <button
@@ -135,6 +150,25 @@ export function SentryIssues({ enabled }: { enabled: boolean }) {
         >
           ↻ Refresh
         </button>
+      </div>
+
+      <div className="relative">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by title, file, or level…"
+          className="w-full px-3 py-2 bg-bg-tertiary/50 border border-gray-700 rounded-lg text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-banana/50"
+        />
+        {filter && (
+          <button
+            onClick={() => setFilter('')}
+            aria-label="Clear filter"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-sm w-6 h-6 flex items-center justify-center"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {!configured && (
@@ -151,7 +185,7 @@ export function SentryIssues({ enabled }: { enabled: boolean }) {
 
       {configured && issues.length === 0 && !query.isLoading ? (
         <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-8 text-center text-gray-500 text-sm">
-          No frontend errors in the last 24h 🎉
+          {norm ? `No issues match "${filter}"` : 'No frontend errors in the last 24h 🎉'}
         </div>
       ) : (
         <div className="space-y-2">
