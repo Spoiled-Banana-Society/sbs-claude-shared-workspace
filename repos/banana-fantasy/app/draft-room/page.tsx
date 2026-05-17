@@ -627,7 +627,13 @@ function DraftRoomContent() {
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
-      logger.debug('[Airplane] Auto-picking immediately:', pickId);
+      logger.info('[Airplane] Auto-pick fired', {
+        draftId,
+        wallet: walletParam,
+        pickId,
+        pickNumber: engine.currentPickNumber,
+        source: 'airplane_mode',
+      });
       if (isLiveMode && draftId) {
         const payload = engine.draftPlayer(pickId);
         if (payload) {
@@ -636,7 +642,13 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
+          }).catch(e => logger.error('airplane.autopick_failed', {
+            route: '/draft-actions/submitPickREST',
+            draftId,
+            wallet: walletParam,
+            pickId,
+            err: e,
+          }));
         }
       } else {
         engine.draftPlayer(pickId);
@@ -714,6 +726,13 @@ function DraftRoomContent() {
   useEffect(() => {
     const id = getPersistId();
     if (!id) return;
+    // Log entry to draft room — boundary event for tracing 'what
+    // happened during this user's session in this draft'.
+    logger.info('[DraftRoom] Entered', {
+      draftId: id,
+      wallet: walletParam,
+      isLiveMode,
+    });
     // Read localStorage synchronously so airplane mode is correct from
     // the first render. Prefs fetch will reconcile if server disagrees.
     const stored = localStorage.getItem(`airplane:${id}`);
@@ -745,6 +764,12 @@ function DraftRoomContent() {
     const id = getPersistId();
     if (!id) return;
     const newValue = !engine.airplaneMode;
+    logger.info('[Airplane] Manual toggle', {
+      draftId: id,
+      wallet: walletParam,
+      newValue,
+      source: 'user_toggle',
+    });
     localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
     draftStore.updateDraft(id, { airplaneMode: newValue });
   // eslint-disable-next-line react-hooks/exhaustive-deps
