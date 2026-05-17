@@ -62,10 +62,18 @@ export async function GET(req: Request) {
     const currentYear = new Date().getUTCFullYear();
     const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
+    // Iterate slot numbers (not global league numbers) because the doc
+    // ID encodes the slot. Slot/global offset varies — we've seen +/-1
+    // already in staging because slow drafts pad the global counter
+    // without bumping fast slot. Scan a buffer past the merkle cutoff
+    // and filter using the doc's DisplayName below (the source of truth
+    // for global league number). Scan range capped at FEED_LIMIT * 2
+    // so a large offset doesn't pull pre-merkle docs in.
+    const SLOT_BUFFER = 20;
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
-    for (let i = 0; i < FEED_LIMIT; i++) {
+    for (let i = 0; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
-      if (num < earliestMerkleDraft) break; // pre-merkle era — different proof system
+      if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
         for (const year of yearPrefixes) {
           candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
@@ -92,6 +100,8 @@ export async function GET(req: Request) {
       const dn = data?.DisplayName ?? '';
       const m = /^BBB\s*#(\d+)$/i.exec(dn);
       const globalNumber = m ? Number(m[1]) : c.draftNumber;
+      // Pre-merkle drafts used commit-reveal — they don't belong here.
+      if (globalNumber < earliestMerkleDraft) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       drafts.push({

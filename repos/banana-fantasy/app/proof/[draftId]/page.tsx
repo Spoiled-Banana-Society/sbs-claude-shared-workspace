@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatedEllipsis } from '@/components/ui/AnimatedEllipsis';
 import {
@@ -91,9 +91,35 @@ const BASESCAN_ADDRESS = (addr: string) => `https://basescan.org/address/${addr}
 
 export default function ProofPage() {
   const params = useParams();
+  const router = useRouter();
   const draftId = typeof params?.draftId === 'string' ? params.draftId : '';
   const draftNumber = useMemo(() => parseDraftNumber(draftId), [draftId]);
   const locator = useMemo(() => (draftNumber ? locateDraft(draftNumber) : null), [draftNumber]);
+
+  // Slot-id URLs (`{year}-{speed}-draft-N`) can map to the wrong league
+  // number when the per-speed slot counter has drifted from the global
+  // FilledLeaguesCount (common once both fast + slow drafts exist).
+  // Resolve via /api/drafts/{slotId}/league-number and redirect to the
+  // canonical `/proof/{globalLeagueNumber}` URL so all proof lookups
+  // use the right number. Bare-number URLs skip this round-trip.
+  useEffect(() => {
+    if (!draftId) return;
+    if (/^(?:league-)?\d+$/.test(draftId)) return; // already canonical
+    if (!/^\d{4}-(fast|slow)-draft-\d+$/.test(draftId)) return; // not a slot id either
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/league-number`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { leagueNumber?: number };
+        if (cancelled || !body.leagueNumber) return;
+        if (body.leagueNumber !== draftNumber) {
+          router.replace(`/proof/${body.leagueNumber}`);
+        }
+      } catch { /* silent — fall through to slot-id-parsed proof, may be wrong batch */ }
+    })();
+    return () => { cancelled = true; };
+  }, [draftId, draftNumber, router]);
 
   const [proof, setProof] = useState<BatchProofPayload | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);

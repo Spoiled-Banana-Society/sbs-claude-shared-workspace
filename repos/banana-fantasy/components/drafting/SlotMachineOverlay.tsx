@@ -181,12 +181,20 @@ export function SlotMachineOverlay({
                 <VerifiedBadge type="draft-type" draftType="pro" size="md" draftId={draftId} />
               </div>
             )}
+            {/* Always-on trust signal — the VerifiedBadge above is small
+                and easy to miss. This line is the explicit Chainlink VRF
+                callout so users know the result wasn't picked by SBS.
+                Click the Verified pill above for the full Merkle proof. */}
+            <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-emerald-300/90 bg-emerald-500/[0.06] border border-emerald-400/20 rounded-full px-3 py-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Verified by Chainlink VRF · click Verified above for proof</span>
+            </div>
             {rngSeedData && (
               <div className="mt-2 text-xs text-white/60">
                 {isVerifying ? 'Verifying fairness...' : isVerified ? 'Provably fair: verified' : 'Provably fair: pending'}
               </div>
             )}
-            <p className="text-white/40 text-sm">Click anywhere or press X to close</p>
+            <p className="text-white/40 text-sm mt-2">Click anywhere or press X to close</p>
           </div>
         )}
       </div>

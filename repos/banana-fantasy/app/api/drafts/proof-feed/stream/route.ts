@@ -80,10 +80,13 @@ export async function GET(req: Request) {
     const currentYear = new Date().getUTCFullYear();
     const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
+    // See non-stream route for rationale: scan slot numbers (not global),
+    // buffer past the merkle cutoff, then filter by parsed DisplayName.
+    const SLOT_BUFFER = 20;
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
-    for (let i = 0; i < FEED_LIMIT; i++) {
+    for (let i = 0; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
-      if (num < earliestMerkleDraft) break; // pre-merkle era — different proof system
+      if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
         for (const year of yearPrefixes) {
           candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
@@ -107,6 +110,7 @@ export async function GET(req: Request) {
       const dn = data?.DisplayName ?? '';
       const m = /^BBB\s*#(\d+)$/i.exec(dn);
       const globalNumber = m ? Number(m[1]) : c.draftNumber;
+      if (globalNumber < earliestMerkleDraft) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       drafts.push({
