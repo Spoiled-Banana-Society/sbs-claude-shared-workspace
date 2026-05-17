@@ -628,13 +628,35 @@ export function useDraftingPageState() {
       for (const draft of liveDraftsToSync) {
         if (cancelled) return;
 
+        // Always fetch state — completion detection must NEVER be skipped.
+        // The heartbeat guard below only opts out of mid-draft *state*
+        // updates (so we don't fight the active WS connection), but a
+        // completed draft must always be removed from My Drafts so the
+        // next league shows up live.
+        let info;
+        try {
+          info = await draftApi.getDraftInfo(draft.id);
+        } catch (err) {
+          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+          continue;
+        }
+        if (cancelled) return;
+
+        // Early completion exit — bypasses the heartbeat skip so a
+        // freshly-completed draft disappears the instant the next 3s
+        // sync runs, not after the WS heartbeat goes stale.
+        {
+          const totalPicks = (info.draftOrder?.length || 10) * 15;
+          if ((info.pickNumber ?? 0) >= totalPicks) {
+            draftStore.removeDraft(draft.id);
+            continue;
+          }
+        }
+
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
         if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
 
         try {
-          const info = await draftApi.getDraftInfo(draft.id);
-          if (cancelled) return;
-
           const fresh = draftStore.getDraft(draft.id) || draft;
           const playerCount = info.draftOrder?.length || 0;
           const hasDraftStarted = playerCount >= 10 && info.pickNumber >= 1;
