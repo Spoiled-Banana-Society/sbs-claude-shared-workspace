@@ -263,8 +263,12 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Held a Banana Best Ball Season 4 draft pass.',
     criteria: 'Own a BBB4 draft pass',
     category: 'legacy',
-    color: '#fbbf24', // banana yellow — current season
-    glyph: '④',
+    color: '#fbbf24',         // banana yellow → orange — current season pops
+    accentColor: '#f97316',
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'pulse',            // pulse marks it as the live/active season
+    glyph: 'BBB4',
   },
   {
     id: 'bbb1-participant',
@@ -272,8 +276,12 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Held a Banana Best Ball Season 1 draft pass.',
     criteria: 'Past-season participant',
     category: 'legacy',
-    color: '#22c55e', // S1 emerald — matches bbb1-champion accent
-    glyph: '①',
+    color: '#22c55e',         // emerald → forest, OG roots
+    accentColor: '#0f5132',
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'soft',
+    glyph: 'BBB1',
     hidden: true,
   },
   {
@@ -282,8 +290,12 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Held a Banana Best Ball Season 2 draft pass.',
     criteria: 'Past-season participant',
     category: 'legacy',
-    color: '#3b82f6', // S2 blue
-    glyph: '②',
+    color: '#3b82f6',         // blue → deep navy
+    accentColor: '#1e3a8a',
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'soft',
+    glyph: 'BBB2',
     hidden: true,
   },
   {
@@ -292,8 +304,12 @@ export const BADGE_CATALOG: Badge[] = [
     description: 'Held a Banana Best Ball Season 3 draft pass.',
     criteria: 'Past-season participant',
     category: 'legacy',
-    color: '#ec4899', // S3 pink
-    glyph: '③',
+    color: '#ec4899',         // pink → deep magenta
+    accentColor: '#831843',
+    gradient: true,
+    ringStyle: 'double',
+    glow: 'soft',
+    glyph: 'BBB3',
     hidden: true,
   },
 

@@ -57,6 +57,21 @@ const SEASONS = [
 const TRANSFER_TOPIC = ethers.id('Transfer(address,address,uint256)');
 const ZERO_ADDR = '0x0000000000000000000000000000000000000000';
 
+// Known marketplace + bridge contracts that briefly hold NFTs mid-trade.
+// Filtered out so they don't earn participant badges they can't display.
+const SKIP_ADDRS = new Set([
+  '0x00000000006c3852cbef3e08e8df289169ede581', // OpenSea Seaport 1.1
+  '0x00000000000000adc04c56bf30ac9d3c0aaf14dc', // OpenSea Seaport 1.5
+  '0x0000000000000068f116a894984e2db1123eb395', // OpenSea Seaport 1.6
+  '0x7be8076f4ea4a4ad08075c2508e481d6c946d12b', // OpenSea Wyvern v2
+  '0x7f268357a8c2552623316e2562d90e642bb538e5', // OpenSea Wyvern v1
+  '0x000000000000ad05ccc4f10045630fb830b95127', // Blur Marketplace
+  '0x39da41747a83aee658334415666f3ef92dd0d541', // Blur Pool
+  '0x59728544b08ab483533076417fbbb2fd0b17ce3a', // LooksRare
+  '0x9757f2d2b135150bbeb65308d4a91804107cd8d6', // X2Y2
+  '0x00000000a50bb64b4bbeceb18715748dface08af', // Reservoir
+]);
+
 async function collectHolders(season) {
   const provider = new ethers.JsonRpcProvider(season.rpcUrl);
   const latest = await provider.getBlockNumber();
@@ -86,8 +101,10 @@ async function collectHolders(season) {
     }
     for (const log of logs) {
       // ERC-721 Transfer: topics[2] = to address (32-byte left-padded).
-      const toAddr = ethers.getAddress('0x' + log.topics[2].slice(26));
-      if (toAddr.toLowerCase() !== ZERO_ADDR) holders.add(toAddr.toLowerCase());
+      const toAddr = ethers.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
+      if (toAddr === ZERO_ADDR) continue;
+      if (SKIP_ADDRS.has(toAddr)) continue;
+      holders.add(toAddr);
     }
     from = to + 1;
   }
@@ -95,13 +112,22 @@ async function collectHolders(season) {
   return holders;
 }
 
-function loadFirebaseFromEnv() {
-  const envText = readFileSync('.env.production', 'utf8');
-  const saMatch = envText.match(/^FIREBASE_SERVICE_ACCOUNT_JSON=([A-Za-z0-9+/=]+)/m);
-  if (!saMatch) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT_JSON not found in .env.production');
+function loadFirebase() {
+  // Match lib/firebaseAdmin.ts: env var FIREBASE_SERVICE_ACCOUNT_JSON
+  // first (raw JSON or base64), else fall back to the hardcoded staging
+  // SA. We pull the fallback by reading the source file so we don't have
+  // to duplicate the long base64 blob here.
+  let saSource = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!saSource) {
+    const src = readFileSync('lib/firebaseAdmin.ts', 'utf8');
+    const m = src.match(/STAGING_SA_B64\s*=\s*'([A-Za-z0-9+/=]+)'/);
+    if (!m) throw new Error('Could not locate STAGING_SA_B64 in lib/firebaseAdmin.ts');
+    saSource = m[1];
   }
-  const sa = JSON.parse(Buffer.from(saMatch[1], 'base64').toString('utf8'));
+  let sa;
+  try { sa = JSON.parse(saSource); }
+  catch { sa = JSON.parse(Buffer.from(saSource, 'base64').toString('utf8')); }
+  console.log(`[grant-bbb-participants] Firestore project: ${sa.project_id}`);
   initializeApp({ credential: cert(sa) });
   return getFirestore();
 }
@@ -137,7 +163,7 @@ async function main() {
   console.log(`[grant-bbb-participants] dry-run: ${DRY_RUN}`);
   console.log(`[grant-bbb-participants] RPC: ${ETH_RPC}`);
 
-  const db = DRY_RUN ? null : loadFirebaseFromEnv();
+  const db = DRY_RUN ? null : loadFirebase();
 
   for (const season of SEASONS) {
     console.log(`\n[${season.badgeId}] scanning ${season.address}`);
