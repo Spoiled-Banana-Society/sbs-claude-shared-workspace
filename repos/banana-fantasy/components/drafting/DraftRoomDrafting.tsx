@@ -589,9 +589,9 @@ export function DraftRoomDrafting({
                                   return (
                                     <div key={playerId} className="flex items-center text-xs py-1 px-3 hover:bg-white/[0.02] transition-colors">
                                       <span className="text-white/85 truncate flex-1 font-medium tracking-tight">{playerId}</span>
-                                      <span className="text-white/35 w-7 text-right text-[10px] tabular-nums">{info?.bye || '—'}</span>
-                                      <span className="text-white/35 w-7 text-right text-[10px] tabular-nums">{info?.adp || '—'}</span>
-                                      <span className="text-white/55 w-8 text-right text-[10px] font-semibold tabular-nums">{info?.pick || '—'}</span>
+                                      <span className="text-white/60 w-7 text-right text-[10px] tabular-nums">{info?.bye || '—'}</span>
+                                      <span className="text-white/60 w-7 text-right text-[10px] tabular-nums">{info?.adp || '—'}</span>
+                                      <span className="text-white/60 w-8 text-right text-[10px] tabular-nums">{info?.pick || '—'}</span>
                                     </div>
                                   );
                                 })
