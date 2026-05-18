@@ -13,6 +13,7 @@ import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { clientLog } from '@/lib/clientLog';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
@@ -124,19 +125,19 @@ function DraftRoomContent() {
   // (verified badge, proof link) picks up the new number live.
   useEffect(() => {
     if (!draftId) {
-      console.info('[league#] draftroom.subs.skip', { reason: 'no draftId' });
+      clientLog('league#', 'draftroom.subs.skip', { reason: 'no draftId' });
       return;
     }
-    console.info('[league#] draftroom.subs.start', { draftId });
+    clientLog('league#', 'draftroom.subs.start', { draftId });
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
-      console.info('[league#] draftroom.handler.fired', { draftId, name });
+      clientLog('league#', 'draftroom.handler.fired', { draftId, name });
       setContestName(name);
       const m = /^BBB\s*#(\d+)$/i.exec(name);
       if (m) {
-        console.info('[league#] draftroom.handler.parsed', { draftId, n: Number(m[1]) });
+        clientLog('league#', 'draftroom.handler.parsed', { draftId, n: Number(m[1]) });
         setLeagueNumberInCache(draftId, Number(m[1]));
       } else {
-        console.info('[league#] draftroom.handler.no-parse', { draftId, name });
+        clientLog('league#', 'draftroom.handler.no-parse', { draftId, name });
       }
     });
     return () => { try { unsub(); } catch { /* ignore */ } };

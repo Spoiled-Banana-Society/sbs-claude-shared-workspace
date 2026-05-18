@@ -20,6 +20,7 @@ import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotific
 import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
+import { setClientLogWallet } from '@/lib/clientLog';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -27,7 +28,12 @@ const NotifContext = createContext<NotifContextType>({ triggerOptIn: () => {} })
 export const useNotifOptIn = () => useContext(NotifContext);
 
 function AppContent({ children }: { children: React.ReactNode }) {
-  const { showLoginModal, setShowLoginModal, setShowOnboarding, login } = useAuth();
+  const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
+  // Attribute client logs to the logged-in wallet so inspect-debug-logs
+  // can filter by user.
+  React.useEffect(() => {
+    setClientLogWallet(user?.walletAddress);
+  }, [user?.walletAddress]);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
   const isDraftRoom = pathname === '/draft-room';

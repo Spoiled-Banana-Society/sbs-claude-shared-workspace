@@ -165,13 +165,17 @@ export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: numbe
  * relying on a REST retry loop.
  */
 export function subscribeDraftDisplayName(draftId: string, cb: (displayName: string) => void): Unsubscribe {
-  console.info('[league#] rtdb.subscribe', { draftId, path: `/drafts/${draftId}/displayName` });
+  // Lazy-import to keep this file SSR-safe (clientLog is 'use client').
+  const log = (event: string, payload?: unknown) => {
+    void import('@/lib/clientLog').then(m => m.clientLog('league#', event, payload)).catch(() => {});
+  };
+  log('rtdb.subscribe', { draftId, path: `/drafts/${draftId}/displayName` });
   const unsub = subscribeValue<string>(`/drafts/${draftId}/displayName`, (v) => {
-    console.info('[league#] rtdb.event', { draftId, value: v, type: typeof v });
+    log('rtdb.event', { draftId, value: v, type: typeof v });
     if (typeof v === 'string' && v.length > 0) cb(v);
   });
   return () => {
-    console.info('[league#] rtdb.unsubscribe', { draftId });
+    log('rtdb.unsubscribe', { draftId });
     unsub();
   };
 }

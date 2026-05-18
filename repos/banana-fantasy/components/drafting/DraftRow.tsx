@@ -62,18 +62,22 @@ export function DraftRow({
     : (looksLikeSlotFallback || !draft.contestName)
       ? 'League…'
       : draft.contestName;
-  // Render-time diagnostic — shows which of the three branches picked
-  // and what the inputs were. Run `console` filter `[league#]` in
-  // devtools to trace any "stale league #" report end-to-end.
-  if (typeof window !== 'undefined') {
-    console.info('[league#] DraftRow.render', {
+  // Render-time diagnostic — only log on meaningful changes (not every
+  // render). Tracks which branch picked the final displayed value so we
+  // can trace any "stale league #" report end-to-end.
+  const lastLoggedRef = React.useRef<string>('');
+  React.useEffect(() => {
+    const key = `${liveLeagueNumber}|${draft.contestName}|${displayedLeagueName}`;
+    if (lastLoggedRef.current === key) return;
+    lastLoggedRef.current = key;
+    void import('@/lib/clientLog').then(m => m.clientLog('league#', 'DraftRow.render', {
       slotId: draft.id,
       liveLeagueNumber,
       contestName: draft.contestName,
       looksLikeSlotFallback,
       displayedLeagueName,
-    });
-  }
+    })).catch(() => {});
+  }, [draft.id, liveLeagueNumber, draft.contestName, looksLikeSlotFallback, displayedLeagueName]);
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'

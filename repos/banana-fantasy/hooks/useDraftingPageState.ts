@@ -19,6 +19,7 @@ import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { clientLog } from '@/lib/clientLog';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -634,28 +635,21 @@ export function useDraftingPageState() {
   }, [localDrafts, user?.walletAddress]);
 
   useEffect(() => {
-    console.info('[league#] mydrafts.subs.effect', {
+    clientLog('league#', 'mydrafts.subs.effect', {
       count: liveDraftIdsForDisplayName.length,
       ids: liveDraftIdsForDisplayName,
     });
     if (liveDraftIdsForDisplayName.length === 0) return;
     const unsubs = liveDraftIdsForDisplayName.map((draftId) =>
       subscribeDraftDisplayName(draftId, (displayName) => {
-        console.info('[league#] mydrafts.handler.fired', { draftId, displayName });
-        // Update the row's cached contestName (used as a fallback / for
-        // localStorage persistence)…
+        clientLog('league#', 'mydrafts.handler.fired', { draftId, displayName });
         draftStore.updateDraft(draftId, { contestName: displayName });
-        // …AND parse the league number out of "BBB #N" and push it into
-        // useLeagueNumberForSlot's cache. Without this, the hook reads
-        // its module-level cache once on mount and never sees the live
-        // update — exactly why "League #N" used to require a hard
-        // refresh to update after a draft filled.
         const m = /^BBB\s*#(\d+)$/i.exec(displayName);
         if (m) {
-          console.info('[league#] mydrafts.handler.parsed', { draftId, n: Number(m[1]) });
+          clientLog('league#', 'mydrafts.handler.parsed', { draftId, n: Number(m[1]) });
           setLeagueNumberInCache(draftId, Number(m[1]));
         } else {
-          console.info('[league#] mydrafts.handler.no-parse', { draftId, displayName });
+          clientLog('league#', 'mydrafts.handler.no-parse', { draftId, displayName });
         }
       }),
     );
