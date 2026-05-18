@@ -13,7 +13,9 @@ const SLOT_ID_RE = /^\d{4}-(fast|slow)-draft-\d+$/;
 // which is exactly why "live league #" updates required a hard refresh.
 const cache = new Map<string, number>();
 const listenersBySlot = new Map<string, Set<() => void>>();
-const inFlight = new Map<string, Promise<number | null>>();
+// Tracks slots currently running a REST retry loop, so multiple
+// component mounts for the same slot don't each spin up their own loop.
+const retryInFlight = new Set<string>();
 
 function notify(slotId: string) {
   const set = listenersBySlot.get(slotId);
@@ -92,8 +94,16 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
     };
   }, [slotId]);
 
-  // REST fallback. Fires once per slotId; once any source (push or REST)
-  // populates the cache, this short-circuits on subsequent mounts.
+  // REST fallback with exponential backoff retry. Belt-and-suspenders
+  // alongside the RTDB push primary path:
+  //  - If push delivers first, our cache check at the top short-circuits
+  //    and we never make a REST call.
+  //  - If push hasn't delivered (initial 404 from Firestore race, or
+  //    push subscription broken / RTDB outage / network blip), we keep
+  //    retrying with 500ms → 1s → 2s → 4s cap until success or unmount.
+  //  - The `fallback.won` telemetry event fires when REST succeeds AFTER
+  //    push had a fair chance to deliver (>1s post-mount or attempt > 0).
+  //    Watching that counter rise = push system degrading silently.
   useEffect(() => {
     if (!slotId || !SLOT_ID_RE.test(slotId)) {
       setLeagueNumber(null);
@@ -104,35 +114,70 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
       setLeagueNumber(cached);
       return;
     }
+    // Another mount of this slot is already running a retry loop — let
+    // it populate the cache, our pub/sub from the OTHER useEffect above
+    // will catch the update.
+    if (retryInFlight.has(slotId)) return;
+
     let cancelled = false;
-    const promise = inFlight.get(slotId) ?? (async () => {
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const mountTime = Date.now();
+    retryInFlight.add(slotId);
+
+    const tryFetch = async (): Promise<void> => {
+      if (cancelled) { retryInFlight.delete(slotId); return; }
+      // Push may have populated the cache between attempts → no need to fetch.
+      if (cache.get(slotId) != null) { retryInFlight.delete(slotId); return; }
+
       try {
-        clientLog('league#', 'rest.fetch.start', { slotId });
+        clientLog('league#', 'rest.fetch.start', { slotId, attempt });
         const res = await fetch(`/api/drafts/${slotId}/league-number`);
-        if (!res.ok) {
-          clientLog('league#', 'rest.fetch.not-ok', { slotId, status: res.status });
-          return null;
+        if (cancelled) { retryInFlight.delete(slotId); return; }
+        // Push may have delivered while our fetch was in flight.
+        if (cache.get(slotId) != null) { retryInFlight.delete(slotId); return; }
+        if (res.ok) {
+          const body = (await res.json()) as { leagueNumber?: number };
+          if (typeof body.leagueNumber === 'number') {
+            cacheFromRest(slotId, body.leagueNumber);
+            setLeagueNumber(body.leagueNumber);
+            // Telemetry: did push fail us? attempt > 0 means we
+            // retried (initial REST got 404). msSinceMount > 1s means
+            // push had a fair chance to deliver and didn't. Either is
+            // a signal that the push path isn't keeping up.
+            const msSinceMount = Date.now() - mountTime;
+            if (attempt > 0 || msSinceMount > 1000) {
+              clientLog('league#', 'fallback.won', {
+                slotId,
+                n: body.leagueNumber,
+                attempt,
+                msSinceMount,
+              });
+            }
+            retryInFlight.delete(slotId);
+            return;
+          }
+          clientLog('league#', 'rest.fetch.bad-body', { slotId, attempt, body });
+        } else {
+          clientLog('league#', 'rest.fetch.not-ok', { slotId, attempt, status: res.status });
         }
-        const body = (await res.json()) as { leagueNumber?: number };
-        if (typeof body.leagueNumber === 'number') {
-          cacheFromRest(slotId, body.leagueNumber);
-          return body.leagueNumber;
-        }
-        clientLog('league#', 'rest.fetch.bad-body', { slotId, body });
-        return null;
       } catch (err) {
-        clientLog('league#', 'rest.fetch.error', { slotId, err: String(err) });
-        return null;
-      } finally {
-        inFlight.delete(slotId);
+        clientLog('league#', 'rest.fetch.error', { slotId, attempt, err: String(err) });
       }
-    })();
-    inFlight.set(slotId, promise);
-    promise.then((n) => {
-      if (cancelled) return;
-      if (n != null) setLeagueNumber(n);
-    });
-    return () => { cancelled = true; };
+
+      // Schedule next retry with exponential backoff, capped at 4s.
+      if (cancelled) { retryInFlight.delete(slotId); return; }
+      const delay = Math.min(4000, 500 * Math.pow(2, attempt));
+      attempt += 1;
+      retryTimer = setTimeout(() => { void tryFetch(); }, delay);
+    };
+    void tryFetch();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryInFlight.delete(slotId);
+    };
   }, [slotId]);
 
   return leagueNumber;
