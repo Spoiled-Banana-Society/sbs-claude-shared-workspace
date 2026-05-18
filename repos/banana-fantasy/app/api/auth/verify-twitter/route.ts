@@ -69,6 +69,17 @@ export async function POST(req: Request) {
       // non-fatal
     }
 
+    // Real-time push: new-user promo just became claimable for this
+    // wallet (verified Twitter + not yet claimed). Frontend toast +
+    // bell fire within ~100ms; user can claim immediately from the
+    // promos page without waiting for the next page-load fetch.
+    try {
+      const { pushStreamEvent } = await import('@/lib/userEventStream');
+      void pushStreamEvent(walletAddress, 'promo-new-user', { source: 'twitter-verify' });
+    } catch {
+      // non-fatal
+    }
+
     // Note: referral "verified" milestone is NOT fired here anymore.
     // Twitter linking alone is too cheap a signal — a referrer would get
     // their spin before the friend actually engaged with the product.

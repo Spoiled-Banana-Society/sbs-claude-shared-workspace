@@ -19,6 +19,7 @@ import OneSignal from 'react-onesignal';
 import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
 import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
+import { useUserEventStream } from '@/hooks/useUserEventStream';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -33,8 +34,12 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const notif = useNotificationOptIn();
-  // Polls /api/badges and fires a toast + notification entry whenever a
-  // new badge unlocks for the logged-in user. Runs app-wide.
+  // Real-time push from RTDB — primary source for badge unlocks +
+  // promo events (toast + bell within ~100ms). Mounted app-wide so any
+  // page sees the unlock the moment it happens server-side.
+  useUserEventStream();
+  // 5-minute poll safety net for badges in case RTDB push misses an
+  // unlock (network blip, write failure, granted-while-offline).
   useBadgeUnlockNotifier();
 
   useEffect(() => {

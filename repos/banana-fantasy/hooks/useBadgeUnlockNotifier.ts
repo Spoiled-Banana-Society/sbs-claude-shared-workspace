@@ -7,7 +7,12 @@ import { useToast } from '@/components/ui/Toast';
 import { pushNotification } from '@/components/NotificationCenter';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
-const POLL_MS = 30_000; // 30s — server-side sweep on every read keeps badges fresh
+// 5-minute safety net. Real-time pushes via useUserEventStream
+// (RTDB) deliver badge unlocks within ~100ms — this poll is only for
+// catching anything RTDB might miss (network blips, RTDB write
+// failures, badges granted while the user was offline). Reduced from
+// 30s on 2026-05-18 when push shipped.
+const POLL_MS = 5 * 60_000;
 
 function seenStorageKey(userId: string) {
   return `sbs-badges-seen:${userId.toLowerCase()}`;
