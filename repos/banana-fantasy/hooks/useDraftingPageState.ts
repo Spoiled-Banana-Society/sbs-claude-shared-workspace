@@ -634,9 +634,14 @@ export function useDraftingPageState() {
   }, [localDrafts, user?.walletAddress]);
 
   useEffect(() => {
+    console.info('[league#] mydrafts.subs.effect', {
+      count: liveDraftIdsForDisplayName.length,
+      ids: liveDraftIdsForDisplayName,
+    });
     if (liveDraftIdsForDisplayName.length === 0) return;
     const unsubs = liveDraftIdsForDisplayName.map((draftId) =>
       subscribeDraftDisplayName(draftId, (displayName) => {
+        console.info('[league#] mydrafts.handler.fired', { draftId, displayName });
         // Update the row's cached contestName (used as a fallback / for
         // localStorage persistence)…
         draftStore.updateDraft(draftId, { contestName: displayName });
@@ -646,7 +651,12 @@ export function useDraftingPageState() {
         // update — exactly why "League #N" used to require a hard
         // refresh to update after a draft filled.
         const m = /^BBB\s*#(\d+)$/i.exec(displayName);
-        if (m) setLeagueNumberInCache(draftId, Number(m[1]));
+        if (m) {
+          console.info('[league#] mydrafts.handler.parsed', { draftId, n: Number(m[1]) });
+          setLeagueNumberInCache(draftId, Number(m[1]));
+        } else {
+          console.info('[league#] mydrafts.handler.no-parse', { draftId, displayName });
+        }
       }),
     );
     return () => {

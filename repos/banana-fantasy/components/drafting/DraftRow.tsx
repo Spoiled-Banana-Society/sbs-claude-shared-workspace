@@ -62,6 +62,18 @@ export function DraftRow({
     : (looksLikeSlotFallback || !draft.contestName)
       ? 'League…'
       : draft.contestName;
+  // Render-time diagnostic — shows which of the three branches picked
+  // and what the inputs were. Run `console` filter `[league#]` in
+  // devtools to trace any "stale league #" report end-to-end.
+  if (typeof window !== 'undefined') {
+    console.info('[league#] DraftRow.render', {
+      slotId: draft.id,
+      liveLeagueNumber,
+      contestName: draft.contestName,
+      looksLikeSlotFallback,
+      displayedLeagueName,
+    });
+  }
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'

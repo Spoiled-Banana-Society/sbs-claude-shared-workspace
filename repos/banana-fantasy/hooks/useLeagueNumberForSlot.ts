@@ -25,10 +25,18 @@ function notify(slotId: string) {
  * hooks for that slot re-render immediately.
  */
 export function setLeagueNumberInCache(slotId: string, leagueNumber: number) {
-  if (!slotId || !Number.isFinite(leagueNumber) || leagueNumber <= 0) return;
+  if (!slotId || !Number.isFinite(leagueNumber) || leagueNumber <= 0) {
+    console.info('[league#] cache.set.invalid', { slotId, leagueNumber });
+    return;
+  }
   const prev = cache.get(slotId);
-  if (prev === leagueNumber) return;
+  if (prev === leagueNumber) {
+    console.info('[league#] cache.set.noop', { slotId, leagueNumber, prev });
+    return;
+  }
   cache.set(slotId, leagueNumber);
+  const listenerCount = listenersBySlot.get(slotId)?.size ?? 0;
+  console.info('[league#] cache.set', { slotId, leagueNumber, prev, listeners: listenerCount });
   notify(slotId);
 }
 
@@ -55,7 +63,10 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
     if (!slotId) return;
     const cb = () => {
       const v = cache.get(slotId);
-      if (v != null) setLeagueNumber(v);
+      if (v != null) {
+        console.info('[league#] hook.update', { slotId, n: v });
+        setLeagueNumber(v);
+      }
     };
     let set = listenersBySlot.get(slotId);
     if (!set) {
@@ -63,11 +74,13 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
       listenersBySlot.set(slotId, set);
     }
     set.add(cb);
+    console.info('[league#] hook.subscribe', { slotId, totalListeners: set.size });
     // Pick up any value that landed between mount and subscribe.
     cb();
     return () => {
       set!.delete(cb);
       if (set!.size === 0) listenersBySlot.delete(slotId);
+      console.info('[league#] hook.unsubscribe', { slotId, remaining: set?.size ?? 0 });
     };
   }, [slotId]);
 
@@ -86,16 +99,23 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
     let cancelled = false;
     const promise = inFlight.get(slotId) ?? (async () => {
       try {
+        console.info('[league#] rest.fetch.start', { slotId });
         const res = await fetch(`/api/drafts/${slotId}/league-number`);
-        if (!res.ok) return null;
+        if (!res.ok) {
+          console.info('[league#] rest.fetch.not-ok', { slotId, status: res.status });
+          return null;
+        }
         const body = (await res.json()) as { leagueNumber?: number };
         if (typeof body.leagueNumber === 'number') {
           cache.set(slotId, body.leagueNumber);
+          console.info('[league#] rest.fetch.ok', { slotId, n: body.leagueNumber });
           notify(slotId);
           return body.leagueNumber;
         }
+        console.info('[league#] rest.fetch.bad-body', { slotId, body });
         return null;
-      } catch {
+      } catch (err) {
+        console.info('[league#] rest.fetch.error', { slotId, err: String(err) });
         return null;
       } finally {
         inFlight.delete(slotId);

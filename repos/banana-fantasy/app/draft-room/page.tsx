@@ -123,11 +123,21 @@ function DraftRoomContent() {
   // useLeagueNumberForSlot's cache so any other component on this page
   // (verified badge, proof link) picks up the new number live.
   useEffect(() => {
-    if (!draftId) return;
+    if (!draftId) {
+      console.info('[league#] draftroom.subs.skip', { reason: 'no draftId' });
+      return;
+    }
+    console.info('[league#] draftroom.subs.start', { draftId });
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
+      console.info('[league#] draftroom.handler.fired', { draftId, name });
       setContestName(name);
       const m = /^BBB\s*#(\d+)$/i.exec(name);
-      if (m) setLeagueNumberInCache(draftId, Number(m[1]));
+      if (m) {
+        console.info('[league#] draftroom.handler.parsed', { draftId, n: Number(m[1]) });
+        setLeagueNumberInCache(draftId, Number(m[1]));
+      } else {
+        console.info('[league#] draftroom.handler.no-parse', { draftId, name });
+      }
     });
     return () => { try { unsub(); } catch { /* ignore */ } };
   }, [draftId]);
