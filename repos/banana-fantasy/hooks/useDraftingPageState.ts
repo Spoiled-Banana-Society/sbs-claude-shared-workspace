@@ -634,13 +634,22 @@ export function useDraftingPageState() {
       .map(d => d.id);
   }, [localDrafts, user?.walletAddress]);
 
+  // Stable string key — `liveDraftIdsForDisplayName` is a new array
+  // reference on every render of useDraftingPageState (which happens
+  // constantly while the user has a drafting draft, because per-pick
+  // state updates churn `localDrafts`). Without this stable key, the
+  // useEffect cleanup fires on every render → subscription is torn
+  // down before Firebase's onValue has time to deliver the initial
+  // value → displayName push is never received. Caught in the logs
+  // when the rtdb.subscribe/unsubscribe loop showed up with no
+  // rtdb.event ever firing.
+  const liveDraftIdsKey = liveDraftIdsForDisplayName.join(',');
+
   useEffect(() => {
-    clientLog('league#', 'mydrafts.subs.effect', {
-      count: liveDraftIdsForDisplayName.length,
-      ids: liveDraftIdsForDisplayName,
-    });
-    if (liveDraftIdsForDisplayName.length === 0) return;
-    const unsubs = liveDraftIdsForDisplayName.map((draftId) =>
+    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
+    clientLog('league#', 'mydrafts.subs.effect', { count: ids.length, ids });
+    if (ids.length === 0) return;
+    const unsubs = ids.map((draftId) =>
       subscribeDraftDisplayName(draftId, (displayName) => {
         clientLog('league#', 'mydrafts.handler.fired', { draftId, displayName });
         draftStore.updateDraft(draftId, { contestName: displayName });
@@ -658,7 +667,7 @@ export function useDraftingPageState() {
         try { unsub(); } catch { /* ignore */ }
       }
     };
-  }, [liveDraftIdsForDisplayName]);
+  }, [liveDraftIdsKey]);
 
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;

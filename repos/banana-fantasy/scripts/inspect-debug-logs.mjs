@@ -32,14 +32,23 @@ const limit = Number(args.limit || 200);
 const cutoff = new Date(Date.now() - minutes * 60_000).toISOString();
 
 const fs = admin.firestore();
-let q = fs.collection('v2_debug_events').where('serverTs', '>=', cutoff);
-if (tag) q = q.where('tag', '==', tag);
-if (wallet) q = q.where('wallet', '==', wallet);
-const snap = await q.orderBy('serverTs', 'asc').limit(limit).get();
+// Single time range + in-memory filter (avoids composite-index requirement).
+const snap = await fs.collection('v2_debug_events')
+  .where('serverTs', '>=', cutoff)
+  .orderBy('serverTs', 'asc')
+  .limit(2000)
+  .get();
 
-console.log(`=== ${snap.size} debug events (last ${minutes} min${tag ? `, tag=${tag}` : ''}${wallet ? `, wallet=${wallet}` : ''}) ===\n`);
+const filtered = snap.docs.filter(doc => {
+  const d = doc.data();
+  if (tag && d.tag !== tag) return false;
+  if (wallet && (d.wallet || '').toLowerCase() !== wallet) return false;
+  return true;
+}).slice(-limit);
 
-for (const doc of snap.docs) {
+console.log(`=== ${filtered.length} debug events (last ${minutes} min${tag ? `, tag=${tag}` : ''}${wallet ? `, wallet=${wallet}` : ''}) ===\n`);
+
+for (const doc of filtered) {
   const d = doc.data();
   const time = d.serverTs.slice(11, 23);
   const sess = d.sessionId ? d.sessionId.slice(0, 8) : 'no-sess';
