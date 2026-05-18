@@ -354,7 +354,13 @@ export function DraftRoomDrafting({
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
             <div className="flex-1 overflow-auto flex flex-col min-w-0">
-              <DraftTabs activeTab={activeTab} onTabChange={onTabChange} queueCount={engine.queuedPlayers.length} />
+              <DraftTabs
+                activeTab={activeTab}
+                onTabChange={onTabChange}
+                queueCount={engine.queuedPlayers.length}
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+              />
               {activeTab === 'draft' && isCompleted && (
                 <DraftComplete
                   draftId={draftId || urlDraftId}
@@ -441,30 +447,8 @@ export function DraftRoomDrafting({
             </div>
 
             {/* Right sidebar: Queue + My Team previews (desktop only).
-                Toggle is in the sidebar header (when open) or a labeled
-                edge-pill (when closed). ⌘\ / Ctrl+\ toggles either way. */}
-            {!sidebarOpen && (() => {
-              const draftedIds = new Set(engine.picks.map(p => p.playerId));
-              const queueCount = engine.queuedPlayers.filter(p => !draftedIds.has(p.playerId)).length;
-              const teamCount = engine.picks.filter(p => p.ownerIndex === engine.userDraftPosition).length;
-              return (
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="hidden xl:flex group flex-col items-center justify-center w-9 flex-shrink-0 border-l border-white/[0.06] bg-gradient-to-l from-banana/[0.04] to-transparent hover:from-banana/[0.12] text-white/50 hover:text-white transition-colors cursor-pointer gap-3 py-4"
-                  title="Show Queue · My Team (⌘\\)"
-                  aria-label="Show queue and team panel"
-                >
-                  <span className="text-banana/70 group-hover:text-banana text-lg leading-none transition-colors">‹</span>
-                  <span
-                    className="text-[10px] font-bold uppercase tracking-[0.18em] whitespace-nowrap text-white/45 group-hover:text-white/85 transition-colors tabular-nums"
-                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-                  >
-                    Queue {queueCount > 0 ? `· ${queueCount}` : ''} · Team {teamCount}/15
-                  </span>
-                  <span className="text-[9px] text-white/25 group-hover:text-white/50 font-mono leading-none transition-colors">⌘\\</span>
-                </button>
-              );
-            })()}
+                Toggle lives in the top tab row (Show/Hide Panel button)
+                — no edge rail. ⌘\ / Ctrl+\ also toggles. */}
             <div className={`hidden xl:flex flex-col flex-shrink-0 border-l border-white/[0.06] overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0 border-l-0'}`}>
               {/* Queue preview — compact, just enough for the list */}
               {(() => {
@@ -472,23 +456,13 @@ export function DraftRoomDrafting({
                 const activeQueue = engine.queuedPlayers.filter(p => !draftedIds.has(p.playerId));
                 return (
               <div className="flex flex-col border-b border-white/[0.06]" style={{ maxHeight: '30%' }}>
-                <div className="flex items-center px-3 py-2 flex-shrink-0">
-                  <button
-                    onClick={() => onTabChange('queue')}
-                    className="flex-1 flex items-center justify-between text-xs font-bold uppercase tracking-wider text-white/50 hover:text-white/80 transition-colors text-left"
-                  >
-                    <span>Queue {activeQueue.length > 0 ? `(${activeQueue.length})` : ''}</span>
-                    <span className="text-[10px] text-white/30 normal-case tracking-normal font-medium">View →</span>
-                  </button>
-                  <button
-                    onClick={() => setSidebarOpen(false)}
-                    className="ml-2 text-white/30 hover:text-white/85 text-base leading-none w-6 h-6 flex items-center justify-center rounded hover:bg-white/[0.06] transition-colors"
-                    title="Hide panel (⌘\)"
-                    aria-label="Hide panel"
-                  >
-                    ›
-                  </button>
-                </div>
+                <button
+                  onClick={() => onTabChange('queue')}
+                  className="flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-white/50 hover:text-white/80 transition-colors flex-shrink-0"
+                >
+                  <span>Queue {activeQueue.length > 0 ? `(${activeQueue.length})` : ''}</span>
+                  <span className="text-[10px] text-white/30 normal-case tracking-normal font-medium">View →</span>
+                </button>
                 <div className="flex-1 overflow-y-auto px-2 pb-2">
                   {activeQueue.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-white/20 text-xs text-center px-4">
