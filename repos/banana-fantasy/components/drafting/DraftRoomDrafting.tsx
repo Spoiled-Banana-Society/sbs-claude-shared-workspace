@@ -577,9 +577,6 @@ export function DraftRoomDrafting({
                                 >
                                   {pos}
                                 </span>
-                                {players.length > 0 && (
-                                  <span className="text-[9px] text-white/25 tabular-nums">{players.length}</span>
-                                )}
                               </div>
                               {players.length === 0 ? (
                                 <div className="text-white/20 text-xs px-3 py-0.5">—</div>
