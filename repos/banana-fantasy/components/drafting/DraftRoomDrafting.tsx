@@ -104,6 +104,21 @@ export function DraftRoomDrafting({
     } catch {}
   }, [sidebarOpen]);
 
+  // ⌘\ / Ctrl+\ — macOS/Finder standard for sidebar toggle. Skip when an
+  // input/textarea is focused so it doesn't fight the chat composer.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== '\\') return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      e.preventDefault();
+      setSidebarOpen(prev => !prev);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   const getPositionCountsForPlayer = (playerName: string) => {
     const roster = engine.rosters[playerName];
     if (!roster) return { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0 };
@@ -333,7 +348,13 @@ export function DraftRoomDrafting({
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
             <div className="flex-1 overflow-auto flex flex-col min-w-0">
-              <DraftTabs activeTab={activeTab} onTabChange={onTabChange} queueCount={engine.queuedPlayers.length} />
+              <DraftTabs
+                activeTab={activeTab}
+                onTabChange={onTabChange}
+                queueCount={engine.queuedPlayers.length}
+                sidebarOpen={sidebarOpen}
+                onToggleSidebar={() => setSidebarOpen(prev => !prev)}
+              />
               {activeTab === 'draft' && isCompleted && (
                 <DraftComplete
                   draftId={draftId || urlDraftId}
@@ -419,24 +440,9 @@ export function DraftRoomDrafting({
               </div>
             </div>
 
-            {/* Right sidebar: Queue + My Team previews (desktop only) */}
-            {/* Toggle button (always visible) */}
-            <button
-              onClick={() => setSidebarOpen(prev => !prev)}
-              className="hidden xl:flex flex-col items-center justify-center w-8 flex-shrink-0 bg-white/[0.04] hover:bg-white/[0.1] text-white/50 hover:text-white text-sm transition-colors border-l border-white/[0.08] cursor-pointer gap-2"
-              title={sidebarOpen ? 'Hide queue & team' : 'Show queue & team'}
-              aria-label={sidebarOpen ? 'Hide queue & team' : 'Show queue & team'}
-            >
-              <span className="text-base leading-none">{sidebarOpen ? '›' : '‹'}</span>
-              {!sidebarOpen && (
-                <span
-                  className="text-[10px] font-bold uppercase tracking-wider whitespace-nowrap"
-                  style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-                >
-                  Queue · My Team
-                </span>
-              )}
-            </button>
+            {/* Right sidebar: Queue + My Team previews (desktop only).
+                Toggle lives in the top tab row (Show/Hide Panel button)
+                — no edge rail. ⌘\ / Ctrl+\ also toggles. */}
             <div className={`hidden xl:flex flex-col flex-shrink-0 border-l border-white/[0.06] overflow-hidden transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-0 border-l-0'}`}>
               {/* Queue preview — compact, just enough for the list */}
               {(() => {
@@ -449,7 +455,7 @@ export function DraftRoomDrafting({
                   className="flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-white/50 hover:text-white/80 transition-colors flex-shrink-0"
                 >
                   <span>Queue {activeQueue.length > 0 ? `(${activeQueue.length})` : ''}</span>
-                  <span className="text-[10px] text-white/30">View full →</span>
+                  <span className="text-[10px] text-white/30 normal-case tracking-normal font-medium">View →</span>
                 </button>
                 <div className="flex-1 overflow-y-auto px-2 pb-2">
                   {activeQueue.length === 0 ? (
@@ -527,9 +533,9 @@ export function DraftRoomDrafting({
                   className="flex items-center justify-between px-3 py-2 text-xs font-bold uppercase tracking-wider text-white/50 hover:text-white/80 transition-colors flex-shrink-0"
                 >
                   <span>{teamLabel} ({teamCount}/15)</span>
-                  <span className="text-[10px] text-white/30">View full →</span>
+                  <span className="text-[10px] text-white/30 normal-case tracking-normal font-medium">View →</span>
                 </button>
-                <div className="flex-1 overflow-y-auto px-2 pb-2">
+                <div className="flex-1 overflow-y-auto pb-2">
                   {(() => {
                     const userRoster = engine.rosters[viewedName];
                     const positionKeys = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
@@ -547,31 +553,45 @@ export function DraftRoomDrafting({
                       }
                     }
                     return (
-                      <div className="space-y-2">
-                        {/* Column headers */}
-                        <div className="flex items-center text-[9px] text-white/30 uppercase tracking-wider px-2">
+                      <div>
+                        {/* Column headers — flush left with rows below */}
+                        <div className="flex items-center text-[9px] text-white/30 uppercase tracking-[0.12em] px-3 pb-1">
                           <span className="flex-1">Player</span>
-                          <span className="w-7 text-center">Bye</span>
-                          <span className="w-7 text-center">ADP</span>
-                          <span className="w-7 text-center">Pick</span>
+                          <span className="w-7 text-right tabular-nums">Bye</span>
+                          <span className="w-7 text-right tabular-nums">ADP</span>
+                          <span className="w-8 text-right tabular-nums">Pick</span>
                         </div>
                         {positionKeys.map(pos => {
                           const players = userRoster ? ((userRoster as unknown as Record<string, string[]>)[pos] || []) : [];
                           const posColor = POSITION_COLORS[pos] || '#888';
                           return (
-                            <div key={pos}>
-                              <div className="text-[10px] font-bold uppercase tracking-wider mb-0.5" style={{ color: posColor }}>{pos}</div>
+                            <div key={pos} className="mt-2 first:mt-1">
+                              {/* Position header — flush left, colored hairline underline anchors the section */}
+                              <div
+                                className="flex items-center justify-between px-3 py-1 mb-0.5 border-b"
+                                style={{ borderBottomColor: `${posColor}26` }}
+                              >
+                                <span
+                                  className="text-[10px] font-bold uppercase tracking-[0.18em]"
+                                  style={{ color: posColor }}
+                                >
+                                  {pos}
+                                </span>
+                                {players.length > 0 && (
+                                  <span className="text-[9px] text-white/25 tabular-nums">{players.length}</span>
+                                )}
+                              </div>
                               {players.length === 0 ? (
-                                <div className="text-white/15 text-xs pl-2">--</div>
+                                <div className="text-white/20 text-xs px-3 py-0.5">—</div>
                               ) : (
                                 players.map(playerId => {
                                   const info = pickLookup[playerId];
                                   return (
-                                    <div key={playerId} className="flex items-center text-xs py-0.5 pl-2">
-                                      <span className="text-white/70 truncate flex-1">{playerId}</span>
-                                      <span className="text-white/30 w-7 text-center text-[10px]">{info?.bye || '-'}</span>
-                                      <span className="text-white/30 w-7 text-center text-[10px]">{info?.adp || '-'}</span>
-                                      <span className="text-white/40 w-7 text-center text-[10px] font-medium">{info?.pick || '-'}</span>
+                                    <div key={playerId} className="flex items-center text-xs py-1 px-3 hover:bg-white/[0.02] transition-colors">
+                                      <span className="text-white/85 truncate flex-1 font-medium tracking-tight">{playerId}</span>
+                                      <span className="text-white/35 w-7 text-right text-[10px] tabular-nums">{info?.bye || '—'}</span>
+                                      <span className="text-white/35 w-7 text-right text-[10px] tabular-nums">{info?.adp || '—'}</span>
+                                      <span className="text-white/55 w-8 text-right text-[10px] font-semibold tabular-nums">{info?.pick || '—'}</span>
                                     </div>
                                   );
                                 })
