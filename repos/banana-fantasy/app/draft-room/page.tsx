@@ -32,6 +32,7 @@ import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 import { useUserRankings } from '@/hooks/useUserRankings';
+import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -1033,24 +1034,59 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId, isLiveMode]);
 
-  // Poll server for real player count during filling
+  // Track real player count during filling.
+  //
+  // Primary: Firebase RTDB live listener on /drafts/{id}/numPlayers. The
+  // Go API (models/leagues.go:AddCardToLeague) writes that field on every
+  // join, so the 10th player → "Randomizing" handoff lands within ~100ms
+  // of the join landing — no polling round-trip. Replaces the old 2.5s
+  // poll loop that could leave users staring at "9/10" for almost a full
+  // poll window after the room filled.
+  //
+  // Fallback: a slow 5s REST poll as a safety net in case RTDB is
+  // unhealthy (env missing, permission denied, listener never fires).
+  // Drops to a faster 1.5s cadence until RTDB starts reporting, then
+  // backs off because RTDB is doing the speed work.
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     let cancelled = false;
+    let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let rtdbHealthy = false;
 
-    const pollPlayers = async () => {
+    const unsubRtdb = subscribeDraftNumPlayers(draftId, (n) => {
+      if (cancelled) return;
+      if (n > 0) {
+        rtdbHealthy = true;
+        setPlayerCount((prev) => Math.max(prev, n));
+      }
+    });
+
+    const pollOnce = async () => {
       try {
         const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(draftId)}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) setPlayerCount(count);
+        if (count > 0 && !cancelled) setPlayerCount((prev) => Math.max(prev, count));
       } catch { /* ignore */ }
     };
 
-    pollPlayers();
-    const interval = setInterval(pollPlayers, 2500);
-    return () => { cancelled = true; clearInterval(interval); };
+    const FALLBACK_SLOW_MS = 5000;
+    const FALLBACK_FAST_MS = 1500;
+
+    const pollLoop = async () => {
+      if (cancelled) return;
+      await pollOnce();
+      if (cancelled) return;
+      pollTimeoutId = setTimeout(pollLoop, rtdbHealthy ? FALLBACK_SLOW_MS : FALLBACK_FAST_MS);
+    };
+    void pollLoop();
+
+    return () => {
+      cancelled = true;
+      unsubRtdb();
+      if (pollTimeoutId) clearTimeout(pollTimeoutId);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId, phase]);
 
