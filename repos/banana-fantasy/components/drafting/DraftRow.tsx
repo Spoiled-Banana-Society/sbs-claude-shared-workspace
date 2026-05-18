@@ -46,11 +46,22 @@ export function DraftRow({
   // stale/wrong contestName (e.g. backend fallback that extracts the
   // slot number from the id) can't show the wrong league number.
   const liveLeagueNumber = useLeagueNumberForSlot(draft.id);
-  // Compose the displayed league name. Prefer live-resolved number; fall
-  // back to contestName from the data layer if the resolve is in flight.
+  // Detect a contestName that was derived from the slot number — older
+  // builds wrote "League #${slot}" into localStorage even though the
+  // slot counter drifts from the global league number. Showing that
+  // stale value would lie about the league number for the brief window
+  // before useLeagueNumberForSlot resolves. Render "League…" instead.
+  const slotMatch = /-draft-(\d+)$/.exec(draft.id || '');
+  const looksLikeSlotFallback = !!slotMatch && (
+    draft.contestName === `League #${slotMatch[1]}` ||
+    draft.contestName === `BBB League #${slotMatch[1]}` ||
+    draft.contestName === `BBB #${slotMatch[1]}`
+  );
   const displayedLeagueName = liveLeagueNumber != null
     ? `League #${liveLeagueNumber}`
-    : draft.contestName;
+    : (looksLikeSlotFallback || !draft.contestName)
+      ? 'League…'
+      : draft.contestName;
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'

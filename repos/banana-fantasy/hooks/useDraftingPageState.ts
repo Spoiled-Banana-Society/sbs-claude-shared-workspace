@@ -481,7 +481,12 @@ export function useDraftingPageState() {
           else type = isDrafting ? 'pro' : null;
           return {
             id: t.leagueId || t.cardId,
-            contestName: t.leagueDisplayName || `League #${t.leagueId || t.cardId}`,
+            // Trust the backend's displayName (sourced from doc.DisplayName).
+            // Never fall back to slot-id-derived "League #N" — the slot
+            // counter drifts from the global league number, so that fallback
+            // produces the wrong number. Empty signals DraftRow to render
+            // "League…" until useLeagueNumberForSlot resolves the real one.
+            contestName: t.leagueDisplayName || '',
             status: isDrafting ? 'drafting' : 'filling',
             type,
             draftSpeed,

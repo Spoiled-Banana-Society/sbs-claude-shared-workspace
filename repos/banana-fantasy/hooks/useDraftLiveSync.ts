@@ -172,7 +172,13 @@ export function useDraftLiveSync({
           draftStore.removeDraft(pendingId);
           draftStore.addDraft({
             id: newId,
-            contestName: draftRoom.contestName || `BBB League #${String(newId).split('-').pop() || newId}`,
+            // NEVER derive a number from the slot id — the slot counter
+            // (per-speed-per-year) drifts from the global league number,
+            // so `League #${slot}` is almost always wrong by the time
+            // the season fills up. Empty contestName signals DraftRow to
+            // show "League…" until useLeagueNumberForSlot resolves the
+            // real number from the doc's DisplayName.
+            contestName: draftRoom.contestName || '',
             status: 'filling',
             type: null,
             draftSpeed: speedParam || 'fast',
