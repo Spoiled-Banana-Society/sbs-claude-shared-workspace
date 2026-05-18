@@ -497,22 +497,6 @@ export function useDraftingPageState() {
           };
         });
 
-        // Garbage-collect: any wallet-owned drafts that are NOT in the
-        // current API response have either completed (roster fully built →
-        // filtered out by the active-tokens check above) or been left.
-        // Remove them so they stop showing in My Drafts. Without this,
-        // a completed draft sits in localStorage forever and shows up as
-        // a stale row above the actual current draft.
-        const apiIds = new Set(mapped.map((d) => d.id));
-        const currentWalletLc = user!.walletAddress!.toLowerCase();
-        for (const stored of draftStore.getActiveDrafts()) {
-          if (stored.specialType) continue; // queue drafts tracked separately
-          if (apiIds.has(stored.id)) continue;
-          if (!stored.liveWalletAddress) continue;
-          if (stored.liveWalletAddress.toLowerCase() !== currentWalletLc) continue;
-          draftStore.removeDraft(stored.id);
-        }
-
         for (const d of mapped) {
           if (hiddenDraftIds.has(d.id)) continue;
           const existing = draftStore.getDraft(d.id);
@@ -578,43 +562,8 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
-
-    // SSE: server pushes the user's token list whenever it changes
-    // (joined a new draft, league name written, roster updated,
-    // completion). Sub-200ms updates with zero polling overhead — far
-    // better than the 2s poll we used to do.
-    //
-    // Polling is kept as a safety net at a slow cadence (15s) in case
-    // SSE drops and reconnect fails repeatedly. Vercel streams have a
-    // ~55s lifetime — frontend auto-reconnects on close.
-    const wallet = user?.walletAddress;
-    let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const connectSSE = () => {
-      if (cancelled || !wallet) return;
-      es = new EventSource(`/api/drafts/my-drafts/stream?wallet=${encodeURIComponent(wallet)}`);
-      const onPayload = () => { void loadLiveDrafts(); };
-      es.addEventListener('snapshot', onPayload);
-      es.addEventListener('update', onPayload);
-      es.onerror = () => {
-        try { es?.close(); } catch { /* ignore */ }
-        if (cancelled) return;
-        reconnectTimer = setTimeout(connectSSE, 1500);
-      };
-    };
-    connectSSE();
-
-    const focusHandler = () => { void loadLiveDrafts(); };
-    window.addEventListener('focus', focusHandler);
-    // Safety-net poll at 15s in case SSE drops repeatedly.
-    const intervalId = setInterval(() => { void loadLiveDrafts(); }, 15_000);
     return () => {
       cancelled = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      try { es?.close(); } catch { /* ignore */ }
-      window.removeEventListener('focus', focusHandler);
-      clearInterval(intervalId);
     };
   }, [hiddenDraftIds, isLive, user]);
 
@@ -1089,12 +1038,7 @@ export function useDraftingPageState() {
       return (a.currentPick || 99) - (b.currentPick || 99);
     }
 
-    // Newest fill first. Slot # is monotonic per speed/year — works for
-    // the common case where a user's active drafts share a season.
-    const aSlot = slotNumberOf(a);
-    const bSlot = slotNumberOf(b);
-    if (aSlot !== bSlot) return bSlot - aSlot;
-    return (b.joinedAt || 0) - (a.joinedAt || 0);
+    return (a.joinedAt || 0) - (b.joinedAt || 0);
   });
 
   const specialDrafts = sortedDrafts.filter(d => d.id.startsWith('queue-'));

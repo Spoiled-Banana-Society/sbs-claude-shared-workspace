@@ -40,42 +40,29 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
       setLeagueNumber(cached);
       return;
     }
-
     let cancelled = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    // Retry until we get a real answer (or component unmounts). The
-    // resolution endpoint can return 404 in a brief race window between
-    // a draft filling (token assigned) and the doc's DisplayName being
-    // written. Without retry the label stays stuck on the stale
-    // contestName fallback. Exponential backoff capped at 4s.
-    let attempt = 0;
-    const tryFetch = async () => {
-      if (cancelled) return;
-      const cachedNow = cache.get(slotId);
-      if (cachedNow) { setLeagueNumber(cachedNow); return; }
+    const promise = inFlight.get(slotId) ?? (async () => {
       try {
         const res = await fetch(`/api/drafts/${slotId}/league-number`);
-        if (!cancelled && res.ok) {
-          const body = (await res.json()) as { leagueNumber?: number };
-          if (typeof body.leagueNumber === 'number') {
-            cache.set(slotId, body.leagueNumber);
-            setLeagueNumber(body.leagueNumber);
-            return;
-          }
+        if (!res.ok) return null;
+        const body = (await res.json()) as { leagueNumber?: number };
+        if (typeof body.leagueNumber === 'number') {
+          cache.set(slotId, body.leagueNumber);
+          return body.leagueNumber;
         }
-      } catch { /* network blip — fall through to retry */ }
+        return null;
+      } catch {
+        return null;
+      } finally {
+        inFlight.delete(slotId);
+      }
+    })();
+    inFlight.set(slotId, promise);
+    promise.then((n) => {
       if (cancelled) return;
-      const delay = Math.min(4000, 500 * Math.pow(2, attempt));
-      attempt += 1;
-      retryTimer = setTimeout(tryFetch, delay);
-    };
-    void tryFetch();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-    };
+      if (n != null) setLeagueNumber(n);
+    });
+    return () => { cancelled = true; };
   }, [slotId]);
 
   return leagueNumber;

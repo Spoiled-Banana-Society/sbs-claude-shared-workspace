@@ -218,13 +218,6 @@ export function useDraftLiveSync({
 
     const pickPayload = engine.draftPlayer(playerId);
     if (pickPayload && draftId) {
-      logger.info('[Draft] Manual pick submitted', {
-        draftId,
-        wallet: walletParam,
-        playerId: pickPayload.playerId,
-        position: pickPayload.position,
-        pickNumber: engine.currentPickNumber,
-      });
       // Submit pick via REST to draft-actions service
       draftApi.submitPickREST(draftId, walletParam, {
         playerId: pickPayload.playerId,

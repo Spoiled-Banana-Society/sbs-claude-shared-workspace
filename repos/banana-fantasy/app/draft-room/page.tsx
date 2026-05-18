@@ -32,7 +32,6 @@ import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 import { useUserRankings } from '@/hooks/useUserRankings';
-import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -628,13 +627,7 @@ function DraftRoomContent() {
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
-      logger.info('[Airplane] Auto-pick fired', {
-        draftId,
-        wallet: walletParam,
-        pickId,
-        pickNumber: engine.currentPickNumber,
-        source: 'airplane_mode',
-      });
+      logger.debug('[Airplane] Auto-picking immediately:', pickId);
       if (isLiveMode && draftId) {
         const payload = engine.draftPlayer(pickId);
         if (payload) {
@@ -643,13 +636,7 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => logger.error('airplane.autopick_failed', {
-            route: '/draft-actions/submitPickREST',
-            draftId,
-            wallet: walletParam,
-            pickId,
-            err: e,
-          }));
+          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
         }
       } else {
         engine.draftPlayer(pickId);
@@ -727,20 +714,11 @@ function DraftRoomContent() {
   useEffect(() => {
     const id = getPersistId();
     if (!id) return;
-    // Log entry to draft room — boundary event for tracing 'what
-    // happened during this user's session in this draft'.
-    logger.info('[DraftRoom] Entered', {
-      draftId: id,
-      wallet: walletParam,
-      isLiveMode,
-    });
-    // Read localStorage synchronously so airplane mode is correct from
-    // the first render. Prefs fetch will reconcile if server disagrees.
-    const stored = localStorage.getItem(`airplane:${id}`);
-    if (stored === '1') {
+    const existing = draftStore.getDraft(id);
+    if (existing && localStorage.getItem(`airplane:${id}`) === '1') {
       engine.setAirplaneMode(true);
-    } else if (stored === '0') {
-      engine.setAirplaneMode(false);
+    } else {
+      localStorage.removeItem(`airplane:${id}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId]);
@@ -765,12 +743,6 @@ function DraftRoomContent() {
     const id = getPersistId();
     if (!id) return;
     const newValue = !engine.airplaneMode;
-    logger.info('[Airplane] Manual toggle', {
-      draftId: id,
-      wallet: walletParam,
-      newValue,
-      source: 'user_toggle',
-    });
     localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
     draftStore.updateDraft(id, { airplaneMode: newValue });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -853,22 +825,7 @@ function DraftRoomContent() {
         engine.setAutoPickSortPreference(newSort);
         setMissedPicksCount(prefs.numPicksMissedConsecutive || 0);
 
-        // Sync local airplaneMode with server autoDraft preference.
-        // Also mirror to localStorage so the next page-mount picks up
-        // the correct value SYNCHRONOUSLY (via the line 714 effect)
-        // instead of flickering through OFF → prefs-fetch → ON. This
-        // means "re-enter the draft" looks identical to "stayed in the
-        // draft": airplane mode is already on from t=0.
-        logger.info('[Airplane] Prefs loaded', {
-          draftId,
-          serverAutoDraft: prefs.autoDraft,
-          serverMissedCount: prefs.numPicksMissedConsecutive,
-          engineAirplane: engine.airplaneMode,
-        });
-        const persistId = getPersistId();
-        if (persistId) {
-          localStorage.setItem(`airplane:${persistId}`, prefs.autoDraft ? '1' : '0');
-        }
+        // Sync local airplaneMode with server autoDraft preference
         if (prefs.autoDraft !== engine.airplaneMode) {
           engine.setAirplaneMode(prefs.autoDraft);
         }
@@ -1034,59 +991,24 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId, isLiveMode]);
 
-  // Track real player count during filling.
-  //
-  // Primary: Firebase RTDB live listener on /drafts/{id}/numPlayers. The
-  // Go API (models/leagues.go:AddCardToLeague) writes that field on every
-  // join, so the 10th player → "Randomizing" handoff lands within ~100ms
-  // of the join landing — no polling round-trip. Replaces the old 2.5s
-  // poll loop that could leave users staring at "9/10" for almost a full
-  // poll window after the room filled.
-  //
-  // Fallback: a slow 5s REST poll as a safety net in case RTDB is
-  // unhealthy (env missing, permission denied, listener never fires).
-  // Drops to a faster 1.5s cadence until RTDB starts reporting, then
-  // backs off because RTDB is doing the speed work.
+  // Poll server for real player count during filling
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     let cancelled = false;
-    let pollTimeoutId: ReturnType<typeof setTimeout> | null = null;
-    let rtdbHealthy = false;
 
-    const unsubRtdb = subscribeDraftNumPlayers(draftId, (n) => {
-      if (cancelled) return;
-      if (n > 0) {
-        rtdbHealthy = true;
-        setPlayerCount((prev) => Math.max(prev, n));
-      }
-    });
-
-    const pollOnce = async () => {
+    const pollPlayers = async () => {
       try {
         const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(draftId)}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) setPlayerCount((prev) => Math.max(prev, count));
+        if (count > 0 && !cancelled) setPlayerCount(count);
       } catch { /* ignore */ }
     };
 
-    const FALLBACK_SLOW_MS = 5000;
-    const FALLBACK_FAST_MS = 1500;
-
-    const pollLoop = async () => {
-      if (cancelled) return;
-      await pollOnce();
-      if (cancelled) return;
-      pollTimeoutId = setTimeout(pollLoop, rtdbHealthy ? FALLBACK_SLOW_MS : FALLBACK_FAST_MS);
-    };
-    void pollLoop();
-
-    return () => {
-      cancelled = true;
-      unsubRtdb();
-      if (pollTimeoutId) clearTimeout(pollTimeoutId);
-    };
+    pollPlayers();
+    const interval = setInterval(pollPlayers, 2500);
+    return () => { cancelled = true; clearInterval(interval); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId, phase]);
 
