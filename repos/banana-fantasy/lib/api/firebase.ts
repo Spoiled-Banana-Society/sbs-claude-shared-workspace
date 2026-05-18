@@ -153,6 +153,22 @@ export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: numbe
   return subscribeValue<number>(`/drafts/${draftId}/numPlayers`, (v) => cb(Number(v || 0)));
 }
 
+/**
+ * Subscribe to the league display name (e.g. "BBB #811") for a draft.
+ *
+ * Firebase path:
+ *   /drafts/{draftId}/displayName
+ *
+ * Go API writes this at the moment of fill (CreateLeagueDraftStateUponFilling),
+ * so the row label updates within ~100ms of the slot filling instead of
+ * relying on a REST retry loop.
+ */
+export function subscribeDraftDisplayName(draftId: string, cb: (displayName: string) => void): Unsubscribe {
+  return subscribeValue<string>(`/drafts/${draftId}/displayName`, (v) => {
+    if (typeof v === 'string' && v.length > 0) cb(v);
+  });
+}
+
 // ─────────── Draft Room Chat ───────────
 
 export interface ChatMessageRecord {

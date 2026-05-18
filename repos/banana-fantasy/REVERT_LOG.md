@@ -39,7 +39,7 @@ pre-revert HEAD if anything needs to be cherry-picked back.
 | 41599aa | Retry deploy after Sentry token scope expansion                  | No code change                      |
 | 712b35d | Pick up rotated SENTRY_AUTH_TOKEN (with event:admin scope)       | No code change                      |
 
-## BACKEND — sbs-drafts-api-deploy
+## BACKEND #1 — Go API (sbs-drafts-api-deploy → sbs-drafts-api-staging)
 
 ### Reverted (1 commit)
 
@@ -47,8 +47,73 @@ pre-revert HEAD if anything needs to be cherry-picked back.
 | ------- | ------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ee9da45 | 05-17 22:11  | Speed up draft join handler — instant Randomizing + parallel setup | Reordered RTDB writes during 10th-player-joins path: numPlayers pushed BEFORE `CreateLeagueDraftStateUponFilling`; user-token setup parallelized. **Strong suspect for the freeze.** |
 
-After revert, redeployed via:
+After revert, redeployed as revision `sbs-drafts-api-staging-00116-fj9` via:
 `gcloud run deploy sbs-drafts-api-staging --source . --region us-central1 --project sbs-staging-env --quiet`
+
+### Additional uncommitted revert — `models/draft-state.go` (the actual freeze cause)
+
+Deeper audit found that yesterday had **5 Go API deploys** (00112, 00113, 00114, 00115, 00116), not 1. The git history only captured `ee9da45` (deployed in 00115); the others contained uncommitted working-tree changes.
+
+Comparing the live working tree against rev 00112 source (pulled from
+`gs://run-sources-sbs-staging-env-us-central1/.../1778999048...zip`),
+only two files actually differ in content:
+
+| File | Status | Reason |
+| --- | --- | --- |
+| `models/draft-state.go` | **Reverted to rev 00112** | Yesterday's edit re-introduced `PfpInfo` storage on every pick slot. The rev 00112 comments explicitly warn this caused the 1 MB Firestore doc-size overflow → fill aborted → 10th-joiner rollback. **This is the freeze.** Backup: `models/draft-state.go.pre-revert-2026-05-18.bak`. |
+| `models/draft-token.go` | **Kept** | Adds `LeagueDisplayName` backfill from the draft doc — pairs with the kept frontend commits `65410f4` + `2bf6a6e` (league # work). Reverting would break the frontend league # fix. |
+
+Other files with yesterday mtimes (`main.go`, `staging/staging.go`, `batchproof/*`, `draft-actions/*`, `draft-state/drafts.go`, `models/draft-actions.go`, `models/owner.go`) have identical content to rev 00112 — touched but no net change. No action needed.
+
+Final state redeployed as `sbs-drafts-api-staging-00118-...` (revert of `draft-state.go` + everything else matches rev 00112 effective behavior).
+
+## BACKEND #2 — WebSocket server (SBS-Football-Drafts-main → sbs-drafts-server-staging)
+
+**Not git-tracked.** Two new revisions deployed yesterday after fee9e84:
+- `sbs-drafts-server-staging-00035-nmv` (2026-05-17 23:09 MT)
+- `sbs-drafts-server-staging-00036-9j6` (2026-05-17 23:53 MT)
+
+**Action:** Cloud Run traffic rolled back to **revision `sbs-drafts-server-staging-00034-96w`** (2026-05-13 22:57 MT — last known-good).
+
+Command used:
+`gcloud run services update-traffic sbs-drafts-server-staging --to-revisions=sbs-drafts-server-staging-00034-96w=100 --region us-central1 --project sbs-staging-env`
+
+### Files reverted on disk in `~/SBS-Football-Drafts-main/`
+
+Source for revision 00034 was retrieved from
+`gs://run-sources-sbs-staging-env-us-central1/services/sbs-drafts-server-staging/1778648136.345499-43c71d3182604df48e90c22afcc0655b.zip`
+(uploaded 2026-05-12 22:55 MT, deployed 2 min later as revision 00034).
+
+All 7 yesterday-modified files restored to that exact rev34 state. Originals
+saved alongside as `<file>.pre-revert-2026-05-18.bak`. `go build ./...` runs
+clean after the revert.
+
+| File                          | Lines reverted | Notable                                                          | Backup                                                    |
+| ----------------------------- | -------------: | ---------------------------------------------------------------- | --------------------------------------------------------- |
+| `main.go`                     | 10             |                                                                  | `main.go.pre-revert-2026-05-18.bak`                       |
+| `websockets/event.go`         | 2              |                                                                  | `websockets/event.go.pre-revert-2026-05-18.bak`           |
+| `websockets/timer.go`         | 2              | **Timer logic — strong freeze suspect**                          | `websockets/timer.go.pre-revert-2026-05-18.bak`           |
+| `websockets/draft-manager.go` | 6              | Draft lifecycle                                                  | `websockets/draft-manager.go.pre-revert-2026-05-18.bak`   |
+| `websockets/draft.go`         | 18             | `GoToNextPickInDraftInfo` got `lastPick *models.PlayerInfo` param | `websockets/draft.go.pre-revert-2026-05-18.bak`           |
+| `utils/db.go`                 | 40             |                                                                  | `utils/db.go.pre-revert-2026-05-18.bak`                   |
+| `models/draft-info.go`        | 62             |                                                                  | `models/draft-info.go.pre-revert-2026-05-18.bak`          |
+
+**Verified clean revert:** each rev34 file mtime predates 2026-05-13 (the
+00034 deploy date), so the diffs reverted are purely yesterday's edits — no
+collateral loss of intermediate changes between 5/13 and 5/17 12:13.
+
+A future `gcloud run deploy sbs-drafts-server-staging --source .` is now safe;
+it will reproduce the equivalent of revision 00034.
+
+To re-implement later:
+1. Inspect the `.bak` files in `~/SBS-Football-Drafts-main/` — each is the
+   exact pre-revert version.
+2. `diff <file> <file>.pre-revert-2026-05-18.bak` shows what was reverted.
+3. Re-apply selectively, then `gcloud run deploy sbs-drafts-server-staging --source . --region us-central1 --project sbs-staging-env`.
+
+## BACKEND #3 — Firebase Functions (sbs-staging-functions)
+
+**No files modified after 2026-05-17 12:13.** No revert needed.
 
 ## How to bring something back later
 

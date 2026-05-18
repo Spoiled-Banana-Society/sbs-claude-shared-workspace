@@ -11,6 +11,7 @@ import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
+import { subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
@@ -40,7 +41,7 @@ function DraftRoomContent() {
   // During filling phase, don't show a numbered name — drafts only get a batch number after starting.
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
-  const [contestName, _setContestName] = useState(urlName || 'Draft Room');
+  const [contestName, setContestName] = useState(urlName || 'Draft Room');
   const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
   const walletParam = searchParams?.get('wallet') || '';
@@ -113,6 +114,18 @@ function DraftRoomContent() {
   useEffect(() => {
     return () => cleanupAudio();
   }, [cleanupAudio]);
+
+  // Live league name from Firebase RTDB. Go API writes
+  // drafts/{draftId}/displayName at the moment of fill, so the header
+  // label ("BBB #811") updates within ~100ms of slot-fill instead of
+  // staying stuck on whatever the URL had at mount.
+  useEffect(() => {
+    if (!draftId) return;
+    const unsub = subscribeDraftDisplayName(draftId, (name) => {
+      setContestName(name);
+    });
+    return () => { try { unsub(); } catch { /* ignore */ } };
+  }, [draftId]);
 
   const [fallbackLocal, setFallbackLocal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);

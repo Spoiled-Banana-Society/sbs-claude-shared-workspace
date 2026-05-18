@@ -17,7 +17,7 @@ import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -598,6 +598,24 @@ export function useDraftingPageState() {
     const unsubs = fillingLiveDraftIds.map((draftId) =>
       subscribeDraftNumPlayers(draftId, (count) => {
         if (count > 0) draftStore.updateDraft(draftId, { players: count });
+      }),
+    );
+    return () => {
+      for (const unsub of unsubs) {
+        try { unsub(); } catch { /* ignore */ }
+      }
+    };
+  }, [fillingLiveDraftIds]);
+
+  // Live league display name on /drafting cards — Go API writes
+  // drafts/{draftId}/displayName to RTDB at the moment of fill, so the
+  // row label updates within ~100ms of slot filling. Replaces the
+  // REST retry-on-404 path in useLeagueNumberForSlot for live drafts.
+  useEffect(() => {
+    if (fillingLiveDraftIds.length === 0) return;
+    const unsubs = fillingLiveDraftIds.map((draftId) =>
+      subscribeDraftDisplayName(draftId, (displayName) => {
+        draftStore.updateDraft(draftId, { contestName: displayName });
       }),
     );
     return () => {
