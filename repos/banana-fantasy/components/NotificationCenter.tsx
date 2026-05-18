@@ -116,14 +116,16 @@ function loadNotifications(): Notification[] {
       return n;
     });
     // Self-heal legacy duplicates: collapse to first occurrence per
-    // dedupeKey OR per identical title (covers older badge notifications
-    // written before dedupeKey existed). Order-preserving so the user's
-    // newest entry wins.
+    // canonical dedup key. For badge notifications, ALWAYS use the
+    // title (e.g. "Badge unlocked: Veteran") regardless of whether
+    // metadata.dedupeKey is set — old entries (pre-dedupeKey) and new
+    // entries (with dedupeKey "badge-veteran") would otherwise hash to
+    // different keys and both survive. Order-preserving — newest wins.
     const seenKeys = new Set<string>();
     return remapped.filter((n) => {
-      const key = n.metadata?.dedupeKey as string | undefined;
       const isBadgeTitle = n.title.startsWith('Badge unlocked:');
-      const dedupeOn = key ?? (isBadgeTitle ? n.title : null);
+      const key = n.metadata?.dedupeKey as string | undefined;
+      const dedupeOn = isBadgeTitle ? n.title : (key ?? null);
       if (!dedupeOn) return true;
       if (seenKeys.has(dedupeOn)) return false;
       seenKeys.add(dedupeOn);
@@ -160,6 +162,13 @@ export function pushNotification(notif: { type: NotificationType; title: string;
   if (notif.dedupeKey) {
     const collision = existing.some(n => n.metadata?.dedupeKey === notif.dedupeKey);
     if (collision) return;
+  }
+  // Belt-and-suspenders: for badge notifications, also drop if any
+  // existing notification has the same title (catches legacy entries
+  // that predate dedupeKey).
+  if (notif.title.startsWith('Badge unlocked:')) {
+    const titleCollision = existing.some(n => n.title === notif.title);
+    if (titleCollision) return;
   }
   const { dedupeKey, ...rest } = notif;
   const newNotif: Notification = {
