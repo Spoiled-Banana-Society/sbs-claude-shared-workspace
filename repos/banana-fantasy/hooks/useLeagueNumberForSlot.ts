@@ -4,32 +4,75 @@ import { useEffect, useState } from 'react';
 
 const SLOT_ID_RE = /^\d{4}-(fast|slow)-draft-\d+$/;
 
-// Module-level cache so multiple badges for the same slot share the
-// resolved value across the page lifetime. Slot → league mapping is
-// immutable once a draft is assigned, so cache forever.
+// Module-level cache + pub/sub. Slot → league mapping is immutable once
+// a draft is assigned, so cached values never need invalidation — but
+// they DO need to be updatable from outside (the RTDB displayName push
+// in useDraftingPageState / app/draft-room/page.tsx). Without pub/sub,
+// the hook reads the cache once on mount and ignores later updates —
+// which is exactly why "live league #" updates required a hard refresh.
 const cache = new Map<string, number>();
+const listenersBySlot = new Map<string, Set<() => void>>();
 const inFlight = new Map<string, Promise<number | null>>();
+
+function notify(slotId: string) {
+  const set = listenersBySlot.get(slotId);
+  if (set) for (const cb of set) cb();
+}
+
+/**
+ * Push a league number into the cache from outside (e.g. when an RTDB
+ * displayName event arrives). All mounted `useLeagueNumberForSlot`
+ * hooks for that slot re-render immediately.
+ */
+export function setLeagueNumberInCache(slotId: string, leagueNumber: number) {
+  if (!slotId || !Number.isFinite(leagueNumber) || leagueNumber <= 0) return;
+  const prev = cache.get(slotId);
+  if (prev === leagueNumber) return;
+  cache.set(slotId, leagueNumber);
+  notify(slotId);
+}
 
 /**
  * Resolves a draft slot id (e.g. `2024-fast-draft-802`) to its global
  * league number (e.g. 803) via /api/drafts/{slotId}/league-number.
  *
- * Needed because the slot-id counter (per-speed-per-year) drifts from
- * the global FilledLeaguesCount over time, so the slot number embedded
- * in a draft.id can't be trusted as the league number. The doc's
- * DisplayName field is the source of truth.
+ * The slot id counter (per-speed-per-year) drifts from the global
+ * FilledLeaguesCount over time. The doc's DisplayName field is the
+ * source of truth.
  *
- * Returns null for queue drafts or until the resolution completes.
- *
- * Designed for use directly in render — the badge can fall back to the
- * slot id while resolution is in flight (the /proof/{slotId} page will
- * itself resolve + redirect). Once resolved, the badge updates to use
- * the correct global number directly.
+ * Real-time updates: RTDB push subscribers (useDraftingPageState,
+ * app/draft-room/page.tsx) call setLeagueNumberInCache(slot, n) when
+ * the Go API writes drafts/{id}/displayName to RTDB at fill. Mounted
+ * hooks re-render via the pub/sub on listenersBySlot.
  */
 export function useLeagueNumberForSlot(slotId: string | undefined): number | null {
   const initial = slotId ? cache.get(slotId) ?? null : null;
   const [leagueNumber, setLeagueNumber] = useState<number | null>(initial);
 
+  // Re-read the cache whenever it changes for this slotId (pub/sub).
+  // Triggered by setLeagueNumberInCache from the RTDB push subscribers.
+  useEffect(() => {
+    if (!slotId) return;
+    const cb = () => {
+      const v = cache.get(slotId);
+      if (v != null) setLeagueNumber(v);
+    };
+    let set = listenersBySlot.get(slotId);
+    if (!set) {
+      set = new Set();
+      listenersBySlot.set(slotId, set);
+    }
+    set.add(cb);
+    // Pick up any value that landed between mount and subscribe.
+    cb();
+    return () => {
+      set!.delete(cb);
+      if (set!.size === 0) listenersBySlot.delete(slotId);
+    };
+  }, [slotId]);
+
+  // REST fallback. Fires once per slotId; once any source (push or REST)
+  // populates the cache, this short-circuits on subsequent mounts.
   useEffect(() => {
     if (!slotId || !SLOT_ID_RE.test(slotId)) {
       setLeagueNumber(null);
@@ -48,6 +91,7 @@ export function useLeagueNumberForSlot(slotId: string | undefined): number | nul
         const body = (await res.json()) as { leagueNumber?: number };
         if (typeof body.leagueNumber === 'number') {
           cache.set(slotId, body.leagueNumber);
+          notify(slotId);
           return body.leagueNumber;
         }
         return null;

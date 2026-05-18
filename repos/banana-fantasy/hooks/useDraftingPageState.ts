@@ -18,6 +18,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -611,11 +612,41 @@ export function useDraftingPageState() {
   // drafts/{draftId}/displayName to RTDB at the moment of fill, so the
   // row label updates within ~100ms of slot filling. Replaces the
   // REST retry-on-404 path in useLeagueNumberForSlot for live drafts.
+  //
+  // IMPORTANT — subscribe for ALL live drafts (not just filling). The
+  // displayName WRITE fires at the fill transition; if we filter to
+  // 'filling' only, the draft's phase flips to 'drafting' / 'starting'
+  // milliseconds after the write and unmounts our subscription before
+  // onValue delivers. Result: we permanently miss the update for any
+  // draft the user is in when its slot is the 10th joiner. Subscribing
+  // for all live drafts (filling + drafting + pre-start countdown)
+  // costs essentially nothing on Firebase and guarantees delivery.
+  const liveDraftIdsForDisplayName = useMemo(() => {
+    const currentWallet = user?.walletAddress?.toLowerCase();
+    if (!currentWallet) return [] as string[];
+    return localDrafts
+      .filter(d =>
+        d.liveWalletAddress
+        && d.liveWalletAddress.toLowerCase() === currentWallet
+        && (d.phase === 'filling' || d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
+      )
+      .map(d => d.id);
+  }, [localDrafts, user?.walletAddress]);
+
   useEffect(() => {
-    if (fillingLiveDraftIds.length === 0) return;
-    const unsubs = fillingLiveDraftIds.map((draftId) =>
+    if (liveDraftIdsForDisplayName.length === 0) return;
+    const unsubs = liveDraftIdsForDisplayName.map((draftId) =>
       subscribeDraftDisplayName(draftId, (displayName) => {
+        // Update the row's cached contestName (used as a fallback / for
+        // localStorage persistence)…
         draftStore.updateDraft(draftId, { contestName: displayName });
+        // …AND parse the league number out of "BBB #N" and push it into
+        // useLeagueNumberForSlot's cache. Without this, the hook reads
+        // its module-level cache once on mount and never sees the live
+        // update — exactly why "League #N" used to require a hard
+        // refresh to update after a draft filled.
+        const m = /^BBB\s*#(\d+)$/i.exec(displayName);
+        if (m) setLeagueNumberInCache(draftId, Number(m[1]));
       }),
     );
     return () => {
@@ -623,7 +654,7 @@ export function useDraftingPageState() {
         try { unsub(); } catch { /* ignore */ }
       }
     };
-  }, [fillingLiveDraftIds]);
+  }, [liveDraftIdsForDisplayName]);
 
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;

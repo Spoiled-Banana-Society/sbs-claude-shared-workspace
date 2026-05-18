@@ -12,6 +12,7 @@ import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
@@ -118,11 +119,15 @@ function DraftRoomContent() {
   // Live league name from Firebase RTDB. Go API writes
   // drafts/{draftId}/displayName at the moment of fill, so the header
   // label ("BBB #811") updates within ~100ms of slot-fill instead of
-  // staying stuck on whatever the URL had at mount.
+  // staying stuck on whatever the URL had at mount. Also feeds
+  // useLeagueNumberForSlot's cache so any other component on this page
+  // (verified badge, proof link) picks up the new number live.
   useEffect(() => {
     if (!draftId) return;
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
       setContestName(name);
+      const m = /^BBB\s*#(\d+)$/i.exec(name);
+      if (m) setLeagueNumberInCache(draftId, Number(m[1]));
     });
     return () => { try { unsub(); } catch { /* ignore */ } };
   }, [draftId]);
