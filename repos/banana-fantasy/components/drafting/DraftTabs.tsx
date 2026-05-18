@@ -40,17 +40,19 @@ export function DraftTabs({ activeTab, onTabChange, queueCount = 0, sidebarOpen,
       {onToggleSidebar && (
         <button
           onClick={onToggleSidebar}
-          className="hidden xl:flex absolute right-4 top-1/2 -translate-y-1/2 items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-wider text-white/70 hover:text-banana hover:bg-banana/10 border border-white/15 hover:border-banana/40 transition-colors cursor-pointer"
+          className="hidden xl:flex absolute right-4 top-1/2 -translate-y-1/2 items-center justify-center w-8 h-8 rounded-md text-white/55 hover:text-banana hover:bg-banana/10 transition-colors cursor-pointer"
           title={sidebarOpen ? 'Hide panel (⌘\\)' : 'Show panel (⌘\\)'}
           aria-label={sidebarOpen ? 'Hide queue and team panel' : 'Show queue and team panel'}
         >
-          {/* Panel/sidebar icon (right-side panel highlighted) */}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+          {/* Panel/sidebar icon — state-coded (filled right pane = panel
+              currently shown; hollow right pane = currently hidden). Same
+              visual language as macOS Mail / Finder / Notes sidebar
+              toggles. Tooltip carries the full label. */}
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
             <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
             <line x1="10" y1="2.5" x2="10" y2="13.5" />
             {sidebarOpen && <rect x="10" y="2.5" width="4.5" height="11" fill="currentColor" opacity="0.35" stroke="none" />}
           </svg>
-          <span>{sidebarOpen ? 'Hide' : 'Show'} Panel</span>
         </button>
       )}
     </div>
