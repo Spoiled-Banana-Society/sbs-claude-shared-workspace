@@ -66,17 +66,19 @@ export function useBadgeUnlockNotifier() {
         // is enough to keep unlocks fresh.
         const res = await fetch(`/api/badges?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
         if (!res.ok) return;
-        const data = await res.json() as { unlocked?: { id: string }[] };
+        const data = await res.json() as { unlocked?: { id: string; unlockedAt?: string | null }[] };
         if (cancelled) return;
-        const currentIds = new Set((data.unlocked ?? []).map(u => u.id));
+        const unlocked = data.unlocked ?? [];
+        const currentIds = new Set(unlocked.map(u => u.id));
+        const unlockedAtById = new Map(unlocked.map(u => [u.id, u.unlockedAt ?? null]));
 
         // First time this session for this user: record current set as
-        // "already seen" so legacy unlocks don't toast.
+        // "already seen" so legacy unlocks don't toast. Always write
+        // (not just on empty) — the seen set should reflect the latest
+        // server truth, otherwise multi-tab races and stale localStorage
+        // can leave badges marked "new" forever.
         if (!seedDoneRef.current.has(userId)) {
-          const seen = readSeen(userId);
-          if (seen.size === 0) {
-            writeSeen(userId, currentIds);
-          }
+          writeSeen(userId, currentIds);
           seedDoneRef.current.add(userId);
           return;
         }
@@ -88,9 +90,21 @@ export function useBadgeUnlockNotifier() {
         });
         if (newlyUnlocked.length === 0) return;
 
+        // Only notify for badges that ACTUALLY unlocked recently. If a
+        // badge has an unlockedAt timestamp older than 5 minutes, it
+        // was unlocked in a prior session — the seen-set drift (cleared
+        // storage, switched browsers, new device) isn't our cue to
+        // re-celebrate an old achievement.
+        const NOTIFY_WINDOW_MS = 5 * 60_000;
+        const nowMs = Date.now();
+
         for (const id of newlyUnlocked) {
           const badge = BADGE_BY_ID[id];
           if (!badge) continue;
+          const unlockedAt = unlockedAtById.get(id);
+          const unlockedAtMs = unlockedAt ? Date.parse(unlockedAt) : NaN;
+          const isRecent = Number.isFinite(unlockedAtMs) && (nowMs - unlockedAtMs) < NOTIFY_WINDOW_MS;
+          if (!isRecent) continue; // silently absorb — already-earned badge
           show({
             level: 'success',
             message: `Badge unlocked: ${badge.label} ${badge.glyph}`,
@@ -101,6 +115,10 @@ export function useBadgeUnlockNotifier() {
             title: `Badge unlocked: ${badge.label}`,
             message: badge.description,
             link: '/profile?tab=badges',
+            // Stable per-badge key — NotificationCenter dedupes so a
+            // badge can only ever produce one entry, even if the diff
+            // logic above somehow trips a second time.
+            dedupeKey: `badge-${id}`,
           });
         }
         writeSeen(userId, currentIds);
