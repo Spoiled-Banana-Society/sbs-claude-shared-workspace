@@ -440,17 +440,38 @@ export function useDraftingPageState() {
         const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
 
         const activeTokens = tokens.filter((t) => {
-          if (!t.leagueId || hiddenDraftIds.has(t.leagueId)) return false;
+          if (!t.leagueId) return false;
           if (t.roster) {
             const rosterCount = (t.roster.QB?.length || 0)
               + (t.roster.RB?.length || 0)
               + (t.roster.WR?.length || 0)
               + (t.roster.TE?.length || 0)
               + (t.roster.DST?.length || 0);
+            // Completed drafts (15 picks) leave My Drafts. In-progress drafts
+            // are NEVER suppressed by the hidden list — if you hold a token
+            // for a live draft you must always see it. "Clear All" blacklists
+            // every current leagueId, and draft ids get reused, so an active
+            // draft can wrongly land on the hidden list. Un-heal step below.
             if (rosterCount >= 15) return false;
           }
           return true;
         });
+
+        // Self-heal: drop any live (non-completed) draft id from the hidden
+        // list. Without this, one "Clear All" tap permanently hides a draft
+        // the user is actively in on that device.
+        const wronglyHidden = activeTokens
+          .map((t) => t.leagueId)
+          .filter((id) => hiddenDraftIds.has(id));
+        if (wronglyHidden.length > 0) {
+          clientLog('mydrafts', 'unhid.active.drafts', { ids: wronglyHidden });
+          setHiddenDraftIds((prev) => {
+            const next = new Set(prev);
+            for (const id of wronglyHidden) next.delete(id);
+            try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            return next;
+          });
+        }
 
         // Fetch current player count + drafting-state for each active draft.
         // numPlayers === 10 means the backend has created the draft state
