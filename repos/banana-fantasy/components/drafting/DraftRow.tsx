@@ -91,14 +91,14 @@ export function DraftRow({
         isYourTurn ? 'border-banana bg-banana/10' : isCreating ? 'border-banana/50 bg-banana/5' : 'border-white/[0.08] bg-white/[0.02]'
       }`}
     >
-      <div className="flex items-center justify-between px-5 py-3">
-        <div className="w-28 flex-shrink-0 flex items-center gap-1">
+      <div className="flex items-center justify-between px-3 sm:px-5 py-3 gap-2 sm:gap-0">
+        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-sm sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap text-sm sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
@@ -107,8 +107,12 @@ export function DraftRow({
           )}
         </div>
 
-        <div className="w-16 flex-shrink-0 text-center hidden sm:block">
-          <span className="text-white/50 text-sm">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
+        {/* Speed column — visible on mobile too (was previously hidden
+            sm:block; users couldn't tell fast from slow drafts at a glance
+            on phones). Slightly narrower + smaller text on mobile to keep
+            the row from overflowing on small viewports. */}
+        <div className="w-14 sm:w-16 flex-shrink-0 text-center">
+          <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
         </div>
 
         <div className="w-28 flex-shrink-0 hidden sm:flex items-center justify-center gap-1.5">
@@ -146,7 +150,7 @@ export function DraftRow({
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
-        <div className="w-28 flex-shrink-0 flex items-center justify-center">
+        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
             <div className="flex flex-col items-center gap-1">
               <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -224,7 +228,7 @@ export function DraftRow({
           )}
         </div>
 
-        <div className="w-28 flex-shrink-0 flex items-center justify-end gap-2">
+        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center justify-end gap-2">
           {['filling', 'randomizing', 'pre-spin-countdown', 'draft-starting'].includes(effectiveLive.displayPhase) ? (
             <>
               <Tooltip content="Enter draft room">
