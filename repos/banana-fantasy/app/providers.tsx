@@ -21,6 +21,7 @@ import { NotificationOptIn } from '@/components/notifications/NotificationOptIn'
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
+import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -113,8 +114,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ReduxProvider>
           <QueryProvider>
             <ToastProvider>
-              <OneSignalInit />
-              <AppContent>{children}</AppContent>
+              <ClaimCelebrationProvider>
+                <OneSignalInit />
+                <AppContent>{children}</AppContent>
+              </ClaimCelebrationProvider>
             </ToastProvider>
           </QueryProvider>
         </ReduxProvider>
