@@ -79,11 +79,36 @@ cd ~/sbs-claude-shared-workspace && git rev-parse origin/<other> > ~/banana-fant
 - Skip for config-only, docs, or pure backend patches the frontend doesn't exercise.
 - If tests fail because of the diff: fix before deploying.
 
-### Backend folders under repos/ (since 2026-05-19)
+### Backend folders under repos/ (since 2026-05-19) — applies to BOTH Boris and Richard
 - `repos/sbs-drafts-api-deploy/`, `repos/SBS-Football-Drafts-main/`, and `repos/sbs-staging-functions/` are now **actively synced** to whatever's deployed on staging Cloud Run / Firebase. Previously these were a stale 2026-05-06 snapshot.
-- **Boris's responsibility, not Richard's.** Boris's deploy workflow syncs them after every backend change.
-- For Richard: nothing to do. If you `git pull` and see backend folder updates, those are Boris's deploy syncs — no action needed, doesn't affect frontend work.
-- Backend deploys go to two places: this shared workspace AND `sbs-drafts-api/staging` branch (Go API only). Caleb (dev) reads from either to merge staging work back into his prod repo.
+- **Whoever deploys is responsible for the sync.** Both Boris and Richard maintain local working copies under `~/sbs-drafts-api-deploy/`, `~/SBS-Football-Drafts-main/`, `~/sbs-staging-functions/` and deploy via `gcloud run deploy --source` / `firebase deploy`. After any deploy, the deployer must sync the local source folder into this shared workspace AND push.
+
+**Workflow after any backend deploy (Boris OR Richard):**
+1. Edit + test locally
+2. Deploy: `gcloud run deploy <svc> --source <local-folder> --region us-central1 --project sbs-staging-env --quiet` (or `firebase deploy` for Functions)
+3. Verify Cloud Run traffic actually routed to the new revision (`gcloud run services describe <svc> --format="value(status.traffic[0].revisionName)"`) — sometimes it stays on the old one and needs `gcloud run services update-traffic <svc> --to-revisions=<new>=100` to fix
+4. **Sync to shared workspace + push.** Use rsync with the standard excludes:
+   ```
+   rsync -av --delete --exclude=.git --exclude=node_modules --exclude=.env \
+     --exclude=.env.* --exclude=configs --exclude=*.bak --exclude=vendor \
+     --exclude=*.log --exclude=.DS_Store --exclude=sbs-drafts-api \
+     ~/<local-folder>/ ~/sbs-claude-shared-workspace/repos/<system>/
+   cd ~/sbs-claude-shared-workspace && git add repos/<system>/ \
+     && git commit -m "Sync <system>" && git push origin main
+   ```
+5. **Go API only:** also push to `staging` branch on `sbs-drafts-api` repo for Caleb (dev):
+   `cd ~/sbs-drafts-api-deploy && git push origin staging`
+
+**For Caleb (dev):**
+- Reviews staging via `Spoiled-Banana-Society/sbs-drafts-api/tree/staging` or `Spoiled-Banana-Society/sbs-claude-shared-workspace` under `repos/`
+- Don't touch his `main` branch on `sbs-drafts-api` — that's his prod lane
+
+**Drift check:** before any backend deploy, verify the shared workspace folder for the system matches the local source. If it doesn't, that means a prior deploy skipped the sync — fix the drift first.
+```
+diff -rq ~/<local-folder>/ ~/sbs-claude-shared-workspace/repos/<system>/ \
+  --exclude=.git --exclude=node_modules --exclude=configs --exclude=.env \
+  --exclude=.DS_Store --exclude=*.bak
+```
 
 ---
 
