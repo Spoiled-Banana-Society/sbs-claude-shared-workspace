@@ -501,6 +501,15 @@ export function useDraftingPageState() {
 
         for (const d of mapped) {
           if (hiddenDraftIds.has(d.id)) continue;
+          // Whenever the API returns a fresh non-empty leagueDisplayName,
+          // push the parsed league # into the global cache. Survives
+          // stale localStorage / module cache from earlier sessions
+          // where the value may have been wrong. Idempotent — same
+          // value is a no-op.
+          if (d.contestName) {
+            const m = /^BBB\s*#(\d+)$/i.exec(d.contestName);
+            if (m) setLeagueNumberInCache(d.id, Number(m[1]));
+          }
           const existing = draftStore.getDraft(d.id);
           if (!existing) {
             draftStore.addDraft({
@@ -509,6 +518,16 @@ export function useDraftingPageState() {
               phase: d.status === 'drafting' ? 'drafting' : 'filling',
             });
             continue;
+          }
+          // Always refresh contestName when API has a fresh non-empty
+          // value that differs from stored. The drafting-phase branch
+          // below otherwise leaves contestName untouched, which means
+          // any wrong value cached during a previous race stays wrong
+          // forever — exactly what produced the "League #814" bug for
+          // slot 814 (correct league # is 815, but store had a stale
+          // "BBB #814" from an earlier API response and never refreshed).
+          if (d.contestName && d.contestName !== existing.contestName) {
+            draftStore.updateDraft(d.id, { contestName: d.contestName });
           }
           // Always refresh type / draftSpeed / draftType on rows that haven't
           // actually transitioned into drafting yet. These fields don't depend
