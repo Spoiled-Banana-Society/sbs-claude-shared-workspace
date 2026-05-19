@@ -79,6 +79,12 @@ cd ~/sbs-claude-shared-workspace && git rev-parse origin/<other> > ~/banana-fant
 - Skip for config-only, docs, or pure backend patches the frontend doesn't exercise.
 - If tests fail because of the diff: fix before deploying.
 
+### Backend folders under repos/ (since 2026-05-19)
+- `repos/sbs-drafts-api-deploy/`, `repos/SBS-Football-Drafts-main/`, and `repos/sbs-staging-functions/` are now **actively synced** to whatever's deployed on staging Cloud Run / Firebase. Previously these were a stale 2026-05-06 snapshot.
+- **Boris's responsibility, not Richard's.** Boris's deploy workflow syncs them after every backend change.
+- For Richard: nothing to do. If you `git pull` and see backend folder updates, those are Boris's deploy syncs — no action needed, doesn't affect frontend work.
+- Backend deploys go to two places: this shared workspace AND `sbs-drafts-api/staging` branch (Go API only). Caleb (dev) reads from either to merge staging work back into his prod repo.
+
 ---
 
 ## Company & Product
