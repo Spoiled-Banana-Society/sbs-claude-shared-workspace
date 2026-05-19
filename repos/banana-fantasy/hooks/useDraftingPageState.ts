@@ -281,30 +281,12 @@ export function useDraftingPageState() {
   const buildDraftRoomUrl = (draft: Draft) => {
     // Don't pass a numbered name for filling drafts — batch number only assigned after start
     const isFilling = draft.status === 'filling' || (draft.players || 0) < 10;
-
-    // Prefer the pretty `?league=N` URL when we know the league
-    // number for this draft. Falls back to `?id=<slot-id>` for:
-    //   - filling drafts (league # not yet assigned)
-    //   - queue drafts (`queue-...` ids — no BBB # numbering)
-    //   - special drafts (Jackpot / HOF — different naming)
-    //   - any draft whose contestName isn't a parseable "BBB #N"
-    // The draft-room page accepts BOTH formats; this keeps every old
-    // ?id= link working forever.
-    const slotId = draft.queueDraftId || draft.id;
-    // Match BOTH "BBB #N" (raw backend form) and "League #N" (the
-    // draftStore normalizes BBB→League on read, so contestName is
-    // usually already in League # form by the time we see it here).
-    const leagueMatch = !isFilling && /^(?:BBB|League)\s*#(\d+)$/i.exec(draft.contestName || '');
-    const isRegularSlot = /^\d{4}-(fast|slow)-draft-\d+$/.test(slotId);
-    const params = new URLSearchParams();
-    if (leagueMatch && isRegularSlot) {
-      params.set('league', leagueMatch[1]);
-    } else {
-      params.set('id', slotId);
-      params.set('name', isFilling ? 'Draft Room' : draft.contestName);
-    }
-    params.set('speed', draft.draftSpeed);
-    params.set('players', String(draft.players));
+    const params = new URLSearchParams({
+      id: draft.queueDraftId || draft.id,
+      name: isFilling ? 'Draft Room' : draft.contestName,
+      speed: draft.draftSpeed,
+      players: String(draft.players),
+    });
     if (isLive && user?.walletAddress) {
       params.set('mode', 'live');
       params.set('wallet', user.walletAddress);

@@ -44,69 +44,8 @@ function DraftRoomContent() {
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
   const [contestName, setContestName] = useState(urlName || 'Draft Room');
-  // Read both URL formats:
-  //  - `?league=N` (new pretty URL — slot id is resolved via API on mount)
-  //  - `?id=2024-fast-draft-N` (legacy / queue / special drafts — used directly)
-  // Either resolves to `urlDraftId` for the rest of the page logic.
-  const urlLeagueParam = searchParams?.get('league');
-  const urlIdParam = searchParams?.get('draftId') || searchParams?.get('id') || '';
-  const [urlDraftId, setUrlDraftId] = useState(urlIdParam);
-  const [_resolvingLeague, setResolvingLeague] = useState(!urlIdParam && !!urlLeagueParam);
-
-  // If the URL has ?league=N but no ?id=, resolve league # → slot id
-  // via the reverse-lookup endpoint, then use the slot id internally.
-  // Cleared as soon as the resolve lands so the rest of the page can
-  // proceed normally.
-  useEffect(() => {
-    if (urlIdParam || !urlLeagueParam) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`/api/drafts/league/${encodeURIComponent(urlLeagueParam)}`);
-        if (!res.ok) {
-          if (!cancelled) setResolvingLeague(false);
-          return;
-        }
-        const body = await res.json() as { draftId?: string };
-        if (cancelled) return;
-        if (body.draftId) {
-          setUrlDraftId(body.draftId);
-          // Also seed contestName so the header shows the league # while
-          // the rest of the draft state loads.
-          setContestName(`League #${urlLeagueParam}`);
-        }
-      } catch {
-        // best-effort — page can still mount with empty draftId
-      } finally {
-        if (!cancelled) setResolvingLeague(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [urlLeagueParam, urlIdParam]);
-
-  // Immediate URL cleanup — if the user arrived via the legacy
-  // `?id=...&name=League #N` URL, upgrade it to the pretty
-  // `?league=N` form RIGHT NOW (don't wait for the RTDB displayName
-  // push). Parses the league number out of the `name` param. Only
-  // for regular drafts on a `2024-{speed}-draft-N` slot id.
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const sp = new URLSearchParams(window.location.search);
-    if (sp.get('league')) return; // already pretty
-    const idVal = sp.get('id') || sp.get('draftId') || '';
-    if (!/^\d{4}-(fast|slow)-draft-\d+$/.test(idVal)) return; // queue/special — leave alone
-    const nameVal = sp.get('name') || '';
-    const m = /^(?:BBB|League)\s*#(\d+)$/i.exec(nameVal);
-    if (!m) return; // no league # in the URL yet — the RTDB push effect will handle it later
-    sp.delete('id');
-    sp.delete('draftId');
-    sp.delete('name');
-    sp.set('league', m[1]);
-    clientLog('league#', 'url.upgrade.from-name-param', { slotId: idVal, league: m[1] });
-    router.replace(`${window.location.pathname}?${sp.toString()}`);
-  }, [router]);
-
   const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
+  const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
   const walletParam = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
@@ -192,39 +131,17 @@ function DraftRoomContent() {
     clientLog('league#', 'draftroom.subs.start', { draftId });
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
       clientLog('league#', 'draftroom.handler.fired', { draftId, name });
-      // Normalize "BBB #N" → "League #N" so the in-page header matches
-      // what My Drafts shows for the same draft.
-      const displayed = name.replace(/^BBB\s*#/i, 'League #');
-      setContestName(displayed);
+      setContestName(name);
       const m = /^BBB\s*#(\d+)$/i.exec(name);
       if (m) {
         clientLog('league#', 'draftroom.handler.parsed', { draftId, n: Number(m[1]) });
         setLeagueNumberInCache(draftId, Number(m[1]));
-        // Live URL upgrade — if the user entered via the legacy
-        // `?id=2024-fast-draft-N` URL and the draft has now received
-        // its league #, swap to the pretty `?league=N` URL via
-        // router.replace (no history entry, no remount). Only triggers
-        // for regular drafts (queue/special drafts don't have league #).
-        if (typeof window !== 'undefined') {
-          const sp = new URLSearchParams(window.location.search);
-          const hasIdParam = !!(sp.get('id') || sp.get('draftId'));
-          const hasLeagueParam = !!sp.get('league');
-          const isRegularSlot = /^\d{4}-(fast|slow)-draft-\d+$/.test(draftId);
-          if (hasIdParam && !hasLeagueParam && isRegularSlot) {
-            sp.delete('id');
-            sp.delete('draftId');
-            sp.delete('name'); // redundant once we have ?league=
-            sp.set('league', m[1]);
-            clientLog('league#', 'url.upgrade.from-rtdb-push', { slotId: draftId, league: m[1] });
-            router.replace(`${window.location.pathname}?${sp.toString()}`);
-          }
-        }
       } else {
         clientLog('league#', 'draftroom.handler.no-parse', { draftId, name });
       }
     });
     return () => { try { unsub(); } catch { /* ignore */ } };
-  }, [draftId, router]);
+  }, [draftId]);
 
   const [fallbackLocal, setFallbackLocal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
