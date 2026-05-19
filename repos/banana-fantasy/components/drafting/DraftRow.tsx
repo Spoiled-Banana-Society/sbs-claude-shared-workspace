@@ -91,8 +91,8 @@ export function DraftRow({
         isYourTurn ? 'border-banana bg-banana/10' : isCreating ? 'border-banana/50 bg-banana/5' : 'border-white/[0.08] bg-white/[0.02]'
       }`}
     >
-      <div className="flex items-center justify-between px-2 sm:px-5 py-3 gap-1 sm:gap-0">
-        <div className="w-20 sm:w-28 flex-shrink-0 flex items-center gap-1">
+      <div className="flex items-center justify-between px-3 sm:px-5 py-3">
+        <div className="w-[72px] sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
               <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
@@ -107,11 +107,8 @@ export function DraftRow({
           )}
         </div>
 
-        {/* Speed column — visible on mobile too (was previously hidden
-            sm:block; users couldn't tell fast from slow drafts at a glance
-            on phones). Abbreviated on mobile ("30s" / "8h") to save space
-            with the now-visible 5-column layout. */}
-        <div className="w-10 sm:w-16 flex-shrink-0 text-center">
+        {/* Speed column — abbreviated on mobile ("30s" / "8h"). */}
+        <div className="w-8 sm:w-16 flex-shrink-0 text-center">
           <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
             <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
             <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
@@ -119,16 +116,16 @@ export function DraftRow({
         </div>
 
         {/* Draft type column (PRO / HOF / JACKPOT + Verified badge).
-            Now visible on mobile too — Boris confirmed users need to
-            know the draft type at a glance on phones. Abbreviated
-            labels on mobile (JACKPOT → JP, HALL OF FAME → HOF) so the
-            column fits the 5-column row on iPhone-SE viewports. */}
-        <div className="w-16 sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
+            Mobile: type label + an icon-only Verified badge (compact)
+            — the "Verified" word is dropped on phones since the green
+            check + colored type already communicates it, and the word
+            crams the 5-column row. Desktop: full badge with the word. */}
+        <div className="w-[58px] sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
           {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37)) ? (
             <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
             <>
-              <span className="text-[10px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
+              <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
                 <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
                 <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
               </span>
@@ -139,17 +136,20 @@ export function DraftRow({
                   non-interactive badge. */}
               {(() => {
                 const isLeagueSlot = /^\d{4}-(fast|slow)-draft-\d+$/.test(draft.id);
-                if (!isLeagueSlot) {
-                  return <VerifiedBadge type="draft-type" draftType={resolvedType} size="sm" draftId={undefined} />;
-                }
-                const linkTarget = liveLeagueNumber != null ? String(liveLeagueNumber) : draft.id;
+                const linkTarget = !isLeagueSlot
+                  ? undefined
+                  : (liveLeagueNumber != null ? String(liveLeagueNumber) : draft.id);
                 return (
-                  <VerifiedBadge
-                    type="draft-type"
-                    draftType={resolvedType}
-                    size="sm"
-                    draftId={linkTarget}
-                  />
+                  <>
+                    {/* mobile — icon-only */}
+                    <span className="sm:hidden inline-flex">
+                      <VerifiedBadge type="draft-type" draftType={resolvedType} size="sm" compact draftId={linkTarget} />
+                    </span>
+                    {/* desktop — full badge with "Verified" word */}
+                    <span className="hidden sm:inline-flex">
+                      <VerifiedBadge type="draft-type" draftType={resolvedType} size="sm" draftId={linkTarget} />
+                    </span>
+                  </>
                 );
               })()}
             </>
@@ -159,10 +159,10 @@ export function DraftRow({
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
-        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center justify-center">
+        <div className="w-[76px] sm:w-28 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
             <div className="flex flex-col items-center gap-1">
-              <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-16 sm:w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700"
                   style={{
@@ -192,9 +192,9 @@ export function DraftRow({
               <span className="text-white/40 text-[10px]">Randomizing...</span>
             </div>
           ) : effectiveLive.displayPhase === 'pre-spin-countdown' ? (
-            <span className="text-white/50 text-sm">Reveal in {effectiveLive.countdown}s</span>
+            <span className="text-white/50 text-[11px] sm:text-sm whitespace-nowrap">Reveal in {effectiveLive.countdown}s</span>
           ) : effectiveLive.displayPhase === 'draft-starting' ? (
-            <span className="text-white/50 text-sm">
+            <span className="text-white/50 text-[11px] sm:text-sm whitespace-nowrap">
               {effectiveLive.countdown != null ? `Starts in ${effectiveLive.countdown}s` : 'Starting...'}
             </span>
           ) : isYourTurn ? (
@@ -211,16 +211,16 @@ export function DraftRow({
               const expectedPickLength = draft.draftSpeed === 'fast' ? 30 : 28800;
               const looksUnconfirmed = remaining > expectedPickLength * 0.95;
               if (looksUnconfirmed) {
-                return <span className="text-white/30 text-sm">Syncing…</span>;
+                return <span className="text-white/30 text-[11px] sm:text-sm">Syncing…</span>;
               }
               return (
-                <span className="text-banana font-bold">
+                <span className="text-banana font-bold text-sm sm:text-base">
                   {formatCountdown(remaining)}
                 </span>
               );
             })()
           ) : draft.currentPick != null ? (
-            <span className="text-white/50 text-sm">
+            <span className="text-white/50 text-[11px] sm:text-sm whitespace-nowrap">
               {/* currentPick semantics:
                   > 0  → that many picks away
                   = 0  → either your turn OR you have no more picks
@@ -233,11 +233,11 @@ export function DraftRow({
                 : `${draft.currentPick} pick${draft.currentPick !== 1 ? 's' : ''} away`}
             </span>
           ) : (
-            <span className="text-white/50 text-sm">In progress</span>
+            <span className="text-white/50 text-[11px] sm:text-sm">In progress</span>
           )}
         </div>
 
-        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center justify-end gap-2">
+        <div className="w-[60px] sm:w-28 flex-shrink-0 flex items-center justify-end gap-1 sm:gap-2">
           {['filling', 'randomizing', 'pre-spin-countdown', 'draft-starting'].includes(effectiveLive.displayPhase) ? (
             <>
               <Tooltip content="Enter draft room">
@@ -246,7 +246,7 @@ export function DraftRow({
                     e.stopPropagation();
                     onDraftClick(draft);
                   }}
-                  className="w-20 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105 bg-white text-black hover:bg-white/90 flex items-center justify-center"
+                  className="w-[52px] sm:w-20 py-1.5 sm:py-2 rounded-lg font-semibold text-xs sm:text-sm transition-all hover:scale-105 bg-white text-black hover:bg-white/90 flex items-center justify-center"
                 >
                   {isCreating ? 'Joining...' : 'Enter'}
                 </button>
@@ -273,7 +273,7 @@ export function DraftRow({
                 e.stopPropagation();
                 onDraftClick(draft);
               }}
-              className="w-20 py-2 rounded-lg font-semibold text-sm transition-all hover:scale-105 flex items-center justify-center"
+              className="w-[52px] sm:w-20 py-1.5 sm:py-2 rounded-lg font-semibold text-xs sm:text-sm transition-all hover:scale-105 flex items-center justify-center whitespace-nowrap"
               style={{
                 backgroundColor: isYourTurn ? '#fbbf24' : accentColor,
                 color: isYourTurn ? '#000' : '#fff',
