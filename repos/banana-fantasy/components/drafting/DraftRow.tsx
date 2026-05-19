@@ -91,37 +91,46 @@ export function DraftRow({
         isYourTurn ? 'border-banana bg-banana/10' : isCreating ? 'border-banana/50 bg-banana/5' : 'border-white/[0.08] bg-white/[0.02]'
       }`}
     >
-      <div className="flex items-center justify-between px-3 sm:px-5 py-3 gap-2 sm:gap-0">
-        <div className="w-24 sm:w-28 flex-shrink-0 flex items-center gap-1">
+      <div className="flex items-center justify-between px-2 sm:px-5 py-3 gap-1 sm:gap-0">
+        <div className="w-20 sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-sm sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap text-sm sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
-              <span className="text-sm">✈️</span>
+              <span className="text-xs sm:text-sm">✈️</span>
             </Tooltip>
           )}
         </div>
 
         {/* Speed column — visible on mobile too (was previously hidden
             sm:block; users couldn't tell fast from slow drafts at a glance
-            on phones). Slightly narrower + smaller text on mobile to keep
-            the row from overflowing on small viewports. */}
-        <div className="w-14 sm:w-16 flex-shrink-0 text-center">
-          <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
+            on phones). Abbreviated on mobile ("30s" / "8h") to save space
+            with the now-visible 5-column layout. */}
+        <div className="w-10 sm:w-16 flex-shrink-0 text-center">
+          <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
+            <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
+            <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
+          </span>
         </div>
 
-        <div className="w-28 flex-shrink-0 hidden sm:flex items-center justify-center gap-1.5">
+        {/* Draft type column (PRO / HOF / JACKPOT + Verified badge).
+            Now visible on mobile too — Boris confirmed users need to
+            know the draft type at a glance on phones. Abbreviated
+            labels on mobile (JACKPOT → JP, HALL OF FAME → HOF) so the
+            column fits the 5-column row on iPhone-SE viewports. */}
+        <div className="w-16 sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
           {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37)) ? (
-            <span className="text-banana text-sm font-semibold animate-pulse">Revealing...</span>
+            <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
             <>
-              <span className="text-sm font-semibold" style={{ color: accentColor }}>
-                {resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}
+              <span className="text-[10px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
+                <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
+                <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
               </span>
               {/* Prefer the live-resolved global league number for the
                   badge URL. Falls back to the slot id (which the proof
@@ -145,7 +154,7 @@ export function DraftRow({
               })()}
             </>
           ) : (
-            <span className="text-white/30 text-sm italic">Unrevealed</span>
+            <span className="text-white/30 text-[10px] sm:text-sm italic">Unrevealed</span>
           )}
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
