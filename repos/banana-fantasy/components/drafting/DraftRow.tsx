@@ -208,7 +208,16 @@ export function DraftRow({
             })()
           ) : draft.currentPick != null ? (
             <span className="text-white/50 text-sm">
-              {draft.currentPick === 0 ? 'Next up' : `${draft.currentPick} pick${draft.currentPick !== 1 ? 's' : ''} away`}
+              {/* currentPick semantics:
+                  > 0  → that many picks away
+                  = 0  → either your turn OR you have no more picks
+                  When currentPick === 0 AND the draft is past pick 1,
+                  it's "you're done" (your isYourTurn would be true
+                  otherwise). Show "Picks complete" instead of the
+                  misleading "Next up". */}
+              {draft.currentPick === 0
+                ? (draft.isYourTurn ? 'Next up' : 'Picks complete')
+                : `${draft.currentPick} pick${draft.currentPick !== 1 ? 's' : ''} away`}
             </span>
           ) : (
             <span className="text-white/50 text-sm">In progress</span>

@@ -329,6 +329,12 @@ export function DraftRoomDrafting({
                 </span>
               ) : engine.turnsUntilUserPick > 0 ? (
                 `${engine.turnsUntilUserPick} turn(s) until your pick!`
+              ) : engine.currentPickNumber && engine.currentPickNumber > 0 ? (
+                // Draft is mid-pick (someone on the clock) but the user
+                // has no more picks of their own. Don't fall through to
+                // 'Draft starting in 0:00' — that's misleading. Show
+                // the actual state: other players finishing up.
+                <span className="text-white/60">Other players finishing the draft…</span>
               ) : (
                 <span className="text-white/70">Draft starting in {formatTime(mainCountdown)}</span>
               )}
