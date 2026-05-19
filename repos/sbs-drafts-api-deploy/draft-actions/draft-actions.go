@@ -4,12 +4,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/go-chi/chi"
 )
+
+// requireAdminKey gates a handler with the X-Admin-Key header. Fails closed
+// when ADMIN_API_KEY is not configured so a missing-env-var deploy can't
+// silently expose admin endpoints to the internet.
+func requireAdminKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		expected := strings.TrimSpace(os.Getenv("ADMIN_API_KEY"))
+		if expected == "" {
+			http.Error(w, "ADMIN_API_KEY not configured", http.StatusServiceUnavailable)
+			return
+		}
+		provided := strings.TrimSpace(r.Header.Get("X-Admin-Key"))
+		if provided == "" || provided != expected {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
 
 type DraftActionResources struct{}
 
@@ -34,7 +54,35 @@ func (dra *DraftActionResources) Routes() chi.Router {
 	r.Post("/{draftId}/owner/{ownerId}/actions/autoDraft", dra.autoDraft)
 	r.Post("/{draftId}/owner/{ownerId}/actions/pick", dra.submitPick)
 
+	// Admin-only: re-run close-draft per-card flow for one user. Used when
+	// the original close partially failed (image-gen 500, network blip, etc)
+	// and a card needs its roster + image re-persisted. Idempotent. Gated
+	// with X-Admin-Key — also called by the daily reconciliation cron.
+	r.Post("/{draftId}/owner/{ownerId}/admin/recover-card", requireAdminKey(dra.recoverCard))
+
 	return r
+}
+
+// recoverCard is the HTTP wrapper around models.RecoverCardForOwner. Returns
+// 200 with a small JSON body on success; 5xx with the underlying error
+// message on failure (so admin UI / cron can show a useful message).
+func (dra *DraftActionResources) recoverCard(w http.ResponseWriter, r *http.Request) {
+	draftId := chi.URLParam(r, "draftId")
+	ownerId := strings.ToLower(chi.URLParam(r, "ownerId"))
+	if draftId == "" || ownerId == "" {
+		http.Error(w, "draftId and ownerId required", http.StatusBadRequest)
+		return
+	}
+	if err := models.RecoverCardForOwner(draftId, ownerId); err != nil {
+		// RecoverCardForOwner already emits structured ERROR logs for the
+		// failing step; we just surface the message here for the caller.
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","event":"admin.recover_card_failed","error":"%v"}`+"\n", draftId, ownerId, err)
+		http.Error(w, fmt.Sprintf("recover failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "draftId": draftId, "ownerId": ownerId})
 }
 
 // getDraftPreferences returns sort/auto-draft preferences for this owner in the draft.

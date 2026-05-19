@@ -33,9 +33,10 @@ import (
 // Cross-process protection comes from the on-chain "already committed"
 // revert and the Firestore status field.
 type Manager struct {
-	client  *Client
-	db      *firestore.Client
-	variant string // "commit-reveal" (default) or "vrf"
+	client       *Client // legacy commit-reveal / vrf / vrf-commit contract
+	merkleClient *Client // vrf-commit-merkle contract (nil if not deployed)
+	db           *firestore.Client
+	variant      string // "commit-reveal" (default), "vrf", "vrf-commit", "vrf-commit-merkle"
 
 	mu          sync.Mutex
 	inFlight    map[int]*sync.Mutex // per-batch lock
@@ -47,7 +48,10 @@ type Manager struct {
 // not yet on file), the Manager returns gracefully from every public
 // method — the existing draft fill flow continues unchanged. Pass
 // `disabledMsg` to surface the reason in logs. `variant` selects the
-// on-chain flow: "" or "commit-reveal" for legacy, "vrf" for Chainlink VRF.
+// on-chain flow: "" or "commit-reveal" for legacy, "vrf", "vrf-commit",
+// or "vrf-commit-merkle". The Merkle variant additionally requires
+// merkleClient; if variant=vrf-commit-merkle and merkleClient is nil,
+// the Manager runs in a degraded mode (errors on EnsureBatchCommitted).
 func NewManager(client *Client, db *firestore.Client, variant string, disabledMsg string) *Manager {
 	if variant == "" {
 		variant = VariantCommitReveal
@@ -61,6 +65,101 @@ func NewManager(client *Client, db *firestore.Client, variant string, disabledMs
 		disabledMsg: disabledMsg,
 	}
 	return m
+}
+
+// SetMerkleClient attaches the Merkle-variant contract client. Called
+// from main.go after both contracts are loaded. Optional — if not set,
+// the vrf-commit-merkle variant is unavailable and routing errors will
+// fire if it's somehow selected via Firestore config.
+func (m *Manager) SetMerkleClient(client *Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.merkleClient = client
+}
+
+// MerkleClient returns the configured Merkle-variant client (or nil
+// if not configured). Useful for admin tooling and observability.
+func (m *Manager) MerkleClient() *Client {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.merkleClient
+}
+
+// PreOpenNextMerkleRound is an admin/staging helper that explicitly
+// drives the next merkle round through the open → fulfilled →
+// merkleCommitted state machine, BEFORE any draft fills triggers it
+// via the natural batch boundary path. Useful for:
+//   - Bootstrapping round 1 on first deploy (so the very first draft of
+//     the variant doesn't pay the ~30s VRF latency)
+//   - Pre-opening subsequent rounds proactively
+//
+// firstBatchNumber: the legacy batch number this round will eventually
+//   start at. Pass 0 as a sentinel meaning "set on first ensureBatch
+//   call that uses this round" — the round-state pointer pre-allocates
+//   the round in either case.
+//
+// Idempotent. If the round already exists (any status), no-ops.
+// Returns the round number that was either opened or already exists.
+func (m *Manager) PreOpenNextMerkleRound(ctx context.Context, firstBatchNumber int) (int, error) {
+	if m.disabled {
+		return 0, fmt.Errorf("batchproof disabled: %s", m.disabledMsg)
+	}
+	if m.variant != VariantVRFCommitMerkle {
+		return 0, fmt.Errorf("PreOpenNextMerkleRound only valid for vrf-commit-merkle variant, got %q", m.variant)
+	}
+	if m.merkleClient == nil {
+		return 0, ErrMerkleClientNotConfigured
+	}
+
+	// Determine the next round number. If no state exists, it's round 1.
+	// Otherwise it's currentRoundNumber+1 if current is full, or
+	// currentRoundNumber if current isn't fulfilled yet (in-flight).
+	state, err := LoadMerkleRoundState(ctx, m.db)
+	if err != nil {
+		return 0, fmt.Errorf("load merkle round state: %w", err)
+	}
+
+	var roundNumber int
+	if state == nil {
+		// Pre-bootstrap. This is round 1. Reserve it in state with
+		// NextBatchIndexInRound=0 — the first batch boundary will consume index 0.
+		roundNumber = 1
+		newState := &MerkleRoundState{CurrentRoundNumber: 1, NextBatchIndexInRound: 0}
+		if err := SaveMerkleRoundState(ctx, m.db, newState); err != nil {
+			return 0, fmt.Errorf("init merkle round state: %w", err)
+		}
+	} else if state.NextBatchIndexInRound >= MerkleWindowCount {
+		// Current round full — bump to next.
+		roundNumber = state.CurrentRoundNumber + 1
+		newState := &MerkleRoundState{CurrentRoundNumber: roundNumber, NextBatchIndexInRound: 0}
+		if err := SaveMerkleRoundState(ctx, m.db, newState); err != nil {
+			return 0, fmt.Errorf("advance merkle round state: %w", err)
+		}
+	} else {
+		// Current round is in progress and not full. Pre-open the round
+		// AFTER it (so it's ready by the time the current round fills).
+		roundNumber = state.CurrentRoundNumber + 1
+	}
+
+	lock := m.lockFor(-1 * roundNumber) // negative key so it doesn't collide with batch locks
+	lock.Lock()
+	defer lock.Unlock()
+
+	existing, err := LoadMerkleRound(ctx, m.db, roundNumber)
+	if err != nil {
+		return 0, fmt.Errorf("load merkle round: %w", err)
+	}
+	if existing != nil && (existing.Status == "merkleCommitted" || existing.Status == "revealed") {
+		// Already pre-opened and committed — nothing to do.
+		return roundNumber, nil
+	}
+
+	// Cold-start (or finish in-flight) the round. ensureRoundCommitted is
+	// reused for all the lifecycle transitions.
+	if _, err := m.ensureRoundCommitted(ctx, roundNumber, firstBatchNumber, existing == nil); err != nil {
+		return 0, fmt.Errorf("ensure round %d committed: %w", roundNumber, err)
+	}
+	return roundNumber, nil
 }
 
 // Variant returns the configured contract variant.
@@ -99,7 +198,17 @@ func (m *Manager) EnsureBatchCommitted(ctx context.Context, batchNumber int) ([]
 	lock.Lock()
 	defer lock.Unlock()
 
-	switch m.variant {
+	// Route by the batch's EXISTING variant when present, falling back to
+	// the manager's current variant for fresh batches. This preserves
+	// in-flight batches across config flips — e.g. flipping the manager
+	// from vrf-commit to vrf-commit-merkle mid-batch does NOT re-derive
+	// the in-flight batch's slot positions. Only NEW batches use the
+	// new variant. Prevents conflicting docs + draft-type mismatches.
+	variant := m.batchVariantOrDefault(ctx, batchNumber)
+
+	switch variant {
+	case VariantVRFCommitMerkle:
+		return m.ensureBatchHasMerkleSlots(ctx, batchNumber)
 	case VariantVRFCommit:
 		return m.ensureBatchHasVRFCommitSlots(ctx, batchNumber)
 	case VariantVRF:
@@ -107,6 +216,18 @@ func (m *Manager) EnsureBatchCommitted(ctx context.Context, batchNumber int) ([]
 	default:
 		return m.ensureBatchCommitReveal(ctx, batchNumber)
 	}
+}
+
+// batchVariantOrDefault returns the variant that should drive batchN's
+// lifecycle. Reads batch_proofs/{batchN}.variant if present (so in-flight
+// batches keep their original variant across config flips), otherwise
+// returns m.variant.
+func (m *Manager) batchVariantOrDefault(ctx context.Context, batchNumber int) string {
+	existing, err := LoadProof(ctx, m.db, batchNumber)
+	if err == nil && existing != nil && existing.Variant != "" {
+		return existing.Variant
+	}
+	return m.variant
 }
 
 // ensureBatchCommitReveal is the legacy commit/reveal flow.
@@ -206,7 +327,13 @@ func (m *Manager) RevealBatch(ctx context.Context, batchNumber int) error {
 		return fmt.Errorf("batch number must be >= 1, got %d", batchNumber)
 	}
 
-	switch m.variant {
+	// Same per-batch variant routing as EnsureBatchCommitted — reveal
+	// uses the variant the batch was OPENED under, not the manager's
+	// current variant. Otherwise a config flip mid-batch would call the
+	// wrong reveal path (e.g. trying revealSalt on the merkle contract
+	// for a batch that lives on the vrf-commit contract).
+	variant := m.batchVariantOrDefault(ctx, batchNumber)
+	switch variant {
 	case VariantVRF:
 		// VRF auto-reveals via the coordinator's rawFulfillRandomWords
 		// callback. EnsureBatchCommitted already polls for fulfillment
@@ -214,6 +341,8 @@ func (m *Manager) RevealBatch(ctx context.Context, batchNumber int) error {
 		return nil
 	case VariantVRFCommit:
 		return m.revealBatchVRFCommit(ctx, batchNumber)
+	case VariantVRFCommitMerkle:
+		return m.revealBatchMerkle(ctx, batchNumber)
 	}
 
 	lock := m.lockFor(batchNumber)
@@ -390,6 +519,8 @@ func (m *Manager) PreRequestNextBatchRandomness(ctx context.Context, batchNumber
 		return m.preRequestVRF(ctx, batchNumber)
 	case VariantVRFCommit:
 		return m.preRequestVRFCommit(ctx, batchNumber)
+	case VariantVRFCommitMerkle:
+		return m.preRequestMerkle(ctx, batchNumber)
 	default:
 		return nil
 	}
@@ -716,4 +847,491 @@ func Default() *Manager {
 // Common errors callers can match against.
 var (
 	ErrManagerNotInitialized = errors.New("batchproof: manager not initialized — Set was never called")
+	ErrMerkleClientNotConfigured = errors.New("batchproof: vrf-commit-merkle variant selected but merkleClient not attached — call SetMerkleClient at startup")
 )
+
+// ─── vrf-commit-merkle flow (round-based) ──────────────────────────────
+//
+// A "merkle round" covers 10,000 drafts (= 100 batches × 100 drafts).
+// ONE on-chain ceremony per 10k drafts:
+//   - requestRandomnessAndCommit (salt-hash + VRF request)
+//   - commitMerkleRoot           (after VRF fulfills; root covers all 10k)
+//   - revealSalt                 (at round close)
+//
+// The per-batch (every 100 drafts) hooks in models/draft-state.go still
+// fire. The manager routes them as follows for variant=vrf-commit-merkle:
+//
+//   - EnsureBatchCommitted(batchN):
+//       - If batchN is the FIRST batch of a round (batchIndexInRound == 0):
+//           open new round on-chain (salt-hash commit + VRF request).
+//           Wait for fulfillment. Pre-compute 10k outcomes. Commit Merkle
+//           root on-chain. Persist round doc with status='merkleCommitted'.
+//       - For subsequent batches in the round: just look up this batch's
+//           1 JP + 5 HOF positions from the round's stored per-window data
+//           (no on-chain ops, no compute).
+//
+//   - PreRequestNextBatchRandomness(batchN+1):
+//       - If batchN+1 is the FIRST batch of a NEW round: pre-request the
+//           new round's VRF so it's already fulfilled by the time the
+//           first draft of that round fills. Otherwise no-op.
+//
+//   - RevealBatch(batchN):
+//       - If batchN is the LAST batch of a round (batchIndexInRound == 99):
+//           reveal the round's salt on-chain.
+//       - Otherwise no-op.
+//
+// Outcome derivation: 1/5/94 per 100-draft window. The 10k outcomes are
+// computed by running the existing DeriveBatchSlots algorithm 100 times,
+// once per window, each with its own subseed = HMAC(combinedSeed, "window:k").
+// Distribution constraint identical to legacy.
+
+// ensureBatchHasMerkleSlots routes a per-batch boundary call into the
+// round-based merkle flow. Determines which 10k-round this batch belongs
+// to, ensures the round is open + Merkle root committed, then returns
+// the global draft numbers for this batch's 1 JP + 5 HOF window.
+//
+// Idempotent. Concurrency: the per-batch lock from EnsureBatchCommitted
+// (acquired by caller) serializes round-open work across simultaneous
+// fills of the same first-batch-of-round.
+func (m *Manager) ensureBatchHasMerkleSlots(ctx context.Context, batchNumber int) ([]int, []int, error) {
+	if m.merkleClient == nil {
+		return nil, nil, ErrMerkleClientNotConfigured
+	}
+
+	// Decide which round this batch belongs to (and whether it's the
+	// first batch of a new round, requiring an on-chain ceremony).
+	roundNumber, batchIndexInRound, isNewRound, err := m.resolveRoundForBatch(ctx, batchNumber)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve round for batch %d: %w", batchNumber, err)
+	}
+
+	// Ensure the round itself is at status=merkleCommitted before we
+	// can return per-batch slot positions.
+	round, err := m.ensureRoundCommitted(ctx, roundNumber, batchNumber, isNewRound)
+	if err != nil {
+		return nil, nil, fmt.Errorf("ensure round %d committed: %w", roundNumber, err)
+	}
+
+	// Also write a per-batch pointer doc at batch_proofs/{batchN} so the
+	// existing /api/batches/{N}/proof endpoint can find this batch via
+	// its familiar key. The pointer carries enough fields to render the
+	// proof UI without re-reading the round doc, plus a roundNumber link
+	// for the per-draft Merkle proof endpoint to dereference.
+	jpInWindow := round.JackpotByWindow[batchIndexInRound]
+	hofInWindow := make([]int, HofCount)
+	base := batchIndexInRound * HofCount
+	copy(hofInWindow, round.HofByWindowFlat[base:base+HofCount])
+	if err := m.writeBatchPointerDoc(ctx, batchNumber, round, batchIndexInRound, jpInWindow, hofInWindow); err != nil {
+		return nil, nil, fmt.Errorf("write batch pointer for %d: %w", batchNumber, err)
+	}
+
+	jp := PositionsToGlobalDraftNumbers([]int{jpInWindow}, batchNumber)
+	hof := PositionsToGlobalDraftNumbers(hofInWindow, batchNumber)
+	return jp, hof, nil
+}
+
+// resolveRoundForBatch maps an incoming batchNumber to (roundNumber,
+// batchIndexInRound, isNewRound). Atomically advances the round-state
+// pointer when a new round needs to open. Idempotent — if the batch
+// was previously assigned, returns the existing mapping.
+func (m *Manager) resolveRoundForBatch(ctx context.Context, batchNumber int) (int, int, bool, error) {
+	// Fast path: if we've already written batch_proofs/{batchN} for this
+	// batch, the pointer doc carries the mapping. Avoids racing the
+	// round-state advance on a retry.
+	existing, err := LoadProof(ctx, m.db, batchNumber)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("load existing batch pointer: %w", err)
+	}
+	if existing != nil && existing.MerkleRound > 0 {
+		return existing.MerkleRound, existing.MerkleBatchIndexInRound, false, nil
+	}
+
+	state, err := LoadMerkleRoundState(ctx, m.db)
+	if err != nil {
+		return 0, 0, false, fmt.Errorf("load merkle round state: %w", err)
+	}
+
+	// Pre-bootstrap: no rounds yet. This batch becomes round 1, index 0.
+	if state == nil {
+		newState := &MerkleRoundState{CurrentRoundNumber: 1, NextBatchIndexInRound: 1}
+		if err := SaveMerkleRoundState(ctx, m.db, newState); err != nil {
+			return 0, 0, false, fmt.Errorf("init merkle round state: %w", err)
+		}
+		return 1, 0, true, nil
+	}
+
+	if state.NextBatchIndexInRound >= MerkleWindowCount {
+		// Round full — open the next one.
+		nextRound := state.CurrentRoundNumber + 1
+		newState := &MerkleRoundState{CurrentRoundNumber: nextRound, NextBatchIndexInRound: 1}
+		if err := SaveMerkleRoundState(ctx, m.db, newState); err != nil {
+			return 0, 0, false, fmt.Errorf("advance merkle round state: %w", err)
+		}
+		return nextRound, 0, true, nil
+	}
+
+	// Continuing within the current round.
+	batchIndex := state.NextBatchIndexInRound
+	state.NextBatchIndexInRound++
+	if err := SaveMerkleRoundState(ctx, m.db, state); err != nil {
+		return 0, 0, false, fmt.Errorf("bump merkle round state: %w", err)
+	}
+	return state.CurrentRoundNumber, batchIndex, false, nil
+}
+
+// ensureRoundCommitted drives a merkle round through the state machine
+// until it's at "merkleCommitted" (or "revealed"). Idempotent. If the
+// round doc doesn't exist yet AND this is a new round, opens it cold:
+// salt + VRF request → wait fulfill → build tree → commit root on-chain.
+//
+// firstBatchNumber is the batchN that opened this round (needed for
+// the firstBatchNumber field on the doc).
+func (m *Manager) ensureRoundCommitted(
+	ctx context.Context,
+	roundNumber int,
+	firstBatchNumber int,
+	isNewRound bool,
+) (*MerkleRoundDoc, error) {
+	existing, err := LoadMerkleRound(ctx, m.db, roundNumber)
+	if err != nil {
+		return nil, fmt.Errorf("load merkle round: %w", err)
+	}
+
+	// Already committed — fast path.
+	if existing != nil && (existing.Status == "merkleCommitted" || existing.Status == "revealed") {
+		return existing, nil
+	}
+
+	// VRF fulfilled but root not yet committed — finish the pipeline.
+	if existing != nil && existing.Status == "fulfilled" && existing.VRFRandomness != "" && existing.ServerSalt != "" {
+		return m.commitRoundMerkleRoot(ctx, roundNumber, existing)
+	}
+
+	// Request submitted but VRF not yet fulfilled — wait + commit root.
+	if existing != nil && existing.Status == "requested" {
+		state, err := m.merkleClient.WaitForMerkleCommitFulfillment(ctx, roundNumber, 5*time.Second, 5*time.Minute)
+		if err != nil {
+			return nil, fmt.Errorf("wait merkle fulfillment: %w", err)
+		}
+		if err := m.persistRoundFulfilled(ctx, roundNumber, state); err != nil {
+			return nil, err
+		}
+		updated, _ := LoadMerkleRound(ctx, m.db, roundNumber)
+		return m.commitRoundMerkleRoot(ctx, roundNumber, updated)
+	}
+
+	// Cold start — only valid if this is a new round.
+	if !isNewRound {
+		return nil, fmt.Errorf("round %d has no doc but isn't flagged as new — inconsistent state", roundNumber)
+	}
+
+	saltBytes, err := GenerateSeed()
+	if err != nil {
+		return nil, fmt.Errorf("generate salt: %w", err)
+	}
+	saltHash := SeedHash(saltBytes)
+
+	res, err := m.merkleClient.RequestRandomnessAndCommitMerkle(ctx, roundNumber, saltHash)
+	if err != nil {
+		return nil, fmt.Errorf("merkle requestRandomnessAndCommit: %w", err)
+	}
+
+	chainState, _ := m.merkleClient.GetBatchMerkleCommit(ctx, roundNumber)
+	requestID := ""
+	if chainState.VRFRequestID != nil && chainState.VRFRequestID.Sign() > 0 {
+		requestID = chainState.VRFRequestID.String()
+	}
+
+	doc := &MerkleRoundDoc{
+		RoundNumber:      roundNumber,
+		Status:           "requested",
+		FirstBatchNumber: firstBatchNumber,
+		SaltHash:         "0x" + hex.EncodeToString(saltHash.Bytes()),
+		ServerSalt:       "0x" + hex.EncodeToString(saltBytes),
+		VRFRequestID:     requestID,
+		VRFRequestTxHash: res.TxHash.Hex(),
+		CommitTxHashVRF:  res.TxHash.Hex(),
+		OpenedAt:         time.Now().Unix(),
+	}
+	if err := SaveMerkleRound(ctx, m.db, doc); err != nil {
+		return nil, fmt.Errorf("persist requested round: %w", err)
+	}
+
+	state, err := m.merkleClient.WaitForMerkleCommitFulfillment(ctx, roundNumber, 5*time.Second, 5*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("wait merkle fulfillment: %w", err)
+	}
+	if err := m.persistRoundFulfilled(ctx, roundNumber, state); err != nil {
+		return nil, err
+	}
+	updated, _ := LoadMerkleRound(ctx, m.db, roundNumber)
+	return m.commitRoundMerkleRoot(ctx, roundNumber, updated)
+}
+
+// persistRoundFulfilled merges VRF-fulfilled state into the round doc.
+func (m *Manager) persistRoundFulfilled(
+	ctx context.Context,
+	roundNumber int,
+	state MerkleCommitBatchState,
+) error {
+	randomness := state.RandomnessSeed()
+	if len(randomness) != 32 {
+		return fmt.Errorf("merkle: VRF returned %d-byte randomness, expected 32", len(randomness))
+	}
+	updates := map[string]interface{}{
+		"status":        "fulfilled",
+		"vrfRandomness": "0x" + hex.EncodeToString(randomness),
+		"fulfilledAt":   int64(state.FulfilledAt),
+	}
+	return MergeMerkleRound(ctx, m.db, roundNumber, updates)
+}
+
+// commitRoundMerkleRoot reads salt + VRF from the round doc, derives
+// 10k outcomes (1 JP + 5 HOF per 100-window), builds the Merkle tree,
+// commits the root on-chain, and persists everything back to Firestore.
+// After this, the round is at status="merkleCommitted" and any draft
+// within the round can be served a per-draft Merkle proof.
+func (m *Manager) commitRoundMerkleRoot(
+	ctx context.Context,
+	roundNumber int,
+	doc *MerkleRoundDoc,
+) (*MerkleRoundDoc, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("merkle commit: round doc missing for round %d", roundNumber)
+	}
+	saltBytes, err := hex.DecodeString(strings.TrimPrefix(doc.ServerSalt, "0x"))
+	if err != nil || len(saltBytes) != 32 {
+		return nil, fmt.Errorf("merkle commit: invalid stored salt for round %d: %w", roundNumber, err)
+	}
+	randBytes, err := hex.DecodeString(strings.TrimPrefix(doc.VRFRandomness, "0x"))
+	if err != nil || len(randBytes) != 32 {
+		return nil, fmt.Errorf("merkle commit: invalid stored VRF randomness for round %d: %w", roundNumber, err)
+	}
+
+	combined := CombinedSeed(saltBytes, randBytes)
+	tree, outcomes, err := BuildRoundMerkleTree(combined)
+	if err != nil {
+		return nil, fmt.Errorf("merkle commit: build round tree: %w", err)
+	}
+
+	// Idempotency: if on-chain root already committed (we crashed between
+	// the tx and the Firestore write), reconcile state instead of double-
+	// submitting.
+	chain, chainErr := m.merkleClient.GetBatchMerkleCommit(ctx, roundNumber)
+	var rootTxHash string
+	if chainErr == nil && chain.RootCommitted {
+		if chain.MerkleRoot != tree.Root {
+			return nil, fmt.Errorf("merkle commit: chain root %s differs from locally-derived %s — refusing to overwrite",
+				chain.MerkleRoot.Hex(), tree.Root.Hex())
+		}
+		rootTxHash = doc.CommitTxHashVRF
+	} else {
+		res, err := m.merkleClient.CommitMerkleRoot(ctx, roundNumber, tree.Root)
+		if err != nil {
+			return nil, fmt.Errorf("commitMerkleRoot: %w", err)
+		}
+		rootTxHash = res.TxHash.Hex()
+	}
+
+	leafHexes := make([]string, len(tree.Leaves))
+	for i, leaf := range tree.Leaves {
+		leafHexes[i] = HashStringToHex(leaf)
+	}
+	jpByWindow := make([]int, MerkleWindowCount)
+	hofByWindowFlat := make([]int, MerkleWindowCount*HofCount)
+	for w := 0; w < MerkleWindowCount; w++ {
+		jpByWindow[w] = outcomes.Windows[w].JackpotPosition
+		for i, p := range outcomes.Windows[w].HofPositions {
+			hofByWindowFlat[w*HofCount+i] = p
+		}
+	}
+
+	updates := map[string]interface{}{
+		"status":                "merkleCommitted",
+		"merkleRoot":            HashStringToHex(tree.Root),
+		"merkleRootTxHash":      rootTxHash,
+		"merkleRootCommittedAt": time.Now().Unix(),
+		"merkleLeaves":          leafHexes,
+		"jackpotByWindow":       jpByWindow,
+		"hofByWindowFlat":       hofByWindowFlat,
+		"hofByWindowSize":       HofCount,
+	}
+	if err := MergeMerkleRound(ctx, m.db, roundNumber, updates); err != nil {
+		return nil, fmt.Errorf("merge merkle commit: %w", err)
+	}
+	updated, _ := LoadMerkleRound(ctx, m.db, roundNumber)
+	return updated, nil
+}
+
+// writeBatchPointerDoc writes batch_proofs/{batchN} for a merkle-variant
+// batch. The pointer carries enough fields for the existing /api/batches
+// proof endpoint to render the batch's UI, plus MerkleRound +
+// MerkleBatchIndexInRound for dereferencing into the round doc.
+func (m *Manager) writeBatchPointerDoc(
+	ctx context.Context,
+	batchNumber int,
+	round *MerkleRoundDoc,
+	batchIndexInRound int,
+	jackpotPos int,
+	hofPositions []int,
+) error {
+	doc := &ProofDoc{
+		BatchNumber:             batchNumber,
+		Status:                  round.Status,
+		Variant:                 VariantVRFCommitMerkle,
+		SaltHash:                round.SaltHash,
+		CommitTxHashVRF:         round.CommitTxHashVRF,
+		VRFRequestID:            round.VRFRequestID,
+		VRFRequestTxHash:        round.VRFRequestTxHash,
+		VRFRandomness:           round.VRFRandomness,
+		VRFFulfilledAt:          round.FulfilledAt,
+		MerkleRoot:              round.MerkleRoot,
+		MerkleRootTxHash:        round.MerkleRootTxHash,
+		MerkleRootCommittedAt:   round.MerkleRootCommittedAt,
+		MerkleRound:             round.RoundNumber,
+		MerkleBatchIndexInRound: batchIndexInRound,
+		JackpotPositions:        []int{jackpotPos},
+		HofPositions:            hofPositions,
+	}
+	// Status from the round is "merkleCommitted" (or "revealed" later).
+	// The batch_proofs status carries the same string.
+	return SaveProof(ctx, m.db, doc)
+}
+
+// revealBatchMerkle posts the salt for the round when batchNumber is
+// the LAST batch in that round (batchIndexInRound == 99). For
+// intermediate batches it's a no-op.
+func (m *Manager) revealBatchMerkle(ctx context.Context, batchNumber int) error {
+	if m.merkleClient == nil {
+		return ErrMerkleClientNotConfigured
+	}
+
+	pointer, err := LoadProof(ctx, m.db, batchNumber)
+	if err != nil {
+		return fmt.Errorf("load batch pointer: %w", err)
+	}
+	if pointer == nil || pointer.MerkleRound == 0 {
+		return fmt.Errorf("batch %d has no merkle round pointer — can't reveal", batchNumber)
+	}
+	if pointer.MerkleBatchIndexInRound != MerkleWindowCount-1 {
+		// Not the last batch in the round; reveal happens only at round close.
+		return nil
+	}
+
+	round, err := LoadMerkleRound(ctx, m.db, pointer.MerkleRound)
+	if err != nil {
+		return fmt.Errorf("load merkle round: %w", err)
+	}
+	if round == nil {
+		return fmt.Errorf("merkle round %d missing", pointer.MerkleRound)
+	}
+	if round.Status == "revealed" {
+		return nil
+	}
+	if round.Status != "merkleCommitted" {
+		return fmt.Errorf("round %d status=%q, expected merkleCommitted before reveal", round.RoundNumber, round.Status)
+	}
+	if round.ServerSalt == "" {
+		return fmt.Errorf("merkle reveal: no stored salt for round %d", round.RoundNumber)
+	}
+
+	saltBytes, err := hex.DecodeString(strings.TrimPrefix(round.ServerSalt, "0x"))
+	if err != nil || len(saltBytes) != 32 {
+		return fmt.Errorf("merkle reveal: invalid stored salt for round %d: %w", round.RoundNumber, err)
+	}
+	var salt [32]byte
+	copy(salt[:], saltBytes)
+
+	res, err := m.merkleClient.RevealSaltMerkle(ctx, round.RoundNumber, salt)
+	if err != nil {
+		return fmt.Errorf("merkle revealSalt: %w", err)
+	}
+
+	now := time.Now().Unix()
+	if err := MergeMerkleRound(ctx, m.db, round.RoundNumber, map[string]interface{}{
+		"status":           "revealed",
+		"revealSaltTxHash": res.TxHash.Hex(),
+		"revealedAt":       now,
+	}); err != nil {
+		return fmt.Errorf("merge round reveal: %w", err)
+	}
+
+	// Propagate "revealed" status to all 100 batch pointer docs in this
+	// round so the existing proof endpoint surfaces the right state. Best-
+	// effort — if a particular pointer doc doesn't exist (only batches
+	// that actually filled have one), skip silently.
+	for b := round.FirstBatchNumber; b < round.FirstBatchNumber+MerkleWindowCount; b++ {
+		_ = MergeProof(ctx, m.db, b, map[string]interface{}{
+			"status":           "revealed",
+			"revealSaltTxHash": res.TxHash.Hex(),
+			"revealedAt":       now,
+			"serverSalt":       round.ServerSalt,
+		})
+	}
+	return nil
+}
+
+// preRequestMerkle pre-opens the NEXT round on-chain when batchNumber
+// is going to be the first batch of that round. Lets the on-chain
+// commit + VRF latency be absorbed before the first draft of the round
+// actually fills. For intermediate batches, no-op.
+func (m *Manager) preRequestMerkle(ctx context.Context, batchNumber int) error {
+	if m.merkleClient == nil {
+		return nil
+	}
+
+	// Will this batch be the first of a new round? Inspect round state.
+	state, err := LoadMerkleRoundState(ctx, m.db)
+	if err != nil {
+		return fmt.Errorf("load merkle round state: %w", err)
+	}
+	if state == nil {
+		// Pre-bootstrap; nothing to pre-open. The very first ensureRoundCommitted
+		// call will cold-start round 1.
+		return nil
+	}
+	// If we're going to roll into a new round at this batch (state says
+	// the current round is full), pre-open round N+1.
+	if state.NextBatchIndexInRound < MerkleWindowCount {
+		return nil
+	}
+
+	nextRoundNumber := state.CurrentRoundNumber + 1
+	existing, err := LoadMerkleRound(ctx, m.db, nextRoundNumber)
+	if err != nil {
+		return fmt.Errorf("load next round: %w", err)
+	}
+	if existing != nil {
+		return nil // already pre-requested
+	}
+
+	saltBytes, err := GenerateSeed()
+	if err != nil {
+		return fmt.Errorf("generate salt: %w", err)
+	}
+	saltHash := SeedHash(saltBytes)
+
+	res, err := m.merkleClient.RequestRandomnessAndCommitMerkle(ctx, nextRoundNumber, saltHash)
+	if err != nil {
+		return fmt.Errorf("merkle pre-request: %w", err)
+	}
+
+	chainState, _ := m.merkleClient.GetBatchMerkleCommit(ctx, nextRoundNumber)
+	requestID := ""
+	if chainState.VRFRequestID != nil && chainState.VRFRequestID.Sign() > 0 {
+		requestID = chainState.VRFRequestID.String()
+	}
+
+	doc := &MerkleRoundDoc{
+		RoundNumber:      nextRoundNumber,
+		Status:           "requested",
+		FirstBatchNumber: batchNumber,
+		SaltHash:         "0x" + hex.EncodeToString(saltHash.Bytes()),
+		ServerSalt:       "0x" + hex.EncodeToString(saltBytes),
+		VRFRequestID:     requestID,
+		VRFRequestTxHash: res.TxHash.Hex(),
+		CommitTxHashVRF:  res.TxHash.Hex(),
+		OpenedAt:         time.Now().Unix(),
+	}
+	return SaveMerkleRound(ctx, m.db, doc)
+}

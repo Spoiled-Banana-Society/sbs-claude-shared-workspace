@@ -91,7 +91,12 @@ func (info *DraftInfo) Update(draftId string) error {
 
 type DraftSummaryObject struct {
 	PlayerInfo PlayerStateInfo `json:"playerInfo"`
-	PfpInfo    PfpInfo         `json:"pfpInfo"`
+	// PfpInfo intentionally NOT stored on each pick. Embedding the
+	// owner's PfpInfo into all 150 pick slots blew the 1 MB Firestore
+	// doc-size limit when a user had a base64 data: URL as their avatar
+	// (15 picks × 126 KB ≈ 1.9 MB → fill aborted, 10th joiner rolled back).
+	// Frontend joins ownerAddress → owner doc for PFP at render time.
+	PfpInfo PfpInfo `json:"pfpInfo,omitempty" firestore:"-"`
 }
 
 type DraftSummary struct {
@@ -110,24 +115,16 @@ func ReturnDraftSummaryForDraft(draftId string) (*DraftSummary, error) {
 }
 
 func CreateDraftSummaryForDraft(draftId string, draftOrder []LeagueUser) (*DraftSummary, error) {
+	// Summary stores only PlayerInfo per pick. Each pick carries the
+	// OwnerAddress, and the frontend looks up the avatar + display name
+	// from the owner doc at render time. Embedding the full PfpInfo into
+	// all 150 slots was the source of the 1 MB Firestore-doc-size overflow
+	// when any user had a large avatar (notably base64 data: URLs).
 	sum := &DraftSummary{
 		Summary: make([]DraftSummaryObject, 0),
 	}
 
-	pfpMap := make(map[string]PfpInfo, 0)
-
-	for i := 0; i < len(draftOrder); i++ {
-		ownerId := draftOrder[i].OwnerId
-		owner, err := ReturnOwnerObjectById(ownerId)
-		if err != nil {
-			fmt.Println("ERROR returning owner from ownerId: ", err)
-			return nil, err
-		}
-		pfpMap[ownerId] = owner.PFP
-	}
-
 	pickNum := 1
-
 	for i := 1; i <= 15; i++ {
 		round := i
 		for j := 1; j <= 10; j++ {
@@ -145,11 +142,7 @@ func CreateDraftSummaryForDraft(draftId string, draftOrder []LeagueUser) (*Draft
 				Round:        round,
 			}
 
-			data := DraftSummaryObject{
-				PlayerInfo: obj,
-				PfpInfo:    pfpMap[drafter],
-			}
-			sum.Summary = append(sum.Summary, data)
+			sum.Summary = append(sum.Summary, DraftSummaryObject{PlayerInfo: obj})
 			pickNum++
 		}
 	}
@@ -718,13 +711,16 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		PickLength:        info.PickLength,
 	}
 
+	fmt.Printf("[league#] rtdb.write.start draftId=%s displayName=%q numPlayers=%d\n", draftId, leagueInfo.DisplayName, leagueInfo.NumPlayers)
 	if err := ref.Set(context.TODO(), map[string]interface{}{
 		"numPlayers":        leagueInfo.NumPlayers,
 		"realTimeDraftInfo": firstPickInfo,
+		"displayName":       leagueInfo.DisplayName,
 	}); err != nil {
-		fmt.Println("ERROR in setting real time database when user joins league: ", err)
+		fmt.Printf("[league#] rtdb.write.error draftId=%s err=%v\n", draftId, err)
 		return err
 	}
+	fmt.Printf("[league#] rtdb.write.ok draftId=%s displayName=%q\n", draftId, leagueInfo.DisplayName)
 
 	fmt.Printf("First pick info: %v\n for draft %s has created the real time draft info\n", firstPickInfo, draftId)
 

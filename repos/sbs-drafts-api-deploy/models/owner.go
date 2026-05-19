@@ -220,7 +220,20 @@ type GameWeekObject struct {
 }
 
 func (o *Owner) UpdatePFPImageAndContract(ownerId, imageUrl, nftContractAddress string) error {
-	o.PFP.ImageUrl = imageUrl
+	// Reject inline base64 image data and oversized URLs. PFP.ImageUrl
+	// must be a real HTTPS URL pointing at a hosted image (~80 bytes).
+	// Storing raw image bytes here blew up the draft summary doc past
+	// Firestore's 1 MB limit and broke draft fill — see DraftSummaryObject
+	// comment in draft-state.go. This guard prevents the regression.
+	trimmed := strings.TrimSpace(imageUrl)
+	if strings.HasPrefix(strings.ToLower(trimmed), "data:") {
+		return fmt.Errorf("pfp imageUrl must be a hosted URL, not an inline data URI (got %d bytes)", len(trimmed))
+	}
+	if len(trimmed) > 2048 {
+		return fmt.Errorf("pfp imageUrl too long: %d bytes (max 2048) — upload the image to a CDN and store the URL", len(trimmed))
+	}
+
+	o.PFP.ImageUrl = trimmed
 	o.PFP.NftContract = nftContractAddress
 
 	err := utils.Db.CreateOrUpdateDocument("owners", ownerId, o)

@@ -92,6 +92,19 @@ func ReturnAllDraftTokensForOwner(ownerId string) (*UsersTokens, error) {
 	for i := 0; i < len(data); i++ {
 		var token DraftToken
 		data[i].DataTo(&token)
+		// Backfill display name from the draft doc when the cached
+		// LeagueDisplayName on the token is empty. Covers the race
+		// window between user joining a lobby and the fill-flow loop
+		// writing leagueDisplayName onto each user's token. Without
+		// this, the frontend falls back to extracting digits from the
+		// slot id ('2024-fast-draft-804' → 804) instead of the actual
+		// league number ('BBB #805'), and the row label is wrong by 1.
+		if token.LeagueDisplayName == "" && token.LeagueId != "" {
+			var league DraftInfo
+			if err := utils.Db.ReadDocument("drafts", token.LeagueId, &league); err == nil && league.DisplayName != "" {
+				token.LeagueDisplayName = league.DisplayName
+			}
+		}
 		res.Active = append(res.Active, token)
 	}
 
@@ -366,7 +379,7 @@ func (token *DraftToken) UpdateImageURL() (*DraftToken, error) {
 		return nil, err
 	}
 
-	r, err := http.NewRequest("POST", "https://us-central1-sbs-prod-env.cloudfunctions.net/draft-image-generator", bytes.NewBuffer(data))
+	r, err := http.NewRequest("POST", imageGeneratorURL(), bytes.NewBuffer(data))
 	if err != nil {
 		fmt.Println("Error creating post request object")
 		return nil, err

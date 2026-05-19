@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/Spoiled-Banana-Society/sbs-drafts-api/batchproof"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
@@ -30,6 +31,8 @@ func (sr *StagingResources) Routes() chi.Router {
 	r.Post("/clear-all-tokens/{ownerId}", sr.ClearAllTokenLeagues)
 	r.Post("/create-special-draft", sr.CreateSpecialDraft)
 	r.Post("/join-special-draft", sr.JoinSpecialDraft)
+	r.Post("/merkle-open-next-round", sr.MerkleOpenNextRound)
+	r.Post("/merkle-reset", sr.MerkleReset)
 	return r
 }
 
@@ -854,5 +857,72 @@ func (sr *StagingResources) ClearAllTokenLeagues(w http.ResponseWriter, r *http.
 		"cleared": cleared,
 		"total":   len(data),
 		"ownerId": ownerId,
+	})
+}
+
+
+// MerkleOpenNextRound is a staging-only admin trigger that drives the
+// next vrf-commit-merkle round through open → fulfilled → merkleCommitted.
+// Idempotent. Returns the round number that was opened.
+//
+// Body (optional): { "firstBatchNumber": int }
+//   firstBatchNumber is the legacy batch number this round will eventually
+//   start at. Defaults to 0 (sentinel).
+func (sr *StagingResources) MerkleOpenNextRound(w http.ResponseWriter, r *http.Request) {
+	mgr := batchproof.Default()
+	if mgr == nil {
+		http.Error(w, "batchproof manager not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req struct {
+		FirstBatchNumber int `json:"firstBatchNumber"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
+	roundNumber, err := mgr.PreOpenNextMerkleRound(ctx, req.FirstBatchNumber)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("PreOpenNextMerkleRound: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":               true,
+		"roundNumber":      roundNumber,
+		"firstBatchNumber": req.FirstBatchNumber,
+	})
+}
+
+// MerkleReset wipes the merkle round state + all merkle_rounds docs so a
+// fresh first round can be opened. Staging-only — destructive for any
+// in-progress round. Use when the cutover got into a weird state during
+// testing (e.g. a failed open left orphan state pointers).
+func (sr *StagingResources) MerkleReset(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	// Delete all merkle_rounds/{N} docs
+	iter := utils.Db.Client.Collection("merkle_rounds").Documents(ctx)
+	deletedRounds := 0
+	for {
+		snap, err := iter.Next()
+		if err != nil {
+			break
+		}
+		_, _ = snap.Ref.Delete(ctx)
+		deletedRounds++
+	}
+
+	// Delete the round-state pointer
+	_, _ = utils.Db.Client.Collection("system_config").Doc("merkleRoundState").Delete(ctx)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"ok":            true,
+		"deletedRounds": deletedRounds,
 	})
 }

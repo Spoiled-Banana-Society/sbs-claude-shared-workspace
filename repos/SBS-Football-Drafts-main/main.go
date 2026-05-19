@@ -39,9 +39,12 @@ func main() {
 	ctx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
+	// .env is only used for local dev — Cloud Run injects env vars via the
+	// service config. A missing .env is normal in deployed environments and
+	// must NOT abort startup (returning here would let the container exit
+	// cleanly before binding the port → Cloud Run health check fails).
 	if err := godotenv.Load(".env"); err != nil {
-		fmt.Println("ERROR loading in .env file: ", err)
-		return
+		fmt.Println("No .env file (expected in Cloud Run, using process env): ", err)
 	}
 
 	port := "8000"

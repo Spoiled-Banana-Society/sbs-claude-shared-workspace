@@ -1,0 +1,17 @@
+# Override .gitignore for gcloud source uploads. The Dockerfile expects
+# configs/ and .env at build time; .gitignore excludes them (correct for git),
+# but gcloud needs them in the build context. Without this file, gcloud falls
+# back to .gitignore and silently skips configs/, causing the container to
+# fail to start.
+
+# Things we DO want to keep out of the build context:
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.idea/
+.DS_Store
+sbs-drafts-api

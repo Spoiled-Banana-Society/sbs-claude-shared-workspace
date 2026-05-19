@@ -120,9 +120,16 @@ func newDraft(draftId string, manager *DraftManager, skipLockCheck bool) (*Draft
 		List: make(map[string]bool),
 	}
 	err = utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "connectionList", &connectionList)
-	if err != nil || connectionList == nil {
-		fmt.Println("Connection list was empty or there was an error when creating a new connection in NewDraft()")
-		return nil, err
+	if err != nil {
+		// Tolerate a missing connectionList doc — drafts that filled while the
+		// WS server was rejecting all auth never got their connectionList
+		// written by the WS init path. We initialize empty here and the doc
+		// gets written on the first UpdateConnectionList call below.
+		fmt.Printf("connectionList missing for %s, starting with empty list: %v\n", draftId, err)
+		connectionList = &ConnectionList{List: make(map[string]bool)}
+	}
+	if connectionList.List == nil {
+		connectionList.List = make(map[string]bool)
 	}
 
 	info := models.DraftInfo{

@@ -338,6 +338,9 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 	if rankErr != nil {
 		fmt.Println("Current drafter has no custom rankings")
 		haveUserRanks = false
+	} else if len(r.Ranking) == 0 {
+		fmt.Println("User Rankings exist but are empty — skipping rank-based pick")
+		haveUserRanks = false
 	} else {
 		fmt.Println("Read in User Rankings in default pick selection 1st player: ", r.Ranking[0])
 	}
@@ -349,7 +352,15 @@ func CalculateDefaultPickForUser(pick *models.PlayerInfo, adpPick *models.Player
 		fmt.Printf(`{"severity":"ERROR","draftId":"%s","pick":%d,"event":"calc_default_adp_error"}`+"\n", draftInfo.DraftId, draftInfo.CurrentPickNumber)
 		return
 	}
-	fmt.Println("Read in ADP rankings in default pick selection: ", adpUserRanks.Ranking[0])
+	if len(adpUserRanks.Ranking) == 0 {
+		// Empty ADP. The downstream loop iterates 0 times and adpPick stays
+		// zero-valued — caller falls back to rankPick or skips the auto-pick.
+		// Don't panic indexing [0] for a log line; just note it and continue.
+		fmt.Println("ADP rankings empty for draft — continuing with zero ADP pick")
+		fmt.Printf(`{"severity":"WARNING","draftId":"%s","pick":%d,"event":"calc_default_adp_empty"}`+"\n", draftInfo.DraftId, draftInfo.CurrentPickNumber)
+	} else {
+		fmt.Println("Read in ADP rankings in default pick selection: ", adpUserRanks.Ranking[0])
+	}
 
 	data := &models.RosterState{
 		Rosters: make(map[string]*models.DraftStateRoster),
