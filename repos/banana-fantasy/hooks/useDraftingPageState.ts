@@ -291,7 +291,10 @@ export function useDraftingPageState() {
     // The draft-room page accepts BOTH formats; this keeps every old
     // ?id= link working forever.
     const slotId = draft.queueDraftId || draft.id;
-    const leagueMatch = !isFilling && /^BBB\s*#(\d+)$/i.exec(draft.contestName || '');
+    // Match BOTH "BBB #N" (raw backend form) and "League #N" (the
+    // draftStore normalizes BBB→League on read, so contestName is
+    // usually already in League # form by the time we see it here).
+    const leagueMatch = !isFilling && /^(?:BBB|League)\s*#(\d+)$/i.exec(draft.contestName || '');
     const isRegularSlot = /^\d{4}-(fast|slow)-draft-\d+$/.test(slotId);
     const params = new URLSearchParams();
     if (leagueMatch && isRegularSlot) {

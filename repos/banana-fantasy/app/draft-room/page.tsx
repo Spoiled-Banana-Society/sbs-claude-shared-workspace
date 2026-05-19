@@ -83,6 +83,29 @@ function DraftRoomContent() {
     })();
     return () => { cancelled = true; };
   }, [urlLeagueParam, urlIdParam]);
+
+  // Immediate URL cleanup — if the user arrived via the legacy
+  // `?id=...&name=League #N` URL, upgrade it to the pretty
+  // `?league=N` form RIGHT NOW (don't wait for the RTDB displayName
+  // push). Parses the league number out of the `name` param. Only
+  // for regular drafts on a `2024-{speed}-draft-N` slot id.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('league')) return; // already pretty
+    const idVal = sp.get('id') || sp.get('draftId') || '';
+    if (!/^\d{4}-(fast|slow)-draft-\d+$/.test(idVal)) return; // queue/special — leave alone
+    const nameVal = sp.get('name') || '';
+    const m = /^(?:BBB|League)\s*#(\d+)$/i.exec(nameVal);
+    if (!m) return; // no league # in the URL yet — the RTDB push effect will handle it later
+    sp.delete('id');
+    sp.delete('draftId');
+    sp.delete('name');
+    sp.set('league', m[1]);
+    clientLog('league#', 'url.upgrade.from-name-param', { slotId: idVal, league: m[1] });
+    router.replace(`${window.location.pathname}?${sp.toString()}`);
+  }, [router]);
+
   const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
   const walletParam = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
@@ -192,6 +215,7 @@ function DraftRoomContent() {
             sp.delete('draftId');
             sp.delete('name'); // redundant once we have ?league=
             sp.set('league', m[1]);
+            clientLog('league#', 'url.upgrade.from-rtdb-push', { slotId: draftId, league: m[1] });
             router.replace(`${window.location.pathname}?${sp.toString()}`);
           }
         }
