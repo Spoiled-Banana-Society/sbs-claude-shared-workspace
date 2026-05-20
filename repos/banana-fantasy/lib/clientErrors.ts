@@ -11,6 +11,8 @@
 //     context: { draftId, walletAddress, attempt: 3 },
 //   });
 
+import { getClientLogSessionId } from './clientLog';
+
 interface ClientErrorPayload {
   source: string;            // dot-separated id, e.g. 'ws.auth_failed'
   message: string;           // human-readable summary
@@ -18,6 +20,7 @@ interface ClientErrorPayload {
   context?: Record<string, unknown>;
   stack?: string;
   actor?: string;            // wallet or user id when available
+  sessionId?: string;        // debug session — auto-filled if omitted
 }
 
 // Per-source throttle. Don't spam the admin error log if the same
@@ -33,13 +36,20 @@ export function reportClientError(payload: ClientErrorPayload): void {
   if (now - last < THROTTLE_MS) return;
   lastFiredAt.set(payload.source, now);
 
+  // Auto-attach the debug session id so this error can be tied back to
+  // the user's full breadcrumb trace in v2_debug_events.
+  const body = {
+    ...payload,
+    sessionId: payload.sessionId ?? getClientLogSessionId(),
+  };
+
   // Fire-and-forget POST. We intentionally don't await — the caller
   // shouldn't ever know or care if this fails.
   try {
     void fetch('/api/client-errors', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
       keepalive: true,
     }).catch(() => {
       /* swallow — logging must never break the app */

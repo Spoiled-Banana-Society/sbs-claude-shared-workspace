@@ -12,6 +12,8 @@ import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 
 interface NftTrait {
@@ -452,6 +454,13 @@ export default function NftDetailPage() {
       refetchOffers();
     } catch (err) {
       console.error('[NFT Detail] Offer failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.OFFER_CREATE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace',
+        context: { tokenId, offerAmount: amount, offerExpiration },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
       setOfferStep('input');
     }
@@ -538,6 +547,13 @@ export default function NftDetailPage() {
       setTimeout(() => fetchNft(), 2000);
     } catch (err) {
       console.error('[NFT Detail] Accept offer failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.OFFER_ACCEPT_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace',
+        context: { tokenId, orderHash: offer.orderHash, offerAmount: offer.amount, offererAddress: offer.offererAddress || null },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept offer');
     } finally {
       setAcceptingOfferHash(null);

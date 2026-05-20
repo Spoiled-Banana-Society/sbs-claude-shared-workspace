@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -74,7 +76,15 @@ export default function ReferralsPage() {
     fetch(`/api/referrals?userId=${encodeURIComponent(userId)}`)
       .then(r => r.json())
       .then(d => setData(d))
-      .catch(() => {})
+      .catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.referral.DATA_FETCH_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'referrals',
+          context: { userId },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      })
       .finally(() => setLoading(false));
   }, [userId]);
 
@@ -92,8 +102,15 @@ export default function ReferralsPage() {
         const d = await res.json();
         setData(d);
       }
-    } catch {
+    } catch (err) {
       // silent
+      reportClientError({
+        source: LOG_SOURCES.referral.CODE_GENERATION_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'referrals',
+        context: { userId, username },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     } finally {
       setGenerating(false);
     }

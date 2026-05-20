@@ -5,6 +5,8 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { API_CONFIG } from '@/lib/api/config';
 import { getPromos, updatePromo } from '@/lib/db';
 import { searchTweetsRaw } from '@/lib/xApi';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 /** Check if user has directly replied to the target tweet (not to other replies in thread). */
 async function checkDirectReply(tweetId: string, handle: string): Promise<boolean> {
@@ -76,6 +78,10 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error(err);
+    logger.error(LOG_SOURCES.promo.TWEET_VERIFY_FAILED, {
+      err: (err as Error).message,
+      stack: (err as Error).stack,
+    });
     return jsonError('Internal Server Error', 500);
   }
 }

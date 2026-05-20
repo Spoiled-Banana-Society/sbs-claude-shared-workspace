@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 import crypto from 'crypto';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { savePersonaVerification } from '@/lib/db-firestore';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const DIDIT_WEBHOOK_SECRET = process.env.DIDIT_WEBHOOK_SECRET || '';
 
@@ -122,6 +124,11 @@ export async function POST(req: Request) {
     const timestamp = req.headers.get('x-timestamp') || '';
     if (!verifyDiditSignature(event, sigV2, timestamp)) {
       console.error('[Didit Webhook] Signature verification failed');
+      logger.error(LOG_SOURCES.kyc.WEBHOOK_INVALID_SIGNATURE, {
+        route: '/api/verify/webhook',
+        hasSignature: !!sigV2,
+        hasTimestamp: !!timestamp,
+      });
       return jsonError('Invalid signature', 401);
     }
 

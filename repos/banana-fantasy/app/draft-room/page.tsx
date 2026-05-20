@@ -14,6 +14,8 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
@@ -553,6 +555,14 @@ function DraftRoomContent() {
         }
       } catch (err) {
         console.warn('[Draft Room] Loading phase server check failed:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.PHASE_CHECK_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, phase, storedStatus: stored?.status ?? null },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
         if (stored?.status === 'drafting') {
           setPhase('drafting');
           setLiveDataReady(true);
@@ -665,7 +675,17 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
+          }).catch(e => {
+            console.error('[Airplane] Auto-pick REST failed:', e);
+            reportClientError({
+              source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+              message: e instanceof Error ? e.message : String(e),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, playerId: payload.playerId },
+              stack: e instanceof Error ? e.stack : undefined,
+            });
+          });
         }
       } else {
         engine.draftPlayer(pickId);
@@ -861,6 +881,14 @@ function DraftRoomContent() {
       })
       .catch((e) => {
         console.warn('[Preferences] Failed to load draft preferences:', e);
+        reportClientError({
+          source: LOG_SOURCES.draft.PREFERENCES_LOAD_FAILED,
+          message: e instanceof Error ? e.message : String(e),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId },
+          stack: e instanceof Error ? e.stack : undefined,
+        });
       });
 
     return () => { cancelled = true; };
@@ -891,6 +919,14 @@ function DraftRoomContent() {
       }
     } catch (e) {
       console.error('[AutoDraft] Toggle failed:', e);
+      reportClientError({
+        source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+        message: e instanceof Error ? e.message : String(e),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, newValue },
+        stack: e instanceof Error ? e.stack : undefined,
+      });
       // Revert optimistic flip on failure.
       setAutoDraft(!newValue);
       engine.setAirplaneMode(!newValue);
@@ -906,7 +942,17 @@ function DraftRoomContent() {
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
-        .catch(e => console.warn('[Sort] Failed to persist sort preference:', e));
+        .catch(e => {
+          console.warn('[Sort] Failed to persist sort preference:', e);
+          reportClientError({
+            source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
+            message: e instanceof Error ? e.message : String(e),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId, sort },
+            stack: e instanceof Error ? e.stack : undefined,
+          });
+        });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
@@ -958,6 +1004,14 @@ function DraftRoomContent() {
       })
       .catch((err) => {
         console.warn('[Rankings] Failed to refresh player rankings:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.RANKINGS_REFRESH_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, pickNumber: engine.mostRecentPick?.pickNumber ?? null },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, phase, rankingsRefreshBucket]);
@@ -1250,6 +1304,14 @@ function DraftRoomContent() {
           body: JSON.stringify({ userId: promoUserId, draftId: id }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Failed to track draft:', err);
+          reportClientError({
+            source: LOG_SOURCES.draft.PROMO_TRACK_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId: id, promoUserId },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         });
       }
       // Badge sweep runs server-side on every /api/badges read (called
@@ -1266,6 +1328,14 @@ function DraftRoomContent() {
           body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
+          reportClientError({
+            source: LOG_SOURCES.draft.PROMO_PICK10_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId: id, promoUserId },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         });
       }
     }
@@ -1277,7 +1347,16 @@ function DraftRoomContent() {
         const mapped = typeMap[level] || 'pro';
         setDraftType(mapped);
         if (draftId) draftStore.updateDraft(draftId, { type: mapped, draftType: mapped });
-      }).catch(() => {});
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverPollResult]);
@@ -1299,7 +1378,17 @@ function DraftRoomContent() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: promoUserId, draftId: id }),
-    }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
+    }).catch(err => {
+      console.error('[Promo] Jackpot tracking failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.PROMO_JACKPOT_HIT_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId: id, promoUserId },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
 
@@ -1359,6 +1448,14 @@ function DraftRoomContent() {
         }
       } catch (err) {
         logger.error('[Promo] Founder tracking failed (will retry):', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.PROMO_FOUNDER_POST_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id, promoUserId },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -9,6 +9,8 @@ import { WithdrawModal } from '@/components/modals/WithdrawModal';
 import { CashOutModal } from '@/components/modals/CashOutModal';
 import { VerificationModal } from '@/components/modals/VerificationModal';
 import type { PrizeHistoryItem } from '@/types';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 export default function PrizesPage() {
   const { isLoggedIn, setShowLoginModal, user, isEmbeddedWallet } = useAuth();
@@ -31,6 +33,21 @@ export default function PrizesPage() {
   // (the default). When user opens the editor we initialise to the
   // full balance so they can dial it down.
   const [customAmount, setCustomAmount] = useState<string | null>(null);
+
+  // Surface eligibility-fetch failures to the admin error log. useSWRLike
+  // has no onError hook, so we watch the query's error field and report
+  // once when it transitions to an error state.
+  useEffect(() => {
+    const err = eligibilityQuery.error;
+    if (!err) return;
+    reportClientError({
+      source: LOG_SOURCES.prizes.ELIGIBILITY_FETCH_FAILED,
+      message: err instanceof Error ? err.message : String(err),
+      route: 'prizes',
+      context: { userId: user?.walletAddress ?? user?.id },
+      stack: err instanceof Error ? err.stack : undefined,
+    });
+  }, [eligibilityQuery.error, user?.walletAddress, user?.id]);
 
   // Auto-open status timeline when redirected back from Coinbase
   useEffect(() => {
@@ -85,6 +102,13 @@ export default function PrizesPage() {
       } else {
         const msg = err instanceof Error ? err.message : 'Withdrawal failed';
         setWithdrawSuccess(`✗ ${msg}`);
+        reportClientError({
+          source: LOG_SOURCES.prizes.WITHDRAWAL_API_FAILED,
+          message: msg,
+          route: 'prizes',
+          context: { userId: user?.walletAddress ?? user?.id, amount, availableBalance },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       }
     } finally {
       setWithdrawing(false);

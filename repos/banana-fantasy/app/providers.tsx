@@ -21,6 +21,7 @@ import { NotificationOptIn } from '@/components/notifications/NotificationOptIn'
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
+import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 
 // Context to expose triggerOptIn to any component in the tree
@@ -35,6 +36,11 @@ function AppContent({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     setClientLogWallet(user?.walletAddress);
   }, [user?.walletAddress]);
+  // Catch every uncaught error / rejected promise app-wide and route it
+  // to the admin Logs tab. Idempotent — safe to call on every mount.
+  useEffect(() => {
+    installGlobalErrorHandlers();
+  }, []);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
   const isDraftRoom = pathname === '/draft-room';

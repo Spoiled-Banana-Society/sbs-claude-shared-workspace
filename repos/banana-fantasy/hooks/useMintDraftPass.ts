@@ -18,6 +18,8 @@ import {
   USDC_PERMIT_ABI,
 } from '@/lib/contracts/bbb4';
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 type MintFn = (
   quantity: number,
@@ -281,6 +283,49 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         return hash;
       } catch (err) {
         const message = normalizeMintError(err);
+        // Classify the failure so the admin Logs tab can split signature
+        // rejections (user action) from admin-wallet / permit failures
+        // (infra). Purely additive — control flow unchanged.
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        const lowerRaw = rawMessage.toLowerCase();
+        const baseContext = {
+          quantity,
+          paymentMethod: opts?.paymentMethod ?? 'usdc',
+          wallet: selectedWallet?.address,
+        };
+        if (
+          lowerRaw.includes('user rejected') ||
+          lowerRaw.includes('rejected the request') ||
+          lowerRaw.includes('user denied')
+        ) {
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_SIGNATURE_REJECTED,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        } else if (
+          lowerRaw.includes('payment relay not available') ||
+          lowerRaw.includes('temporarily paused for maintenance') ||
+          lowerRaw.includes('admin wallet')
+        ) {
+          reportClientError({
+            source: LOG_SOURCES.payment.ADMIN_WALLET_UNAVAILABLE,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        } else {
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_PERMIT_FAILED,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        }
         setError(message);
         setMintStep('error');
         throw new Error(message);

@@ -10,6 +10,8 @@ import { InstallModal } from '@/components/home/AddToHomeScreenCard';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useNotificationOptIn } from '@/hooks/useNotificationOptIn';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -147,6 +149,13 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         setJpRevealLabels(null);
       }
     } catch (err) {
+      reportClientError({
+        source: LOG_SOURCES.promo.JP_REVEAL_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'promos',
+        context: { promoId: promo.id, promoType: promo.type, draftId },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setJpRevealError(err instanceof Error ? err.message : 'Failed to load drafters');
       setJpRevealLabels(null);
     }
@@ -655,6 +664,15 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       if (result) {
         setTweetVerifyResult(result);
       } else {
+        // onVerifyTweet returned null — the X API call or post-verify
+        // write failed inside usePromos. Surface it so the admin Logs
+        // tab catches verification outages.
+        reportClientError({
+          source: LOG_SOURCES.promo.TWEET_VERIFY_FAILED,
+          message: 'verifyTweetEngagement returned null',
+          route: 'promos',
+          context: { promoId: promo.id, promoType: promo.type, xHandle: user?.xHandle },
+        });
         setTweetVerifyResult({ verified: false, message: 'Verification failed. Please try again.' });
       }
     };

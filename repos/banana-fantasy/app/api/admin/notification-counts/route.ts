@@ -17,8 +17,7 @@ import { logger } from '@/lib/logger';
 // to 0 (or omit) to count everything. `support` and `withdrawals` are
 // state-driven (unread / pending) and ignore `since`.
 interface Since {
-  errors?: number;
-  sentry?: number;
+  logs?: number;
   kyc?: number;
   offramp?: number;
   onramp?: number;
@@ -28,8 +27,7 @@ interface Since {
 
 export interface NotificationCounts {
   support: number;       // Crisp unread conversations
-  errors: number;        // v2_error_events since `errors` (important pattern matches)
-  sentry: number;        // unresolved Sentry issues seen since `sentry`
+  logs: number;          // important v2_error_events + unresolved Sentry issues since `logs`
   kyc: number;           // kyc_attempts in review states since `kyc`
   offramp: number;       // offramp_attempts with failure status since `offramp`
   onramp: number;        // onramp_attempts tx_failed since `onramp`
@@ -133,8 +131,8 @@ export async function GET(req: Request) {
       drafts,
     ] = await Promise.all([
       countSupport(),
-      countErrors(since.errors ?? 0),
-      countSentryUnresolved(since.sentry ?? 0),
+      countErrors(since.logs ?? 0),
+      countSentryUnresolved(since.logs ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
       countOnramp(db, since.onramp ?? 0),
@@ -143,8 +141,10 @@ export async function GET(req: Request) {
       countStuckDrafts(db, stuckBefore),
     ]);
 
+    // The Logs tab merges server errors + Sentry issues into one feed,
+    // so the badge is their combined count.
     const counts: NotificationCounts = {
-      support, errors, sentry, kyc, offramp, onramp, withdrawals, purchases, drafts,
+      support, logs: errors + sentry, kyc, offramp, onramp, withdrawals, purchases, drafts,
     };
 
     logger.info('admin.notif_counts.ok', {

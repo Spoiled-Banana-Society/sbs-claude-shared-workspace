@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 type JwtPayload = Record<string, unknown>;
 
@@ -23,7 +25,14 @@ function getPrivyAppId(): string {
 async function refreshJwksKeys(): Promise<void> {
   const appId = getPrivyAppId();
   const res = await fetch(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`);
-  if (!res.ok) throw new ApiError(500, 'Failed to fetch Privy JWKS');
+  if (!res.ok) {
+    logger.error(LOG_SOURCES.auth.JWKS_FETCH_FAILED, {
+      route: 'lib/auth',
+      appId,
+      status: res.status,
+    });
+    throw new ApiError(500, 'Failed to fetch Privy JWKS');
+  }
   const jwks = await res.json() as { keys: Array<{ kid: string; kty: string; crv: string; x: string; y: string }> };
 
   jwksCache.keys = new Map();
@@ -130,7 +139,14 @@ async function verifyPrivyJwt(token: string): Promise<{ userId: string; walletAd
   if (!isValid) {
     isValid = await verifySignature(true);
   }
-  if (!isValid) throw new ApiError(401, 'Token signature verification failed');
+  if (!isValid) {
+    logger.error(LOG_SOURCES.auth.JWT_SIGNATURE_INVALID, {
+      route: 'lib/auth',
+      alg,
+      kid,
+    });
+    throw new ApiError(401, 'Token signature verification failed');
+  }
 
   // Check expiration
   if (typeof payload.exp === 'number' && Date.now() / 1000 >= payload.exp) {

@@ -1,9 +1,11 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import type { ActivityEventType } from '@/lib/activityEvents';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Purchased',
@@ -113,7 +115,20 @@ function describe(e: LiveActivityEvent): string {
 
 export function ActivityHistory({ userId }: { userId: string | null }) {
   const url = userId ? `/api/user/activity/stream?userId=${encodeURIComponent(userId.toLowerCase())}` : null;
-  const { events, isConnected } = useActivityStream(url);
+  const { events, isConnected, error } = useActivityStream(url);
+
+  // Surface activity-stream (SSE) failures to the admin error log. The
+  // stream silently degrades to "Connecting…" otherwise, so a broken
+  // feed is invisible without this report.
+  useEffect(() => {
+    if (!error) return;
+    reportClientError({
+      source: LOG_SOURCES.profile.ACTIVITY_FETCH_FAILED,
+      message: `Activity stream error: ${error}`,
+      route: 'profile',
+      context: { userId },
+    });
+  }, [error, userId]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, LiveActivityEvent[]>();

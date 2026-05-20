@@ -7,6 +7,8 @@ import { getPrivyUser } from '@/lib/auth';
 import { savePersonaVerification, type VerifiedIdentity } from '@/lib/db-firestore';
 import { checkBlockRules } from '@/lib/verifyBlockRules';
 import { buildIdentityHash, logKycAttempt } from '@/lib/kycAudit';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 // Custom KYC submission endpoint:
 //   POST /api/verify/submit
@@ -168,6 +170,13 @@ export async function POST(req: Request) {
     if (!verifyRes.ok) {
       const text = await verifyRes.text();
       console.error('[Verify Submit] Didit ID verification failed:', verifyRes.status, text);
+      logger.error(LOG_SOURCES.kyc.DIDIT_API_FAILED, {
+        route: '/api/verify/submit',
+        userId,
+        walletAddress,
+        status: verifyRes.status,
+        responseBody: text.slice(0, 500),
+      });
       await logKycAttempt({
         userId, walletAddress, status: 'error',
         formData, identityHash, imageSizeKb,

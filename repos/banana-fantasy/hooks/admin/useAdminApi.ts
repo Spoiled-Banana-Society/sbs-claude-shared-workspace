@@ -330,6 +330,7 @@ export interface ErrorEventEntry {
   requestId?: string;
   actor?: string;
   context?: Record<string, unknown>;
+  sessionId?: string;
   timestamp: string;
 }
 
@@ -343,6 +344,41 @@ export function useRecentErrors(enabled: boolean) {
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
+}
+
+/**
+ * Returns a function that downloads an error + its full debug-session
+ * trace as a JSON file (for handing to a developer). Raw fetch — not
+ * adminFetch — because the response is a file, not JSON.
+ */
+export function useExportErrorSession() {
+  const getHeaders = useAdminAuthHeaders();
+  return useCallback(
+    async (sessionId: string): Promise<void> => {
+      const headers = await getHeaders();
+      const res = await fetch(`/api/admin/error-export?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers,
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error((body as { error?: string })?.error || `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sbs-error-${sessionId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    [getHeaders],
+  );
 }
 
 export interface SentryIssueEntry {

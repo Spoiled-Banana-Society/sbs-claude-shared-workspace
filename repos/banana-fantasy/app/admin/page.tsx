@@ -25,8 +25,7 @@ import { OnrampAttemptsViewer } from '@/components/admin/OnrampAttemptsViewer';
 import { ActivityCombined } from '@/components/admin/ActivityCombined';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { MetricsDashboard } from '@/components/admin/MetricsDashboard';
-import { ErrorLog } from '@/components/admin/ErrorLog';
-import { SentryIssues } from '@/components/admin/SentryIssues';
+import { LogsTab } from '@/components/admin/LogsTab';
 import { SupportInbox } from '@/components/admin/SupportInbox';
 import { AuditLog } from '@/components/admin/AuditLog';
 import { AdminTools } from '@/components/admin/AdminTools';
@@ -34,7 +33,7 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 
-type TabKey = 'metrics' | 'errors' | 'sentry' | 'support' | 'kyc' | 'offramp' | 'onramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
+type TabKey = 'metrics' | 'logs' | 'support' | 'kyc' | 'offramp' | 'onramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
 
 interface NavItem {
   key: TabKey;
@@ -44,8 +43,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'metrics', label: 'Metrics', group: 'Monitoring' },
-  { key: 'errors', label: 'Server Errors', group: 'Monitoring' },
-  { key: 'sentry', label: 'Frontend Errors', group: 'Monitoring' },
+  { key: 'logs', label: 'Logs', group: 'Monitoring' },
   { key: 'support', label: 'Support', group: 'Monitoring' },
   { key: 'kyc', label: 'KYC Attempts', group: 'Monitoring' },
   { key: 'offramp', label: 'Offramps', group: 'Monitoring' },
@@ -91,6 +89,8 @@ export default function AdminPage() {
   };
   const initialTab: TabKey = (() => {
     const fromUrl = searchParams?.get('tab') ?? null;
+    // Legacy bookmarks: the old separate error tabs merged into 'logs'.
+    if (fromUrl === 'errors' || fromUrl === 'sentry') return 'logs';
     return isValidTabKey(fromUrl) ? fromUrl : 'metrics';
   })();
   const [activeTab, setActiveTabRaw] = useState<TabKey>(initialTab);
@@ -113,8 +113,7 @@ export default function AdminPage() {
   // not in the map get no badge.
   const TAB_NOTIF_CATEGORY: Partial<Record<TabKey, NotifCategory>> = {
     support: 'support',
-    errors: 'errors',
-    sentry: 'sentry',
+    logs: 'logs',
     kyc: 'kyc',
     offramp: 'offramp',
     onramp: 'onramp',
@@ -354,8 +353,7 @@ export default function AdminPage() {
 
           <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 max-w-[1400px]">
           {activeTab === 'metrics' && <MetricsDashboard enabled={isAuthorized} />}
-          {activeTab === 'errors' && <ErrorLog enabled={isAuthorized} />}
-          {activeTab === 'sentry' && <SentryIssues enabled={isAuthorized} />}
+          {activeTab === 'logs' && <LogsTab enabled={isAuthorized} />}
           {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
           {activeTab === 'kyc' && <KycAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'offramp' && <OfframpAttemptsViewer enabled={isAuthorized} />}

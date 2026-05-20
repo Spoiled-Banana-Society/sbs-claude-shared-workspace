@@ -50,6 +50,15 @@ export function setClientLogWallet(w: string | undefined | null) {
   wallet = (w ?? '').toLowerCase();
 }
 
+/**
+ * The current debug session id — shared with reportClientError so an
+ * error in v2_error_events can be tied back to this session's full
+ * breadcrumb trace in v2_debug_events. Returns '' server-side.
+ */
+export function getClientLogSessionId(): string {
+  return getSessionId();
+}
+
 function scheduleFlush() {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {

@@ -8,6 +8,7 @@ export interface ErrorEventRecord {
   requestId?: string;
   actor?: string;
   context?: Record<string, unknown>;
+  sessionId?: string;    // debug session — links to v2_debug_events trace
   timestamp: string;     // ISO
 }
 

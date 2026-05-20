@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import { logger } from '@/lib/logger';
+import { reportClientError } from '@/lib/clientErrors';
 
 export default function Error({
   error,
@@ -11,9 +13,20 @@ export default function Error({
   reset: () => void;
 }) {
   logger.error('[Error Boundary]', error);
-  try {
-    Sentry.captureException(error);
-  } catch {}
+  useEffect(() => {
+    try {
+      Sentry.captureException(error);
+    } catch {}
+    // Surface the boundary error in the admin Logs tab — client-side
+    // logger.error does not write to Firestore, only reportClientError does.
+    reportClientError({
+      source: 'global.react.boundary',
+      message: error.message || 'React error boundary triggered',
+      route: typeof window !== 'undefined' ? window.location?.pathname : undefined,
+      stack: error.stack,
+      context: error.digest ? { digest: error.digest } : undefined,
+    });
+  }, [error]);
 
   return (
     <div className="min-h-[50vh] flex items-center justify-center">
