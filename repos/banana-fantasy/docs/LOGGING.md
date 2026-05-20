@@ -3,6 +3,23 @@
 How Banana Fantasy catches, stores, and surfaces errors. Read this
 before adding logging to a new page or debugging a reported bug.
 
+## 👋 Developer — start here
+
+This one document is the whole logging system. There are **three pieces**,
+and they work together:
+
+1. **This doc** — the manual. Read it once; you'll understand everything.
+2. **`scripts/logs.mjs`** — the CLI. Run it to read live logs yourself
+   (`node scripts/logs.mjs errors`). Auto-connects to staging, no setup.
+3. **Export files** — when a specific bug needs fixing, you'll be handed
+   a `sbs-error-<session>.json` file: it contains the error *and* the
+   user's full session trace. Open it, everything's there — no account,
+   no keys, no access to anything needed.
+
+**Your workflow:** read this doc once → for a handed-over bug, open the
+export file → to investigate live, use the CLI. You do **not** need the
+admin panel. Jump to the section you need below.
+
 ## TL;DR
 
 - **An error happened — where do I look?** Admin → **Logs** tab. One feed
