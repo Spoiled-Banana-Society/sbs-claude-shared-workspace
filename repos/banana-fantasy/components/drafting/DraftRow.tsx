@@ -162,7 +162,7 @@ export function DraftRow({
         <div className="w-[76px] sm:w-28 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
             <div className="flex flex-col items-center gap-1">
-              <div className="w-16 sm:w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-12 sm:w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700"
                   style={{
