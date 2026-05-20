@@ -159,23 +159,12 @@ export function DraftRow({
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
-        <div className="w-[76px] sm:w-28 flex-shrink-0 flex items-center justify-center">
+        <div className="w-[76px] sm:w-28 flex-shrink-0 flex items-center justify-start sm:justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 sm:w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{
-                    width: `${(effectiveLive.playerCount / 10) * 100}%`,
-                    backgroundColor: accentColor,
-                  }}
-                />
-              </div>
-              <span className="text-xs tabular-nums">
-                <span className="text-white font-semibold">{effectiveLive.playerCount}</span>
-                <span className="text-white/40">/10</span>
-              </span>
-            </div>
+            <span className="text-xs sm:text-sm tabular-nums">
+              <span className="text-white font-semibold">{effectiveLive.playerCount}</span>
+              <span className="text-white/40">/10</span>
+            </span>
           ) : effectiveLive.displayPhase === 'randomizing' ? (
             <div className="flex flex-col items-center gap-1">
               <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
