@@ -375,6 +375,13 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
   group: ErrorGroup; isOpen: boolean; onToggle: () => void; muted?: boolean;
 }) {
   const { rep, severity, area, count } = group;
+  // Which side broke — the Go server, or the banana-fantasy app
+  // (browser + its API routes). Tells you which repo / dev it goes to.
+  const isBackend = area === 'backend';
+  const layerLabel = isBackend ? 'Backend' : 'Frontend';
+  const layerClass = isBackend
+    ? 'text-violet-300 bg-violet-500/15 border-violet-500/30'
+    : 'text-sky-300 bg-sky-500/15 border-sky-500/30';
   const exportSession = useExportErrorSession();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -405,6 +412,7 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
         <span className={`${dot} mt-0.5`}>●</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
+            <span className={`text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded border ${layerClass}`}>{layerLabel}</span>
             <span className="text-[10px] uppercase tracking-wider text-gray-500 bg-white/[0.04] px-1.5 py-0.5 rounded">{area}</span>
             <span className="font-mono text-sm text-white font-semibold">{rep.source}</span>
             {count > 1 && (
