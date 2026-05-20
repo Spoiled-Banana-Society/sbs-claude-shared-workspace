@@ -92,7 +92,7 @@ export function DraftRow({
       }`}
     >
       <div className="flex items-center justify-between px-3 sm:px-5 py-3">
-        <div className="w-[72px] sm:w-28 flex-shrink-0 flex items-center gap-1">
+        <div className="sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
               <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
@@ -108,7 +108,7 @@ export function DraftRow({
         </div>
 
         {/* Speed column — abbreviated on mobile ("30s" / "8h"). */}
-        <div className="w-8 sm:w-16 flex-shrink-0 text-center">
+        <div className="sm:w-16 flex-shrink-0 text-center">
           <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
             <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
             <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
@@ -120,7 +120,7 @@ export function DraftRow({
             — the "Verified" word is dropped on phones since the green
             check + colored type already communicates it, and the word
             crams the 5-column row. Desktop: full badge with the word. */}
-        <div className="w-[58px] sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
+        <div className="sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
           {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37)) ? (
             <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
@@ -159,7 +159,7 @@ export function DraftRow({
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
-        <div className="w-[76px] sm:w-28 flex-shrink-0 flex items-center justify-start sm:justify-center">
+        <div className="sm:w-28 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
             <span className="text-xs sm:text-sm tabular-nums">
               <span className="text-white font-semibold">{effectiveLive.playerCount}</span>
@@ -226,7 +226,7 @@ export function DraftRow({
           )}
         </div>
 
-        <div className="w-[60px] sm:w-28 flex-shrink-0 flex items-center justify-end gap-1 sm:gap-2">
+        <div className="sm:w-28 flex-shrink-0 flex items-center justify-end gap-1 sm:gap-2">
           {['filling', 'randomizing', 'pre-spin-countdown', 'draft-starting'].includes(effectiveLive.displayPhase) ? (
             <>
               <Tooltip content="Enter draft room">
