@@ -107,9 +107,22 @@ Rules of thumb:
 
 ## Reading logs
 
-**Admin UI** — `/admin` → Logs tab. Live feed (15s refresh), area-filter
-pills, free-text filter (wallet / source / route / message / session).
-Expand a row for stack + context.
+**Admin UI** — `/admin` → Logs tab. Live feed (15s refresh), built to
+read at a glance:
+- A **triage banner** up top — red if critical issues are active, green
+  if all clear.
+- **Critical** (fix now: money, crashes, draft-blocking) and **Warning**
+  (look into it) sections.
+- **Earlier** — issues that happened but have been quiet 2h+. Collapsed.
+- **Test traffic** — e2e-suite noise (fake draft ids / wallets). Hidden
+  by default behind a toggle; never counted in the badge.
+- Identical errors are **grouped** — 99 copies show as one `×99` row.
+- Area-filter pills + free-text search (wallet / source / route /
+  message / session). Expand a row for stack + context + Export.
+
+Severity (`logSeverity` in `lib/logSources.ts`): critical = `global.*`,
+`payment.*`, `auth.*`, `*mint_failed*`, draft join/pick/autopick/
+live-load/token failures. Everything else is a warning.
 
 **CLI** — `scripts/logs.mjs` (auto-decodes the staging service account):
 

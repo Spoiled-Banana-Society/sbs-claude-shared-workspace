@@ -8,6 +8,7 @@ import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { fetchRecentErrors } from '@/lib/errorEvents';
+import { isTestNoiseError } from '@/lib/logSources';
 import { listConversations } from '@/lib/crispApi';
 import { getRequestId } from '@/lib/requestId';
 import { logger } from '@/lib/logger';
@@ -201,6 +202,9 @@ async function countErrors(since: number): Promise<number> {
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
+      // Automated-test traffic (fake draft ids / wallets) is real 500s
+      // but not user-facing — never badge it.
+      if (isTestNoiseError(r)) return false;
       // Only "important" errors (real bugs / user-money / ops issues)
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.

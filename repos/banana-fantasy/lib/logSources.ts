@@ -117,6 +117,62 @@ export const LOG_SOURCES = {
   },
 } as const;
 
+/* ── Severity ──────────────────────────────────────────────────── */
+
+export type LogSeverity = 'critical' | 'warning';
+
+// Critical = fix right away: money flows, app crashes, draft-blocking
+// failures, broken login. Everything else is a warning — something
+// failed but the app limps on.
+const CRITICAL_PATTERNS: RegExp[] = [
+  /^global\./i,                       // uncaught crashes + React boundary
+  /unhandled/i,
+  /^payment\./i,
+  /^card-mint\./i,
+  /mint_failed/i,
+  /transferFrom_failed/i,
+  /^auth\./i,                         // login broken
+  /^prizes\.withdrawal/i,
+  /admin_wallet/i,
+  /^draft\.join_failed/i,
+  /^draft\.live_load_exhausted/i,
+  /^draft\.ws\.token_fetch_failed/i,
+  /^draft\.pick_submit/i,
+  /^draft\.autopick_submit/i,
+];
+
+/** Triage tier for an error source — drives the admin Logs sections. */
+export function logSeverity(source: string | undefined | null): LogSeverity {
+  if (!source) return 'warning';
+  return CRITICAL_PATTERNS.some((p) => p.test(source)) ? 'critical' : 'warning';
+}
+
+/* ── Test-traffic detection ────────────────────────────────────── */
+
+// Staging is hammered by the Playwright e2e suite, which hits the
+// backend with fake draft ids / wallets (test-reentry-draft-123,
+// 0xTestWallet123, …). Those are real 500s but not user-facing — keep
+// them out of the admin feed + badge so genuine issues stand out.
+const TEST_MARKERS =
+  /0x[0-9a-z]{0,6}testwall|testwallet|\/draft[\w-]*\/test-|\btest-(reentry|no-randomize|fast-draft|slow-draft|draft)|test-draft/i;
+
+export function isTestNoiseError(e: {
+  source?: string;
+  route?: string;
+  message?: string;
+  actor?: string;
+  context?: Record<string, unknown>;
+}): boolean {
+  const hay = [
+    e.source ?? '',
+    e.route ?? '',
+    e.message ?? '',
+    e.actor ?? '',
+    e.context ? JSON.stringify(e.context) : '',
+  ].join(' ');
+  return TEST_MARKERS.test(hay);
+}
+
 // Source dot-prefixes that don't equal their area name.
 const PREFIX_TO_AREA: Record<string, LogArea> = {
   ws: 'draft',
