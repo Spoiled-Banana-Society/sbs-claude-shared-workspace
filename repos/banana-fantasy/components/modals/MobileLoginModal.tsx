@@ -114,12 +114,51 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
     setConnectingWallet('metamask');
     setWalletError('');
 
+    // Breadcrumbs ('metamask#') timestamp every step. We also record page
+    // visibility — leaving Safari for the MetaMask app backgrounds this
+    // tab, which can kill the SDK's relay socket (the likely cause of
+    // "connection failed" after approving). Read the trail with:
+    //   node scripts/logs.mjs trace --tag=metamask#
+    let mmSettled = false;
+    let mmStep = 'init';
+    const mmMark = (step: string, extra?: Record<string, unknown>) => {
+      mmStep = step;
+      clientLog('metamask#', step, {
+        ...extra,
+        visible: typeof document !== 'undefined' ? !document.hidden : true,
+      });
+    };
+    const onVis = () => mmMark(document.hidden ? 'page_hidden' : 'page_visible');
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    const cleanup = () => {
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+    };
+
+    mmMark('connect_started', { sdkPreloaded: !!mmSdkRef.current, switchMode });
+
+    // No-popup / hang guard — if connect never finishes, surface it to
+    // the user + admin instead of a silent dead state. 45s allows for
+    // the app-switch to MetaMask and back.
+    const mmTimeout = setTimeout(() => {
+      if (mmSettled) return;
+      mmSettled = true;
+      cleanup();
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_TIMEOUT,
+        message: `MetaMask connect timed out — stuck at: ${mmStep}`,
+        route: 'mobile-login',
+        context: { wallet: 'metamask', lastStep: mmStep, switchMode },
+      });
+      setWalletError('Connection timed out — please try again.');
+      setWalletStatus('error');
+      setConnectingWallet(null);
+    }, 45_000);
+
     try {
-      logger.debug('[MM Login] Step 1: Loading MetaMask SDK...');
       const { default: MetaMaskSDK } = await import('@metamask/sdk');
+      mmMark('sdk_imported');
 
       if (!mmSdkRef.current) {
-        logger.debug('[MM Login] Step 2: Initializing SDK...');
         const sdk = new MetaMaskSDK({
           dappMetadata: {
             name: 'Banana Fantasy',
@@ -131,7 +170,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         });
         await sdk.init();
         mmSdkRef.current = sdk;
-        logger.debug('[MM Login] SDK initialized successfully');
+        mmMark('sdk_initialized', { freshInit: true });
+      } else {
+        mmMark('sdk_initialized', { freshInit: false });
       }
 
       const sdk = mmSdkRef.current;
@@ -143,7 +184,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         try {
           const provider = sdk.getProvider();
           if (provider) {
-            logger.debug('[MM Login] Switch mode: requesting fresh permissions...');
+            mmMark('switch_mode_request_permissions');
             await provider.request({
               method: 'wallet_requestPermissions',
               params: [{ eth_accounts: {} }],
@@ -154,9 +195,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         }
       }
 
-      logger.debug('[MM Login] Step 3: Calling sdk.connect()...');
+      mmMark('connect_called');
       const accounts = await sdk.connect() as string[];
-      logger.debug('[MM Login] Step 3 complete. Accounts:', accounts);
+      mmMark('accounts_received', { count: accounts?.length ?? 0 });
 
       if (!accounts || accounts.length === 0) {
         throw new Error('No accounts returned from MetaMask');
@@ -164,7 +205,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
 
       const { getAddress } = await import('ethers');
       const address = getAddress(accounts[0]);
-      logger.debug('[MM Login] Step 4: Connected. Address:', address);
+      mmMark('address_resolved');
       setWalletStatus('signing');
 
       const provider = sdk.getProvider();
@@ -175,16 +216,16 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
       const chainIdNum = parseInt(chainIdHex, 16);
       const siweChainId = `eip155:${chainIdNum}` as `eip155:${number}`;
-      logger.debug('[MM Login] Step 5: Provider acquired. Chain:', siweChainId);
+      mmMark('chain_id_received', { chainId: chainIdNum });
 
       const message = await generateSiweMessage({ address, chainId: siweChainId });
-      logger.debug('[MM Login] Step 6: SIWE message generated. Requesting signature...');
+      mmMark('siwe_message_generated');
 
       const signature = await provider.request({
         method: 'personal_sign',
         params: [message, address],
       }) as string;
-      logger.debug('[MM Login] Step 7: Signature received. Logging in with Privy...');
+      mmMark('signature_received');
 
       await loginWithSiwe({
         signature,
@@ -192,14 +233,31 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         walletClientType: 'metamask',
         connectorType: 'wallet_connect_v2',
       });
-      logger.debug('[MM Login] Step 8: Privy login complete!');
+      mmMark('privy_login_complete');
 
+      if (mmSettled) return;
+      mmSettled = true;
+      clearTimeout(mmTimeout);
+      cleanup();
       handleClose();
     } catch (err: unknown) {
+      if (mmSettled) return;
+      mmSettled = true;
+      clearTimeout(mmTimeout);
+      cleanup();
       const msg = (err instanceof Error ? err.message : null) || 'Connection failed';
       if (msg.includes('rejected') || msg.includes('denied') || msg.includes('User rejected')) {
+        mmMark('user_rejected');
         setWalletStatus('idle');
       } else {
+        mmMark('connect_failed', { error: msg });
+        reportClientError({
+          source: LOG_SOURCES.auth.WALLET_CONNECT_FAILED,
+          message: `MetaMask connect failed at ${mmStep}: ${msg}`,
+          route: 'mobile-login',
+          context: { wallet: 'metamask', lastStep: mmStep, switchMode },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
         setWalletError(msg);
         setWalletStatus('error');
       }
