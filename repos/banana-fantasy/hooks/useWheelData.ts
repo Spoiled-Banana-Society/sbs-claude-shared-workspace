@@ -3,6 +3,8 @@
 import { usePrivy } from '@privy-io/react-auth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchJson } from '@/lib/appApiClient';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 export type WheelSpinOutcome = {
   spinId: string;
@@ -80,6 +82,27 @@ export function useSpin(userId: string | undefined | null) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wheel', 'history', userId || ''] });
+    },
+    onError: (err) => {
+      // Spin failures were invisible to admin — React Query swallows the
+      // error into mutation state. Report it, with Privy state so we can
+      // tell a stale/expired session ("Missing Privy access token" while
+      // authenticated) apart from a genuinely-logged-out user.
+      reportClientError({
+        source: LOG_SOURCES.wheel.SPIN_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'banana-wheel',
+        context: {
+          userId,
+          privyReady: privy.ready,
+          privyAuthenticated: privy.authenticated,
+          hasPrivyUser: !!privy.user,
+          isMobile:
+            typeof navigator !== 'undefined' &&
+            /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
+        },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     },
   });
 }

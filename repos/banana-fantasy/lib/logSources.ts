@@ -86,6 +86,7 @@ export const LOG_SOURCES = {
     OFFER_CREATE_FAILED: 'marketplace.offer_create_failed',
   },
   wheel: {
+    SPIN_FAILED: 'wheel.spin_failed',
     QUEUE_FETCH_FAILED: 'wheel.queue_fetch_failed',
     SPIN_REVEAL_CONFIRM_FAILED: 'wheel.spin_reveal_confirm_failed',
     BALANCE_REFRESH_TIMEOUT: 'wheel.balance_refresh_timeout',
