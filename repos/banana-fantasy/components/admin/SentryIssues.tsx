@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSentryIssues, useAdminAuthHeaders, AdminApiError, type SentryIssueEntry } from '@/hooks/admin/useAdminApi';
+import { explainError } from '@/lib/logSources';
 
 function formatRelative(iso: string) {
   if (!iso) return '—';
@@ -61,6 +62,9 @@ function IssueRow({ issue, onResolved }: { issue: SentryIssueEntry; onResolved: 
           <p className="text-sm text-white font-medium truncate" title={issue.title}>
             {issue.title}
           </p>
+          {explainError(issue.title, issue.culprit) && (
+            <p className="text-[12px] text-amber-300/90 mt-0.5">💡 {explainError(issue.title, issue.culprit)}</p>
+          )}
           {issue.culprit ? (
             <p className="text-[12px] text-gray-400 truncate font-mono mt-0.5" title={issue.culprit}>
               {issue.culprit}

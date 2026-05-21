@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRecentErrors, useExportErrorSession, AdminApiError, type ErrorEventEntry } from '@/hooks/admin/useAdminApi';
-import { logAreaForSource, logSeverity, isTestNoiseError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 
 /**
@@ -420,6 +420,9 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
             )}
           </div>
           <p className="text-sm text-gray-300 mt-0.5 truncate">{rep.message}</p>
+          {explainError(rep.source, rep.message) && (
+            <p className="text-[12px] text-banana/90 mt-1">💡 {explainError(rep.source, rep.message)}</p>
+          )}
           <div className="flex gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
             <span>last {formatAgo(rep.timestamp)}</span>
             {count > 1 && <span>first seen {formatAgo(new Date(group.firstTs).toISOString())}</span>}

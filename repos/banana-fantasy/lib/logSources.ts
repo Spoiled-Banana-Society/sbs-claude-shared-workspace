@@ -201,3 +201,52 @@ export function logAreaForSource(source: string | undefined | null): LogArea {
   if ((LOG_AREAS as readonly string[]).includes(prefix)) return prefix as LogArea;
   return 'other';
 }
+
+/* ── Plain-English explanations ────────────────────────────────── */
+
+// Maps technical error text → a human sentence a non-dev can act on.
+// First match wins. Matched against the error's source + message (or a
+// Sentry issue title). Add a row here whenever a cryptic error shows up.
+const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
+  { pattern: /aes\/gcm|ghash|invalid auth tag|bad decrypt|decryption failed/i,
+    text: 'A secure connection failed to decrypt — usually a stale login session or a wallet connection that got interrupted.' },
+  { pattern: /session expired|missing privy|access token/i,
+    text: 'The login session expired — the user needs to log out and log back in.' },
+  { pattern: /wallet_connect_timeout/i,
+    text: 'A wallet connection hung and never finished.' },
+  { pattern: /wallet_connect_abandoned/i,
+    text: 'The user gave up on a wallet connection that was stuck.' },
+  { pattern: /wallet_connect_failed/i,
+    text: 'A wallet connection failed before completing.' },
+  { pattern: /mint_failed|card-mint/i,
+    text: 'A pass mint failed — the user may have been charged. Worth checking.' },
+  { pattern: /permit|signature|personal_sign|user rejected|user denied/i,
+    text: 'A wallet signature failed or was declined by the user.' },
+  { pattern: /global\.(uncaught|unhandled)|unhandledrejection/i,
+    text: 'An unexpected crash — the code hit an error nothing was catching.' },
+  { pattern: /react\.boundary|error boundary/i,
+    text: 'A page crashed and showed the error screen to the user.' },
+  { pattern: /\b5\d\d\b|internal server error/i,
+    text: 'A server request failed (server-side error).' },
+  { pattern: /\b40[13]\b|unauthorized|forbidden/i,
+    text: 'A request was rejected for auth / permission reasons.' },
+  { pattern: /timeout|timed out|etimedout/i,
+    text: 'Something took too long and timed out — often a slow network or backend.' },
+  { pattern: /failed to fetch|networkerror|load failed|err_network/i,
+    text: 'A network request could not reach the server.' },
+  { pattern: /firestore|rtdb|firebase/i,
+    text: 'A database read or write failed.' },
+];
+
+/**
+ * Plain-English explanation for an error, or null if nothing matches.
+ * Pass any combination of source / message / title — they're all searched.
+ */
+export function explainError(...parts: (string | undefined | null)[]): string | null {
+  const hay = parts.filter(Boolean).join(' ');
+  if (!hay) return null;
+  for (const e of EXPLANATIONS) {
+    if (e.pattern.test(hay)) return e.text;
+  }
+  return null;
+}
