@@ -33,6 +33,10 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   const mmSdkRef = useRef<Record<string, any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const baseProviderRef = useRef<any>(null);
+  // Non-null only while a wallet connect is genuinely in flight. Lets
+  // handleClose tell a stuck-connect the user gave up on from a casual
+  // modal dismissal. Cleared the moment a connect succeeds/fails/times out.
+  const connectInfoRef = useRef<{ wallet: string; startedAt: number } | null>(null);
 
   // Pre-load both wallet SDKs when the modal opens so they're ready the
   // instant the user taps — without this, the SDK downloads + initializes
@@ -77,6 +81,19 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   const isOtpSubmitting = emailState.status === 'submitting-code';
 
   const handleClose = () => {
+    // If the user dismisses the modal while a wallet connect is still
+    // genuinely in flight, and it's been >10s (long enough to rule out a
+    // casual mind-change), log it — a stuck connect they gave up on.
+    const inFlight = connectInfoRef.current;
+    if (inFlight && Date.now() - inFlight.startedAt > 10_000) {
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_ABANDONED,
+        message: `${inFlight.wallet} connect abandoned after ${Math.round((Date.now() - inFlight.startedAt) / 1000)}s on a stuck connect`,
+        route: 'mobile-login',
+        context: { wallet: inFlight.wallet, elapsedMs: Date.now() - inFlight.startedAt },
+      });
+    }
+    connectInfoRef.current = null;
     setView('main');
     setEmail('');
     setOtpCode('');
@@ -135,6 +152,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
     };
 
     mmMark('connect_started', { sdkPreloaded: !!mmSdkRef.current, switchMode });
+    connectInfoRef.current = { wallet: 'metamask', startedAt: Date.now() };
 
     // No-popup / hang guard — if connect never finishes, surface it to
     // the user + admin instead of a silent dead state. 45s allows for
@@ -142,6 +160,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
     const mmTimeout = setTimeout(() => {
       if (mmSettled) return;
       mmSettled = true;
+      connectInfoRef.current = null;
       cleanup();
       reportClientError({
         source: LOG_SOURCES.auth.WALLET_CONNECT_TIMEOUT,
@@ -237,12 +256,14 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
 
       if (mmSettled) return;
       mmSettled = true;
+      connectInfoRef.current = null;
       clearTimeout(mmTimeout);
       cleanup();
       handleClose();
     } catch (err: unknown) {
       if (mmSettled) return;
       mmSettled = true;
+      connectInfoRef.current = null;
       clearTimeout(mmTimeout);
       cleanup();
       const msg = (err instanceof Error ? err.message : null) || 'Connection failed';
@@ -298,10 +319,12 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       clientLog('coinbase#', step, extra);
     };
     cbMark('connect_started', { switchMode });
+    connectInfoRef.current = { wallet: 'coinbase', startedAt: Date.now() };
 
     const cbTimeout = setTimeout(() => {
       if (cbSettled) return;
       cbSettled = true;
+      connectInfoRef.current = null;
       reportClientError({
         source: LOG_SOURCES.auth.WALLET_CONNECT_TIMEOUT,
         message: `Coinbase connect timed out — stuck at: ${cbStep}`,
@@ -410,11 +433,13 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
 
         if (cbSettled) return;
         cbSettled = true;
+        connectInfoRef.current = null;
         clearTimeout(cbTimeout);
         handleClose();
       } catch (err: unknown) {
         if (cbSettled) return;
         cbSettled = true;
+        connectInfoRef.current = null;
         clearTimeout(cbTimeout);
         console.error('[CB] Error:', err);
         const msg = (err instanceof Error ? err.message : null) || 'Connection failed';

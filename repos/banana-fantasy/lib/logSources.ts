@@ -97,6 +97,7 @@ export const LOG_SOURCES = {
     JWT_SIGNATURE_INVALID: 'auth.jwt_signature_invalid',
     WALLET_CONNECT_TIMEOUT: 'auth.wallet_connect_timeout',
     WALLET_CONNECT_FAILED: 'auth.wallet_connect_failed',
+    WALLET_CONNECT_ABANDONED: 'auth.wallet_connect_abandoned',
   },
   kyc: {
     DIDIT_API_FAILED: 'kyc.didit_api_failed',
