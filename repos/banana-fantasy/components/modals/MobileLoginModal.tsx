@@ -252,10 +252,14 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       (window as any).open = (...args: any[]) => {
         if (!intercepted) {
           intercepted = true;
-          // Navigate to the SDK's full URL (with query params)
-          if (args[0] && typeof args[0] === 'string') {
+          // The Base Account SDK passes a URL *object* (not a string) as
+          // the first arg. The old `typeof === 'string'` check missed it,
+          // so the popup never received the real connect URL and spun
+          // forever. Accept both string and URL object.
+          const target = args[0];
+          if (target) {
             try {
-              popup.location.href = args[0];
+              popup.location.href = String(target);
               cbMark('sdk_window_open_intercepted', { navigated: true });
             } catch {
               cbMark('sdk_window_open_intercepted', { navigated: false, reason: 'cross-origin' });
