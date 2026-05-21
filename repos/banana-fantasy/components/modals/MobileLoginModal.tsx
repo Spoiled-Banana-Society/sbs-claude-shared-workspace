@@ -34,9 +34,13 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const baseProviderRef = useRef<any>(null);
 
-  // Pre-load Base Account SDK when modal opens so it's ready on click
+  // Pre-load both wallet SDKs when the modal opens so they're ready the
+  // instant the user taps — without this, the SDK downloads + initializes
+  // only after the click, which is the lag users feel on MetaMask.
   useEffect(() => {
     if (!isOpen) return;
+
+    // Coinbase / Base Account SDK
     import('@base-org/account').then(({ createBaseAccountSDK }) => {
       const sdk = createBaseAccountSDK({
         appName: 'Banana Fantasy',
@@ -46,6 +50,25 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       baseProviderRef.current = sdk.getProvider();
       logger.debug('[CB] Base Account SDK pre-loaded');
     }).catch(err => console.error('[CB] Failed to pre-load Base SDK:', err));
+
+    // MetaMask SDK — pre-load + init so connect() fires immediately on tap
+    if (!mmSdkRef.current) {
+      import('@metamask/sdk').then(async ({ default: MetaMaskSDK }) => {
+        if (mmSdkRef.current) return;
+        const sdk = new MetaMaskSDK({
+          dappMetadata: {
+            name: 'Banana Fantasy',
+            url: typeof window !== 'undefined' ? window.location.origin : 'https://banana-fantasy-sbs.vercel.app',
+          },
+          useDeeplink: true,
+          preferDesktop: false,
+          logging: { developerMode: true },
+        });
+        await sdk.init();
+        mmSdkRef.current = sdk;
+        logger.debug('[MM Login] SDK pre-loaded');
+      }).catch(err => console.error('[MM Login] Failed to pre-load SDK:', err));
+    }
   }, [isOpen]);
 
   if (!isOpen) return null;
