@@ -55,24 +55,13 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       logger.debug('[CB] Base Account SDK pre-loaded');
     }).catch(err => console.error('[CB] Failed to pre-load Base SDK:', err));
 
-    // MetaMask SDK — pre-load + init so connect() fires immediately on tap
-    if (!mmSdkRef.current) {
-      import('@metamask/sdk').then(async ({ default: MetaMaskSDK }) => {
-        if (mmSdkRef.current) return;
-        const sdk = new MetaMaskSDK({
-          dappMetadata: {
-            name: 'Banana Fantasy',
-            url: typeof window !== 'undefined' ? window.location.origin : 'https://banana-fantasy-sbs.vercel.app',
-          },
-          useDeeplink: true,
-          preferDesktop: false,
-          logging: { developerMode: true },
-        });
-        await sdk.init();
-        mmSdkRef.current = sdk;
-        logger.debug('[MM Login] SDK pre-loaded');
-      }).catch(err => console.error('[MM Login] Failed to pre-load SDK:', err));
-    }
+    // MetaMask SDK — pre-download the JS bundle ONLY (warms the dynamic
+    // import cache so the on-tap import resolves instantly). We must NOT
+    // create the SDK instance or call init() here: MetaMask's mobile
+    // connection is an encrypted session that must be created fresh
+    // inside the user's tap. Pre-creating it makes the deeplink carry a
+    // stale key → decryption fails ("aes/gcm") → "connection failed".
+    void import('@metamask/sdk').catch(() => { /* best-effort prefetch */ });
   }, [isOpen]);
 
   if (!isOpen) return null;
