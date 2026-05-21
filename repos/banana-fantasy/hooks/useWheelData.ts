@@ -64,7 +64,9 @@ export function useSpin(userId: string | undefined | null) {
     mutationFn: async () => {
       if (!userId) throw new Error('Not logged in');
       const token = await privy.getAccessToken();
-      if (!token) throw new Error('Missing Privy access token');
+      if (!token) {
+        throw new Error('Your session expired — please log out and log back in to continue.');
+      }
 
       const forceResult =
         typeof window !== 'undefined'
@@ -85,9 +87,17 @@ export function useSpin(userId: string | undefined | null) {
     },
     onError: (err) => {
       // Spin failures were invisible to admin — React Query swallows the
-      // error into mutation state. Report it, with Privy state so we can
-      // tell a stale/expired session ("Missing Privy access token" while
-      // authenticated) apart from a genuinely-logged-out user.
+      // error into mutation state. Report it with Privy state + session
+      // age so we can tell a clean 30-day Privy expiry apart from early
+      // mobile storage-eviction (a missing login record = storage was
+      // cleared), and apart from a genuinely-logged-out user.
+      let sessionAgeDays: string | number = 'unknown — login record missing (storage may have been cleared)';
+      try {
+        const started = localStorage.getItem('banana-session-started');
+        if (started) {
+          sessionAgeDays = Math.round((Date.now() - Number(started)) / 8_640_000) / 10;
+        }
+      } catch { /* ignore */ }
       reportClientError({
         source: LOG_SOURCES.wheel.SPIN_FAILED,
         message: err instanceof Error ? err.message : String(err),
@@ -97,6 +107,7 @@ export function useSpin(userId: string | undefined | null) {
           privyReady: privy.ready,
           privyAuthenticated: privy.authenticated,
           hasPrivyUser: !!privy.user,
+          sessionAgeDays,
           isMobile:
             typeof navigator !== 'undefined' &&
             /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),

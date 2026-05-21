@@ -18,7 +18,15 @@ const USER_STORAGE_KEYS = [
   'banana-completed-drafts',
   'banana-fantasy-onboarding-complete',
   'hasSeenOnboarding',
+  // When this login session was first established — see SESSION_STARTED_KEY.
+  'banana-session-started',
 ];
+
+// Records (once) when the current session began. Survives page reloads
+// since Privy restores the session. Used to log session age on auth
+// failures: a ~30-day age = clean Privy expiry; a MISSING record while
+// the session is dead = storage was cleared early (mobile eviction).
+const SESSION_STARTED_KEY = 'banana-session-started';
 
 interface SavedProfile {
   username?: string;
@@ -307,6 +315,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Track current wallet (drafts are filtered by wallet in useActiveDrafts, not deleted)
       try {
         localStorage.setItem('banana-last-wallet', walletAddress.toLowerCase());
+      } catch { /* ignore */ }
+
+      // Stamp the session start once. Guarded so page reloads (Privy
+      // restoring the same session) don't reset it — only a real
+      // logout clears it (USER_STORAGE_KEYS), so a fresh login re-stamps.
+      try {
+        if (!localStorage.getItem(SESSION_STARTED_KEY)) {
+          localStorage.setItem(SESSION_STARTED_KEY, String(Date.now()));
+        }
       } catch { /* ignore */ }
 
       const savedProfile = getSavedProfile();

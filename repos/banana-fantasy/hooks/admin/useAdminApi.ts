@@ -94,7 +94,7 @@ export function useAdminAuthHeaders() {
   const privy = usePrivy();
   return useCallback(async (): Promise<HeadersInit> => {
     const token = await privy.getAccessToken();
-    if (!token) throw new Error('Missing Privy access token');
+    if (!token) throw new Error('Your session expired — please log out and log back in to continue.');
     return { Authorization: `Bearer ${token}` };
   }, [privy]);
 }
