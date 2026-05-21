@@ -59,6 +59,15 @@ export function getClientLogSessionId(): string {
   return getSessionId();
 }
 
+/**
+ * The current logged-in wallet (lowercased), '' if not logged in.
+ * reportClientError auto-attaches this as `actor` so every client-side
+ * error is attributed to a user with no per-call-site work.
+ */
+export function getClientLogWallet(): string {
+  return wallet;
+}
+
 function scheduleFlush() {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {

@@ -11,7 +11,7 @@
 //     context: { draftId, walletAddress, attempt: 3 },
 //   });
 
-import { getClientLogSessionId } from './clientLog';
+import { getClientLogSessionId, getClientLogWallet } from './clientLog';
 
 interface ClientErrorPayload {
   source: string;            // dot-separated id, e.g. 'ws.auth_failed'
@@ -36,11 +36,14 @@ export function reportClientError(payload: ClientErrorPayload): void {
   if (now - last < THROTTLE_MS) return;
   lastFiredAt.set(payload.source, now);
 
-  // Auto-attach the debug session id so this error can be tied back to
-  // the user's full breadcrumb trace in v2_debug_events.
+  // Auto-attach the debug session id (links to the breadcrumb trace)
+  // and the logged-in wallet as `actor` (so every error shows which
+  // user hit it, with no per-call-site work). Caller-provided values
+  // win when present.
   const body = {
     ...payload,
     sessionId: payload.sessionId ?? getClientLogSessionId(),
+    actor: payload.actor ?? (getClientLogWallet() || undefined),
   };
 
   // Fire-and-forget POST. We intentionally don't await — the caller

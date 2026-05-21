@@ -102,6 +102,7 @@ export function useSpin(userId: string | undefined | null) {
         source: LOG_SOURCES.wheel.SPIN_FAILED,
         message: err instanceof Error ? err.message : String(err),
         route: 'banana-wheel',
+        // actor (the user) is auto-attached by reportClientError.
         context: {
           userId,
           privyReady: privy.ready,
