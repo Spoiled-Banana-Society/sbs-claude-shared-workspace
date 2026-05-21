@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFundWallet, useSendTransaction, useWallets } from '@privy-io/react-auth';
 import { useNotifications } from '@/components/NotificationCenter';
+import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { ActivityTab } from '@/app/components/marketplace/ActivityTab';
 import { BuyTab } from '@/app/components/marketplace/BuyTab';
 import { SellTab } from '@/app/components/marketplace/SellTab';
@@ -428,8 +429,8 @@ export default function MarketplacePage() {
 
       if (!selectedWallet) throw new Error('No wallet connected');
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) await selectedWallet.switchChain(8453);
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();

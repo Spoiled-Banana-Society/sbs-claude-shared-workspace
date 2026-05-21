@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
@@ -381,10 +382,8 @@ export default function NftDetailPage() {
       const { ethers } = await import('ethers');
 
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) {
-        await selectedWallet.switchChain(8453);
-      }
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       // Sponsor USDC approval for the conduit if needed
       const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
@@ -477,10 +476,8 @@ export default function NftDetailPage() {
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) {
-        await selectedWallet.switchChain(8453);
-      }
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       // Check NFT approval for conduit
       const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';

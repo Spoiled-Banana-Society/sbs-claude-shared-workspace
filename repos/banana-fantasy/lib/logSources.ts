@@ -68,6 +68,7 @@ export const LOG_SOURCES = {
     USDC_SIGNATURE_REJECTED: 'payment.usdc.signature_rejected',
     ADMIN_WALLET_UNAVAILABLE: 'payment.admin_wallet_unavailable',
     MINT_FAILED: 'card-mint.mint_failed',
+    WRONG_NETWORK: 'payment.wrong_network',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',
