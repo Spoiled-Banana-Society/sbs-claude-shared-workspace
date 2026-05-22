@@ -164,16 +164,22 @@ export function useDraftLiveSync({
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 
           const newId = draftRoom.id;
-          logger.debug('[Draft Room] Joined draft:', newId, 'players:', draftRoom.players);
+          // Backend returns the post-join count under `numPlayers` (see
+          // DraftToken.NumPlayers added in sbs-drafts-api models/draft-token.go).
+          // Fallback to `.players` for any in-flight response from an
+          // older backend revision during the deploy crossover.
+          const joinedCount = (draftRoom as { numPlayers?: number; players?: number }).numPlayers
+            ?? (draftRoom as { players?: number }).players;
+          logger.debug('[Draft Room] Joined draft:', newId, 'numPlayers:', joinedCount);
           setDraftId(newId);
 
           // Show the real player count immediately from the join response —
-          // the backend already tells us how many are in the draft, so the
-          // room renders the right number the instant the join lands instead
-          // of waiting for the RTDB push or the 2.5s poll to catch up.
-          if (typeof draftRoom.players === 'number' && draftRoom.players > 0) {
-            clientLog('pcdiag', 'set.join', { players: draftRoom.players });
-            setPlayerCount(Math.min(Math.max(draftRoom.players, 1), 10));
+          // the backend tells us the post-join count, so the room renders
+          // the right number the instant the join lands instead of waiting
+          // for the RTDB push or the 2.5s poll to catch up.
+          if (typeof joinedCount === 'number' && joinedCount > 0) {
+            clientLog('pcdiag', 'set.join', { numPlayers: joinedCount });
+            setPlayerCount(Math.min(Math.max(joinedCount, 1), 10));
           }
 
           try {
@@ -196,7 +202,7 @@ export function useDraftLiveSync({
             status: 'filling',
             type: null,
             draftSpeed: speedParam || 'fast',
-            players: draftRoom.players || 1,
+            players: joinedCount || 1,
             maxPlayers: 10,
             joinedAt: joinStartedAt,
             phase: 'filling',
