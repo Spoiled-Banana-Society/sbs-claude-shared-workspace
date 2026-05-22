@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deliverToRecipient } from '@/lib/notifications/deliver';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const INTERNAL_SECRET = process.env.NOTIFICATIONS_INTERNAL_SECRET;
 
@@ -17,6 +18,12 @@ const INTERNAL_SECRET = process.env.NOTIFICATIONS_INTERNAL_SECRET;
 export async function POST(req: NextRequest) {
   try {
     if (!INTERNAL_SECRET) {
+      // Misconfiguration — the route can't authenticate any caller, so
+      // every "draft filled" alert silently dies. Make it loud in the Logs.
+      logger.error(LOG_SOURCES.notifications.SECRET_MISSING, {
+        err: 'NOTIFICATIONS_INTERNAL_SECRET is unset or blank on the Vercel deploy',
+        route: 'notifications/draft-filled',
+      });
       return NextResponse.json(
         { error: 'NOTIFICATIONS_INTERNAL_SECRET not configured' },
         { status: 503 },

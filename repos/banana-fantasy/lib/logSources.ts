@@ -127,6 +127,9 @@ export const LOG_SOURCES = {
     SETTINGS_READ_FAILED: 'notifications.settings.read_failed',
     SETTINGS_SAVE_FAILED: 'notifications.settings.save_failed',
     CHANNEL_CONNECT_FAILED: 'notifications.settings.connect_failed',
+    // The server-to-server secret is unset/blank — the dispatch routes
+    // can't run, so every draft alert silently fails. Loud on purpose.
+    SECRET_MISSING: 'notifications.config.secret_missing',
   },
   global: {
     UNCAUGHT_ERROR: 'global.uncaught.error',
