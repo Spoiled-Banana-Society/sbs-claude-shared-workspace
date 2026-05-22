@@ -16,7 +16,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { IconType } from 'react-icons';
-import { IoNotifications, IoMail, IoAmericanFootball, IoTime, IoFlash } from 'react-icons/io5';
+import {
+  IoNotifications,
+  IoMail,
+  IoAmericanFootball,
+  IoTime,
+  IoFlash,
+  IoPhonePortrait,
+} from 'react-icons/io5';
 import { FaTelegramPlane, FaDiscord } from 'react-icons/fa';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
@@ -45,47 +52,42 @@ interface Tile {
   dark?: boolean;
 }
 
-const CHANNEL_META: Record<ChannelId, { label: string; blurb: string; tile: Tile }> = {
+const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
   push: {
-    label: 'Home screen & push',
-    blurb: 'Browser and installed-app notifications.',
-    tile: { Icon: IoNotifications, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
+    label: 'Phone & desktop',
+    tile: { Icon: IoPhonePortrait, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   email: {
     label: 'Email',
-    blurb: 'A reliable backup, straight to your inbox.',
     tile: { Icon: IoMail, grad: 'from-[#0a84ff] to-[#0060df]' },
   },
   telegram: {
     label: 'Telegram',
-    blurb: 'Instant — the most reliable channel.',
+    blurb: 'Pinged in SBS Telegram.',
     tile: { Icon: FaTelegramPlane, grad: 'from-[#2aabee] to-[#1d93d2]' },
   },
   discord: {
     label: 'Discord',
-    blurb: 'Pinged in the SBS Discord server.',
+    blurb: 'Pinged in SBS Discord.',
     tile: { Icon: FaDiscord, grad: 'from-[#5865f2] to-[#4752c4]' },
   },
 };
 
-const EVENT_META: Record<EventId, { label: string; blurb: string; tile: Tile }> = {
+const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   draftFilled: {
-    label: 'A draft I joined fills up',
-    blurb: 'All 10 spots are in — the draft starts.',
+    label: 'Draft fills',
     tile: { Icon: IoAmericanFootball, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
-  pickSlow: {
-    label: 'My pick — slow drafts',
-    blurb: 'Long pick clock. You stepped away — get pinged.',
-    tile: { Icon: IoTime, grad: 'from-[#30d158] to-[#28b14c]' },
-  },
   pickFast: {
-    label: 'My pick — fast drafts',
-    blurb: 'Quick pick clock. Most players watch live.',
+    label: 'My pick — fast draft',
     tile: { Icon: IoFlash, grad: 'from-[#ff9f0a] to-[#f08000]' },
   },
+  pickSlow: {
+    label: 'My pick — slow draft',
+    tile: { Icon: IoTime, grad: 'from-[#30d158] to-[#28b14c]' },
+  },
 };
-const EVENT_ORDER: EventId[] = ['draftFilled', 'pickSlow', 'pickFast'];
+const EVENT_ORDER: EventId[] = ['draftFilled', 'pickFast', 'pickSlow'];
 const CHANNEL_ORDER: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
 
 export function NotificationSettings() {
@@ -342,8 +344,7 @@ export function NotificationSettings() {
       <header className="mb-6">
         <h2 className="text-[24px] font-bold tracking-[-0.02em] text-white">Draft alerts</h2>
         <p className="mt-1.5 text-[13.5px] leading-relaxed text-text-secondary">
-          Choose what you want to know about, and how you want to hear it — turn on as
-          many channels as you like.
+          Choose how you get notified when drafts fill and when it&apos;s your pick.
         </p>
       </header>
 
@@ -386,9 +387,8 @@ export function NotificationSettings() {
         </div>
       ) : (
         <div className="space-y-7">
-          {/* ─── What to tell me about ─── */}
+          {/* ─── Which alerts ─── */}
           <section>
-            <SectionLabel>What to tell me about</SectionLabel>
             <Group>
               {EVENT_ORDER.map((id, i) => (
                 <Row
@@ -396,19 +396,15 @@ export function NotificationSettings() {
                   first={i === 0}
                   tile={EVENT_META[id].tile}
                   label={EVENT_META[id].label}
-                  blurb={EVENT_META[id].blurb}
                   control={<Switch on={eventOn(id)} onToggle={(v) => setEvent(id, v)} />}
                 />
               ))}
             </Group>
-            <Caption>
-              Each event is sent to every channel you turn on below.
-            </Caption>
           </section>
 
-          {/* ─── How to reach me ─── */}
+          {/* ─── Places you'll get notified ─── */}
           <section>
-            <SectionLabel>How to reach me</SectionLabel>
+            <SectionLabel>Places you&apos;ll get notified</SectionLabel>
             <Group>
               {CHANNEL_ORDER.map((id, i) => {
                 const meta = CHANNEL_META[id];
@@ -510,10 +506,6 @@ export function NotificationSettings() {
                 );
               })}
             </Group>
-            <Caption>
-              Turn a channel off any time — it stays linked, so flipping it back on is
-              instant.
-            </Caption>
           </section>
         </div>
       )}
@@ -530,11 +522,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       {children}
     </p>
   );
-}
-
-/** Footnote under a group, iOS-settings style. */
-function Caption({ children }: { children: React.ReactNode }) {
-  return <p className="ml-1 mt-2.5 text-[11.5px] leading-relaxed text-text-muted">{children}</p>;
 }
 
 /** A grouped card. Rows inside carry their own inset hairline dividers. */
@@ -566,7 +553,7 @@ function Row({
   first?: boolean;
   tile: Tile;
   label: string;
-  blurb: string;
+  blurb?: string;
   status?: React.ReactNode;
   control: React.ReactNode;
   children?: React.ReactNode;
@@ -579,7 +566,9 @@ function Row({
         <IconTile {...tile} />
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-medium leading-tight text-white">{label}</p>
-          <p className="mt-[3px] text-[12.5px] leading-snug text-text-muted">{blurb}</p>
+          {blurb && (
+            <p className="mt-[3px] text-[12.5px] leading-snug text-text-muted">{blurb}</p>
+          )}
           {status}
         </div>
         <div className="shrink-0 pl-1">{control}</div>
