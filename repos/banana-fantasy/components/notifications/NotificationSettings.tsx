@@ -55,6 +55,7 @@ interface Tile {
 const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
   push: {
     label: 'Phone & desktop',
+    blurb: 'Pop-up alerts on this device — nothing to download.',
     tile: { Icon: IoPhonePortrait, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   email: {
@@ -63,12 +64,12 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
   },
   telegram: {
     label: 'Telegram',
-    blurb: 'Pinged in SBS Telegram.',
+    blurb: 'A DM from the SBS bot.',
     tile: { Icon: FaTelegramPlane, grad: 'from-[#2aabee] to-[#1d93d2]' },
   },
   discord: {
     label: 'Discord',
-    blurb: 'Pinged in SBS Discord.',
+    blurb: 'Pinged in the SBS Discord server.',
     tile: { Icon: FaDiscord, grad: 'from-[#5865f2] to-[#4752c4]' },
   },
 };
@@ -101,6 +102,9 @@ export function NotificationSettings() {
   const [editingEmail, setEditingEmail] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [busy, setBusy] = useState<ChannelId | null>(null);
+  // iOS only delivers web push to an installed (home-screen) PWA — Apple's
+  // restriction. True when we're on an iPhone/iPad that isn't installed yet.
+  const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
 
   const authedFetch = useCallback(
     async (url: string, opts: RequestInit = {}) => {
@@ -155,6 +159,20 @@ export function NotificationSettings() {
         route: 'notifications-settings',
       });
     }
+  }, []);
+
+  // Detect an iPhone/iPad that hasn't been added to the home screen — iOS
+  // only delivers web push to an installed PWA.
+  useEffect(() => {
+    const ua = navigator.userAgent || '';
+    const isIOS =
+      /iP(hone|ad|od)/.test(ua) ||
+      // iPadOS 13+ reports as a Mac; disambiguate via touch support.
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone =
+      window.matchMedia?.('(display-mode: standalone)')?.matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    setIosNeedsInstall(isIOS && !standalone);
   }, []);
 
   const channelOn = (id: ChannelId) => !!prefs?.channels?.[id];
@@ -501,6 +519,12 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
+                    )}
+                    {id === 'push' && iosNeedsInstall && !on && (
+                      <p className="text-[12px] leading-relaxed text-amber-400/90">
+                        On iPhone, add SBS to your home screen first — tap the Share
+                        button, then “Add to Home Screen.”
+                      </p>
                     )}
                   </Row>
                 );
