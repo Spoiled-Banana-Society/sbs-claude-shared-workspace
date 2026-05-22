@@ -141,7 +141,7 @@ const MOCK_WALLET = '0xd3301bC039faF4223dA98bcEB5Fb818C9993620';
 const MOCK_USER: User | null = MOCK_AUTH
   ? {
       id: 'mock-user-001',
-      username: 'TestUser',
+      username: friendlyDefaultName(MOCK_WALLET),
       walletAddress: MOCK_WALLET,
       loginMethod: 'social',
       draftPasses: 21,

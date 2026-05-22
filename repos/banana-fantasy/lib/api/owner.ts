@@ -76,14 +76,15 @@ export interface ApiDraftToken {
 }
 
 /**
- * A friendly, on-brand default display name. Derived deterministically
- * from the wallet so it's stable for a given user, and used whenever a
- * user hasn't set a real name of their own.
+ * A friendly, on-brand default display name. The tag is the first four
+ * hex characters of the wallet — i.e. the same characters shown in the
+ * truncated `0x93e2…` address — so it visibly matches the user's wallet
+ * and is stable for a given user.
  */
 export function friendlyDefaultName(walletAddress: string): string {
   const hex = normalizeWalletAddress(walletAddress).replace(/^0x/i, '');
-  const n = parseInt(hex.slice(0, 8) || '0', 16) % 10000;
-  return `Banana #${n}`;
+  const tag = (hex.slice(0, 4) || '0000').toLowerCase();
+  return `Banana #${tag}`;
 }
 
 /**
