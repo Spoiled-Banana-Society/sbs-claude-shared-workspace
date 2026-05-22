@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
-import { getUserNotifPrefs, setUserNotifPrefs } from '@/lib/notifications/prefs';
+import { getUserNotifPrefs, setUserNotifPrefs, unlinkChannel } from '@/lib/notifications/prefs';
 import type { ChannelId, EventPrefs } from '@/lib/notifications/types';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -43,13 +43,15 @@ export async function GET(req: NextRequest) {
 /**
  * PUT /api/notifications/profile
  * Updates the caller's own channel toggles and email address. Linked
- * account ids (telegramChatId, discordId) are NOT editable here — they are
- * set only by the Telegram/Discord linking flows.
+ * account ids (telegramChatId, discordId) can't be *set* here — only the
+ * Telegram/Discord link flows do that — but `unlink` may *clear* one,
+ * which is always safe (you can only disconnect your own account).
  *
  * Body: {
  *   channels?: Partial<Record<ChannelId, boolean>>,
  *   events?: Partial<Record<keyof EventPrefs, boolean>>,
  *   email?: string,
+ *   unlink?: 'telegram' | 'discord',
  * }
  */
 export async function PUT(req: NextRequest) {
@@ -80,12 +82,15 @@ export async function PUT(req: NextRequest) {
   if (typeof body.email === 'string') {
     patch.email = body.email.trim();
   }
+  const unlink: 'telegram' | 'discord' | null =
+    body.unlink === 'telegram' || body.unlink === 'discord' ? body.unlink : null;
 
   try {
+    if (unlink) await unlinkChannel(wallet, unlink);
     await setUserNotifPrefs(wallet, patch);
     const prefs = await getUserNotifPrefs(wallet);
     logger.debug(
-      `[notifications/profile] saved wallet=${wallet} keys=${Object.keys(patch).join(',') || 'none'}`,
+      `[notifications/profile] saved wallet=${wallet} keys=${Object.keys(patch).join(',') || 'none'}${unlink ? ` unlink=${unlink}` : ''}`,
     );
     return NextResponse.json({ ok: true, prefs });
   } catch (err) {

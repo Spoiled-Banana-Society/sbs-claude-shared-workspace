@@ -72,6 +72,33 @@ export async function setUserNotifPrefs(
 }
 
 /**
+ * Truly disconnect a linked channel: clear its stored contact id
+ * (telegramChatId / discordId) and switch the channel off. After this the
+ * channel reads as "not connected", so the next connect re-runs the full
+ * link flow — letting the user link a different account.
+ */
+export async function unlinkChannel(
+  walletAddress: string,
+  channel: 'telegram' | 'discord',
+): Promise<void> {
+  const wallet = walletAddress.trim().toLowerCase();
+  if (!isFirestoreConfigured()) return;
+  const idField = channel === 'telegram' ? 'telegramChatId' : 'discordId';
+  await getAdminFirestore()
+    .collection(COLLECTION)
+    .doc(wallet)
+    .set(
+      {
+        walletAddress: wallet,
+        [idField]: FieldValue.delete(),
+        channels: { [channel]: false },
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+}
+
+/**
  * Whether the user wants this event at all — checked before any channel
  * routing. A missing preference defaults to "on"; only an explicit `false`
  * opts out. "your turn" is split by draft speed via `pickLengthSeconds`.

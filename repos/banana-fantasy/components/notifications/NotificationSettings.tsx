@@ -353,6 +353,30 @@ export function NotificationSettings() {
     patchChannel('discord', on);
   };
 
+  // Truly disconnect a linked channel — clears the stored account so the
+  // next connect re-runs the login (lets the user link a different one).
+  const disconnectChannel = async (id: 'telegram' | 'discord') => {
+    setBusy(id);
+    clientLog('notifications', 'channel-disconnect', { channel: id });
+    try {
+      const res = await authedFetch('/api/notifications/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ unlink: id }),
+      });
+      if (!res.ok) throw new Error(`PUT profile ${res.status}`);
+      setPrefs((await res.json()).prefs as Prefs);
+      setBanner(`${CHANNEL_META[id].label} disconnected — connect again to link a different account.`);
+    } catch (err) {
+      setBanner(`Couldn’t disconnect ${CHANNEL_META[id].label} — please try again.`);
+      reportIssue(LOG_SOURCES.notifications.SETTINGS_SAVE_FAILED, `channel disconnect failed: ${id}`, {
+        channel: id,
+        error: String(err),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (!user?.walletAddress) {
     return (
       <div className="py-16 text-center text-sm text-text-secondary">
@@ -524,6 +548,11 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
+                    )}
+                    {(id === 'telegram' || id === 'discord') && linked && (
+                      <TextAction onClick={() => disconnectChannel(id)}>
+                        Use a different account
+                      </TextAction>
                     )}
                     {id === 'discord' && on && DISCORD_INVITE_URL && (
                       <p className="text-[12px] leading-relaxed text-text-muted">
