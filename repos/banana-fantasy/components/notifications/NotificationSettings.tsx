@@ -54,8 +54,8 @@ interface Tile {
 
 const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
   push: {
-    label: 'Phone & desktop',
-    blurb: 'Pop-up alerts on this device — nothing to download.',
+    label: 'Push notifications',
+    blurb: 'Pop-up alerts on your phone or computer.',
     tile: { Icon: IoPhonePortrait, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   email: {
