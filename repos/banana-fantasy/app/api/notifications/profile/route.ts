@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { getUserNotifPrefs, setUserNotifPrefs } from '@/lib/notifications/prefs';
 import type { ChannelId, EventPrefs } from '@/lib/notifications/types';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const EDITABLE_CHANNELS: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
 const EDITABLE_EVENTS: (keyof EventPrefs)[] = ['draftFilled', 'pickSlow', 'pickFast'];
@@ -23,8 +25,19 @@ async function authWallet(req: NextRequest): Promise<string | null> {
 export async function GET(req: NextRequest) {
   const wallet = await authWallet(req);
   if (!wallet) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const prefs = await getUserNotifPrefs(wallet);
-  return NextResponse.json({ ok: true, prefs });
+  try {
+    const prefs = await getUserNotifPrefs(wallet);
+    return NextResponse.json({ ok: true, prefs });
+  } catch (err) {
+    // Surface in the admin Logs tab with the wallet attached, so a tester
+    // who reports "my settings won't load" can be pinpointed.
+    logger.error(LOG_SOURCES.notifications.SETTINGS_READ_FAILED, {
+      err: err instanceof Error ? err : String(err),
+      route: 'notifications/profile#GET',
+      actor: wallet,
+    });
+    return NextResponse.json({ error: 'Failed to load preferences' }, { status: 500 });
+  }
 }
 
 /**
@@ -68,7 +81,22 @@ export async function PUT(req: NextRequest) {
     patch.email = body.email.trim();
   }
 
-  await setUserNotifPrefs(wallet, patch);
-  const prefs = await getUserNotifPrefs(wallet);
-  return NextResponse.json({ ok: true, prefs });
+  try {
+    await setUserNotifPrefs(wallet, patch);
+    const prefs = await getUserNotifPrefs(wallet);
+    logger.debug(
+      `[notifications/profile] saved wallet=${wallet} keys=${Object.keys(patch).join(',') || 'none'}`,
+    );
+    return NextResponse.json({ ok: true, prefs });
+  } catch (err) {
+    // A failed save means the user's toggle silently didn't stick — log
+    // it so the admin Logs tab shows which user and which keys broke.
+    logger.error(LOG_SOURCES.notifications.SETTINGS_SAVE_FAILED, {
+      err: err instanceof Error ? err : String(err),
+      route: 'notifications/profile#PUT',
+      actor: wallet,
+      context: { patchKeys: Object.keys(patch) },
+    });
+    return NextResponse.json({ error: 'Failed to save preferences' }, { status: 500 });
+  }
 }

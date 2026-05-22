@@ -21,6 +21,9 @@ import { FaTelegramPlane, FaDiscord } from 'react-icons/fa';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
+import { reportClientError } from '@/lib/clientErrors';
+import { clientLog } from '@/lib/clientLog';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 type ChannelId = 'push' | 'email' | 'telegram' | 'discord';
 type EventId = 'draftFilled' | 'pickSlow' | 'pickFast';
@@ -115,13 +118,19 @@ export function NotificationSettings() {
   const loadProfile = useCallback(async () => {
     try {
       const res = await authedFetch('/api/notifications/profile');
-      if (res.ok) {
-        const d = await res.json();
-        setPrefs(d.prefs as Prefs);
-        setEmailInput((d.prefs as Prefs).email || '');
-      }
-    } catch {
-      /* leave prefs null — UI shows a retry */
+      if (!res.ok) throw new Error(`GET profile ${res.status}`);
+      const d = await res.json();
+      setPrefs(d.prefs as Prefs);
+      setEmailInput((d.prefs as Prefs).email || '');
+    } catch (err) {
+      // Tell the user plainly, and surface it in the admin Logs tab.
+      setBanner('Couldn’t load your notification settings — check your connection and reload.');
+      reportClientError({
+        source: LOG_SOURCES.notifications.SETTINGS_READ_FAILED,
+        message: 'failed to load notification settings',
+        route: 'notifications-settings',
+        context: { error: String(err) },
+      });
     } finally {
       setLoading(false);
     }
@@ -136,7 +145,14 @@ export function NotificationSettings() {
   useEffect(() => {
     const flag = new URLSearchParams(window.location.search).get('discord');
     if (flag === 'linked') setBanner('Discord connected.');
-    else if (flag === 'error') setBanner('Discord connection failed — please try again.');
+    else if (flag === 'error') {
+      setBanner('Discord connection failed — please try connecting again.');
+      reportClientError({
+        source: LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
+        message: 'discord oauth callback returned error',
+        route: 'notifications-settings',
+      });
+    }
   }, []);
 
   const channelOn = (id: ChannelId) => !!prefs?.channels?.[id];
@@ -149,42 +165,84 @@ export function NotificationSettings() {
     return !!prefs?.discordId;
   };
 
+  // Report a settings-page failure to the admin Logs tab (with the wallet).
+  const reportIssue = (source: string, message: string, context?: Record<string, unknown>) =>
+    reportClientError({
+      source,
+      message,
+      route: 'notifications-settings',
+      actor: user?.walletAddress,
+      context,
+    });
+
   // ── Writes ─────────────────────────────────────────────────────────
   const patchChannel = async (id: ChannelId, on: boolean) => {
+    const prev = !!prefs?.channels?.[id];
     setBusy(id);
     setPrefs((p) => (p ? { ...p, channels: { ...p.channels, [id]: on } } : p)); // optimistic
+    clientLog('notifications', 'channel-toggle', { channel: id, on });
     try {
       const res = await authedFetch('/api/notifications/profile', {
         method: 'PUT',
         body: JSON.stringify({ channels: { [id]: on } }),
       });
-      if (res.ok) setPrefs((await res.json()).prefs as Prefs);
+      if (!res.ok) throw new Error(`PUT profile ${res.status}`);
+      setPrefs((await res.json()).prefs as Prefs);
+    } catch (err) {
+      // Roll the switch back so the UI never lies about what was saved.
+      setPrefs((p) => (p ? { ...p, channels: { ...p.channels, [id]: prev } } : p));
+      setBanner(
+        `Couldn’t save that — ${CHANNEL_META[id].label} stayed ${prev ? 'on' : 'off'}. Check your connection and try again.`,
+      );
+      reportIssue(LOG_SOURCES.notifications.SETTINGS_SAVE_FAILED, `channel toggle save failed: ${id}`, {
+        channel: id,
+        requested: on,
+        error: String(err),
+      });
     } finally {
       setBusy(null);
     }
   };
 
   const setEvent = async (id: EventId, on: boolean) => {
+    const prev = prefs?.events?.[id];
     setPrefs((p) => (p ? { ...p, events: { ...p.events, [id]: on } } : p));
-    const res = await authedFetch('/api/notifications/profile', {
-      method: 'PUT',
-      body: JSON.stringify({ events: { [id]: on } }),
-    });
-    if (res.ok) setPrefs((await res.json()).prefs as Prefs);
+    clientLog('notifications', 'event-toggle', { event: id, on });
+    try {
+      const res = await authedFetch('/api/notifications/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ events: { [id]: on } }),
+      });
+      if (!res.ok) throw new Error(`PUT profile ${res.status}`);
+      setPrefs((await res.json()).prefs as Prefs);
+    } catch (err) {
+      setPrefs((p) => (p ? { ...p, events: { ...p.events, [id]: prev } } : p));
+      setBanner(`Couldn’t save that — “${EVENT_META[id].label}” didn’t change. Try again.`);
+      reportIssue(LOG_SOURCES.notifications.SETTINGS_SAVE_FAILED, `event toggle save failed: ${id}`, {
+        event: id,
+        requested: on,
+        error: String(err),
+      });
+    }
   };
 
   const saveEmail = async () => {
     setBusy('email');
+    clientLog('notifications', 'email-save', {});
     try {
       const res = await authedFetch('/api/notifications/profile', {
         method: 'PUT',
         body: JSON.stringify({ email: emailInput.trim(), channels: { email: true } }),
       });
-      if (res.ok) {
-        setPrefs((await res.json()).prefs as Prefs);
-        setEditingEmail(false);
-        setBanner('Email saved — check Spam for the first alert and mark it “Not spam.”');
-      }
+      if (!res.ok) throw new Error(`PUT profile ${res.status}`);
+      setPrefs((await res.json()).prefs as Prefs);
+      setEditingEmail(false);
+      setBanner('Email saved — check Spam for the first alert and mark it “Not spam.”');
+    } catch (err) {
+      setBanner('Couldn’t save your email — check your connection and try again.');
+      reportIssue(LOG_SOURCES.notifications.SETTINGS_SAVE_FAILED, 'email save failed', {
+        error: String(err),
+      });
     } finally {
       setBusy(null);
     }
@@ -192,9 +250,15 @@ export function NotificationSettings() {
 
   // Push: the switch IS the subscription — on subscribes, off unsubscribes.
   const togglePush = async (on: boolean) => {
+    clientLog('notifications', 'push-toggle', { on });
     const r = on ? await push.connect() : await push.disconnect();
     if (!r.ok) {
       setBanner(r.error || 'Push action failed — please try again.');
+      reportIssue(
+        LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
+        `push ${on ? 'connect' : 'disconnect'} failed`,
+        { action: on ? 'connect' : 'disconnect', error: r.error },
+      );
       return;
     }
     setBanner(on ? 'Push notifications are on for this device.' : 'Push notifications turned off.');
@@ -211,14 +275,19 @@ export function NotificationSettings() {
 
   const connectTelegram = async () => {
     setBusy('telegram');
+    clientLog('notifications', 'telegram-connect', {});
     try {
       const res = await authedFetch('/api/notifications/link/telegram');
-      if (res.ok) {
-        window.open((await res.json()).url, '_blank', 'noopener');
-        setBanner('Open Telegram, tap Start, then press “Check connection.”');
-      } else {
-        setBanner('Telegram is not configured yet.');
-      }
+      if (!res.ok) throw new Error(`link/telegram ${res.status}`);
+      window.open((await res.json()).url, '_blank', 'noopener');
+      setBanner('Open Telegram, tap Start, then press “Check connection.”');
+    } catch (err) {
+      setBanner('Telegram isn’t available right now — please try again in a moment.');
+      reportIssue(
+        LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
+        'telegram link request failed',
+        { error: String(err) },
+      );
     } finally {
       setBusy(null);
     }
@@ -226,14 +295,18 @@ export function NotificationSettings() {
 
   const connectDiscord = async () => {
     setBusy('discord');
+    clientLog('notifications', 'discord-connect', {});
     try {
       const res = await authedFetch('/api/notifications/link/discord');
-      if (res.ok) window.location.href = (await res.json()).url; // OAuth; callback links + enables
-      else {
-        setBanner('Discord is not configured yet.');
-        setBusy(null);
-      }
-    } catch {
+      if (!res.ok) throw new Error(`link/discord ${res.status}`);
+      window.location.href = (await res.json()).url; // OAuth; callback links + enables
+    } catch (err) {
+      setBanner('Discord isn’t available right now — please try again in a moment.');
+      reportIssue(
+        LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
+        'discord link request failed',
+        { error: String(err) },
+      );
       setBusy(null);
     }
   };

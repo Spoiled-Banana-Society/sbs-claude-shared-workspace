@@ -122,6 +122,11 @@ export const LOG_SOURCES = {
     TELEGRAM_SEND_FAILED: 'notifications.telegram.send_failed',
     DISCORD_SEND_FAILED: 'notifications.discord.send_failed',
     DEDUP_STORE_UNAVAILABLE: 'notifications.dedup.store_unavailable',
+    // Settings page (Profile → Notifications): preference reads/writes
+    // and channel connect flows the user themselves triggered.
+    SETTINGS_READ_FAILED: 'notifications.settings.read_failed',
+    SETTINGS_SAVE_FAILED: 'notifications.settings.save_failed',
+    CHANNEL_CONNECT_FAILED: 'notifications.settings.connect_failed',
   },
   global: {
     UNCAUGHT_ERROR: 'global.uncaught.error',
