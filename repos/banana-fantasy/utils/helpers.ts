@@ -65,21 +65,13 @@ export const isWalletAddress = (address: string) => {
 // placeholders. Kept in sync with isPlaceholderName in lib/api/owner.ts.
 const PLACEHOLDER_NAMES = new Set(["testname", "testuser", "test"])
 
-// On-brand fallback name, tagged with the wallet's first four hex chars so
-// it visibly matches the user's `0x93e2…` address. Matches
-// friendlyDefaultName in lib/api/owner.ts.
-const bananaDefaultName = (walletAddress: string): string => {
-    const hex = (walletAddress || "").replace(/^0x/i, "")
-    return `Banana #${(hex.slice(0, 4) || "0000").toLowerCase()}`
-}
-
 // Returns the user's display name if it's a real, user-chosen one;
-// otherwise an on-brand "Banana #abcd" default. Never surfaces a raw
-// wallet address or a leftover "TestName" placeholder.
+// otherwise the truncated wallet (0x438.72e0) — the web3-standard
+// default. Never surfaces a leftover "TestName" placeholder.
 export const getTruncatedAccountName = (displayName: string, walletAddress: string) => {
     const name = (displayName || "").trim()
     const isPlaceholder =
         name === "" || isWalletAddress(name) || PLACEHOLDER_NAMES.has(name.toLowerCase())
 
-    return isPlaceholder ? bananaDefaultName(walletAddress) : truncateDisplayName(name)
+    return isPlaceholder ? truncate(walletAddress) : truncateDisplayName(name)
 }

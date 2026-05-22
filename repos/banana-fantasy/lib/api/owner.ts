@@ -76,21 +76,19 @@ export interface ApiDraftToken {
 }
 
 /**
- * A friendly, on-brand default display name. The tag is the first four
- * hex characters of the wallet — i.e. the same characters shown in the
- * truncated `0x93e2…` address — so it visibly matches the user's wallet
- * and is stable for a given user.
+ * The default display name shown when a user hasn't chosen one — the
+ * truncated wallet address (`0x438.72e0`), the web3-standard convention.
+ * It's unique per user, unlike a short branded handle.
  */
-export function friendlyDefaultName(walletAddress: string): string {
-  const hex = normalizeWalletAddress(walletAddress).replace(/^0x/i, '');
-  const tag = (hex.slice(0, 4) || '0000').toLowerCase();
-  return `Banana #${tag}`;
+export function defaultDisplayName(walletAddress: string): string {
+  const addr = normalizeWalletAddress(walletAddress);
+  return addr.length >= 11 ? `${addr.slice(0, 5)}.${addr.slice(-4)}` : addr;
 }
 
 /**
  * True when a stored display name isn't a real, user-chosen name —
  * empty, a leftover test placeholder, or a raw wallet address. Such
- * names get replaced with `friendlyDefaultName` for display.
+ * names get replaced with `defaultDisplayName` for display.
  */
 function isPlaceholderName(name: string | undefined | null, walletAddress: string): boolean {
   if (!name) return true;
@@ -112,7 +110,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
   return {
     id: normalizeWalletAddress(walletAddress),
     username: isPlaceholderName(owner.pfp?.displayName, walletAddress)
-      ? friendlyDefaultName(walletAddress)
+      ? defaultDisplayName(walletAddress)
       : (owner.pfp as { displayName: string }).displayName,
     walletAddress: normalizeWalletAddress(walletAddress),
     loginMethod: 'wallet',
