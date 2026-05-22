@@ -40,7 +40,20 @@ interface LogEntry {
   labels?: Record<string, string>;
   textPayload?: string;
   jsonPayload?: Record<string, unknown>;
-  httpRequest?: { status?: number; requestUrl?: string };
+  httpRequest?: { status?: number; requestUrl?: string; requestMethod?: string };
+}
+
+/** Compact "POST /path → 500" from an entry's HTTP request, if any. */
+function httpContext(entry: LogEntry): string {
+  const h = entry.httpRequest;
+  if (!h?.requestUrl) return '';
+  let path = h.requestUrl;
+  try {
+    path = new URL(h.requestUrl).pathname;
+  } catch {
+    /* keep the raw url */
+  }
+  return `${h.requestMethod || 'request'} ${path} → ${h.status ?? '?'}`;
 }
 
 const SERVICES = ['sbs-drafts-api-staging', 'sbs-drafts-server-staging'];
@@ -135,10 +148,15 @@ function classifyEvent(entry: LogEntry, serviceName: string): { source: string; 
     return { source: `backend.${svc}.cloud_task_error`, message: tp.slice(0, 1500) };
   }
 
-  // Generic bucket — still useful to know about, but won't have a tight name
+  // Generic bucket — no tight name, so make the message carry whatever
+  // context exists: the HTTP route+status and/or the raw payload. This
+  // is what stops a backend error from showing as a vague "server
+  // request failed" with no indication of *where* or *why*.
+  const http = httpContext(entry);
+  const body = tp ? tp.slice(0, 1500) : jp ? JSON.stringify(jp).slice(0, 1500) : '';
   return {
     source: `backend.${svc}.error`,
-    message: tp ? tp.slice(0, 1500) : JSON.stringify(jp || {}).slice(0, 1500) || '(no payload)',
+    message: [http, body].filter(Boolean).join(' — ') || '(no payload)',
   };
 }
 
