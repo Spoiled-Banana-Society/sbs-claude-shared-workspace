@@ -138,6 +138,11 @@ const RosterItemComponent: React.FC<RosterItemProps> = (props) => {
                                 }
                                 alt="SBS Fantasy"
                                 className="profile-photo"
+                                onError={(e) => {
+                                    // Broken/glitched pfp URL → fall back to the banana.
+                                    const img = e.currentTarget;
+                                    if (!img.src.includes('/banana-profile.png')) img.src = '/banana-profile.png';
+                                }}
                             />
                         </div>
                         <div>

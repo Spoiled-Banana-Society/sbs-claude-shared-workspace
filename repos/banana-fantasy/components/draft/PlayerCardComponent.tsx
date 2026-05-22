@@ -141,6 +141,11 @@ const PlayerCardComponent: React.FC<PlayerCardComponentProps> = (props) => {
                     src={item.pfpInfo.imageUrl !== "" ? item.pfpInfo.imageUrl : "/banana-profile.png"}
                     alt="Banana Best Ball Player"
                     className="rounded-full w-[30px] mx-auto h-[30px] border border-gray-500"
+                    onError={(e) => {
+                        // Broken/glitched pfp URL → fall back to the banana.
+                        const img = e.currentTarget;
+                        if (!img.src.includes('/banana-profile.png')) img.src = '/banana-profile.png';
+                    }}
                 />
                 {item.playerInfo.pickNum === currentPickNumber && leagueStatus !== "completed" ? (
                     <TimerComponent />
