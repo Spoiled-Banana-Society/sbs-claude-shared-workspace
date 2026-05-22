@@ -34,6 +34,12 @@ type DraftToken struct {
 	WeekScore         string       `json:"_weekScore"`
 	SeasonScore       string       `json:"_seasonScore"`
 	Prizes            Prizes       `json:"prizes"`
+	// NumPlayers is populated by AddCardToLeague on a successful join with
+	// the post-join player count of the league the token landed in, so the
+	// frontend can show the right number on the very first paint without
+	// waiting for an RTDB push or the 2.5s poll. Zero/absent on other
+	// endpoints — those don't have a meaningful per-token player count.
+	NumPlayers int `json:"numPlayers,omitempty" firestore:"-"`
 }
 
 type UsersTokens struct {

@@ -319,6 +319,12 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 		}
 	}
 
+	// Hand the post-join count back to the caller so the draft-room frontend
+	// can render the right number on first paint instead of waiting on RTDB
+	// or the 2.5s poll. l.NumPlayers reflects the count AFTER this token was
+	// added (incremented inside the transaction above).
+	token.NumPlayers = l.NumPlayers
+
 	return currentDraftNum, nil
 }
 
