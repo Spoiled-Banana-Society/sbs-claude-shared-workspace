@@ -126,24 +126,40 @@ export const sendTelegram: ChannelSender = async (message, _event, prefs) => {
   }
 };
 
-// ── Discord (channel webhook + @mention) ─────────────────────────────────────
+// ── Discord (private bot DM) ─────────────────────────────────────────────────
+// The SBS bot opens a direct-message channel with the user and sends the
+// alert there — private, never posted in a shared server channel. The bot
+// can only DM a user who shares a server with it, so the user must be in
+// the SBS Discord (see the join link in the settings UI).
 export const sendDiscord: ChannelSender = async (message, _event, prefs) => {
   if (!prefs.channels.discord) return skip('discord', 'channel off');
   if (!prefs.discordId) return skip('discord', 'no discord linked');
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
-  if (!webhookUrl) return skip('discord', 'not configured');
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) return skip('discord', 'not configured');
+
+  const api = 'https://discord.com/api/v10';
+  const auth = { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' };
   try {
-    const res = await fetch(webhookUrl, {
+    // 1. Open (or reuse) the DM channel with this user.
+    const dmRes = await fetch(`${api}/users/@me/channels`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: `<@${prefs.discordId}> **${message.title}**\n${message.body}\n${message.url}`,
-        // Only ping this one user — never @everyone/@here from a draft alert.
-        allowed_mentions: { users: [prefs.discordId] },
-      }),
+      headers: auth,
+      body: JSON.stringify({ recipient_id: prefs.discordId }),
     });
-    if (!res.ok) {
-      return fail('discord', `Discord ${res.status}: ${await res.text().catch(() => '')}`);
+    if (!dmRes.ok) {
+      return fail('discord', `Discord DM open ${dmRes.status}: ${await dmRes.text().catch(() => '')}`);
+    }
+    const dmChannelId = (await dmRes.json())?.id as string | undefined;
+    if (!dmChannelId) return fail('discord', 'Discord DM open: no channel id');
+
+    // 2. Send the alert into that DM.
+    const msgRes = await fetch(`${api}/channels/${dmChannelId}/messages`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ content: `**${message.title}**\n${message.body}\n${message.url}` }),
+    });
+    if (!msgRes.ok) {
+      return fail('discord', `Discord DM send ${msgRes.status}: ${await msgRes.text().catch(() => '')}`);
     }
     return { channel: 'discord', status: 'sent' };
   } catch (err) {

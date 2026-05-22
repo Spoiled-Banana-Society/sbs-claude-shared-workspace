@@ -133,18 +133,45 @@ describe('sendDiscord', () => {
     expect(r.status).toBe('skipped');
   });
 
-  it('posts a webhook message that @-mentions only the linked user', async () => {
-    vi.stubEnv('DISCORD_WEBHOOK_URL', 'https://discord/webhook/xyz');
-    const fetchFn = mockFetch(true);
+  it('skips when the bot token is unset', async () => {
+    const r = await sendDiscord(
+      message,
+      event,
+      prefs({ channels: { discord: true }, discordId: '555000' }),
+    );
+    expect(r.status).toBe('skipped');
+  });
+
+  it('opens a DM with the linked user and sends the alert privately', async () => {
+    vi.stubEnv('DISCORD_BOT_TOKEN', 'bot-tok');
+    const fetchFn = mockFetch(true, { id: 'dm-chan-1' });
     const r = await sendDiscord(
       message,
       event,
       prefs({ channels: { discord: true }, discordId: '555000' }),
     );
     expect(r.status).toBe('sent');
-    expect(fetchFn.mock.calls[0][0]).toBe('https://discord/webhook/xyz');
-    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
-    expect(body.content).toContain('<@555000>');
-    expect(body.allowed_mentions).toEqual({ users: ['555000'] });
+    // 1. opens a DM channel with the user's id, authed as the bot
+    expect(fetchFn.mock.calls[0][0]).toBe('https://discord.com/api/v10/users/@me/channels');
+    expect(JSON.parse(fetchFn.mock.calls[0][1].body).recipient_id).toBe('555000');
+    expect(fetchFn.mock.calls[0][1].headers.Authorization).toBe('Bot bot-tok');
+    // 2. sends the message into that DM channel — no channel @mention
+    expect(fetchFn.mock.calls[1][0]).toBe(
+      'https://discord.com/api/v10/channels/dm-chan-1/messages',
+    );
+    const body = JSON.parse(fetchFn.mock.calls[1][1].body);
+    expect(body.content).toContain(message.title);
+    expect(body.content).not.toContain('<@');
+  });
+
+  it('returns failed when Discord responds non-OK', async () => {
+    vi.stubEnv('DISCORD_BOT_TOKEN', 'bot-tok');
+    mockFetch(false);
+    const r = await sendDiscord(
+      message,
+      event,
+      prefs({ channels: { discord: true }, discordId: '1' }),
+    );
+    expect(r.status).toBe('failed');
   });
 });
