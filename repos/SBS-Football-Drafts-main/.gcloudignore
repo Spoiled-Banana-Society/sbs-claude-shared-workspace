@@ -1,0 +1,17 @@
+# Override .gitignore for gcloud source uploads. .gitignore excludes
+# configs/ and .env (correct for git), but if we ever go back to needing
+# them at build time we don't want to silently lose them like happened
+# on 2026-05-12. Today the server doesn't strictly need .env (it logs +
+# continues without one), but keeping configs/ in the upload remains
+# correct for any local-dev parity.
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+.idea/
+.DS_Store
+sbs-drafts-server

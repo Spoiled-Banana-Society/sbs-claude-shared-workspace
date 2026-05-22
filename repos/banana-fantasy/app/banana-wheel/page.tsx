@@ -11,6 +11,8 @@ import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { WheelProofBanner } from '@/components/wheel/WheelProofBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { fetchJson } from '@/lib/appApiClient';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { pushNotification } from '@/components/NotificationCenter';
 import { useWheelHistory, useSpin, type WheelSpinOutcome } from '@/hooks/useWheelData';
 import { usePromos } from '@/hooks/usePromos';
@@ -33,7 +35,15 @@ export default function BananaWheelPage() {
         };
         setQueuedJP(countQueued('jackpot'));
         setQueuedHOF(countQueued('hof'));
-      }).catch(() => {});
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.wheel.QUEUE_FETCH_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'banana-wheel',
+          context: { userId: user?.id },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      });
   }, [user?.id]);
 
   const historyQuery = useWheelHistory(user?.id);
@@ -52,7 +62,15 @@ export default function BananaWheelPage() {
       // Pull in the authoritative wheelSpins decrement + fresh history from the server.
       // The useSpin mutation already invalidates ['wheel','history']; refreshBalance
       // syncs the user's wheelSpins count so spinsAvailable updates without a local offset.
-      refreshBalance().catch(() => {});
+      refreshBalance().catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.wheel.BALANCE_REFRESH_TIMEOUT,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'banana-wheel',
+          context: { userId: user?.id, phase: 'spin_complete_refresh' },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      });
 
       // Tell the server the spinner has seen their prize. This bumps
       // wheel_periods.feedRevealCount, which is the trigger /wheel-batches'
@@ -61,7 +79,16 @@ export default function BananaWheelPage() {
       if (_outcome?.spinId) {
         fetch(`/api/wheel/spin/${encodeURIComponent(_outcome.spinId)}/confirm-reveal`, {
           method: 'POST',
-        }).catch(() => { /* silent — feed will self-heal on next confirmed spin */ });
+        }).catch((err) => {
+          /* silent — feed will self-heal on next confirmed spin */
+          reportClientError({
+            source: LOG_SOURCES.wheel.SPIN_REVEAL_CONFIRM_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'banana-wheel',
+            context: { userId: user?.id, spinId: _outcome.spinId },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        });
       }
 
       if (!user || !segment) return;
@@ -74,7 +101,15 @@ export default function BananaWheelPage() {
         refreshBalanceUntil((b) => b.draftPasses >= expectedDraftPasses, {
           timeoutMs: 15_000,
           intervalMs: 1_000,
-        }).catch(() => {});
+        }).catch((err) => {
+          reportClientError({
+            source: LOG_SOURCES.wheel.BALANCE_REFRESH_TIMEOUT,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'banana-wheel',
+            context: { userId: user?.id, phase: 'draft_pass_mint_wait', expectedDraftPasses },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        });
         pushNotification({
           type: 'promo',
           title: 'Free Drafts Won!',

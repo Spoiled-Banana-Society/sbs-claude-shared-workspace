@@ -10,8 +10,9 @@ import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
 import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
-import { formatLeagueName } from '@/lib/formatters';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
 import type {
   DraftInfoPayload,
@@ -173,7 +174,13 @@ export function useDraftLiveSync({
           draftStore.removeDraft(pendingId);
           draftStore.addDraft({
             id: newId,
-            contestName: draftRoom.contestName || formatLeagueName(newId),
+            // NEVER derive a number from the slot id — the slot counter
+            // (per-speed-per-year) drifts from the global league number,
+            // so `League #${slot}` is almost always wrong by the time
+            // the season fills up. Empty contestName signals DraftRow to
+            // show "League…" until useLeagueNumberForSlot resolves the
+            // real number from the doc's DisplayName.
+            contestName: draftRoom.contestName || '',
             status: 'filling',
             type: null,
             draftSpeed: speedParam || 'fast',
@@ -197,6 +204,14 @@ export function useDraftLiveSync({
       }
 
       console.error('[Draft Room] Failed to join draft after retries:', lastErr);
+      reportClientError({
+        source: LOG_SOURCES.draft.JOIN_FAILED,
+        message: lastErr instanceof Error ? lastErr.message : String(lastErr),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { speed: speedParam || 'fast', passType: passTypeParam || 'paid', promoType: promoTypeParam ?? null, attempts: MAX_JOIN_RETRIES },
+        stack: lastErr instanceof Error ? lastErr.stack : undefined,
+      });
       draftStore.removeDraft(pendingId);
       setLiveError(lastErr instanceof Error ? lastErr.message : 'Failed to join draft');
     }
@@ -222,31 +237,41 @@ export function useDraftLiveSync({
       }).then(() => {
         logger.debug('[REST] Pick submitted:', pickPayload.playerId);
       }).catch((err) => {
-        if (engine.airplaneMode && engine.isUserTurn) {
-          const msg = err?.message || '';
-          const match = msg.match(/already picked (\S+)/);
-          if (match) {
-            const staleId = match[1];
-            logger.debug('[Airplane] Removing stale player and retrying:', staleId);
-            engine.removeFromAvailable(staleId);
-            // Defer to next tick so removeFromAvailable settles before
-            // getAutoPickPlayer runs. Was 300ms — no longer visible.
-            setTimeout(() => {
-              const nextPick = engine.getAutoPickPlayer();
-              if (nextPick && draftId) {
-                logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
-                const retryPayload = engine.draftPlayer(nextPick);
-                if (retryPayload) {
-                  draftApi.submitPickREST(draftId, walletParam, {
-                    playerId: retryPayload.playerId,
-                    displayName: retryPayload.displayName,
-                    team: retryPayload.team,
-                    position: retryPayload.position,
-                  }).catch(e => console.error('[Airplane] Retry failed:', e));
-                }
+        const msg = err?.message || '';
+        const match = msg.match(/already picked (\S+)/);
+        const handledByAutopick = engine.airplaneMode && engine.isUserTurn && !!match;
+        if (handledByAutopick) {
+          const staleId = match[1];
+          logger.debug('[Airplane] Removing stale player and retrying:', staleId);
+          engine.removeFromAvailable(staleId);
+          // Defer to next tick so removeFromAvailable settles before
+          // getAutoPickPlayer runs. Was 300ms — no longer visible.
+          setTimeout(() => {
+            const nextPick = engine.getAutoPickPlayer();
+            if (nextPick && draftId) {
+              logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
+              const retryPayload = engine.draftPlayer(nextPick);
+              if (retryPayload) {
+                draftApi.submitPickREST(draftId, walletParam, {
+                  playerId: retryPayload.playerId,
+                  displayName: retryPayload.displayName,
+                  team: retryPayload.team,
+                  position: retryPayload.position,
+                }).catch(e => console.error('[Airplane] Retry failed:', e));
               }
-            }, 0);
-          }
+            }
+          }, 0);
+        } else {
+          // Pick-submit failure that the autopick stale-player handler
+          // does not cover — surface it so we don't silently drop picks.
+          reportClientError({
+            source: LOG_SOURCES.draft.PICK_SUBMIT_UNHANDLED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId, playerId: pickPayload.playerId, airplaneMode: engine.airplaneMode, isUserTurn: engine.isUserTurn },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         }
       });
     }
@@ -266,6 +291,14 @@ export function useDraftLiveSync({
     }));
     draftApi.updateQueue(walletParam, draftId, payload).catch(err => {
       console.error('[Queue] REST sync failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.QUEUE_UPDATE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, queueSize: payload.length },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
     });
   }, [isLiveMode, draftId, walletParam]);
 
@@ -520,6 +553,14 @@ export function useDraftLiveSync({
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
           logger.debug('[Draft Room] All retries exhausted — falling back to local mode');
+          reportClientError({
+            source: LOG_SOURCES.draft.LIVE_LOAD_EXHAUSTED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId, attempts: liveRetryCountRef.current, maxRetries: MAX_OUTER_RETRIES },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
           setFallbackLocal(true);
           liveInitializedRef.current = true;
         } else {
@@ -575,7 +616,16 @@ export function useDraftLiveSync({
               engine.refreshSummaryPicks(summaryArr);
               logger.debug(`[Watchdog] Re-synced ${countSummaryPicks(summaryArr)} picks from REST`);
             }
-          }).catch(() => {});
+          }).catch((err) => {
+            reportClientError({
+              source: LOG_SOURCES.draft.WATCHDOG_RESYNC_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, call: 'getDraftSummary' },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          });
 
           draftApi.getDraftInfo(draftId).then(info => {
             engine.handleDraftInfoUpdate({
@@ -595,7 +645,16 @@ export function useDraftLiveSync({
               })),
             });
             logger.debug(`[Watchdog] Re-synced draft info: pick ${info.pickNumber}, drafter ${info.currentDrafter.slice(0, 8)}...`);
-          }).catch(() => {});
+          }).catch((err) => {
+            reportClientError({
+              source: LOG_SOURCES.draft.WATCHDOG_RESYNC_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, call: 'getDraftInfo' },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          });
         }
 
         lastFirebaseUpdateRef.current = Date.now();

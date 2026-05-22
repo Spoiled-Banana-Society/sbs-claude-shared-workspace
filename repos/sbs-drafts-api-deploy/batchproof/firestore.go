@@ -13,9 +13,12 @@ import (
 )
 
 const (
-	systemConfigCollection = "system_config"
-	batchProofConfigDoc    = "batchProof"
-	batchProofsCollection  = "batch_proofs"
+	systemConfigCollection    = "system_config"
+	batchProofConfigDoc       = "batchProof"
+	batchProofMerkleConfigDoc = "batchProofMerkle"
+	merkleRoundStateDoc       = "merkleRoundState"
+	batchProofsCollection     = "batch_proofs"
+	merkleRoundsCollection    = "merkle_rounds"
 )
 
 // SystemConfig is the singleton doc (system_config/batchProof) that holds
@@ -86,6 +89,23 @@ type ProofDoc struct {
 	CommitTxHashVRF  string `firestore:"commitTxHashVrf,omitempty"`  // tx that submitted requestRandomnessAndCommit (atomic with VRF request)
 	RevealSaltTxHash string `firestore:"revealSaltTxHash,omitempty"` // tx that revealed salt at end of batch
 
+	// Merkle fields (variant=vrf-commit-merkle). For merkle batches the
+	// authoritative state lives in merkle_rounds/{N}; this doc is a
+	// per-batch pointer that surfaces the relevant subset for the
+	// existing /api/batches/{N}/proof endpoint. The MerkleRound +
+	// MerkleBatchIndexInRound fields let other endpoints (e.g. per-draft
+	// proof lookup) dereference into the round's leaves array.
+	MerkleRoot              string `firestore:"merkleRoot,omitempty"`              // 0x-prefixed 32-byte root (mirrored from round)
+	MerkleRootTxHash        string `firestore:"merkleRootTxHash,omitempty"`        // tx that called commitMerkleRoot
+	MerkleRootCommittedAt   int64  `firestore:"merkleRootCommittedAt,omitempty"`   // unix sec
+	MerkleRound             int    `firestore:"merkleRound,omitempty"` // 1-indexed round this batch belongs to
+	// NOT omitempty — 0 is a valid value (first batch in the round) and
+	// stripping it leaves the per-draft proof endpoint with no way to
+	// dereference into the round's leaves array. Lost staging-env batch 9
+	// to this on 2026-05-16 (firstBatch=9 → index=0 → field stripped →
+	// /api/drafts/{id}/merkle-proof returned "missing merkle round pointer").
+	MerkleBatchIndexInRound int `firestore:"merkleBatchIndexInRound"` // 0..99 — which 100-window within the round
+
 	// Common: derived slot positions. Stored privately on commit; gated by
 	// the Next.js API layer based on variant + status before exposure to
 	// clients. Legacy commit-reveal: gated until status='revealed'. VRF:
@@ -112,6 +132,28 @@ func LoadSystemConfig(ctx context.Context, db *firestore.Client) (*SystemConfig,
 	}
 	if cfg.ContractAddress == "" {
 		return nil, fmt.Errorf("%w: contractAddress field empty", ErrNotConfigured)
+	}
+	return &cfg, nil
+}
+
+// LoadMerkleSystemConfig reads system_config/batchProofMerkle. Returns
+// nil (not ErrNotConfigured) when the doc isn't present — the Merkle
+// contract is optional infrastructure. If absent, the Manager runs in
+// legacy-only mode and the vrf-commit-merkle variant is unavailable.
+func LoadMerkleSystemConfig(ctx context.Context, db *firestore.Client) (*SystemConfig, error) {
+	snap, err := db.Collection(systemConfigCollection).Doc(batchProofMerkleConfigDoc).Get(ctx)
+	if err != nil {
+		if errIsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read system_config/batchProofMerkle: %w", err)
+	}
+	var cfg SystemConfig
+	if err := snap.DataTo(&cfg); err != nil {
+		return nil, fmt.Errorf("decode system_config/batchProofMerkle: %w", err)
+	}
+	if cfg.ContractAddress == "" {
+		return nil, nil // doc exists but empty — same as not configured
 	}
 	return &cfg, nil
 }
@@ -201,3 +243,136 @@ func IterateProofs(ctx context.Context, db *firestore.Client, fn func(*ProofDoc)
 
 // nowUnix is exposed for tests; production callers use time.Now().Unix().
 var nowUnix = func() int64 { return time.Now().Unix() }
+
+// ─── Merkle rounds ──────────────────────────────────────────────────────
+//
+// A merkle round covers 10,000 drafts (= 100 batches). One on-chain
+// ceremony per round (commit + VRF + commitMerkleRoot + reveal). Drafts
+// within the round get instant per-draft Merkle proofs.
+
+// MerkleRoundDoc lives at merkle_rounds/{N}. Schema is intentionally close
+// to ProofDoc for the salt-commit + VRF fields so future audit tooling
+// can share code paths. Adds: merkleRoot, merkleRootTxHash, leaves array,
+// firstBatchNumber (so we can derive which batches belong to the round).
+type MerkleRoundDoc struct {
+	RoundNumber int    `firestore:"roundNumber"`
+	Status      string `firestore:"status"` // "requested" → "fulfilled" → "merkleCommitted" → "revealed"
+
+	// First legacy-batch number assigned to this round. Round R covers
+	// batches firstBatchNumber..firstBatchNumber+99 (100 batches × 100
+	// drafts = 10,000 drafts). Stored so we can map any batchN back to
+	// its round without re-walking history.
+	FirstBatchNumber int `firestore:"firstBatchNumber"`
+
+	// Salt + VRF (same as vrf-commit variant)
+	SaltHash         string `firestore:"saltHash,omitempty"`
+	ServerSalt       string `firestore:"serverSalt,omitempty"` // private until status=revealed
+	VRFRequestID     string `firestore:"vrfRequestId,omitempty"`
+	VRFRequestTxHash string `firestore:"vrfRequestTxHash,omitempty"`
+	VRFRandomness    string `firestore:"vrfRandomness,omitempty"`
+	CommitTxHashVRF  string `firestore:"commitTxHashVrf,omitempty"`
+	RevealSaltTxHash string `firestore:"revealSaltTxHash,omitempty"`
+
+	// Merkle commit
+	MerkleRoot            string   `firestore:"merkleRoot,omitempty"`
+	MerkleRootTxHash      string   `firestore:"merkleRootTxHash,omitempty"`
+	MerkleRootCommittedAt int64    `firestore:"merkleRootCommittedAt,omitempty"`
+	MerkleLeaves          []string `firestore:"merkleLeaves,omitempty"` // 10k entries, indexed by positionInRound
+
+	// Per-window JP + HOF positions, stored to enable fast per-batch
+	// lookups in EnsureBatchCommitted. JackpotByWindow is indexed by
+	// windowIndex (0..99). HofByWindow is FLATTENED (length 500) because
+	// Firestore doesn't support nested arrays — index = windowIndex*5 + i
+	// where i is 0..4. See helpers in merkle.go.
+	JackpotByWindow []int `firestore:"jackpotByWindow,omitempty"`     // length 100
+	HofByWindowFlat []int `firestore:"hofByWindowFlat,omitempty"`     // length 500, flat
+	HofByWindowSize int   `firestore:"hofByWindowSize,omitempty"`     // 5 — for verification
+
+	// Timing
+	OpenedAt     int64 `firestore:"openedAt,omitempty"`
+	FulfilledAt  int64 `firestore:"fulfilledAt,omitempty"`
+	ClosedAt     int64 `firestore:"closedAt,omitempty"`
+	RevealedAt   int64 `firestore:"revealedAt,omitempty"`
+}
+
+// MerkleRoundState — singleton at system_config/merkleRoundState. Tracks
+// the active round + how many batches into it we've consumed. Used to
+// decide whether the next batch boundary opens a new round or rolls
+// into the existing one.
+type MerkleRoundState struct {
+	CurrentRoundNumber  int `firestore:"currentRoundNumber"`
+	NextBatchIndexInRound int `firestore:"nextBatchIndexInRound"` // 0..99
+}
+
+// LoadMerkleRound reads merkle_rounds/{N}. Returns (nil, nil) if not present.
+func LoadMerkleRound(ctx context.Context, db *firestore.Client, roundNumber int) (*MerkleRoundDoc, error) {
+	docID := strconv.Itoa(roundNumber)
+	snap, err := db.Collection(merkleRoundsCollection).Doc(docID).Get(ctx)
+	if err != nil {
+		if errIsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read merkle_rounds/%d: %w", roundNumber, err)
+	}
+	var doc MerkleRoundDoc
+	if err := snap.DataTo(&doc); err != nil {
+		return nil, fmt.Errorf("decode merkle_rounds/%d: %w", roundNumber, err)
+	}
+	return &doc, nil
+}
+
+// SaveMerkleRound writes merkle_rounds/{N} (full overwrite).
+func SaveMerkleRound(ctx context.Context, db *firestore.Client, doc *MerkleRoundDoc) error {
+	if doc.RoundNumber < 1 {
+		return errors.New("round number must be >= 1")
+	}
+	docID := strconv.Itoa(doc.RoundNumber)
+	_, err := db.Collection(merkleRoundsCollection).Doc(docID).Set(ctx, doc)
+	if err != nil {
+		return fmt.Errorf("write merkle_rounds/%d: %w", doc.RoundNumber, err)
+	}
+	return nil
+}
+
+// MergeMerkleRound patches specific fields on merkle_rounds/{N}.
+func MergeMerkleRound(ctx context.Context, db *firestore.Client, roundNumber int, updates map[string]interface{}) error {
+	if roundNumber < 1 {
+		return errors.New("round number must be >= 1")
+	}
+	docID := strconv.Itoa(roundNumber)
+	merge := make([]firestore.Update, 0, len(updates))
+	for k, v := range updates {
+		merge = append(merge, firestore.Update{Path: k, Value: v})
+	}
+	_, err := db.Collection(merkleRoundsCollection).Doc(docID).Update(ctx, merge)
+	if err != nil {
+		return fmt.Errorf("merge merkle_rounds/%d: %w", roundNumber, err)
+	}
+	return nil
+}
+
+// LoadMerkleRoundState reads system_config/merkleRoundState. Returns
+// (nil, nil) if absent (pre-bootstrap — no merkle round opened yet).
+func LoadMerkleRoundState(ctx context.Context, db *firestore.Client) (*MerkleRoundState, error) {
+	snap, err := db.Collection(systemConfigCollection).Doc(merkleRoundStateDoc).Get(ctx)
+	if err != nil {
+		if errIsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read system_config/merkleRoundState: %w", err)
+	}
+	var state MerkleRoundState
+	if err := snap.DataTo(&state); err != nil {
+		return nil, fmt.Errorf("decode merkleRoundState: %w", err)
+	}
+	return &state, nil
+}
+
+// SaveMerkleRoundState writes system_config/merkleRoundState.
+func SaveMerkleRoundState(ctx context.Context, db *firestore.Client, state *MerkleRoundState) error {
+	_, err := db.Collection(systemConfigCollection).Doc(merkleRoundStateDoc).Set(ctx, state)
+	if err != nil {
+		return fmt.Errorf("write merkleRoundState: %w", err)
+	}
+	return nil
+}

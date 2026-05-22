@@ -10,8 +10,7 @@ import type { NotificationCounts, NotificationCountsResponse } from '@/app/api/a
 // auto-clear when the underlying state changes, not on tab visit.
 export type NotifCategory =
   | 'support'
-  | 'errors'
-  | 'sentry'
+  | 'logs'
   | 'kyc'
   | 'offramp'
   | 'onramp'
@@ -23,9 +22,11 @@ export type NotifCategory =
 // The hook stores `lastSeenAt[cat]` in localStorage and passes those
 // values to the API so each category's count only includes items
 // newer than `lastSeenAt[cat]`.
-const VISIT_CLEARED: NotifCategory[] = ['errors', 'sentry', 'kyc', 'offramp', 'onramp', 'purchases', 'drafts'];
+const VISIT_CLEARED: NotifCategory[] = ['logs', 'kyc', 'offramp', 'onramp', 'purchases', 'drafts'];
 
-const STORAGE_KEY = 'admin.notifications.lastSeen.v1';
+// .v2 — bumped when 'errors'+'sentry' merged into 'logs'. Old keys are
+// harmlessly ignored; the badge resets clean once.
+const STORAGE_KEY = 'admin.notifications.lastSeen.v2';
 const POLL_MS = 30_000;
 // Custom event name for cross-component sync within the same browser
 // tab. The native `storage` event only fires across tabs, so without
@@ -34,8 +35,7 @@ const POLL_MS = 30_000;
 const SAME_TAB_SYNC_EVENT = 'admin-notifications-changed';
 
 interface LastSeenMap {
-  errors?: number;
-  sentry?: number;
+  logs?: number;
   kyc?: number;
   offramp?: number;
   onramp?: number;
@@ -114,14 +114,14 @@ export function useAdminNotifications({ enabled, useAuthHeaders }: Options): Use
   });
 
   const counts: NotificationCounts = query.data?.counts ?? {
-    support: 0, errors: 0, sentry: 0, kyc: 0, offramp: 0, onramp: 0,
+    support: 0, logs: 0, kyc: 0, offramp: 0, onramp: 0,
     withdrawals: 0, purchases: 0, drafts: 0,
   };
 
   // `purchases` (failed mints) is tracked by the endpoint but has no
   // dedicated tab yet — exclude from the badge total so it can't sit
   // there forever with nowhere to clear. Add it back when a UI lands.
-  const total = counts.support + counts.errors + counts.sentry + counts.kyc
+  const total = counts.support + counts.logs + counts.kyc
     + counts.offramp + counts.onramp + counts.withdrawals + counts.drafts;
 
   const markSeen = useCallback((cat: NotifCategory) => {

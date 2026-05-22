@@ -19,6 +19,10 @@ import OneSignal from 'react-onesignal';
 import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
 import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
+import { useUserEventStream } from '@/hooks/useUserEventStream';
+import { setClientLogWallet } from '@/lib/clientLog';
+import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -26,15 +30,29 @@ const NotifContext = createContext<NotifContextType>({ triggerOptIn: () => {} })
 export const useNotifOptIn = () => useContext(NotifContext);
 
 function AppContent({ children }: { children: React.ReactNode }) {
-  const { showLoginModal, setShowLoginModal, setShowOnboarding, login } = useAuth();
+  const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
+  // Attribute client logs to the logged-in wallet so inspect-debug-logs
+  // can filter by user.
+  React.useEffect(() => {
+    setClientLogWallet(user?.walletAddress);
+  }, [user?.walletAddress]);
+  // Catch every uncaught error / rejected promise app-wide and route it
+  // to the admin Logs tab. Idempotent — safe to call on every mount.
+  useEffect(() => {
+    installGlobalErrorHandlers();
+  }, []);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
   const isDraftRoom = pathname === '/draft-room';
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const notif = useNotificationOptIn();
-  // Polls /api/badges and fires a toast + notification entry whenever a
-  // new badge unlocks for the logged-in user. Runs app-wide.
+  // Real-time push from RTDB — primary source for badge unlocks +
+  // promo events (toast + bell within ~100ms). Mounted app-wide so any
+  // page sees the unlock the moment it happens server-side.
+  useUserEventStream();
+  // 5-minute poll safety net for badges in case RTDB push misses an
+  // unlock (network blip, write failure, granted-while-offline).
   useBadgeUnlockNotifier();
 
   useEffect(() => {
@@ -102,8 +120,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <ReduxProvider>
           <QueryProvider>
             <ToastProvider>
-              <OneSignalInit />
-              <AppContent>{children}</AppContent>
+              <ClaimCelebrationProvider>
+                <OneSignalInit />
+                <AppContent>{children}</AppContent>
+              </ClaimCelebrationProvider>
             </ToastProvider>
           </QueryProvider>
         </ReduxProvider>

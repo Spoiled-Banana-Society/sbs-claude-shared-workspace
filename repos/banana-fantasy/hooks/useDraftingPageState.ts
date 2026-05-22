@@ -17,8 +17,9 @@ import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
-import { formatLeagueName, normalizeBackendLeagueName } from '@/lib/formatters';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { clientLog } from '@/lib/clientLog';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -439,17 +440,38 @@ export function useDraftingPageState() {
         const tokens: ApiDraftToken[] = Array.isArray(raw) ? raw : [];
 
         const activeTokens = tokens.filter((t) => {
-          if (!t.leagueId || hiddenDraftIds.has(t.leagueId)) return false;
+          if (!t.leagueId) return false;
           if (t.roster) {
             const rosterCount = (t.roster.QB?.length || 0)
               + (t.roster.RB?.length || 0)
               + (t.roster.WR?.length || 0)
               + (t.roster.TE?.length || 0)
               + (t.roster.DST?.length || 0);
+            // Completed drafts (15 picks) leave My Drafts. In-progress drafts
+            // are NEVER suppressed by the hidden list — if you hold a token
+            // for a live draft you must always see it. "Clear All" blacklists
+            // every current leagueId, and draft ids get reused, so an active
+            // draft can wrongly land on the hidden list. Un-heal step below.
             if (rosterCount >= 15) return false;
           }
           return true;
         });
+
+        // Self-heal: drop any live (non-completed) draft id from the hidden
+        // list. Without this, one "Clear All" tap permanently hides a draft
+        // the user is actively in on that device.
+        const wronglyHidden = activeTokens
+          .map((t) => t.leagueId)
+          .filter((id) => hiddenDraftIds.has(id));
+        if (wronglyHidden.length > 0) {
+          clientLog('mydrafts', 'unhid.active.drafts', { ids: wronglyHidden });
+          setHiddenDraftIds((prev) => {
+            const next = new Set(prev);
+            for (const id of wronglyHidden) next.delete(id);
+            try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+            return next;
+          });
+        }
 
         // Fetch current player count + drafting-state for each active draft.
         // numPlayers === 10 means the backend has created the draft state
@@ -482,9 +504,12 @@ export function useDraftingPageState() {
           else type = isDrafting ? 'pro' : null;
           return {
             id: t.leagueId || t.cardId,
-            contestName: t.leagueDisplayName
-              ? normalizeBackendLeagueName(t.leagueDisplayName)
-              : formatLeagueName(t.leagueId || t.cardId),
+            // Trust the backend's displayName (sourced from doc.DisplayName).
+            // Never fall back to slot-id-derived "League #N" — the slot
+            // counter drifts from the global league number, so that fallback
+            // produces the wrong number. Empty signals DraftRow to render
+            // "League…" until useLeagueNumberForSlot resolves the real one.
+            contestName: t.leagueDisplayName || '',
             status: isDrafting ? 'drafting' : 'filling',
             type,
             draftSpeed,
@@ -497,6 +522,15 @@ export function useDraftingPageState() {
 
         for (const d of mapped) {
           if (hiddenDraftIds.has(d.id)) continue;
+          // Whenever the API returns a fresh non-empty leagueDisplayName,
+          // push the parsed league # into the global cache. Survives
+          // stale localStorage / module cache from earlier sessions
+          // where the value may have been wrong. Idempotent — same
+          // value is a no-op.
+          if (d.contestName) {
+            const m = /^BBB\s*#(\d+)$/i.exec(d.contestName);
+            if (m) setLeagueNumberInCache(d.id, Number(m[1]));
+          }
           const existing = draftStore.getDraft(d.id);
           if (!existing) {
             draftStore.addDraft({
@@ -505,6 +539,16 @@ export function useDraftingPageState() {
               phase: d.status === 'drafting' ? 'drafting' : 'filling',
             });
             continue;
+          }
+          // Always refresh contestName when API has a fresh non-empty
+          // value that differs from stored. The drafting-phase branch
+          // below otherwise leaves contestName untouched, which means
+          // any wrong value cached during a previous race stays wrong
+          // forever — exactly what produced the "League #814" bug for
+          // slot 814 (correct league # is 815, but store had a stale
+          // "BBB #814" from an earlier API response and never refreshed).
+          if (d.contestName && d.contestName !== existing.contestName) {
+            draftStore.updateDraft(d.id, { contestName: d.contestName });
           }
           // Always refresh type / draftSpeed / draftType on rows that haven't
           // actually transitioned into drafting yet. These fields don't depend
@@ -605,6 +649,66 @@ export function useDraftingPageState() {
     };
   }, [fillingLiveDraftIds]);
 
+  // Live league display name on /drafting cards — Go API writes
+  // drafts/{draftId}/displayName to RTDB at the moment of fill, so the
+  // row label updates within ~100ms of slot filling. Replaces the
+  // REST retry-on-404 path in useLeagueNumberForSlot for live drafts.
+  //
+  // IMPORTANT — subscribe for ALL live drafts (not just filling). The
+  // displayName WRITE fires at the fill transition; if we filter to
+  // 'filling' only, the draft's phase flips to 'drafting' / 'starting'
+  // milliseconds after the write and unmounts our subscription before
+  // onValue delivers. Result: we permanently miss the update for any
+  // draft the user is in when its slot is the 10th joiner. Subscribing
+  // for all live drafts (filling + drafting + pre-start countdown)
+  // costs essentially nothing on Firebase and guarantees delivery.
+  const liveDraftIdsForDisplayName = useMemo(() => {
+    const currentWallet = user?.walletAddress?.toLowerCase();
+    if (!currentWallet) return [] as string[];
+    return localDrafts
+      .filter(d =>
+        d.liveWalletAddress
+        && d.liveWalletAddress.toLowerCase() === currentWallet
+        && (d.phase === 'filling' || d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
+      )
+      .map(d => d.id);
+  }, [localDrafts, user?.walletAddress]);
+
+  // Stable string key — `liveDraftIdsForDisplayName` is a new array
+  // reference on every render of useDraftingPageState (which happens
+  // constantly while the user has a drafting draft, because per-pick
+  // state updates churn `localDrafts`). Without this stable key, the
+  // useEffect cleanup fires on every render → subscription is torn
+  // down before Firebase's onValue has time to deliver the initial
+  // value → displayName push is never received. Caught in the logs
+  // when the rtdb.subscribe/unsubscribe loop showed up with no
+  // rtdb.event ever firing.
+  const liveDraftIdsKey = liveDraftIdsForDisplayName.join(',');
+
+  useEffect(() => {
+    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
+    clientLog('league#', 'mydrafts.subs.effect', { count: ids.length, ids });
+    if (ids.length === 0) return;
+    const unsubs = ids.map((draftId) =>
+      subscribeDraftDisplayName(draftId, (displayName) => {
+        clientLog('league#', 'mydrafts.handler.fired', { draftId, displayName });
+        draftStore.updateDraft(draftId, { contestName: displayName });
+        const m = /^BBB\s*#(\d+)$/i.exec(displayName);
+        if (m) {
+          clientLog('league#', 'mydrafts.handler.parsed', { draftId, n: Number(m[1]) });
+          setLeagueNumberInCache(draftId, Number(m[1]));
+        } else {
+          clientLog('league#', 'mydrafts.handler.no-parse', { draftId, displayName });
+        }
+      }),
+    );
+    return () => {
+      for (const unsub of unsubs) {
+        try { unsub(); } catch { /* ignore */ }
+      }
+    };
+  }, [liveDraftIdsKey]);
+
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;
 
@@ -631,13 +735,45 @@ export function useDraftingPageState() {
       for (const draft of liveDraftsToSync) {
         if (cancelled) return;
 
+        // Always fetch state — completion detection must NEVER be skipped.
+        // The heartbeat guard below only opts out of mid-draft *state*
+        // updates (so we don't fight the active WS connection), but a
+        // completed draft must always be removed from My Drafts so the
+        // next league shows up live.
+        let info;
+        try {
+          info = await draftApi.getDraftInfo(draft.id);
+        } catch (err) {
+          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+          continue;
+        }
+        if (cancelled) return;
+
+        // Early completion exit — bypasses the heartbeat skip so a
+        // freshly-completed draft disappears the instant the next 3s
+        // sync runs, not after the WS heartbeat goes stale.
+        // ALSO adds the id to hiddenDraftIds (persisted in localStorage)
+        // so the next loadLiveDrafts() can't re-add it via the user's
+        // active-token list — completed drafts stay completed.
+        {
+          const totalPicks = (info.draftOrder?.length || 10) * 15;
+          if ((info.pickNumber ?? 0) >= totalPicks) {
+            draftStore.removeDraft(draft.id);
+            setHiddenDraftIds((prev) => {
+              if (prev.has(draft.id)) return prev;
+              const next = new Set(prev);
+              next.add(draft.id);
+              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+              return next;
+            });
+            continue;
+          }
+        }
+
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
         if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
 
         try {
-          const info = await draftApi.getDraftInfo(draft.id);
-          if (cancelled) return;
-
           const fresh = draftStore.getDraft(draft.id) || draft;
           const playerCount = info.draftOrder?.length || 0;
           const hasDraftStarted = playerCount >= 10 && info.pickNumber >= 1;
@@ -980,6 +1116,17 @@ export function useDraftingPageState() {
       d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed',
     );
   }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
+
+  // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
+  // → 804). Within the same speed/year the slot counter increments per
+  // fill, so highest slot = most recently filled = should be at top.
+  // This is deterministic and doesn't depend on the contestName, which
+  // can be stale (backend sometimes returns a fallback "League #{slot}"
+  // before the real DisplayName lands).
+  const slotNumberOf = (d: Draft): number => {
+    const m = /-draft-(\d+)$/.exec(d.id || '');
+    return m ? Number(m[1]) : 0;
+  };
 
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
     if (a.isYourTurn && !b.isYourTurn) return -1;

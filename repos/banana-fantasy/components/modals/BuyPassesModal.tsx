@@ -14,6 +14,9 @@ import { pushNotification } from '@/components/NotificationCenter';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
+import { reportClientError } from '@/lib/clientErrors';
+import { clientLog } from '@/lib/clientLog';
+import { LOG_SOURCES } from '@/lib/logSources';
 import {
   type FlowStep,
   type ModalPhase,
@@ -148,6 +151,8 @@ export function BuyPassesModal({
       });
     }
 
+    clientLog('payment', 'track_purchase_start', { userId, quantity: qty, txHash: hash, paymentMethod });
+
     try {
       const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
         method: 'POST',
@@ -174,6 +179,13 @@ export function BuyPassesModal({
       // counter sync is behind. Log visibly so the user understands their
       // balance will catch up when the backend reconciles.
       console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
+      reportClientError({
+        source: LOG_SOURCES.payment.CARD_PURCHASE_TRACKING_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'buy-drafts',
+        context: { userId, quantity: qty, txHash: hash, paymentMethod },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       pushNotification({
         type: 'system',
         title: 'Pass minted but sync delayed',

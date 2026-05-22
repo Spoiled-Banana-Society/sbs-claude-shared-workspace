@@ -5,6 +5,7 @@ import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { DRAFT_TYPES } from '@/lib/draftRoomConstants';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { useRng, type RngSeedData } from '@/hooks/useRng';
+import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface SlotMachineOverlayProps {
   allReelItems: DraftType[][];
@@ -41,6 +42,12 @@ export function SlotMachineOverlay({
   const targetOffset = landingIndex * itemHeight;
   const isReelStopped = (reelIndex: number) => reelOffsets[reelIndex] >= targetOffset - 1;
   const { verifySpin, isVerified, isVerifying } = useRng();
+  // Resolve slot id → live global league number so the badge always
+  // links to the correct draft's proof page (not a stale -1 cached
+  // league number). Falls back to the slot id while resolving — the
+  // /proof page itself can also resolve, so the link works either way.
+  const liveLeagueNumber = useLeagueNumberForSlot(draftId);
+  const badgeDraftId = liveLeagueNumber != null ? String(liveLeagueNumber) : draftId;
 
   useEffect(() => {
     if (!autoVerifyRng || !rngSeedData || !slotAnimationDone) return;
@@ -153,7 +160,7 @@ export function SlotMachineOverlay({
                   <div className="text-5xl font-black" style={{ color: DRAFT_TYPES[draftType].color, textShadow: `0 0 30px ${DRAFT_TYPES[draftType].color}` }}>
                     JACKPOT!
                   </div>
-                  <VerifiedBadge type="draft-type" draftType="jackpot" size="md" draftId={draftId} />
+                  <VerifiedBadge type="draft-type" draftType="jackpot" size="md" draftId={badgeDraftId} />
                 </div>
                 <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4 max-w-sm mx-auto text-left">
                   <p className="text-red-300 font-bold text-lg mb-3">Skip to the Finals</p>
@@ -167,7 +174,7 @@ export function SlotMachineOverlay({
                   <div className="text-5xl font-black" style={{ color: DRAFT_TYPES[draftType].color, textShadow: `0 0 30px ${DRAFT_TYPES[draftType].color}` }}>
                     HALL OF FAME
                   </div>
-                  <VerifiedBadge type="draft-type" draftType="hof" size="md" draftId={draftId} />
+                  <VerifiedBadge type="draft-type" draftType="hof" size="md" draftId={badgeDraftId} />
                 </div>
                 <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-xl p-4 mb-4 max-w-sm mx-auto text-left">
                   <p className="text-yellow-300 font-bold text-lg mb-3">Bonus Prizes</p>
@@ -178,15 +185,23 @@ export function SlotMachineOverlay({
             ) : (
               <div className="flex items-center justify-center gap-2 mb-2">
                 <p className="text-white/70 text-2xl font-bold">Pro Draft</p>
-                <VerifiedBadge type="draft-type" draftType="pro" size="md" draftId={draftId} />
+                <VerifiedBadge type="draft-type" draftType="pro" size="md" draftId={badgeDraftId} />
               </div>
             )}
+            {/* Always-on trust signal — the VerifiedBadge above is small
+                and easy to miss. This line is the explicit Chainlink VRF
+                callout so users know the result wasn't picked by SBS.
+                Click the Verified pill above for the full Merkle proof. */}
+            <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-emerald-300/90 bg-emerald-500/[0.06] border border-emerald-400/20 rounded-full px-3 py-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Verified by Chainlink VRF · click Verified above for proof</span>
+            </div>
             {rngSeedData && (
               <div className="mt-2 text-xs text-white/60">
                 {isVerifying ? 'Verifying fairness...' : isVerified ? 'Provably fair: verified' : 'Provably fair: pending'}
               </div>
             )}
-            <p className="text-white/40 text-sm">Click anywhere or press X to close</p>
+            <p className="text-white/40 text-sm mt-2">Click anywhere or press X to close</p>
           </div>
         )}
       </div>

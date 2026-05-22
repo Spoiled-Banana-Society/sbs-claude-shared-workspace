@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
@@ -38,13 +39,17 @@ func GetRealTimeDraftInfoForDraft(draftId string) (*RealTimeDraftInfo, error) {
 }
 
 func (info *RealTimeDraftInfo) Update(draftId string) error {
+	// Use Update, not Set — Set would replace the entire `drafts/{draftId}`
+	// node, wiping sibling fields (e.g. `displayName` set by
+	// CreateLeagueDraftStateUponFilling for live league-# updates).
+	// Update only writes the listed keys.
 	realTimeDraftInfoRef := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", draftId))
-	err := realTimeDraftInfoRef.Set(context.TODO(), map[string]interface{}{"numPlayers": 10, "realTimeDraftInfo": info})
+	err := realTimeDraftInfoRef.Update(context.TODO(), map[string]interface{}{"numPlayers": 10, "realTimeDraftInfo": info})
 	if err != nil {
-		fmt.Println("ERROR in updating real time draft info: ", err)
+		fmt.Printf("[league#] rtdb.update.error draftId=%s err=%v\n", draftId, err)
 		return err
 	}
-	fmt.Printf("Real time draft info: %v\n for draft %s has updated the real time draft info\n", info, draftId)
+	fmt.Printf("[league#] rtdb.update.ok draftId=%s pickNumber=%d (Update preserves displayName)\n", draftId, info.CurrentPickNumber)
 	return nil
 }
 
@@ -709,116 +714,271 @@ func FindTokenIdFromOwnerId(ownerId string, users []LeagueUser) string {
 func CloseDraftForAllUsers(draftId string) error {
 	realTimeDraftInfo, err := GetRealTimeDraftInfoForDraft(draftId)
 	if err != nil {
-		fmt.Printf("CloseDraftForAllUsers error (GetRealTimeDraftInfoForDraft): draftId=%s err=%v\n", draftId, err)
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.read_rtdb_failed","error":"%v"}`+"\n", draftId, err)
 		return err
 	}
 
 	if !realTimeDraftInfo.IsDraftComplete {
 		err = errors.New("the draft is not complete so we cannot close it")
-		fmt.Printf("CloseDraftForAllUsers error: draftId=%s isDraftComplete=%v err=%v\n", draftId, realTimeDraftInfo.IsDraftComplete, err)
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.not_complete","isDraftComplete":%v}`+"\n", draftId, realTimeDraftInfo.IsDraftComplete)
 		return err
 	}
 
 	var rosterState RosterState
 	err = utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "rosters", &rosterState)
 	if err != nil {
-		fmt.Printf("CloseDraftForAllUsers error (ReadDocument rosters): draftId=%s err=%v\n", draftId, err)
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.read_rosters_failed","error":"%v"}`+"\n", draftId, err)
+		return err
+	}
+
+	var league League
+	if err := utils.Db.ReadDocument("drafts", draftId, &league); err != nil {
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.read_league_failed","error":"%v"}`+"\n", draftId, err)
 		return err
 	}
 
 	var wg sync.WaitGroup
+	var renderFailures int32
+	var persistFailures int32
+
 	for user, roster := range rosterState.Rosters {
-		if (len(roster.DST) + len(roster.QB) + len(roster.RB) + len(roster.TE) + len(roster.WR)) != 15 {
-			err = fmt.Errorf("this users roster does not have a valid lineup: %s and we are returning", user)
-			fmt.Printf("CloseDraftForAllUsers error: draftId=%s user=%s rosterCount=%d err=%v\n", draftId, user, len(roster.DST)+len(roster.QB)+len(roster.RB)+len(roster.TE)+len(roster.WR), err)
-			return err
+		totalPicks := len(roster.DST) + len(roster.QB) + len(roster.RB) + len(roster.TE) + len(roster.WR)
+		if totalPicks != 15 {
+			// Don't abort the whole close just because one user's roster is malformed —
+			// log it loudly so admin sees it, and keep going so the other 9 users still
+			// get their cards minted.
+			fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","event":"close.invalid_roster","rosterCount":%d}`+"\n", draftId, user, totalPicks)
+			atomic.AddInt32(&persistFailures, 1)
+			continue
 		}
 
-		TokenRoster := TokenRoster{
-			DST: roster.DST,
-			QB:  roster.QB,
-			RB:  roster.RB,
-			TE:  roster.TE,
-			WR:  roster.WR,
-		}
-
-		var league League
-		err = utils.Db.ReadDocument("drafts", draftId, &league)
-		if err != nil {
-			fmt.Printf("CloseDraftForAllUsers error (ReadDocument league): draftId=%s user=%s err=%v\n", draftId, user, err)
-			return err
-		}
+		tokenRoster := TokenRoster{DST: roster.DST, QB: roster.QB, RB: roster.RB, TE: roster.TE, WR: roster.WR}
 
 		tokenId := FindTokenIdFromOwnerId(user, league.CurrentUsers)
 		if tokenId == "" {
-			err = errors.New("could not find the token id for the user")
-			fmt.Printf("CloseDraftForAllUsers error: draftId=%s user=%s err=%v\n", draftId, user, err)
-			return err
+			fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","event":"close.no_token_id"}`+"\n", draftId, user)
+			atomic.AddInt32(&persistFailures, 1)
+			continue
 		}
 
 		token, err := GetCardFromLeagueAndOwner(draftId, user)
 		if err != nil {
-			fmt.Printf("CloseDraftForAllUsers error (GetCardFromLeagueAndOwner): draftId=%s user=%s err=%v\n", draftId, user, err)
-			return err
+			fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","event":"close.get_card_failed","error":"%v"}`+"\n", draftId, user, err)
+			atomic.AddInt32(&persistFailures, 1)
+			continue
 		}
-		token.Roster = &TokenRoster
+		token.Roster = &tokenRoster
 		token.WeekScore = "0"
 		token.SeasonScore = "0"
 
+		// STEP 1 — Persist the roster to Firestore synchronously, BEFORE the
+		// image render call. If anything goes wrong in step 2 (image-gen
+		// timeout, network blip, bad response), the card still has its real
+		// roster data. The 2026-05-13 incident lost a user's entire team
+		// because the in-memory mutation happened before the goroutine and
+		// the goroutine's silent `return` left the Firestore copy stale.
+		if err := persistDraftCardFields(token, league.LeagueId); err != nil {
+			fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","cardId":"%s","event":"close.persist_roster_failed","error":"%v"}`+"\n", draftId, user, token.CardId, err)
+			atomic.AddInt32(&persistFailures, 1)
+			continue
+		}
+
 		wg.Add(1)
-		go func(wg *sync.WaitGroup, token *DraftToken) {
+		go func(token *DraftToken, owner string) {
 			defer wg.Done()
-			reqBody := ImageGeneratorRequest{
-				Card: *token,
-			}
-			body, err := json.Marshal(reqBody)
-			if err != nil {
+			// STEP 2 — Render the image. If this fails after retries, the
+			// card from step 1 is still good (roster + scores intact, just
+			// the default placeholder image). Admin can re-trigger render
+			// without losing roster data.
+			if err := renderAndPersistCardImage(token, league.LeagueId); err != nil {
+				fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","cardId":"%s","event":"close.image_render_failed","error":"%v"}`+"\n", draftId, owner, token.CardId, err)
+				atomic.AddInt32(&renderFailures, 1)
 				return
 			}
-			r, err := http.NewRequest("POST", "https://us-central1-sbs-prod-env.cloudfunctions.net/draft-image-generator", bytes.NewBuffer(body))
-			if err != nil {
-				return
-			}
-			r.Header.Add("Content-Type", "application/json")
-			client := &http.Client{}
-			res, err := client.Do(r)
-			if err != nil {
-				return
-			}
-			defer res.Body.Close()
-			var UpdatedDraftToken DraftToken
-			err = json.NewDecoder(res.Body).Decode(&UpdatedDraftToken)
-			if err != nil {
-				return
-			}
-			metadata := UpdatedDraftToken.ConvertToMetadata()
-			err = utils.Db.CreateOrUpdateDocument("draftTokenMetadata", UpdatedDraftToken.CardId, metadata)
-			if err != nil {
-				return
-			}
-			err = utils.Db.CreateOrUpdateDocument(fmt.Sprintf("drafts/%s/cards", league.LeagueId), UpdatedDraftToken.CardId, UpdatedDraftToken)
-			if err != nil {
-				return
-			}
-			err = utils.Db.CreateOrUpdateDocument("draftTokens", UpdatedDraftToken.CardId, UpdatedDraftToken)
-			if err != nil {
-				return
-			}
-			err = utils.Db.CreateOrUpdateDocument(fmt.Sprintf("owners/%s/usedDraftTokens", UpdatedDraftToken.OwnerId), UpdatedDraftToken.CardId, UpdatedDraftToken)
-			if err != nil {
-				return
-			}
-			fmt.Println("Converted card to metadata and updated with this object: ", *metadata)
-		}(&wg, token)
+			fmt.Printf(`{"severity":"INFO","draftId":"%s","owner":"%s","cardId":"%s","event":"close.card_done"}`+"\n", draftId, owner, token.CardId)
+		}(token, user)
 	}
 
 	wg.Wait()
+
+	totalFailures := atomic.LoadInt32(&persistFailures) + atomic.LoadInt32(&renderFailures)
+	if totalFailures > 0 {
+		// Loud structured ERROR — picked up by the cloud-error-sync cron and
+		// surfaced in the admin Server Errors badge.
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.partial_failure","persistFailures":%d,"renderFailures":%d}`+"\n", draftId, atomic.LoadInt32(&persistFailures), atomic.LoadInt32(&renderFailures))
+	} else {
+		fmt.Printf(`{"severity":"INFO","draftId":"%s","event":"close.complete","cards":%d}`+"\n", draftId, len(rosterState.Rosters))
+	}
+
 	realTimeDraftInfo.IsDraftClosed = true
-	err = realTimeDraftInfo.Update(draftId)
-	if err != nil {
-		fmt.Printf("CloseDraftForAllUsers error (realTimeDraftInfo.Update): draftId=%s err=%v\n", draftId, err)
+	if err := realTimeDraftInfo.Update(draftId); err != nil {
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","event":"close.update_rtdb_failed","error":"%v"}`+"\n", draftId, err)
 		return err
 	}
 
+	return nil
+}
+
+// persistDraftCardFields writes a DraftToken to all 4 collections that hold
+// per-card data: draftTokenMetadata, drafts/{leagueId}/cards, draftTokens,
+// and owners/{ownerId}/usedDraftTokens. Each write is wrapped so a partial
+// failure produces an error with the specific collection that failed.
+//
+// Callers should treat this as best-effort-atomic: if it returns an error,
+// at least one collection didn't get updated, and the card may be
+// inconsistent across the 4 stores. The caller should log and (ideally)
+// retry from an admin path.
+func persistDraftCardFields(token *DraftToken, leagueId string) error {
+	if token == nil {
+		return errors.New("nil token")
+	}
+	metadata := token.ConvertToMetadata()
+	if err := utils.Db.CreateOrUpdateDocument("draftTokenMetadata", token.CardId, metadata); err != nil {
+		return fmt.Errorf("draftTokenMetadata write: %w", err)
+	}
+	if err := utils.Db.CreateOrUpdateDocument(fmt.Sprintf("drafts/%s/cards", leagueId), token.CardId, *token); err != nil {
+		return fmt.Errorf("drafts/%s/cards write: %w", leagueId, err)
+	}
+	if err := utils.Db.CreateOrUpdateDocument("draftTokens", token.CardId, *token); err != nil {
+		return fmt.Errorf("draftTokens write: %w", err)
+	}
+	if err := utils.Db.CreateOrUpdateDocument(fmt.Sprintf("owners/%s/usedDraftTokens", token.OwnerId), token.CardId, *token); err != nil {
+		return fmt.Errorf("owners/%s/usedDraftTokens write: %w", token.OwnerId, err)
+	}
+	return nil
+}
+
+// imageGeneratorURL returns the image generator endpoint, falling back to
+// the prod Cloud Function when no override is set. This indirection lets us
+// flip staging to its own image generator without a code deploy — set
+// IMAGE_GENERATOR_URL on the Cloud Run service.
+func imageGeneratorURL() string {
+	return utils.GetenvOrDefault(
+		"IMAGE_GENERATOR_URL",
+		"https://us-central1-sbs-prod-env.cloudfunctions.net/draft-image-generator",
+	)
+}
+
+// renderCardImage POSTs the token to the image-generator Cloud Function and
+// returns the updated DraftToken (with the rendered ImageUrl set). Bounded
+// timeout, descriptive errors so the caller can log specifics.
+func renderCardImage(token *DraftToken) (*DraftToken, error) {
+	body, err := json.Marshal(ImageGeneratorRequest{Card: *token})
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+	req, err := http.NewRequest("POST", imageGeneratorURL(), bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Add("Content-Type", "application/json")
+	client := &http.Client{Timeout: 60 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("http call: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("image generator returned HTTP %d", res.StatusCode)
+	}
+	var updated DraftToken
+	if err := json.NewDecoder(res.Body).Decode(&updated); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if updated.CardId == "" {
+		// Defensive: the response should at minimum echo the cardId. If it
+		// doesn't, persisting would corrupt the card record.
+		return nil, errors.New("image generator response missing cardId")
+	}
+	return &updated, nil
+}
+
+// renderAndPersistCardImage calls the image generator with retries and
+// persists the updated card to all 4 collections on success. Backoff
+// schedule covers Cloud Function cold starts (~10s) and brief transient
+// outages (~30s) — anything longer than that and admin uses the manual
+// Recover Card button. STEP 1 already saved the roster, so a render
+// failure here is a degraded image, never lost team data.
+//
+// Retry budget: 5 attempts over ~44 seconds total (0s, 1s, 3s, 10s, 30s).
+// The loop exits the moment any attempt succeeds — pays nothing when
+// image-gen is healthy.
+func renderAndPersistCardImage(token *DraftToken, leagueId string) error {
+	var lastErr error
+	backoffs := []time.Duration{
+		0,
+		1 * time.Second,
+		3 * time.Second,
+		10 * time.Second,
+		30 * time.Second,
+	}
+	for attempt := 1; attempt <= len(backoffs); attempt++ {
+		if backoffs[attempt-1] > 0 {
+			time.Sleep(backoffs[attempt-1])
+		}
+		updated, err := renderCardImage(token)
+		if err == nil {
+			if err := persistDraftCardFields(updated, leagueId); err != nil {
+				// Render worked but write failed — log the specific step and
+				// retry the whole thing (cheap idempotent re-render).
+				lastErr = fmt.Errorf("persist updated card: %w", err)
+				fmt.Printf(`{"severity":"WARNING","cardId":"%s","attempt":%d,"event":"close.persist_after_render_failed","error":"%v"}`+"\n", token.CardId, attempt, err)
+				continue
+			}
+			return nil
+		}
+		lastErr = err
+		fmt.Printf(`{"severity":"WARNING","cardId":"%s","attempt":%d,"event":"close.image_render_retry","error":"%v"}`+"\n", token.CardId, attempt, err)
+	}
+	return fmt.Errorf("image render failed after %d attempts: %w", len(backoffs), lastErr)
+}
+
+// RecoverCardForOwner re-runs the close-draft per-card flow for a single
+// (draftId, ownerId) — useful when one user's card got lost in a partial
+// close failure. Reads the user's roster from state, re-builds the token,
+// persists the roster, then renders + persists the image. Safe to call
+// repeatedly: each step is idempotent.
+func RecoverCardForOwner(draftId, ownerId string) error {
+	var rosterState RosterState
+	if err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "rosters", &rosterState); err != nil {
+		return fmt.Errorf("read rosters: %w", err)
+	}
+	roster, ok := rosterState.Rosters[ownerId]
+	if !ok || roster == nil {
+		return fmt.Errorf("no roster for owner %s in draft %s", ownerId, draftId)
+	}
+	totalPicks := len(roster.DST) + len(roster.QB) + len(roster.RB) + len(roster.TE) + len(roster.WR)
+	if totalPicks != 15 {
+		return fmt.Errorf("invalid roster: %d picks (expected 15)", totalPicks)
+	}
+
+	var league League
+	if err := utils.Db.ReadDocument("drafts", draftId, &league); err != nil {
+		return fmt.Errorf("read league: %w", err)
+	}
+	tokenId := FindTokenIdFromOwnerId(ownerId, league.CurrentUsers)
+	if tokenId == "" {
+		return fmt.Errorf("no tokenId for owner %s in league %s", ownerId, draftId)
+	}
+
+	token, err := GetCardFromLeagueAndOwner(draftId, ownerId)
+	if err != nil {
+		return fmt.Errorf("get card: %w", err)
+	}
+	token.Roster = &TokenRoster{DST: roster.DST, QB: roster.QB, RB: roster.RB, TE: roster.TE, WR: roster.WR}
+	token.WeekScore = "0"
+	token.SeasonScore = "0"
+
+	if err := persistDraftCardFields(token, league.LeagueId); err != nil {
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","cardId":"%s","event":"recover.persist_failed","error":"%v"}`+"\n", draftId, ownerId, token.CardId, err)
+		return fmt.Errorf("persist roster: %w", err)
+	}
+
+	if err := renderAndPersistCardImage(token, league.LeagueId); err != nil {
+		fmt.Printf(`{"severity":"ERROR","draftId":"%s","owner":"%s","cardId":"%s","event":"recover.render_failed","error":"%v"}`+"\n", draftId, ownerId, token.CardId, err)
+		return fmt.Errorf("render image: %w", err)
+	}
+
+	fmt.Printf(`{"severity":"INFO","draftId":"%s","owner":"%s","cardId":"%s","event":"recover.card_done"}`+"\n", draftId, ownerId, token.CardId)
 	return nil
 }

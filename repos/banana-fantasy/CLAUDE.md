@@ -109,6 +109,7 @@ gcloud run deploy sbs-drafts-server-staging --source /Users/borisvagner/SBS-Foot
 - **Before pushing, run `git diff --stat HEAD~1` to verify** you're only changing the files you intended.
 
 ## Troubleshooting
+- **Debugging a reported bug:** Logs live in the admin Logs tab + via `node scripts/logs.mjs`. See `docs/LOGGING.md` for the full system (sources, export, CLI).
 - **Draft server 503:** Usually Redis unreachable. Check: Redis instance READY, VPC connector attached, `REDIS_URL` env var.
 - **gcloud permission errors:** Firebase SA can deploy Cloud Run but CANNOT create infra (Redis, VPC). Use GCP Console.
 - **Build errors:** Don't run `npm run build` while dev server is up. Fix: stop server, `rm -rf .next`, restart.

@@ -70,14 +70,22 @@ type Config struct {
 	Variant string
 }
 
-// VariantCommitReveal / VariantVRF / VariantVRFCommit are the legal
-// Variant values. VariantVRFCommit is the hybrid that uses VRF for
-// entropy AND a SBS-side salt commit/reveal so positions stay hidden
-// from the public during the batch.
+// VariantCommitReveal / VariantVRF / VariantVRFCommit / VariantVRFCommitMerkle
+// are the legal Variant values.
+//
+//   - VariantVRFCommit (current default for legacy batches): VRF + salt
+//     commit-reveal. Positions hidden from public during the batch.
+//   - VariantVRFCommitMerkle (new, this commit): same primitives PLUS a
+//     Merkle root commit on-chain after VRF fulfills. Every draft in the
+//     batch receives a Merkle proof at slot reveal — instant per-draft
+//     verification instead of "wait until batch closes". Targets a
+//     separate contract address from VariantVRFCommit, configured in
+//     system_config/batchProofMerkle.
 const (
-	VariantCommitReveal = "commit-reveal"
-	VariantVRF          = "vrf"
-	VariantVRFCommit    = "vrf-commit"
+	VariantCommitReveal     = "commit-reveal"
+	VariantVRF              = "vrf"
+	VariantVRFCommit        = "vrf-commit"
+	VariantVRFCommitMerkle  = "vrf-commit-merkle"
 )
 
 // ErrNotConfigured is returned when a critical setting (contract address,

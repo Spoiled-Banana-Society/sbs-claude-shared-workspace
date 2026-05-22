@@ -76,9 +76,29 @@ export interface ApiDraftToken {
   [k: string]: unknown;
 }
 
-function fallbackUsernameFromWallet(walletAddress: string): string {
-  const a = normalizeWalletAddress(walletAddress);
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+/**
+ * The default display name shown when a user hasn't chosen one — the
+ * truncated wallet address (`0x438.72e0`), the web3-standard convention.
+ * It's unique per user, unlike a short branded handle.
+ */
+export function defaultDisplayName(walletAddress: string): string {
+  const addr = normalizeWalletAddress(walletAddress);
+  return addr.length >= 11 ? `${addr.slice(0, 5)}.${addr.slice(-4)}` : addr;
+}
+
+/**
+ * True when a stored display name isn't a real, user-chosen name —
+ * empty, a leftover test placeholder, or a raw wallet address. Such
+ * names get replaced with `defaultDisplayName` for display.
+ */
+function isPlaceholderName(name: string | undefined | null, walletAddress: string): boolean {
+  if (!name) return true;
+  const t = name.trim();
+  if (t === '') return true;
+  if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
+  if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true; // raw / truncated wallet
+  if (t.toLowerCase() === normalizeWalletAddress(walletAddress).toLowerCase()) return true;
+  return false;
 }
 
 /**
@@ -90,7 +110,9 @@ function fallbackUsernameFromWallet(walletAddress: string): string {
 export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProfile): User {
   return {
     id: normalizeWalletAddress(walletAddress),
-    username: owner.pfp?.displayName || fallbackUsernameFromWallet(walletAddress),
+    username: isPlaceholderName(owner.pfp?.displayName, walletAddress)
+      ? defaultDisplayName(walletAddress)
+      : (owner.pfp as { displayName: string }).displayName,
     walletAddress: normalizeWalletAddress(walletAddress),
     loginMethod: 'wallet',
     profilePicture: owner.pfp?.imageUrl,

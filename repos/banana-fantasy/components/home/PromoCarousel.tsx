@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
@@ -34,7 +33,6 @@ function useVisibleCount() {
 }
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode }: PromoCarouselProps) {
-  const router = useRouter();
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder } = useAuth();
   const VISIBLE_COUNT = useVisibleCount();
 
@@ -53,7 +51,6 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
   }, [promos, selectedPromo]);
   const [isTransitioning, setIsTransitioning] = useState(true);
-  const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number; promoType?: string }>({ show: false, count: 0 });
   const [claimedPromos, setClaimedPromos] = useState<Set<string>>(new Set());
   const [_timerTick, setTimerTick] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,31 +161,24 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
       reservePromoDraftType(promo.type, count);
     }
 
-    // Use real backend claim if available
+    // Use real backend claim if available — celebration modal fires
+    // centrally from usePromos.claimPromo via ClaimCelebrationContext.
     if (claimPromo) {
       const result = await claimPromo(promo.id);
-      if (result instanceof Error) {
-        return;
-      }
-      // claimPromo handles optimistic updates and user refresh internally
-      if (!isModalOpen) {
-        setClaimSuccess({ show: true, count: result?.spinsAdded ?? count, promoType: promo.type });
-      }
+      if (result instanceof Error) return;
       return;
     }
 
-    // Fallback: local-only claim (no backend)
+    // Fallback: local-only claim (no backend). Still mark claimed
+    // locally + bump balance optimistically; no celebration modal here
+    // because we'd be lying about a backend reward.
     setClaimedPromos(prev => new Set([...Array.from(prev), promo.id]));
-
-    if (!isModalOpen) {
-      if (user) {
-        if (promo.type === 'buy-bonus') {
-          updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
-        } else {
-          updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
-        }
+    if (user) {
+      if (promo.type === 'buy-bonus') {
+        updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
+      } else {
+        updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
       }
-      setClaimSuccess({ show: true, count, promoType: promo.type });
     }
   };
 
@@ -446,74 +436,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
         onVerifyTweet={onVerifyTweet}
         onGenerateReferralCode={onGenerateReferralCode}
       />
-
-      {/* Claim Success Popup - Apple-style */}
-      {claimSuccess.show && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50">
-          <div
-            className="relative overflow-hidden rounded-[28px] p-[1px] animate-slide-up"
-            style={{
-              background: 'linear-gradient(145deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.05) 50%, rgba(251,191,36,0.2) 100%)',
-            }}
-          >
-            <div
-              className="relative bg-[#1c1c1e] rounded-[27px] px-10 py-9 text-center min-w-[300px]"
-              style={{
-                boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)',
-                fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif'
-              }}
-            >
-              {/* Subtle glow behind emoji */}
-              <div className="absolute top-6 left-1/2 -translate-x-1/2 w-20 h-20 bg-banana/20 rounded-full blur-2xl" />
-
-              <div className="relative text-5xl mb-5">🎉</div>
-
-              <p className="text-[#86868b] text-sm font-medium tracking-wide uppercase mb-2">
-                Claimed
-              </p>
-
-              <h3 className="text-[26px] font-semibold text-white tracking-tight mb-7">
-                {claimSuccess.promoType === 'buy-bonus'
-                  ? `${claimSuccess.count} Free ${claimSuccess.count === 1 ? 'Draft' : 'Drafts'}`
-                  : `${claimSuccess.count} Free ${claimSuccess.count === 1 ? 'Spin' : 'Spins'}`}
-              </h3>
-
-              <div className="flex flex-col gap-3">
-                {claimSuccess.promoType === 'buy-bonus' ? (
-                  <button
-                    onClick={() => {
-                      setClaimSuccess({ show: false, count: 0 });
-                      router.push('/drafting');
-                    }}
-                    className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl
-                      hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
-                  >
-                    Go Draft <span className="text-lg">🏈</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setClaimSuccess({ show: false, count: 0 });
-                      router.push('/banana-wheel');
-                    }}
-                    className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl
-                      hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
-                  >
-                    Spin the Wheel <span className="text-lg">🎡</span>
-                  </button>
-                )}
-                <button
-                  onClick={() => setClaimSuccess({ show: false, count: 0 })}
-                  className="w-full py-3 text-[#86868b] font-medium rounded-xl
-                    hover:text-white hover:bg-white/5 active:scale-[0.98] transition-all duration-150"
-                >
-                  Maybe Later
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* The "Claimed" celebration modal used to render here inline.
+          It's now centralized in ClaimCelebrationProvider (app/providers.tsx)
+          + fired from usePromos.claimPromo on success, so every claim
+          path across the app produces the same banana-shower celebration. */}
     </div>
   );
 }

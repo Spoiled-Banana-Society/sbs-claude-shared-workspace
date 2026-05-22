@@ -116,6 +116,12 @@ export function VerifiedBadge({ type: _type, draftType: rawDraftType = 'pro', si
           ref={buttonRef}
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
+          // Even when non-interactive (no draftId → no proof page to
+          // link to), stop clicks from bubbling to a parent row's
+          // onClick. Without this, clicking the Verified pill inside a
+          // DraftRow would trigger 'enter draft' instead of just
+          // hovering for the tooltip.
+          onClick={(e) => e.stopPropagation()}
           className={className}
           aria-label="Verified — provably fair distribution"
         >

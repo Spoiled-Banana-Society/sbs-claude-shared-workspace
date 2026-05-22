@@ -27,10 +27,10 @@ interface FeedResponse {
 
 const BASESCAN_TX = (h: string) => `https://basescan.org/tx/${h.startsWith('0x') ? h : '0x' + h}`;
 
-const LEVEL_COLORS: Record<string, { text: string; dot: string }> = {
-  Jackpot: { text: 'text-red-400', dot: 'bg-red-400' },
-  'Hall of Fame': { text: 'text-hof', dot: 'bg-[#D4AF37]' },
-  Pro: { text: 'text-purple-400', dot: 'bg-purple-400' },
+const LEVEL_COLORS: Record<string, { color: string; label: string }> = {
+  Jackpot: { color: '#ef4444', label: 'JACKPOT' },
+  'Hall of Fame': { color: '#D4AF37', label: 'HOF' },
+  Pro: { color: '#a855f7', label: 'PRO' },
 };
 
 /**
@@ -88,26 +88,29 @@ export default function ProofFeedPage() {
   }, []);
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-3xl mx-auto space-y-6">
-      <div>
-        <Link href="/drafting" className="text-xs text-white/50 hover:text-white/80">← Back</Link>
-        <h1 className="text-2xl font-semibold text-white mt-2">Verified drafts · live feed</h1>
-        <p className="text-sm text-white/60 mt-1">
-          Every draft below was assigned its type by Chainlink VRF before any draft filled.
-          Click <span className="text-emerald-300 font-medium">Verified ✓</span> on any row to see its proof.
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+      <div className="mb-6">
+        <Link href="/drafting" className="text-banana hover:underline text-sm">← Drafting</Link>
+        <h1 className="text-[28px] font-semibold text-white tracking-tight mt-2">Public draft feed</h1>
+        <p className="text-white/60 text-sm mt-1">
+          Every draft on Banana Best Ball, publicly verifiable. Click any row to see the cryptographic proof.
         </p>
       </div>
 
+      {error && (
+        <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-300 text-sm mb-6">{error}</div>
+      )}
+
       {round && (
-        <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5 space-y-3">
+        <section className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5 mb-6 space-y-3">
           <div className="flex items-center gap-2">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
               On-chain commit · live
             </h2>
           </div>
-          <p className="text-xs text-white/55 leading-relaxed">
-            The randomization for all upcoming drafts is committed on Base. Anyone can read it directly from the contract — no SBS server involved.
+          <p className="text-xs text-white/60 leading-relaxed">
+            All draft types for the upcoming round were locked on Base mainnet before any draft happened. Click any tx to verify on BaseScan — no SBS server involved.
           </p>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
             {round.merkleRoot && (
@@ -137,47 +140,46 @@ export default function ProofFeedPage() {
               </>
             )}
           </dl>
+          <p className="text-[11px] text-white/40">
+            {drafts.length.toLocaleString()} draft{drafts.length === 1 ? '' : 's'} verified against the root above.
+          </p>
         </section>
       )}
 
-      <section>
-        {error && (
-          <p className="text-xs text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-3">{error}</p>
-        )}
+      <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md overflow-hidden">
         {loading && drafts.length === 0 && (
-          <p className="text-xs text-white/50">Loading…</p>
+          <div className="p-8 text-white/40 text-sm text-center">Loading…</div>
         )}
         {!loading && drafts.length === 0 && !error && (
-          <p className="text-xs text-white/50">No drafts have filled yet.</p>
+          <div className="p-8 text-white/40 text-sm text-center">No drafts have filled yet.</div>
         )}
         {drafts.length > 0 && (
-          <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/10 bg-white/[0.02] overflow-hidden">
-            {drafts.map((d) => {
-              const level = d.level ?? 'Pro';
-              const colors = LEVEL_COLORS[level];
-              return (
-                <li key={d.draftId} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.03] transition-colors">
-                  <div className="min-w-0 flex items-center gap-3">
-                    <span className={`inline-block w-1.5 h-1.5 rounded-full ${colors.dot}`} />
-                    <span className="text-white font-medium text-sm tabular-nums shrink-0">
-                      {formatLeagueName(d.draftNumber)}
-                    </span>
-                    <span className={`${colors.text} text-[12px] font-semibold uppercase tracking-wider`}>
-                      {level}
-                    </span>
-                  </div>
-                  <Link
-                    href={`/proof/${d.draftId}`}
-                    className="inline-flex items-center gap-1 text-emerald-300 hover:text-emerald-200 text-[11px] font-medium shrink-0"
-                  >
-                    Verified ✓
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
+          <table className="w-full text-[12px]">
+            <thead className="bg-white/5 text-white/40 uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="text-left px-4 py-2.5">League</th>
+                <th className="text-left px-4 py-2.5">Type</th>
+                <th className="text-right px-4 py-2.5">Proof</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((d) => {
+                const level = d.level ?? 'Pro';
+                const colors = LEVEL_COLORS[level];
+                return (
+                  <tr key={d.draftId} className="border-t border-white/5 hover:bg-white/5">
+                    <td className="px-4 py-2 text-white/80">{formatLeagueName(d.draftNumber)}</td>
+                    <td className="px-4 py-2 font-semibold" style={{ color: colors.color }}>{colors.label}</td>
+                    <td className="px-4 py-2 text-right">
+                      <Link href={`/proof/${d.draftId}`} className="text-banana hover:underline">Verify →</Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-      </section>
+      </div>
     </div>
   );
 }

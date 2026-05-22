@@ -6,8 +6,9 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { fetchRecentErrors } from '@/lib/errorEvents';
+import { isTestNoiseError } from '@/lib/logSources';
 import { listConversations } from '@/lib/crispApi';
 import { getRequestId } from '@/lib/requestId';
 import { logger } from '@/lib/logger';
@@ -17,8 +18,7 @@ import { logger } from '@/lib/logger';
 // to 0 (or omit) to count everything. `support` and `withdrawals` are
 // state-driven (unread / pending) and ignore `since`.
 interface Since {
-  errors?: number;
-  sentry?: number;
+  logs?: number;
   kyc?: number;
   offramp?: number;
   onramp?: number;
@@ -28,8 +28,7 @@ interface Since {
 
 export interface NotificationCounts {
   support: number;       // Crisp unread conversations
-  errors: number;        // v2_error_events since `errors` (important pattern matches)
-  sentry: number;        // unresolved Sentry issues seen since `sentry`
+  logs: number;          // important v2_error_events + unresolved Sentry issues since `logs`
   kyc: number;           // kyc_attempts in review states since `kyc`
   offramp: number;       // offramp_attempts with failure status since `offramp`
   onramp: number;        // onramp_attempts tx_failed since `onramp`
@@ -89,6 +88,11 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   // doc-size error logged loudly to Cloud Logging but never reached
   // admin because there was no Go→admin bridge.
   /^backend\./i,
+  // Legacy Go bridge format (`go:{service}/{revision}`). Older entries
+  // and any future writer that hasn't been updated to the new
+  // `backend.api.error` shape still light up the badge — better to be
+  // noisy than miss a real outage. Added 2026-05-17.
+  /^go:/i,
 ];
 
 function isImportantError(source: string | undefined): boolean {
@@ -128,8 +132,8 @@ export async function GET(req: Request) {
       drafts,
     ] = await Promise.all([
       countSupport(),
-      countErrors(since.errors ?? 0),
-      countSentryUnresolved(since.sentry ?? 0),
+      countErrors(since.logs ?? 0),
+      countSentryUnresolved(since.logs ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
       countOnramp(db, since.onramp ?? 0),
@@ -138,8 +142,10 @@ export async function GET(req: Request) {
       countStuckDrafts(db, stuckBefore),
     ]);
 
+    // The Logs tab merges server errors + Sentry issues into one feed,
+    // so the badge is their combined count.
     const counts: NotificationCounts = {
-      support, errors, sentry, kyc, offramp, onramp, withdrawals, purchases, drafts,
+      support, logs: errors + sentry, kyc, offramp, onramp, withdrawals, purchases, drafts,
     };
 
     logger.info('admin.notif_counts.ok', {
@@ -196,6 +202,9 @@ async function countErrors(since: number): Promise<number> {
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
+      // Automated-test traffic (fake draft ids / wallets) is real 500s
+      // but not user-facing — never badge it.
+      if (isTestNoiseError(r)) return false;
       // Only "important" errors (real bugs / user-money / ops issues)
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.
@@ -289,23 +298,89 @@ async function countFailedPurchases(db: Firestore, since: number): Promise<numbe
 }
 
 async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<number> {
-  // Two distinct stall modes both flow into the same `drafts` badge:
+  // Detect stuck drafts via the REAL schema. The earlier version
+  // queried `drafts.status` but that field doesn't exist on the
+  // actual `drafts/{id}` docs (they only carry league metadata —
+  // ADP, DraftType, CurrentUsers, etc). That query silently
+  // returned zero forever, which is why draft 808's pick-49 freeze
+  // on 2026-05-17 never lit up the admin badge.
   //
-  // 1. Lobby never filled: status in {filling}, ≥1 player joined,
-  //    sat there >24h. (stuckBeforeIso = now - 24h)
-  // 2. Active draft stalled: status in {in_progress, drafting, active},
-  //    last pick (or updatedAt) older than 5 minutes. This is the
-  //    signal that would catch a WS-401-frozen draft like today's.
-  const FILLING = ['pending', 'waiting', 'lobby', 'filling'];
-  const ACTIVE = ['active', 'in_progress', 'drafting'];
-  const stalledBeforeMs = Date.now() - 5 * 60 * 1000;
-  const stalledBeforeIso = new Date(stalledBeforeMs).toISOString();
-  const collections = ['drafts', 'v2_drafts', 'draftRooms'];
+  // New detection uses the source of truth that's actually written
+  // every pick: RTDB `drafts/{leagueId}/realTimeDraftInfo.PickEndTime`
+  // is updated each time the next pick's timer starts. If now is
+  // more than 60s past that timestamp AND the draft isn't complete,
+  // the draft is genuinely stuck — the timer should have advanced.
+  //
+  // We bound the work by reading the draftTracker doc to know how
+  // many active draft ids exist, then point-checking each one's
+  // RTDB realTimeDraftInfo. Cheap: ~one RTDB read per active draft.
+  const stalledBeforeMs = Date.now() / 1000 - 60; // PickEndTime is unix seconds, allow 60s grace
   let total = 0;
+
+  try {
+    // Tracker tells us the highest in-use draft id per (year, speed).
+    // We scan back a small window so finished older drafts don't
+    // accidentally count — RecoverActiveDrafts uses the same pattern.
+    const trackerDoc = await db.collection('drafts').doc('draftTracker').get();
+    if (!trackerDoc.exists) return 0;
+    const tracker = trackerDoc.data() || {};
+    const liveCount = Number(tracker.currentLiveDraftCount || 0);
+    const slowCount = Number(tracker.currentScheduledDraftCount || 0);
+
+    // Look back 20 drafts per speed — fast drafts complete in ~25 min
+    // so anything that started in the last few hours is in this range.
+    // Older drafts are either done (caught by IsDraftComplete in RTDB)
+    // or genuinely abandoned (no badge needed, admin can scan manually).
+    const LOOKBACK = 20;
+    const ids: string[] = [];
+    for (let n = Math.max(1, liveCount - LOOKBACK); n <= liveCount; n++) {
+      ids.push(`2024-fast-draft-${n}`);
+      ids.push(`2025-fast-draft-${n}`);
+    }
+    for (let n = Math.max(1, slowCount - LOOKBACK); n <= slowCount; n++) {
+      ids.push(`2024-slow-draft-${n}`);
+      ids.push(`2025-slow-draft-${n}`);
+    }
+
+    // Use RTDB realTimeDraftInfo as the freshness check. We hit
+    // Firestore state/info as a fallback for older drafts whose RTDB
+    // entry may have aged out — both writes happen on every pick.
+    const rtdb = getAdminDatabase();
+    const results = await Promise.all(
+      ids.map(async (draftId) => {
+        try {
+          const snap = await rtdb.ref(`drafts/${draftId}/realTimeDraftInfo`).get();
+          if (!snap.exists()) return false;
+          const rt = snap.val() as {
+            IsDraftComplete?: boolean;
+            CurrentPickNumber?: number;
+            PickEndTime?: number;
+          };
+          if (rt.IsDraftComplete) return false;
+          if (!rt.PickEndTime || rt.PickEndTime <= 0) return false;
+          if ((rt.CurrentPickNumber ?? 0) < 1) return false;
+          if ((rt.CurrentPickNumber ?? 0) > 150) return false;
+          return rt.PickEndTime < stalledBeforeMs;
+        } catch {
+          return false;
+        }
+      }),
+    );
+    total = results.filter(Boolean).length;
+  } catch (err) {
+    logger.warn('countStuckDrafts.failed', { err: err instanceof Error ? err.message : String(err) });
+    return 0;
+  }
+
+  // Pre-existing lobby-stuck check (≥1 joiner, sat >24h) — keep the
+  // collection-scan version since lobby docs DO have a status field
+  // in the v2_drafts / draftRooms collections. Silent-fail per
+  // collection so a schema mismatch in one doesn't kill the others.
+  const FILLING = ['pending', 'waiting', 'lobby', 'filling'];
+  const lobbyCollections = ['v2_drafts', 'draftRooms'];
   await Promise.all(
-    collections.map(async (col) => {
+    lobbyCollections.map(async (col) => {
       try {
-        // Mode 1: stuck filling lobby
         const fillingSnap = await db
           .collection(col)
           .where('status', 'in', FILLING)
@@ -320,31 +395,10 @@ async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<
           if (!createdIso) continue;
           if (createdIso < stuckBeforeIso) total += 1;
         }
-      } catch { /* schema mismatch — skip collection */ }
-
-      try {
-        // Mode 2: active draft with no recent activity
-        const activeSnap = await db
-          .collection(col)
-          .where('status', 'in', ACTIVE)
-          .limit(200)
-          .get();
-        for (const d of activeSnap.docs) {
-          const data = d.data();
-          // updatedAt / lastPickAt / lastActivityAt — pick whichever
-          // the draft writes. If none exists, fall back to createdAt
-          // (catches drafts that started but never advanced).
-          const recencyIso = toIsoString(data.updatedAt)
-            ?? toIsoString(data.lastPickAt)
-            ?? toIsoString(data.lastActivityAt)
-            ?? toIsoString(data.startedAt)
-            ?? toIsoString(data.createdAt);
-          if (!recencyIso) continue;
-          if (recencyIso < stalledBeforeIso) total += 1;
-        }
-      } catch { /* schema mismatch — skip collection */ }
+      } catch { /* schema mismatch — skip */ }
     }),
   );
+
   return total;
 }
 

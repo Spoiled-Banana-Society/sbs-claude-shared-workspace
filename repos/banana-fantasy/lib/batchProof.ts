@@ -36,10 +36,27 @@ export interface DraftLocator {
 }
 
 /**
- * Parse a draft id like "2024-fast-draft-164" or "2024-slow-draft-12" into
- * the global draft number. Returns null if unparseable.
+ * Parse a draft id into the global draft (league) number.
+ *
+ * Accepts three formats:
+ *   - "2024-fast-draft-164" — slot id, but ONLY safe when slot index ==
+ *     global league number (fast/slow counters can desync from the
+ *     global FilledLeaguesCount over time)
+ *   - "league-801" — explicit global league number (preferred)
+ *   - "801" — bare global league number (preferred)
+ *
+ * Returns null if unparseable.
  */
 export function parseDraftNumber(draftId: string): number | null {
+  // Bare number or "league-N" form — direct global number.
+  const direct = /^(?:league-)?(\d+)$/.exec(draftId);
+  if (direct) {
+    const n = Number(direct[1]);
+    return Number.isFinite(n) && n >= 1 ? n : null;
+  }
+  // Legacy slot-id form. Note: for drafts where the per-speed slot
+  // counter has desynced from the global counter (post-2024 batches),
+  // the returned number will be WRONG. Prefer the bare-number form.
   const match = /draft-(\d+)$/.exec(draftId);
   if (!match) return null;
   const n = Number(match[1]);

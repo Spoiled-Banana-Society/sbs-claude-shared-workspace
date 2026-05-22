@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { subscribeValue, isFirebaseAvailable } from '@/lib/api/firebase';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 
 // ==================== TYPES ====================
@@ -95,6 +97,12 @@ export function useRealTimeDraftInfo(
     const timeoutId = setTimeout(() => {
       if (!data) {
         console.warn('[Firebase RTDB] No data received within 15s — marking as error for WS fallback');
+        reportClientError({
+          source: LOG_SOURCES.draft.FIREBASE_RTDB_TIMEOUT,
+          message: 'No Firebase RTDB data received within 15s',
+          route: 'useRealTimeDraftInfo',
+          context: { draftId, path },
+        });
         setHasError(true);
       }
     }, 15000);
@@ -142,6 +150,13 @@ export function useRealTimeDraftInfo(
         // Firebase permission_denied or other errors — signal WS fallback
         clearTimeout(timeoutId);
         console.error('[Firebase RTDB] Subscription error:', error.message);
+        reportClientError({
+          source: LOG_SOURCES.draft.FIREBASE_RTDB_PERMISSION_DENIED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'useRealTimeDraftInfo',
+          context: { draftId, path },
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         setHasError(true);
         setIsListening(false);
       },

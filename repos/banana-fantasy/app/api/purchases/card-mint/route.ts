@@ -26,6 +26,7 @@ import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const USERS_COLLECTION = 'v2_users';
 const FAILED_MINTS_COLLECTION = 'failed_mints';
@@ -379,6 +380,10 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('card-mint.unhandled', { err: (err as Error).message });
+    logger.error(LOG_SOURCES.payment.MINT_FAILED, {
+      err: (err as Error).message,
+      stack: (err as Error).stack,
+    });
     return jsonError((err as Error).message || 'Internal Server Error', 500);
   }
 }

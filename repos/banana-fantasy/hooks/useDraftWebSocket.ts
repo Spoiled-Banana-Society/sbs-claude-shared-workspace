@@ -3,6 +3,8 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getDraftServerUrl } from '@/lib/staging';
 import { reportClientError } from '@/lib/clientErrors';
+import { clientLog } from '@/lib/clientLog';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 
 // ==================== PAYLOAD TYPES ====================
@@ -208,6 +210,14 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
         token = await tokenFn();
       } catch (err) {
         console.warn('[ws] failed to get access token:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.WS_TOKEN_FETCH_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletAddress,
+          context: { draftName },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       }
     }
     if (!mountedRef.current) return;
@@ -272,8 +282,14 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
             cbs.onNewQueue?.(payload as PlayerStateInfo[]);
             break;
         }
-      } catch {
+      } catch (err) {
         // Ignore non-JSON messages (e.g. pong frames)
+        clientLog('draft#', 'ws_message_parse_failed', {
+          source: LOG_SOURCES.draft.WS_MESSAGE_PARSE_FAILED,
+          draftName,
+          error: err instanceof Error ? err.message : String(err),
+          raw: typeof event.data === 'string' ? event.data.slice(0, 120) : typeof event.data,
+        });
       }
     };
 
@@ -352,6 +368,12 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
           backoffRef.current = INITIAL_BACKOFF_MS;
           // Cancel any pending reconnect before starting a new visible-tab reconnect.
           clearTimers();
+          clientLog('draft#', 'ws_reconnect_attempt', {
+            source: LOG_SOURCES.draft.WS_RECONNECT_FAILED,
+            draftName,
+            reason: 'visibilitychange',
+            readyState: wsRef.current?.readyState ?? null,
+          });
           connect();
         }
       }

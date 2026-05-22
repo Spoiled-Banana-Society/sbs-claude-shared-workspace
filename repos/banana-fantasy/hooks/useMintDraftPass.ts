@@ -18,6 +18,9 @@ import {
   USDC_PERMIT_ABI,
 } from '@/lib/contracts/bbb4';
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
+import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 
 type MintFn = (
   quantity: number,
@@ -230,18 +233,14 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const provider = await selectedWallet.getEthereumProvider();
 
         // Make sure the wallet is on Base before signing. The USDC permit's
-        // domain references Base (chain 8453), so external wallets sitting
-        // on Ethereum/BNB/Polygon would either warn the user about a
-        // cross-chain typed-data signature or refuse outright. Embedded
-        // wallets are always on Base, so this is a no-op for them.
-        try {
-          const currentChainHex = await provider.request({ method: 'eth_chainId' });
-          if (parseInt(currentChainHex as string, 16) !== 8453) {
-            await selectedWallet.switchChain(8453);
-          }
-        } catch {
-          // Ignore — the signature attempt below will surface a clearer
-          // error if the wallet truly can't switch.
+        // domain references Base (8453), so a wallet on another network
+        // would warn or refuse. ensureBaseNetwork switches them — or adds
+        // Base if their wallet doesn't have it — and on failure returns
+        // clear copy instead of letting the signature fail murkily.
+        // Embedded wallets are already on Base, so this is a no-op.
+        const baseNet = await ensureBaseNetwork(provider);
+        if (!baseNet.ok) {
+          throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
         }
 
         const signature = (await provider.request({
@@ -281,6 +280,57 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         return hash;
       } catch (err) {
         const message = normalizeMintError(err);
+        // Classify the failure so the admin Logs tab can split signature
+        // rejections (user action) from admin-wallet / permit failures
+        // (infra). Purely additive — control flow unchanged.
+        const rawMessage = err instanceof Error ? err.message : String(err);
+        const lowerRaw = rawMessage.toLowerCase();
+        const baseContext = {
+          quantity,
+          paymentMethod: opts?.paymentMethod ?? 'usdc',
+          wallet: selectedWallet?.address,
+        };
+        if (
+          lowerRaw.includes('user rejected') ||
+          lowerRaw.includes('rejected the request') ||
+          lowerRaw.includes('user denied')
+        ) {
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_SIGNATURE_REJECTED,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        } else if (
+          lowerRaw.includes('payment relay not available') ||
+          lowerRaw.includes('temporarily paused for maintenance') ||
+          lowerRaw.includes('admin wallet')
+        ) {
+          reportClientError({
+            source: LOG_SOURCES.payment.ADMIN_WALLET_UNAVAILABLE,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        } else if (lowerRaw.includes('base network')) {
+          reportClientError({
+            source: LOG_SOURCES.payment.WRONG_NETWORK,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        } else {
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_PERMIT_FAILED,
+            message: rawMessage,
+            route: 'useMintDraftPass',
+            context: baseContext,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
+        }
         setError(message);
         setMintStep('error');
         throw new Error(message);

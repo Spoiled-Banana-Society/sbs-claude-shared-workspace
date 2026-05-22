@@ -109,11 +109,27 @@ function loadNotifications(): Notification[] {
     // "go see what this is" or "claim your reward". Rewrite them to
     // /promos so the click lands somewhere the user can actually act.
     const PROMO_REDIRECT_TITLES = new Set(['Ready to Claim!', 'New Promo Available!']);
-    return parsed.map((n) => {
+    const remapped = parsed.map((n) => {
       if (PROMO_REDIRECT_TITLES.has(n.title) && n.link && !n.link.startsWith('/promos')) {
         return { ...n, link: '/promos' };
       }
       return n;
+    });
+    // Self-heal legacy duplicates: collapse to first occurrence per
+    // canonical dedup key. For badge notifications, ALWAYS use the
+    // title (e.g. "Badge unlocked: Veteran") regardless of whether
+    // metadata.dedupeKey is set — old entries (pre-dedupeKey) and new
+    // entries (with dedupeKey "badge-veteran") would otherwise hash to
+    // different keys and both survive. Order-preserving — newest wins.
+    const seenKeys = new Set<string>();
+    return remapped.filter((n) => {
+      const isBadgeTitle = n.title.startsWith('Badge unlocked:');
+      const key = n.metadata?.dedupeKey as string | undefined;
+      const dedupeOn = isBadgeTitle ? n.title : (key ?? null);
+      if (!dedupeOn) return true;
+      if (seenKeys.has(dedupeOn)) return false;
+      seenKeys.add(dedupeOn);
+      return true;
     });
   } catch {
     return getDefaultNotifications();
@@ -129,17 +145,38 @@ function saveNotifications(notifs: Notification[]) {
   } catch { /* quota */ }
 }
 
-/** Add a notification from anywhere (no hook needed). Updates localStorage + triggers sync. */
-export function pushNotification(notif: { type: NotificationType; title: string; message: string; link?: string }) {
+/**
+ * Add a notification from anywhere (no hook needed). Updates localStorage + triggers sync.
+ *
+ * `dedupeKey` (optional): if any existing notification carries the same
+ * key in metadata.dedupeKey, the new one is dropped. Use a stable key
+ * like `badge-${id}` so a badge can only ever produce one entry, even
+ * if the upstream notifier fires multiple times across tabs / mounts /
+ * stale localStorage state.
+ */
+export function pushNotification(notif: { type: NotificationType; title: string; message: string; link?: string; dedupeKey?: string }) {
   if (typeof window === 'undefined') return;
   // Respect user's category preferences
   if (!isCategoryEnabled(notif.type)) return;
   const existing = loadNotifications();
+  if (notif.dedupeKey) {
+    const collision = existing.some(n => n.metadata?.dedupeKey === notif.dedupeKey);
+    if (collision) return;
+  }
+  // Belt-and-suspenders: for badge notifications, also drop if any
+  // existing notification has the same title (catches legacy entries
+  // that predate dedupeKey).
+  if (notif.title.startsWith('Badge unlocked:')) {
+    const titleCollision = existing.some(n => n.title === notif.title);
+    if (titleCollision) return;
+  }
+  const { dedupeKey, ...rest } = notif;
   const newNotif: Notification = {
-    ...notif,
+    ...rest,
     id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     read: false,
     createdAt: new Date().toISOString(),
+    ...(dedupeKey ? { metadata: { dedupeKey } } : {}),
   };
   saveNotifications([newNotif, ...existing]);
 }

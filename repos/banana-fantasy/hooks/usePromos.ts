@@ -6,6 +6,7 @@ import { AppApiError, fetchJson } from '@/lib/appApiClient';
 import { pushNotification } from '@/components/NotificationCenter';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
+import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -17,6 +18,7 @@ type ClaimPromoResult = ClaimPromoResponse | Error | null;
 
 export function usePromos(opts?: { userId?: string }) {
   const { user, updateUser } = useAuth();
+  const { celebrate } = useClaimCelebration();
   const userId = opts?.userId ?? user?.id;
 
   const swr = useSWRLike<Promo[]>(
@@ -74,7 +76,7 @@ export function usePromos(opts?: { userId?: string }) {
         // Revalidate in background (keeps everything consistent)
         void mutateRef.current();
 
-        // Notify user of claimed reward
+        // Notify user of claimed reward (persistent bell entry).
         if (res.spinsAdded > 0) {
           const isBuyBonus = res.promo?.type === 'buy-bonus';
           pushNotification({
@@ -83,6 +85,11 @@ export function usePromos(opts?: { userId?: string }) {
             message: `You earned ${res.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${res.spinsAdded !== 1 ? 's' : ''}!`,
             link: isBuyBonus ? '/drafting' : '/banana-wheel',
           });
+          // Banana-shower celebration modal — fires from any page that
+          // triggers a successful claim (homepage carousel, /promos,
+          // /drafting, /banana-wheel). Central wiring here means no
+          // per-page logic to keep in sync.
+          celebrate({ count: res.spinsAdded, promoType: res.promo?.type });
         }
 
         return res;
@@ -96,7 +103,7 @@ export function usePromos(opts?: { userId?: string }) {
         return error;
       }
     },
-    [userId, swr.data, updateUser],
+    [userId, swr.data, updateUser, celebrate],
   );
 
   const verifyTweetEngagement = useCallback(

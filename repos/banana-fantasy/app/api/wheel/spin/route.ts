@@ -11,6 +11,7 @@ import { getWheelConfig } from '@/lib/wheelConfigFirestore';
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
@@ -51,7 +52,14 @@ async function getPrivyVerificationKey(kid: string): Promise<crypto.KeyObject> {
 async function refreshPrivyVerificationKeys(): Promise<void> {
   const appId = getPrivyAppId();
   const res = await fetch(`https://auth.privy.io/api/v1/apps/${appId}/jwks.json`);
-  if (!res.ok) throw new ApiError(500, 'Failed to fetch Privy JWKS');
+  if (!res.ok) {
+    logger.error(LOG_SOURCES.auth.JWKS_FETCH_FAILED, {
+      route: '/api/wheel/spin',
+      appId,
+      status: res.status,
+    });
+    throw new ApiError(500, 'Failed to fetch Privy JWKS');
+  }
   const jwks = await res.json() as { keys: Array<{ kid: string; kty: string; crv: string; x: string; y: string }> };
 
   jwksCache.keys = new Map();
@@ -123,7 +131,14 @@ async function verifyPrivyJwt(token: string): Promise<string> {
     isValid = await verifySignature(true);
   }
 
-  if (!isValid) throw new ApiError(401, 'Token signature verification failed');
+  if (!isValid) {
+    logger.error(LOG_SOURCES.auth.JWT_SIGNATURE_INVALID, {
+      route: '/api/wheel/spin',
+      alg,
+      kid,
+    });
+    throw new ApiError(401, 'Token signature verification failed');
+  }
 
   if (typeof payload.exp === 'number' && Date.now() / 1000 >= payload.exp) {
     throw new ApiError(401, 'Auth token expired');

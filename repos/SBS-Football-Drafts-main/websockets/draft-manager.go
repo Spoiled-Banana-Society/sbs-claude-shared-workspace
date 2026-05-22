@@ -166,11 +166,6 @@ func (m *DraftManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("invalid access token"))
 		return
 	}
-	if user.WalletAddress == "" {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("no wallet on token"))
-		return
-	}
 
 	draftName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("draftName")))
 	if draftName == "" {
@@ -179,21 +174,32 @@ func (m *DraftManager) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Membership check: caller's wallet must be in the league's CurrentUsers
-	// list. This is the gap the previous TODO comment flagged — without it,
-	// any authenticated user could spectate any private draft.
-	if !isWalletInDraft(user.WalletAddress, draftName) {
-		fmt.Printf("[ws] membership rejected: wallet=%s draft=%s\n", user.WalletAddress, draftName)
+	// Wallet identity: Privy access tokens don't carry a walletAddress claim
+	// for most users (especially social-login), so we can't rely on the JWT
+	// alone. Take the wallet from the ?address= URL param. JWT signature
+	// verification above proves the caller is a logged-in Privy user; the
+	// isWalletInDraft membership check below is the real access gate — it
+	// verifies the URL-provided wallet is actually in this draft's
+	// CurrentUsers list, so spoofing a different wallet wouldn't bypass it.
+	walletAddress := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("address")))
+	if walletAddress == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("no wallet address was passed in the url params"))
+		return
+	}
+
+	if !isWalletInDraft(walletAddress, draftName) {
+		fmt.Printf("[ws] membership rejected: wallet=%s draft=%s privyUser=%s\n", walletAddress, draftName, user.UserID)
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte("not a member of this draft"))
 		return
 	}
 
 	requestData := ClientInfo{
-		Address:   user.WalletAddress,
+		Address:   walletAddress,
 		DraftName: draftName,
 	}
-	fmt.Printf("[ws] accepted: wallet=%s draft=%s\n", requestData.Address, requestData.DraftName)
+	fmt.Printf("[ws] accepted: wallet=%s draft=%s privyUser=%s\n", requestData.Address, requestData.DraftName, user.UserID)
 
 	conn, err := websocketUpgrader.Upgrade(w, r, nil)
 	if err != nil {

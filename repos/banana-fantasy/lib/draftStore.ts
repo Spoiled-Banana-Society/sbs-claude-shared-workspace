@@ -88,13 +88,33 @@ function normalizeContestName(name: string | undefined): string {
   return name;
 }
 
+// Clear any cached contestName that was derived from the slot number —
+// older builds wrote "League #${slot}" or "BBB League #${slot}" into
+// localStorage as a fallback when the backend didn't return a
+// displayName. The slot counter drifts from the global league number,
+// so that fallback is almost always wrong by mid-season. Blanking it
+// forces useLeagueNumberForSlot to resolve the real number from Firestore.
+function purgeSlotDerivedName(d: DraftState): DraftState {
+  const slotMatch = /-draft-(\d+)$/.exec(d.id || '');
+  if (!slotMatch) return d;
+  const slot = slotMatch[1];
+  if (
+    d.contestName === `League #${slot}` ||
+    d.contestName === `BBB League #${slot}` ||
+    d.contestName === `BBB #${slot}`
+  ) {
+    return { ...d, contestName: '' };
+  }
+  return d;
+}
+
 function readAll(): DraftState[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as DraftState[];
-    return parsed.map(d => ({ ...d, contestName: normalizeContestName(d.contestName) }));
+    return parsed.map(d => purgeSlotDerivedName({ ...d, contestName: normalizeContestName(d.contestName) }));
   } catch {
     return [];
   }

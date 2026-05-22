@@ -10,6 +10,7 @@ import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
+import { NotificationSettings } from '@/components/notifications/NotificationSettings';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -30,12 +31,21 @@ export default function ProfilePage() {
   const { exportWallet } = useExportWallet();
   const [copiedWallet, setCopiedWallet] = useState(false);
   const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'badges'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'activity' | 'badges' | 'notifications'
+  >('overview');
 
-  // Honor ?tab=activity deep link from the profile dropdown's "Activity →" shortcut.
+  // Honor ?tab= deep links (profile dropdown shortcuts, Discord link return).
   useEffect(() => {
     const tab = searchParams?.get('tab');
-    if (tab === 'activity' || tab === 'overview' || tab === 'badges') setActiveTab(tab);
+    if (
+      tab === 'activity' ||
+      tab === 'overview' ||
+      tab === 'badges' ||
+      tab === 'notifications'
+    ) {
+      setActiveTab(tab);
+    }
   }, [searchParams]);
 
   const PROMO_KEY = 'sbs-first-draft-promo-claimed';
@@ -150,11 +160,23 @@ export default function ProfilePage() {
           <TabButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')}>
             Activity
           </TabButton>
+          <TabButton
+            active={activeTab === 'notifications'}
+            onClick={() => setActiveTab('notifications')}
+          >
+            Notifications
+          </TabButton>
         </div>
 
         {activeTab === 'activity' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <ActivityHistory userId={user.walletAddress ?? user.id} />
+          </motion.div>
+        )}
+
+        {activeTab === 'notifications' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <NotificationSettings />
           </motion.div>
         )}
 

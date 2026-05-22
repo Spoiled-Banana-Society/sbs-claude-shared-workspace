@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
-import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage } from '@/lib/api/owner';
+import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
@@ -18,7 +18,15 @@ const USER_STORAGE_KEYS = [
   'banana-completed-drafts',
   'banana-fantasy-onboarding-complete',
   'hasSeenOnboarding',
+  // When this login session was first established — see SESSION_STARTED_KEY.
+  'banana-session-started',
 ];
+
+// Records (once) when the current session began. Survives page reloads
+// since Privy restores the session. Used to log session age on auth
+// failures: a ~30-day age = clean Privy expiry; a MISSING record while
+// the session is dead = storage was cleared early (mobile eviction).
+const SESSION_STARTED_KEY = 'banana-session-started';
 
 interface SavedProfile {
   username?: string;
@@ -133,7 +141,7 @@ const MOCK_WALLET = '0xd3301bC039faF4223dA98bcEB5Fb818C9993620';
 const MOCK_USER: User | null = MOCK_AUTH
   ? {
       id: 'mock-user-001',
-      username: 'TestUser',
+      username: defaultDisplayName(MOCK_WALLET),
       walletAddress: MOCK_WALLET,
       loginMethod: 'social',
       draftPasses: 21,
@@ -279,6 +287,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [walletAddress, privy.user, verifyTwitterWithBackend, checkExistingTwitterLink]);
 
+  // Tag Sentry with the current user so every frontend error / breadcrumb
+  // is attributable to a specific wallet. Without this, admin sees
+  // 'X events · 1 users' but no way to know WHICH user. With this, the
+  // Sentry issue detail shows the wallet — and "all errors for user X"
+  // becomes a 1-click filter in Sentry.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return;
+    void import('@sentry/nextjs').then((Sentry) => {
+      if (walletAddress) {
+        Sentry.setUser({ id: walletAddress.toLowerCase(), username: walletAddress });
+      } else {
+        Sentry.setUser(null);
+      }
+    }).catch(() => { /* silent — Sentry is optional */ });
+  }, [walletAddress]);
+
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode
@@ -290,6 +315,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Track current wallet (drafts are filtered by wallet in useActiveDrafts, not deleted)
       try {
         localStorage.setItem('banana-last-wallet', walletAddress.toLowerCase());
+      } catch { /* ignore */ }
+
+      // Stamp the session start once. Guarded so page reloads (Privy
+      // restoring the same session) don't reset it — only a real
+      // logout clears it (USER_STORAGE_KEYS), so a fresh login re-stamps.
+      try {
+        if (!localStorage.getItem(SESSION_STARTED_KEY)) {
+          localStorage.setItem(SESSION_STARTED_KEY, String(Date.now()));
+        }
       } catch { /* ignore */ }
 
       const savedProfile = getSavedProfile();
@@ -389,7 +423,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const isNotFound = err instanceof ClientApiError && err.status === 404;
           const fallbackUser: User = {
             id: privy.user!.id,
-            username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
+            username: savedProfile?.username || defaultDisplayName(walletAddress),
             walletAddress,
             loginMethod,
             profilePicture: savedProfile?.profilePicture,

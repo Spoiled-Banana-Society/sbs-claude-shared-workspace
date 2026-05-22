@@ -94,7 +94,7 @@ export function useAdminAuthHeaders() {
   const privy = usePrivy();
   return useCallback(async (): Promise<HeadersInit> => {
     const token = await privy.getAccessToken();
-    if (!token) throw new Error('Missing Privy access token');
+    if (!token) throw new Error('Your session expired — please log out and log back in to continue.');
     return { Authorization: `Bearer ${token}` };
   }, [privy]);
 }
@@ -330,6 +330,7 @@ export interface ErrorEventEntry {
   requestId?: string;
   actor?: string;
   context?: Record<string, unknown>;
+  sessionId?: string;
   timestamp: string;
 }
 
@@ -343,6 +344,41 @@ export function useRecentErrors(enabled: boolean) {
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
+}
+
+/**
+ * Returns a function that downloads an error + its full debug-session
+ * trace as a JSON file (for handing to a developer). Raw fetch — not
+ * adminFetch — because the response is a file, not JSON.
+ */
+export function useExportErrorSession() {
+  const getHeaders = useAdminAuthHeaders();
+  return useCallback(
+    async (sessionId: string): Promise<void> => {
+      const headers = await getHeaders();
+      const res = await fetch(`/api/admin/error-export?sessionId=${encodeURIComponent(sessionId)}`, {
+        headers,
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error((body as { error?: string })?.error || `Export failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `sbs-error-${sessionId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    },
+    [getHeaders],
+  );
 }
 
 export interface SentryIssueEntry {
@@ -539,7 +575,10 @@ export function useSentryIssues(enabled: boolean) {
         '/api/admin/sentry-issues?limit=25&statsPeriod=24h',
         getHeaders,
       ),
-    refetchInterval: 30_000,
+    // 60s when tab visible; paused when tab inactive (refetchIntervalInBackground:false).
+    // The notification badge already pings every 30s for new-error counts so
+    // you don't miss spikes — the page itself doesn't need a tighter cadence.
+    refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 }

@@ -146,8 +146,8 @@ export default function WheelBatchesPage() {
   const segmentById = new Map(wheelSegments.map((s) => [s.id, s]));
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-      <div className="mb-8">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+      <div className="mb-6">
         <Link href="/banana-wheel" className="text-banana hover:underline text-sm">← Banana Wheel</Link>
         <h1 className="text-[28px] font-semibold text-white tracking-tight mt-2">Public spin feed</h1>
         <p className="text-white/60 text-sm mt-1">
@@ -245,7 +245,6 @@ export default function WheelBatchesPage() {
                   <tr>
                     <th className="text-left px-4 py-2.5">Spin</th>
                     <th className="text-left px-4 py-2.5">Result</th>
-                    <th className="text-left px-4 py-2.5">Time</th>
                     <th className="text-right px-4 py-2.5">Proof</th>
                   </tr>
                 </thead>
@@ -256,7 +255,6 @@ export default function WheelBatchesPage() {
                       <tr key={s.spinId} className="border-t border-white/5 hover:bg-white/5">
                         <td className="px-4 py-2 text-white/60 font-mono">#{s.spinIndex}</td>
                         <td className="px-4 py-2 font-semibold" style={{ color: seg?.color ?? '#fff' }}>{seg?.label ?? s.result}</td>
-                        <td className="px-4 py-2 text-white/50">{new Date(s.timestamp).toLocaleString()}</td>
                         <td className="px-4 py-2 text-right">
                           <Link href={`/spin-proof/${s.spinId}`} className="text-banana hover:underline">Verify →</Link>
                         </td>
@@ -279,9 +277,6 @@ export default function WheelBatchesPage() {
             )}
           </div>
 
-          <p className="text-white/35 text-[11px] mt-4 text-center">
-            Live — new spins appear the moment they happen. Verify any spin independently — no SBS trust required.
-          </p>
         </>
       )}
     </div>

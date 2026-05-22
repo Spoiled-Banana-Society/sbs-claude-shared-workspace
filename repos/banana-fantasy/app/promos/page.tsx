@@ -7,6 +7,8 @@ import { usePromos } from '@/hooks/usePromos';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { logger } from '@/lib/logger';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { Promo, PromoType } from '@/types';
 
@@ -140,10 +142,10 @@ export default function PromosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
 
-  const handleClaim = async (promo: Promo) => {
+  const handleClaim = async (promo: Promo): Promise<boolean> => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
-      return;
+      return false;
     }
     const count = promo.claimCount || 1;
     if (promo.type === 'jackpot' || promo.type === 'hof') {
@@ -151,9 +153,20 @@ export default function PromosPage() {
     }
     if (promosQuery.claimPromo) {
       const result = await promosQuery.claimPromo(promo.id);
-      if (result instanceof Error) return;
+      if (result instanceof Error) {
+        // Claim failed silently — surface to the admin Logs tab so a
+        // backend claim outage doesn't go unnoticed.
+        reportClientError({
+          source: LOG_SOURCES.promo.CLAIM_FAILED,
+          message: result.message,
+          route: 'promos',
+          context: { promoId: promo.id, promoType: promo.type, count },
+          stack: result.stack,
+        });
+        return false;
+      }
       setClaimedLocally(prev => new Set([...Array.from(prev), promo.id]));
-      return;
+      return true;
     }
     setClaimedLocally(prev => new Set([...Array.from(prev), promo.id]));
     if (user) {
@@ -163,6 +176,7 @@ export default function PromosPage() {
         updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
       }
     }
+    return true;
   };
 
   // Claim every visible-claimable promo, one at a time. Sequential
@@ -179,13 +193,27 @@ export default function PromosPage() {
     const targets = visiblePromos.filter(hasVisibleClaim);
     if (targets.length === 0) return;
     setIsClaimingAll(true);
+    let succeeded = 0;
+    let failed = 0;
     try {
       for (const promo of targets) {
         // eslint-disable-next-line no-await-in-loop
-        await handleClaim(promo);
+        const ok = await handleClaim(promo);
+        if (ok) succeeded += 1;
+        else failed += 1;
       }
     } finally {
       setIsClaimingAll(false);
+    }
+    // Batch ended with at least one failure — report the partial result
+    // so the admin Logs tab catches degraded claim-all runs.
+    if (failed > 0) {
+      reportClientError({
+        source: LOG_SOURCES.promo.CLAIM_BATCH_PARTIAL_FAILED,
+        message: `Claim-all completed with ${failed} of ${targets.length} claims failing`,
+        route: 'promos',
+        context: { total: targets.length, succeeded, failed },
+      });
     }
   };
 

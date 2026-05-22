@@ -12,7 +12,27 @@ import (
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+// isFirestoreNotFound returns true when err is a Firestore RPC
+// NotFound error (typically "draft state doc doesn't exist yet" — a
+// completely normal state for a draft still in its filling lobby).
+// Used to convert such errors into 404 responses instead of 500s so
+// the admin error log doesn't get flooded by routine pre-fill polling.
+func isFirestoreNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	if s, ok := status.FromError(err); ok && s.Code() == codes.NotFound {
+		return true
+	}
+	// Some Firestore Admin SDK error paths bubble up as wrapped strings
+	// without the grpc/status interface. Fall back to substring sniff.
+	return strings.Contains(err.Error(), "code = NotFound") ||
+		strings.Contains(err.Error(), "not found")
+}
 
 type DraftResources struct{}
 
@@ -81,6 +101,13 @@ func (dr *DraftResources) getDraftInfoById(w http.ResponseWriter, r *http.Reques
 
 	info, err := models.ReturnDraftInfoForDraft(draftId)
 	if err != nil {
+		// NotFound = draft's state doc hasn't been created yet (lobby
+		// still filling). Normal pre-fill state — 404 cleanly instead
+		// of flooding the admin error log with 500s on every poll.
+		if isFirestoreNotFound(err) {
+			http.Error(w, "draft state not yet initialized", http.StatusNotFound)
+			return
+		}
 		fmt.Printf("ERROR returning draft info for %s: %v\r", draftId, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -110,6 +137,12 @@ func (dr *DraftResources) getDraftSummaryById(w http.ResponseWriter, r *http.Req
 
 	sum, err := models.ReturnDraftSummaryForDraft(draftId)
 	if err != nil {
+		// Same as state/info: summary hasn't been written yet for a
+		// pre-fill draft is a normal 404, not a 500.
+		if isFirestoreNotFound(err) {
+			http.Error(w, "draft summary not yet available", http.StatusNotFound)
+			return
+		}
 		fmt.Printf("ERROR returning draft summary for %s: %v\r", draftId, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

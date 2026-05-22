@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import confetti from 'canvas-confetti';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { RaffleResult } from '@/hooks/usePWAInstallPromo';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -116,7 +118,14 @@ export default function RafflePage() {
       const res = await fetch(`/api/promos/pwa-raffle-result${params}`);
       if (!res.ok) return null;
       return await res.json() as RaffleResult;
-    } catch {
+    } catch (err) {
+      reportClientError({
+        source: LOG_SOURCES.wheel.RAFFLE_FETCH_TIMEOUT,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'banana-wheel/raffle',
+        context: { userId: user?.id, promoId: 'pwa-install-promo' },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       return null;
     }
   }, [user?.id]);

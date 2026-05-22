@@ -1,5 +1,8 @@
 'use client';
 import { logger } from '@/lib/logger';
+import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 import React, { useState, useRef, useEffect } from 'react';
 import Image from 'next/image';
@@ -30,10 +33,18 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   const mmSdkRef = useRef<Record<string, any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const baseProviderRef = useRef<any>(null);
+  // Non-null only while a wallet connect is genuinely in flight. Lets
+  // handleClose tell a stuck-connect the user gave up on from a casual
+  // modal dismissal. Cleared the moment a connect succeeds/fails/times out.
+  const connectInfoRef = useRef<{ wallet: string; startedAt: number } | null>(null);
 
-  // Pre-load Base Account SDK when modal opens so it's ready on click
+  // Pre-load both wallet SDKs when the modal opens so they're ready the
+  // instant the user taps — without this, the SDK downloads + initializes
+  // only after the click, which is the lag users feel on MetaMask.
   useEffect(() => {
     if (!isOpen) return;
+
+    // Coinbase / Base Account SDK
     import('@base-org/account').then(({ createBaseAccountSDK }) => {
       const sdk = createBaseAccountSDK({
         appName: 'Banana Fantasy',
@@ -43,6 +54,14 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       baseProviderRef.current = sdk.getProvider();
       logger.debug('[CB] Base Account SDK pre-loaded');
     }).catch(err => console.error('[CB] Failed to pre-load Base SDK:', err));
+
+    // MetaMask SDK — pre-download the JS bundle ONLY (warms the dynamic
+    // import cache so the on-tap import resolves instantly). We must NOT
+    // create the SDK instance or call init() here: MetaMask's mobile
+    // connection is an encrypted session that must be created fresh
+    // inside the user's tap. Pre-creating it makes the deeplink carry a
+    // stale key → decryption fails ("aes/gcm") → "connection failed".
+    void import('@metamask/sdk').catch(() => { /* best-effort prefetch */ });
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -51,6 +70,19 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   const isOtpSubmitting = emailState.status === 'submitting-code';
 
   const handleClose = () => {
+    // If the user dismisses the modal while a wallet connect is still
+    // genuinely in flight, and it's been >10s (long enough to rule out a
+    // casual mind-change), log it — a stuck connect they gave up on.
+    const inFlight = connectInfoRef.current;
+    if (inFlight && Date.now() - inFlight.startedAt > 10_000) {
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_ABANDONED,
+        message: `${inFlight.wallet} connect abandoned after ${Math.round((Date.now() - inFlight.startedAt) / 1000)}s on a stuck connect`,
+        route: 'mobile-login',
+        context: { wallet: inFlight.wallet, elapsedMs: Date.now() - inFlight.startedAt },
+      });
+    }
+    connectInfoRef.current = null;
     setView('main');
     setEmail('');
     setOtpCode('');
@@ -88,12 +120,53 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
     setConnectingWallet('metamask');
     setWalletError('');
 
+    // Breadcrumbs ('metamask#') timestamp every step. We also record page
+    // visibility — leaving Safari for the MetaMask app backgrounds this
+    // tab, which can kill the SDK's relay socket (the likely cause of
+    // "connection failed" after approving). Read the trail with:
+    //   node scripts/logs.mjs trace --tag=metamask#
+    let mmSettled = false;
+    let mmStep = 'init';
+    const mmMark = (step: string, extra?: Record<string, unknown>) => {
+      mmStep = step;
+      clientLog('metamask#', step, {
+        ...extra,
+        visible: typeof document !== 'undefined' ? !document.hidden : true,
+      });
+    };
+    const onVis = () => mmMark(document.hidden ? 'page_hidden' : 'page_visible');
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVis);
+    const cleanup = () => {
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVis);
+    };
+
+    mmMark('connect_started', { sdkPreloaded: !!mmSdkRef.current, switchMode });
+    connectInfoRef.current = { wallet: 'metamask', startedAt: Date.now() };
+
+    // No-popup / hang guard — if connect never finishes, surface it to
+    // the user + admin instead of a silent dead state. 45s allows for
+    // the app-switch to MetaMask and back.
+    const mmTimeout = setTimeout(() => {
+      if (mmSettled) return;
+      mmSettled = true;
+      connectInfoRef.current = null;
+      cleanup();
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_TIMEOUT,
+        message: `MetaMask connect timed out — stuck at: ${mmStep}`,
+        route: 'mobile-login',
+        context: { wallet: 'metamask', lastStep: mmStep, switchMode },
+      });
+      setWalletError('Connection timed out — please try again.');
+      setWalletStatus('error');
+      setConnectingWallet(null);
+    }, 45_000);
+
     try {
-      logger.debug('[MM Login] Step 1: Loading MetaMask SDK...');
       const { default: MetaMaskSDK } = await import('@metamask/sdk');
+      mmMark('sdk_imported');
 
       if (!mmSdkRef.current) {
-        logger.debug('[MM Login] Step 2: Initializing SDK...');
         const sdk = new MetaMaskSDK({
           dappMetadata: {
             name: 'Banana Fantasy',
@@ -105,7 +178,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         });
         await sdk.init();
         mmSdkRef.current = sdk;
-        logger.debug('[MM Login] SDK initialized successfully');
+        mmMark('sdk_initialized', { freshInit: true });
+      } else {
+        mmMark('sdk_initialized', { freshInit: false });
       }
 
       const sdk = mmSdkRef.current;
@@ -117,7 +192,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         try {
           const provider = sdk.getProvider();
           if (provider) {
-            logger.debug('[MM Login] Switch mode: requesting fresh permissions...');
+            mmMark('switch_mode_request_permissions');
             await provider.request({
               method: 'wallet_requestPermissions',
               params: [{ eth_accounts: {} }],
@@ -128,9 +203,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         }
       }
 
-      logger.debug('[MM Login] Step 3: Calling sdk.connect()...');
+      mmMark('connect_called');
       const accounts = await sdk.connect() as string[];
-      logger.debug('[MM Login] Step 3 complete. Accounts:', accounts);
+      mmMark('accounts_received', { count: accounts?.length ?? 0 });
 
       if (!accounts || accounts.length === 0) {
         throw new Error('No accounts returned from MetaMask');
@@ -138,7 +213,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
 
       const { getAddress } = await import('ethers');
       const address = getAddress(accounts[0]);
-      logger.debug('[MM Login] Step 4: Connected. Address:', address);
+      mmMark('address_resolved');
       setWalletStatus('signing');
 
       const provider = sdk.getProvider();
@@ -149,16 +224,16 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
       const chainIdNum = parseInt(chainIdHex, 16);
       const siweChainId = `eip155:${chainIdNum}` as `eip155:${number}`;
-      logger.debug('[MM Login] Step 5: Provider acquired. Chain:', siweChainId);
+      mmMark('chain_id_received', { chainId: chainIdNum });
 
       const message = await generateSiweMessage({ address, chainId: siweChainId });
-      logger.debug('[MM Login] Step 6: SIWE message generated. Requesting signature...');
+      mmMark('siwe_message_generated');
 
       const signature = await provider.request({
         method: 'personal_sign',
         params: [message, address],
       }) as string;
-      logger.debug('[MM Login] Step 7: Signature received. Logging in with Privy...');
+      mmMark('signature_received');
 
       await loginWithSiwe({
         signature,
@@ -166,14 +241,33 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         walletClientType: 'metamask',
         connectorType: 'wallet_connect_v2',
       });
-      logger.debug('[MM Login] Step 8: Privy login complete!');
+      mmMark('privy_login_complete');
 
+      if (mmSettled) return;
+      mmSettled = true;
+      connectInfoRef.current = null;
+      clearTimeout(mmTimeout);
+      cleanup();
       handleClose();
     } catch (err: unknown) {
+      if (mmSettled) return;
+      mmSettled = true;
+      connectInfoRef.current = null;
+      clearTimeout(mmTimeout);
+      cleanup();
       const msg = (err instanceof Error ? err.message : null) || 'Connection failed';
       if (msg.includes('rejected') || msg.includes('denied') || msg.includes('User rejected')) {
+        mmMark('user_rejected');
         setWalletStatus('idle');
       } else {
+        mmMark('connect_failed', { error: msg });
+        reportClientError({
+          source: LOG_SOURCES.auth.WALLET_CONNECT_FAILED,
+          message: `MetaMask connect failed at ${mmStep}: ${msg}`,
+          route: 'mobile-login',
+          context: { wallet: 'metamask', lastStep: mmStep, switchMode },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
         setWalletError(msg);
         setWalletStatus('error');
       }
@@ -190,12 +284,46 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       // SDK not pre-loaded yet — tell user to try again
       setWalletError('Loading... please try again.');
       setWalletStatus('error');
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_FAILED,
+        message: 'Coinbase connect tapped before Base SDK finished pre-loading',
+        route: 'mobile-login',
+        context: { wallet: 'coinbase' },
+      });
       return;
     }
 
     setWalletStatus('connecting');
     setConnectingWallet('coinbase');
     setWalletError('');
+
+    // Step tracking — a connect HANG throws no error, so the catch never
+    // fires. We breadcrumb each step (clientLog → v2_debug_events) and
+    // time out after 30s; the last breadcrumb shows exactly where it
+    // stuck. Read with: node scripts/logs.mjs trace --tag=coinbase#
+    let cbStep = 'init';
+    let cbSettled = false;
+    const cbMark = (step: string, extra?: Record<string, unknown>) => {
+      cbStep = step;
+      clientLog('coinbase#', step, extra);
+    };
+    cbMark('connect_started', { switchMode });
+    connectInfoRef.current = { wallet: 'coinbase', startedAt: Date.now() };
+
+    const cbTimeout = setTimeout(() => {
+      if (cbSettled) return;
+      cbSettled = true;
+      connectInfoRef.current = null;
+      reportClientError({
+        source: LOG_SOURCES.auth.WALLET_CONNECT_TIMEOUT,
+        message: `Coinbase connect timed out — stuck at: ${cbStep}`,
+        route: 'mobile-login',
+        context: { wallet: 'coinbase', lastStep: cbStep, switchMode },
+      });
+      setWalletError('Connection timed out — please try again.');
+      setWalletStatus('error');
+      setConnectingWallet(null);
+    }, 30_000);
 
     // Pre-open the popup SYNCHRONOUSLY from click handler.
     // Safari allows window.open from direct clicks but blocks it from async callbacks.
@@ -208,6 +336,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       `wallet_${crypto.randomUUID()}`,
       `width=420, height=700, left=${(window.innerWidth - 420) / 2 + window.screenX}, top=${(window.innerHeight - 700) / 2 + window.screenY}`
     );
+    cbMark('popup_opened', { popupOpened: !!popup });
 
     if (popup) {
       // Intercept SDK's window.open call — return our pre-opened popup
@@ -216,10 +345,20 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
       (window as any).open = (...args: any[]) => {
         if (!intercepted) {
           intercepted = true;
-          logger.debug('[CB] Intercepted SDK window.open, reusing pre-opened popup');
-          // Navigate to the SDK's full URL (with query params)
-          if (args[0] && typeof args[0] === 'string') {
-            try { popup.location.href = args[0]; } catch { /* cross-origin */ }
+          // The Base Account SDK passes a URL *object* (not a string) as
+          // the first arg. The old `typeof === 'string'` check missed it,
+          // so the popup never received the real connect URL and spun
+          // forever. Accept both string and URL object.
+          const target = args[0];
+          if (target) {
+            try {
+              popup.location.href = String(target);
+              cbMark('sdk_window_open_intercepted', { navigated: true });
+            } catch {
+              cbMark('sdk_window_open_intercepted', { navigated: false, reason: 'cross-origin' });
+            }
+          } else {
+            cbMark('sdk_window_open_intercepted', { navigated: false, reason: 'no-url' });
           }
           return popup;
         }
@@ -236,7 +375,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         // In switch mode, force CB to re-prompt the account picker.
         if (switchMode) {
           try {
-            logger.debug('[CB] Switch mode: requesting fresh permissions...');
+            cbMark('switch_mode_request_permissions');
             await provider.request({
               method: 'wallet_requestPermissions',
               params: [{ eth_accounts: {} }],
@@ -246,9 +385,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
           }
         }
 
-        logger.debug('[CB] Step 1: Requesting accounts...');
+        cbMark('request_accounts');
         const accounts = await provider.request({ method: 'eth_requestAccounts' }) as string[];
-        logger.debug('[CB] Step 2: Got accounts:', accounts);
+        cbMark('accounts_received', { count: accounts?.length ?? 0 });
 
         if (!accounts || accounts.length === 0) {
           throw new Error('No accounts returned from Coinbase Wallet');
@@ -256,22 +395,22 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
 
         const { getAddress } = await import('ethers');
         const address = getAddress(accounts[0]);
-        logger.debug('[CB] Step 3: Address:', address);
+        cbMark('address_resolved');
         setWalletStatus('signing');
 
         const chainIdHex = await provider.request({ method: 'eth_chainId' }) as string;
         const chainIdNum = parseInt(chainIdHex as string, 16);
         const siweChainId = `eip155:${chainIdNum}` as `eip155:${number}`;
-        logger.debug('[CB] Step 4: Chain:', siweChainId);
+        cbMark('chain_id_received', { chainId: chainIdNum });
 
         const message = await generateSiweMessage({ address, chainId: siweChainId });
-        logger.debug('[CB] Step 5: SIWE message generated, requesting signature...');
+        cbMark('siwe_message_generated');
 
         const signature = await provider.request({
           method: 'personal_sign',
           params: [message, address],
         }) as string;
-        logger.debug('[CB] Step 6: Signature received, logging in with Privy...');
+        cbMark('signature_received');
 
         await loginWithSiwe({
           signature,
@@ -279,15 +418,31 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
           walletClientType: 'coinbase_wallet',
           connectorType: 'wallet_connect_v2',
         });
-        logger.debug('[CB] Step 7: Privy login complete!');
+        cbMark('privy_login_complete');
 
+        if (cbSettled) return;
+        cbSettled = true;
+        connectInfoRef.current = null;
+        clearTimeout(cbTimeout);
         handleClose();
       } catch (err: unknown) {
+        if (cbSettled) return;
+        cbSettled = true;
+        connectInfoRef.current = null;
+        clearTimeout(cbTimeout);
         console.error('[CB] Error:', err);
         const msg = (err instanceof Error ? err.message : null) || 'Connection failed';
         if (msg.includes('rejected') || msg.includes('denied') || msg.includes('User rejected')) {
+          cbMark('user_rejected');
           setWalletStatus('idle');
         } else {
+          reportClientError({
+            source: LOG_SOURCES.auth.WALLET_CONNECT_FAILED,
+            message: `Coinbase connect failed at ${cbStep}: ${msg}`,
+            route: 'mobile-login',
+            context: { wallet: 'coinbase', lastStep: cbStep, switchMode },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
           setWalletError(msg);
           setWalletStatus('error');
         }

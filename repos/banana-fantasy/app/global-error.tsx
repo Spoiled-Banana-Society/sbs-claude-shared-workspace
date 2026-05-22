@@ -3,6 +3,7 @@
 
 import { useEffect } from "react";
 import * as Sentry from '@sentry/nextjs';
+import { reportClientError } from '@/lib/clientErrors';
 
 export default function GlobalError({
   error,
@@ -16,6 +17,13 @@ export default function GlobalError({
     try {
       Sentry.captureException(error);
     } catch {}
+    reportClientError({
+      source: 'global.react.boundary',
+      message: error.message || 'Global error boundary triggered',
+      route: typeof window !== 'undefined' ? window.location?.pathname : undefined,
+      stack: error.stack,
+      context: error.digest ? { digest: error.digest } : undefined,
+    });
   }, [error]);
 
   return (

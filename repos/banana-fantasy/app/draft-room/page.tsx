@@ -11,6 +11,11 @@ import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
+import { subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
@@ -40,7 +45,7 @@ function DraftRoomContent() {
   // During filling phase, don't show a numbered name — drafts only get a batch number after starting.
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
-  const [contestName, _setContestName] = useState(urlName || 'Draft Room');
+  const [contestName, setContestName] = useState(urlName || 'Draft Room');
   const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
   const walletParam = searchParams?.get('wallet') || '';
@@ -113,6 +118,32 @@ function DraftRoomContent() {
   useEffect(() => {
     return () => cleanupAudio();
   }, [cleanupAudio]);
+
+  // Live league name from Firebase RTDB. Go API writes
+  // drafts/{draftId}/displayName at the moment of fill, so the header
+  // label ("BBB #811") updates within ~100ms of slot-fill instead of
+  // staying stuck on whatever the URL had at mount. Also feeds
+  // useLeagueNumberForSlot's cache so any other component on this page
+  // (verified badge, proof link) picks up the new number live.
+  useEffect(() => {
+    if (!draftId) {
+      clientLog('league#', 'draftroom.subs.skip', { reason: 'no draftId' });
+      return;
+    }
+    clientLog('league#', 'draftroom.subs.start', { draftId });
+    const unsub = subscribeDraftDisplayName(draftId, (name) => {
+      clientLog('league#', 'draftroom.handler.fired', { draftId, name });
+      setContestName(name);
+      const m = /^BBB\s*#(\d+)$/i.exec(name);
+      if (m) {
+        clientLog('league#', 'draftroom.handler.parsed', { draftId, n: Number(m[1]) });
+        setLeagueNumberInCache(draftId, Number(m[1]));
+      } else {
+        clientLog('league#', 'draftroom.handler.no-parse', { draftId, name });
+      }
+    });
+    return () => { try { unsub(); } catch { /* ignore */ } };
+  }, [draftId]);
 
   const [fallbackLocal, setFallbackLocal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
@@ -524,6 +555,14 @@ function DraftRoomContent() {
         }
       } catch (err) {
         console.warn('[Draft Room] Loading phase server check failed:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.PHASE_CHECK_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, phase, storedStatus: stored?.status ?? null },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
         if (stored?.status === 'drafting') {
           setPhase('drafting');
           setLiveDataReady(true);
@@ -636,7 +675,17 @@ function DraftRoomContent() {
             displayName: payload.displayName,
             team: payload.team,
             position: payload.position,
-          }).catch(e => console.error('[Airplane] Auto-pick REST failed:', e));
+          }).catch(e => {
+            console.error('[Airplane] Auto-pick REST failed:', e);
+            reportClientError({
+              source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+              message: e instanceof Error ? e.message : String(e),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, playerId: payload.playerId },
+              stack: e instanceof Error ? e.stack : undefined,
+            });
+          });
         }
       } else {
         engine.draftPlayer(pickId);
@@ -832,6 +881,14 @@ function DraftRoomContent() {
       })
       .catch((e) => {
         console.warn('[Preferences] Failed to load draft preferences:', e);
+        reportClientError({
+          source: LOG_SOURCES.draft.PREFERENCES_LOAD_FAILED,
+          message: e instanceof Error ? e.message : String(e),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId },
+          stack: e instanceof Error ? e.stack : undefined,
+        });
       });
 
     return () => { cancelled = true; };
@@ -862,6 +919,14 @@ function DraftRoomContent() {
       }
     } catch (e) {
       console.error('[AutoDraft] Toggle failed:', e);
+      reportClientError({
+        source: LOG_SOURCES.draft.AUTOPICK_TOGGLE_FAILED,
+        message: e instanceof Error ? e.message : String(e),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, newValue },
+        stack: e instanceof Error ? e.stack : undefined,
+      });
       // Revert optimistic flip on failure.
       setAutoDraft(!newValue);
       engine.setAirplaneMode(!newValue);
@@ -877,7 +942,17 @@ function DraftRoomContent() {
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
-        .catch(e => console.warn('[Sort] Failed to persist sort preference:', e));
+        .catch(e => {
+          console.warn('[Sort] Failed to persist sort preference:', e);
+          reportClientError({
+            source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
+            message: e instanceof Error ? e.message : String(e),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId, sort },
+            stack: e instanceof Error ? e.stack : undefined,
+          });
+        });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
@@ -929,6 +1004,14 @@ function DraftRoomContent() {
       })
       .catch((err) => {
         console.warn('[Rankings] Failed to refresh player rankings:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.RANKINGS_REFRESH_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, pickNumber: engine.mostRecentPick?.pickNumber ?? null },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, phase, rankingsRefreshBucket]);
@@ -1221,6 +1304,14 @@ function DraftRoomContent() {
           body: JSON.stringify({ userId: promoUserId, draftId: id }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Failed to track draft:', err);
+          reportClientError({
+            source: LOG_SOURCES.draft.PROMO_TRACK_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId: id, promoUserId },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         });
       }
       // Badge sweep runs server-side on every /api/badges read (called
@@ -1237,6 +1328,14 @@ function DraftRoomContent() {
           body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
+          reportClientError({
+            source: LOG_SOURCES.draft.PROMO_PICK10_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId: id, promoUserId },
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         });
       }
     }
@@ -1248,7 +1347,16 @@ function DraftRoomContent() {
         const mapped = typeMap[level] || 'pro';
         setDraftType(mapped);
         if (draftId) draftStore.updateDraft(draftId, { type: mapped, draftType: mapped });
-      }).catch(() => {});
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+      });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverPollResult]);
@@ -1270,7 +1378,17 @@ function DraftRoomContent() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId: promoUserId, draftId: id }),
-    }).catch(err => console.error('[Promo] Jackpot tracking failed:', err));
+    }).catch(err => {
+      console.error('[Promo] Jackpot tracking failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.PROMO_JACKPOT_HIT_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId: id, promoUserId },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
 
@@ -1330,6 +1448,14 @@ function DraftRoomContent() {
         }
       } catch (err) {
         logger.error('[Promo] Founder tracking failed (will retry):', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.PROMO_FOUNDER_POST_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id, promoUserId },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps

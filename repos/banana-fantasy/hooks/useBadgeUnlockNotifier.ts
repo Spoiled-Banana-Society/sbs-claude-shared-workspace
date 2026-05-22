@@ -1,21 +1,31 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { pushNotification } from '@/components/NotificationCenter';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
-const POLL_MS = 30_000; // 30s — server-side sweep on every read keeps badges fresh
+// 5-minute safety net. Real-time pushes via useUserEventStream
+// (RTDB) deliver badge unlocks within ~100ms — this poll is only for
+// catching anything RTDB might miss (network blips, RTDB write
+// failures, badges granted while the user was offline). Reduced from
+// 30s on 2026-05-18 when push shipped.
+const POLL_MS = 5 * 60_000;
 
-function storageKey(userId: string) {
+function seenStorageKey(userId: string) {
   return `sbs-badges-seen:${userId.toLowerCase()}`;
 }
 
-function readSeen(userId: string): Set<string> {
+function notifiedStorageKey(userId: string) {
+  return `sbs-badges-notified:${userId.toLowerCase()}`;
+}
+
+function readSet(key: string): Set<string> {
   if (typeof window === 'undefined') return new Set();
   try {
-    const raw = localStorage.getItem(storageKey(userId));
+    const raw = localStorage.getItem(key);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed : []);
@@ -24,11 +34,29 @@ function readSeen(userId: string): Set<string> {
   }
 }
 
-function writeSeen(userId: string, ids: Set<string>) {
+function writeSet(key: string, ids: Set<string>) {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(storageKey(userId), JSON.stringify(Array.from(ids)));
+    localStorage.setItem(key, JSON.stringify(Array.from(ids)));
   } catch { /* quota */ }
+}
+
+function readSeen(userId: string): Set<string> {
+  return readSet(seenStorageKey(userId));
+}
+
+function writeSeen(userId: string, ids: Set<string>) {
+  writeSet(seenStorageKey(userId), ids);
+}
+
+function readNotified(userId: string): Set<string> {
+  return readSet(notifiedStorageKey(userId));
+}
+
+function addNotified(userId: string, badgeId: string) {
+  const current = readNotified(userId);
+  current.add(badgeId);
+  writeSet(notifiedStorageKey(userId), current);
 }
 
 /**
@@ -49,6 +77,11 @@ function writeSeen(userId: string, ids: Set<string>) {
 export function useBadgeUnlockNotifier() {
   const { user, isLoggedIn } = useAuth();
   const { show } = useToast();
+  const pathname = usePathname();
+  // Latest pathname in a ref so the polling closure reads the current
+  // route without needing to re-bind the interval on every navigation.
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const seedDoneRef = useRef<Set<string>>(new Set()); // tracks userIds we've seeded the "seen" set for
   const inFlightRef = useRef(false);
 
@@ -66,17 +99,19 @@ export function useBadgeUnlockNotifier() {
         // is enough to keep unlocks fresh.
         const res = await fetch(`/api/badges?userId=${encodeURIComponent(userId)}`, { cache: 'no-store' });
         if (!res.ok) return;
-        const data = await res.json() as { unlocked?: { id: string }[] };
+        const data = await res.json() as { unlocked?: { id: string; unlockedAt?: string | null }[] };
         if (cancelled) return;
-        const currentIds = new Set((data.unlocked ?? []).map(u => u.id));
+        const unlocked = data.unlocked ?? [];
+        const currentIds = new Set(unlocked.map(u => u.id));
+        const unlockedAtById = new Map(unlocked.map(u => [u.id, u.unlockedAt ?? null]));
 
         // First time this session for this user: record current set as
-        // "already seen" so legacy unlocks don't toast.
+        // "already seen" so legacy unlocks don't toast. Always write
+        // (not just on empty) — the seen set should reflect the latest
+        // server truth, otherwise multi-tab races and stale localStorage
+        // can leave badges marked "new" forever.
         if (!seedDoneRef.current.has(userId)) {
-          const seen = readSeen(userId);
-          if (seen.size === 0) {
-            writeSeen(userId, currentIds);
-          }
+          writeSeen(userId, currentIds);
           seedDoneRef.current.add(userId);
           return;
         }
@@ -88,20 +123,50 @@ export function useBadgeUnlockNotifier() {
         });
         if (newlyUnlocked.length === 0) return;
 
+        // Only notify for badges that ACTUALLY unlocked recently. If a
+        // badge has an unlockedAt timestamp older than 5 minutes, it
+        // was unlocked in a prior session — the seen-set drift (cleared
+        // storage, switched browsers, new device) isn't our cue to
+        // re-celebrate an old achievement.
+        const NOTIFY_WINDOW_MS = 5 * 60_000;
+        const nowMs = Date.now();
+
+        // Persistent per-user "we already notified for this badge" set.
+        // Single source of truth — survives tab close, localStorage seed
+        // re-runs, wallet switches, multi-tab races. The legacy seen-set
+        // diff above is the *trigger*; this is the *gate*.
+        const notified = readNotified(userId);
+
+        // Suppress toast (not notification entry) while the user is in
+        // the draft lobby or actively drafting — a popup over the timer
+        // / pick UI is disruptive. The bell still shows the unlock so
+        // they see it the moment they leave the room.
+        const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
+
         for (const id of newlyUnlocked) {
           const badge = BADGE_BY_ID[id];
           if (!badge) continue;
-          show({
-            level: 'success',
-            message: `Badge unlocked: ${badge.label} ${badge.glyph}`,
-            action: { label: 'View', onClick: () => { window.location.href = '/profile?tab=badges'; } },
-          });
+          const unlockedAt = unlockedAtById.get(id);
+          const unlockedAtMs = unlockedAt ? Date.parse(unlockedAt) : NaN;
+          const isRecent = Number.isFinite(unlockedAtMs) && (nowMs - unlockedAtMs) < NOTIFY_WINDOW_MS;
+          if (!isRecent) continue; // silently absorb — already-earned badge
+          if (notified.has(id)) continue; // already announced this one — skip both surfaces
+
+          if (!inDraftRoom) {
+            show({
+              level: 'success',
+              message: `Badge unlocked: ${badge.label} ${badge.glyph}`,
+              action: { label: 'View', onClick: () => { window.location.href = '/profile?tab=badges'; } },
+            });
+          }
           pushNotification({
             type: 'promo',
             title: `Badge unlocked: ${badge.label}`,
             message: badge.description,
             link: '/profile?tab=badges',
+            dedupeKey: `badge-${id}`,
           });
+          addNotified(userId, id);
         }
         writeSeen(userId, currentIds);
       } catch {

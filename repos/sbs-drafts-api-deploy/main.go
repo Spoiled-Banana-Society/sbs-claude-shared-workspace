@@ -162,6 +162,32 @@ func initBatchProof() error {
 	}
 
 	mgr := batchproof.NewManager(client, utils.Db.Client, variant, "")
+
+	// Optional: attach Merkle-variant contract client when system_config/
+	// batchProofMerkle has been deployed via /api/admin/deploy-batch-proof-merkle.
+	// The Merkle variant lives on a separate contract address from the
+	// legacy vrf-commit variant, so we instantiate a second Client with
+	// the same signer + RPC. If the doc isn't present, the Manager
+	// gracefully runs without Merkle support and any attempt to use the
+	// vrf-commit-merkle variant returns ErrMerkleClientNotConfigured.
+	merkleCfg, merkleErr := batchproof.LoadMerkleSystemConfig(ctx, utils.Db.Client)
+	if merkleErr != nil {
+		fmt.Printf("[batchproof] WARN: failed to read system_config/batchProofMerkle: %v\n", merkleErr)
+	} else if merkleCfg != nil {
+		merkleClient, mcErr := batchproof.NewClient(batchproof.Config{
+			RPCURL:          rpcURL,
+			ContractAddress: merkleCfg.ContractAddress,
+			PrivateKeyHex:   privKey,
+			Variant:         batchproof.VariantVRFCommitMerkle,
+		})
+		if mcErr != nil {
+			fmt.Printf("[batchproof] WARN: failed to build merkle client: %v\n", mcErr)
+		} else {
+			mgr.SetMerkleClient(merkleClient)
+			fmt.Printf("[batchproof] merkle client attached: contract=%s\n", merkleClient.ContractAddress().Hex())
+		}
+	}
+
 	batchproof.Set(mgr)
 	fmt.Printf("[batchproof] manager initialized: variant=%s contract=%s signer=%s rpc=%s\n",
 		variant, client.ContractAddress().Hex(), client.SignerAddress().Hex(), rpcURL)

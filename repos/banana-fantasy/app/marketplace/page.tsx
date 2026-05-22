@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFundWallet, useSendTransaction, useWallets } from '@privy-io/react-auth';
 import { useNotifications } from '@/components/NotificationCenter';
+import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { ActivityTab } from '@/app/components/marketplace/ActivityTab';
 import { BuyTab } from '@/app/components/marketplace/BuyTab';
 import { SellTab } from '@/app/components/marketplace/SellTab';
@@ -14,6 +15,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isDraftingOpen } from '@/lib/draftTypes';
+import { reportClientError } from '@/lib/clientErrors';
+import { clientLog } from '@/lib/clientLog';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { Address } from 'viem';
@@ -333,6 +337,13 @@ export default function MarketplacePage() {
         }, 1500);
       } catch (error) {
         console.error('[Marketplace] Buy failed:', error);
+        reportClientError({
+          source: LOG_SOURCES.marketplace.BUY_EXECUTION_FAILED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'marketplace',
+          context: { tokenId: selectedTeam.tokenId, orderHash: selectedTeam.orderHash, price, paymentMethod: 'usdc' },
+          stack: error instanceof Error ? error.stack : undefined,
+        });
         setTxError(error instanceof Error ? error.message : 'Transaction failed');
         setBuyStep('confirm');
       }
@@ -358,12 +369,21 @@ export default function MarketplacePage() {
       setCardFlowStep('waiting');
       const requiredUsdc = BigInt(Math.ceil(price * 1e6));
       const startTime = Date.now();
+      let polledBalance = BigInt(0);
       while (!cancelledRef.current && Date.now() - startTime < 300_000) {
-        const balance = await getUsdcBalance(walletAddress as Address);
-        if (balance >= requiredUsdc) break;
+        polledBalance = await getUsdcBalance(walletAddress as Address);
+        if (polledBalance >= requiredUsdc) break;
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
       if (cancelledRef.current) return;
+      if (polledBalance < requiredUsdc) {
+        reportClientError({
+          source: LOG_SOURCES.marketplace.BUY_BALANCE_POLL_TIMEOUT,
+          message: `USDC balance did not arrive within 300s (have ${polledBalance}, need ${requiredUsdc})`,
+          route: 'marketplace',
+          context: { tokenId: selectedTeam.tokenId, orderHash: selectedTeam.orderHash, price, polledBalance: String(polledBalance), requiredUsdc: String(requiredUsdc) },
+        });
+      }
 
       setCardFlowStep('buying');
       await executeBuy();
@@ -379,11 +399,18 @@ export default function MarketplacePage() {
       }, 1500);
     } catch (error) {
       console.error('[Marketplace] Card buy failed:', error);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.BUY_CARD_FUNDING_FAILED,
+        message: error instanceof Error ? error.message : String(error),
+        route: 'marketplace',
+        context: { tokenId: selectedTeam.tokenId, orderHash: selectedTeam.orderHash, price, paymentMethod: 'card', cardFlowStep },
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       setTxError(error instanceof Error ? error.message : 'Payment failed');
       setBuyStep('confirm');
       setCardFlowStep('idle');
     }
-  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, walletAddress]);
+  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, walletAddress, cardFlowStep]);
 
   const handleList = useCallback(async () => {
     if (!selectedTeam || !walletAddress || !listPrice) return;
@@ -402,8 +429,8 @@ export default function MarketplacePage() {
 
       if (!selectedWallet) throw new Error('No wallet connected');
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) await selectedWallet.switchChain(8453);
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       const provider = new ethers.BrowserProvider(ethereum);
       const signer = await provider.getSigner();
@@ -451,6 +478,13 @@ export default function MarketplacePage() {
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] List failed:', error);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.LIST_APPROVAL_TX_FAILED,
+        message: error instanceof Error ? error.message : String(error),
+        route: 'marketplace',
+        context: { tokenId: selectedTeam.tokenId, listPrice, listDurationSeconds },
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       setTxError(error instanceof Error ? error.message : 'Failed to create listing');
     }
   }, [addNotification, listPrice, listDurationSeconds, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
@@ -484,6 +518,13 @@ export default function MarketplacePage() {
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] Cancel failed:', error);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.CANCEL_TX_FAILED,
+        message: error instanceof Error ? error.message : String(error),
+        route: 'marketplace',
+        context: { tokenId: team.tokenId, orderHash: team.orderHash },
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       setTxError(error instanceof Error ? error.message : 'Failed to cancel listing');
     } finally {
       setCancellingTokenId(null);
@@ -562,9 +603,23 @@ export default function MarketplacePage() {
         progress[team.tokenId] = 'done';
       } catch (error) {
         console.error(`[Sweep] Failed ${team.tokenId}:`, error);
+        clientLog('marketplace#', 'sweep_team_failed', {
+          tokenId: team.tokenId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
         progress[team.tokenId] = 'failed';
       }
       setSweepProgress({ ...progress });
+    }
+
+    const failedTokenIds = sweepTeams.filter(team => progress[team.tokenId] === 'failed').map(team => team.tokenId);
+    if (failedTokenIds.length > 0) {
+      reportClientError({
+        source: LOG_SOURCES.marketplace.SWEEP_TEAM_BUY_FAILED,
+        message: `Sweep completed with ${failedTokenIds.length}/${sweepTeams.length} team buys failed`,
+        route: 'marketplace',
+        context: { failedTokenIds, totalTeams: sweepTeams.length, sweepPaymentMethod, sweepTotal },
+      });
     }
 
     setSweepStep('complete');

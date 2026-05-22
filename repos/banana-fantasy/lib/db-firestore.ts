@@ -31,6 +31,7 @@ import type {
   WheelSpin,
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
+import { pushStreamEvent } from '@/lib/userEventStream';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -705,6 +706,15 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
 
     tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
     return { updated: true, referrerUserId };
+  }).then((result) => {
+    // Real-time push to the referrer ONLY when the milestone actually
+    // flipped (result.updated). Friend identity is NOT in the payload —
+    // the frontend refetches /api/promos (Privy-authed) to render the
+    // full toast string ("Your friend Sarah verified!").
+    if (result.updated && result.referrerUserId) {
+      void pushStreamEvent(result.referrerUserId, 'referral-milestone', { milestone });
+    }
+    return result;
   });
 }
 
@@ -887,7 +897,16 @@ export async function incrementMintPromos(
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
-  return db.runTransaction((tx) => _incrementMintPromosInTx(tx, userRef, quantity));
+  const result = await db.runTransaction((tx) => _incrementMintPromosInTx(tx, userRef, quantity));
+  // Post-commit push. Fires once per actual milestone earned (Buy 10
+  // can fire multiple times in a single bulk mint — e.g. quantity=20
+  // earns 2 spins). awardedCount lets the toast read "earned 2 free spins".
+  if (result.mintMilestonesEarned > 0) {
+    void pushStreamEvent(userId, 'promo-buy-10', {
+      awardedCount: result.mintMilestonesEarned,
+    });
+  }
+  return result;
 }
 
 /**
@@ -972,6 +991,11 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
 
   await ensureUserSeeded(prePurchase.userId);
   const userRef = db.collection(USERS_COLLECTION).doc(prePurchase.userId);
+
+  // Stashed inside the transaction; pushed to the user event stream
+  // only AFTER the transaction commits (firing inside would notify on
+  // a tx that might still roll back). Captured by closure on userId.
+  let _mintMilestonesForPostCommitPush = 0;
 
   // Idempotent short-circuit: already completed → return existing state.
   if (prePurchase.status === 'completed') {
@@ -1063,7 +1087,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     logger.warn('verifyPurchase.record_tokens_error', { err: (err as Error).message, txHash });
   }
 
-  return db.runTransaction(async (tx) => {
+  const txResult = await db.runTransaction(async (tx) => {
     const purchaseSnap = await tx.get(purchaseRef);
     if (!purchaseSnap.exists) throw new ApiError(404, 'Purchase not found');
     const purchase = purchaseSnap.data() as Purchase;
@@ -1099,10 +1123,14 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     let freeDraftsAdded = calcBuyBonusFreeDrafts(purchase.quantity);
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
-    const { buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
+    const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
     if (buyBonusMilestonesEarned > 0) {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
     }
+    // Stash for post-commit event push (inside this transaction the data
+    // isn't durable yet — firing here would notify on a tx that might
+    // still roll back).
+    _mintMilestonesForPostCommitPush = mintMilestonesEarned;
 
     await _incrementReferralPromosInTx(tx, user, purchase.userId, purchase.quantity);
 
@@ -1151,6 +1179,18 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     });
     return result;
   });
+
+  // Post-commit push (Buy 10). The other public wrappers fire their
+  // own event; this verifyPurchase path calls _incrementMintPromosInTx
+  // directly inside a larger transaction, so we delay the event until
+  // after the outer transaction commits successfully.
+  if (_mintMilestonesForPostCommitPush > 0) {
+    void pushStreamEvent(prePurchase.userId, 'promo-buy-10', {
+      awardedCount: _mintMilestonesForPostCommitPush,
+    });
+  }
+
+  return txResult;
 }
 
 export async function getPurchaseHistory(userId: string): Promise<Purchase[]> {
@@ -1613,14 +1653,14 @@ export async function recordDraftCompletion(userId: string, draftId: string): Pr
 
   return db.runTransaction(async (tx) => {
     const promoSnap = await tx.get(promoRef);
-    if (!promoSnap.exists) return null;
+    if (!promoSnap.exists) return { promo: null as Promo | null, justBecameClaimable: false };
 
     const promo = deepClone(promoSnap.data() as Promo);
-    if (promo.type !== 'daily-drafts') return null;
+    if (promo.type !== 'daily-drafts') return { promo: null as Promo | null, justBecameClaimable: false };
 
     const ids = promo.completedDraftIds || [];
 
-    if (ids.includes(draftId)) return promo;
+    if (ids.includes(draftId)) return { promo: promo as Promo | null, justBecameClaimable: false };
 
     let needsTimerDelete = false;
     if (promo.timerEndTime) {
@@ -1642,6 +1682,7 @@ export async function recordDraftCompletion(userId: string, draftId: string): Pr
     }
 
     // Target reached: 3/4 → (4th draft) → 0/4 with CLAIM button + 24:00:00.
+    let justBecameClaimable = false;
     if (promo.progressCurrent >= (promo.progressMax || 4)) {
       promo.progressCurrent = 0;
       promo.claimable = true;
@@ -1649,13 +1690,22 @@ export async function recordDraftCompletion(userId: string, draftId: string): Pr
       promo.timerEndTime = undefined;
       promo.completedDraftIds = [];
       needsTimerDelete = true;
+      justBecameClaimable = true;
     }
 
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     if (needsTimerDelete) {
       tx.update(promoRef, { timerEndTime: FieldValue.delete() });
     }
-    return deepClone(promo);
+    return { promo: deepClone(promo) as Promo | null, justBecameClaimable };
+  }).then(({ promo, justBecameClaimable }) => {
+    // Only push on the transition from "in progress" → "claimable".
+    // Idempotent per draftId on the transaction side, so this also
+    // only fires once per actual 4th-of-the-day completion.
+    if (justBecameClaimable) {
+      void pushStreamEvent(userId, 'promo-daily-drafts', { draftId });
+    }
+    return promo;
   });
 }
 
@@ -1675,14 +1725,17 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
 
   return db.runTransaction(async (tx) => {
     const promoSnap = await tx.get(promoRef);
-    if (!promoSnap.exists) return null;
+    if (!promoSnap.exists) return { promo: null, justAdded: false };
 
     const promo = deepClone(promoSnap.data() as Promo);
-    if (promo.type !== 'pick-10') return null;
+    if (promo.type !== 'pick-10') return { promo: null, justAdded: false };
 
     const history = promo.modalContent.pick10History || [];
 
-    if (history.some(h => h.draftName === draftId)) return promo;
+    // Already recorded this draft → no-op, no event push.
+    if (history.some(h => h.draftName === draftId)) {
+      return { promo, justAdded: false };
+    }
 
     history.unshift({
       date: new Date().toISOString().split('T')[0],
@@ -1698,7 +1751,15 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
     promo.claimCount = claimableCount;
 
     tx.set(promoRef, stripUndefined(promo), { merge: true });
-    return deepClone(promo);
+    return { promo: deepClone(promo), justAdded: true };
+  }).then(({ promo, justAdded }) => {
+    // Only push when the slot-10 entry was newly added (transaction is
+    // idempotent on duplicate draftId, so this fires exactly once per
+    // actual Pick 10 occurrence).
+    if (justAdded) {
+      void pushStreamEvent(userId, 'promo-pick-10', { draftId });
+    }
+    return promo;
   });
 }
 
@@ -1809,14 +1870,17 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
 
   return db.runTransaction(async (tx) => {
     const promoSnap = await tx.get(promoRef);
-    if (!promoSnap.exists) return null;
+    if (!promoSnap.exists) return { promo: null, justAdded: false, awarded: 0 };
 
     const promo = deepClone(promoSnap.data() as Promo);
-    if (promo.type !== 'jackpot') return null;
+    if (promo.type !== 'jackpot') return { promo: null, justAdded: false, awarded: 0 };
 
     const history = promo.modalContent.jackpotHistory || [];
 
-    if (history.some(h => h.draftName === draftId)) return promo;
+    // Already recorded this draft → no-op, no event push.
+    if (history.some(h => h.draftName === draftId)) {
+      return { promo, justAdded: false, awarded: 0 };
+    }
 
     history.unshift({
       date: new Date().toISOString().split('T')[0],
@@ -1829,7 +1893,15 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
     promo.claimCount = (promo.claimCount || 0) + reward;
 
     tx.set(promoRef, stripUndefined(promo), { merge: true });
-    return deepClone(promo);
+    return { promo: deepClone(promo), justAdded: true, awarded: reward };
+  }).then(({ promo, justAdded, awarded }) => {
+    // Push only when the jackpot was newly credited to this user. The
+    // gate above (winnerOwnerId !== userId) ensures only the actual
+    // winner reaches this code path.
+    if (justAdded) {
+      void pushStreamEvent(userId, 'promo-jackpot-hit', { draftId, awardedCount: awarded });
+    }
+    return promo;
   });
 }
 
@@ -1994,7 +2066,7 @@ export async function unlockBadge(
     .collection(BADGES_SUBCOLLECTION)
     .doc(badgeId);
 
-  return db.runTransaction(async (tx) => {
+  const wasNewlyUnlocked = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     const existing = snap.exists ? (snap.data() as UserBadge) : null;
     if (existing?.unlocked) return false;
@@ -2007,6 +2079,17 @@ export async function unlockBadge(
     tx.set(ref, stripUndefined(updated), { merge: true });
     return true;
   });
+
+  // Real-time push to the user's event stream. Fire-and-forget; failure
+  // is logged inside pushStreamEvent and never blocks the unlock.
+  if (wasNewlyUnlocked) {
+    void pushStreamEvent(userId, 'badge-unlock', {
+      badgeId,
+      source: typeof source?.source === 'string' ? source.source : undefined,
+    });
+  }
+
+  return wasNewlyUnlocked;
 }
 
 /**

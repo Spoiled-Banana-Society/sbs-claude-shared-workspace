@@ -6,12 +6,15 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
 import { formatTeamName, formatOwnerTeamName } from '@/lib/formatters';
 
@@ -380,10 +383,8 @@ export default function NftDetailPage() {
       const { ethers } = await import('ethers');
 
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) {
-        await selectedWallet.switchChain(8453);
-      }
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       // Sponsor USDC approval for the conduit if needed
       const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
@@ -453,6 +454,13 @@ export default function NftDetailPage() {
       refetchOffers();
     } catch (err) {
       console.error('[NFT Detail] Offer failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.OFFER_CREATE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace',
+        context: { tokenId, offerAmount: amount, offerExpiration },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
       setOfferStep('input');
     }
@@ -469,10 +477,8 @@ export default function NftDetailPage() {
       const { BBB4_CONTRACT } = await import('@/lib/opensea');
 
       const ethereum = await selectedWallet.getEthereumProvider();
-      const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
-      if (parseInt(currentChainHex, 16) !== 8453) {
-        await selectedWallet.switchChain(8453);
-      }
+      const baseNet = await ensureBaseNetwork(ethereum);
+      if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
       // Check NFT approval for conduit
       const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
@@ -539,6 +545,13 @@ export default function NftDetailPage() {
       setTimeout(() => fetchNft(), 2000);
     } catch (err) {
       console.error('[NFT Detail] Accept offer failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.OFFER_ACCEPT_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace',
+        context: { tokenId, orderHash: offer.orderHash, offerAmount: offer.amount, offererAddress: offer.offererAddress || null },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
       setAcceptError(err instanceof Error ? err.message : 'Failed to accept offer');
     } finally {
       setAcceptingOfferHash(null);

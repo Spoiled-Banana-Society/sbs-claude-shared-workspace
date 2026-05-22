@@ -22,6 +22,7 @@ interface ClientErrorBody {
   context?: unknown;
   stack?: unknown;
   actor?: unknown;
+  sessionId?: unknown;
 }
 
 function asString(v: unknown, max = 2000): string | undefined {
@@ -53,6 +54,7 @@ export async function POST(req: Request) {
     const route = asString(body.route, 500);
     const stack = asString(body.stack, 5000);
     const actor = asString(body.actor, 200);
+    const sessionId = asString(body.sessionId, 64);
     const context = asObject(body.context);
 
     logErrorEvent({
@@ -61,11 +63,12 @@ export async function POST(req: Request) {
       route,
       stack,
       actor,
+      sessionId,
       context,
       requestId,
     });
 
-    logger.info('client.error_reported', { requestId, source, route, actor });
+    logger.info('client.error_reported', { requestId, source, route, actor, sessionId });
 
     return json({ ok: true, requestId });
   } catch (err) {
