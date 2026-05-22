@@ -1,10 +1,12 @@
 'use client';
 
 /**
- * Notification settings — one row per channel. Each channel can be
- * connected (push permission / email address / Telegram / Discord) and
- * independently toggled on or off. A user may enable any combination,
- * including all four. Reads/writes /api/notifications/profile.
+ * Notification settings — Apple-style grouped settings.
+ *
+ * Two groups: which events to be told about, and which channels to be
+ * reached on. Each channel can be connected (push permission / email /
+ * Telegram / Discord) and independently toggled. Reads/writes
+ * /api/notifications/profile.
  *
  * Rendered both as the Profile "Notifications" tab and the standalone
  * /notifications/settings page, so it carries no page chrome of its own.
@@ -28,18 +30,19 @@ interface Prefs {
 }
 
 const CHANNEL_META: Record<ChannelId, { label: string; emoji: string; blurb: string }> = {
-  push: { label: 'Home screen / push', emoji: '🔔', blurb: 'Browser & installed-app notifications.' },
-  email: { label: 'Email', emoji: '✉️', blurb: 'A fast backup in your inbox.' },
+  push: { label: 'Home screen & push', emoji: '🔔', blurb: 'Browser and installed-app notifications.' },
+  email: { label: 'Email', emoji: '✉️', blurb: 'A reliable backup, straight to your inbox.' },
   telegram: { label: 'Telegram', emoji: '✈️', blurb: 'Instant — the most reliable channel.' },
   discord: { label: 'Discord', emoji: '🎮', blurb: 'Pinged in the SBS Discord server.' },
 };
 
-const EVENT_META: Record<EventId, { label: string; blurb: string }> = {
-  draftFilled: { label: 'A draft I joined fills up', blurb: 'When all 10 spots are in and the draft starts.' },
-  pickSlow: { label: 'My pick — slow drafts', blurb: 'Long pick clock (hours). You stepped away — get pinged.' },
-  pickFast: { label: 'My pick — fast drafts', blurb: 'Quick pick clock (seconds). Most players watch live.' },
+const EVENT_META: Record<EventId, { label: string; emoji: string; blurb: string }> = {
+  draftFilled: { label: 'A draft I joined fills up', emoji: '🍌', blurb: 'All 10 spots are in — the draft starts.' },
+  pickSlow: { label: 'My pick — slow drafts', emoji: '🐢', blurb: 'Long pick clock. You stepped away — get pinged.' },
+  pickFast: { label: 'My pick — fast drafts', emoji: '⚡️', blurb: 'Quick pick clock. Most players watch live.' },
 };
 const EVENT_ORDER: EventId[] = ['draftFilled', 'pickSlow', 'pickFast'];
+const CHANNEL_ORDER: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
 
 export function NotificationSettings() {
   const { user } = useAuth();
@@ -90,7 +93,7 @@ export function NotificationSettings() {
   // Surface the result of the Discord OAuth round-trip.
   useEffect(() => {
     const flag = new URLSearchParams(window.location.search).get('discord');
-    if (flag === 'linked') setBanner('Discord connected ✅');
+    if (flag === 'linked') setBanner('Discord connected.');
     else if (flag === 'error') setBanner('Discord connection failed — please try again.');
   }, []);
 
@@ -100,6 +103,8 @@ export function NotificationSettings() {
 
   const setChannel = async (id: ChannelId, on: boolean) => {
     setBusy(id);
+    // Optimistic.
+    setPrefs((p) => (p ? { ...p, channels: { ...p.channels, [id]: on } } : p));
     try {
       const res = await authedFetch('/api/notifications/profile', {
         method: 'PUT',
@@ -112,7 +117,6 @@ export function NotificationSettings() {
   };
 
   const setEvent = async (id: EventId, on: boolean) => {
-    // Optimistic — event toggles should feel instant.
     setPrefs((p) => (p ? { ...p, events: { ...p.events, [id]: on } } : p));
     const res = await authedFetch('/api/notifications/profile', {
       method: 'PUT',
@@ -130,24 +134,7 @@ export function NotificationSettings() {
       });
       if (res.ok) {
         setPrefs((await res.json()).prefs as Prefs);
-        setBanner(
-          '✅ Email connected. Check your Spam folder for the first alert and mark it "Not spam" so the rest land in your inbox.',
-        );
-      }
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const connectTelegram = async () => {
-    setBusy('telegram');
-    try {
-      const res = await authedFetch('/api/notifications/link/telegram');
-      if (res.ok) {
-        window.open((await res.json()).url, '_blank', 'noopener');
-        setBanner('Tap Start in Telegram, then press "Check connection".');
-      } else {
-        setBanner('Telegram is not configured yet.');
+        setBanner('Email saved — check Spam for the first alert and mark it “Not spam.”');
       }
     } finally {
       setBusy(null);
@@ -157,14 +144,22 @@ export function NotificationSettings() {
   const handlePush = async () => {
     const wasConnected = push.state === 'connected';
     const r = wasConnected ? await push.disconnect() : await push.connect();
-    if (!r.ok) {
-      setBanner(r.error || 'Push action failed — please try again.');
-    } else {
-      setBanner(
-        wasConnected
-          ? 'Push disconnected.'
-          : '🔔 Push connected! You’ll get draft alerts on this device.',
-      );
+    if (!r.ok) setBanner(r.error || 'Push action failed — please try again.');
+    else setBanner(wasConnected ? 'Push disconnected.' : 'Push connected on this device.');
+  };
+
+  const connectTelegram = async () => {
+    setBusy('telegram');
+    try {
+      const res = await authedFetch('/api/notifications/link/telegram');
+      if (res.ok) {
+        window.open((await res.json()).url, '_blank', 'noopener');
+        setBanner('Tap Start in Telegram, then press “Check connection.”');
+      } else {
+        setBanner('Telegram is not configured yet.');
+      }
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -181,248 +176,314 @@ export function NotificationSettings() {
 
   if (!user?.walletAddress) {
     return (
-      <div className="mx-auto max-w-xl py-10 text-center text-gray-300">
-        <p>Sign in to choose how you get draft alerts.</p>
+      <div className="mx-auto max-w-xl py-16 text-center text-text-secondary">
+        <p>Sign in to choose how you hear about your drafts.</p>
       </div>
     );
   }
 
+  // Per-channel connection state + the right-hand control.
+  const channelConnected = (id: ChannelId): boolean => {
+    if (id === 'push') return push.state === 'connected';
+    if (id === 'email') return !!prefs?.email;
+    if (id === 'telegram') return !!prefs?.telegramChatId;
+    return !!prefs?.discordId;
+  };
+  const channelDetail = (id: ChannelId): string | undefined =>
+    id === 'email' ? prefs?.email : undefined;
+
   return (
     <div className="mx-auto max-w-xl">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-white">Draft alerts</h2>
-        <p className="mt-1 text-sm text-gray-400">
-          Pick how you want to hear that a draft filled or it&apos;s your pick. Connect
-          and switch on as many as you like.
+      {/* Header */}
+      <div className="mb-7">
+        <h2 className="text-[22px] font-bold tracking-tight text-text-primary">Draft alerts</h2>
+        <p className="mt-1 text-sm leading-relaxed text-text-muted">
+          Choose what you want to know about, and how you want to hear it. Connect and
+          switch on as many channels as you like.
         </p>
       </div>
 
       {banner && (
-        <div className="mb-4 rounded-lg border border-[#fbbf24]/30 bg-[#fbbf24]/10 px-4 py-2 text-sm text-[#fbbf24]">
-          {banner}
+        <div className="mb-5 flex items-start gap-2 rounded-xl border border-banana/25 bg-banana/[0.08] px-4 py-3 text-[13px] leading-relaxed text-banana">
+          <span aria-hidden>🔔</span>
+          <span>{banner}</span>
+          <button
+            onClick={() => setBanner(null)}
+            className="ml-auto -mr-1 -mt-0.5 shrink-0 rounded p-0.5 text-banana/60 hover:text-banana"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
         </div>
       )}
 
       {loading ? (
-        <p className="text-gray-400">Loading…</p>
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-[68px] animate-pulse rounded-xl bg-white/[0.04]" />
+          ))}
+        </div>
       ) : (
-        <>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            What to tell me about
-          </h3>
-          <div className="mb-6 space-y-3">
-            {EVENT_ORDER.map((id) => (
-              <ToggleRow
-                key={id}
-                label={EVENT_META[id].label}
-                blurb={EVENT_META[id].blurb}
-                on={eventOn(id)}
-                onToggle={(v) => setEvent(id, v)}
-              />
-            ))}
-          </div>
-
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
-            How to reach me
-          </h3>
-          <div className="space-y-3">
-            {/* Push */}
-            <ChannelRow
-              id="push"
-              connected={push.state === 'connected'}
-              on={channelOn('push')}
-              busy={busy === 'push' || push.busy}
-              connectLabel={
-                push.state === 'loading'
-                  ? '…'
-                  : push.state === 'connected'
-                    ? 'Disconnect'
-                    : 'Connect'
-              }
-              onConnect={handlePush}
-              onToggle={(v) => setChannel('push', v)}
-            />
-
-            {/* Email */}
-            <ChannelRow
-              id="email"
-              connected={!!prefs?.email}
-              on={channelOn('email')}
-              busy={busy === 'email'}
-              connected_detail={prefs?.email}
-              onToggle={(v) => setChannel('email', v)}
-            >
-              <div className="mt-3 flex gap-2">
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="you@example.com"
-                  className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder-gray-500 outline-none focus:border-[#fbbf24]/50"
+        <div className="space-y-7">
+          {/* ─── What to tell me about ─── */}
+          <section>
+            <SectionLabel>What to tell me about</SectionLabel>
+            <Group>
+              {EVENT_ORDER.map((id, i) => (
+                <Row
+                  key={id}
+                  first={i === 0}
+                  emoji={EVENT_META[id].emoji}
+                  label={EVENT_META[id].label}
+                  blurb={EVENT_META[id].blurb}
+                  control={<Switch on={eventOn(id)} onToggle={(v) => setEvent(id, v)} />}
                 />
-                <button
-                  onClick={saveEmail}
-                  disabled={busy === 'email' || !emailInput.trim()}
-                  className="rounded-lg bg-[#fbbf24] px-4 py-2 text-sm font-semibold text-black disabled:opacity-40"
-                >
-                  Save
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-gray-500">
-                📬 Your first alert may land in{' '}
-                <span className="text-gray-300">Spam</span> or Promotions — open it and
-                tap <span className="text-gray-300">&quot;Not spam&quot;</span> so every
-                alert after it reaches your inbox.
-              </p>
-            </ChannelRow>
+              ))}
+            </Group>
+          </section>
 
-            {/* Telegram */}
-            <ChannelRow
-              id="telegram"
-              connected={!!prefs?.telegramChatId}
-              on={channelOn('telegram')}
-              busy={busy === 'telegram'}
-              connectLabel={prefs?.telegramChatId ? 'Reconnect' : 'Connect'}
-              onConnect={connectTelegram}
-              onToggle={(v) => setChannel('telegram', v)}
-            >
-              {!prefs?.telegramChatId && (
-                <button
-                  onClick={loadProfile}
-                  className="mt-2 text-xs text-gray-400 underline hover:text-white"
-                >
-                  Check connection
-                </button>
-              )}
-            </ChannelRow>
+          {/* ─── How to reach me ─── */}
+          <section>
+            <SectionLabel>How to reach me</SectionLabel>
+            <Group>
+              {CHANNEL_ORDER.map((id, i) => {
+                const meta = CHANNEL_META[id];
+                const connected = channelConnected(id);
+                const detail = channelDetail(id);
+                const rowBusy =
+                  busy === id || (id === 'push' && push.state === 'loading') || (id === 'push' && push.busy);
 
-            {/* Discord */}
-            <ChannelRow
-              id="discord"
-              connected={!!prefs?.discordId}
-              on={channelOn('discord')}
-              busy={busy === 'discord'}
-              connectLabel={prefs?.discordId ? 'Reconnect' : 'Connect'}
-              onConnect={connectDiscord}
-              onToggle={(v) => setChannel('discord', v)}
-            />
-          </div>
-        </>
+                // Right-hand control: toggle once connected, else a Connect button.
+                let control: React.ReactNode;
+                if (id === 'email') {
+                  control = connected ? (
+                    <Switch on={channelOn('email')} onToggle={(v) => setChannel('email', v)} />
+                  ) : null;
+                } else if (connected) {
+                  control = (
+                    <div className="flex items-center gap-2.5">
+                      <PillButton
+                        onClick={
+                          id === 'push'
+                            ? handlePush
+                            : id === 'telegram'
+                              ? connectTelegram
+                              : connectDiscord
+                        }
+                        busy={rowBusy}
+                        subtle
+                      >
+                        {id === 'push' ? 'Disconnect' : 'Reconnect'}
+                      </PillButton>
+                      <Switch
+                        on={channelOn(id)}
+                        disabled={rowBusy}
+                        onToggle={(v) => setChannel(id, v)}
+                      />
+                    </div>
+                  );
+                } else {
+                  control = (
+                    <PillButton
+                      onClick={
+                        id === 'push'
+                          ? handlePush
+                          : id === 'telegram'
+                            ? connectTelegram
+                            : connectDiscord
+                      }
+                      busy={rowBusy}
+                    >
+                      Connect
+                    </PillButton>
+                  );
+                }
+
+                return (
+                  <Row
+                    key={id}
+                    first={i === 0}
+                    emoji={meta.emoji}
+                    label={meta.label}
+                    blurb={meta.blurb}
+                    status={
+                      <StatusLine connected={connected} detail={detail} />
+                    }
+                    control={control}
+                  >
+                    {id === 'email' && (
+                      <div className="mt-3">
+                        <div className="flex gap-2">
+                          <input
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="you@example.com"
+                            className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-text-primary placeholder-text-muted outline-none transition-colors focus:border-banana/50"
+                          />
+                          <PillButton
+                            onClick={saveEmail}
+                            busy={busy === 'email'}
+                            disabled={!emailInput.trim()}
+                          >
+                            Save
+                          </PillButton>
+                        </div>
+                        <p className="mt-2 text-[12px] leading-relaxed text-text-muted">
+                          📬 Your first alert may land in <span className="text-text-secondary">Spam</span> or
+                          Promotions — open it and tap{' '}
+                          <span className="text-text-secondary">“Not spam”</span> so the rest reach your inbox.
+                        </p>
+                      </div>
+                    )}
+                    {id === 'telegram' && !connected && (
+                      <button
+                        onClick={loadProfile}
+                        className="mt-2 text-[12px] font-medium text-text-muted underline decoration-white/20 underline-offset-2 hover:text-text-secondary"
+                      >
+                        Check connection
+                      </button>
+                    )}
+                  </Row>
+                );
+              })}
+            </Group>
+          </section>
+        </div>
       )}
     </div>
   );
 }
 
-/** A label + blurb + on/off toggle, with no connect action. */
-function ToggleRow({
-  label,
-  blurb,
-  on,
-  onToggle,
-}: {
-  label: string;
-  blurb: string;
-  on: boolean;
-  onToggle: (on: boolean) => void;
-}) {
+/* ── Building blocks ───────────────────────────────────────────────── */
+
+/** Small uppercase section header, iOS-settings style. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="glass-card flex items-center justify-between gap-3 rounded-xl border border-white/10 p-4">
-      <div className="min-w-0">
-        <p className="font-semibold text-white">{label}</p>
-        <p className="mt-0.5 text-xs text-gray-400">{blurb}</p>
-      </div>
-      <button
-        role="switch"
-        aria-checked={on}
-        aria-label={`Toggle ${label}`}
-        onClick={() => onToggle(!on)}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-          on ? 'bg-[#fbbf24]' : 'bg-white/15'
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-            on ? 'translate-x-5' : 'translate-x-0.5'
-          }`}
-        />
-      </button>
+    <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-muted">
+      {children}
+    </p>
+  );
+}
+
+/** A grouped card — rows inside share hairline dividers. */
+function Group({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="divide-y divide-white/[0.06]">{children}</div>
     </div>
   );
 }
 
-/** A single channel row: icon, label, connection state, connect + toggle. */
-function ChannelRow({
-  id,
-  connected,
-  connected_detail,
-  on,
-  busy,
-  connectLabel,
-  onConnect,
-  onToggle,
+/** One settings row: tinted icon, label + blurb (+ status), right-hand control. */
+function Row({
+  emoji,
+  label,
+  blurb,
+  status,
+  control,
   children,
 }: {
-  id: ChannelId;
-  connected: boolean;
-  connected_detail?: string;
-  on: boolean;
-  busy: boolean;
-  connectLabel?: string;
-  onConnect?: () => void;
-  onToggle: (on: boolean) => void;
+  first?: boolean;
+  emoji: string;
+  label: string;
+  blurb: string;
+  status?: React.ReactNode;
+  control: React.ReactNode;
   children?: React.ReactNode;
 }) {
-  const meta = CHANNEL_META[id];
   return (
-    <div className="glass-card rounded-xl border border-white/10 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-semibold text-white">
-            <span className="mr-2">{meta.emoji}</span>
-            {meta.label}
-          </p>
-          <p className="mt-0.5 text-xs text-gray-400">{meta.blurb}</p>
-          <p className="mt-1 text-xs">
-            {connected ? (
-              <span className="text-green-400">
-                Connected{connected_detail ? ` · ${connected_detail}` : ''}
-              </span>
-            ) : (
-              <span className="text-gray-500">Not connected</span>
-            )}
-          </p>
+    <div className="px-4 py-3.5">
+      <div className="flex items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.06] text-[17px]">
+          {emoji}
         </div>
-
-        <div className="flex shrink-0 items-center gap-3">
-          {onConnect && (
-            <button
-              onClick={onConnect}
-              disabled={busy}
-              className="rounded-lg border border-white/15 px-3 py-1.5 text-xs font-medium text-white hover:bg-white/5 disabled:opacity-40"
-            >
-              {busy ? '…' : connectLabel}
-            </button>
-          )}
-          {/* On/off toggle */}
-          <button
-            role="switch"
-            aria-checked={on}
-            aria-label={`Toggle ${meta.label}`}
-            disabled={busy}
-            onClick={() => onToggle(!on)}
-            className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
-              on ? 'bg-[#fbbf24]' : 'bg-white/15'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                on ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
-          </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-medium leading-tight text-text-primary">{label}</p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-text-muted">{blurb}</p>
+          {status}
         </div>
+        <div className="shrink-0">{control}</div>
       </div>
       {children}
     </div>
+  );
+}
+
+/** Green-dot "Connected" / muted "Not connected" line. */
+function StatusLine({ connected, detail }: { connected: boolean; detail?: string }) {
+  return (
+    <p className="mt-1 flex items-center gap-1.5 text-[12px]">
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-white/25'}`}
+      />
+      {connected ? (
+        <span className="text-emerald-400">
+          Connected{detail ? <span className="text-text-muted"> · {detail}</span> : ''}
+        </span>
+      ) : (
+        <span className="text-text-muted">Not connected</span>
+      )}
+    </p>
+  );
+}
+
+/** iOS-style switch. */
+function Switch({
+  on,
+  onToggle,
+  disabled,
+}: {
+  on: boolean;
+  onToggle: (on: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={() => onToggle(!on)}
+      className={`relative h-[27px] w-[46px] shrink-0 rounded-full transition-colors duration-200 ease-out disabled:opacity-40 ${
+        on ? 'bg-banana' : 'bg-white/15'
+      }`}
+    >
+      <span
+        className={`absolute top-[2.5px] h-[22px] w-[22px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.45)] transition-transform duration-200 ease-out ${
+          on ? 'translate-x-[21px]' : 'translate-x-[2.5px]'
+        }`}
+      />
+    </button>
+  );
+}
+
+/** Compact pill button — banana-filled by default, subtle outline variant. */
+function PillButton({
+  children,
+  onClick,
+  busy,
+  disabled,
+  subtle,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  busy?: boolean;
+  disabled?: boolean;
+  subtle?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy || disabled}
+      className={`rounded-full px-3.5 py-1.5 text-[12.5px] font-semibold transition-all duration-150 active:scale-[0.97] disabled:opacity-40 ${
+        subtle
+          ? 'border border-white/15 text-text-secondary hover:bg-white/[0.06] hover:text-text-primary'
+          : 'bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.25)] hover:from-[#fcc63a] hover:to-[#fbbf24]'
+      }`}
+    >
+      {busy ? '…' : children}
+    </button>
   );
 }
