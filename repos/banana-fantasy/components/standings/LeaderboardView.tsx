@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { formatScore } from '@/lib/formatters';
+import { formatScore, formatLeagueName } from '@/lib/formatters';
 import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useLeagueDetail } from '@/hooks/useStandings';
@@ -183,7 +183,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-white font-semibold text-sm">League #{leagueLookup?.match(/(\d+)$/)?.[1] || leagueInput.trim()}</h3>
+              <h3 className="text-white font-semibold text-sm">{formatLeagueName(leagueLookup || leagueInput.trim())}</h3>
               {leagueEntries.length > 0 && leagueEntries[0].leagueLevel && (() => {
                 const lvl = String(leagueEntries[0].leagueLevel).toLowerCase();
                 const isJP = lvl.includes('jackpot');

@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { formatLeagueName, normalizeBackendLeagueName, SEASON_LABEL } from '@/lib/formatters';
 
 const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -11,7 +12,9 @@ async function fetchDraftMeta(draftId: string) {
     });
     if (!infoRes.ok) return null;
     const info = await infoRes.json();
-    const displayName = info.displayName || `Draft #${draftId}`;
+    const displayName = info.displayName
+      ? normalizeBackendLeagueName(info.displayName)
+      : formatLeagueName(draftId);
     const level = info.draftLevel || info.level || 'Pro';
 
     // Fetch rosters to find a real user's wallet (non-bot)
@@ -56,11 +59,11 @@ export async function generateMetadata(
   const meta = await fetchDraftMeta(draftId);
 
   if (!meta) {
-    return { title: `Draft Results` };
+    return { title: formatLeagueName(draftId) };
   }
 
   const title = `${meta.displayName} — Draft Complete`;
-  const description = `Check out my ${meta.level} draft team on Banana Best Ball! #BBB4`;
+  const description = `Check out my ${meta.level} draft team on Banana Best Ball! #${SEASON_LABEL}`;
 
   return {
     title,

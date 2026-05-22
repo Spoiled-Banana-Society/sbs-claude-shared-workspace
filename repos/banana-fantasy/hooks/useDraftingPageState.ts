@@ -156,6 +156,19 @@ export function useDraftingPageState() {
       return new Set();
     }
   });
+  // Drafts the user explicitly nuked via "Clear All". An explicit Clear All
+  // overrides the self-heal step below — these are NEVER resurrected, even
+  // for an active/in-progress draft. Separate from the general hidden list
+  // so auto-hides can still be un-healed while explicit clears stay cleared.
+  const [explicitlyClearedIds, setExplicitlyClearedIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set();
+    try {
+      const stored = localStorage.getItem('banana-cleared-drafts');
+      return stored ? new Set(JSON.parse(stored) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [queueDrafts, setQueueDrafts] = useState<Draft[]>([]);
   const [creatingQueueDraft, setCreatingQueueDraft] = useState<string | null>(null);
 
@@ -458,11 +471,13 @@ export function useDraftingPageState() {
         });
 
         // Self-heal: drop any live (non-completed) draft id from the hidden
-        // list. Without this, one "Clear All" tap permanently hides a draft
-        // the user is actively in on that device.
+        // list. Without this, one auto-hide permanently hides a draft the
+        // user is actively in on that device. Exception: drafts the user
+        // explicitly nuked via "Clear All" are NEVER un-hidden here — an
+        // explicit Clear All overrides the active-draft protection.
         const wronglyHidden = activeTokens
           .map((t) => t.leagueId)
-          .filter((id) => hiddenDraftIds.has(id));
+          .filter((id) => hiddenDraftIds.has(id) && !explicitlyClearedIds.has(id));
         if (wronglyHidden.length > 0) {
           clientLog('mydrafts', 'unhid.active.drafts', { ids: wronglyHidden });
           setHiddenDraftIds((prev) => {
@@ -607,7 +622,7 @@ export function useDraftingPageState() {
     return () => {
       cancelled = true;
     };
-  }, [hiddenDraftIds, isLive, user]);
+  }, [hiddenDraftIds, explicitlyClearedIds, isLive, user]);
 
   // Only poll filling drafts that belong to the currently-authenticated wallet.
   // Legacy rows with no liveWalletAddress are intentionally excluded — a missed
@@ -1380,6 +1395,11 @@ export function useDraftingPageState() {
     const newHidden = new Set([...Array.from(hiddenDraftIds), ...combinedIds]);
     localStorage.setItem('banana-hidden-drafts', JSON.stringify(Array.from(newHidden)));
     setHiddenDraftIds(newHidden);
+    // Mark these as explicit clears so the self-heal poll can't resurrect
+    // them — Clear All overrides the active-draft protection.
+    const newCleared = new Set([...Array.from(explicitlyClearedIds), ...combinedIds]);
+    localStorage.setItem('banana-cleared-drafts', JSON.stringify(Array.from(newCleared)));
+    setExplicitlyClearedIds(newCleared);
     setLiveDrafts([]);
     localStorage.removeItem('banana-active-drafts');
     localStorage.removeItem('banana-completed-drafts');
