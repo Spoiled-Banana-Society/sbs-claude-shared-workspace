@@ -27,7 +27,9 @@ export async function sendOneSignalPush(opts: OneSignalPushOptions): Promise<num
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Basic ${apiKey}`,
+      // OneSignal's current key format (os_v2_app_…) uses the `Key` auth
+      // scheme; the old `Basic` scheme was for legacy REST API keys.
+      Authorization: `Key ${apiKey}`,
     },
     body: JSON.stringify({
       app_id: appId,
