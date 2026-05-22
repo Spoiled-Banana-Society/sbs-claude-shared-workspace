@@ -76,7 +76,7 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
 
 const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   draftFilled: {
-    label: 'Draft fills',
+    label: 'Draft starting',
     tile: { Icon: IoAmericanFootball, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   pickFast: {
