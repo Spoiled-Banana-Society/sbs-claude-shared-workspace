@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
-import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage } from '@/lib/api/owner';
+import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, friendlyDefaultName } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
@@ -423,7 +423,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const isNotFound = err instanceof ClientApiError && err.status === 404;
           const fallbackUser: User = {
             id: privy.user!.id,
-            username: savedProfile?.username || walletAddress.slice(0, 6) + '...' + walletAddress.slice(-4),
+            username: savedProfile?.username || friendlyDefaultName(walletAddress),
             walletAddress,
             loginMethod,
             profilePicture: savedProfile?.profilePicture,
