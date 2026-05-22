@@ -136,7 +136,7 @@ export default function NotificationsPage() {
               ))}
             </div>
             <Link
-              href="/notifications/settings"
+              href="/profile?tab=notifications"
               className="mt-3 flex items-center justify-between rounded-lg border border-banana/20 bg-banana/[0.06] px-3 py-2 text-sm text-banana hover:bg-banana/10 transition-colors"
             >
               <span>🔔 Draft alert channels — push, email, Telegram, Discord</span>

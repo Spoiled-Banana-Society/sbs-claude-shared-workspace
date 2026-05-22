@@ -25,6 +25,7 @@ export const LOG_AREAS = [
   'referral',
   'profile',
   'prizes',
+  'notifications',
   'admin',
   'backend',
   'global',
@@ -114,6 +115,13 @@ export const LOG_SOURCES = {
   },
   profile: {
     ACTIVITY_FETCH_FAILED: 'profile.activity_fetch_failed',
+  },
+  notifications: {
+    PUSH_SEND_FAILED: 'notifications.push.send_failed',
+    EMAIL_SEND_FAILED: 'notifications.email.send_failed',
+    TELEGRAM_SEND_FAILED: 'notifications.telegram.send_failed',
+    DISCORD_SEND_FAILED: 'notifications.discord.send_failed',
+    DEDUP_STORE_UNAVAILABLE: 'notifications.dedup.store_unavailable',
   },
   global: {
     UNCAUGHT_ERROR: 'global.uncaught.error',

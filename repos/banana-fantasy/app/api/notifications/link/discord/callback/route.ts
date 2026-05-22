@@ -10,7 +10,8 @@ import { logger } from '@/lib/logger';
  * to the notification settings page with a status flag.
  */
 export async function GET(req: NextRequest) {
-  const settingsUrl = new URL('/notifications/settings', req.nextUrl.origin);
+  const settingsUrl = new URL('/profile', req.nextUrl.origin);
+  settingsUrl.searchParams.set('tab', 'notifications');
   const code = req.nextUrl.searchParams.get('code') || '';
   const state = req.nextUrl.searchParams.get('state') || '';
 
