@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
-import { useNotificationOptIn } from '@/hooks/useNotificationOptIn';
+import { usePushSubscription } from '@/hooks/usePushSubscription';
 
 type ChannelId = 'push' | 'email' | 'telegram' | 'discord';
 type EventId = 'draftFilled' | 'pickSlow' | 'pickFast';
@@ -44,7 +44,7 @@ const EVENT_ORDER: EventId[] = ['draftFilled', 'pickSlow', 'pickFast'];
 export function NotificationSettings() {
   const { user } = useAuth();
   const { getAccessToken } = usePrivy();
-  const { isSubscribed, acceptOptIn, isLoading: pushLoading } = useNotificationOptIn();
+  const push = usePushSubscription();
 
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [loading, setLoading] = useState(true);
@@ -154,6 +154,20 @@ export function NotificationSettings() {
     }
   };
 
+  const handlePush = async () => {
+    const wasConnected = push.state === 'connected';
+    const r = wasConnected ? await push.disconnect() : await push.connect();
+    if (!r.ok) {
+      setBanner(r.error || 'Push action failed — please try again.');
+    } else {
+      setBanner(
+        wasConnected
+          ? 'Push disconnected.'
+          : '🔔 Push connected! You’ll get draft alerts on this device.',
+      );
+    }
+  };
+
   const connectDiscord = async () => {
     setBusy('discord');
     try {
@@ -215,11 +229,17 @@ export function NotificationSettings() {
             {/* Push */}
             <ChannelRow
               id="push"
-              connected={isSubscribed}
+              connected={push.state === 'connected'}
               on={channelOn('push')}
-              busy={busy === 'push' || pushLoading}
-              connectLabel={isSubscribed ? 'Connected' : 'Enable'}
-              onConnect={acceptOptIn}
+              busy={busy === 'push' || push.busy}
+              connectLabel={
+                push.state === 'loading'
+                  ? '…'
+                  : push.state === 'connected'
+                    ? 'Disconnect'
+                    : 'Connect'
+              }
+              onConnect={handlePush}
               onToggle={(v) => setChannel('push', v)}
             />
 
