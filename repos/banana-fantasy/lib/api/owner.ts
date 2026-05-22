@@ -7,6 +7,7 @@
 import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { formatLeagueName, normalizeBackendLeagueName } from '@/lib/formatters';
 
 function draftsApi() {
   return createHttpClient({
@@ -165,14 +166,8 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
   const leagueId = token.leagueId || token.cardId;
   const rawDisplayName = (token.leagueDisplayName || '').trim();
   const name = rawDisplayName
-    ? rawDisplayName.replace(/^BBB\s*#/, 'League #')
-    : (() => {
-        // Defensive fallback only — should never hit for a well-formed
-        // backend response. Pull the number off the draftId if there's
-        // truly no displayName.
-        const num = leagueId.match(/(\d+)$/)?.[1];
-        return num ? `League #${num}` : `League ${leagueId}`;
-      })();
+    ? normalizeBackendLeagueName(rawDisplayName)
+    : formatLeagueName(leagueId);
 
   // Real chronology comes from the timestamp embedded in cardId — modern
   // cards use a 13-digit Unix ms (e.g. "1777581797653" or

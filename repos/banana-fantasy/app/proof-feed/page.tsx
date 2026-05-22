@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { formatLeagueName } from '@/lib/formatters';
 
 interface FeedDraft {
   draftId: string;
@@ -159,7 +160,7 @@ export default function ProofFeedPage() {
                   <div className="min-w-0 flex items-center gap-3">
                     <span className={`inline-block w-1.5 h-1.5 rounded-full ${colors.dot}`} />
                     <span className="text-white font-medium text-sm tabular-nums shrink-0">
-                      League #{d.draftNumber}
+                      {formatLeagueName(d.draftNumber)}
                     </span>
                     <span className={`${colors.text} text-[12px] font-semibold uppercase tracking-wider`}>
                       {level}

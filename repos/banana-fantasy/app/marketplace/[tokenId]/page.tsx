@@ -13,6 +13,7 @@ import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
 import { logger } from '@/lib/logger';
+import { formatTeamName, formatOwnerTeamName } from '@/lib/formatters';
 
 interface NftTrait {
   trait_type: string;
@@ -175,7 +176,7 @@ export default function NftDetailPage() {
 
   const getShareText = useCallback(() => {
     const url = window.location.href;
-    const name = nft?.name || `Team #${tokenId}`;
+    const name = nft?.name || formatTeamName(tokenId);
     const listing = nft?.listing;
     const buyPrice = listing?.price?.current
       ? Number(listing.price.current.value) / Math.pow(10, listing.price.current.decimals ?? 18)
@@ -245,7 +246,7 @@ export default function NftDetailPage() {
       notifySeller({
         sellerWallet: sellerAddr,
         tokenId,
-        teamName: nft.name || `Team #${tokenId}`,
+        teamName: nft.name || formatTeamName(tokenId),
         price: buyPrice || 0,
         buyerWallet: walletAddress,
       });
@@ -255,7 +256,7 @@ export default function NftDetailPage() {
       type: 'buy',
       walletAddress,
       tokenId,
-      teamName: nft.name || `Team #${tokenId}`,
+      teamName: nft.name || formatTeamName(tokenId),
       price: buyPrice,
       counterparty: nft.listing?.protocol_data?.parameters?.offerer || null,
       orderHash: nft.listing?.order_hash || null,
@@ -267,7 +268,7 @@ export default function NftDetailPage() {
         type: 'sell',
         walletAddress: sellerAddr,
         tokenId,
-        teamName: nft.name || `Team #${tokenId}`,
+        teamName: nft.name || formatTeamName(tokenId),
         price: buyPrice,
         counterparty: walletAddress,
         orderHash: nft.listing?.order_hash || null,
@@ -278,7 +279,7 @@ export default function NftDetailPage() {
     addNotification({
       type: 'purchase_complete',
       title: 'Purchase Complete',
-      message: `You bought ${nft.name || `Team #${tokenId}`} for $${(buyPrice || 0).toFixed(2)}`,
+      message: `You bought ${nft.name || formatTeamName(tokenId)} for $${(buyPrice || 0).toFixed(2)}`,
       link: `/marketplace/${tokenId}`,
     });
 
@@ -433,7 +434,7 @@ export default function NftDetailPage() {
         notifyOwnerOfOffer({
           ownerWallet: ownerAddr,
           tokenId,
-          teamName: nft?.name || `Team #${tokenId}`,
+          teamName: nft?.name || formatTeamName(tokenId),
           offerAmount: amount,
           offererWallet: walletAddress,
         });
@@ -443,7 +444,7 @@ export default function NftDetailPage() {
         type: 'offer_made',
         walletAddress,
         tokenId,
-        teamName: nft?.name || `Team #${tokenId}`,
+        teamName: nft?.name || formatTeamName(tokenId),
         price: amount,
         counterparty: ownerAddr || null,
       });
@@ -518,7 +519,7 @@ export default function NftDetailPage() {
         type: 'offer_accepted',
         walletAddress,
         tokenId,
-        teamName: nft?.name || `Team #${tokenId}`,
+        teamName: nft?.name || formatTeamName(tokenId),
         price: offer.amount,
         counterparty: offer.offererAddress || null,
         orderHash: offer.orderHash || null,
@@ -529,7 +530,7 @@ export default function NftDetailPage() {
         notifyOffererOfAcceptance({
           offererWallet: offer.offererAddress,
           tokenId,
-          teamName: nft?.name || `Team #${tokenId}`,
+          teamName: nft?.name || formatTeamName(tokenId),
           offerAmount: offer.amount,
         });
       }
@@ -574,7 +575,7 @@ export default function NftDetailPage() {
         type: 'cancel',
         walletAddress,
         tokenId,
-        teamName: nft?.name || `Team #${tokenId}`,
+        teamName: nft?.name || formatTeamName(tokenId),
         price: offer.amount,
         orderHash: offer.orderHash || null,
       });
@@ -647,7 +648,8 @@ export default function NftDetailPage() {
   const isOwner = walletAddress && nftOwner && walletAddress.toLowerCase() === nftOwner.toLowerCase();
 
   const imageUrl = nft.display_image_url || nft.image_url;
-  const teamName = leagueName || nft.name || `Team #${tokenId}`;
+  const teamName = formatTeamName(tokenId);
+  const teamHeader = formatOwnerTeamName(tokenId, nft.ownerName);
 
   // Group roster by position type
   const qbs = roster.filter(r => r.slot.startsWith('QB'));
@@ -694,7 +696,7 @@ export default function NftDetailPage() {
                 : 'from-pro/20 to-bg-secondary'
               } flex items-center justify-center p-8`}>
                 <SbsPassThumb
-                  label={leagueName?.startsWith('BBB') ? leagueName.replace('BBB ', '') : `#${tokenId}`}
+                  label={leagueName || formatTeamName(tokenId)}
                   size={320}
                   roster={roster.map(r => r.value)}
                 />
@@ -726,7 +728,7 @@ export default function NftDetailPage() {
         <div>
           {/* Title */}
           <div className="flex items-center justify-between mb-1">
-            <h1 className="text-2xl font-bold text-text-primary font-mono">{teamName}</h1>
+            <h1 className="text-2xl font-bold text-text-primary font-mono">{teamHeader}</h1>
             <div className="relative">
               <button
                 onClick={() => setShowShareMenu(prev => !prev)}

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
+import { formatTeamName, normalizeBackendLeagueName } from '@/lib/formatters';
 
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
@@ -53,7 +54,9 @@ async function fetchNftMeta(tokenId: string) {
       }
     } catch { /* optional */ }
 
-    const name = leagueName || nft.name || `Team #${tokenId}`;
+    const name = (leagueName && normalizeBackendLeagueName(leagueName))
+      || nft.name
+      || formatTeamName(tokenId);
     const imageUrl = nft.display_image_url || nft.image_url || null;
 
     return { name, imageUrl, level, rank, price };
@@ -69,7 +72,7 @@ export async function generateMetadata(
   const nft = await fetchNftMeta(tokenId);
 
   if (!nft) {
-    return { title: `Team #${tokenId}` };
+    return { title: formatTeamName(tokenId) };
   }
 
   const priceStr = nft.price ? ` - $${nft.price.toFixed(2)}` : '';

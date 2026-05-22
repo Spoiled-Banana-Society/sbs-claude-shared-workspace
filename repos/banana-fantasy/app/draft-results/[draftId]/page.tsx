@@ -9,6 +9,7 @@ import { getOwnerDraftTokens } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { formatLeagueName, formatTeamName, normalizeBackendLeagueName } from '@/lib/formatters';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -200,7 +201,9 @@ export default function DraftResultsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftId, walletAddress]);
 
-  const title = displayName || draftId;
+  const title = displayName
+    ? normalizeBackendLeagueName(displayName)
+    : formatLeagueName(draftId);
   const roster = allRosters[selectedPlayer];
   const cardImageUrl = cardImages[selectedPlayer.toLowerCase()]?.imageUrl || null;
   const cardId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
@@ -305,7 +308,7 @@ export default function DraftResultsPage() {
         }
 
         // League · Team · Level
-        const leagueNum = (title).replace(/\D/g, '') || title;
+        const leagueLabel = title;
         const levelColor = draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7';
 
         ctx.font = '22px system-ui, sans-serif';
@@ -313,11 +316,11 @@ export default function DraftResultsPage() {
 
         // Build parts with measurements
         const parts: Array<{ text: string; color: string }> = [
-          { text: `League #${leagueNum}`, color: '#ffffff' },
+          { text: leagueLabel, color: '#ffffff' },
         ];
         if (teamNumber) {
           parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
-          parts.push({ text: `Team #${teamNumber}`, color: '#ffffff' });
+          parts.push({ text: formatTeamName(teamNumber), color: '#ffffff' });
         }
         parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
         parts.push({ text: draftLevel, color: levelColor });
@@ -505,7 +508,7 @@ export default function DraftResultsPage() {
 
         {/* Header */}
         <div className="text-center mb-4">
-          <h1 className="text-white text-2xl font-bold">League #{title.replace(/\D/g, '') || title}</h1>
+          <h1 className="text-white text-2xl font-bold">{title}</h1>
 
           {/* Team # = the user's BBB4 NFT token ID (sequential 1-800).
               Skipped entirely for legacy cards with timestamp-shaped ids
@@ -513,7 +516,7 @@ export default function DraftResultsPage() {
           <div className="flex items-center justify-center gap-2 mt-2">
             {teamNumber && (
               <span className="text-white/70 text-sm font-medium">
-                Team #{teamNumber}
+                {formatTeamName(teamNumber)}
               </span>
             )}
             {teamNumber && <span className="text-white/10 text-xs">·</span>}

@@ -18,6 +18,7 @@ import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers } from '@/lib/api/firebase';
+import { formatLeagueName, normalizeBackendLeagueName } from '@/lib/formatters';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -481,7 +482,9 @@ export function useDraftingPageState() {
           else type = isDrafting ? 'pro' : null;
           return {
             id: t.leagueId || t.cardId,
-            contestName: t.leagueDisplayName || `League #${t.leagueId || t.cardId}`,
+            contestName: t.leagueDisplayName
+              ? normalizeBackendLeagueName(t.leagueDisplayName)
+              : formatLeagueName(t.leagueId || t.cardId),
             status: isDrafting ? 'drafting' : 'filling',
             type,
             draftSpeed,

@@ -11,6 +11,7 @@ import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
 import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 import { logger } from '@/lib/logger';
+import { formatLeagueName } from '@/lib/formatters';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
 import type {
   DraftInfoPayload,
@@ -172,7 +173,7 @@ export function useDraftLiveSync({
           draftStore.removeDraft(pendingId);
           draftStore.addDraft({
             id: newId,
-            contestName: draftRoom.contestName || `BBB League #${String(newId).split('-').pop() || newId}`,
+            contestName: draftRoom.contestName || formatLeagueName(newId),
             status: 'filling',
             type: null,
             draftSpeed: speedParam || 'fast',

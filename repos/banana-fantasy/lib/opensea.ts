@@ -2,6 +2,8 @@
  * OpenSea types, constants, and mapping helpers for the BBB4 marketplace.
  */
 
+import { formatTeamName, normalizeBackendLeagueName } from './formatters';
+
 // ── Constants ───────────────────────────────────────────────────────
 export const BBB4_CONTRACT = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
@@ -219,7 +221,7 @@ function listingPriceUsd(listing: OpenSeaListing): number {
 /**
  * Build display name for an NFT.
  * OpenSea often returns bare names like "#1" — we want "Draft Pass #1" for undrafted
- * passes and "Team #1" for drafted teams with a roster.
+ * passes and "BBB Team #1" for drafted teams with a roster.
  */
 function nftDisplayName(
   leagueName: string | null,
@@ -227,10 +229,10 @@ function nftDisplayName(
   tokenId: string,
   hasRoster: boolean,
 ): string {
-  if (leagueName) return leagueName;
+  if (leagueName) return normalizeBackendLeagueName(leagueName);
   // Skip OpenSea names that are just "#N" or bare numbers — not useful
   if (openSeaName && !/^#?\d+$/.test(openSeaName.trim())) return openSeaName;
-  return hasRoster ? `Team #${tokenId}` : `Draft Pass #${tokenId}`;
+  return hasRoster ? formatTeamName(tokenId) : `Draft Pass #${tokenId}`;
 }
 
 /**

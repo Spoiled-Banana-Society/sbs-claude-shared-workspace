@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
-import { formatScore, formatRank } from '@/lib/formatters';
+import { formatScore, formatRank, formatLeagueName } from '@/lib/formatters';
 import type { League } from '@/types';
 
 type ViewMode = 'myteams' | 'leaderboard';
@@ -170,10 +170,9 @@ export default function StandingsPage() {
   };
 
   const handleOpenLeagueFromLookup = (draftId: string, options?: { tab?: string; wallet?: string }) => {
-    const leagueNum = draftId.match(/(\d+)$/)?.[1] || draftId;
     setModalLeague({
       id: draftId,
-      name: `League #${leagueNum}`,
+      name: formatLeagueName(draftId),
       contestId: '',
       type: 'regular',
       leagueRank: 0,
