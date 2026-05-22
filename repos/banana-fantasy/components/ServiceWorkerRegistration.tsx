@@ -23,10 +23,17 @@ export default function ServiceWorkerRegistration() {
       .getRegistrations()
       .then((regs) => {
         regs.forEach((reg) => {
-          const url = reg.active?.scriptURL || reg.installing?.scriptURL || '';
-          // Only remove our old self-destructing sw.js. Leave OneSignal's
-          // worker (OneSignalSDKWorker.js) and anything else alone.
-          if (url.endsWith('/sw.js')) {
+          const url =
+            reg.active?.scriptURL ||
+            reg.installing?.scriptURL ||
+            reg.waiting?.scriptURL ||
+            '';
+          // OneSignal owns the only service worker the app needs. Remove
+          // any OTHER worker — the old self-destructing /sw.js, or stale
+          // workers left from past builds — since a squatting worker
+          // blocks OneSignal's from receiving web push. Never touch
+          // OneSignal's own worker (its URL contains "OneSignal").
+          if (url && !url.includes('OneSignal')) {
             reg.unregister().catch(() => {});
           }
         });
