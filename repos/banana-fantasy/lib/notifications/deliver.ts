@@ -92,12 +92,16 @@ export async function deliverToRecipient(
 
   // One structured trace line per delivery — visible in the Vercel logs
   // and the breadcrumb CLI so a successful/skipped run can be followed too.
+  // `providerId` (e.g. the Postmark MessageID) lets a line be traced
+  // straight into the channel provider's own activity log.
   logger.info('notifications.deliver', {
     outcome,
     event: event.type,
     draftId: event.draftId,
     actor: wallet,
-    channels: results.map((r) => `${r.channel}:${r.status}`).join(','),
+    channels: results
+      .map((r) => `${r.channel}:${r.status}${r.providerId ? `(${r.providerId})` : ''}`)
+      .join(','),
   });
 
   return {

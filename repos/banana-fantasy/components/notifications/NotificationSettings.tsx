@@ -130,7 +130,9 @@ export function NotificationSettings() {
       });
       if (res.ok) {
         setPrefs((await res.json()).prefs as Prefs);
-        setBanner('Email saved ✅');
+        setBanner(
+          '✅ Email connected. Check your Spam folder for the first alert and mark it "Not spam" so the rest land in your inbox.',
+        );
       }
     } finally {
       setBusy(null);
@@ -246,6 +248,12 @@ export function NotificationSettings() {
                   Save
                 </button>
               </div>
+              <p className="mt-2 text-xs text-gray-500">
+                📬 Your first alert may land in{' '}
+                <span className="text-gray-300">Spam</span> or Promotions — open it and
+                tap <span className="text-gray-300">&quot;Not spam&quot;</span> so every
+                alert after it reaches your inbox.
+              </p>
             </ChannelRow>
 
             {/* Telegram */}

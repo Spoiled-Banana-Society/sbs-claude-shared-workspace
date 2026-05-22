@@ -89,7 +89,10 @@ export const sendEmail: ChannelSender = async (message, _event, prefs) => {
     if (!res.ok) {
       return fail('email', `Postmark ${res.status}: ${await res.text().catch(() => '')}`);
     }
-    return { channel: 'email', status: 'sent' };
+    // Capture Postmark's MessageID so a log line can be traced straight
+    // into Postmark's delivery activity.
+    const pmBody = (await res.json().catch(() => ({}))) as { MessageID?: string };
+    return { channel: 'email', status: 'sent', providerId: pmBody.MessageID };
   } catch (err) {
     return fail('email', errText(err));
   }

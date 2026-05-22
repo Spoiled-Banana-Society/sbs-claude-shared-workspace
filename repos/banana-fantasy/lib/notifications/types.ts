@@ -73,6 +73,8 @@ export interface ChannelResult {
   reason?: string;
   /** Recipient count when the provider reports it (push). */
   recipients?: number;
+  /** Provider-side message id (e.g. Postmark MessageID) for log tracing. */
+  providerId?: string;
 }
 
 /**
