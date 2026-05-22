@@ -91,6 +91,11 @@ const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
 const EVENT_ORDER: EventId[] = ['draftFilled', 'pickFast', 'pickSlow'];
 const CHANNEL_ORDER: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
 
+// Discord @mentions only reach a user who is in the SBS Discord server —
+// OAuth links the account but doesn't add them. Surface a join link.
+// Env-driven so the invite can be rotated without a redeploy.
+const DISCORD_INVITE_URL = process.env.NEXT_PUBLIC_DISCORD_INVITE_URL || '';
+
 export function NotificationSettings() {
   const { user } = useAuth();
   const { getAccessToken } = usePrivy();
@@ -519,6 +524,20 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
+                    )}
+                    {id === 'discord' && on && DISCORD_INVITE_URL && (
+                      <p className="text-[12px] leading-relaxed text-text-muted">
+                        Pings only reach you inside the SBS Discord —{' '}
+                        <a
+                          href={DISCORD_INVITE_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-text-secondary underline decoration-white/20 underline-offset-[3px] transition-colors hover:text-white"
+                        >
+                          join the server
+                        </a>{' '}
+                        if you haven&apos;t yet.
+                      </p>
                     )}
                     {id === 'push' && iosNeedsInstall && !on && (
                       <p className="text-[12px] leading-relaxed text-amber-400/90">
