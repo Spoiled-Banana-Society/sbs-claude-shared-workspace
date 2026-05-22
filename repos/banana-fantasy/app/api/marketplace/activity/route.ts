@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { formatTeamName } from '@/lib/formatters';
 
 const COLLECTION = 'marketplace_activity';
 
@@ -159,7 +158,7 @@ export async function POST(req: NextRequest) {
       type,
       walletAddress: walletAddress.toLowerCase(),
       tokenId: String(tokenId),
-      teamName: teamName || formatTeamName(tokenId),
+      teamName: teamName || `Team #${tokenId}`,
       price: price ?? null,
       counterparty: counterparty?.toLowerCase() ?? null,
       orderHash: orderHash ?? null,

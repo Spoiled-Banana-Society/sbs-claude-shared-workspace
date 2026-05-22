@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { formatLeagueName } from '@/lib/formatters';
 
 interface FeedDraft {
   draftId: string;
@@ -168,7 +167,7 @@ export default function ProofFeedPage() {
                 const colors = LEVEL_COLORS[level];
                 return (
                   <tr key={d.draftId} className="border-t border-white/5 hover:bg-white/5">
-                    <td className="px-4 py-2 text-white/80">{formatLeagueName(d.draftNumber)}</td>
+                    <td className="px-4 py-2 text-white/80 font-mono">#{d.draftNumber}</td>
                     <td className="px-4 py-2 font-semibold" style={{ color: colors.color }}>{colors.label}</td>
                     <td className="px-4 py-2 text-right">
                       <Link href={`/proof/${d.draftId}`} className="text-banana hover:underline">Verify →</Link>

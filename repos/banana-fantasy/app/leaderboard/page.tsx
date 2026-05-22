@@ -3,7 +3,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
-import { SEASON_LABEL } from '@/lib/formatters';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -148,7 +147,7 @@ export default function LeaderboardPage() {
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -15 }} animate={{ opacity: 1, y: 0 }} className="text-center mb-6">
           <h1 className="text-white text-2xl sm:text-3xl font-bold">Season Leaderboard</h1>
-          <p className="text-white/40 text-sm mt-1">{SEASON_LABEL} — Best Ball Banana Season 4</p>
+          <p className="text-white/40 text-sm mt-1">BBB4 — Best Ball Banana Season 4</p>
         </motion.div>
 
         {/* Prize Pool Progress */}

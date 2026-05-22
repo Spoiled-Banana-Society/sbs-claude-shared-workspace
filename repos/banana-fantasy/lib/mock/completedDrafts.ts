@@ -3,7 +3,7 @@ import { CompletedDraft } from '@/types';
 export const mockCompletedDrafts: CompletedDraft[] = [
   {
     id: 'c1',
-    contestName: 'BBB League #892',
+    contestName: 'League #892',
     type: 'jackpot',
     finalPlace: 1,
     totalPlayers: 10,
@@ -19,7 +19,7 @@ export const mockCompletedDrafts: CompletedDraft[] = [
   },
   {
     id: 'c2',
-    contestName: 'BBB League #756',
+    contestName: 'League #756',
     type: 'hof',
     finalPlace: 2,
     totalPlayers: 10,
@@ -35,7 +35,7 @@ export const mockCompletedDrafts: CompletedDraft[] = [
   },
   {
     id: 'c3',
-    contestName: 'BBB League #621',
+    contestName: 'League #621',
     type: 'regular',
     finalPlace: 3,
     totalPlayers: 10,
@@ -51,7 +51,7 @@ export const mockCompletedDrafts: CompletedDraft[] = [
   },
   {
     id: 'c4',
-    contestName: 'BBB League #512',
+    contestName: 'League #512',
     type: 'regular',
     finalPlace: 5,
     totalPlayers: 10,
@@ -67,7 +67,7 @@ export const mockCompletedDrafts: CompletedDraft[] = [
   },
   {
     id: 'c5',
-    contestName: 'BBB League #401',
+    contestName: 'League #401',
     type: 'hof',
     finalPlace: 1,
     totalPlayers: 10,
@@ -83,7 +83,7 @@ export const mockCompletedDrafts: CompletedDraft[] = [
   },
   {
     id: 'c6',
-    contestName: 'BBB League #298',
+    contestName: 'League #298',
     type: 'regular',
     finalPlace: 7,
     totalPlayers: 10,

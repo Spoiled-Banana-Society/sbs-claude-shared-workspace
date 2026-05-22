@@ -24,7 +24,6 @@ import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
 import * as draftStore from '@/lib/draftStore';
-import { formatLeagueName } from '@/lib/formatters';
 
 function StagingMintButton({
   userId,
@@ -243,7 +242,7 @@ export default function HomePage() {
       router.push(`/draft-room?${params.toString()}`);
     } else {
       const localDraftId = `local-${Date.now()}`;
-      const localContestName = formatLeagueName(Math.floor(Math.random() * 9000) + 1000);
+      const localContestName = `League #${Math.floor(Math.random() * 9000) + 1000}`;
       draftStore.addDraft({
         id: localDraftId,
         contestName: localContestName,

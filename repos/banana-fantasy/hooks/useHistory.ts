@@ -4,7 +4,6 @@ import type { CompletedDraft, ContestType } from '@/types';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 import { getOwnerDraftTokens, type ApiDraftToken } from '@/lib/api/owner';
-import { formatLeagueName, normalizeBackendLeagueName } from '@/lib/formatters';
 
 function levelToContestType(level: string): ContestType {
   if (level === 'Jackpot') return 'jackpot';
@@ -28,9 +27,8 @@ function mapTokenToCompletedDraft(t: ApiDraftToken): CompletedDraft {
 
   // Derive league name from league ID (same logic as mapDraftTokenToLeague)
   const leagueId = t.leagueId || t.cardId;
-  const contestName = t.leagueDisplayName
-    ? normalizeBackendLeagueName(t.leagueDisplayName)
-    : formatLeagueName(leagueId);
+  const leagueNum = leagueId.match(/(\d+)$/)?.[1];
+  const contestName = leagueNum ? `League #${leagueNum}` : (t.leagueDisplayName || `League ${leagueId}`);
 
   const finalPlace = t.rank ? parseInt(t.rank, 10) : 0;
 

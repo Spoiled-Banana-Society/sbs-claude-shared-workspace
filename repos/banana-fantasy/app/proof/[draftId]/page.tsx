@@ -17,7 +17,6 @@ import {
   verifyDraftMerkleProof,
   type DraftType as MerkleDraftType,
 } from '@/lib/batchMerkleClient';
-import { formatLeagueName } from '@/lib/formatters';
 
 type ProofStatus =
   | 'pending'
@@ -168,7 +167,7 @@ export default function ProofPage() {
         const res = await fetch(`/api/batches/${locator.batchNumber}/proof`);
         if (!res.ok) {
           if (cancelled) return;
-          setProofError(`Could not load proof for ${formatLeagueName(locator.draftNumber)} (HTTP ${res.status})`);
+          setProofError(`Could not load proof for League #${locator.draftNumber} (HTTP ${res.status})`);
           return;
         }
         const body = (await res.json()) as BatchProofPayload;
@@ -262,7 +261,7 @@ export default function ProofPage() {
       <div>
         <Link href="/drafting" className="text-xs text-white/50 hover:text-white/80">← Back</Link>
         <h1 className="text-2xl font-semibold text-white mt-2">
-          Provably Fair · {formatLeagueName(locator.draftNumber)}
+          Provably Fair · League #{locator.draftNumber}
         </h1>
         <p className="text-sm text-white/60 mt-1">
           Independently verifiable on Base mainnet.
@@ -317,7 +316,7 @@ export default function ProofPage() {
                     ? <>This draft&apos;s type was committed on Base before any draft filled. The Merkle proof below was verified in your browser against the on-chain root — no SBS trust required.</>
                     : merkleVerified === 'failed'
                     ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
-                    : <>{formatLeagueName(locator.draftNumber)} hasn&apos;t filled yet. The randomization is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
+                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
                 </p>
               </div>
               {merkleVerified === 'verified' && (
@@ -493,11 +492,11 @@ export default function ProofPage() {
 
         {isMidFlight && (
           <p className="text-xs text-amber-200/80 bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 mb-2">
-            <span className="font-semibold">Slot positions are sealed</span> until this batch closes ({formatLeagueName(lastDraftInBatch)}).
+            <span className="font-semibold">Slot positions are sealed</span> until this batch closes (League #{lastDraftInBatch}).
             {' '}
             {isVRFCommit ? (
               <>Chainlink VRF has delivered, and the salt was committed at the same moment. The 6 positions are
-              locked in but the salt stays sealed until {formatLeagueName(lastDraftInBatch)} fills — so no one can compute
+              locked in but the salt stays sealed until League #{lastDraftInBatch} fills — so no one can compute
               which draft is which type during the batch. After close, the salt is revealed and anyone can
               re-derive every position.</>
             ) : isVRF ? (

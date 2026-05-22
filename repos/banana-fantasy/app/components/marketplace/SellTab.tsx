@@ -7,7 +7,6 @@ import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { isDraftingOpen } from '@/lib/draftTypes';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
-import { formatTeamName } from '@/lib/formatters';
 
 type SuccessType = 'buy' | 'sell' | 'list';
 
@@ -109,7 +108,7 @@ export function SellTab({
                       <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
                     ) : (
                       <SbsPassThumb
-                        label={team.name || formatTeamName(team.tokenId)}
+                        label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`}
                         size={56}
                         roster={team.roster}
                       />
@@ -226,7 +225,7 @@ export function SellTab({
                     {offer.imageUrl ? (
                       <Image src={offer.imageUrl} alt={offer.teamName} width={48} height={48} className="rounded-xl" />
                     ) : (
-                      <SbsPassThumb label={offer.teamName || formatTeamName(offer.tokenId)} size={48} />
+                      <SbsPassThumb label={offer.teamName?.startsWith('BBB') ? offer.teamName.replace('BBB ', '') : `#${offer.tokenId}`} size={48} />
                     )}
                     <div>
                       <h4 className="text-text-primary font-semibold font-mono text-sm">{offer.teamName}</h4>
@@ -298,7 +297,7 @@ export function SellTab({
                 {selectedTeam.imageUrl ? (
                   <Image src={selectedTeam.imageUrl} alt={selectedTeam.name} width={56} height={56} className="rounded-xl" />
                 ) : (
-                  <SbsPassThumb label={selectedTeam.name || formatTeamName(selectedTeam.tokenId)} size={56} />
+                  <SbsPassThumb label={selectedTeam.name?.startsWith('BBB') ? selectedTeam.name.replace('BBB ', '') : `#${selectedTeam.tokenId}`} size={56} />
                 )}
                 <div>
                   <h3 className="text-text-primary font-semibold font-mono">{selectedTeam.name}</h3>

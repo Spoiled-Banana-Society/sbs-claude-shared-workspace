@@ -11,7 +11,6 @@ import {
   getSyntheticPrizesForUser,
 } from '@/lib/prizeOverlay';
 import type { PrizeHistoryItem, PrizeStatus, PrizeWin, PrizeWithdrawal, WithdrawalStatus } from '@/types';
-import { normalizeBackendLeagueName } from '@/lib/formatters';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
 
@@ -105,9 +104,9 @@ function normalizePrizeHistory(payload: unknown, userId: string) {
 
     const amount = asNumber(record.amount) ?? asNumber(record.prizeAmount) ?? 0;
     const status = normalizePrizeStatus(record.status);
-    // Server returns "BBB #N"; in-app label is "BBB League #N".
+    // Server returns "BBB #N"; in-app label is plain "League #N".
     const rawContestName = asString(record.contestName) || asString(record.displayName) || asString(record.leagueDisplayName) || 'Contest Prize';
-    const contestName = normalizeBackendLeagueName(rawContestName);
+    const contestName = rawContestName.replace(/^BBB\s*#/, 'League #');
     const win: PrizeHistoryItem = {
       id: asString(record.id) || asString(record.prizeId) || crypto.randomUUID(),
       type: 'win',

@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { motion, useInView } from 'framer-motion';
-import { SEASON_LABEL } from '@/lib/formatters';
 
 /* ────────── Scroll-animated wrapper ────────── */
 
@@ -125,7 +124,7 @@ const FAQS = [
   },
   {
     q: 'When does the season run?',
-    a: `${SEASON_LABEL} drafts open in June 2026. Scoring runs through the full NFL regular season (September–January). Playoffs and final prizes are distributed after the season ends.`,
+    a: 'BBB4 drafts open in June 2026. Scoring runs through the full NFL regular season (September–January). Playoffs and final prizes are distributed after the season ends.',
   },
 ];
 
@@ -429,7 +428,7 @@ export default function HowItWorksPage() {
             <div className="text-5xl mb-4">🍌</div>
             <h2 className="text-3xl sm:text-5xl font-black mb-4">Ready to Draft?</h2>
             <p className="text-gray-400 text-lg mb-8 max-w-lg mx-auto">
-              Join thousands of players in {SEASON_LABEL} — the biggest Best Ball season yet.
+              Join thousands of players in BBB4 — the biggest Best Ball season yet.
               Buy a pass, draft your squad, win prizes.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">

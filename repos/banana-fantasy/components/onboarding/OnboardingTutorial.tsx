@@ -654,7 +654,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   </div>
                   <div className="text-left">
                     <p className="text-white font-semibold">Your Team</p>
-                    <p className="text-white/40 text-sm">BBB League #4521</p>
+                    <p className="text-white/40 text-sm">League #4,521</p>
                   </div>
                   <div className="ml-auto text-right">
                     <p className="text-banana font-bold text-xl">$45</p>
