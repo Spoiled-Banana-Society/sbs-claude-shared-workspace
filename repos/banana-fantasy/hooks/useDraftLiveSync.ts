@@ -13,6 +13,7 @@ import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
+import { clientLog } from '@/lib/clientLog';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
 import type {
   DraftInfoPayload,
@@ -171,6 +172,7 @@ export function useDraftLiveSync({
           // room renders the right number the instant the join lands instead
           // of waiting for the RTDB push or the 2.5s poll to catch up.
           if (typeof draftRoom.players === 'number' && draftRoom.players > 0) {
+            clientLog('pcdiag', 'set.join', { players: draftRoom.players });
             setPlayerCount(Math.min(Math.max(draftRoom.players, 1), 10));
           }
 

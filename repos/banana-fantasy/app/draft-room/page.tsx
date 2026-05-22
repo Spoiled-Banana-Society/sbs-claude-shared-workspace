@@ -194,6 +194,24 @@ function DraftRoomContent() {
     if (stored?.phase && stored.phase !== 'filling') return 10;
     return Math.min(Math.max(stored?.players || initialPlayers || 1, 1), 10);
   });
+  // DIAGNOSTIC (player-count timing) — remove after diagnosis.
+  useEffect(() => {
+    clientLog('pcdiag', 'mount', {
+      urlDraftId,
+      draftId,
+      initialPlayers,
+      storedPlayers: stored?.players ?? null,
+      storedPhase: stored?.phase ?? null,
+      initialPlayerCount: playerCount,
+      phase,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // DIAGNOSTIC (player-count timing) — remove after diagnosis.
+  useEffect(() => {
+    clientLog('pcdiag', 'playerCount.change', { playerCount, phase, draftId });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playerCount]);
   const [preSpinCountdown, setPreSpinCountdown] = useState(() => {
     if (stored?.preSpinStartedAt) return Math.max(0, Math.floor(15 - (Date.now() - stored.preSpinStartedAt) / 1000));
     return 15;
@@ -1086,7 +1104,7 @@ function DraftRoomContent() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) setPlayerCount(count);
+        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(count); }
       } catch { /* ignore */ }
     };
 
@@ -1104,7 +1122,7 @@ function DraftRoomContent() {
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     const unsub = subscribeDraftNumPlayers(draftId, (count) => {
-      if (count > 0) setPlayerCount(count);
+      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(count); }
     });
     return () => { unsub(); };
   }, [draftId, phase]);
