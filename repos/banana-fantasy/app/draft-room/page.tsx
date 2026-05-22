@@ -11,7 +11,7 @@ import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
-import { subscribeDraftDisplayName } from '@/lib/api/firebase';
+import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
@@ -1093,6 +1093,19 @@ function DraftRoomContent() {
     const interval = setInterval(pollPlayers, 2500);
     return () => { cancelled = true; clearInterval(interval); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftId, phase]);
+
+  // Live player count via Firebase RTDB — Go API writes
+  // drafts/{draftId}/numPlayers on every join, so a new player shows up
+  // within ~100ms instead of waiting up to 2.5s for the next poll above.
+  // The poll stays as a safety net (e.g. staging fill-bots can leave the
+  // RTDB count stale; the poll reconciles it).
+  useEffect(() => {
+    if (!draftId || phase !== 'filling') return;
+    const unsub = subscribeDraftNumPlayers(draftId, (count) => {
+      if (count > 0) setPlayerCount(count);
+    });
+    return () => { unsub(); };
   }, [draftId, phase]);
 
   useEffect(() => {
