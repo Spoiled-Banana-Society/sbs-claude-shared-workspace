@@ -45,6 +45,7 @@ interface UseDraftLiveSyncParams {
   setPhase: Dispatch<SetStateAction<RoomPhase>>;
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
+  setPlayerCount: Dispatch<SetStateAction<number>>;
   draftIdRef: MutableRefObject<string>;
 }
 
@@ -64,6 +65,7 @@ export function useDraftLiveSync({
   setPhase,
   setMainCountdown,
   setShowSlotMachine,
+  setPlayerCount,
   draftIdRef,
 }: UseDraftLiveSyncParams) {
   const { getAccessToken } = usePrivy();
@@ -163,6 +165,14 @@ export function useDraftLiveSync({
           const newId = draftRoom.id;
           logger.debug('[Draft Room] Joined draft:', newId, 'players:', draftRoom.players);
           setDraftId(newId);
+
+          // Show the real player count immediately from the join response —
+          // the backend already tells us how many are in the draft, so the
+          // room renders the right number the instant the join lands instead
+          // of waiting for the RTDB push or the 2.5s poll to catch up.
+          if (typeof draftRoom.players === 'number' && draftRoom.players > 0) {
+            setPlayerCount(Math.min(Math.max(draftRoom.players, 1), 10));
+          }
 
           try {
             const hidden = JSON.parse(localStorage.getItem('banana-hidden-drafts') || '[]');

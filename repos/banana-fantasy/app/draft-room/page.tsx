@@ -311,6 +311,7 @@ function DraftRoomContent() {
     setPhase,
     setMainCountdown,
     setShowSlotMachine,
+    setPlayerCount,
     draftIdRef,
   });
 
