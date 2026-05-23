@@ -608,17 +608,43 @@ export function NotificationSettings() {
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
-                    {id === 'discord' && on && !linked && isStandalonePWA && (
+                    {id === 'discord' && !linked && isStandalonePWA && (
                       // iOS PWA quirk: SafariViewController white-screens
-                      // first load and often can't see the Discord session;
-                      // user has to refresh, then escape to Safari to
-                      // finish. Keep the hint short and visual.
-                      <p className="text-[12px] leading-relaxed text-amber-400/95">
-                        📱 In the new tab:{' '}
-                        <span className="font-semibold">refresh</span> if blank →
-                        tap the <span className="font-semibold">↗ Safari icon</span> (bottom-right) →
-                        tap <span className="font-semibold">Authorize</span>. Then come back to this app.
-                      </p>
+                      // first load and can't complete Discord OAuth on
+                      // its own — user has to refresh, then escape into
+                      // real Safari (via the bottom-right Safari icon)
+                      // to actually finish. Show this BEFORE the toggle
+                      // tap so the user knows what to expect; hide it
+                      // once linked.
+                      <div className="text-[12px] leading-relaxed text-amber-400/95">
+                        <p className="mb-1.5 font-semibold">
+                          📱 Mobile only — must use Safari to finish:
+                        </p>
+                        <ol className="ml-5 list-decimal space-y-0.5">
+                          <li>Toggle Discord on</li>
+                          <li>Refresh the page that opens (if blank)</li>
+                          <li>
+                            Tap the Safari icon{' '}
+                            <span
+                              aria-hidden
+                              className="inline-flex h-[14px] w-[14px] translate-y-[2px] items-center justify-center rounded-full border border-amber-400/70"
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                width="9"
+                                height="9"
+                                fill="currentColor"
+                                aria-hidden
+                              >
+                                <path d="M15.5 8.5 L12 12 L8.5 15.5 L12 12 Z" />
+                              </svg>
+                            </span>{' '}
+                            at the bottom-right
+                          </li>
+                          <li>Tap <span className="font-semibold">Authorize</span></li>
+                          <li>Come back to this app</li>
+                        </ol>
+                      </div>
                     )}
                     {(id === 'telegram' || id === 'discord') && linked && (
                       <TextAction onClick={() => disconnectChannel(id)}>
