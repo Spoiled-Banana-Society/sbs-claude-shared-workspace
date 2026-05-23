@@ -110,6 +110,12 @@ export function NotificationSettings() {
   // iOS only delivers web push to an installed (home-screen) PWA — Apple's
   // restriction. True when we're on an iPhone/iPad that isn't installed yet.
   const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
+  // iOS routes JS-driven window.open from an installed PWA to
+  // SFSafariViewController (where Discord's OAuth renders blank). The
+  // only reliable way to open in real Safari is a direct user tap on
+  // a real <a> link — so in PWA mode, the toggle "primes" the URL and
+  // we render a tappable link the user clicks themselves.
+  const [pwaDiscordUrl, setPwaDiscordUrl] = useState<string | null>(null);
 
   const authedFetch = useCallback(
     async (url: string, opts: RequestInit = {}) => {
@@ -353,38 +359,24 @@ export function NotificationSettings() {
       window.matchMedia?.('(display-mode: standalone)')?.matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
 
-    // iOS PWAs require window.open to run *synchronously* inside the
-    // user's tap — an async await between the tap and window.open
-    // breaks the gesture and iOS falls back to SFSafariViewController
-    // (the in-app browser that can't see the user's Discord session,
-    // hence the white screen on the first attempt). Pre-open a blank
-    // tab in the gesture window, then navigate it to the OAuth URL
-    // once the server hands it back.
-    const pwaTab: Window | null = isStandalonePWA ? window.open('about:blank', '_blank') : null;
-
     try {
       const res = await authedFetch('/api/notifications/link/discord');
       if (!res.ok) throw new Error(`link/discord ${res.status}`);
       const url = (await res.json()).url as string;
 
-      if (pwaTab) {
-        pwaTab.location.href = url;
-        setBanner(
-          'Authorize Discord in the new Safari tab, then come back here — the row will switch to Connected on its own.',
-        );
-        setBusy(null);
-      } else if (isStandalonePWA) {
-        // Pre-open got blocked (rare). Fall back to a post-await open —
-        // may still land in SFSafariViewController on iOS, but better
-        // than a hard failure.
-        window.open(url, '_blank');
-        setBanner('Authorize Discord in the new tab, then come back here.');
+      if (isStandalonePWA) {
+        // JS-driven window.open from an installed PWA gets routed to
+        // SFSafariViewController, where Discord's OAuth renders blank.
+        // The only reliable escape to real Safari is a direct user tap
+        // on a real <a> link. Stash the URL; the row renders a tappable
+        // "Authorize in Safari" link the user clicks themselves.
+        setPwaDiscordUrl(url);
+        setBanner('Tap the "Authorize in Safari" link below to finish connecting Discord.');
         setBusy(null);
       } else {
         window.location.href = url; // desktop / non-PWA — same-window redirect
       }
     } catch (err) {
-      if (pwaTab) pwaTab.close();
       setBanner('Discord isn’t available right now — please try again in a moment.');
       reportIssue(
         LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
@@ -605,8 +597,26 @@ export function NotificationSettings() {
                         <TextAction onClick={loadProfile}>Check connection</TextAction>
                       </div>
                     )}
-                    {id === 'discord' && on && !linked && (
+                    {id === 'discord' && on && !linked && !pwaDiscordUrl && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
+                    )}
+                    {id === 'discord' && on && !linked && pwaDiscordUrl && (
+                      // Direct user tap on a real <a> escapes the PWA into
+                      // real Safari (where Discord's OAuth works) — JS-
+                      // driven opens get trapped in SFSafariViewController.
+                      <a
+                        href={pwaDiscordUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => {
+                          // The state token is single-use; clear after tap
+                          // so a re-try mints a fresh URL.
+                          setTimeout(() => setPwaDiscordUrl(null), 100);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-b from-[#fbbf24] to-[#f59e0b] px-4 py-2 text-[13px] font-semibold text-[#1a1a1f] shadow-[0_2px_8px_rgba(251,191,36,0.28)] transition-all hover:from-[#fcc63a] hover:to-[#fbbf24] active:scale-[0.96]"
+                      >
+                        Authorize Discord in Safari ↗
+                      </a>
                     )}
                     {(id === 'telegram' || id === 'discord') && linked && (
                       <TextAction onClick={() => disconnectChannel(id)}>
