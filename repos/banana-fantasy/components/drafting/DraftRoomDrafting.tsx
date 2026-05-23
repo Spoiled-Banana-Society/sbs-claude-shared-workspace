@@ -155,7 +155,16 @@ export function DraftRoomDrafting({
                 const isUserCard = slot.ownerIndex === engine.userDraftPosition;
                 const posHex = isPicked ? getPositionColorHex(slot.position) : '';
                 const counts = getPositionCountsForPlayer(slot.ownerName);
-                const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : '#444';
+                // Non-user, non-current card borders pick up the special
+                // draft type — gold for HOF, red for JP — so the cards row
+                // visually carries the HOF/JP energy across all the picks
+                // (vs the dark grey that blends into the page bg).
+                const defaultBorder = visibleDraftType === 'hof'
+                  ? '#F3E216'
+                  : visibleDraftType === 'jackpot'
+                    ? '#EF4444'
+                    : '#444';
+                const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : defaultBorder;
                 const textColor = visibleDraftType === 'hof' && isUserCard ? '#111'
                   : visibleDraftType === 'jackpot' && isUserCard ? '#222'
                   : '#fff';
