@@ -110,6 +110,9 @@ export function NotificationSettings() {
   // iOS only delivers web push to an installed (home-screen) PWA — Apple's
   // restriction. True when we're on an iPhone/iPad that isn't installed yet.
   const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
+  // True when the user is in the installed PWA (home-screen app) — used
+  // to surface Discord's iOS-only authorize quirk only where it matters.
+  const [isStandalonePWA, setIsStandalonePWA] = useState(false);
 
   const authedFetch = useCallback(
     async (url: string, opts: RequestInit = {}) => {
@@ -168,11 +171,13 @@ export function NotificationSettings() {
   useEffect(() => {
     const flag = new URLSearchParams(window.location.search).get('discord');
     if (flag === 'linked') {
-      setBanner('Discord connected.');
+      // Default — covers desktop and the iOS-Safari-after-escape case
+      // where the user got pushed out of the PWA into real Safari to
+      // finish auth. Tell them to switch back to the home-screen app.
+      setBanner('✅ Discord connected. If you started this from the SBS app on your home screen, switch back to it now.');
       // If this tab was popped open from the PWA (window.opener is set),
       // close it shortly after success — iOS returns the user to the
-      // PWA they came from. On desktop / normal flow, opener is null
-      // and the tab just stays.
+      // PWA they came from automatically.
       if (typeof window !== 'undefined' && window.opener) {
         setBanner('✅ Discord connected — closing this tab…');
         setTimeout(() => window.close(), 1500);
@@ -205,6 +210,7 @@ export function NotificationSettings() {
       window.matchMedia?.('(display-mode: standalone)')?.matches ||
       (navigator as Navigator & { standalone?: boolean }).standalone === true;
     setIosNeedsInstall(isIOS && !standalone);
+    setIsStandalonePWA(standalone);
   }, []);
 
   const channelOn = (id: ChannelId) => !!prefs?.channels?.[id];
@@ -601,6 +607,18 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
+                    )}
+                    {id === 'discord' && on && !linked && isStandalonePWA && (
+                      // iOS PWA quirk: SafariViewController white-screens
+                      // first load and often can't see the Discord session;
+                      // user has to refresh, then escape to Safari to
+                      // finish. Keep the hint short and visual.
+                      <p className="text-[12px] leading-relaxed text-amber-400/95">
+                        📱 In the new tab:{' '}
+                        <span className="font-semibold">refresh</span> if blank →
+                        tap the <span className="font-semibold">↗ Safari icon</span> (bottom-right) →
+                        tap <span className="font-semibold">Authorize</span>. Then come back to this app.
+                      </p>
                     )}
                     {(id === 'telegram' || id === 'discord') && linked && (
                       <TextAction onClick={() => disconnectChannel(id)}>
