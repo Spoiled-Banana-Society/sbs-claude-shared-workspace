@@ -1863,7 +1863,7 @@ function DraftRoomContent() {
           plus a soft inset glow that fades inward ~200px. */}
       {visibleDraftType && (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') && (
         <div
-          className="fixed inset-0 pointer-events-none z-[5] animate-hof-edge"
+          className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
           style={{
             boxShadow: visibleDraftType === 'jackpot'
               ? 'inset 0 0 0 2px rgba(239,68,68,0.7), inset 0 0 80px 0 rgba(239,68,68,0.45), inset 0 0 220px 60px rgba(239,68,68,0.14)'
