@@ -89,11 +89,6 @@ function parseRoster(raw: Record<string, unknown>): PlayerRoster {
   return result;
 }
 
-function truncateAddress(addr: string): string {
-  if (!addr.startsWith('0x') || addr.length < 10) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
-}
-
 // ─── Main Page Component ─────────────────────────────────────────────────
 
 export default function DraftResultsPage() {
