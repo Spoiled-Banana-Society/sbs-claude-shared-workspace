@@ -7,6 +7,7 @@
 import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { bananaDefaultName } from '@/utils/helpers';
 
 function draftsApi() {
   return createHttpClient({
@@ -76,13 +77,14 @@ export interface ApiDraftToken {
 }
 
 /**
- * The default display name shown when a user hasn't chosen one — the
- * truncated wallet address (`0x438.72e0`), the web3-standard convention.
- * It's unique per user, unlike a short branded handle.
+ * The default display name shown when a user hasn't chosen one — an
+ * on-brand `Banana #1234567` handle derived deterministically from the
+ * wallet (7-digit space, ~9M values). Stable per user across devices
+ * and sessions. See `bananaDefaultName` / `bananaNumberFromWallet` in
+ * `utils/helpers.ts` for the hash + collision-math rationale.
  */
 export function defaultDisplayName(walletAddress: string): string {
-  const addr = normalizeWalletAddress(walletAddress);
-  return addr.length >= 11 ? `${addr.slice(0, 5)}.${addr.slice(-4)}` : addr;
+  return bananaDefaultName(normalizeWalletAddress(walletAddress));
 }
 
 /**

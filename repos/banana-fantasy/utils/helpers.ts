@@ -65,13 +65,37 @@ export const isWalletAddress = (address: string) => {
 // placeholders. Kept in sync with isPlaceholderName in lib/api/owner.ts.
 const PLACEHOLDER_NAMES = new Set(["testname", "testuser", "test"])
 
+// Deterministic FNV-1a 32-bit hash of the wallet hex, mapped into a
+// 7-digit space [1_000_000, 9_999_999]. ~9M handles. Stable per user,
+// no server coordination needed. Birthday-paradox collision odds:
+// ~5% at ~1.5k users; revisit / move to server-assigned if we grow past.
+// Boris's prior 4-hex `Banana #93e2` was 65k space — this is 138x wider.
+export const bananaNumberFromWallet = (walletAddress: string): number => {
+    const hex = (walletAddress || "").replace(/^0x/i, "").toLowerCase()
+    let h = 0x811c9dc5
+    for (let i = 0; i < hex.length; i++) {
+        h ^= hex.charCodeAt(i)
+        h = Math.imul(h, 0x01000193)
+    }
+    return ((h >>> 0) % 9_000_000) + 1_000_000
+}
+
+// On-brand default handle for users who haven't set a name. Stable per
+// wallet (deterministic from the address) so the same user always sees
+// the same number across devices and sessions.
+export const bananaDefaultName = (walletAddress: string): string => {
+    if (!walletAddress) return "Banana"
+    return `Banana #${bananaNumberFromWallet(walletAddress)}`
+}
+
 // Returns the user's display name if it's a real, user-chosen one;
-// otherwise the truncated wallet (0x438.72e0) — the web3-standard
-// default. Never surfaces a leftover "TestName" placeholder.
+// otherwise an on-brand "Banana #1234567" default derived from the
+// wallet. Never surfaces a leftover "TestName" placeholder or a raw
+// wallet address.
 export const getTruncatedAccountName = (displayName: string, walletAddress: string) => {
     const name = (displayName || "").trim()
     const isPlaceholder =
         name === "" || isWalletAddress(name) || PLACEHOLDER_NAMES.has(name.toLowerCase())
 
-    return isPlaceholder ? truncate(walletAddress) : truncateDisplayName(name)
+    return isPlaceholder ? bananaDefaultName(walletAddress) : truncateDisplayName(name)
 }
