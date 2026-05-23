@@ -30,7 +30,10 @@ export interface DeliveryReport {
   walletAddress: string;
   /** `muted` = the user opted out of this event (e.g. fast-draft picks). */
   outcome: 'deduped' | 'sent' | 'failed' | 'muted';
-  channels?: { channel: string; status: string; reason?: string }[];
+  // `recipients` surfaces OneSignal's count for push so test pings
+  // immediately show whether the channel reached any devices —
+  // `sent` alone hides 0-recipient silent failures.
+  channels?: { channel: string; status: string; reason?: string; recipients?: number }[];
 }
 
 export async function deliverToRecipient(
@@ -84,6 +87,23 @@ export async function deliverToRecipient(
         context: { event: event.type, draftId: event.draftId, channel: r.channel },
       });
     }
+    // Silent push failure: OneSignal accepted the push but matched
+    // zero subscribed devices. status='sent' (because OneSignal said
+    // OK) but nobody actually received it. Surface as a loud error so
+    // it shows up in the admin Logs tab with the wallet — admin can
+    // DM the user to re-enable push on their devices.
+    if (r.channel === 'push' && r.status === 'sent' && (r.recipients ?? 0) === 0) {
+      logger.error(LOG_SOURCES.notifications.PUSH_ZERO_RECIPIENTS, {
+        err: 'Push accepted by OneSignal but reached 0 subscribed devices for this wallet',
+        route: 'notifications/deliver',
+        actor: wallet,
+        context: {
+          event: event.type,
+          draftId: event.draftId,
+          recipients: r.recipients ?? 0,
+        },
+      });
+    }
   }
 
   const outcome = settleOutcome(results);
@@ -111,6 +131,7 @@ export async function deliverToRecipient(
       channel: r.channel,
       status: r.status,
       reason: r.reason,
+      recipients: r.recipients,
     })),
   };
 }

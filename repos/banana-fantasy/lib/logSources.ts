@@ -118,6 +118,12 @@ export const LOG_SOURCES = {
   },
   notifications: {
     PUSH_SEND_FAILED: 'notifications.push.send_failed',
+    // OneSignal accepted the push but matched 0 subscribed devices —
+    // the user has push toggled on but no device is actually listening
+    // (iOS revoked permission, browser DND, subscription rotated, etc.).
+    // Logged loud as an error so the admin can DM the user proactively
+    // before they file a "I'm not getting alerts" ticket.
+    PUSH_ZERO_RECIPIENTS: 'notifications.push.zero_recipients',
     EMAIL_SEND_FAILED: 'notifications.email.send_failed',
     TELEGRAM_SEND_FAILED: 'notifications.telegram.send_failed',
     DISCORD_SEND_FAILED: 'notifications.discord.send_failed',
@@ -253,6 +259,16 @@ const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
     text: 'A network request could not reach the server.' },
   { pattern: /firestore|rtdb|firebase/i,
     text: 'A database read or write failed.' },
+  { pattern: /notifications\.push\.zero_recipients/i,
+    text: 'Push notification fired but reached 0 of the user\'s devices — they need to re-enable notifications on each device (iOS often silently revokes PWA notification permission).' },
+  { pattern: /notifications\.push\.send_failed/i,
+    text: 'OneSignal push API call failed — check the OneSignal status page and the error reason for details.' },
+  { pattern: /notifications\.email\.send_failed/i,
+    text: 'Postmark email send failed — check Postmark dashboard for the rejection reason.' },
+  { pattern: /notifications\.telegram\.send_failed/i,
+    text: 'Telegram bot DM failed — usually because the user blocked the bot or the chat id is stale.' },
+  { pattern: /notifications\.discord\.send_failed/i,
+    text: 'Discord bot DM failed — the user may have changed accounts, the bot may have been kicked from the SBS server, or DMs are disabled on the user\'s account.' },
 ];
 
 /**
