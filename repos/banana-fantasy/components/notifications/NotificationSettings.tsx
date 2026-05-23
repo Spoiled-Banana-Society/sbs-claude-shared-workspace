@@ -609,37 +609,40 @@ export function NotificationSettings() {
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
                     {id === 'discord' && !linked && isStandalonePWA && (
-                      // iOS PWA quirk: SafariViewController white-screens
-                      // first load and can't complete Discord OAuth on
-                      // its own — user has to refresh, then escape into
-                      // real Safari (via the bottom-right Safari icon)
-                      // to actually finish. Show this BEFORE the toggle
-                      // tap so the user knows what to expect; hide it
-                      // once linked.
+                      // iOS PWA quirk: the OAuth tab is SFSafariViewController
+                      // — a separate cookie jar from real Safari, so it can't
+                      // see the user's Discord login session. The bottom-right
+                      // Safari button hands off to real Safari, where they're
+                      // already signed in. Show this BEFORE the toggle tap so
+                      // they know what's coming.
                       <div className="text-[12px] leading-relaxed text-amber-400/95">
-                        <p className="mb-1.5 font-semibold">
-                          📱 Mobile only — must use Safari to finish:
-                        </p>
+                        <p className="mb-1.5 font-semibold">📱 On iPhone:</p>
                         <ol className="ml-5 list-decimal space-y-0.5">
-                          <li>Toggle Discord on</li>
-                          <li>Refresh the page that opens (if blank)</li>
+                          <li>Toggle Discord on (a new tab opens)</li>
+                          <li>Refresh that tab if it&apos;s blank</li>
                           <li>
                             Tap the Safari icon{' '}
                             <span
                               aria-hidden
-                              className="inline-flex h-[14px] w-[14px] translate-y-[2px] items-center justify-center rounded-full border border-amber-400/70"
+                              className="inline-flex h-[16px] w-[16px] translate-y-[3px] items-center justify-center rounded-full border border-amber-400/80"
                             >
+                              {/* iOS Safari compass needle — two opposing
+                                  triangles meeting at center, rotated 45°.
+                                  Matches the glyph Apple uses on the
+                                  "Open in Safari" button in SFSafariViewController. */}
                               <svg
                                 viewBox="0 0 24 24"
-                                width="9"
-                                height="9"
-                                fill="currentColor"
+                                width="11"
+                                height="11"
                                 aria-hidden
                               >
-                                <path d="M15.5 8.5 L12 12 L8.5 15.5 L12 12 Z" />
+                                <g transform="rotate(45 12 12)">
+                                  <polygon points="12,5 14,12 12,12" fill="currentColor" />
+                                  <polygon points="12,19 10,12 12,12" fill="currentColor" opacity="0.55" />
+                                </g>
                               </svg>
                             </span>{' '}
-                            at the bottom-right
+                            (bottom-right)
                           </li>
                           <li>Tap <span className="font-semibold">Authorize</span></li>
                           <li>Come back to this app</li>
