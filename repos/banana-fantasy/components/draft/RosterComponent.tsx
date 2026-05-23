@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth"
 import RosterItemComponent from "./RosterItemComponent"
 import { setDraftRosters } from "@/redux/draftSlice"
 import React, { useEffect, useState } from "react"
-import { truncate } from "@/utils/helpers"
+import { bananaDefaultName, isWalletAddress } from "@/utils/helpers"
 import Dropdown from "react-dropdown"
 import ReactLoading from "react-loading"
 import { Draft } from "@/utils/api"
@@ -49,9 +49,14 @@ const RosterComponent = () => {
         <div className="px-3 pt-5 w-full lg:w-[900px] mx-auto" data-tutorial="roster">
             {players && walletAddress ? (
                 <Dropdown
-                    options={players}
+                    options={players.map((w) => ({ value: w, label: bananaDefaultName(w) }))}
                     onChange={(e) => setSelectedPlayer(e.value)}
-                    value={truncate(selectedPlayer) || truncate(walletAddress!)}
+                    value={{
+                        value: selectedPlayer || walletAddress!,
+                        label: bananaDefaultName(
+                            isWalletAddress(selectedPlayer) ? selectedPlayer : walletAddress!
+                        ),
+                    }}
                     placeholder="Select a player"
                     className="font-primary font-bold"
                 />
