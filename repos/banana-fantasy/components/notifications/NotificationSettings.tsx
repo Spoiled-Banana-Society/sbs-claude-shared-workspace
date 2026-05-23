@@ -624,22 +624,32 @@ export function NotificationSettings() {
                             Tap the Safari icon{' '}
                             <span
                               aria-hidden
-                              className="inline-flex h-[16px] w-[16px] translate-y-[3px] items-center justify-center rounded-full border border-amber-400/80"
+                              className="inline-flex h-[16px] w-[16px] translate-y-[3px] items-center justify-center"
                             >
-                              {/* iOS Safari compass needle — two opposing
-                                  triangles meeting at center, rotated 45°.
-                                  Matches the glyph Apple uses on the
-                                  "Open in Safari" button in SFSafariViewController. */}
+                              {/* Apple Safari logo: outline circle + a
+                                  horizontal compass-needle "lens" with a
+                                  tiny pivot hole at the center. Drawn as
+                                  one path with even-odd fill so the hole
+                                  shows the background through. */}
                               <svg
                                 viewBox="0 0 24 24"
-                                width="11"
-                                height="11"
+                                width="16"
+                                height="16"
                                 aria-hidden
                               >
-                                <g transform="rotate(45 12 12)">
-                                  <polygon points="12,5 14,12 12,12" fill="currentColor" />
-                                  <polygon points="12,19 10,12 12,12" fill="currentColor" opacity="0.55" />
-                                </g>
+                                <circle
+                                  cx="12"
+                                  cy="12"
+                                  r="9.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.8"
+                                />
+                                <path
+                                  d="M4 12 L12 9 L20 12 L12 15 Z M10.7 12 a1.3 1.3 0 1 0 2.6 0 a1.3 1.3 0 1 0 -2.6 0 Z"
+                                  fill="currentColor"
+                                  fillRule="evenodd"
+                                />
                               </svg>
                             </span>{' '}
                             (bottom-right)
