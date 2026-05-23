@@ -93,7 +93,11 @@ interface Tile {
 const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
   push: {
     label: 'Push notifications',
-    blurb: 'Pop-up alerts on your phone or computer.',
+    // Unlike Email/Telegram/Discord (one destination, syncs natively),
+    // web push is per-device — every browser/PWA has its own subscription
+    // token. The blurb has to say so or users wonder why phone and desktop
+    // act independently.
+    blurb: 'Pop-up alerts — enable on each device separately (phone, desktop).',
     // Bell glyph (universal notification icon) on banana yellow tile —
     // brand color + the symbol every OS uses for push.
     tile: { Icon: IoNotifications, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
@@ -361,16 +365,26 @@ export function NotificationSettings() {
       );
       return;
     }
-    setBanner(on ? 'Push notifications are on for this device.' : 'Push notifications turned off.');
-    // Keep the server pref in step with the subscription.
-    authedFetch('/api/notifications/profile', {
-      method: 'PUT',
-      body: JSON.stringify({ channels: { push: on } }),
-    })
-      .then(async (res) => {
-        if (res.ok) setPrefs((await res.json()).prefs as Prefs);
+    setBanner(
+      on
+        ? 'Push notifications are on for this device.'
+        : 'Push turned off on this device. Other devices stay subscribed unless you turn them off there too.',
+    );
+    // Sync the shared "push enabled?" flag — but ONLY on connect.
+    // Turning OFF on one device must NOT flip the shared flag to false,
+    // because that would skip push delivery for every OTHER device the
+    // user has subscribed. Per-device opt-out only removes THIS device's
+    // OneSignal subscription (and untags it), leaving the others intact.
+    if (on) {
+      authedFetch('/api/notifications/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ channels: { push: true } }),
       })
-      .catch(() => {});
+        .then(async (res) => {
+          if (res.ok) setPrefs((await res.json()).prefs as Prefs);
+        })
+        .catch(() => {});
+    }
   };
 
   const connectTelegram = async () => {
@@ -568,12 +582,21 @@ export function NotificationSettings() {
                 // Status line — never says "Connected" while the row is off.
                 let status: { tone: 'on' | 'off' | 'action'; text: string };
                 if (id === 'push') {
+                  // Push is the only per-device channel — every browser
+                  // needs its own subscription. `on` reflects THIS device's
+                  // OneSignal opt-in; `prefs.channels.push` is the shared
+                  // "enabled somewhere" flag. If it's true here but this
+                  // device isn't subscribed, the user has push working on
+                  // another device and needs to flip the toggle here too.
+                  const enabledElsewhere = !on && !!prefs?.channels?.push;
                   status =
                     push.state === 'loading'
                       ? { tone: 'off', text: 'Checking…' }
                       : on
                         ? { tone: 'on', text: 'On for this device' }
-                        : { tone: 'off', text: 'Off' };
+                        : enabledElsewhere
+                          ? { tone: 'action', text: 'On for another device — toggle on to enable here too' }
+                          : { tone: 'off', text: 'Off' };
                 } else if (!on) {
                   status = { tone: 'off', text: 'Off' };
                 } else if (linked) {
