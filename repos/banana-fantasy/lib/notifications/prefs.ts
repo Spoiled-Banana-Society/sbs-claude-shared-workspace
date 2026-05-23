@@ -15,11 +15,17 @@ const ALL_EVENTS: (keyof EventPrefs)[] = ['draftFilled', 'pickSlow', 'pickFast']
 /** Pick length (seconds) at/above which a draft counts as "slow". */
 export const SLOW_PICK_THRESHOLD_SECONDS = 3600;
 
-/** Prefs for a user who has never opened the settings page. */
+/**
+ * Prefs for a user who has never opened the settings page. Every channel
+ * starts **off** — the user opts in by enabling one. A `channels.push: true`
+ * default was misleading: it suggested push was on even for a fresh user
+ * with no actual subscription, and could surprise people testing on a
+ * device that *already* has push subscribed under another account.
+ */
 export function defaultPrefs(walletAddress: string): UserNotifPrefs {
   return {
     walletAddress: walletAddress.trim().toLowerCase(),
-    channels: { push: true },
+    channels: {},
   };
 }
 

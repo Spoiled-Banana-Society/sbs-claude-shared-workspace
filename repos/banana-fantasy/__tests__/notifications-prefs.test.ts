@@ -32,18 +32,18 @@ beforeEach(() => {
 });
 
 describe('defaultPrefs', () => {
-  it('enables push by default and lowercases the wallet', () => {
+  it('starts every channel off and lowercases the wallet', () => {
     const p = defaultPrefs('0xABC');
     expect(p.walletAddress).toBe('0xabc');
-    expect(p.channels.push).toBe(true);
+    expect(p.channels).toEqual({});
   });
 });
 
 describe('getUserNotifPrefs', () => {
-  it('returns the safe default when no doc exists', async () => {
+  it('returns the safe default (all channels off) when no doc exists', async () => {
     snapMock.exists = false;
     const p = await getUserNotifPrefs('0xABC');
-    expect(p.channels.push).toBe(true);
+    expect(p.channels).toEqual({});
     expect(p.email).toBeUndefined();
   });
 

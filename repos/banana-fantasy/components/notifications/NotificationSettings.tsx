@@ -157,11 +157,17 @@ export function NotificationSettings() {
     const flag = new URLSearchParams(window.location.search).get('discord');
     if (flag === 'linked') setBanner('Discord connected.');
     else if (flag === 'error') {
-      setBanner('Discord connection failed — please try connecting again.');
+      // The callback redirects with ?reason=… naming the exact failure
+      // ("oauth_denied_or_error", "invalid_or_expired_state", etc.) —
+      // surface it so a tester reading the URL or banner can tell why.
+      const reason = new URLSearchParams(window.location.search).get('reason') || '';
+      const human = reason ? ` (${reason.replace(/_/g, ' ')})` : '';
+      setBanner(`Discord connection failed${human} — please try connecting again.`);
       reportClientError({
         source: LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
-        message: 'discord oauth callback returned error',
+        message: `discord oauth callback returned error${reason ? `: ${reason}` : ''}`,
         route: 'notifications-settings',
+        context: { reason: reason || 'unknown' },
       });
     }
   }, []);
