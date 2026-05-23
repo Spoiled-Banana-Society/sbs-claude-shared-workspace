@@ -616,7 +616,7 @@ export function NotificationSettings() {
                       // already signed in. Show this BEFORE the toggle tap so
                       // they know what's coming.
                       <div className="text-[12px] leading-relaxed text-amber-400/95">
-                        <p className="mb-1.5 font-semibold">📱 On iPhone:</p>
+                        <p className="mb-1.5 font-semibold">📱 Mobile only — must use Safari:</p>
                         <ol className="ml-5 list-decimal space-y-0.5">
                           <li>Toggle Discord on (a new tab opens)</li>
                           <li>Refresh that tab if it&apos;s blank</li>
