@@ -608,15 +608,16 @@ export function NotificationSettings() {
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
-                    {id === 'discord' && isStandalonePWA && (!linked || !on) && (
+                    {id === 'discord' && isStandalonePWA && !linked && (
                       // iOS PWA quirk: the OAuth tab is SFSafariViewController
                       // — a separate cookie jar from real Safari, so it can't
                       // see the user's Discord login session. The bottom-right
                       // Safari button hands off to real Safari, where they're
-                      // already signed in. Show this BEFORE the toggle tap so
-                      // they know what's coming — and also when toggled off
-                      // (linked or not), so the user has guidance + a switch-
-                      // account option at the bottom.
+                      // already signed in. Only render when NOT linked: once
+                      // the user has connected once, toggling off→on never
+                      // re-runs OAuth, so the steps become dead weight. If
+                      // they tap "Use a different account" the link clears
+                      // and these steps reappear naturally.
                       <div className="text-[12px] leading-relaxed text-amber-400/95">
                         <p className="mb-1.5 font-semibold">📱 Mobile only — must use Safari:</p>
                         <ol className="ml-5 list-decimal space-y-0.5">
@@ -661,14 +662,7 @@ export function NotificationSettings() {
                         </ol>
                       </div>
                     )}
-                    {/* Use a different account:
-                        - Telegram: only when linked (no swap if nothing to swap).
-                        - Discord:  whenever toggled OFF (always pairs with the
-                                    steps block above), OR when linked. So when
-                                    the row is off the user has the option right
-                                    next to the steps, every time. */}
-                    {((id === 'telegram' && linked) ||
-                      (id === 'discord' && (linked || !on))) && (
+                    {(id === 'telegram' || id === 'discord') && linked && (
                       <TextAction onClick={() => disconnectChannel(id)}>
                         Use a different account
                       </TextAction>
