@@ -18,13 +18,12 @@ import { useState, useEffect, useCallback } from 'react';
 import type { IconType } from 'react-icons';
 import {
   IoNotifications,
-  IoMail,
   IoAmericanFootball,
   IoTime,
   IoFlash,
-  IoPhonePortrait,
 } from 'react-icons/io5';
 import { FaTelegramPlane, FaDiscord } from 'react-icons/fa';
+import { SiGmail } from 'react-icons/si';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
@@ -56,11 +55,14 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
   push: {
     label: 'Push notifications',
     blurb: 'Pop-up alerts on your phone or computer.',
-    tile: { Icon: IoPhonePortrait, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
+    // Bell glyph (universal notification icon) on banana yellow tile —
+    // brand color + the symbol every OS uses for push.
+    tile: { Icon: IoNotifications, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   email: {
     label: 'Email',
-    tile: { Icon: IoMail, grad: 'from-[#0a84ff] to-[#0060df]' },
+    // Gmail logo on Gmail red — strongest visual cue for "this is email".
+    tile: { Icon: SiGmail, grad: 'from-[#ea4335] to-[#c5221f]' },
   },
   telegram: {
     label: 'Telegram',
@@ -446,11 +448,12 @@ export function NotificationSettings() {
 
   return (
     <div>
-      {/* Header */}
+      {/* Header — tab already says "Draft Alerts", so we just lead with
+          the one-line subtitle. Trimmed to fit a single line on mobile
+          and desktop. */}
       <header className="mb-6">
-        <h2 className="text-[24px] font-bold tracking-[-0.02em] text-white">Draft alerts</h2>
-        <p className="mt-1.5 text-[13.5px] leading-relaxed text-text-secondary">
-          Choose how you get notified when drafts fill and when it&apos;s your pick.
+        <p className="text-[13.5px] leading-relaxed text-text-secondary">
+          Choose how you get notified.
         </p>
       </header>
 

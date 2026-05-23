@@ -164,7 +164,7 @@ export default function ProfilePage() {
             active={activeTab === 'notifications'}
             onClick={() => setActiveTab('notifications')}
           >
-            Notifications
+            Draft Alerts
           </TabButton>
         </div>
 
