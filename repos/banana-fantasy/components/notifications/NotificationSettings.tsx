@@ -23,7 +23,46 @@ import {
   IoFlash,
 } from 'react-icons/io5';
 import { FaTelegramPlane, FaDiscord } from 'react-icons/fa';
-import { SiGmail } from 'react-icons/si';
+
+// Multi-color Gmail brand mark (Google's published 5-path SVG).
+// react-icons' SiGmail renders single-color; the brand identity is
+// the red/yellow/blue/green M, so we inline it. Conforms to the
+// IconType signature so it slots into CHANNEL_META.tile.Icon — the
+// className IconTile passes (text-[16px], text-white) is harmless
+// because we hardcode size and use explicit fills.
+const GmailLogo: IconType = (props) => {
+  return (
+    <svg
+      {...props}
+      viewBox="0 0 256 193"
+      width="20"
+      height="15"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path
+        d="M58.182 192.05V93.14L27.507 65.077 0 49.504v125.091c0 9.658 7.825 17.455 17.455 17.455h40.727z"
+        fill="#4285f4"
+      />
+      <path
+        d="M197.818 192.05h40.727c9.659 0 17.455-7.826 17.455-17.455V49.505l-31.156 17.837-27.026 25.798v98.91z"
+        fill="#34a853"
+      />
+      <path
+        d="M58.182 93.14l-4.174-38.65 4.174-36.964L128 69.868l69.818-52.34 4.669 33.5-4.669 42.112L128 145.48z"
+        fill="#ea4335"
+      />
+      <path
+        d="M197.818 17.504V93.14L256 49.504V26.231c0-21.585-24.64-33.89-41.89-20.945l-16.292 12.218z"
+        fill="#fbbc04"
+      />
+      <path
+        d="M0 49.504l26.759 20.07L58.182 93.14V17.504L41.89 5.286C24.61-7.66 0 4.646 0 26.23v23.273z"
+        fill="#c5221f"
+      />
+    </svg>
+  );
+}
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePushSubscription } from '@/hooks/usePushSubscription';
@@ -61,8 +100,9 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
   },
   email: {
     label: 'Email',
-    // Gmail logo on Gmail red — strongest visual cue for "this is email".
-    tile: { Icon: SiGmail, grad: 'from-[#ea4335] to-[#c5221f]' },
+    // Multi-color Gmail mark on a white tile — the brand colors are the
+    // signal, so the tile gets out of the way (light bg lets them pop).
+    tile: { Icon: GmailLogo, grad: 'from-white to-[#f1f3f4]' },
   },
   telegram: {
     label: 'Telegram',
@@ -448,12 +488,14 @@ export function NotificationSettings() {
 
   return (
     <div>
-      {/* Header — tab already says "Draft Alerts", so we just lead with
-          the one-line subtitle. Trimmed to fit a single line on mobile
-          and desktop. */}
-      <header className="mb-6">
-        <p className="text-[13.5px] leading-relaxed text-text-secondary">
-          Choose how you get notified.
+      {/* Header — the "Draft Alerts" tab establishes the section, so the
+          page itself leads with the one-line intro. Responsive font-size
+          + tracking-tight keeps it on a single line on iPhone widths;
+          on sm+ it relaxes back to the normal body size. Tightened
+          margin-bottom to sit close to the section structure below. */}
+      <header className="mb-3">
+        <p className="whitespace-nowrap text-[10.5px] leading-snug tracking-tight text-text-secondary sm:text-[13.5px] sm:tracking-normal">
+          Choose how you get notis when drafts fill and when it&apos;s your pick.
         </p>
       </header>
 
