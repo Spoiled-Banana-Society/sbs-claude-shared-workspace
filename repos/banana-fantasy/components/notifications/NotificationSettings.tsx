@@ -330,7 +330,27 @@ export function NotificationSettings() {
     try {
       const res = await authedFetch('/api/notifications/link/discord');
       if (!res.ok) throw new Error(`link/discord ${res.status}`);
-      window.location.href = (await res.json()).url; // OAuth; callback links + enables
+      const url = (await res.json()).url as string;
+
+      // From an installed PWA, navigating same-window to Discord's OAuth
+      // opens it inside SFSafariViewController — a separate cookie jar
+      // that can't see the user's Discord session, so the OAuth page
+      // renders blank. Pop out to real Safari (a new tab) so OAuth runs
+      // in a normal browser context. On desktop / non-PWA, keep the
+      // straight redirect — that's the clean flow.
+      const isStandalonePWA =
+        window.matchMedia?.('(display-mode: standalone)')?.matches ||
+        (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+      if (isStandalonePWA) {
+        window.open(url, '_blank', 'noopener');
+        setBanner(
+          'Authorize Discord in the new Safari tab, then come back here — your Discord row will switch to Connected.',
+        );
+        setBusy(null);
+      } else {
+        window.location.href = url; // OAuth; callback links + enables
+      }
     } catch (err) {
       setBanner('Discord isn’t available right now — please try again in a moment.');
       reportIssue(
