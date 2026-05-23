@@ -1866,8 +1866,8 @@ function DraftRoomContent() {
           className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
           style={{
             boxShadow: visibleDraftType === 'jackpot'
-              ? 'inset 0 0 0 2px rgba(239,68,68,0.7), inset 0 0 80px 0 rgba(239,68,68,0.45), inset 0 0 220px 60px rgba(239,68,68,0.14)'
-              : 'inset 0 0 0 2px rgba(255,215,0,0.7), inset 0 0 80px 0 rgba(255,215,0,0.45), inset 0 0 220px 60px rgba(255,215,0,0.12)',
+              ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
+              : 'inset 0 0 0 2px rgba(255,215,0,0.85)',
           }}
         />
       )}
