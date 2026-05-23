@@ -133,20 +133,10 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* JP/HOF tint behind the drafting view. Same gradient as the
-          DraftRoomReveal pulse-glow so the red/yellow background carries
-          through from reveal into drafting (was disappearing the moment
-          the slot machine resolved into 'drafting' phase). */}
-      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
-        <div
-          className="fixed inset-0 z-0 pointer-events-none"
-          style={{
-            background: visibleDraftType === 'jackpot'
-              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.18) 0%, transparent 70%)'
-              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.18) 0%, transparent 70%)',
-          }}
-        />
-      )}
+      {/* Removed: gold/red radial tint that carried through from reveal
+          into drafting phase. User wanted the whole glow gone — only the
+          thin viewport-edge border (rendered at the draft-room page level)
+          stays as the HOF/JP indicator. */}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
