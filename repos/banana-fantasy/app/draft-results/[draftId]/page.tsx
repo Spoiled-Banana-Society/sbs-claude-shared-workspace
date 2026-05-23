@@ -5,8 +5,9 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { getDraftInfo } from '@/lib/api/drafts';
-import { getOwnerDraftTokens } from '@/lib/api/owner';
+import { getOwnerDraftTokens, isPlaceholderName } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
+import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 
@@ -114,6 +115,21 @@ export default function DraftResultsPage() {
   const [fetchedPlayers, setFetchedPlayers] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Bumped when the tab regains focus — drives the loader effect below to
+  // refetch so a user returning after their draft auto-completed sees the
+  // final roster instead of the snapshot from when they last looked.
+  const [reloadTick, setReloadTick] = useState(0);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') setReloadTick((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, []);
 
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
@@ -198,7 +214,7 @@ export default function DraftResultsPage() {
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftId, walletAddress]);
+  }, [draftId, walletAddress, reloadTick]);
 
   const title = displayName || draftId;
   const roster = allRosters[selectedPlayer];
@@ -252,11 +268,18 @@ export default function DraftResultsPage() {
   // Get display name for a player key
   const getPlayerLabel = (key: string): string => {
     const r = allRosters[key];
-    if (r?.pfpDisplayName) return r.pfpDisplayName;
-    if (key.startsWith('0x')) return truncateAddress(key);
-    // Bot names — clean up
+    // Real wallets: prefer a user-chosen displayName; otherwise the on-brand
+    // Banana #N handle (NOT the raw wallet — that's what was leaking when
+    // the backend's PFP.DisplayName defaults to ownerId on new accounts).
+    if (key.startsWith('0x')) {
+      if (r?.pfpDisplayName && !isPlaceholderName(r.pfpDisplayName, key)) {
+        return r.pfpDisplayName;
+      }
+      return bananaDefaultName(key);
+    }
+    // Bots — clean up the timestamp prefix.
     if (key.startsWith('bot-')) return key.replace(/^bot-fast-\d+-/, 'Bot ');
-    return key;
+    return r?.pfpDisplayName || key;
   };
 
   // Generate roster image for download
@@ -588,7 +611,7 @@ export default function DraftResultsPage() {
             className="w-10 h-10 rounded-full border border-white/20 mx-auto mb-2 bg-white/5 object-cover"
           />
           <p className="text-white font-bold text-lg mb-3">
-            {roster.pfpDisplayName || truncateAddress(selectedPlayer)}
+            {getPlayerLabel(selectedPlayer)}
           </p>
 
           {/* Position counts row */}
