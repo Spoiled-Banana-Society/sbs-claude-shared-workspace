@@ -113,16 +113,10 @@ export function DraftRoomReveal({
         </div>
       )}
 
-      {((pulseGlow || (specialTypeParam && phase !== 'loading')) && visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')) && (
-        <div
-          className="fixed inset-0 z-30 pointer-events-none animate-pulse-glow"
-          style={{
-            background: visibleDraftType === 'jackpot'
-              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.3) 0%, transparent 70%)'
-              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
-          }}
-        />
-      )}
+      {/* Removed: persistent gold/red radial-gradient halo that used to
+          pulse behind the cards. User wanted the whole glow gone — only
+          the thin border on the viewport edge stays. The brief hero-banner
+          reveal still plays via the block below. */}
 
       {jackpotRain.length > 0 && visibleDraftType && (
         <div className="fixed inset-0 z-[60] pointer-events-none overflow-hidden">
