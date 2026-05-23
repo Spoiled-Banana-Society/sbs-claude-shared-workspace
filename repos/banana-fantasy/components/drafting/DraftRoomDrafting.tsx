@@ -133,10 +133,21 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* Removed: gold/red radial tint that carried through from reveal
-          into drafting phase. User wanted the whole glow gone — only the
-          thin viewport-edge border (rendered at the draft-room page level)
-          stays as the HOF/JP indicator. */}
+      {/* Subtle gold/red wash during the drafting phase — a thin, even
+          coat across the whole viewport so HOF/JP energy reads on the
+          drafting view without overpowering text or picks. Flat low-
+          opacity color (not a radial gradient) so the intensity stays
+          uniform from edge to edge. */}
+      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
+        <div
+          className="fixed inset-0 z-0 pointer-events-none"
+          style={{
+            backgroundColor: visibleDraftType === 'jackpot'
+              ? 'rgba(239, 68, 68, 0.06)'
+              : 'rgba(255, 215, 0, 0.06)',
+          }}
+        />
+      )}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
