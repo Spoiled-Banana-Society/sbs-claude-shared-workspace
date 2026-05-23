@@ -133,21 +133,9 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* Gold/red wash during the drafting phase — visible coat across
-          the whole viewport so HOF/JP energy reads on the drafting view.
-          Flat color (not a gradient) so intensity stays uniform from
-          edge to edge. 12% opacity — sits behind interactive content
-          (z-0) so text and picks remain crisp. */}
-      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
-        <div
-          className="fixed inset-0 z-0 pointer-events-none"
-          style={{
-            backgroundColor: visibleDraftType === 'jackpot'
-              ? 'rgba(239, 68, 68, 0.14)'
-              : 'rgba(255, 215, 0, 0.14)',
-          }}
-        />
-      )}
+      {/* No drafting-phase wash — user preferred just the thin viewport-
+          edge border (rendered at the draft-room page level) as the
+          HOF/JP indicator during drafting. */}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
