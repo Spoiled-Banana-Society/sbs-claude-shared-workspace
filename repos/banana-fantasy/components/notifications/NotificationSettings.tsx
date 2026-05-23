@@ -348,31 +348,43 @@ export function NotificationSettings() {
   const connectDiscord = async () => {
     setBusy('discord');
     clientLog('notifications', 'discord-connect', {});
+
+    const isStandalonePWA =
+      window.matchMedia?.('(display-mode: standalone)')?.matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+    // iOS PWAs require window.open to run *synchronously* inside the
+    // user's tap — an async await between the tap and window.open
+    // breaks the gesture and iOS falls back to SFSafariViewController
+    // (the in-app browser that can't see the user's Discord session,
+    // hence the white screen on the first attempt). Pre-open a blank
+    // tab in the gesture window, then navigate it to the OAuth URL
+    // once the server hands it back.
+    const pwaTab: Window | null = isStandalonePWA ? window.open('about:blank', '_blank') : null;
+
     try {
       const res = await authedFetch('/api/notifications/link/discord');
       if (!res.ok) throw new Error(`link/discord ${res.status}`);
       const url = (await res.json()).url as string;
 
-      // From an installed PWA, navigating same-window to Discord's OAuth
-      // opens it inside SFSafariViewController — a separate cookie jar
-      // that can't see the user's Discord session, so the OAuth page
-      // renders blank. Pop out to real Safari (a new tab) so OAuth runs
-      // in a normal browser context. On desktop / non-PWA, keep the
-      // straight redirect — that's the clean flow.
-      const isStandalonePWA =
-        window.matchMedia?.('(display-mode: standalone)')?.matches ||
-        (navigator as Navigator & { standalone?: boolean }).standalone === true;
-
-      if (isStandalonePWA) {
-        window.open(url, '_blank', 'noopener');
+      if (pwaTab) {
+        pwaTab.location.href = url;
         setBanner(
-          'Authorize Discord in the new Safari tab, then come back here — your Discord row will switch to Connected.',
+          'Authorize Discord in the new Safari tab, then come back here — the row will switch to Connected on its own.',
         );
         setBusy(null);
+      } else if (isStandalonePWA) {
+        // Pre-open got blocked (rare). Fall back to a post-await open —
+        // may still land in SFSafariViewController on iOS, but better
+        // than a hard failure.
+        window.open(url, '_blank');
+        setBanner('Authorize Discord in the new tab, then come back here.');
+        setBusy(null);
       } else {
-        window.location.href = url; // OAuth; callback links + enables
+        window.location.href = url; // desktop / non-PWA — same-window redirect
       }
     } catch (err) {
+      if (pwaTab) pwaTab.close();
       setBanner('Discord isn’t available right now — please try again in a moment.');
       reportIssue(
         LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
