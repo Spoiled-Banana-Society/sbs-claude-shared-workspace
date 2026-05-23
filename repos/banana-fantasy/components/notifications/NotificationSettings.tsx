@@ -661,7 +661,14 @@ export function NotificationSettings() {
                         </ol>
                       </div>
                     )}
-                    {(id === 'telegram' || id === 'discord') && linked && (
+                    {/* Use a different account:
+                        - Telegram: only when linked (no swap if nothing to swap).
+                        - Discord:  whenever toggled OFF (always pairs with the
+                                    steps block above), OR when linked. So when
+                                    the row is off the user has the option right
+                                    next to the steps, every time. */}
+                    {((id === 'telegram' && linked) ||
+                      (id === 'discord' && (linked || !on))) && (
                       <TextAction onClick={() => disconnectChannel(id)}>
                         Use a different account
                       </TextAction>
