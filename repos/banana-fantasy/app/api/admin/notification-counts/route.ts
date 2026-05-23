@@ -81,6 +81,11 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Notification system failures — user-facing impact (they miss a
+  // "your draft is starting" or "it's your pick" alert). Every channel
+  // failure + the silent-success-but-zero-recipients case should raise
+  // the admin badge so the team can DM the user proactively.
+  /^notifications\./i,
   // Bridged Go-service errors from /api/crons/sync-cloud-errors. The
   // bridge already filters to severity>=ERROR and tries to classify
   // common Go failure modes — anything that gets through is worth a
