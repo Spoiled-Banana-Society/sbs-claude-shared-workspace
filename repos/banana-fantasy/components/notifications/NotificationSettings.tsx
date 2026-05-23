@@ -396,12 +396,12 @@ export function NotificationSettings() {
 
   // Discord: flipping on with no linked account starts OAuth (the callback
   // links it and turns the channel on). Flipping off turns it off.
+  // Always flip the channel flag too — so the toggle visually stays on,
+  // the row's "needs action" state renders, and the PWA "Authorize in
+  // Safari" link appears in the row's children.
   const toggleDiscord = (on: boolean) => {
-    if (on && !channelLinked('discord')) {
-      connectDiscord();
-      return;
-    }
     patchChannel('discord', on);
+    if (on && !channelLinked('discord')) connectDiscord();
   };
 
   // Truly disconnect a linked channel — clears the stored account so the
