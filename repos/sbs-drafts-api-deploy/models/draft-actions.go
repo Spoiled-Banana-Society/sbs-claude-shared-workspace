@@ -194,10 +194,13 @@ func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickE
 	var scheduleTime int64
 	now := time.Now().Unix()
 
-	// If user has AutoPick turned on, schedule for 2 seconds from now
+	// If user has AutoPick turned on, fire immediately — they explicitly
+	// opted in, so the prior 2-second "give the human a chance" buffer was
+	// unnecessary and made background wallets feel bot-like (~3s pick) vs
+	// the foreground tab's instant client-side airplane-mode pick (~1s).
 	if sortByObj.AutoDraft {
-		scheduleTime = now + 2
-		fmt.Printf("User has AutoDraft enabled, scheduling auto-draft task for 2 seconds from now for pick %d\n", pickNum)
+		scheduleTime = now
+		fmt.Printf("User has AutoDraft enabled, scheduling auto-draft task immediately for pick %d\n", pickNum)
 	} else if sortByObj.NumPicksMissedConsecutive == 2 {
 		scheduleTime = now + 8
 		fmt.Printf("User has missed 2 picks in a row, scheduling auto-draft task for 5 seconds from now for pick %d\n", pickNum)
