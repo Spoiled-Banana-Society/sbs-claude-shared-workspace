@@ -145,6 +145,55 @@ export function DraftRoomReveal({
         </div>
       )}
 
+      {/* HOF / JACKPOT HERO REVEAL — the "you hit something rare" moment.
+          Rotating sun-rays behind a massive metallic-gradient title that
+          slams in from huge scale with motion blur. Plays once for ~3.4s
+          on the same gate as the pulse glow / specialType reveal. */}
+      {((pulseGlow || (specialTypeParam && phase !== 'loading')) && visibleDraftType && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')) && (
+        <div className="fixed inset-0 z-[70] pointer-events-none flex items-center justify-center overflow-hidden">
+          <div
+            className="absolute left-1/2 top-1/2 w-[200vmax] h-[200vmax] -translate-x-1/2 -translate-y-1/2 animate-hero-rays"
+            style={{
+              background: visibleDraftType === 'jackpot'
+                ? 'repeating-conic-gradient(from 0deg, rgba(239,68,68,0.55) 0deg 6deg, transparent 6deg 24deg)'
+                : 'repeating-conic-gradient(from 0deg, rgba(255,215,0,0.55) 0deg 6deg, transparent 6deg 24deg)',
+              maskImage: 'radial-gradient(circle at center, transparent 8%, black 18%, black 55%, transparent 80%)',
+              WebkitMaskImage: 'radial-gradient(circle at center, transparent 8%, black 18%, black 55%, transparent 80%)',
+            }}
+          />
+          <div
+            className="absolute left-1/2 top-1/2 animate-hero-slam font-black italic tracking-tighter text-center"
+            style={{
+              fontSize: 'clamp(80px, 18vw, 260px)',
+              lineHeight: 1,
+              background: visibleDraftType === 'jackpot'
+                ? 'linear-gradient(180deg, #FFE0E0 0%, #FF4D4D 35%, #B91C1C 70%, #FFC2C2 100%)'
+                : 'linear-gradient(180deg, #FFF6C2 0%, #FFD700 30%, #B8860B 65%, #FFE57F 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              filter: visibleDraftType === 'jackpot'
+                ? 'drop-shadow(0 0 36px rgba(239,68,68,0.95)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))'
+                : 'drop-shadow(0 0 36px rgba(255,215,0,0.95)) drop-shadow(0 6px 0 rgba(0,0,0,0.55))',
+            }}
+          >
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : 'HOF'}
+          </div>
+          <div
+            className="absolute left-1/2 top-[58%] animate-hero-subtitle font-bold text-center uppercase whitespace-nowrap"
+            style={{
+              fontSize: 'clamp(13px, 1.8vw, 22px)',
+              color: visibleDraftType === 'jackpot' ? '#FFE5E5' : '#FFF8C2',
+              textShadow: visibleDraftType === 'jackpot'
+                ? '0 0 18px rgba(239,68,68,0.9), 0 2px 0 rgba(0,0,0,0.65)'
+                : '0 0 18px rgba(255,215,0,0.9), 0 2px 0 rgba(0,0,0,0.65)',
+            }}
+          >
+            {visibleDraftType === 'jackpot' ? 'Winner skips to the finals' : 'Hall of Fame — bonus prizes'}
+          </div>
+        </div>
+      )}
+
       <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
