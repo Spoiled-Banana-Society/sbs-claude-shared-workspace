@@ -280,10 +280,18 @@ export function DraftRoomDrafting({
                         </div>
                       )}
                       {isCurrent && (
-                        <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%', minHeight: '54px' }}>
-                          <p className="font-primary text-[15px] font-bold italic text-center pt-2" style={{ color: textColor }}>
-                            Picking...
-                          </p>
+                        <div style={{ borderBottomWidth: 5, borderBottomStyle: 'solid', borderBottomColor: '#fff', width: '100%' }}>
+                          <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
+                            {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
+                              <div
+                                key={pos}
+                                style={{ flex: 1, borderTopWidth: '2px', borderTopStyle: 'solid', borderTopColor: POSITION_COLORS[pos], textAlign: 'center' }}
+                              >
+                                <p style={{ fontSize: '10px' }}>{pos}</p>
+                                <p className="text-xs">{counts[pos]}</p>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                       {isPicked && (
