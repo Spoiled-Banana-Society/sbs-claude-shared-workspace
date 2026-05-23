@@ -494,7 +494,7 @@ export function NotificationSettings() {
           on sm+ it relaxes back to the normal body size. Tightened
           margin-bottom to sit close to the section structure below. */}
       <header className="mb-3">
-        <p className="whitespace-nowrap text-[10.5px] leading-snug tracking-tight text-text-secondary sm:text-[13.5px] sm:tracking-normal">
+        <p className="whitespace-nowrap text-[12px] leading-snug tracking-tighter text-text-secondary sm:text-[13.5px] sm:tracking-normal">
           Choose how you get notis when drafts fill and when it&apos;s your pick.
         </p>
       </header>
