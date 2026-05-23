@@ -664,7 +664,10 @@ export function NotificationSettings() {
                       // they tap "Use a different account" the link clears
                       // and these steps reappear naturally.
                       <div className="text-[12px] leading-relaxed text-amber-400/95">
-                        <p className="mb-1.5 font-semibold">📱 Mobile only — must use Safari:</p>
+                        <p className="mb-1.5 font-semibold">📱 Mobile setup using Safari (desktop works without these steps)</p>
+                        <p className="mb-1.5 text-amber-400/80">
+                          First time? Open <span className="font-mono">discord.com/login</span> in Safari and log in once. Then follow the steps below.
+                        </p>
                         <ol className="ml-5 list-decimal space-y-0.5">
                           <li>Toggle Discord on (a new tab opens)</li>
                           <li>
