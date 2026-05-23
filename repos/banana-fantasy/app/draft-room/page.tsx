@@ -1857,6 +1857,21 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
+      {/* Persistent edge treatment for special drafts — gold for HOF, red
+          for Jackpot. Pointer-events-none so clicks pass through; a gentle
+          pulse keeps it alive without being distracting. Thin 2px border
+          plus a soft inset glow that fades inward ~200px. */}
+      {visibleDraftType && (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') && (
+        <div
+          className="fixed inset-0 pointer-events-none z-[5] animate-hof-edge"
+          style={{
+            boxShadow: visibleDraftType === 'jackpot'
+              ? 'inset 0 0 0 2px rgba(239,68,68,0.7), inset 0 0 80px 0 rgba(239,68,68,0.45), inset 0 0 220px 60px rgba(239,68,68,0.14)'
+              : 'inset 0 0 0 2px rgba(255,215,0,0.7), inset 0 0 80px 0 rgba(255,215,0,0.45), inset 0 0 220px 60px rgba(255,215,0,0.12)',
+          }}
+        />
+      )}
+
       {/* Login gate — dims draft and blocks interaction when logged out */}
       {!isLoggedIn && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">

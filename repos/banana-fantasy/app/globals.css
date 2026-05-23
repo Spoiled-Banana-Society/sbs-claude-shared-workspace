@@ -374,6 +374,16 @@ body {
   animation: pulse-glow 2.2s ease-in-out infinite;
 }
 
+/* Gentle breathing pulse for the persistent HOF/JP viewport edge —
+   keeps the gold/red border alive without being distracting. */
+@keyframes hof-edge {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1;    }
+}
+.animate-hof-edge {
+  animation: hof-edge 3.5s ease-in-out infinite;
+}
+
 /* Fade in animation */
 @keyframes fade-in {
   from {
