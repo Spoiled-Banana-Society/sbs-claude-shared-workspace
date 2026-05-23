@@ -89,15 +89,18 @@ export function defaultDisplayName(walletAddress: string): string {
 
 /**
  * True when a stored display name isn't a real, user-chosen name —
- * empty, a leftover test placeholder, or a raw wallet address. Such
- * names get replaced with `defaultDisplayName` for display.
+ * empty, a leftover test placeholder, or any form of the wallet address
+ * (raw, full, or truncated with a dot like `0x709.a4e9`). Exported so
+ * useAuth can filter stale localStorage `savedProfile.username` values
+ * from older code that wrote the truncated wallet there.
  */
-function isPlaceholderName(name: string | undefined | null, walletAddress: string): boolean {
+export function isPlaceholderName(name: string | undefined | null, walletAddress: string): boolean {
   if (!name) return true;
   const t = name.trim();
   if (t === '') return true;
   if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
-  if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true; // raw / truncated wallet
+  if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true; // raw / partially-truncated wallet
+  if (/^0x[0-9a-fA-F]+\.[0-9a-fA-F]+$/.test(t)) return true; // truncated `0x709.a4e9` form
   if (t.toLowerCase() === normalizeWalletAddress(walletAddress).toLowerCase()) return true;
   return false;
 }

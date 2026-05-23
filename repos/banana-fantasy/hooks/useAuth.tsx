@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
 import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
-import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName } from '@/lib/api/owner';
+import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
 import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
@@ -390,10 +390,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .then((backendUser) => {
           // Merge backend data with any locally saved profile overrides
           // Always use backend draftPasses (real token count from API)
+          // Filter savedProfile.username through the placeholder check —
+          // older builds wrote the truncated wallet ("0x709.a4e9") here,
+          // and that leaks across wallets on the same browser profile.
+          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+            ? savedProfile.username
+            : undefined;
           const merged: User = {
             ...backendUser,
             loginMethod,
-            username: backendUser.username || savedProfile?.username || backendUser.walletAddress,
+            username: backendUser.username || safeSavedName || defaultDisplayName(walletAddress),
             profilePicture: savedProfile?.profilePicture || backendUser.profilePicture,
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
@@ -421,9 +427,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           // Backend unreachable or user not found — fall back to Privy-only profile
           const isNotFound = err instanceof ClientApiError && err.status === 404;
+          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+            ? savedProfile.username
+            : undefined;
           const fallbackUser: User = {
             id: privy.user!.id,
-            username: savedProfile?.username || defaultDisplayName(walletAddress),
+            username: safeSavedName || defaultDisplayName(walletAddress),
             walletAddress,
             loginMethod,
             profilePicture: savedProfile?.profilePicture,
