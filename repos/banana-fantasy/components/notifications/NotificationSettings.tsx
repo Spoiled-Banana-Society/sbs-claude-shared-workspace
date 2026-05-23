@@ -608,18 +608,19 @@ export function NotificationSettings() {
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
-                    {id === 'discord' && !linked && isStandalonePWA && (
+                    {id === 'discord' && isStandalonePWA && (!linked || !on) && (
                       // iOS PWA quirk: the OAuth tab is SFSafariViewController
                       // — a separate cookie jar from real Safari, so it can't
                       // see the user's Discord login session. The bottom-right
                       // Safari button hands off to real Safari, where they're
                       // already signed in. Show this BEFORE the toggle tap so
-                      // they know what's coming.
+                      // they know what's coming — and also when toggled off
+                      // (linked or not), so the user has guidance + a switch-
+                      // account option at the bottom.
                       <div className="text-[12px] leading-relaxed text-amber-400/95">
                         <p className="mb-1.5 font-semibold">📱 Mobile only — must use Safari:</p>
                         <ol className="ml-5 list-decimal space-y-0.5">
                           <li>Toggle Discord on (a new tab opens)</li>
-                          <li>Refresh that tab if it&apos;s blank</li>
                           <li>
                             Tap the Safari icon{' '}
                             <span
@@ -654,6 +655,7 @@ export function NotificationSettings() {
                             </span>{' '}
                             (bottom-right)
                           </li>
+                          <li>Refresh that tab if it&apos;s blank</li>
                           <li>Tap <span className="font-semibold">Authorize</span></li>
                           <li>Come back to this app</li>
                         </ol>
