@@ -152,11 +152,32 @@ export function NotificationSettings() {
     else setLoading(false);
   }, [user?.walletAddress, loadProfile]);
 
+  // When the user comes back to the PWA after authorizing Discord in
+  // Safari, the page becomes visible again — re-fetch prefs so the
+  // Discord row flips to "Connected" without a manual refresh.
+  useEffect(() => {
+    if (!user?.walletAddress) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') loadProfile();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [user?.walletAddress, loadProfile]);
+
   // Surface the result of the Discord OAuth round-trip.
   useEffect(() => {
     const flag = new URLSearchParams(window.location.search).get('discord');
-    if (flag === 'linked') setBanner('Discord connected.');
-    else if (flag === 'error') {
+    if (flag === 'linked') {
+      setBanner('Discord connected.');
+      // If this tab was popped open from the PWA (window.opener is set),
+      // close it shortly after success — iOS returns the user to the
+      // PWA they came from. On desktop / normal flow, opener is null
+      // and the tab just stays.
+      if (typeof window !== 'undefined' && window.opener) {
+        setBanner('✅ Discord connected — closing this tab…');
+        setTimeout(() => window.close(), 1500);
+      }
+    } else if (flag === 'error') {
       // The callback redirects with ?reason=… naming the exact failure
       // ("oauth_denied_or_error", "invalid_or_expired_state", etc.) —
       // surface it so a tester reading the URL or banner can tell why.
