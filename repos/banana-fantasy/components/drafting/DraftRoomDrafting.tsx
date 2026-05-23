@@ -133,18 +133,18 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* Subtle gold/red wash during the drafting phase — a thin, even
-          coat across the whole viewport so HOF/JP energy reads on the
-          drafting view without overpowering text or picks. Flat low-
-          opacity color (not a radial gradient) so the intensity stays
-          uniform from edge to edge. */}
+      {/* Gold/red wash during the drafting phase — visible coat across
+          the whole viewport so HOF/JP energy reads on the drafting view.
+          Flat color (not a gradient) so intensity stays uniform from
+          edge to edge. 12% opacity — sits behind interactive content
+          (z-0) so text and picks remain crisp. */}
       {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
         <div
           className="fixed inset-0 z-0 pointer-events-none"
           style={{
             backgroundColor: visibleDraftType === 'jackpot'
-              ? 'rgba(239, 68, 68, 0.06)'
-              : 'rgba(255, 215, 0, 0.06)',
+              ? 'rgba(239, 68, 68, 0.14)'
+              : 'rgba(255, 215, 0, 0.14)',
           }}
         />
       )}
