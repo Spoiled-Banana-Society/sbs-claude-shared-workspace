@@ -274,12 +274,33 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </Section>
       )}
 
-      {/* All-clear state */}
+      {/* "Nothing firing recently" state. We deliberately split this into
+          two visually distinct cards based on whether there are unresolved
+          earlier issues. Boris flagged that the old "All clear" green copy
+          implied "the system is healthy" even when earlier bugs sat in the
+          backlog — they hadn't been fixed, just hadn't fired in 2h. New
+          copy never claims fixedness; it only describes activity. */}
       {activeCritical.length === 0 && activeWarning.length === 0 && !query.isLoading && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] p-8 text-center">
-          <p className="text-emerald-300 text-sm font-medium">✓ Nothing active right now</p>
+        <div
+          className={`rounded-xl border p-8 text-center ${
+            earlier.length > 0
+              ? 'border-yellow-500/30 bg-yellow-500/[0.05]'
+              : 'border-emerald-500/30 bg-emerald-500/[0.06]'
+          }`}
+        >
+          <p
+            className={`text-sm font-medium ${
+              earlier.length > 0 ? 'text-yellow-300' : 'text-emerald-300'
+            }`}
+          >
+            {earlier.length > 0
+              ? '⚠️ Quiet now (last 2h) — but earlier issues may still be live bugs'
+              : '✓ Nothing active right now'}
+          </p>
           <p className="text-gray-500 text-[12px] mt-1">
-            No errors in the last 2 hours{earlier.length > 0 ? ' — older issues are under “Earlier” below' : ''}.
+            {earlier.length > 0
+              ? `${earlier.length} earlier ${earlier.length === 1 ? 'issue has' : 'issues have'} not been verified as fixed — they just haven't fired in the last 2 hours. Review under "Earlier" below.`
+              : 'No errors in the last 2 hours.'}
           </p>
         </div>
       )}
@@ -358,13 +379,29 @@ function TriageBanner({ critical, warning, earlierCount }: {
         <p className="text-yellow-300 text-sm font-semibold">
           🟡 No critical issues — {warning.length} warning{warning.length === 1 ? '' : 's'} to look into
         </p>
-        <p className="text-[11px] text-gray-500 mt-1">{earlierCount} earlier (quiet now)</p>
+        <p className="text-[11px] text-gray-500 mt-1">{earlierCount} earlier (quiet now, still unfixed)</p>
+      </div>
+    );
+  }
+  // Nothing active. Two distinct states based on whether earlier issues
+  // exist — "All clear" must only show when there are TRULY zero bugs in
+  // the feed (active OR earlier). If earlier > 0, those are unfixed bugs
+  // that simply haven't fired recently; not "all clear."
+  if (earlierCount > 0) {
+    return (
+      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/[0.05] px-4 py-3">
+        <p className="text-yellow-300 text-sm font-semibold">
+          ⚠️ Quiet now (last 2h) — {earlierCount} earlier {earlierCount === 1 ? 'issue is' : 'issues are'} still unfixed
+        </p>
+        <p className="text-[11px] text-gray-500 mt-1">
+          No new errors in the last 2 hours, but earlier bugs haven&apos;t been verified as fixed — they just haven&apos;t fired again yet. Review them below.
+        </p>
       </div>
     );
   }
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3">
-      <p className="text-emerald-300 text-sm font-semibold">✓ All clear — nothing needs attention</p>
+      <p className="text-emerald-300 text-sm font-semibold">✓ All clear — no bugs in the feed</p>
     </div>
   );
 }
