@@ -133,9 +133,19 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* No drafting-phase wash — user preferred just the thin viewport-
-          edge border (rendered at the draft-room page level) as the
-          HOF/JP indicator during drafting. */}
+      {/* Radial halo during the drafting phase too — paired with the
+          thin viewport-edge border so the "double glow" persists from
+          reveal all the way through drafting. Gold for HOF, red for JP. */}
+      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
+        <div
+          className="fixed inset-0 z-0 pointer-events-none animate-pulse-glow"
+          style={{
+            background: visibleDraftType === 'jackpot'
+              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.3) 0%, transparent 70%)'
+              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
+          }}
+        />
+      )}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
@@ -155,16 +165,7 @@ export function DraftRoomDrafting({
                 const isUserCard = slot.ownerIndex === engine.userDraftPosition;
                 const posHex = isPicked ? getPositionColorHex(slot.position) : '';
                 const counts = getPositionCountsForPlayer(slot.ownerName);
-                // Non-user, non-current card borders pick up the special
-                // draft type — gold for HOF, red for JP — so the cards row
-                // visually carries the HOF/JP energy across all the picks
-                // (vs the dark grey that blends into the page bg).
-                const defaultBorder = visibleDraftType === 'hof'
-                  ? '#F3E216'
-                  : visibleDraftType === 'jackpot'
-                    ? '#EF4444'
-                    : '#444';
-                const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : defaultBorder;
+                const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : '#444';
                 const textColor = visibleDraftType === 'hof' && isUserCard ? '#111'
                   : visibleDraftType === 'jackpot' && isUserCard ? '#222'
                   : '#fff';
