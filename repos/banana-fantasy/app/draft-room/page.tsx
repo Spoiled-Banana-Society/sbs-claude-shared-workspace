@@ -1830,6 +1830,15 @@ function DraftRoomContent() {
       )}
       <div>
         <button
+          onClick={() => router.push('/')}
+          title="Back to home — the draft keeps going without you here"
+          className="text-[12px] cursor-pointer flex items-center justify-center border border-gray-500 px-1 font-primary"
+        >
+          ← EXIT
+        </button>
+      </div>
+      <div>
+        <button
           onClick={handleToggleMute}
           className="text-[12px] text-right cursor-pointer flex items-center justify-end border border-gray-500 px-1 font-primary"
         >
