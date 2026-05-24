@@ -283,6 +283,171 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
       {info && (
         <pre className="text-[10px] text-gray-300 bg-gray-900/80 border border-gray-700 rounded p-2 whitespace-pre-wrap max-h-64 overflow-auto">{info}</pre>
       )}
+
+      {/* Companion contract: on-chain commits of wallet→spinIndex
+          assignments every 100 spins. Closes the last fairness gap so
+          the order in which outcomes are handed out is also tamper-
+          proof. Sits inside the same panel since it's part of the
+          same wheel-fairness story. */}
+      <AssignmentJournalSubPanel getHeaders={getHeaders} />
+    </div>
+  );
+}
+
+/* ───────────────────────── Assignment-journal sub-panel ───────────── */
+
+interface AssignmentJournalConfig {
+  contractAddress?: string;
+  deployerAddress?: string;
+  deployTxHash?: string;
+  deployedAt?: number;
+}
+
+function AssignmentJournalSubPanel({
+  getHeaders,
+}: {
+  getHeaders: () => Promise<HeadersInit>;
+}) {
+  const [config, setConfig] = useState<AssignmentJournalConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const headers = await getHeaders();
+      const res = await fetch('/api/admin/deploy-wheel-assignment-journal', {
+        cache: 'no-store',
+        headers,
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { config?: AssignmentJournalConfig };
+        setConfig(data.config ?? null);
+      }
+    } catch {
+      /* silent */
+    }
+  }, [getHeaders]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const handleDeploy = useCallback(
+    async (forceRedeploy: boolean) => {
+      const confirm = window.confirm(
+        forceRedeploy
+          ? 'FORCE redeploy BananaWheelAssignmentJournal? The old contract address will be discarded. The cron picks up the new address automatically on its next tick.'
+          : 'Deploy BananaWheelAssignmentJournal to Base mainnet?\n\nNo VRF, no funds — just an append-only commit log of wallet→spinIndex assignments, one Merkle root per ~100 spins. Owner = deployer wallet (same as the wheel proof contract).',
+      );
+      if (!confirm) return;
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+      try {
+        const headers = await getHeaders();
+        const res = await fetch('/api/admin/deploy-wheel-assignment-journal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: JSON.stringify({ forceRedeploy }),
+        });
+        const data = (await res.json()) as { ok?: boolean; error?: string } & Record<string, unknown>;
+        if (!res.ok || data.ok === false) {
+          setError(data.error || `Request failed (${res.status})`);
+        } else {
+          setInfo(JSON.stringify(data, null, 2));
+          await refresh();
+        }
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [getHeaders, refresh],
+  );
+
+  return (
+    <div className="mt-4 rounded-md bg-gray-900/60 border border-gray-700 p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <h5 className="text-[11px] font-semibold text-white uppercase tracking-wider">
+            Assignment Journal
+          </h5>
+          <p className="text-[10px] text-gray-500 mt-0.5">
+            On-chain commit of wallet→spinIndex assignments, batched every 100 spins.
+            Closes the last fairness gap.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          className="text-[10px] text-gray-400 hover:text-white"
+        >
+          Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+        <KV
+          label="Contract"
+          value={
+            config?.contractAddress ? (
+              <a
+                className="text-banana hover:underline font-mono"
+                href={`https://basescan.org/address/${config.contractAddress}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {config.contractAddress}
+              </a>
+            ) : (
+              <span className="text-amber-300">not deployed</span>
+            )
+          }
+        />
+        <KV
+          label="Deployed"
+          value={
+            config?.deployedAt
+              ? new Date(config.deployedAt).toLocaleString()
+              : '—'
+          }
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {!config?.contractAddress ? (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void handleDeploy(false)}
+            className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[11px] font-semibold"
+          >
+            {loading ? 'Deploying…' : 'Deploy assignment journal'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void handleDeploy(true)}
+            className="px-3 py-1.5 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white text-[11px] font-semibold"
+          >
+            Force redeploy
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <pre className="text-[10px] text-red-300 bg-red-950/30 border border-red-900 rounded p-2 whitespace-pre-wrap">
+          {error}
+        </pre>
+      )}
+      {info && (
+        <pre className="text-[10px] text-gray-300 bg-gray-900/80 border border-gray-700 rounded p-2 whitespace-pre-wrap max-h-48 overflow-auto">
+          {info}
+        </pre>
+      )}
     </div>
   );
 }

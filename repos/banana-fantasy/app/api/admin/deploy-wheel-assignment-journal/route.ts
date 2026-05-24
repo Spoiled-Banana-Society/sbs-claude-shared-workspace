@@ -158,3 +158,28 @@ export async function POST(req: Request) {
     return jsonError('Internal Server Error', 500, { requestId });
   }
 }
+
+/**
+ * GET /api/admin/deploy-wheel-assignment-journal
+ * Returns the current journal config so the admin panel can render
+ * its "deployed at 0x… / not deployed" status without needing a
+ * separate route for the simple Firestore read.
+ */
+export async function GET(req: Request) {
+  const requestId = getRequestId(req);
+  const rateLimited = rateLimit(req, RATE_LIMITS.admin);
+  if (rateLimited) return rateLimited;
+  try {
+    await requireAdmin(req);
+    if (!isFirestoreConfigured()) {
+      return json({ ok: true, config: null, requestId });
+    }
+    const db = getAdminFirestore();
+    const snap = await db.collection(SYSTEM_CONFIG).doc(JOURNAL_DOC).get();
+    if (!snap.exists) return json({ ok: true, config: null, requestId });
+    return json({ ok: true, config: snap.data() as JournalConfig, requestId });
+  } catch (err) {
+    if (err instanceof ApiError) return jsonError(err.message, err.status, { requestId });
+    return jsonError('Internal Server Error', 500, { requestId });
+  }
+}
