@@ -19,6 +19,7 @@ func (or *OwnerResources) Routes() chi.Router {
 
 	r.Post("/{ownerId}/draftToken/mint", or.CreateTokensInDatabase)
 	r.Post("/{ownerId}/drafts/state/rankings", or.UpdateUserRankings)
+	r.Delete("/{ownerId}/drafts/state/rankings", or.RemoveUserRankings)
 	r.Get("/{ownerId}/draftToken/all", or.ReturnTokensOwnedByUser)
 	r.Get("/{ownerId}/rankings/get", or.ReturnUserRankings)
 	r.Get("/{ownerId}/promoCode/get", or.ReturnPromoCode)
@@ -306,6 +307,31 @@ func (or *OwnerResources) UpdateUserRankings(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+// RemoveUserRankings clears the user's saved rankings doc so the next
+// GET re-seeds from playerStats2024 (i.e., resets to ADP default).
+// Frontend's "Reset to defaults" button hits this via DELETE.
+func (or *OwnerResources) RemoveUserRankings(w http.ResponseWriter, r *http.Request) {
+	ownerId := chi.URLParam(r, "ownerId")
+	if ownerId == "" {
+		http.Error(w, "Did not find an ownerId in the url path", http.StatusBadRequest)
+		return
+	}
+	ownerId = strings.ToLower(ownerId)
+
+	err := utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/drafts", ownerId), "rankings")
+	if err != nil {
+		// NotFound is the happy case for "already at defaults" — treat as success.
+		if strings.Contains(strings.ToLower(err.Error()), "notfound") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		fmt.Println("Error deleting user rankings:", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 type GetRankingsResponse struct {
