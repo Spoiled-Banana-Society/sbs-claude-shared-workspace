@@ -21,7 +21,7 @@ import { SPIN_DURATION_MS } from '@/components/wheel/BananaWheel';
 import { useQueryClient } from '@tanstack/react-query';
 
 export default function BananaWheelPage() {
-  const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil, freezeBalanceUpdates } = useAuth();
+  const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil, freezeSpinReveal } = useAuth();
   const spinMutation = useSpin(user?.id);
   const queryClient = useQueryClient();
   const promosQuery = usePromos({ userId: user?.id });
@@ -57,16 +57,17 @@ export default function BananaWheelPage() {
   const segmentMap = useMemo(() => new Map(wheelSegments.map((segment) => [segment.id, segment])), []);
 
   const handleSpin = useCallback(async (): Promise<WheelSpinOutcome | null> => {
-    // Freeze global balance updates for the duration of the wheel
-    // animation so the header's draft passes / wheel spins counts don't
-    // tick mid-spin (would spoil the reveal). The +800ms buffer covers
-    // the small window between mutation start and the wheel actually
-    // beginning to spin, plus the post-landing prize reveal frame. Any
-    // SSE payload arriving during the freeze is queued and applied
-    // automatically when the freeze expires — no balance data is lost.
-    freezeBalanceUpdates(SPIN_DURATION_MS + 800);
+    // Freeze global spin-reveal updates for the duration of the wheel
+    // animation so the header's draft passes / wheel spins counts AND
+    // the profile activity feed don't tick mid-spin (would spoil the
+    // reveal). The +800ms buffer covers the small window between
+    // mutation start and the wheel actually beginning to spin, plus
+    // the post-landing prize reveal frame. Any SSE payload arriving
+    // during the freeze is queued and applied automatically when the
+    // freeze expires — no balance data is lost.
+    freezeSpinReveal(SPIN_DURATION_MS + 800);
     return spinMutation.mutateAsync();
-  }, [spinMutation, freezeBalanceUpdates]);
+  }, [spinMutation, freezeSpinReveal]);
 
   const handleSpinComplete = useCallback(
     (_outcome: WheelSpinOutcome, segment: WheelSegment | null) => {

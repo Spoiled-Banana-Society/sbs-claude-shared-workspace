@@ -6,6 +6,7 @@ import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivitySt
 import type { ActivityEventType } from '@/lib/activityEvents';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { useAuth } from '@/hooks/useAuth';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Purchased',
@@ -117,6 +118,15 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
   const url = userId ? `/api/user/activity/stream?userId=${encodeURIComponent(userId.toLowerCase())}` : null;
   const { events, isConnected, error } = useActivityStream(url);
 
+  // Read the spin-reveal freeze state from auth so we can hide
+  // freshly-arrived spin events while the wheel is mid-animation
+  // on the banana-wheel page. Without this, opening /profile in
+  // another tab during a spin would show "Won on wheel" the moment
+  // the server wrote the event — ~5s before the wheel landed and
+  // spoiling the reveal. Once the freeze expires (~5.8s after spin
+  // start), the queued events show normally.
+  const { spinRevealFrozenUntil } = useAuth();
+
   // Surface activity-stream (SSE) failures to the admin error log. The
   // stream silently degrades to "Connecting…" otherwise, so a broken
   // feed is invisible without this report.
@@ -130,9 +140,27 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
     });
   }, [error, userId]);
 
+  // Filter out spin-related events that landed during the freeze
+  // window. The freeze covers "spin reveal" events specifically
+  // (spin_won + the pass_granted that mints a wheel reward), not
+  // unrelated activity from other flows.
+  const isFrozen = spinRevealFrozenUntil > 0 && Date.now() < spinRevealFrozenUntil;
+  const visibleEvents = useMemo(() => {
+    if (!isFrozen) return events;
+    // Hide spin-related events arriving during the freeze window so
+    // the wheel can land before the activity feed reveals the prize.
+    return events.filter((e) => {
+      if (e.type !== 'spin_won' && e.type !== 'pass_granted') return true;
+      const ms = e.createdAt ?? Date.parse(e.createdAtIso);
+      // Events older than the freeze start are normal history — show them.
+      const freezeStartedAt = spinRevealFrozenUntil - 6000; // ~SPIN_DURATION_MS + buffer
+      return ms < freezeStartedAt;
+    });
+  }, [events, isFrozen, spinRevealFrozenUntil]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, LiveActivityEvent[]>();
-    for (const e of events) {
+    for (const e of visibleEvents) {
       const ms = e.createdAt ?? Date.parse(e.createdAtIso);
       const key = Number.isFinite(ms) ? new Date(ms).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'Unknown';
       const arr = map.get(key);
@@ -140,7 +168,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
       else map.set(key, [e]);
     }
     return [...map.entries()];
-  }, [events]);
+  }, [visibleEvents]);
 
   return (
     <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 mb-6">
@@ -152,7 +180,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
         </div>
       </div>
 
-      {events.length === 0 ? (
+      {visibleEvents.length === 0 ? (
         <p className="text-white/30 text-xs py-6 text-center">
           Your purchases, wins, and promo claims will show up here.
         </p>

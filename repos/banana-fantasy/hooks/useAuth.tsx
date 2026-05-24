@@ -71,14 +71,25 @@ interface AuthContextType {
     opts?: { timeoutMs?: number; intervalMs?: number },
   ) => Promise<boolean>;
   /**
-   * Suppress balance updates (SSE + polling fallback) for the next
-   * `durationMs`. Any payload that arrives during the freeze is queued
-   * and applied when the freeze expires — no updates are lost. Used by
-   * the wheel page to keep the header's "draft passes / wheel spins"
-   * count from updating mid-spin animation, which would spoil the
-   * prize reveal.
+   * Suppress spin-reveal updates (balance SSE + polling fallback) for
+   * the next `durationMs`. Any balance payload that arrives during the
+   * freeze is queued and applied when the freeze expires — no updates
+   * are lost. Used by the wheel page to keep the header's "draft passes
+   * / wheel spins" count from updating mid-spin animation, which would
+   * spoil the prize reveal.
+   *
+   * Other components (ActivityHistory, etc.) can read
+   * `spinRevealFrozenUntil` to coordinate their own filtering during
+   * the same window.
    */
-  freezeBalanceUpdates: (durationMs: number) => void;
+  freezeSpinReveal: (durationMs: number) => void;
+  /**
+   * Timestamp (ms) when the current spin-reveal freeze expires. 0 when
+   * no freeze is active. Components that show real-time spin-related
+   * data (activity feed, etc.) read this and filter out events newer
+   * than the spin start so the reveal isn't spoiled.
+   */
+  spinRevealFrozenUntil: number;
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
   isEmbeddedWallet: boolean;
@@ -178,25 +189,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
-  // Balance-update freeze. While the wheel is animating a spin, the
-  // server has already incremented the user's prize counters (freeDrafts,
-  // jackpotEntries, etc.) and decremented wheelSpins — and the SSE
-  // balance stream would normally push those new values to the client
-  // within ~200ms, updating the header's counters BEFORE the wheel even
-  // lands on the prize (spoils the reveal). `freezeBalanceUpdates(ms)`
-  // suppresses any applyPayload writes for that window, queueing the
-  // latest payload to apply once the freeze expires so no data is lost.
+  // Spin-reveal freeze. While the wheel is animating a spin, the
+  // server has already incremented prize counters (freeDrafts,
+  // jackpotEntries, etc.) and decremented wheelSpins — and the various
+  // SSE streams (balance + per-user activity) would normally push those
+  // values to the client within ~200ms, updating header counters AND the
+  // profile activity feed BEFORE the wheel even lands on the prize
+  // (spoils the reveal).
+  //
+  // `freezeSpinReveal(ms)`:
+  //   - suppresses any applyPayload writes for that window (queueing
+  //     the latest payload to apply once the freeze expires so no
+  //     balance data is lost), AND
+  //   - exposes `spinRevealFrozenUntil` (reactive state) so OTHER
+  //     components (ActivityHistory, anywhere else that subscribes to
+  //     SSE-driven spin events) can also opt in to filter out events
+  //     newer than the spin start.
   const balanceFrozenUntilRef = useRef<number>(0);
   const pendingBalancePayloadRef = useRef<unknown>(null);
   const applyPayloadRef = useRef<((data: unknown) => void) | null>(null);
-  const freezeBalanceUpdates = useCallback((durationMs: number) => {
+  const [spinRevealFrozenUntil, setSpinRevealFrozenUntil] = useState(0);
+  const freezeSpinReveal = useCallback((durationMs: number) => {
     if (durationMs <= 0) return;
     const until = Date.now() + durationMs;
     if (until > balanceFrozenUntilRef.current) {
       balanceFrozenUntilRef.current = until;
+      setSpinRevealFrozenUntil(until);
       // When the freeze expires, drain any payload queued during the
       // freeze so the UI catches up without waiting for the next SSE
-      // push or poll cycle.
+      // push or poll cycle. Reset the reactive state so consumers know
+      // the freeze is over.
       setTimeout(() => {
         if (Date.now() < balanceFrozenUntilRef.current) return;
         const queued = pendingBalancePayloadRef.current;
@@ -204,6 +226,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (queued && applyPayloadRef.current) {
           applyPayloadRef.current(queued);
         }
+        setSpinRevealFrozenUntil(0);
       }, durationMs + 10);
     }
   }, []);
@@ -924,7 +947,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser,
         refreshBalance,
         refreshBalanceUntil,
-        freezeBalanceUpdates,
+        freezeSpinReveal,
+        spinRevealFrozenUntil,
         showLoginModal,
         setShowLoginModal,
         isEmbeddedWallet: user?.loginMethod === 'social',
