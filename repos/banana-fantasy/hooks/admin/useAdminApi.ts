@@ -360,6 +360,55 @@ export function useRecentErrors(enabled: boolean) {
   });
 }
 
+export interface ResolvedErrorEntry {
+  at: string | null;
+  byWallet: string;
+  note?: string;
+}
+
+/**
+ * Returns the admin-curated map of "resolved" error groups — group keys
+ * an admin has explicitly marked as fixed. The Logs UI drops these out
+ * of the active feed and chip counts; a "Show resolved" toggle reveals
+ * them again so they can be re-opened if the issue actually recurred.
+ */
+export function useResolvedErrors(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<{ resolved: Record<string, ResolvedErrorEntry> }>({
+    queryKey: ['admin', 'resolved-errors'],
+    enabled,
+    queryFn: () =>
+      adminFetch<{ resolved: Record<string, ResolvedErrorEntry> }>('/api/admin/error-resolved', getHeaders),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+export function useMarkErrorResolved() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<
+    { ok: boolean; resolved: boolean; groupKey: string },
+    AdminApiError,
+    { groupKey: string; resolved: boolean; note?: string }
+  >({
+    mutationFn: async ({ groupKey, resolved, note }) =>
+      adminFetch<{ ok: boolean; resolved: boolean; groupKey: string }>(
+        '/api/admin/error-resolved',
+        getHeaders,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupKey, resolved, note }),
+        },
+      ),
+    onSuccess: () => {
+      // Refetch the resolved map so the UI updates immediately.
+      qc.invalidateQueries({ queryKey: ['admin', 'resolved-errors'] });
+    },
+  });
+}
+
 /**
  * Returns a function that downloads an error + its full debug-session
  * trace as a JSON file (for handing to a developer). Raw fetch — not

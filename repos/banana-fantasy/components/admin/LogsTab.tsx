@@ -1,7 +1,14 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { useRecentErrors, useExportErrorSession, AdminApiError, type ErrorEventEntry } from '@/hooks/admin/useAdminApi';
+import {
+  useRecentErrors,
+  useExportErrorSession,
+  useResolvedErrors,
+  useMarkErrorResolved,
+  AdminApiError,
+  type ErrorEventEntry,
+} from '@/hooks/admin/useAdminApi';
 import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
@@ -174,15 +181,20 @@ export function LogsTab({ enabled }: { enabled: boolean }) {
 
 function ErrorFeed({ enabled }: { enabled: boolean }) {
   const query = useRecentErrors(enabled);
+  const resolvedQuery = useResolvedErrors(enabled);
   const allErrors = useMemo(() => query.data?.errors ?? [], [query.data]);
+  const resolvedMap = useMemo(() => resolvedQuery.data?.resolved ?? {}, [resolvedQuery.data]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
   const [area, setArea] = useState<LogArea | 'all'>('all');
   const [showTest, setShowTest] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
-  // Severity filter: 'all' shows every section, otherwise only the
-  // matching severity tier renders. Boris asked for the top-of-page
-  // severity chips to BE filters, not just informational.
+  const [showResolved, setShowResolved] = useState(false);
+  // Severity filter: 'all' shows the usual active/earlier split.
+  // When set to critical/warning/low, the page flips into "focus mode":
+  // ONE consolidated section with every group of that severity regardless
+  // of age (active + earlier combined), so clicking a chip with all its
+  // issues bucketed as "earlier" still surfaces them.
   const [severityFilter, setSeverityFilter] = useState<LogSeverity | 'all'>('all');
 
   const norm = filter.trim().toLowerCase();
@@ -206,27 +218,33 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     const test: ErrorEventEntry[] = [];
     for (const e of filtered) (isTestNoiseError(e) ? test : real).push(e);
 
-    // 3. group, then split active vs earlier (quiet)
+    // 3. group + split out resolved (admin-marked-fixed) groups
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
-    const groups = groupErrors(real);
-    // Cross-error correlation map: wallet → set of group keys it appears in.
-    // Passed to AffectedUsers so each wallet row can show "+N other errors"
-    // for heavy hitters spanning multiple sources.
+    const allGroups = groupErrors(real);
+    const resolvedGroups = allGroups.filter((g) => !!resolvedMap[g.key]);
+    const groups = allGroups.filter((g) => !resolvedMap[g.key]);
+
+    // Cross-error correlation map (only unresolved — resolved groups
+    // shouldn't pollute the "+N other errors" tally).
     const actorGroupMap = buildActorGroupMap(groups);
+
+    // Active vs earlier split (used in default "all" view).
     const activeCritical = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'critical');
     const activeWarning = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'warning');
     const activeLow = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'low');
     const earlier = groups.filter((g) => g.lastTs < cutoff);
     const testGroups = groupErrors(test);
 
-    // Total counts (active + earlier) per severity — drives the top-of-page
-    // severity summary so Boris can scan "X critical / X warning / X low"
-    // including unresolved older bugs in the same view.
+    // Per-severity totals across ALL unresolved groups (active + earlier).
+    // Drives the chip counts so they reflect the true backlog, not just
+    // what's firing right now.
     const totalCritical = groups.filter((g) => g.severity === 'critical').length;
     const totalWarning = groups.filter((g) => g.severity === 'warning').length;
     const totalLow = groups.filter((g) => g.severity === 'low').length;
 
     return {
+      groups,
+      resolvedGroups,
       activeCritical,
       activeWarning,
       activeLow,
@@ -238,9 +256,11 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       totalLow,
       actorGroupMap,
     };
-  }, [allErrors, area, norm]);
+  }, [allErrors, area, norm, resolvedMap]);
 
   const {
+    groups,
+    resolvedGroups,
     activeCritical,
     activeWarning,
     activeLow,
@@ -252,6 +272,13 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     totalLow,
     actorGroupMap,
   } = buckets;
+
+  // When a severity filter is active, render ONE merged list of all
+  // groups (any age) at that severity, sorted newest-first. This is the
+  // "click Warning → see all 26 warnings" experience Boris asked for.
+  const filteredView = severityFilter !== 'all'
+    ? groups.filter((g) => g.severity === severityFilter).sort((a, b) => b.lastTs - a.lastTs)
+    : null;
 
   return (
     <div className="space-y-3">
@@ -271,9 +298,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       </div>
 
       {/* Severity summary — three color-coded chips with total counts
-          (active + earlier) per severity. Clickable: tapping a chip
-          filters the feed to that tier; tapping the same chip again
-          (or the "All" implicit fourth state) clears the filter. */}
+          per severity. Counts EXCLUDE groups an admin has marked as
+          fixed (resolved). Tap a chip to filter the feed to that tier;
+          tap again to clear. Filtering merges active + earlier so you
+          always see every issue at that level. */}
       <SeveritySummaryBar
         critical={totalCritical}
         warning={totalWarning}
@@ -281,8 +309,18 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         active={severityFilter}
         onChange={(next) => setSeverityFilter(next === severityFilter ? 'all' : next)}
       />
+      <p className="text-[11px] text-gray-500">
+        Counts exclude fixed issues. Tap a chip to see only that severity (recent + earlier combined).
+        Inside any row, hit <span className="text-emerald-300">✓ Mark fixed</span> to drop it from these counts.
+      </p>
 
-      <TriageBanner critical={activeCritical} warning={activeWarning} earlierCount={earlier.length} />
+      {/* Triage banner — hide when severity filter is active to remove
+          the duplicate "Quiet now" + "Filtering by warning" cognitive
+          overlap Boris flagged. The chip bar already shows what's
+          filtered and how many groups exist. */}
+      {severityFilter === 'all' && (
+        <TriageBanner critical={activeCritical} warning={activeWarning} earlierCount={earlier.length} />
+      )}
 
       {/* Area filter pills */}
       <div className="flex flex-wrap gap-1.5">
@@ -332,8 +370,43 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
-      {/* Critical — fix now. Hidden when severity filter excludes it. */}
-      {activeCritical.length > 0 && (severityFilter === 'all' || severityFilter === 'critical') && (
+      {/* FILTERED VIEW — when a severity chip is active, render ONE
+          merged section containing every group of that severity (active
+          AND earlier) sorted newest first. Replaces the default split
+          so Boris doesn't have to expand "Earlier" to see filtered
+          warnings/critical/low. */}
+      {filteredView && (
+        <Section
+          title={`${
+            severityFilter === 'critical' ? 'Critical' :
+            severityFilter === 'warning' ? 'Warnings' :
+            'Low priority'
+          } — all ${filteredView.length}`}
+          tone={severityFilter as 'critical' | 'warning' | 'low'}
+          count={filteredView.length}
+          defaultOpen
+        >
+          {filteredView.length === 0 ? (
+            <p className="rounded-md border border-white/5 bg-black/20 px-4 py-6 text-center text-[12px] text-gray-500">
+              No {severityFilter} issues. Click the chip again to clear the filter.
+            </p>
+          ) : (
+            filteredView.map((g) => (
+              <GroupRow
+                key={g.key}
+                group={g}
+                isOpen={expanded === g.key}
+                actorGroupMap={actorGroupMap}
+                onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))}
+              />
+            ))
+          )}
+        </Section>
+      )}
+
+      {/* Default view — split active vs earlier per severity. Only renders
+          when no severity filter is active. */}
+      {!filteredView && activeCritical.length > 0 && (
         <Section title="Critical — fix now" tone="critical" count={activeCritical.length} defaultOpen>
           {activeCritical.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -342,8 +415,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </Section>
       )}
 
-      {/* Warnings — look into it */}
-      {activeWarning.length > 0 && (severityFilter === 'all' || severityFilter === 'warning') && (
+      {!filteredView && activeWarning.length > 0 && (
         <Section title="Warnings — look into it" tone="warning" count={activeWarning.length} defaultOpen>
           {activeWarning.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -352,12 +424,9 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </Section>
       )}
 
-      {/* Low priority — informational, collapsed by default so it doesn't
-          crowd the page. These are fallback/transient errors that don't
-          impact the user-facing happy path (watchdog crashes, transient
-          RTDB hiccups, prefs-load failures). Worth knowing about, not
-          worth panicking over. */}
-      {activeLow.length > 0 && (severityFilter === 'all' || severityFilter === 'low') && (
+      {/* Low priority — informational, collapsed by default. Fallback /
+          transient errors that don't break the user-facing happy path. */}
+      {!filteredView && activeLow.length > 0 && (
         <Section title="Low priority — informational" tone="low" count={activeLow.length}>
           {activeLow.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -366,39 +435,14 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </Section>
       )}
 
-      {/* "Nothing firing recently" state. We deliberately split this into
-          two visually distinct cards based on whether there are unresolved
-          earlier issues. Boris flagged that the old "All clear" green copy
-          implied "the system is healthy" even when earlier bugs sat in the
-          backlog — they hadn't been fixed, just hadn't fired in 2h. New
-          copy never claims fixedness; it only describes activity. */}
-      {activeCritical.length === 0 && activeWarning.length === 0 && !query.isLoading && (
-        <div
-          className={`rounded-xl border p-8 text-center ${
-            earlier.length > 0
-              ? 'border-yellow-500/30 bg-yellow-500/[0.05]'
-              : 'border-emerald-500/30 bg-emerald-500/[0.06]'
-          }`}
-        >
-          <p
-            className={`text-sm font-medium ${
-              earlier.length > 0 ? 'text-yellow-300' : 'text-emerald-300'
-            }`}
-          >
-            {earlier.length > 0
-              ? '⚠️ Quiet now (last 2h) — but earlier issues may still be live bugs'
-              : '✓ Nothing active right now'}
-          </p>
-          <p className="text-gray-500 text-[12px] mt-1">
-            {earlier.length > 0
-              ? `${earlier.length} earlier ${earlier.length === 1 ? 'issue has' : 'issues have'} not been verified as fixed — they just haven't fired in the last 2 hours. Review under "Earlier" below.`
-              : 'No errors in the last 2 hours.'}
-          </p>
-        </div>
-      )}
+      {/* Duplicate "Quiet now / All clear" mega-card removed — TriageBanner
+          at the top already covers every state (critical / warning / quiet
+          with earlier / truly all clear). Two banners saying the same thing
+          was the main reason this page felt cluttered. */}
 
-      {/* Earlier — happened but quiet now */}
-      {earlier.length > 0 && (
+      {/* Earlier — happened but quiet now. Hidden when filtering since
+          the filtered view already includes earlier entries. */}
+      {!filteredView && earlier.length > 0 && (
         <div className="rounded-xl border border-gray-800 bg-gray-900/40 overflow-hidden">
           <button
             onClick={() => setShowEarlier((s) => !s)}
@@ -414,6 +458,38 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
               {earlier.map((g) => (
                 <GroupRow key={g.key} group={g} isOpen={expanded === g.key} muted actorGroupMap={actorGroupMap}
                   onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Resolved (admin-marked-fixed). Hidden by default; toggle to
+          show + re-open if the issue actually recurred. Mirrors the
+          Earlier-section affordance. */}
+      {!filteredView && resolvedGroups.length > 0 && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] overflow-hidden">
+          <button
+            onClick={() => setShowResolved((s) => !s)}
+            className="w-full px-4 py-2.5 flex items-center justify-between text-left hover:bg-emerald-500/[0.06]"
+          >
+            <span className="text-[12px] text-emerald-300">
+              ✓ Resolved — {resolvedGroups.length} {resolvedGroups.length === 1 ? 'issue' : 'issues'} an admin marked as fixed
+            </span>
+            <span className="text-emerald-300/60 text-xs">{showResolved ? 'hide' : 'show'}</span>
+          </button>
+          {showResolved && (
+            <div className="px-3 pb-3 space-y-2">
+              {resolvedGroups.map((g) => (
+                <GroupRow
+                  key={g.key}
+                  group={g}
+                  isOpen={expanded === g.key}
+                  muted
+                  resolved
+                  actorGroupMap={actorGroupMap}
+                  onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))}
+                />
               ))}
             </div>
           )}
@@ -528,15 +604,19 @@ function Section({ title, tone, count, defaultOpen, children }: {
   );
 }
 
-function GroupRow({ group, isOpen, onToggle, muted, actorGroupMap }: {
+function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
   group: ErrorGroup;
   isOpen: boolean;
   onToggle: () => void;
   muted?: boolean;
+  /** True when this row is currently in the resolved section. Changes
+      the Mark-fixed button to "Re-open" + grays out the dot. */
+  resolved?: boolean;
   /** wallet → set of group keys it appears in across the whole feed */
   actorGroupMap: Map<string, Set<string>>;
 }) {
   const { rep, severity, area, count } = group;
+  const markResolve = useMarkErrorResolved();
   // Which side broke — the Go server, or the banana-fantasy app
   // (browser + its API routes). Tells you which repo / dev it goes to.
   const isBackend = area === 'backend';
@@ -628,8 +708,36 @@ function GroupRow({ group, isOpen, onToggle, muted, actorGroupMap }: {
           {rep.requestId && (
             <p className="text-[11px] text-gray-500 font-mono">req: {rep.requestId}</p>
           )}
-          {rep.sessionId && (
-            <div className="flex items-center gap-3 pt-1">
+          {/* Mark fixed / Re-open — drops this group out of the chip
+              tallies + active feed. Lives in a dedicated row above the
+              export button so it can't be missed. */}
+          <div className="flex items-center gap-3 pt-1 flex-wrap">
+            <button
+              onClick={() => {
+                const note = resolved
+                  ? undefined
+                  : window.prompt('Optional note about the fix (visible to all admins):', '') ?? undefined;
+                markResolve.mutate({
+                  groupKey: group.key,
+                  resolved: !resolved,
+                  note: note?.trim() || undefined,
+                });
+              }}
+              disabled={markResolve.isPending}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 ${
+                resolved
+                  ? 'border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                  : 'bg-emerald-500/90 hover:bg-emerald-500 text-black'
+              }`}
+              title={
+                resolved
+                  ? 'Move this group back into the active feed (use if the issue actually recurred)'
+                  : 'Mark this issue as fixed — drops it from the chip counts + active feed'
+              }
+            >
+              {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Mark fixed'}
+            </button>
+            {rep.sessionId && (
               <button
                 onClick={handleExport}
                 disabled={exporting}
@@ -638,9 +746,9 @@ function GroupRow({ group, isOpen, onToggle, muted, actorGroupMap }: {
               >
                 {exporting ? 'Exporting…' : '⬇ Export trace for dev'}
               </button>
-              {exportError && <span className="text-[11px] text-red-300">{exportError}</span>}
-            </div>
-          )}
+            )}
+            {exportError && <span className="text-[11px] text-red-300">{exportError}</span>}
+          </div>
         </div>
       )}
     </div>
