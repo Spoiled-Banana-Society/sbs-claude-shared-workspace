@@ -16,16 +16,22 @@ import { RecentActivity } from '@/components/admin/RecentActivity';
 import { UserActivity } from '@/components/admin/UserActivity';
 import { KycAttemptsViewer } from '@/components/admin/KycAttemptsViewer';
 import { AuditLog } from '@/components/admin/AuditLog';
+import { LiveActivity } from '@/components/admin/LiveActivity';
 import { SubTabBar, useSubTab, type SubTabItem } from '@/components/admin/SubTabBar';
 
-type AuditSub = 'admin-actions' | 'user-signups' | 'kyc' | 'full-log';
-const SUB_KEYS = ['admin-actions', 'user-signups', 'kyc', 'full-log'] as const;
+type AuditSub = 'live-activity' | 'admin-actions' | 'user-signups' | 'kyc' | 'full-log';
+const SUB_KEYS = ['live-activity', 'admin-actions', 'user-signups', 'kyc', 'full-log'] as const;
 
 export function AuditTab({ enabled }: { enabled: boolean }) {
-  const sub = useSubTab<AuditSub>(SUB_KEYS, 'admin-actions');
+  // Default to Live Activity — that's the full commerce + gameplay stream
+  // (the same data the Dashboard's "See all →" points to). Boris's
+  // expectation when clicking "See all" on the dashboard activity widget
+  // is to land here, not on the signup log.
+  const sub = useSubTab<AuditSub>(SUB_KEYS, 'live-activity');
   const { counts } = useAdminNotifications({ enabled, useAuthHeaders: useAdminAuthHeaders });
 
   const items: SubTabItem<AuditSub>[] = [
+    { key: 'live-activity', label: 'Live Activity' },
     { key: 'admin-actions', label: 'Admin Actions' },
     { key: 'user-signups', label: 'User Signups' },
     { key: 'kyc', label: 'KYC Attempts', badge: counts.kyc },
@@ -35,6 +41,7 @@ export function AuditTab({ enabled }: { enabled: boolean }) {
   return (
     <div>
       <SubTabBar items={items} active={sub} onChange={() => { /* URL handled by SubTabBar */ }} />
+      {sub === 'live-activity' && <LiveActivity enabled={enabled} />}
       {sub === 'admin-actions' && <RecentActivity enabled={enabled} />}
       {sub === 'user-signups' && <UserActivity enabled={enabled} />}
       {sub === 'kyc' && <KycAttemptsViewer enabled={enabled} />}

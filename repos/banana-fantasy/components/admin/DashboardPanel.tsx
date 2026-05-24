@@ -122,8 +122,8 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
             <KpiCard label="Wheel spins today" value={m.wheel.spinsToday} sub={`${m.wheel.totalSpins.toLocaleString()} all-time`} series={spinsSeries} accent="text-[#F3E216]" />
             <KpiCard label="Pending withdrawals" value={m.withdrawals.pending} sub={`$${m.withdrawals.totalVolume.toLocaleString()} approved+pending volume`} series={withdrawSeries} accent={m.withdrawals.pending > 0 ? 'text-yellow-400' : 'text-white'} />
             <KpiCard label="Total users" value={m.users.total} sub={`+${m.users.newToday} today / +${m.users.newThisWeek} this week`} />
-            <KpiCard label="Jackpot queue" value={m.drafts.jackpotQueueSize} sub="in queue right now" accent="text-red-400" />
-            <KpiCard label="HOF queue" value={m.drafts.hofQueueSize} sub="in queue right now" accent="text-[#D4AF37]" />
+            <KpiCard label="JP queue (filling)" value={m.drafts.jackpotQueueSize} sub="players in the next Jackpot round, waiting for it to fill" accent="text-red-400" />
+            <KpiCard label="HOF queue (filling)" value={m.drafts.hofQueueSize} sub="players in the next HOF round, waiting for it to fill" accent="text-[#D4AF37]" />
             <KpiCard label="Promos claimed today" value={m.promos.promoClaimsToday} sub={`${m.promos.sharesVerifiedToday} shares verified`} accent="text-green-400" />
           </div>
         </div>
@@ -140,9 +140,40 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
             <KpiCard label="Total wheel spins" value={m.lifetime.wheelSpins} sub="every spin ever" accent="text-[#F3E216]" />
             <KpiCard label="Total passes purchased" value={m.lifetime.passesPurchased} sub="card + USDC mints" accent="text-emerald-400" />
             <KpiCard label="Total promos claimed" value={m.lifetime.promosClaimed} sub="across all promo types" accent="text-pink-400" />
-            <KpiCard label="Jackpot wins" value={m.lifetime.jackpotWins} sub="lifetime" accent="text-red-400" />
-            <KpiCard label="HOF wins" value={m.lifetime.hofWins} sub="lifetime" accent="text-[#D4AF37]" />
+            <KpiCard label="Jackpot wheel hits" value={m.lifetime.jackpotWins} sub="lifetime — wheel landed on Jackpot" accent="text-red-400" />
+            <KpiCard label="HOF wheel hits" value={m.lifetime.hofWins} sub="lifetime — wheel landed on HOF" accent="text-[#D4AF37]" />
             <KpiCard label="Withdrawals paid" value={`$${m.lifetime.withdrawalsPaidVolume.toLocaleString()}`} sub={`${m.lifetime.draftsCompleted.toLocaleString()} drafts completed`} accent="text-green-400" />
+          </div>
+        </div>
+      )}
+
+      {/* WHEEL PRIZE BREAKDOWN — how many wins of each prize type across
+          the last 2000 spins. Boris's ask: "from the banana wheel spins
+          how many wins are what 1 draft 5 draft 20 drafts JP and HOF". */}
+      {m && Object.keys(m.wheelPrizeBreakdown).length > 0 && (
+        <WheelPrizeBreakdownCard breakdown={m.wheelPrizeBreakdown} />
+      )}
+
+      {/* RESERVED DRAFTS PENDING — JP/HOF entries users earned on the
+          wheel but haven't yet redeemed into an actual draft. The queue
+          counters above track who's currently in a filling round; these
+          are the unredeemed entries across every user. */}
+      {m && (m.reservedDrafts.jackpot > 0 || m.reservedDrafts.hof > 0) && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 mb-2">Reserved drafts (unredeemed wheel wins)</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiCard
+              label="Jackpot entries pending"
+              value={m.reservedDrafts.jackpot}
+              sub="Total JP entries users have earned but not yet entered into a draft"
+              accent="text-red-400"
+            />
+            <KpiCard
+              label="HOF entries pending"
+              value={m.reservedDrafts.hof}
+              sub="Total HOF entries users have earned but not yet entered into a draft"
+              accent="text-[#D4AF37]"
+            />
           </div>
         </div>
       )}
@@ -209,6 +240,55 @@ function KpiCard({
       </div>
       <p className={`text-2xl font-bold tabular-nums ${accent}`}>{display}</p>
       {sub ? <p className="text-[11px] text-gray-500 mt-1">{sub}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Wheel prize breakdown — shows how many spins won each prize over the
+ * last 2000 spins ("1 free draft × 412", "5 free drafts × 47", "Jackpot
+ * entry × 11", "HOF entry × 52", "Nothing × 920", …). Sorted by count
+ * descending so the most-frequent prize sits at the top. Boris's exact
+ * ask: see at a glance which prize values are hitting most often.
+ */
+function WheelPrizeBreakdownCard({ breakdown }: { breakdown: Record<string, number> }) {
+  const rows = Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+  const leader = rows[0]?.[1] ?? 0;
+  const total = rows.reduce((s, [, n]) => s + n, 0);
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">Wheel wins by prize</h3>
+        <span className="text-[11px] text-gray-500">last {total.toLocaleString()} spins</span>
+      </div>
+      <ul className="divide-y divide-white/[0.04]">
+        {rows.map(([prize, count]) => {
+          const pct = leader > 0 ? Math.max(2, Math.round((count / leader) * 100)) : 0;
+          // Color code by prize type so JP/HOF pop visually.
+          const accent =
+            /jackpot/i.test(prize) ? 'bg-red-500/70'
+            : /hof/i.test(prize) ? 'bg-[#D4AF37]/70'
+            : /nothing/i.test(prize) ? 'bg-gray-500/40'
+            : 'bg-purple-400/70';
+          return (
+            <li key={prize} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <span className="text-sm font-medium text-white capitalize">{prize}</span>
+                <span className="text-xs text-gray-300 tabular-nums">
+                  {count.toLocaleString()}
+                  <span className="text-gray-500 ml-1">
+                    ({total > 0 ? ((count / total) * 100).toFixed(1) : '0'}%)
+                  </span>
+                </span>
+              </div>
+              <div className="h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                <div className={`h-full rounded-full ${accent}`} style={{ width: `${pct}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -319,7 +399,9 @@ function LiveActivityWidget({ enabled }: { enabled: boolean }) {
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
       <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">Live activity</h3>
-        <Link href="/admin?tab=audit&sub=user-signups" className="text-[11px] text-gray-400 hover:text-white">
+        {/* Open the full Live Activity view (table + filters + CSV export)
+            living as the first sub-tab under Audit. */}
+        <Link href="/admin?tab=audit&sub=live-activity" className="text-[11px] text-gray-400 hover:text-white">
           See all →
         </Link>
       </div>

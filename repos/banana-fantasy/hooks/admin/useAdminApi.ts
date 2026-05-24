@@ -317,6 +317,8 @@ export interface MetricsResponse {
     draftsCompleted: number;
   };
   promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
+  wheelPrizeBreakdown: Record<string, number>;
+  reservedDrafts: { jackpot: number; hof: number };
   generatedAt: string;
   requestId?: string;
   cached?: boolean;

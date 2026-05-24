@@ -78,6 +78,13 @@ export interface MetricsResponse {
   // promo is most popular at a glance. Keys are promoType values from
   // the promo_claimed event metadata (`refer`, `tweet_share`, etc.).
   promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
+  // Wheel spin breakdown by exact prize label ("1 free draft", "5 free
+  // drafts", "Jackpot entry", "HOF entry", "Nothing"). Counts come from
+  // a bounded scan of the most-recent 2000 spins.
+  wheelPrizeBreakdown: Record<string, number>;
+  // JP/HOF entries currently held by users — reservations from wheel
+  // wins that haven't been redeemed into an actual JP/HOF draft yet.
+  reservedDrafts: { jackpot: number; hof: number };
   generatedAt: string;
   requestId?: string;
 }
@@ -246,6 +253,56 @@ async function buildMetrics(): Promise<MetricsResponse> {
     // Non-fatal — leave at 0
   }
 
+  // Wheel-prize breakdown by exact prize label. Boris's ask: "from the
+  // banana wheel spins how many wins are what — 1 draft, 5 draft, 20 drafts,
+  // JP and HOF." We scan up to 2000 most-recent spins and bucket by the
+  // resolved prize string ("1 free draft", "5 free drafts", "Jackpot entry",
+  // "HOF entry"). Bounded to keep latency under 1s on cold cache.
+  const wheelPrizeBreakdown: Record<string, number> = {};
+  try {
+    const spinSnap = await wheelSpins.orderBy('timestamp', 'desc').limit(2000).get();
+    for (const d of spinSnap.docs) {
+      const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string };
+      const prizeType = data.prize?.type ?? '';
+      const prizeValue = data.prize?.value;
+      let label = 'unknown';
+      if (prizeType === 'draft_pass' && typeof prizeValue === 'number') {
+        label = `${prizeValue} free draft${prizeValue === 1 ? '' : 's'}`;
+      } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
+        label = 'Jackpot entry';
+      } else if (prizeType === 'custom' && prizeValue === 'hof') {
+        label = 'HOF entry';
+      } else if (prizeType === 'nothing') {
+        label = 'Nothing';
+      } else if (data.result) {
+        label = String(data.result);
+      }
+      wheelPrizeBreakdown[label] = (wheelPrizeBreakdown[label] ?? 0) + 1;
+    }
+  } catch (err) {
+    logger.warn('metrics.wheel_prize_breakdown_failed', { err });
+  }
+
+  // JP/HOF reserved drafts — entries the user earned on the wheel but
+  // hasn't yet "burned" by entering a Jackpot/HOF league. Reads the
+  // sum of `jackpotEntries` / `hofEntries` across all users (capped
+  // 2000 newest users). Approximation: jackpotEntries > 0 means "has
+  // unredeemed wheel-earned slots."
+  let jackpotReservedPending = 0;
+  let hofReservedPending = 0;
+  try {
+    const userSnap = await users.orderBy('createdAt', 'desc').limit(2000).get();
+    for (const d of userSnap.docs) {
+      const data = d.data();
+      const jp = typeof data.jackpotEntries === 'number' ? data.jackpotEntries : 0;
+      const hof = typeof data.hofEntries === 'number' ? data.hofEntries : 0;
+      jackpotReservedPending += Math.max(0, jp);
+      hofReservedPending += Math.max(0, hof);
+    }
+  } catch (err) {
+    logger.warn('metrics.reserved_drafts_failed', { err });
+  }
+
   // Promo breakdown by type. Two scans (today + lifetime) of the
   // promo_claimed event stream so we can show "X claims today / Y total"
   // per promo type. Capped at 2000 lifetime to keep latency bounded.
@@ -338,6 +395,8 @@ async function buildMetrics(): Promise<MetricsResponse> {
       draftsCompleted: draftsCompletedLifetime,
     },
     promoBreakdown,
+    wheelPrizeBreakdown,
+    reservedDrafts: { jackpot: jackpotReservedPending, hof: hofReservedPending },
     generatedAt: new Date(now).toISOString(),
   };
 }

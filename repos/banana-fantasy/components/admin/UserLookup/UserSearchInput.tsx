@@ -40,9 +40,14 @@ export function UserSearchInput({ value, onPick, onClear }: Props) {
 
   // Keep the input mirroring the externally-selected wallet — covers
   // cross-tab navigation (WalletLink click elsewhere → ?wallet= changes
-  // → value prop changes) and the Clear button.
+  // → value prop changes). We ONLY pull from value when value is non-
+  // empty; an empty value (post-Clear) must not stomp whatever the user
+  // is currently typing. Previously this fired on Clear and re-set the
+  // input back to '' a tick AFTER the click handler already did the
+  // same thing — harmless in isolation but it forced two clicks when
+  // combined with the wallet-detect effect below racing the value prop.
   useEffect(() => {
-    setInput(value || '');
+    if (value) setInput(value);
   }, [value]);
 
   // Direct wallet paste: skip search, fire immediately. Keep the wallet
@@ -54,6 +59,13 @@ export function UserSearchInput({ value, onPick, onClear }: Props) {
       const lower = trimmed.toLowerCase();
       if (lower !== value) onPick(lower);
       setOpenDropdown(false);
+      return;
+    }
+    // Empty input → clear the debounced search term immediately (instead
+    // of waiting 300ms). Eliminates the dropdown briefly showing stale
+    // results right after a Clear.
+    if (!trimmed) {
+      setDebounced('');
       return;
     }
     const t = setTimeout(() => setDebounced(trimmed), 300);

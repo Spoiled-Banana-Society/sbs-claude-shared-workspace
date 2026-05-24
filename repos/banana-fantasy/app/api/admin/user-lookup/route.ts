@@ -85,26 +85,57 @@ function sectionFail(name: string, err: unknown): SectionFail {
  * Fetch the user's profile (displayName, avatar URL) from the Go owner API.
  * Boris's display name + PFP live in the Go-side owner doc — not in our
  * Firestore v2_users mirror — so the admin Lookup card was showing
- * "No display name" even for users with one. Silent fallback on any
- * error (network, 404, parsing) so the rest of the lookup still works.
+ * "No display name" even for users with one. Soft-fails on any error so
+ * the rest of the lookup still works; logs the cause so the admin Logs
+ * tab surfaces what went wrong (silent null was making this look broken
+ * when really the env var was unset / fetch timed out / etc.).
  */
 async function fetchOwnerProfile(wallet: string): Promise<{ displayName: string | null; avatar: string | null }> {
-  const base = process.env.NEXT_PUBLIC_SBS_API_URL;
-  if (!base) return { displayName: null, avatar: null };
-  try {
-    const res = await fetch(`${base}/owner/${wallet}`, { cache: 'no-store' });
-    if (!res.ok) return { displayName: null, avatar: null };
-    const data = (await res.json()) as { pfp?: { displayName?: string; imageUrl?: string } };
-    return {
-      displayName: typeof data?.pfp?.displayName === 'string' && data.pfp.displayName.trim()
-        ? data.pfp.displayName
-        : null,
-      avatar: typeof data?.pfp?.imageUrl === 'string' && data.pfp.imageUrl.trim()
-        ? data.pfp.imageUrl
-        : null,
-    };
-  } catch {
+  const baseRaw = process.env.NEXT_PUBLIC_SBS_API_URL || process.env.SBS_API_URL;
+  if (!baseRaw) {
+    logger.warn('admin.user_lookup.owner_profile_no_base_url', {
+      route: 'admin/user-lookup',
+      context: { wallet },
+    });
     return { displayName: null, avatar: null };
+  }
+  const base = baseRaw.replace(/\/+$/, ''); // strip trailing slash so we never produce //owner
+  // 3s timeout — owner endpoint is fast; if it hangs we don't want to
+  // block the whole consolidated user-lookup response on it.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 3_000);
+  try {
+    const res = await fetch(`${base}/owner/${wallet}`, { cache: 'no-store', signal: ctrl.signal });
+    if (!res.ok) {
+      logger.warn('admin.user_lookup.owner_profile_http_failed', {
+        route: 'admin/user-lookup',
+        context: { wallet, status: res.status, base },
+      });
+      return { displayName: null, avatar: null };
+    }
+    const data = (await res.json()) as { pfp?: { displayName?: string; imageUrl?: string } };
+    const displayName = typeof data?.pfp?.displayName === 'string' && data.pfp.displayName.trim()
+      ? data.pfp.displayName
+      : null;
+    const avatar = typeof data?.pfp?.imageUrl === 'string' && data.pfp.imageUrl.trim()
+      ? data.pfp.imageUrl
+      : null;
+    if (!displayName && !avatar) {
+      logger.info('admin.user_lookup.owner_profile_empty', {
+        route: 'admin/user-lookup',
+        context: { wallet, base, hasPfp: !!data?.pfp },
+      });
+    }
+    return { displayName, avatar };
+  } catch (err) {
+    logger.warn('admin.user_lookup.owner_profile_fetch_failed', {
+      route: 'admin/user-lookup',
+      err: err instanceof Error ? err.message : String(err),
+      context: { wallet, base },
+    });
+    return { displayName: null, avatar: null };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -451,10 +482,14 @@ export async function GET(req: Request) {
       readList(wallet, { collection: 'v2_drafts', field: 'createdBy', limit: RECENT_LIMIT }),
       readList(wallet, { collection: 'v2_error_events', field: 'actor', limit: ERROR_LIMIT }),
       readList(wallet, { collection: 'adminAuditLog', field: 'target', limit: AUDIT_LIMIT }),
-      // Bumped to 200 so the Activity section can show meaningful
-      // lifetime summaries (promos claimed, spins, purchases, wins)
-      // computed client-side from the event stream.
-      readList(wallet, { collection: 'userEvents', field: 'userId', limit: 200 }),
+      // ACTIVITY: read from `v2_activity_events` (the commerce + gameplay
+      // stream that powers Live Activity) — NOT `userEvents`, which is a
+      // stale collection name from an older auth pipeline that's never
+      // populated. The previous code was reading from `userEvents` and
+      // finding 0 hits for every wallet. Bumped to 200 docs so the lifetime
+      // summary chips (logins / spins / promos / passes / wins / cashouts)
+      // have a meaningful denominator.
+      readList(wallet, { collection: 'v2_activity_events', field: 'userId', limit: 200 }),
       readNotes(wallet),
     ]);
 

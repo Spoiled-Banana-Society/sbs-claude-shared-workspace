@@ -23,10 +23,35 @@ import { isSectionFail } from '@/hooks/admin/useUserLookup';
 
 interface RawEvent {
   id?: string;
+  // v2_activity_events uses `type`; the older v2_user_events used `eventType`.
+  // Read either so this section works no matter which collection the
+  // route ends up reading from.
+  type?: string;
   eventType?: string;
+  // v2_activity_events stores `createdAt` (ms epoch) + `createdAtIso`.
+  // v2_user_events stores `timestamp` (ISO). Accept all.
+  createdAt?: number | string | null;
+  createdAtIso?: string;
   timestamp?: string;
+  // metadata (v2_activity_events) vs meta (v2_user_events).
+  metadata?: Record<string, unknown>;
   meta?: Record<string, unknown>;
   txHash?: string;
+}
+
+function eventTypeOf(e: RawEvent): string {
+  return e.type || e.eventType || 'unknown';
+}
+
+function metaOf(e: RawEvent): Record<string, unknown> {
+  return (e.metadata ?? e.meta ?? {}) as Record<string, unknown>;
+}
+
+function isoOf(e: RawEvent): string | undefined {
+  if (e.createdAtIso) return e.createdAtIso;
+  if (typeof e.createdAt === 'number') return new Date(e.createdAt).toISOString();
+  if (typeof e.createdAt === 'string') return e.createdAt;
+  return e.timestamp;
 }
 
 function fmtWhen(iso: string | undefined): string {
@@ -46,7 +71,7 @@ const EVENT_LABEL: Record<string, string> = {
   login: 'Login',
   pass_purchased: 'Pass purchased',
   pass_granted: 'Pass granted',
-  spin_won: 'Wheel spin',
+  spin_won: 'Wheel spin win',
   promo_claimed: 'Promo claimed',
   draft_entered: 'Draft entered',
   draft_left: 'Draft left',
@@ -91,14 +116,33 @@ export function ActivitySection({ activity }: Props) {
 
   // Summary counts — one tally per event type. Boris wanted "as much info
   // as possible that makes sense" — these are the high-signal counters.
+  // We also break out spin wins by prize so admins can see "1 free draft × 12,
+  // 5 free drafts × 3, jackpot entry × 2, …" at a glance.
   const tally = new Map<string, number>();
   let promoTypeBreakdown = new Map<string, number>();
+  const spinPrizeBreakdown = new Map<string, number>();
   for (const e of events) {
-    const t = e.eventType || 'unknown';
+    const t = eventTypeOf(e);
+    const meta = metaOf(e);
     tally.set(t, (tally.get(t) ?? 0) + 1);
     if (t === 'promo_claimed') {
-      const promoType = String(e.meta?.promoType ?? 'unknown');
+      const promoType = String(meta.promoType ?? 'unknown');
       promoTypeBreakdown.set(promoType, (promoTypeBreakdown.get(promoType) ?? 0) + 1);
+    }
+    if (t === 'spin_won') {
+      // Surface prize label so the breakdown reads "1 free draft", "JP entry",
+      // "HOF entry" etc. Falls back to segmentLabel when prizeType isn't set.
+      const prizeType = String(meta.prizeType ?? '');
+      const prizeValue = meta.prizeValue;
+      let label = String(meta.segmentLabel ?? 'unknown');
+      if (prizeType === 'draft_pass') {
+        label = `${prizeValue} free draft${Number(prizeValue) === 1 ? '' : 's'}`;
+      } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
+        label = 'Jackpot entry';
+      } else if (prizeType === 'custom' && prizeValue === 'hof') {
+        label = 'HOF entry';
+      }
+      spinPrizeBreakdown.set(label, (spinPrizeBreakdown.get(label) ?? 0) + 1);
     }
   }
   // Sort breakdown for stable display, most-claimed first.
@@ -120,7 +164,7 @@ export function ActivitySection({ activity }: Props) {
   // Sort events by timestamp desc (already sorted server-side, but defend
   // against any reordering by Firestore index quirks).
   const sortedEvents = [...events].sort((a, b) =>
-    (b.timestamp || '').localeCompare(a.timestamp || ''),
+    (isoOf(b) || '').localeCompare(isoOf(a) || ''),
   );
   const recent = sortedEvents.slice(0, 30);
 
@@ -171,6 +215,29 @@ export function ActivitySection({ activity }: Props) {
         </div>
       )}
 
+      {/* Wheel-spin prize breakdown — Boris's explicit ask: "how many won
+          1 draft, 5 draft, 20 drafts, JP, HOF etc." Each chip = one prize
+          label with its hit count for this wallet. */}
+      {spinPrizeBreakdown.size > 0 && (
+        <div className="rounded-md border border-purple-500/20 bg-purple-500/[0.04] px-3 py-2">
+          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-purple-300/80">
+            Wheel wins by prize
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {[...spinPrizeBreakdown.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .map(([prize, count]) => (
+                <span
+                  key={prize}
+                  className="rounded-full bg-purple-500/[0.10] px-2 py-0.5 text-[11px] text-purple-200 ring-1 ring-purple-500/20"
+                >
+                  {prize} · {count}
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Recent events */}
       <div>
         <p className="mb-1.5 text-[11px] uppercase tracking-wider text-gray-500">
@@ -183,8 +250,9 @@ export function ActivitySection({ activity }: Props) {
         ) : (
           <ul className="divide-y divide-white/[0.04] rounded-md border border-white/[0.04] bg-black/20">
             {recent.map((e, i) => {
-              const label = EVENT_LABEL[e.eventType ?? ''] ?? (e.eventType || 'event');
-              const color = EVENT_COLOR[e.eventType ?? ''] ?? 'text-gray-300';
+              const t = eventTypeOf(e);
+              const label = EVENT_LABEL[t] ?? t;
+              const color = EVENT_COLOR[t] ?? 'text-gray-300';
               const tx = e.txHash ? `https://basescan.org/tx/${e.txHash}` : null;
               const detail = describeEvent(e);
               return (
@@ -192,7 +260,7 @@ export function ActivitySection({ activity }: Props) {
                   <span className={`shrink-0 font-semibold ${color}`}>{label}</span>
                   {detail && <span className="text-gray-400 truncate flex-1">{detail}</span>}
                   {!detail && <span className="flex-1" />}
-                  <span className="shrink-0 text-gray-500">{fmtWhen(e.timestamp)}</span>
+                  <span className="shrink-0 text-gray-500">{fmtWhen(isoOf(e))}</span>
                   {tx && (
                     <a
                       href={tx}
@@ -219,8 +287,8 @@ export function ActivitySection({ activity }: Props) {
  * Returns null when nothing useful can be said beyond the type label.
  */
 function describeEvent(e: RawEvent): string | null {
-  const meta = e.meta ?? {};
-  switch (e.eventType) {
+  const meta = metaOf(e);
+  switch (eventTypeOf(e)) {
     case 'pass_purchased': {
       const price = Number(meta.totalPrice);
       const qty = Number(meta.quantity ?? 1);
