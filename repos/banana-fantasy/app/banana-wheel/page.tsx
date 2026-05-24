@@ -176,6 +176,23 @@ export default function BananaWheelPage() {
   const getPrizeLabel = (segmentId: string): string => segmentMap.get(segmentId)?.label ?? '';
   const getPrizeColor = (segmentId: string): string => segmentMap.get(segmentId)?.color ?? '#94a3b8';
 
+  // Format a spin timestamp into the user's local-timezone short form,
+  // e.g. "May 23, 11:43 PM". Raw ISO strings ("2026-05-24T03:43:43.109Z")
+  // were unreadable in the sidebar and didn't show local time.
+  // `toLocaleString` automatically uses the browser's IANA timezone.
+  const formatSpinDate = (raw: string): string => {
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return raw;
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      ...(sameYear ? {} : { year: 'numeric' }),
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
   const dataReady = !isLoading && (!user || isBalanceLoaded);
 
   if (!dataReady) {
@@ -340,17 +357,20 @@ export default function BananaWheelPage() {
           >
             <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Spin History</h3>
             {spinHistory.length > 0 ? (
+              // Sized to fit exactly 5 rows (each ≈ 22px text + 14px space-y-3.5
+              // gap → ~36px per row, 5 × 36 = ~180px). Scrollbar styled to match
+              // the rest of the dark panels — same thumb color/width as before.
               <div
-                className="space-y-3.5 max-h-[200px] overflow-y-auto text-[13px] pr-6 [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#3a3a3a] [&::-webkit-scrollbar-thumb]:rounded-full"
+                className="space-y-3.5 max-h-[180px] overflow-y-auto text-[13px] pr-6 [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#3a3a3a] [&::-webkit-scrollbar-thumb]:rounded-full"
               >
-                {spinHistory.slice(0, 10).map((spin) => (
+                {spinHistory.map((spin) => (
                   <a
                     key={spin.id}
                     href={`/spin-proof/${spin.spinId}`}
                     className="flex justify-between items-center hover:bg-white/5 rounded -mx-2 px-2 py-0.5 group"
                     title="View proof"
                   >
-                    <span className="text-white">{spin.date}</span>
+                    <span className="text-white">{formatSpinDate(spin.date)}</span>
                     <span className="flex items-center gap-1.5">
                       <span className="font-medium" style={{ color: getPrizeColor(spin.result) }}>
                         {getPrizeLabel(spin.result)}

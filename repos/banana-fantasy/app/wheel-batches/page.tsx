@@ -235,15 +235,17 @@ export default function WheelBatchesPage() {
             </p>
           </section>
 
-          {/* Spin feed — bounded to ~5 rows visible at once with an
-              inner scrollbar so the page doesn't grow infinitely on
-              long sessions. Most recent is on top (SSE prepends). */}
+          {/* Spin feed — bounded to exactly 5 rows visible at once with
+              an inner scrollbar matching the Spin History sidebar (same
+              dark thumb, transparent track). Header height ≈ 33px, each
+              row ≈ 32px → 5 × 32 + 33 ≈ 193px. Most recent is on top
+              (SSE prepends). */}
           <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md overflow-hidden">
             {spins.length === 0 && !loading && (
               <div className="p-8 text-white/40 text-sm text-center">No spins yet.</div>
             )}
             {spins.length > 0 && (
-              <div className="max-h-[230px] overflow-y-auto">
+              <div className="max-h-[193px] overflow-y-auto [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#3a3a3a] [&::-webkit-scrollbar-thumb]:rounded-full">
                 <table className="w-full text-[12px]">
                   <thead className="sticky top-0 z-10 bg-bg-secondary/95 backdrop-blur text-white/40 uppercase tracking-wider text-[10px]">
                     <tr>
@@ -383,26 +385,38 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
       </div>
 
       {batches.length > 0 && (
-        <div className="space-y-1.5">
-          {batches.slice(0, 5).map((b) => (
-            <div
-              key={b.batchIndex}
-              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md bg-white/[0.03] px-3 py-1.5 text-[11px]"
-            >
-              <span className="text-white/85 font-semibold">Batch #{b.batchIndex}</span>
-              <span className="text-white/45">
-                spins #{b.fromIndex.toLocaleString()}–{b.toIndex.toLocaleString()} ({b.count})
-              </span>
-              <a
-                href={BASESCAN_TX(b.txHash)}
-                target="_blank"
-                rel="noreferrer"
-                className="ml-auto text-blue-300 hover:text-blue-200 underline font-mono"
-              >
-                {b.txHash.slice(0, 8)}…{b.txHash.slice(-4)}
-              </a>
-            </div>
-          ))}
+        <div>
+          <p className="mb-1.5 text-[10px] uppercase tracking-wider text-white/40">
+            Recent batch commits ({batches.length} total)
+          </p>
+          <div className="space-y-1.5">
+            {batches.slice(0, 5).map((b) => (
+              <BatchRow key={b.batchIndex} batch={b} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Sample row — shown ABOVE the 0/100 progress while no real
+          batches exist yet, so users can see what one will look like
+          when it lands. Hidden once real batches accumulate. */}
+      {batches.length === 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] uppercase tracking-wider text-white/40">
+            Example of what each batch commit will look like ↓
+          </p>
+          <BatchRow
+            batch={{
+              batchIndex: 0,
+              fromIndex: 0,
+              toIndex: 99,
+              count: 100,
+              root: '0xexamplerootexamplerootexamplerootexamplerootexamplerootexamplero',
+              txHash: '0xexampletxhashexampletxhashexampletxhashexampletxhashexampletxha',
+              committedAt: Date.now(),
+            }}
+            isExample
+          />
         </div>
       )}
 
@@ -414,4 +428,70 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
       )}
     </section>
   );
+}
+
+/**
+ * One assignment-batch row. Renders the batch index + spin range, the
+ * timestamp in user-local time, and a prominent "Verify on BaseScan"
+ * button — same visual weight as the spin feed's "Verify →" link so
+ * users see this is the audit hook for each batch.
+ *
+ * When `isExample` is true, the row dims itself + labels the button as
+ * a sample so users understand they're looking at a preview, not a
+ * real on-chain commit.
+ */
+function BatchRow({
+  batch,
+  isExample,
+}: {
+  batch: AssignmentBatch;
+  isExample?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md px-3 py-2 text-[11px] ${
+        isExample ? 'bg-white/[0.02] border border-dashed border-white/10' : 'bg-white/[0.03]'
+      }`}
+    >
+      <span className={isExample ? 'text-white/45 font-semibold' : 'text-white/85 font-semibold'}>
+        Batch #{batch.batchIndex}
+      </span>
+      <span className="text-white/45">
+        spins #{batch.fromIndex.toLocaleString()}–{batch.toIndex.toLocaleString()} ({batch.count})
+      </span>
+      <span className="text-white/35 text-[10px]" title={new Date(batch.committedAt).toLocaleString()}>
+        {isExample ? 'just now' : formatBatchTime(batch.committedAt)}
+      </span>
+      {isExample ? (
+        <span className="ml-auto inline-flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-white/40 italic">
+          example — no real tx
+        </span>
+      ) : (
+        <a
+          href={BASESCAN_TX(batch.txHash)}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-banana/30 bg-banana/[0.06] px-2 py-0.5 text-[10px] font-semibold text-banana hover:bg-banana/[0.12] hover:border-banana/60 transition-colors"
+          title={`Verify batch ${batch.batchIndex} on Base mainnet`}
+        >
+          Verify on BaseScan ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
+function formatBatchTime(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
 }
