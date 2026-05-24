@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import type { ActivityEventType, PaymentMethod, WalletType } from '@/lib/activityEvents';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Pass purchased',
@@ -240,7 +241,9 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-200">{e.username ?? '—'}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-400">{shortWallet(e.walletAddress)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-400">
+                      <WalletLink wallet={e.walletAddress || ''} bare displayName={e.username ?? undefined} />
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {WALLET_TYPE_LABEL[e.walletType]} · {e.devicePlatform}
                     </td>

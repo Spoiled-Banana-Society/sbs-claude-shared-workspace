@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { WalletLink } from '@/components/admin/WalletLink';
 import {
   useKycAttempts,
   AdminApiError,
@@ -194,8 +195,20 @@ function AttemptRow({ attempt, isExpanded, isCollision, collisionUserIds, onTogg
           <div>
             <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Diagnostics</p>
             <dl className="space-y-0.5">
-              <KvRow label="User ID" value={attempt.userId} mono />
-              {attempt.walletAddress && <KvRow label="Wallet" value={attempt.walletAddress} mono />}
+              <KvRow
+                label="User ID"
+                value={attempt.userId}
+                mono
+                link={<WalletLink wallet={attempt.userId} bare />}
+              />
+              {attempt.walletAddress && (
+                <KvRow
+                  label="Wallet"
+                  value={attempt.walletAddress}
+                  mono
+                  link={<WalletLink wallet={attempt.walletAddress} bare />}
+                />
+              )}
               <KvRow label="Identity hash" value={attempt.identityHash} mono />
               <KvRow label="Timestamp" value={attempt.timestamp} />
               {isCollision && (
@@ -213,11 +226,23 @@ function AttemptRow({ attempt, isExpanded, isCollision, collisionUserIds, onTogg
   );
 }
 
-function KvRow({ label, value, mono }: { label: string; value?: string; mono?: boolean }) {
+function KvRow({
+  label,
+  value,
+  mono,
+  link,
+}: {
+  label: string;
+  value?: string;
+  mono?: boolean;
+  link?: React.ReactNode;
+}) {
   return (
     <div className="flex gap-2 text-[12px]">
       <dt className="text-gray-500 w-32 shrink-0">{label}</dt>
-      <dd className={`text-gray-200 break-all ${mono ? 'font-mono text-[11px]' : ''}`}>{value || '—'}</dd>
+      <dd className={`text-gray-200 break-all ${mono ? 'font-mono text-[11px]' : ''}`}>
+        {link ?? value ?? '—'}
+      </dd>
     </div>
   );
 }

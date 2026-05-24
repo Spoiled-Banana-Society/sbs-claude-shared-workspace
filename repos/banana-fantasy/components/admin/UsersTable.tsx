@@ -13,6 +13,7 @@ import {
   type AdminUser,
 } from '@/hooks/admin/useAdminApi';
 import { useToast } from '@/components/ui/Toast';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 const LIMIT = 50;
 
@@ -137,7 +138,9 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
 function UserRow({ user }: { user: AdminUser }) {
   return (
     <tr className="border-t border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-      <td className="px-4 py-3 font-mono text-xs">{formatWallet(user.walletAddress)}</td>
+      <td className="px-4 py-3 font-mono text-xs">
+        <WalletLink wallet={user.walletAddress} bare className="hover:text-banana" />
+      </td>
       <td className="px-4 py-3 text-gray-300 text-xs">{user.username || '—'}</td>
       <td className="px-4 py-3 text-gray-300 text-xs">{user.email || '—'}</td>
       <td className="px-4 py-3 text-right font-semibold text-white">{user.paidDrafts}</td>

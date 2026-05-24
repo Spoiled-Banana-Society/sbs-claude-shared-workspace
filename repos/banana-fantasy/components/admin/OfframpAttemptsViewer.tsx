@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { WalletLink } from '@/components/admin/WalletLink';
 import {
   useOfframpAttempts,
   AdminApiError,
@@ -125,11 +126,6 @@ function formatRelative(iso: string): string {
   });
 }
 
-function shortWallet(w?: string): string {
-  if (!w) return '—';
-  return w.length < 12 ? w : `${w.slice(0, 6)}…${w.slice(-4)}`;
-}
-
 function durationBetween(a?: string, b?: string): string | null {
   if (!a || !b) return null;
   const da = Date.parse(a);
@@ -183,9 +179,7 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
               )}
             </p>
             <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 font-mono flex-wrap">
-              <span title={attempt.walletAddress || attempt.userId}>
-                {shortWallet(attempt.walletAddress || attempt.userId)}
-              </span>
+              <WalletLink wallet={attempt.walletAddress || attempt.userId} bare className="hover:!text-banana" />
               {sessionToTx && <span>session→tx {sessionToTx}</span>}
               {txToComplete && <span>tx→done {txToComplete}</span>}
               {attempt.draftId && <span>draft {attempt.draftId.slice(0, 8)}…</span>}

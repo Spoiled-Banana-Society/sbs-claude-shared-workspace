@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRecentErrors, useExportErrorSession, AdminApiError, type ErrorEventEntry } from '@/hooks/admin/useAdminApi';
 import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
 import { SentryIssues } from '@/components/admin/SentryIssues';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 /**
  * Unified admin Logs view. Built to be read at a glance by a non-dev:
@@ -61,15 +62,29 @@ interface ErrorGroup {
   rep: ErrorEventEntry;   // representative = most recent occurrence
   firstTs: number;
   lastTs: number;
+  // Per-wallet hit map so the row can show "Affected users" inline
+  // without re-iterating the full error list per render.
+  actorCounts: Map<string, number>;
+  // Bucketed counts so the row can show "3 in 24h · 7 in 7d" without
+  // re-traversing the events array per render.
+  countLast24h: number;
+  countLast7d: number;
 }
 
 function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
   const map = new Map<string, ErrorGroup>();
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
   for (const e of errors) {
     const key = `${normalize(e.source)}|${normalize(e.message).slice(0, 140)}`;
     const ts = new Date(e.timestamp).getTime() || 0;
+    const within24h = now - ts <= day;
+    const within7d = now - ts <= 7 * day;
+    const actor = (e.actor || '').toLowerCase();
     const existing = map.get(key);
     if (!existing) {
+      const actorCounts = new Map<string, number>();
+      if (actor) actorCounts.set(actor, 1);
       map.set(key, {
         key,
         severity: logSeverity(e.source),
@@ -79,10 +94,18 @@ function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
         rep: e,
         firstTs: ts,
         lastTs: ts,
+        actorCounts,
+        countLast24h: within24h ? 1 : 0,
+        countLast7d: within7d ? 1 : 0,
       });
     } else {
       existing.count += 1;
       existing.firstTs = Math.min(existing.firstTs, ts);
+      if (within24h) existing.countLast24h += 1;
+      if (within7d) existing.countLast7d += 1;
+      if (actor) {
+        existing.actorCounts.set(actor, (existing.actorCounts.get(actor) ?? 0) + 1);
+      }
       if (ts >= existing.lastTs) {
         existing.lastTs = ts;
         existing.rep = e;       // keep the most recent as representative
@@ -425,13 +448,22 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
           )}
           <div className="flex gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
             <span>last {formatAgo(rep.timestamp)}</span>
+            <span className="font-medium text-gray-400">
+              {group.countLast24h} in 24h · {group.countLast7d} in 7d
+            </span>
             {count > 1 && <span>first seen {formatAgo(new Date(group.firstTs).toISOString())}</span>}
             {rep.route && <span className="font-mono truncate max-w-[260px]">{rep.route}</span>}
-            {rep.actor && <span className="font-mono">actor: {rep.actor.slice(0, 10)}…</span>}
           </div>
         </div>
         <span className="text-gray-500 text-xs">{isOpen ? '▾' : '▸'}</span>
       </button>
+
+      {/* Affected users — inline so triage doesn't need to leave this row.
+          Renders even when collapsed so you can scan affected wallets at
+          a glance and click straight into User Lookup. */}
+      {group.actorCounts.size > 0 && (
+        <AffectedUsers actorCounts={group.actorCounts} />
+      )}
       {isOpen && (
         <div className="border-t border-white/5 px-4 py-3 space-y-2 bg-black/20">
           {rep.stack && (
@@ -464,6 +496,54 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline list of wallets affected by this error group. Each wallet links
+ * into User Lookup so triage doesn't need a tab switch. Defaults to 5,
+ * "Show all (N)" / "Hide" to expand. The hit count per wallet surfaces
+ * heavy hitters at a glance.
+ */
+function AffectedUsers({ actorCounts }: { actorCounts: Map<string, number> }) {
+  const [expanded, setExpanded] = useState(false);
+  const sorted = useMemo(
+    () => Array.from(actorCounts.entries()).sort((a, b) => b[1] - a[1]),
+    [actorCounts],
+  );
+  const visible = expanded ? sorted : sorted.slice(0, 5);
+  return (
+    <div className="border-t border-white/5 bg-black/20 px-4 py-2.5">
+      <div className="mb-1 flex items-baseline justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Affected users ({sorted.length})
+        </p>
+        {sorted.length > 5 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }}
+            className="text-[11px] text-gray-400 hover:text-banana"
+          >
+            {expanded ? 'Hide' : `Show all (${sorted.length})`}
+          </button>
+        )}
+      </div>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        {visible.map(([wallet, hits]) => (
+          <li key={wallet} className="flex items-center gap-1">
+            <WalletLink wallet={wallet} bare className="!text-gray-300 hover:!text-banana" />
+            {hits > 1 && (
+              <span className="rounded bg-white/[0.06] px-1 text-[10px] text-gray-400">
+                ×{hits}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

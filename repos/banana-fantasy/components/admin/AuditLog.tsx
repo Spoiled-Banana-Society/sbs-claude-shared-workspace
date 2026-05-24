@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useAdminAudit, type AdminAuditRecord } from '@/hooks/admin/useAdminApi';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 const ACTION_FILTERS: { label: string; value: string }[] = [
   { label: 'All actions', value: '' },
@@ -14,11 +15,6 @@ const ACTION_FILTERS: { label: string; value: string }[] = [
   { label: 'Approve withdrawal', value: 'approve-withdrawal' },
   { label: 'Deny withdrawal', value: 'deny-withdrawal' },
 ];
-
-function fmtWallet(raw: string | null | undefined): string {
-  if (!raw) return '—';
-  return raw.length < 12 ? raw : `${raw.slice(0, 6)}…${raw.slice(-4)}`;
-}
 
 function fmtTime(iso: string): string {
   const d = new Date(iso);
@@ -140,8 +136,12 @@ export function AuditLog({ enabled }: { enabled: boolean }) {
                         {r.action}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-300">{fmtWallet(r.actor)}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-300">{fmtWallet(r.target)}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-300">
+                      <WalletLink wallet={r.actor} bare />
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-300">
+                      <WalletLink wallet={r.target} bare />
+                    </td>
                     <td className="px-4 py-3 text-xs text-gray-200">{summary(r)}</td>
                     <td className="px-4 py-3 text-xs">
                       {tx ? (

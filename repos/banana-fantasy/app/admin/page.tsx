@@ -32,8 +32,9 @@ import { AdminTools } from '@/components/admin/AdminTools';
 import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
+import { UserLookupPanel } from '@/components/admin/UserLookup/UserLookupPanel';
 
-type TabKey = 'metrics' | 'logs' | 'support' | 'kyc' | 'offramp' | 'onramp' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
+type TabKey = 'metrics' | 'logs' | 'support' | 'kyc' | 'offramp' | 'onramp' | 'user-lookup' | 'users' | 'drafts' | 'withdrawals' | 'promos' | 'live' | 'activity' | 'audit' | 'tools' | 'spectate' | 'founder';
 
 interface NavItem {
   key: TabKey;
@@ -48,6 +49,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'kyc', label: 'KYC Attempts', group: 'Monitoring' },
   { key: 'offramp', label: 'Offramps', group: 'Monitoring' },
   { key: 'onramp', label: 'Onramps', group: 'Monitoring' },
+  { key: 'user-lookup', label: 'User Lookup', group: 'Manage' },
   { key: 'users', label: 'Users', group: 'Manage' },
   { key: 'drafts', label: 'Drafts', group: 'Manage' },
   { key: 'withdrawals', label: 'Withdrawals', group: 'Manage' },
@@ -358,6 +360,7 @@ export default function AdminPage() {
           {activeTab === 'kyc' && <KycAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'offramp' && <OfframpAttemptsViewer enabled={isAuthorized} />}
           {activeTab === 'onramp' && <OnrampAttemptsViewer enabled={isAuthorized} />}
+          {activeTab === 'user-lookup' && <UserLookupPanel enabled={isAuthorized} />}
           {activeTab === 'users' && <UsersTable enabled={isAuthorized} />}
           {activeTab === 'drafts' && <CompletedDraftsList enabled={isAuthorized} />}
           {activeTab === 'withdrawals' && <WithdrawalsPanel items={withdrawalsQuery.data ?? []} />}

@@ -8,6 +8,7 @@ import {
   type OnrampAttemptStatus,
   type OnrampProvider,
 } from '@/hooks/admin/useAdminApi';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 const STATUS_FILTERS: { value: OnrampAttemptStatus | ''; label: string }[] = [
   { value: '', label: 'All' },
@@ -94,11 +95,6 @@ function formatRelative(iso: string): string {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function shortWallet(w?: string): string {
-  if (!w) return '—';
-  return w.length < 12 ? w : `${w.slice(0, 6)}…${w.slice(-4)}`;
-}
-
 interface RowProps {
   attempt: OnrampAttemptEntry;
   isExpanded: boolean;
@@ -129,7 +125,7 @@ function AttemptRow({ attempt, isExpanded, onToggle }: RowProps) {
               ) : null}
             </p>
             <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500 font-mono flex-wrap">
-              <span>{shortWallet(attempt.walletAddress || attempt.userId)}</span>
+              <WalletLink wallet={attempt.walletAddress || attempt.userId} bare className="hover:!text-banana" />
               {attempt.failureReason && (
                 <span className="text-red-300 font-sans normal-case">{attempt.failureReason}</span>
               )}
