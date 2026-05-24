@@ -1802,13 +1802,8 @@ function DraftRoomContent() {
     setActiveTab('roster');
   };
 
-  const controlsBorderColor = visibleDraftType === 'hof'
-    ? 'rgba(243,226,22,0.85)'   // gold for HOF
-    : visibleDraftType === 'jackpot'
-      ? 'rgba(239,68,68,0.85)'  // red for JP
-      : 'rgba(255,255,255,0.15)'; // default subtle white
   const bannerControls = (
-    <div className="flex items-center justify-center gap-2 py-2" style={{ borderBottom: `1px solid ${controlsBorderColor}` }}>
+    <div className="flex items-center justify-center gap-2 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
       {visibleDraftType === 'hof' && (
         <div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
