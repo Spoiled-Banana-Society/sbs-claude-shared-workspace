@@ -59,6 +59,25 @@ export interface MetricsResponse {
     jackpotQueueSize: number;
     hofQueueSize: number;
   };
+  // All-time totals. Added May 2026 — the per-day KPIs above only tell
+  // half the story; admins also want the cumulative scoreboard.
+  lifetime: {
+    signups: number;
+    logins: number;
+    wheelSpins: number;
+    passesPurchased: number;
+    promosClaimed: number;
+    jackpotWins: number;
+    hofWins: number;
+    /** Total USDC ever paid out via withdrawals (paid status). */
+    withdrawalsPaidVolume: number;
+    /** Drafts that have reached "completed" status. */
+    draftsCompleted: number;
+  };
+  // Promo engagement breakdown — claims-by-type so admins can see which
+  // promo is most popular at a glance. Keys are promoType values from
+  // the promo_claimed event metadata (`refer`, `tweet_share`, etc.).
+  promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
   generatedAt: string;
   requestId?: string;
 }
@@ -191,6 +210,75 @@ async function buildMetrics(): Promise<MetricsResponse> {
     // Non-fatal
   }
 
+  // ── Lifetime totals + promo breakdown ──────────────────────────────
+  // All-time counters that complement the per-day KPIs above. Each one
+  // is a single count() query unless noted; promo-by-type requires a
+  // bounded scan because Firestore can't group_by.
+
+  const [
+    loginsLifetime,
+    passesPurchasedLifetime,
+    promosClaimedLifetime,
+    draftsCompletedLifetime,
+  ] = await Promise.all([
+    count(userEvents.where('eventType', '==', 'login')),
+    count(userEvents.where('eventType', '==', 'pass_purchased')),
+    count(userEvents.where('eventType', '==', 'promo_claimed')),
+    count(db.collection('v2_drafts').where('status', '==', 'completed')),
+  ]);
+
+  // Withdrawals paid volume (lifetime). Bounded scan to keep the
+  // metrics query fast — caps at the most-recent 2000 paid withdrawals.
+  // If volume ever blows past that cap, we should switch to a write-
+  // through aggregate doc (out of scope for this pass).
+  let withdrawalsPaidVolume = 0;
+  try {
+    const paidSnap = await withdrawals
+      .where('status', 'in', ['paid', 'completed'])
+      .orderBy('createdAt', 'desc')
+      .limit(2000)
+      .get();
+    for (const d of paidSnap.docs) {
+      const amt = d.data().amount;
+      if (typeof amt === 'number' && Number.isFinite(amt)) withdrawalsPaidVolume += amt;
+    }
+  } catch {
+    // Non-fatal — leave at 0
+  }
+
+  // Promo breakdown by type. Two scans (today + lifetime) of the
+  // promo_claimed event stream so we can show "X claims today / Y total"
+  // per promo type. Capped at 2000 lifetime to keep latency bounded.
+  const promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }> = {};
+  const bumpPromo = (type: string, key: 'claimsToday' | 'claimsTotal') => {
+    if (!promoBreakdown[type]) promoBreakdown[type] = { claimsToday: 0, claimsTotal: 0 };
+    promoBreakdown[type][key] += 1;
+  };
+  try {
+    const [todaySnap, totalSnap] = await Promise.all([
+      userEvents
+        .where('eventType', '==', 'promo_claimed')
+        .where('timestamp', '>=', todayIso)
+        .limit(500)
+        .get(),
+      userEvents
+        .where('eventType', '==', 'promo_claimed')
+        .orderBy('timestamp', 'desc')
+        .limit(2000)
+        .get(),
+    ]);
+    for (const d of todaySnap.docs) {
+      const t = String((d.data() as { meta?: { promoType?: unknown } }).meta?.promoType ?? 'unknown');
+      bumpPromo(t, 'claimsToday');
+    }
+    for (const d of totalSnap.docs) {
+      const t = String((d.data() as { meta?: { promoType?: unknown } }).meta?.promoType ?? 'unknown');
+      bumpPromo(t, 'claimsTotal');
+    }
+  } catch (err) {
+    logger.warn('metrics.promo_breakdown_failed', { err });
+  }
+
   // Suppress unused warnings — weekTs/todayTs reserved for future Timestamp-typed
   // collections. We use ISO strings throughout for now.
   void weekTs;
@@ -238,6 +326,18 @@ async function buildMetrics(): Promise<MetricsResponse> {
       jackpotQueueSize,
       hofQueueSize,
     },
+    lifetime: {
+      signups: usersTotal,            // every v2_users doc is a signup
+      logins: loginsLifetime,
+      wheelSpins: totalSpins,
+      passesPurchased: passesPurchasedLifetime,
+      promosClaimed: promosClaimedLifetime,
+      jackpotWins: jackpotHits,
+      hofWins: hofHits,
+      withdrawalsPaidVolume,
+      draftsCompleted: draftsCompletedLifetime,
+    },
+    promoBreakdown,
     generatedAt: new Date(now).toISOString(),
   };
 }

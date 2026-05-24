@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 
 import type { ActivityEventType, WalletType, PaymentMethod, DevicePlatform } from '@/lib/activityEvents';
 
@@ -40,19 +41,63 @@ export interface UseActivityStreamResult {
  * - Returns `isConnected` so the UI can show a live indicator.
  */
 export function useActivityStream(url: string | null): UseActivityStreamResult {
+  const { getAccessToken, authenticated } = usePrivy();
   const [events, setEvents] = useState<LiveActivityEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authedUrl, setAuthedUrl] = useState<string | null>(null);
+
+  // Native EventSource can't send custom headers — so for the admin
+  // stream (which requires a Bearer JWT), we resolve the Privy access
+  // token first and append it as ?token=… The server (lib/auth.ts)
+  // accepts that query-param fallback only when no Authorization
+  // header is present, which is exactly the EventSource case.
+  // For per-user activity streams (/api/user/activity/stream?userId=…)
+  // the route accepts an unauthenticated stream tied to the wallet
+  // parameter, so we pass the URL through as-is.
+  useEffect(() => {
+    let cancelled = false;
+    if (!url) {
+      setAuthedUrl(null);
+      return;
+    }
+    const needsToken = url.startsWith('/api/admin/');
+    if (!needsToken) {
+      setAuthedUrl(url);
+      return;
+    }
+    if (!authenticated) {
+      setAuthedUrl(null);
+      return;
+    }
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (cancelled) return;
+        if (!token) {
+          setAuthedUrl(null);
+          return;
+        }
+        const sep = url.includes('?') ? '&' : '?';
+        setAuthedUrl(`${url}${sep}token=${encodeURIComponent(token)}`);
+      } catch {
+        if (!cancelled) setAuthedUrl(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [url, authenticated, getAccessToken]);
 
   useEffect(() => {
-    if (!url) {
+    if (!authedUrl) {
       setEvents([]);
       setIsConnected(false);
       return;
     }
 
     let cancelled = false;
-    const es = new EventSource(url);
+    const es = new EventSource(authedUrl);
 
     const handleSnapshot = (ev: MessageEvent) => {
       try {
@@ -89,7 +134,7 @@ export function useActivityStream(url: string | null): UseActivityStreamResult {
       es.close();
       setIsConnected(false);
     };
-  }, [url]);
+  }, [authedUrl]);
 
   return { events, isConnected, error };
 }

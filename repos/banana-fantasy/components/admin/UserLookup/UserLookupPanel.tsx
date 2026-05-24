@@ -24,6 +24,7 @@ import { PaymentsSection } from './PaymentsSection';
 import { KycSection } from './KycSection';
 import { ErrorsSection } from './ErrorsSection';
 import { AuditSection } from './AuditSection';
+import { ActivitySection } from './ActivitySection';
 import { ActionsPanel } from './ActionsPanel';
 
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -75,12 +76,9 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
         />
       </div>
 
-      {/* Empty state */}
-      {!wallet && (
-        <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/20 p-8 text-center text-sm text-gray-500">
-          Type a wallet, username, or email above to start.
-        </div>
-      )}
+      {/* Empty state intentionally removed — the search input above
+          already carries a placeholder, so a second copy of the same
+          instruction underneath was redundant. */}
 
       {/* Loading */}
       {wallet && lookup.isLoading && (
@@ -116,6 +114,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
               wallet={wallet}
               notifications={lookup.data.notifications}
             />
+            <ActivitySection activity={lookup.data.activity} />
             <PassesDraftsSection drafts={lookup.data.drafts} />
             <PaymentsSection payments={lookup.data.payments} />
             <KycSection kyc={lookup.data.kyc} wallet={wallet} />

@@ -40,6 +40,8 @@ export interface UserLookupIdentity {
   walletAddress: string;
   username: string | null;
   displayName: string | null;
+  /** PFP image URL pulled from the Go owner API. Null when not set. */
+  avatar: string | null;
   email: string | null;
   blueCheckVerified: boolean;
   banned: boolean;

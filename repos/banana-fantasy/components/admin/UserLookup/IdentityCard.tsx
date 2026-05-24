@@ -55,7 +55,11 @@ export function IdentityCard({
     );
   }
 
-  const name = identity.username || identity.displayName || 'No display name';
+  // Prefer the user's chosen displayName (set on the Profile page, lives in
+  // the Go owner doc) over the auto-generated username. The Firestore mirror
+  // doesn't always carry displayName, so the user-lookup endpoint also fetches
+  // it from /owner/{wallet} server-side before responding.
+  const name = identity.displayName || identity.username || 'No display name';
   const isPlaceholder = !identity.username && !identity.displayName;
   const kycLabel =
     identity.kycStatus === 'approved'
@@ -67,34 +71,52 @@ export function IdentityCard({
   return (
     <section className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3
-            className={`text-lg font-semibold ${
-              isPlaceholder ? 'text-gray-500 italic' : 'text-white'
-            }`}
-            title={name}
-          >
-            {name}
-            {identity.blueCheckVerified && (
-              <span className="ml-2 text-sky-400" title="Blue-check verified">
-                ✓
-              </span>
-            )}
-          </h3>
-          <p className="mt-1 font-mono text-xs text-gray-400" title={identity.walletAddress}>
-            {shortHex(identity.walletAddress)}
-            <button
-              type="button"
-              onClick={() => navigator.clipboard?.writeText(identity.walletAddress)}
-              className="ml-2 text-gray-500 hover:text-gray-300"
-              title="Copy full wallet"
-            >
-              copy
-            </button>
-          </p>
-          {identity.email && (
-            <p className="mt-0.5 text-sm text-gray-300">{identity.email}</p>
+        <div className="flex items-start gap-3 min-w-0">
+          {/* PFP from the Go owner profile. Falls back to a 🍌 placeholder
+              when the user hasn't set one. Renders a round 48px avatar to
+              match the rest of SBS profile chrome. */}
+          {identity.avatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={identity.avatar}
+              alt={name}
+              className="h-12 w-12 shrink-0 rounded-full border border-white/10 object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/5 text-xl">
+              🍌
+            </div>
           )}
+          <div className="min-w-0">
+            <h3
+              className={`text-lg font-semibold ${
+                isPlaceholder ? 'text-gray-500 italic' : 'text-white'
+              }`}
+              title={name}
+            >
+              {name}
+              {identity.blueCheckVerified && (
+                <span className="ml-2 text-sky-400" title="Blue-check verified">
+                  ✓
+                </span>
+              )}
+            </h3>
+            <p className="mt-1 font-mono text-xs text-gray-400" title={identity.walletAddress}>
+              {shortHex(identity.walletAddress)}
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(identity.walletAddress)}
+                className="ml-2 text-gray-500 hover:text-gray-300"
+                title="Copy full wallet"
+              >
+                copy
+              </button>
+            </p>
+            {identity.email && (
+              <p className="mt-0.5 text-sm text-gray-300">{identity.email}</p>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">

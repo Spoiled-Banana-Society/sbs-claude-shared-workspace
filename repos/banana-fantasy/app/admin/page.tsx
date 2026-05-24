@@ -134,20 +134,31 @@ export default function AdminPage() {
   }, []);
   const [activeTab, setActiveTabRaw] = useState<TabKey>(initialTab);
 
-  // One-shot: if the URL had a legacy tab, rewrite to the new (tab, sub)
-  // pair so the user sees the canonical URL and so refreshes are
-  // consistent. Runs once on mount.
+  // ❶ Keep activeTab in sync with the URL on every searchParams change.
+  // Without this, clicking a <Link href="/admin?tab=logs"> elsewhere
+  // (HealthCard's "Logs →", LiveActivityWidget's "See all →", a sidebar
+  // pill rendered as a Link, etc.) would update the URL but the page
+  // would still render the old tab. ALSO handles legacy tab keys — we
+  // canonicalize them via router.replace so refresh + share survive.
   useEffect(() => {
     const fromUrl = searchParams?.get('tab') ?? null;
-    if (isValidTabKey(fromUrl)) return;
+    if (isValidTabKey(fromUrl)) {
+      if (fromUrl !== activeTab) setActiveTabRaw(fromUrl);
+      return;
+    }
+    // Unknown / legacy → rewrite the URL to the canonical (tab,sub) pair
+    // AND flip activeTab to match. Single combined effect so we don't
+    // briefly render the wrong tab in between two re-renders.
     const legacy = resolveLegacyTab(fromUrl);
-    if (!legacy) return;
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    params.set('tab', legacy.tab);
-    if (legacy.sub) params.set('sub', legacy.sub);
-    router.replace(`/admin?${params.toString()}`, { scroll: false });
+    if (legacy) {
+      if (legacy.tab !== activeTab) setActiveTabRaw(legacy.tab);
+      const params = new URLSearchParams(searchParams?.toString() ?? '');
+      params.set('tab', legacy.tab);
+      if (legacy.sub) params.set('sub', legacy.sub);
+      router.replace(`/admin?${params.toString()}`, { scroll: false });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
 
   const setActiveTab = (key: TabKey) => {
     setActiveTabRaw(key);

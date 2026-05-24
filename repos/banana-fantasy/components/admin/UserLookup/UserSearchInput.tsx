@@ -29,23 +29,36 @@ function shortHex(w: string) {
 }
 
 export function UserSearchInput({ value, onPick, onClear }: Props) {
-  const [input, setInput] = useState('');
+  // Initialize the input with the currently-selected wallet so it stays
+  // visible after a paste. Before this, pasting a wallet detected it via
+  // WALLET_REGEX → called onPick() → then cleared the input, so Boris
+  // couldn't see what he'd just pasted.
+  const [input, setInput] = useState(value || '');
   const [debounced, setDebounced] = useState('');
   const [openDropdown, setOpenDropdown] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  // Direct wallet paste: skip search, fire immediately.
+  // Keep the input mirroring the externally-selected wallet — covers
+  // cross-tab navigation (WalletLink click elsewhere → ?wallet= changes
+  // → value prop changes) and the Clear button.
+  useEffect(() => {
+    setInput(value || '');
+  }, [value]);
+
+  // Direct wallet paste: skip search, fire immediately. Keep the wallet
+  // visible in the input (don't clear it) so the admin can confirm what
+  // they pasted. The parent panel will show the loaded user data below.
   useEffect(() => {
     const trimmed = input.trim();
     if (WALLET_REGEX.test(trimmed)) {
-      onPick(trimmed.toLowerCase());
-      setInput('');
+      const lower = trimmed.toLowerCase();
+      if (lower !== value) onPick(lower);
       setOpenDropdown(false);
       return;
     }
     const t = setTimeout(() => setDebounced(trimmed), 300);
     return () => clearTimeout(t);
-  }, [input, onPick]);
+  }, [input, onPick, value]);
 
   // Close on outside click.
   useEffect(() => {
@@ -78,8 +91,11 @@ export function UserSearchInput({ value, onPick, onClear }: Props) {
         </div>
         {value && (
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs text-gray-400" title={value}>
-              {shortHex(value)}
+            <span
+              className="rounded-md bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300 ring-1 ring-emerald-500/30"
+              title={value}
+            >
+              loaded {shortHex(value)}
             </span>
             <button
               type="button"

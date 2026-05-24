@@ -86,9 +86,25 @@ export async function GET(req: Request) {
       const results = new Map<string, ReturnType<typeof mapUserDoc>>();
 
       const prefixEnd = q + '\uf8ff';
+      // Generate case variants of the typed string so a single Firestore
+      // prefix range hits at least one of them. Firestore prefix queries
+      // are byte-comparison and case-sensitive \u2014 without this, typing
+      // 'borisvagner' misses a username stored as 'Boris Vagner'.
+      const titleCase = qRaw.length === 0
+        ? ''
+        : qRaw.charAt(0).toUpperCase() + qRaw.slice(1).toLowerCase();
+      const usernameCandidates = Array.from(new Set([
+        qRaw,
+        qRaw.toLowerCase(),
+        qRaw.toUpperCase(),
+        titleCase,
+      ].filter(Boolean)));
+
       const queries: Query<DocumentData>[] = [
         usersCollection.where('walletAddress', '>=', q).where('walletAddress', '<=', prefixEnd).limit(20),
-        usersCollection.where('username', '>=', qRaw).where('username', '<=', qRaw + '\uf8ff').limit(20),
+        ...usernameCandidates.map((candidate) =>
+          usersCollection.where('username', '>=', candidate).where('username', '<=', candidate + '\uf8ff').limit(20),
+        ),
       ];
 
       // If q looks like a wallet or wallet-prefix, also try direct doc lookup

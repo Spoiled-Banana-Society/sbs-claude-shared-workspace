@@ -228,9 +228,11 @@ export function BuyPassesModal({
     setMintedCount(count);
     setPhase('pick-speed');
     onPurchaseComplete?.(count);
+    // Pluralize title to match the count so "1 draft pass" + "Draft Passes
+    // Purchased!" doesn't read like a bug.
     pushNotification({
       type: 'purchase_complete',
-      title: 'Draft Passes Purchased!',
+      title: count === 1 ? 'Draft Pass Purchased!' : 'Draft Passes Purchased!',
       message: `You bought ${count} draft pass${count !== 1 ? 'es' : ''}. Time to draft!`,
       link: '/drafting',
     });

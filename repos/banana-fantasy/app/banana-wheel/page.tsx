@@ -132,9 +132,12 @@ export default function BananaWheelPage() {
             stack: err instanceof Error ? err.stack : undefined,
           });
         });
+        // Pluralize the title to match the count: "Free Draft Won!" for 1,
+        // "Free Drafts Won!" for 2+. Sticking "Drafts" on the title when
+        // the body says "1 free draft" reads sloppy.
         pushNotification({
           type: 'promo',
-          title: 'Free Drafts Won!',
+          title: segment.prizeValue === 1 ? 'Free Draft Won!' : 'Free Drafts Won!',
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
         });

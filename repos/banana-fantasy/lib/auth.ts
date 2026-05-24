@@ -234,7 +234,17 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
 
 export async function getPrivyUser(req: Request): Promise<{ userId: string; walletAddress: string | null }> {
   const authHeader = req.headers.get('authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  let token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  // SSE/EventSource cannot set custom headers (browser limitation), so
+  // SSE callers pass the JWT via `?token=` query string. We only honor
+  // it when no Authorization header is present, so it can't be sniffed
+  // to bypass an explicit header check on non-SSE callers.
+  if (!token) {
+    try {
+      const qToken = new URL(req.url).searchParams.get('token');
+      if (qToken && qToken.length >= 20) token = qToken;
+    } catch { /* malformed URL → fall through to the 401 below */ }
+  }
   if (!token) throw new ApiError(401, 'Missing authorization token');
 
   const user = await verifyPrivyJwt(token);

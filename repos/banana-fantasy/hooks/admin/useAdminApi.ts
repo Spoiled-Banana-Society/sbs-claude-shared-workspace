@@ -305,6 +305,18 @@ export interface MetricsResponse {
   referrals: { totalCodes: number };
   withdrawals: { pending: number; approved: number; denied: number; totalVolume: number };
   drafts: { queued: number; jackpotQueueSize: number; hofQueueSize: number };
+  lifetime: {
+    signups: number;
+    logins: number;
+    wheelSpins: number;
+    passesPurchased: number;
+    promosClaimed: number;
+    jackpotWins: number;
+    hofWins: number;
+    withdrawalsPaidVolume: number;
+    draftsCompleted: number;
+  };
+  promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
   generatedAt: string;
   requestId?: string;
   cached?: boolean;

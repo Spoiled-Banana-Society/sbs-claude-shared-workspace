@@ -180,6 +180,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
   const [area, setArea] = useState<LogArea | 'all'>('all');
   const [showTest, setShowTest] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
+  // Severity filter: 'all' shows every section, otherwise only the
+  // matching severity tier renders. Boris asked for the top-of-page
+  // severity chips to BE filters, not just informational.
+  const [severityFilter, setSeverityFilter] = useState<LogSeverity | 'all'>('all');
 
   const norm = filter.trim().toLowerCase();
 
@@ -267,13 +271,15 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       </div>
 
       {/* Severity summary — three color-coded chips with total counts
-          (active + earlier) per severity. Boris wanted a "X critical /
-          X warning / X low" glance bar so he can tell instantly how bad
-          things are without scanning the feed. */}
+          (active + earlier) per severity. Clickable: tapping a chip
+          filters the feed to that tier; tapping the same chip again
+          (or the "All" implicit fourth state) clears the filter. */}
       <SeveritySummaryBar
         critical={totalCritical}
         warning={totalWarning}
         low={totalLow}
+        active={severityFilter}
+        onChange={(next) => setSeverityFilter(next === severityFilter ? 'all' : next)}
       />
 
       <TriageBanner critical={activeCritical} warning={activeWarning} earlierCount={earlier.length} />
@@ -326,8 +332,8 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
-      {/* Critical — fix now */}
-      {activeCritical.length > 0 && (
+      {/* Critical — fix now. Hidden when severity filter excludes it. */}
+      {activeCritical.length > 0 && (severityFilter === 'all' || severityFilter === 'critical') && (
         <Section title="Critical — fix now" tone="critical" count={activeCritical.length} defaultOpen>
           {activeCritical.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -337,7 +343,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       )}
 
       {/* Warnings — look into it */}
-      {activeWarning.length > 0 && (
+      {activeWarning.length > 0 && (severityFilter === 'all' || severityFilter === 'warning') && (
         <Section title="Warnings — look into it" tone="warning" count={activeWarning.length} defaultOpen>
           {activeWarning.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -351,7 +357,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
           impact the user-facing happy path (watchdog crashes, transient
           RTDB hiccups, prefs-load failures). Worth knowing about, not
           worth panicking over. */}
-      {activeLow.length > 0 && (
+      {activeLow.length > 0 && (severityFilter === 'all' || severityFilter === 'low') && (
         <Section title="Low priority — informational" tone="low" count={activeLow.length}>
           {activeLow.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
@@ -723,34 +729,49 @@ function SeveritySummaryBar({
   critical,
   warning,
   low,
+  active,
+  onChange,
 }: {
   critical: number;
   warning: number;
   low: number;
+  active: LogSeverity | 'all';
+  onChange: (next: LogSeverity) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <SeverityChip
         emoji="🔴"
         label="Critical"
         count={critical}
         tone="critical"
-        helpText="Fix right away — payment / mint / auth / draft-blocking failures."
+        helpText="Fix right away — payment / mint / auth / draft-blocking failures. Click to filter."
+        isActive={active === 'critical'}
+        onClick={() => onChange('critical')}
       />
       <SeverityChip
         emoji="🟡"
         label="Warning"
         count={warning}
         tone="warning"
-        helpText="Worth looking at — non-critical bugs that may need a fix."
+        helpText="Worth looking at — non-critical bugs that may need a fix. Click to filter."
+        isActive={active === 'warning'}
+        onClick={() => onChange('warning')}
       />
       <SeverityChip
         emoji="⚪"
         label="Low"
         count={low}
         tone="low"
-        helpText="Fallback / transient — doesn't affect the user-facing happy path."
+        helpText="Fallback / transient — doesn't affect the user-facing happy path. Click to filter."
+        isActive={active === 'low'}
+        onClick={() => onChange('low')}
       />
+      {active !== 'all' && (
+        <span className="text-[11px] text-gray-400">
+          Filtering by <span className="text-white">{active}</span> — click chip again to clear.
+        </span>
+      )}
     </div>
   );
 }
@@ -761,34 +782,49 @@ function SeverityChip({
   count,
   tone,
   helpText,
+  isActive,
+  onClick,
 }: {
   emoji: string;
   label: string;
   count: number;
   tone: 'critical' | 'warning' | 'low';
   helpText: string;
+  isActive: boolean;
+  onClick: () => void;
 }) {
   // Active chips (count > 0) get the full color treatment so they pop.
   // Zero-count chips render in a muted neutral state — present so the
   // bar always shows all three tiers (no "is there a critical chip?"
   // ambiguity) without screaming for attention.
-  const active = count > 0;
+  // The filter-selected chip gets a bright ring outline so it's obvious
+  // which tier is currently filtered.
+  const hasCount = count > 0;
   const styles =
-    !active
+    !hasCount
       ? 'border-gray-800 bg-gray-900/40 text-gray-500'
       : tone === 'critical'
         ? 'border-red-500/50 bg-red-500/[0.10] text-red-200'
         : tone === 'warning'
           ? 'border-yellow-500/40 bg-yellow-500/[0.08] text-yellow-200'
           : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
+  const activeRing = isActive
+    ? tone === 'critical'
+      ? 'ring-2 ring-red-400/60'
+      : tone === 'warning'
+        ? 'ring-2 ring-yellow-400/60'
+        : 'ring-2 ring-gray-400/60'
+    : 'ring-0';
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       title={helpText}
-      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${styles}`}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${styles} ${activeRing} transition-colors hover:brightness-110`}
     >
       <span aria-hidden>{emoji}</span>
       <span className="text-[12px] font-semibold">{count}</span>
       <span className="text-[11px] opacity-80">{label}</span>
-    </div>
+    </button>
   );
 }

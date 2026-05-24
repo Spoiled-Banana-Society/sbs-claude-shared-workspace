@@ -112,18 +112,45 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
-      {/* KPI grid */}
+      {/* TODAY — what's happening right now, with live in-memory sparklines */}
       {m && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          <KpiCard label="Signups today" value={m.engagement.signupsToday} sub={`${m.engagement.signupsThisWeek} this week`} series={signupsSeries} />
-          <KpiCard label="Logins today" value={m.engagement.loginsToday} sub={`${m.engagement.loginsThisWeek} this week`} series={loginsSeries} accent="text-blue-400" />
-          <KpiCard label="Wheel spins today" value={m.wheel.spinsToday} sub={`${m.wheel.totalSpins.toLocaleString()} all-time`} series={spinsSeries} accent="text-[#F3E216]" />
-          <KpiCard label="Pending withdrawals" value={m.withdrawals.pending} sub={`$${m.withdrawals.totalVolume.toLocaleString()} total volume`} series={withdrawSeries} accent={m.withdrawals.pending > 0 ? 'text-yellow-400' : 'text-white'} />
-          <KpiCard label="Total users" value={m.users.total} sub={`+${m.users.newToday} today / +${m.users.newThisWeek} this week`} />
-          <KpiCard label="Jackpot queue" value={m.drafts.jackpotQueueSize} sub="in queue right now" accent="text-red-400" />
-          <KpiCard label="HOF queue" value={m.drafts.hofQueueSize} sub="in queue right now" accent="text-[#D4AF37]" />
-          <KpiCard label="Promos claimed today" value={m.promos.promoClaimsToday} sub={`${m.promos.sharesVerifiedToday} shares verified`} accent="text-green-400" />
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 mb-2">Today</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <KpiCard label="Signups today" value={m.engagement.signupsToday} sub={`${m.engagement.signupsThisWeek} this week`} series={signupsSeries} />
+            <KpiCard label="Logins today" value={m.engagement.loginsToday} sub={`${m.engagement.loginsThisWeek} this week`} series={loginsSeries} accent="text-blue-400" />
+            <KpiCard label="Wheel spins today" value={m.wheel.spinsToday} sub={`${m.wheel.totalSpins.toLocaleString()} all-time`} series={spinsSeries} accent="text-[#F3E216]" />
+            <KpiCard label="Pending withdrawals" value={m.withdrawals.pending} sub={`$${m.withdrawals.totalVolume.toLocaleString()} approved+pending volume`} series={withdrawSeries} accent={m.withdrawals.pending > 0 ? 'text-yellow-400' : 'text-white'} />
+            <KpiCard label="Total users" value={m.users.total} sub={`+${m.users.newToday} today / +${m.users.newThisWeek} this week`} />
+            <KpiCard label="Jackpot queue" value={m.drafts.jackpotQueueSize} sub="in queue right now" accent="text-red-400" />
+            <KpiCard label="HOF queue" value={m.drafts.hofQueueSize} sub="in queue right now" accent="text-[#D4AF37]" />
+            <KpiCard label="Promos claimed today" value={m.promos.promoClaimsToday} sub={`${m.promos.sharesVerifiedToday} shares verified`} accent="text-green-400" />
+          </div>
         </div>
+      )}
+
+      {/* ALL TIME — cumulative scoreboard. Boris explicitly asked for these
+          alongside the per-day numbers ("total promos, total mints etc."). */}
+      {m && (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 mb-2">All time</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <KpiCard label="Total signups" value={m.lifetime.signups} sub="every user that ever signed in" />
+            <KpiCard label="Total logins" value={m.lifetime.logins} sub="lifetime login events" accent="text-blue-400" />
+            <KpiCard label="Total wheel spins" value={m.lifetime.wheelSpins} sub="every spin ever" accent="text-[#F3E216]" />
+            <KpiCard label="Total passes purchased" value={m.lifetime.passesPurchased} sub="card + USDC mints" accent="text-emerald-400" />
+            <KpiCard label="Total promos claimed" value={m.lifetime.promosClaimed} sub="across all promo types" accent="text-pink-400" />
+            <KpiCard label="Jackpot wins" value={m.lifetime.jackpotWins} sub="lifetime" accent="text-red-400" />
+            <KpiCard label="HOF wins" value={m.lifetime.hofWins} sub="lifetime" accent="text-[#D4AF37]" />
+            <KpiCard label="Withdrawals paid" value={`$${m.lifetime.withdrawalsPaidVolume.toLocaleString()}`} sub={`${m.lifetime.draftsCompleted.toLocaleString()} drafts completed`} accent="text-green-400" />
+          </div>
+        </div>
+      )}
+
+      {/* PROMO BREAKDOWN — popularity by type. Surfaces "which promo is
+          actually moving" without admin having to scan the audit log. */}
+      {m && Object.keys(m.promoBreakdown).length > 0 && (
+        <PromoBreakdownCard breakdown={m.promoBreakdown} />
       )}
 
       {/* Two-column lower split: recent errors + live activity */}
@@ -167,19 +194,68 @@ function KpiCard({
   accent = 'text-white',
 }: {
   label: string;
-  value: number;
+  /** Accept pre-formatted strings (e.g. "$1,234") or raw numbers. */
+  value: number | string;
   sub?: string;
   series?: number[];
   accent?: string;
 }) {
+  const display = typeof value === 'number' ? value.toLocaleString() : value;
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-800/60 p-4 backdrop-blur">
       <div className="flex items-start justify-between gap-2 mb-1">
         <p className="text-[11px] text-gray-400 uppercase tracking-wider">{label}</p>
         {series && series.length >= 2 && <Sparkline values={series} />}
       </div>
-      <p className={`text-2xl font-bold tabular-nums ${accent}`}>{value.toLocaleString()}</p>
+      <p className={`text-2xl font-bold tabular-nums ${accent}`}>{display}</p>
       {sub ? <p className="text-[11px] text-gray-500 mt-1">{sub}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Promo breakdown — claims today + lifetime per promo type. Sorted by
+ * lifetime claims so the most popular promo bubbles to the top.
+ * Boris's ask: "stats not only of people claiming but also which ones
+ * are most popular". A bar relative to the leader makes that obvious
+ * at a glance without needing exact numbers in your head.
+ */
+function PromoBreakdownCard({
+  breakdown,
+}: {
+  breakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
+}) {
+  const rows = Object.entries(breakdown)
+    .map(([type, v]) => ({ type, ...v }))
+    .sort((a, b) => b.claimsTotal - a.claimsTotal);
+  const leader = rows[0]?.claimsTotal ?? 0;
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">Promos — popularity by type</h3>
+        <span className="text-[11px] text-gray-500">today / all-time</span>
+      </div>
+      <ul className="divide-y divide-white/[0.04]">
+        {rows.map((row) => {
+          // Bar width relative to the leader so the most-popular promo
+          // is a full bar and the rest scale down proportionally.
+          const pct = leader > 0 ? Math.max(2, Math.round((row.claimsTotal / leader) * 100)) : 0;
+          return (
+            <li key={row.type} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <span className="text-sm font-medium text-white capitalize">{row.type.replace(/_/g, ' ')}</span>
+                <span className="text-xs text-gray-400 tabular-nums">
+                  <span className="text-emerald-300">{row.claimsToday}</span> / {row.claimsTotal.toLocaleString()}
+                </span>
+              </div>
+              <div className="h-1 w-full rounded-full bg-white/5 overflow-hidden">
+                <div className="h-full rounded-full bg-banana/70" style={{ width: `${pct}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

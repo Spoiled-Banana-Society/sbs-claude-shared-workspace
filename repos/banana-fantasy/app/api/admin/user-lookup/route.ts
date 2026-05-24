@@ -81,17 +81,54 @@ function sectionFail(name: string, err: unknown): SectionFail {
 
 /* ───────────────────────────────────────────────────────── Identity + balance */
 
+/**
+ * Fetch the user's profile (displayName, avatar URL) from the Go owner API.
+ * Boris's display name + PFP live in the Go-side owner doc — not in our
+ * Firestore v2_users mirror — so the admin Lookup card was showing
+ * "No display name" even for users with one. Silent fallback on any
+ * error (network, 404, parsing) so the rest of the lookup still works.
+ */
+async function fetchOwnerProfile(wallet: string): Promise<{ displayName: string | null; avatar: string | null }> {
+  const base = process.env.NEXT_PUBLIC_SBS_API_URL;
+  if (!base) return { displayName: null, avatar: null };
+  try {
+    const res = await fetch(`${base}/owner/${wallet}`, { cache: 'no-store' });
+    if (!res.ok) return { displayName: null, avatar: null };
+    const data = (await res.json()) as { pfp?: { displayName?: string; imageUrl?: string } };
+    return {
+      displayName: typeof data?.pfp?.displayName === 'string' && data.pfp.displayName.trim()
+        ? data.pfp.displayName
+        : null,
+      avatar: typeof data?.pfp?.imageUrl === 'string' && data.pfp.imageUrl.trim()
+        ? data.pfp.imageUrl
+        : null,
+    };
+  } catch {
+    return { displayName: null, avatar: null };
+  }
+}
+
 async function readIdentity(wallet: string) {
   const db = getAdminFirestore();
-  const doc = await db.collection('v2_users').doc(wallet).get();
-  if (!doc.exists) return null;
-  const d = doc.data() ?? {};
+  // Fan out Firestore read + Go-API owner-profile read in parallel — the
+  // owner profile carries the user-chosen displayName + avatar that the
+  // Firestore doc doesn't mirror.
+  const [doc, ownerProfile] = await Promise.all([
+    db.collection('v2_users').doc(wallet).get(),
+    fetchOwnerProfile(wallet),
+  ]);
+  if (!doc.exists && !ownerProfile.displayName) return null;
+  const d = doc.exists ? (doc.data() ?? {}) : {};
   return {
     walletAddress: typeof d.walletAddress === 'string' ? d.walletAddress.toLowerCase() : wallet,
     username:
       typeof d.username === 'string' && !d.username.startsWith('User-') ? d.username : null,
+    // Prefer the Go-side owner profile (what the user actually set in their
+    // Profile page) over the Firestore mirror (which may not be in sync).
     displayName:
-      typeof d.displayName === 'string' && d.displayName.trim() ? d.displayName : null,
+      ownerProfile.displayName ??
+      (typeof d.displayName === 'string' && d.displayName.trim() ? d.displayName : null),
+    avatar: ownerProfile.avatar,
     email:
       (typeof d.blueCheckEmail === 'string' && d.blueCheckEmail) ||
       (typeof d.email === 'string' && d.email) ||
@@ -414,7 +451,10 @@ export async function GET(req: Request) {
       readList(wallet, { collection: 'v2_drafts', field: 'createdBy', limit: RECENT_LIMIT }),
       readList(wallet, { collection: 'v2_error_events', field: 'actor', limit: ERROR_LIMIT }),
       readList(wallet, { collection: 'adminAuditLog', field: 'target', limit: AUDIT_LIMIT }),
-      readList(wallet, { collection: 'userEvents', field: 'userId', limit: RECENT_LIMIT }),
+      // Bumped to 200 so the Activity section can show meaningful
+      // lifetime summaries (promos claimed, spins, purchases, wins)
+      // computed client-side from the event stream.
+      readList(wallet, { collection: 'userEvents', field: 'userId', limit: 200 }),
       readNotes(wallet),
     ]);
 
