@@ -25,6 +25,7 @@ import {
   getWheelProofContractAddress,
   readPeriodOnchain,
 } from '@/lib/wheelProofContract';
+import { commitPendingBatches } from '@/lib/wheelAssignmentJournal';
 
 /**
  * Vercel cron — runs every 5 minutes. Two responsibilities:
@@ -150,6 +151,41 @@ export async function GET(req: Request) {
         });
         summary.revealError = (revealErr as Error).message;
       }
+    }
+
+    // (4) Provably-fair assignment-batch commitments. Every 100 spins we
+    //     publish an on-chain Merkle root of "wallet → spinIndex"
+    //     assignments so the order in which we hand out pre-committed
+    //     outcomes can't be secretly rewritten. Runs entirely in the
+    //     background of this cron — never blocks user spins.
+    //
+    //     Scan the current period plus the previous one (in case the
+    //     previous period's last batch arrived just after rollover).
+    //     Each call commits all ready batches up to a per-period cap so
+    //     a big backlog doesn't tie up the whole cron tick.
+    const settledPeriod = await getCurrentPeriod();
+    const periodsToScan: number[] = [];
+    if (settledPeriod) {
+      periodsToScan.push(settledPeriod.periodNumber);
+      if (settledPeriod.periodNumber > 1) {
+        periodsToScan.push(settledPeriod.periodNumber - 1);
+      }
+    }
+    try {
+      const committed = await commitPendingBatches(periodsToScan);
+      if (committed.length > 0) {
+        summary.assignmentBatchesCommitted = committed.map((c) => ({
+          periodNumber: c.periodNumber,
+          batchIndex: c.batchIndex,
+          range: [c.fromIndex, c.toIndex],
+          txHash: c.txHash,
+        }));
+      }
+    } catch (assignErr) {
+      // Soft-fail — assignment commits are non-blocking for the wheel.
+      // The error already logged inside commitPendingBatches; surface
+      // the count in the summary for the keeper's structured response.
+      summary.assignmentBatchError = (assignErr as Error).message;
     }
 
     return json(summary, 200);

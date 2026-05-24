@@ -235,6 +235,11 @@ export default function WheelBatchesPage() {
             </p>
           </section>
 
+          {/* NEW: assignment-batch commits for this period — every 100
+              spins, the wallet→spinIndex assignments get bundled and
+              committed on-chain so the ORDER can't be quietly rewritten. */}
+          <AssignmentBatchesPanel periodNumber={period.periodNumber} />
+
           <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md overflow-hidden">
             {spins.length === 0 && !loading && (
               <div className="p-8 text-white/40 text-sm text-center">No spins yet.</div>
@@ -280,5 +285,127 @@ export default function WheelBatchesPage() {
         </>
       )}
     </div>
+  );
+}
+
+/* ───────────────────────────────────────── Assignment batches panel */
+
+interface AssignmentBatch {
+  batchIndex: number;
+  fromIndex: number;
+  toIndex: number;
+  count: number;
+  root: string;
+  txHash: string;
+  committedAt: number;
+}
+
+interface AssignmentsResponse {
+  ok: true;
+  periodNumber: number;
+  batchSize: number;
+  contractAddress: string | null;
+  status: {
+    totalBatchesCommitted: number;
+    highestEntryIndex: number;
+    unbatchedEntryCount: number;
+  };
+  batches: AssignmentBatch[];
+}
+
+function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
+  const [data, setData] = useState<AssignmentsResponse | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/wheel/assignments/${periodNumber}?limit=1`, {
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as AssignmentsResponse;
+        if (!cancelled) setData(body);
+      } catch {
+        // silent — section is informational; main feed below still works
+      }
+    }
+    load();
+    const id = setInterval(load, 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [periodNumber]);
+
+  if (!data) return null;
+  const { batches, status, batchSize, contractAddress } = data;
+  const nextBatchProgress = status.unbatchedEntryCount;
+
+  return (
+    <section className="rounded-2xl border border-banana/30 bg-banana/[0.04] p-5 mb-6 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-banana animate-pulse" />
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-banana">
+          Wallet assignments · on-chain
+        </h2>
+      </div>
+      <p className="text-xs text-white/60 leading-relaxed">
+        Even though SBS knows the outcomes after Chainlink rolls, we can&apos;t quietly hand
+        wins to specific wallets. Every {batchSize} spins, the on-chain log records which
+        wallet got which spinIndex — skipping or reordering would be cryptographically
+        visible to anyone watching.
+      </p>
+
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-md bg-white/[0.04] py-2 px-1">
+          <p className="text-[10px] uppercase tracking-wider text-white/40">Batches</p>
+          <p className="mt-0.5 font-semibold text-white">{status.totalBatchesCommitted}</p>
+        </div>
+        <div className="rounded-md bg-white/[0.04] py-2 px-1">
+          <p className="text-[10px] uppercase tracking-wider text-white/40">Spins locked</p>
+          <p className="mt-0.5 font-semibold text-white">
+            {(status.totalBatchesCommitted * batchSize).toLocaleString()}
+          </p>
+        </div>
+        <div className="rounded-md bg-white/[0.04] py-2 px-1">
+          <p className="text-[10px] uppercase tracking-wider text-white/40">Next batch</p>
+          <p className="mt-0.5 font-semibold text-white">
+            {nextBatchProgress}/{batchSize}
+          </p>
+        </div>
+      </div>
+
+      {batches.length > 0 && (
+        <div className="space-y-1.5">
+          {batches.slice(0, 5).map((b) => (
+            <div
+              key={b.batchIndex}
+              className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md bg-white/[0.03] px-3 py-1.5 text-[11px]"
+            >
+              <span className="text-white/85 font-semibold">Batch #{b.batchIndex}</span>
+              <span className="text-white/45">
+                spins #{b.fromIndex.toLocaleString()}–{b.toIndex.toLocaleString()} ({b.count})
+              </span>
+              <a
+                href={BASESCAN_TX(b.txHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="ml-auto text-blue-300 hover:text-blue-200 underline font-mono"
+              >
+                {b.txHash.slice(0, 8)}…{b.txHash.slice(-4)}
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!contractAddress && (
+        <p className="text-[11px] text-white/40">
+          (Assignment-journal contract not yet deployed — journal entries are being
+          written; on-chain commits will backfill once Boris flips the contract address.)
+        </p>
+      )}
+    </section>
   );
 }

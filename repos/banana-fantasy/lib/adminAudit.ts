@@ -21,6 +21,7 @@ export type AdminAction =
   | 'transfer-batchproof-ownership'
   | 'recover-draft-card'
   | 'deploy-wheel-proof'
+  | 'deploy-wheel-assignment-journal'
   | 'wheel-period-open'
   | 'wheel-period-finalize'
   | 'wheel-period-reveal';

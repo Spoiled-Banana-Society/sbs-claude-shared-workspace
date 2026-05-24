@@ -49,6 +49,13 @@ const TARGETS = [
     bytecodeConst: 'BBB4_BATCH_PROOF_MERKLE_BYTECODE',
     abiConst: 'BBB4_BATCH_PROOF_MERKLE_ABI',
   },
+  {
+    sourceFile: 'BananaWheelAssignmentJournal.sol',
+    contractName: 'BananaWheelAssignmentJournal',
+    outRel: 'lib/contracts/bananaWheelAssignmentJournalArtifact.ts',
+    bytecodeConst: 'BANANA_WHEEL_ASSIGNMENT_JOURNAL_BYTECODE',
+    abiConst: 'BANANA_WHEEL_ASSIGNMENT_JOURNAL_ABI',
+  },
 ];
 
 for (const t of TARGETS) {

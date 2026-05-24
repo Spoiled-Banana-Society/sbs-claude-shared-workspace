@@ -165,7 +165,7 @@ export default function SpinProofPage() {
 
               {data.proof && (
                 <>
-                  <h3 className="text-white text-[12px] font-semibold mt-4">Merkle proof for this spin</h3>
+                  <h3 className="text-white text-[12px] font-semibold mt-4">Outcome proof for this spin</h3>
                   <div className="space-y-1.5 text-[11px] font-mono">
                     <KVMono label="Leaf" value={data.proof.leaf} />
                     <KVMono label="Root" value={data.proof.root} />
@@ -178,7 +178,132 @@ export default function SpinProofPage() {
               )}
             </div>
           )}
+
+          {data.verifiable && (
+            <AssignmentProofSection spinId={data.spinId} />
+          )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────── Assignment proof (NEW) */
+
+interface AssignmentProofPayload {
+  ok: true;
+  spinId: string;
+  verifiable: boolean;
+  pending?: boolean;
+  periodNumber?: number;
+  spinIndex?: number;
+  wallet?: string;
+  batchSize?: number;
+  positionInBatch?: number;
+  contractAddress?: string | null;
+  reason?: string;
+  batch?: {
+    batchIndex: number;
+    fromIndex: number;
+    toIndex: number;
+    count: number;
+    root: string;
+    txHash: string;
+    committedAt: number;
+  };
+  proof?: { leaf: string; path: string[]; root: string };
+}
+
+function AssignmentProofSection({ spinId }: { spinId: string }) {
+  const [data, setData] = useState<AssignmentProofPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ctrl = { cancelled: false };
+    async function load() {
+      try {
+        const res = await fetch(`/api/wheel/assignment-proof/${spinId}`, { cache: 'no-store' });
+        const body = (await res.json()) as AssignmentProofPayload & { error?: string };
+        if (!res.ok) {
+          if (!ctrl.cancelled) setError(body.error ?? `Request failed (${res.status})`);
+          return;
+        }
+        if (!ctrl.cancelled) setData(body);
+      } catch (err) {
+        if (!ctrl.cancelled) setError((err as Error).message);
+      }
+    }
+    load();
+    return () => {
+      ctrl.cancelled = true;
+    };
+  }, [spinId]);
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-500/30 bg-red-500/[0.04] p-6 text-red-300 text-[12px]">
+        Assignment proof unavailable: {error}
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md p-6 space-y-3">
+      <h2 className="text-white text-sm font-semibold tracking-tight">
+        Assignment verification
+      </h2>
+      <p className="text-white/50 text-[12px] leading-relaxed">
+        Confirms that <span className="font-mono text-white/70">{data.wallet?.slice(0, 6)}…{data.wallet?.slice(-4)}</span>{' '}
+        was assigned spinIndex {data.spinIndex} in order. Every {data.batchSize ?? 100} spins,
+        the wallet→spinIndex assignments are bundled and committed on-chain — reordering
+        or skipping would be cryptographically visible.
+      </p>
+
+      {data.pending && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-amber-200 text-[12px]">
+          <p className="font-semibold mb-1">⏳ Batch committing soon</p>
+          <p className="text-amber-100/80 leading-relaxed">
+            This spin sits in the next pending batch (position{' '}
+            <span className="font-mono">{data.positionInBatch}</span> of{' '}
+            <span className="font-mono">{data.batchSize}</span>). The on-chain commit
+            happens automatically as soon as the batch fills (every {data.batchSize} spins),
+            typically within minutes. Refresh to recheck.
+          </p>
+        </div>
+      )}
+
+      {data.verifiable && data.batch && data.proof && (
+        <>
+          <div className="space-y-2 text-[12px]">
+            <Link2
+              label="Journal contract"
+              href={data.contractAddress ? `https://basescan.org/address/${data.contractAddress}` : null}
+              display={data.contractAddress ?? '—'}
+            />
+            <Link2
+              label="Batch commit tx"
+              href={`https://basescan.org/tx/${data.batch.txHash}`}
+              display={data.batch.txHash}
+            />
+            <KV label="Batch" value={`#${data.batch.batchIndex} (spins ${data.batch.fromIndex.toLocaleString()}–${data.batch.toIndex.toLocaleString()})`} />
+            <KV label="Committed" value={new Date(data.batch.committedAt).toLocaleString()} />
+          </div>
+
+          <h3 className="text-white text-[12px] font-semibold mt-4">Assignment Merkle proof</h3>
+          <div className="space-y-1.5 text-[11px] font-mono">
+            <KVMono label="Leaf" value={data.proof.leaf} />
+            <KVMono label="On-chain root" value={data.proof.root} />
+            <div className="text-white/40">Path ({data.proof.path.length} hashes)</div>
+            {data.proof.path.map((h, i) => (
+              <div key={i} className="text-white/60 truncate">{i}: {h}</div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {!data.verifiable && !data.pending && (
+        <p className="text-white/40 text-[12px]">{data.reason ?? 'Not verifiable.'}</p>
       )}
     </div>
   );

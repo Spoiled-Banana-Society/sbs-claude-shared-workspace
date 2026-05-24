@@ -16,6 +16,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
@@ -294,6 +295,17 @@ export async function POST(req: Request) {
         }
         segment = found;
         index = segments.findIndex((s) => s.id === claim.segmentId);
+
+        // Provably-fair assignment commitment: append "wallet → spinIndex"
+        // to the journal in the same tx as the claim, so the on-chain
+        // batch commit (cron, every 100 spins) can never miss an entry
+        // or include a wallet that didn't actually spin. Zero added on-
+        // chain latency here — just one Firestore write.
+        writeJournalEntryTx(tx, {
+          periodNumber: currentPeriod.periodNumber,
+          spinIndex: claim.spinIndex,
+          wallet: userId,
+        });
       }
 
       tx.set(spinRef, {

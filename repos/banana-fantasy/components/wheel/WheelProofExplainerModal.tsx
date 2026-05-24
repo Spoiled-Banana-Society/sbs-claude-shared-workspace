@@ -74,7 +74,7 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
             How your spins are verified
           </h2>
           <p className="text-white/55 text-[14px] mt-2 leading-snug">
-            Every outcome was randomized by Chainlink VRF and committed to Base mainnet before any spin happened.
+            Outcomes AND who gets them are both locked on-chain. Chainlink VRF picks the outcomes before any spin, and every wallet assignment is publicly committed as spins happen.
           </p>
         </div>
 
@@ -91,20 +91,25 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
           />
           <Step
             num="3"
-            title="Every spin returns its own proof"
-            body="Each spin response includes a Merkle proof tying its outcome to the on-chain fingerprint. Verified in your browser in milliseconds."
+            title="Wallet assignments committed every 100 spins"
+            body="Even though SBS knows the outcomes after Chainlink rolls, we can't quietly hand wins to specific wallets. Every 100 spins, the on-chain log records which wallet got which spinIndex. Reordering or skipping would be cryptographically visible to anyone watching."
           />
           <Step
             num="4"
+            title="Every spin returns its own proof"
+            body="Each spin response includes two Merkle proofs — one tying its outcome to the on-chain outcomes root, one tying your wallet to the on-chain assignments root. Verified in your browser in milliseconds."
+          />
+          <Step
+            num="5"
             title="Every spin appears in the public feed"
-            body="The live feed at /wheel-batches shows every spin as it happens, with a verifiable proof link for each. Anyone can audit any outcome independently."
+            body="The live feed at /wheel-batches shows every spin and every batch commit as it happens, with verifiable proof links for each. Anyone can audit any outcome AND any assignment independently."
           />
         </div>
 
         <div className="px-8 py-5 border-t border-white/[0.07] shrink-0">
           <p className="text-white/80 text-[13.5px] leading-relaxed">
             <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
-            Outcomes are cryptographically immutable from the moment of commit, and independently verifiable on-chain.
+            Outcomes AND wallet assignments are both cryptographically immutable. Nothing about who got what can be quietly changed after the fact.
           </p>
           <a
             href="/wheel-batches"
