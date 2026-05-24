@@ -7,6 +7,9 @@ import { NftMappingTool } from '@/components/admin/NftMappingTool';
 import { RecoverDraftCardForm } from '@/components/admin/RecoverDraftCardForm';
 import { WheelProofAdminPanel } from '@/components/admin/WheelProofAdminPanel';
 import { DraftMerkleAdminPanel } from '@/components/admin/DraftMerkleAdminPanel';
+import { BroadcastsPanel } from '@/components/admin/BroadcastsPanel';
+import { BulkGrantPanel } from '@/components/admin/BulkGrantPanel';
+import { DigestPreviewButton } from '@/components/admin/DigestPreviewButton';
 
 interface WalletStatus {
   address: string;
@@ -336,6 +339,13 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
           One-off operational utilities. Use sparingly and remove the endpoints after they have served their purpose.
         </p>
       </div>
+
+      {/* Phase 5 additions: broadcasts + bulk grant + digest. Pinned to
+          the top of Tools so they're the first things admins see — the
+          old per-contract utilities below are rarely-touched ops. */}
+      <BroadcastsPanel />
+      <BulkGrantPanel />
+      <DigestPreviewButton />
 
       <GrantPrizeForm />
 

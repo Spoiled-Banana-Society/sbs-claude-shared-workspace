@@ -1,6 +1,7 @@
 'use client';
 
 import { useRecentUserEvents, AdminApiError } from '@/hooks/admin/useAdminApi';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -8,9 +9,13 @@ function formatDate(iso: string) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function shorten(v: string) {
-  if (!v) return '—';
-  return v.length < 14 ? v : `${v.slice(0, 6)}…${v.slice(-4)}`;
+// True for a 40-hex Ethereum wallet (with or without 0x prefix). Some
+// userId values are Privy DIDs or other identifiers, in which case we
+// render them as plain text (no User Lookup target for non-wallets).
+function isWallet(v: string): boolean {
+  if (!v) return false;
+  const hex = v.replace(/^0x/i, '');
+  return /^[0-9a-f]{40}$/i.test(hex);
 }
 
 const EVENT_COLORS: Record<string, string> = {
@@ -63,7 +68,9 @@ export function UserActivity({ enabled }: { enabled: boolean }) {
               events.map((e, i) => (
                 <tr key={`${e.timestamp}-${i}`} className="border-t border-gray-800/50">
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDate(e.timestamp)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{shorten(e.userId)}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {isWallet(e.userId) ? <WalletLink wallet={e.userId} /> : <span className="font-mono text-gray-400">{e.userId || '—'}</span>}
+                  </td>
                   <td className={`px-4 py-3 text-xs font-semibold ${EVENT_COLORS[e.eventType] ?? 'text-gray-300'}`}>
                     {e.eventType}
                   </td>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useGrantPrize, AdminApiError } from '@/hooks/admin/useAdminApi';
 import { useToast } from '@/components/ui/Toast';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 
@@ -158,7 +159,7 @@ export function GrantPrizeForm() {
           {lastGranted && (
             <p className="text-[11px] text-gray-500">
               Last: <span className="text-success">✓ ${lastGranted.amount.toLocaleString()}</span> →{' '}
-              <span className="font-mono">{lastGranted.wallet.slice(0, 6)}…{lastGranted.wallet.slice(-4)}</span>
+              <WalletLink wallet={lastGranted.wallet} inline />
             </p>
           )}
         </div>

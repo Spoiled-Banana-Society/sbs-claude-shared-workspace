@@ -137,6 +137,27 @@ export const LOG_SOURCES = {
     // can't run, so every draft alert silently fails. Loud on purpose.
     SECRET_MISSING: 'notifications.config.secret_missing',
   },
+  // Admin-side operational sources. Added Phase 6 of the admin overhaul
+  // (May 2026) so the new broadcast / bulk-grant / digest / runbook
+  // routes log under a consistent namespace. Failures here are admin-
+  // facing, not user-facing — they don't gate any user happy path, but
+  // we still want them visible in the Logs tab so a broken broadcast
+  // doesn't silently never deliver.
+  admin: {
+    BROADCAST_FAILED: 'admin.broadcast.failed',
+    BROADCAST_SENT: 'admin.broadcast.sent',
+    BULK_GRANT_FAILED: 'admin.bulk_grant.failed',
+    BULK_GRANT_COMPLETED: 'admin.bulk_grant.completed',
+    DIGEST_FAILED: 'admin.digest.failed',
+    DIGEST_SENT: 'admin.digest.sent',
+    DIGEST_CRON_FAILED: 'admin.digest.cron_failed',
+    ERROR_RUNBOOK_SAVE_FAILED: 'admin.error_runbooks.save_failed',
+    ERROR_RUNBOOK_LIST_FAILED: 'admin.error_runbooks.list_failed',
+    USER_NOTES_CREATE_FAILED: 'admin.user_notes.create_failed',
+    USER_NOTES_LIST_FAILED: 'admin.user_notes.list_failed',
+    USER_LOOKUP_PARTIAL_FAILURE: 'admin.user_lookup.partial_failure',
+    AUDIT_WRITE_FAILED: 'admin.audit.write_failed',
+  },
   global: {
     UNCAUGHT_ERROR: 'global.uncaught.error',
     UNHANDLED_REJECTION: 'global.unhandled.rejection',
@@ -287,6 +308,23 @@ const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
     text: 'Telegram bot DM failed — usually because the user blocked the bot or the chat id is stale.' },
   { pattern: /notifications\.discord\.send_failed/i,
     text: 'Discord bot DM failed — the user may have changed accounts, the bot may have been kicked from the SBS server, or DMs are disabled on the user\'s account.' },
+  // Admin ops — Phase 5/6 of the admin overhaul. Plain-English helps
+  // an admin investigating their own broken broadcast quickly find the
+  // root cause without reading our source.
+  { pattern: /admin\.broadcast\.failed/i,
+    text: 'A broadcast send failed before completing — check the reason field in context for which channel + provider error.' },
+  { pattern: /admin\.bulk_grant\.failed/i,
+    text: 'A bulk grant aborted before issuing all mints — partial result may have already landed; see audit log for per-wallet outcomes.' },
+  { pattern: /admin\.digest\.failed/i,
+    text: 'The daily digest failed to render or send. Cron will retry tomorrow; manual trigger is available in admin Tools.' },
+  { pattern: /admin\.digest\.cron_failed/i,
+    text: 'Cron-triggered digest send failed authentication or sending. Check CRON_SECRET env var first.' },
+  { pattern: /admin\.error_runbooks\.(save|list)_failed/i,
+    text: 'Runbook read/save against Firestore failed. The editor falls back to localStorage so notes aren\'t lost.' },
+  { pattern: /admin\.user_notes\.(create|list)_failed/i,
+    text: 'Per-user admin note read/write against Firestore failed. Surface the error to the admin who tried to add the note.' },
+  { pattern: /admin\.audit\.write_failed/i,
+    text: 'An admin action ran successfully but the audit log write failed. The parent action did not fail because of this.' },
 ];
 
 /**

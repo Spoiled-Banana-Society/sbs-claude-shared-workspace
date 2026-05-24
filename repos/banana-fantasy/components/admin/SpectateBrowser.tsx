@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 interface ActiveDraft {
   draftId: string;
@@ -28,11 +29,6 @@ interface QueueStatus {
 }
 
 const REFRESH_INTERVAL_MS = 5000;
-
-function shortAddr(addr: string): string {
-  if (!addr || addr.length < 12) return addr || '—';
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
 
 function levelPillStyle(level: string | null): { bg: string; color: string; label: string } {
   if (!level) return { bg: '#a855f7', color: '#fff', label: 'PRO' };
@@ -260,7 +256,9 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       <span>P{d.pickNumber}/150</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-gray-400 font-mono text-xs">{shortAddr(d.currentDrafter)}</td>
+                  <td className="px-4 py-3 text-gray-400 text-xs">
+                    {d.currentDrafter ? <WalletLink wallet={d.currentDrafter} /> : '—'}
+                  </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-1.5">
                       <button

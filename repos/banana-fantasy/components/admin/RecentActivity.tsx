@@ -1,11 +1,22 @@
 'use client';
 
 import { useRecentAdminActions, AdminApiError } from '@/hooks/admin/useAdminApi';
+import { WalletLink } from '@/components/admin/WalletLink';
 
 function formatDate(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// True for a 40-hex Ethereum wallet (with or without 0x prefix). Admin
+// actors/targets are wallets when they look like one, otherwise plain
+// identifiers (e.g. system/cron labels) — we only render WalletLink in
+// the wallet case so the click-through always lands on a real user.
+function isWallet(v: string): boolean {
+  if (!v) return false;
+  const hex = v.replace(/^0x/i, '');
+  return /^[0-9a-f]{40}$/i.test(hex);
 }
 
 function shorten(v: string) {
@@ -74,9 +85,13 @@ export function RecentActivity({ enabled }: { enabled: boolean }) {
               actions.map((a, i) => (
                 <tr key={`${a.requestId}-${i}`} className="border-t border-gray-800/50">
                   <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{formatDate(a.timestamp)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{shorten(a.actor)}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {isWallet(a.actor) ? <WalletLink wallet={a.actor} /> : <span className="font-mono text-gray-400">{shorten(a.actor)}</span>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-[#F3E216]">{a.action}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{shorten(a.target)}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {isWallet(a.target) ? <WalletLink wallet={a.target} /> : <span className="font-mono text-gray-400">{shorten(a.target)}</span>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-gray-300">{summarize(a.before, a.after)}</td>
                   <td className="px-4 py-3 font-mono text-[10px] text-gray-500">{a.requestId}</td>
                 </tr>

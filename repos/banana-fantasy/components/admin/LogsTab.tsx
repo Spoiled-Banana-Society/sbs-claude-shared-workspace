@@ -5,6 +5,8 @@ import { useRecentErrors, useExportErrorSession, AdminApiError, type ErrorEventE
 import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { GroupSparkline } from '@/components/admin/Logs/GroupSparkline';
+import { RunbookEditor } from '@/components/admin/Logs/RunbookEditor';
 
 /**
  * Unified admin Logs view. Built to be read at a glance by a non-dev:
@@ -28,6 +30,8 @@ const AREA_FILTERS: { key: LogArea | 'all'; label: string }[] = [
   { key: 'marketplace', label: 'Marketplace' },
   { key: 'wheel', label: 'Wheel' },
   { key: 'auth', label: 'Auth' },
+  { key: 'notifications', label: 'Notifications' },
+  { key: 'admin', label: 'Admin' },
   { key: 'backend', label: 'Backend' },
   { key: 'global', label: 'Crashes' },
   { key: 'other', label: 'Other' },
@@ -69,6 +73,10 @@ interface ErrorGroup {
   // re-traversing the events array per render.
   countLast24h: number;
   countLast7d: number;
+  // Full timestamp series for the per-group sparkline. Bucketed into
+  // 12h bins client-side. Captured here so we don't re-walk all events
+  // per render.
+  eventTimestamps: number[];
 }
 
 function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
@@ -97,6 +105,7 @@ function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
         actorCounts,
         countLast24h: within24h ? 1 : 0,
         countLast7d: within7d ? 1 : 0,
+        eventTimestamps: ts ? [ts] : [],
       });
     } else {
       existing.count += 1;
@@ -106,6 +115,7 @@ function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
       if (actor) {
         existing.actorCounts.set(actor, (existing.actorCounts.get(actor) ?? 0) + 1);
       }
+      if (ts) existing.eventTimestamps.push(ts);
       if (ts >= existing.lastTs) {
         existing.lastTs = ts;
         existing.rep = e;       // keep the most recent as representative
@@ -113,6 +123,24 @@ function groupErrors(errors: ErrorEventEntry[]): ErrorGroup[] {
     }
   }
   return [...map.values()].sort((a, b) => b.lastTs - a.lastTs);
+}
+
+/**
+ * Builds a "wallet → set of group keys it hit" map across the whole feed.
+ * Powers cross-error correlation in AffectedUsers: per wallet, tells us
+ * how many OTHER groups they appear in. Cheap to compute once and pass
+ * down — re-walking groups per render in each row would be O(n²).
+ */
+function buildActorGroupMap(groups: ErrorGroup[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const g of groups) {
+    for (const wallet of g.actorCounts.keys()) {
+      const set = map.get(wallet) ?? new Set<string>();
+      set.add(g.key);
+      map.set(wallet, set);
+    }
+  }
+  return map;
 }
 
 export function LogsTab({ enabled }: { enabled: boolean }) {
@@ -177,6 +205,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     // 3. group, then split active vs earlier (quiet)
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
     const groups = groupErrors(real);
+    // Cross-error correlation map: wallet → set of group keys it appears in.
+    // Passed to AffectedUsers so each wallet row can show "+N other errors"
+    // for heavy hitters spanning multiple sources.
+    const actorGroupMap = buildActorGroupMap(groups);
     const activeCritical = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'critical');
     const activeWarning = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'warning');
     const activeLow = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'low');
@@ -200,6 +232,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       totalCritical,
       totalWarning,
       totalLow,
+      actorGroupMap,
     };
   }, [allErrors, area, norm]);
 
@@ -213,6 +246,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     totalCritical,
     totalWarning,
     totalLow,
+    actorGroupMap,
   } = buckets;
 
   return (
@@ -296,7 +330,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       {activeCritical.length > 0 && (
         <Section title="Critical — fix now" tone="critical" count={activeCritical.length} defaultOpen>
           {activeCritical.map((g) => (
-            <GroupRow key={g.key} group={g} isOpen={expanded === g.key}
+            <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
               onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
           ))}
         </Section>
@@ -306,7 +340,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       {activeWarning.length > 0 && (
         <Section title="Warnings — look into it" tone="warning" count={activeWarning.length} defaultOpen>
           {activeWarning.map((g) => (
-            <GroupRow key={g.key} group={g} isOpen={expanded === g.key}
+            <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
               onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
           ))}
         </Section>
@@ -320,7 +354,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       {activeLow.length > 0 && (
         <Section title="Low priority — informational" tone="low" count={activeLow.length}>
           {activeLow.map((g) => (
-            <GroupRow key={g.key} group={g} isOpen={expanded === g.key}
+            <GroupRow key={g.key} group={g} isOpen={expanded === g.key} actorGroupMap={actorGroupMap}
               onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
           ))}
         </Section>
@@ -372,7 +406,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
           {showEarlier && (
             <div className="px-3 pb-3 space-y-2">
               {earlier.map((g) => (
-                <GroupRow key={g.key} group={g} isOpen={expanded === g.key} muted
+                <GroupRow key={g.key} group={g} isOpen={expanded === g.key} muted actorGroupMap={actorGroupMap}
                   onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
               ))}
             </div>
@@ -395,7 +429,7 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
           {showTest && (
             <div className="px-3 pb-3 space-y-2">
               {testGroups.map((g) => (
-                <GroupRow key={g.key} group={g} isOpen={expanded === g.key} muted
+                <GroupRow key={g.key} group={g} isOpen={expanded === g.key} muted actorGroupMap={actorGroupMap}
                   onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
               ))}
             </div>
@@ -488,8 +522,13 @@ function Section({ title, tone, count, defaultOpen, children }: {
   );
 }
 
-function GroupRow({ group, isOpen, onToggle, muted }: {
-  group: ErrorGroup; isOpen: boolean; onToggle: () => void; muted?: boolean;
+function GroupRow({ group, isOpen, onToggle, muted, actorGroupMap }: {
+  group: ErrorGroup;
+  isOpen: boolean;
+  onToggle: () => void;
+  muted?: boolean;
+  /** wallet → set of group keys it appears in across the whole feed */
+  actorGroupMap: Map<string, Set<string>>;
 }) {
   const { rep, severity, area, count } = group;
   // Which side broke — the Go server, or the banana-fantasy app
@@ -540,11 +579,14 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
           {explainError(rep.source, rep.message) && (
             <p className="text-[12px] text-banana/90 mt-1">💡 {explainError(rep.source, rep.message)}</p>
           )}
-          <div className="flex gap-3 mt-1 text-[11px] text-gray-500 flex-wrap">
+          <div className="flex gap-3 mt-1 text-[11px] text-gray-500 flex-wrap items-center">
             <span>last {formatAgo(rep.timestamp)}</span>
             <span className="font-medium text-gray-400">
               {group.countLast24h} in 24h · {group.countLast7d} in 7d
             </span>
+            {/* Inline 7-day sparkline — instantly shows whether the error is
+                spiking now, decaying since a fix, or steady-state noise. */}
+            <GroupSparkline timestamps={group.eventTimestamps} />
             {count > 1 && <span>first seen {formatAgo(new Date(group.firstTs).toISOString())}</span>}
             {rep.route && <span className="font-mono truncate max-w-[260px]">{rep.route}</span>}
           </div>
@@ -554,12 +596,17 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
 
       {/* Affected users — inline so triage doesn't need to leave this row.
           Renders even when collapsed so you can scan affected wallets at
-          a glance and click straight into User Lookup. */}
+          a glance and click straight into User Lookup. Cross-correlation
+          chips ("+2 other errors") surface heavy hitters spanning sources. */}
       {group.actorCounts.size > 0 && (
-        <AffectedUsers actorCounts={group.actorCounts} />
+        <AffectedUsers actorCounts={group.actorCounts} actorGroupMap={actorGroupMap} />
       )}
       {isOpen && (
-        <div className="border-t border-white/5 px-4 py-3 space-y-2 bg-black/20">
+        <div className="border-t border-white/5 px-4 py-3 space-y-3 bg-black/20">
+          {/* Runbook editor — shared with all admins via Firestore. Falls
+              back to localStorage when the API is unavailable so unsaved
+              notes survive a tab close. */}
+          <RunbookEditor source={rep.source} />
           {rep.stack && (
             <div>
               <p className="text-[11px] uppercase text-gray-500 mb-1">Stack (most recent occurrence)</p>
@@ -600,7 +647,13 @@ function GroupRow({ group, isOpen, onToggle, muted }: {
  * "Show all (N)" / "Hide" to expand. The hit count per wallet surfaces
  * heavy hitters at a glance.
  */
-function AffectedUsers({ actorCounts }: { actorCounts: Map<string, number> }) {
+function AffectedUsers({
+  actorCounts,
+  actorGroupMap,
+}: {
+  actorCounts: Map<string, number>;
+  actorGroupMap: Map<string, Set<string>>;
+}) {
   const [expanded, setExpanded] = useState(false);
   const sorted = useMemo(
     () => Array.from(actorCounts.entries()).sort((a, b) => b[1] - a[1]),
@@ -627,16 +680,30 @@ function AffectedUsers({ actorCounts }: { actorCounts: Map<string, number> }) {
         )}
       </div>
       <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
-        {visible.map(([wallet, hits]) => (
-          <li key={wallet} className="flex items-center gap-1">
-            <WalletLink wallet={wallet} bare className="!text-gray-300 hover:!text-banana" />
-            {hits > 1 && (
-              <span className="rounded bg-white/[0.06] px-1 text-[10px] text-gray-400">
-                ×{hits}
-              </span>
-            )}
-          </li>
-        ))}
+        {visible.map(([wallet, hits]) => {
+          // How many OTHER error groups this wallet appears in. A high
+          // number means the wallet is a heavy hitter across the system,
+          // not just here — worth opening User Lookup to see the pattern.
+          const otherGroups = (actorGroupMap.get(wallet)?.size ?? 1) - 1;
+          return (
+            <li key={wallet} className="flex items-center gap-1">
+              <WalletLink wallet={wallet} bare className="!text-gray-300 hover:!text-banana" />
+              {hits > 1 && (
+                <span className="rounded bg-white/[0.06] px-1 text-[10px] text-gray-400">
+                  ×{hits}
+                </span>
+              )}
+              {otherGroups > 0 && (
+                <span
+                  className="rounded bg-amber-500/[0.12] px-1 text-[10px] text-amber-300/90"
+                  title={`This wallet also appears in ${otherGroups} other error group${otherGroups === 1 ? '' : 's'} — open User Lookup for the full pattern.`}
+                >
+                  +{otherGroups} other
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
