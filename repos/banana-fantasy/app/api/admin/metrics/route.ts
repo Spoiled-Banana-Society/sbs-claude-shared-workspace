@@ -82,9 +82,21 @@ export interface MetricsResponse {
   // drafts", "Jackpot entry", "HOF entry", "Nothing"). Counts come from
   // a bounded scan of the most-recent 2000 spins.
   wheelPrizeBreakdown: Record<string, number>;
+  /** Sum of free draft passes given out via wheel wins (scan window). */
+  totalFreeDraftsFromWheel: number;
   // JP/HOF entries currently held by users — reservations from wheel
   // wins that haven't been redeemed into an actual JP/HOF draft yet.
   reservedDrafts: { jackpot: number; hof: number };
+  /**
+   * Wheel-won JP/HOF draft pipeline. Every entry in the JP/HOF queues
+   * exists because a wheel win triggered it — so these counts are
+   * specifically "drafts created via the wheel" (separate from the
+   * regular 5%/1% guaranteed-distribution drafts).
+   */
+  wheelDrafts: {
+    jackpot: { filling: number; drafting: number; completed: number; total: number };
+    hof: { filling: number; drafting: number; completed: number; total: number };
+  };
   generatedAt: string;
   requestId?: string;
 }
@@ -200,6 +212,28 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const jackpotQueueSize = sumQueueMembers(jackpotQueueDoc?.data());
   const hofQueueSize = sumQueueMembers(hofQueueDoc?.data());
 
+  // JP/HOF wheel-won draft breakdown — per Boris's ask: "show me in
+  // daily and total column how many jp or hof drafts were done solely
+  // through winning the spins, how many are pending, how many finished."
+  // The v2_queues docs are the source of truth — every round was
+  // populated by a wheel win. Status mapping:
+  //   filling   → still waiting for 10 players to fill
+  //   ready     → 10 players locked in, draft kicking off
+  //   drafting  → live draft in progress
+  //   completed → finished
+  function summarizeQueue(doc: FirebaseFirestore.DocumentData | undefined) {
+    const rounds = (doc as { rounds?: Array<{ status?: string; draftId?: string | null }> } | undefined)?.rounds ?? [];
+    const out = { filling: 0, drafting: 0, completed: 0, total: rounds.length };
+    for (const r of rounds) {
+      if (r.status === 'completed') out.completed += 1;
+      else if (r.status === 'drafting' || r.status === 'ready') out.drafting += 1;
+      else if (r.status === 'filling') out.filling += 1;
+    }
+    return out;
+  }
+  const jackpotQueueBreakdown = summarizeQueue(jackpotQueueDoc?.data());
+  const hofQueueBreakdown = summarizeQueue(hofQueueDoc?.data());
+
   // Draft passes awarded (sum prize.value from wheelSpins where prize.type='draft_pass')
   // Firestore can't sum — fetch recent up to 500 and total.
   let draftPassesAwardedTotal = 0;
@@ -258,7 +292,11 @@ async function buildMetrics(): Promise<MetricsResponse> {
   // JP and HOF." We scan up to 2000 most-recent spins and bucket by the
   // resolved prize string ("1 free draft", "5 free drafts", "Jackpot entry",
   // "HOF entry"). Bounded to keep latency under 1s on cold cache.
+  // Also accumulates totalFreeDraftsFromWheel (sum of prize.value across
+  // every draft_pass-prize spin), which feeds the free-vs-paid pass ratio
+  // shown on the dashboard.
   const wheelPrizeBreakdown: Record<string, number> = {};
+  let totalFreeDraftsFromWheel = 0;
   try {
     const spinSnap = await wheelSpins.orderBy('timestamp', 'desc').limit(2000).get();
     for (const d of spinSnap.docs) {
@@ -268,6 +306,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
       let label = 'unknown';
       if (prizeType === 'draft_pass' && typeof prizeValue === 'number') {
         label = `${prizeValue} free draft${prizeValue === 1 ? '' : 's'}`;
+        totalFreeDraftsFromWheel += prizeValue;
       } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
         label = 'Jackpot entry';
       } else if (prizeType === 'custom' && prizeValue === 'hof') {
@@ -396,7 +435,12 @@ async function buildMetrics(): Promise<MetricsResponse> {
     },
     promoBreakdown,
     wheelPrizeBreakdown,
+    totalFreeDraftsFromWheel,
     reservedDrafts: { jackpot: jackpotReservedPending, hof: hofReservedPending },
+    wheelDrafts: {
+      jackpot: jackpotQueueBreakdown,
+      hof: hofQueueBreakdown,
+    },
     generatedAt: new Date(now).toISOString(),
   };
 }

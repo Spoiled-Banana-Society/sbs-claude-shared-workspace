@@ -318,7 +318,12 @@ export interface MetricsResponse {
   };
   promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
   wheelPrizeBreakdown: Record<string, number>;
+  totalFreeDraftsFromWheel: number;
   reservedDrafts: { jackpot: number; hof: number };
+  wheelDrafts: {
+    jackpot: { filling: number; drafting: number; completed: number; total: number };
+    hof: { filling: number; drafting: number; completed: number; total: number };
+  };
   generatedAt: string;
   requestId?: string;
   cached?: boolean;

@@ -24,9 +24,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useAdminMetrics, useRecentErrors, type ErrorEventEntry, AdminApiError } from '@/hooks/admin/useAdminApi';
+import { useAdminMetrics, useRecentErrors, type ErrorEventEntry, type MetricsResponse, AdminApiError } from '@/hooks/admin/useAdminApi';
 import { Sparkline } from '@/components/admin/Sparkline';
 import { LiveActivity } from '@/components/admin/LiveActivity';
+import { WalletLink } from '@/components/admin/WalletLink';
 import { explainError } from '@/lib/logSources';
 
 // How many polling samples we keep for each KPI's sparkline. At a 10s
@@ -101,10 +102,36 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
 
   const health = computeHealth(errors, m?.withdrawals.pending);
 
+  // Age-in-seconds of the data — drives the "Updated Xs ago" header so
+  // Boris can see at a glance that the dashboard IS pulling live data.
+  const ageSec = m?.generatedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(m.generatedAt).getTime()) / 1000))
+    : null;
+
   return (
     <div className="space-y-6">
       {/* System health — top priority, always visible */}
       <HealthCard health={health} loading={metricsQ.isLoading || errorsQ.isLoading} />
+
+      {/* Live-data indicator. Auto-refreshes every 10s; manual refresh
+          for the impatient. The age tick lets Boris confirm at a glance
+          the dashboard isn't stale. */}
+      <div className="flex items-center justify-between text-[11px] text-gray-500">
+        <div className="flex items-center gap-2">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${metricsQ.isFetching ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
+          {metricsQ.isFetching
+            ? 'refreshing live data…'
+            : ageSec !== null
+              ? `live · last update ${ageSec}s ago · auto-refreshes every 10s`
+              : 'loading live data…'}
+        </div>
+        <button
+          onClick={() => metricsQ.refetch()}
+          className="text-gray-400 hover:text-white underline underline-offset-2"
+        >
+          ↻ Refresh now
+        </button>
+      </div>
 
       {metricsQ.isError && (
         <div className="rounded-lg border border-red-500/40 bg-red-500/10 text-red-200 text-sm px-4 py-3">
@@ -122,11 +149,18 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
             <KpiCard label="Wheel spins today" value={m.wheel.spinsToday} sub={`${m.wheel.totalSpins.toLocaleString()} all-time`} series={spinsSeries} accent="text-[#F3E216]" />
             <KpiCard label="Pending withdrawals" value={m.withdrawals.pending} sub={`$${m.withdrawals.totalVolume.toLocaleString()} approved+pending volume`} series={withdrawSeries} accent={m.withdrawals.pending > 0 ? 'text-yellow-400' : 'text-white'} />
             <KpiCard label="Total users" value={m.users.total} sub={`+${m.users.newToday} today / +${m.users.newThisWeek} this week`} />
-            <KpiCard label="JP queue (filling)" value={m.drafts.jackpotQueueSize} sub="players in the next Jackpot round, waiting for it to fill" accent="text-red-400" />
-            <KpiCard label="HOF queue (filling)" value={m.drafts.hofQueueSize} sub="players in the next HOF round, waiting for it to fill" accent="text-[#D4AF37]" />
             <KpiCard label="Promos claimed today" value={m.promos.promoClaimsToday} sub={`${m.promos.sharesVerifiedToday} shares verified`} accent="text-green-400" />
+            <KpiCard label="JP drafts (wheel-won)" value={m.wheelDrafts.jackpot.total} sub={`${m.wheelDrafts.jackpot.filling} filling · ${m.wheelDrafts.jackpot.drafting} drafting · ${m.wheelDrafts.jackpot.completed} done`} accent="text-red-400" />
+            <KpiCard label="HOF drafts (wheel-won)" value={m.wheelDrafts.hof.total} sub={`${m.wheelDrafts.hof.filling} filling · ${m.wheelDrafts.hof.drafting} drafting · ${m.wheelDrafts.hof.completed} done`} accent="text-[#D4AF37]" />
           </div>
         </div>
+      )}
+
+      {/* JP/HOF WHEEL-WON DRAFT PIPELINE — explicit "what stage is each one
+          at" view. Boris asked for: how many pending where filling, how
+          many already finished. This card group is the answer. */}
+      {m && (m.wheelDrafts.jackpot.total > 0 || m.wheelDrafts.hof.total > 0) && (
+        <WheelDraftsPipelineCard wheelDrafts={m.wheelDrafts} reserved={m.reservedDrafts} />
       )}
 
       {/* ALL TIME — cumulative scoreboard. Boris explicitly asked for these
@@ -147,6 +181,16 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
+      {/* FREE vs PAID — at-a-glance ratio of how many draft passes came
+          from wheel wins vs how many were purchased. Answers "are we
+          mostly giving them away or selling them". */}
+      {m && (
+        <FreeVsPaidCard
+          freeFromWheel={m.totalFreeDraftsFromWheel}
+          paid={m.lifetime.passesPurchased}
+        />
+      )}
+
       {/* WHEEL PRIZE BREAKDOWN — how many wins of each prize type across
           the last 2000 spins. Boris's ask: "from the banana wheel spins
           how many wins are what 1 draft 5 draft 20 drafts JP and HOF". */}
@@ -155,23 +199,21 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
       )}
 
       {/* RESERVED DRAFTS PENDING — JP/HOF entries users earned on the
-          wheel but haven't yet redeemed into an actual draft. The queue
-          counters above track who's currently in a filling round; these
-          are the unredeemed entries across every user. */}
+          wheel but haven't yet redeemed into an actual draft. */}
       {m && (m.reservedDrafts.jackpot > 0 || m.reservedDrafts.hof > 0) && (
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 mb-2">Reserved drafts (unredeemed wheel wins)</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 mb-2">Reserved drafts (wheel wins not yet redeemed)</p>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard
-              label="Jackpot entries pending"
+              label="JP entries unredeemed"
               value={m.reservedDrafts.jackpot}
-              sub="Total JP entries users have earned but not yet entered into a draft"
+              sub="JP wheel wins users haven't entered a draft with yet"
               accent="text-red-400"
             />
             <KpiCard
-              label="HOF entries pending"
+              label="HOF entries unredeemed"
               value={m.reservedDrafts.hof}
-              sub="Total HOF entries users have earned but not yet entered into a draft"
+              sub="HOF wheel wins users haven't entered a draft with yet"
               accent="text-[#D4AF37]"
             />
           </div>
@@ -341,17 +383,27 @@ function PromoBreakdownCard({
 }
 
 function RecentErrorsWidget({ errors, loading }: { errors: ErrorEventEntry[]; loading: boolean }) {
-  // Group by source, take top 5 most-frequent in the last 24h
+  // Group by source, take top 5 most-frequent in the last 24h. Also
+  // accumulate the set of distinct wallets affected per source so the
+  // dashboard widget can show "affected: 3 wallets" without needing a
+  // click-through. Boris's ask: "give me a little more info there like
+  // the wallet / user name of the person persons affected".
   const oneDayAgo = Date.now() - 86_400_000;
   const recent = errors.filter((e) => new Date(e.timestamp).getTime() > oneDayAgo);
-  const counts = new Map<string, { count: number; latest: ErrorEventEntry }>();
+  const counts = new Map<string, { count: number; latest: ErrorEventEntry; affected: Set<string> }>();
   for (const e of recent) {
     const existing = counts.get(e.source);
+    const actor = (e.actor || '').toLowerCase();
     if (existing) {
       existing.count += 1;
+      if (actor) existing.affected.add(actor);
       if (new Date(e.timestamp) > new Date(existing.latest.timestamp)) existing.latest = e;
     } else {
-      counts.set(e.source, { count: 1, latest: e });
+      counts.set(e.source, {
+        count: 1,
+        latest: e,
+        affected: actor ? new Set([actor]) : new Set<string>(),
+      });
     }
   }
   const top5 = [...counts.entries()]
@@ -372,20 +424,137 @@ function RecentErrorsWidget({ errors, loading }: { errors: ErrorEventEntry[]; lo
         ) : top5.length === 0 ? (
           <p className="px-4 py-6 text-center text-gray-500 text-xs">Nothing in the last 24 hours — quiet day.</p>
         ) : (
-          top5.map(([source, { count, latest }]) => (
-            <Link
-              key={source}
-              href={`/admin?tab=logs&source=${encodeURIComponent(source)}`}
-              className="block px-4 py-2.5 hover:bg-white/[0.02] transition-colors"
-            >
-              <div className="flex items-center justify-between gap-3 mb-1">
-                <span className="text-[12px] font-mono text-amber-300 truncate">{source}</span>
-                <span className="text-[10px] text-gray-400 shrink-0">{count}×</span>
+          top5.map(([source, { count, latest, affected }]) => {
+            // Show up to the first 3 affected wallets as clickable chips
+            // (each → User Lookup); collapse the rest into "+N more".
+            const wallets = Array.from(affected);
+            const shown = wallets.slice(0, 3);
+            const extra = wallets.length - shown.length;
+            return (
+              <div key={source} className="px-4 py-2.5 hover:bg-white/[0.02] transition-colors">
+                <Link
+                  href={`/admin?tab=logs&source=${encodeURIComponent(source)}`}
+                  className="block"
+                >
+                  <div className="flex items-center justify-between gap-3 mb-1">
+                    <span className="text-[12px] font-mono text-amber-300 truncate">{source}</span>
+                    <span className="text-[10px] text-gray-400 shrink-0">{count}× · {wallets.length} {wallets.length === 1 ? 'wallet' : 'wallets'}</span>
+                  </div>
+                  <p className="text-[11px] text-gray-400 truncate">{explainError(source, latest.message) || latest.message}</p>
+                </Link>
+                {shown.length > 0 && (
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    {shown.map((w) => (
+                      <WalletLink key={w} wallet={w} bare className="!text-[10px] !text-gray-400 hover:!text-banana" />
+                    ))}
+                    {extra > 0 && (
+                      <span className="text-[10px] text-gray-500">+{extra} more</span>
+                    )}
+                  </div>
+                )}
               </div>
-              <p className="text-[11px] text-gray-400 truncate">{explainError(source, latest.message) || latest.message}</p>
-            </Link>
-          ))
+            );
+          })
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * JP/HOF wheel-won draft pipeline — explicit per-stage breakdown so Boris
+ * can see at a glance: "X drafts filling / Y mid-draft / Z completed"
+ * for each special type. Answers his exact question "how many are
+ * pending where filling, how many already finished".
+ *
+ * Side panel shows the unredeemed-entries totals (wheel wins users
+ * earned but haven't joined a draft with yet) since those are the
+ * upstream source of new queue activity.
+ */
+function WheelDraftsPipelineCard({
+  wheelDrafts,
+  reserved,
+}: {
+  wheelDrafts: MetricsResponse['wheelDrafts'];
+  reserved: MetricsResponse['reservedDrafts'];
+}) {
+  const rows = [
+    { label: 'Jackpot', data: wheelDrafts.jackpot, accent: 'text-red-400', bar: 'bg-red-500/70', pending: reserved.jackpot },
+    { label: 'HOF', data: wheelDrafts.hof, accent: 'text-[#D4AF37]', bar: 'bg-[#D4AF37]/70', pending: reserved.hof },
+  ];
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">JP / HOF drafts — pipeline (wheel-won only)</h3>
+        <span className="text-[11px] text-gray-500">filling → drafting → completed</span>
+      </div>
+      <div className="divide-y divide-white/[0.04]">
+        {rows.map((row) => {
+          const total = row.data.total;
+          const pct = (n: number) => (total > 0 ? Math.max(2, Math.round((n / total) * 100)) : 0);
+          return (
+            <div key={row.label} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                <span className={`text-sm font-semibold ${row.accent}`}>{row.label}</span>
+                <span className="text-[11px] text-gray-400">
+                  {row.data.filling} filling · {row.data.drafting} drafting · {row.data.completed} completed · {total} total
+                </span>
+              </div>
+              {/* Stacked-bar visualization so the mix of filling / drafting
+                  / completed reads at a glance without doing math. */}
+              {total > 0 && (
+                <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/5">
+                  <div className="h-full bg-yellow-400/70" style={{ width: `${pct(row.data.filling)}%` }} title="filling" />
+                  <div className="h-full bg-blue-400/70" style={{ width: `${pct(row.data.drafting)}%` }} title="drafting" />
+                  <div className="h-full bg-emerald-400/70" style={{ width: `${pct(row.data.completed)}%` }} title="completed" />
+                </div>
+              )}
+              {row.pending > 0 && (
+                <p className="mt-1.5 text-[11px] text-gray-500">
+                  +{row.pending} {row.label} {row.pending === 1 ? 'entry is' : 'entries are'} sitting in user balances unredeemed
+                  — they&apos;ll flow into &quot;filling&quot; as soon as those users hit Enter on /banana-wheel.
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Free vs paid draft passes — at-a-glance ratio so Boris can see
+ * "are we mostly giving them away or selling them". Free total is
+ * derived from wheel wins (sum of prize.value across draft_pass spins,
+ * bounded by the scan window the metrics endpoint uses).
+ */
+function FreeVsPaidCard({ freeFromWheel, paid }: { freeFromWheel: number; paid: number }) {
+  const total = freeFromWheel + paid;
+  const freePct = total > 0 ? (freeFromWheel / total) * 100 : 0;
+  const paidPct = total > 0 ? (paid / total) * 100 : 0;
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="flex items-baseline justify-between gap-3 mb-3">
+        <h3 className="text-sm font-semibold text-white">Free vs paid draft passes</h3>
+        <span className="text-[11px] text-gray-500">{total.toLocaleString()} total</span>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="rounded-md border border-purple-500/30 bg-purple-500/[0.06] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-purple-300/80">Free (wheel wins)</p>
+          <p className="text-xl font-bold text-purple-200 tabular-nums">{freeFromWheel.toLocaleString()}</p>
+          <p className="text-[10px] text-gray-500 mt-0.5">{freePct.toFixed(1)}% of all passes</p>
+        </div>
+        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/[0.06] px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wider text-emerald-300/80">Paid (card + USDC)</p>
+          <p className="text-xl font-bold text-emerald-200 tabular-nums">{paid.toLocaleString()}</p>
+          <p className="text-[10px] text-gray-500 mt-0.5">{paidPct.toFixed(1)}% of all passes</p>
+        </div>
+      </div>
+      {/* Stacked bar visual. */}
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/5">
+        <div className="h-full bg-purple-400/80" style={{ width: `${freePct}%` }} title={`Free ${freePct.toFixed(1)}%`} />
+        <div className="h-full bg-emerald-400/80" style={{ width: `${paidPct}%` }} title={`Paid ${paidPct.toFixed(1)}%`} />
       </div>
     </div>
   );
