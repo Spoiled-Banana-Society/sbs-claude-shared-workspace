@@ -179,13 +179,41 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     const groups = groupErrors(real);
     const activeCritical = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'critical');
     const activeWarning = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'warning');
+    const activeLow = groups.filter((g) => g.lastTs >= cutoff && g.severity === 'low');
     const earlier = groups.filter((g) => g.lastTs < cutoff);
     const testGroups = groupErrors(test);
 
-    return { activeCritical, activeWarning, earlier, testGroups, testCount: test.length };
+    // Total counts (active + earlier) per severity — drives the top-of-page
+    // severity summary so Boris can scan "X critical / X warning / X low"
+    // including unresolved older bugs in the same view.
+    const totalCritical = groups.filter((g) => g.severity === 'critical').length;
+    const totalWarning = groups.filter((g) => g.severity === 'warning').length;
+    const totalLow = groups.filter((g) => g.severity === 'low').length;
+
+    return {
+      activeCritical,
+      activeWarning,
+      activeLow,
+      earlier,
+      testGroups,
+      testCount: test.length,
+      totalCritical,
+      totalWarning,
+      totalLow,
+    };
   }, [allErrors, area, norm]);
 
-  const { activeCritical, activeWarning, earlier, testGroups, testCount } = buckets;
+  const {
+    activeCritical,
+    activeWarning,
+    activeLow,
+    earlier,
+    testGroups,
+    testCount,
+    totalCritical,
+    totalWarning,
+    totalLow,
+  } = buckets;
 
   return (
     <div className="space-y-3">
@@ -203,6 +231,16 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
           ↻ Refresh
         </button>
       </div>
+
+      {/* Severity summary — three color-coded chips with total counts
+          (active + earlier) per severity. Boris wanted a "X critical /
+          X warning / X low" glance bar so he can tell instantly how bad
+          things are without scanning the feed. */}
+      <SeveritySummaryBar
+        critical={totalCritical}
+        warning={totalWarning}
+        low={totalLow}
+      />
 
       <TriageBanner critical={activeCritical} warning={activeWarning} earlierCount={earlier.length} />
 
@@ -268,6 +306,20 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
       {activeWarning.length > 0 && (
         <Section title="Warnings — look into it" tone="warning" count={activeWarning.length} defaultOpen>
           {activeWarning.map((g) => (
+            <GroupRow key={g.key} group={g} isOpen={expanded === g.key}
+              onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
+          ))}
+        </Section>
+      )}
+
+      {/* Low priority — informational, collapsed by default so it doesn't
+          crowd the page. These are fallback/transient errors that don't
+          impact the user-facing happy path (watchdog crashes, transient
+          RTDB hiccups, prefs-load failures). Worth knowing about, not
+          worth panicking over. */}
+      {activeLow.length > 0 && (
+        <Section title="Low priority — informational" tone="low" count={activeLow.length}>
+          {activeLow.map((g) => (
             <GroupRow key={g.key} group={g} isOpen={expanded === g.key}
               onToggle={() => setExpanded((p) => (p === g.key ? null : g.key))} />
           ))}
@@ -408,13 +460,18 @@ function TriageBanner({ critical, warning, earlierCount }: {
 
 function Section({ title, tone, count, defaultOpen, children }: {
   title: string;
-  tone: 'critical' | 'warning';
+  tone: 'critical' | 'warning' | 'low';
   count: number;
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(!!defaultOpen);
-  const dot = tone === 'critical' ? 'text-red-400' : 'text-yellow-400';
+  const dot =
+    tone === 'critical'
+      ? 'text-red-400'
+      : tone === 'warning'
+        ? 'text-yellow-400'
+        : 'text-gray-500';
   return (
     <div>
       <button
@@ -581,6 +638,90 @@ function AffectedUsers({ actorCounts }: { actorCounts: Map<string, number> }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Three color-coded chips showing total counts per severity tier
+ * (active + earlier combined). Sits above the TriageBanner so Boris
+ * can scan the whole feed's severity profile in one look — no need
+ * to read individual rows to know how serious things are.
+ *
+ * Color convention matches the rest of the page (red/yellow/gray).
+ * Even zero-count chips render — empty state still helps confirm
+ * "yep, zero critical right now" without ambiguity.
+ */
+function SeveritySummaryBar({
+  critical,
+  warning,
+  low,
+}: {
+  critical: number;
+  warning: number;
+  low: number;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      <SeverityChip
+        emoji="🔴"
+        label="Critical"
+        count={critical}
+        tone="critical"
+        helpText="Fix right away — payment / mint / auth / draft-blocking failures."
+      />
+      <SeverityChip
+        emoji="🟡"
+        label="Warning"
+        count={warning}
+        tone="warning"
+        helpText="Worth looking at — non-critical bugs that may need a fix."
+      />
+      <SeverityChip
+        emoji="⚪"
+        label="Low"
+        count={low}
+        tone="low"
+        helpText="Fallback / transient — doesn't affect the user-facing happy path."
+      />
+    </div>
+  );
+}
+
+function SeverityChip({
+  emoji,
+  label,
+  count,
+  tone,
+  helpText,
+}: {
+  emoji: string;
+  label: string;
+  count: number;
+  tone: 'critical' | 'warning' | 'low';
+  helpText: string;
+}) {
+  // Active chips (count > 0) get the full color treatment so they pop.
+  // Zero-count chips render in a muted neutral state — present so the
+  // bar always shows all three tiers (no "is there a critical chip?"
+  // ambiguity) without screaming for attention.
+  const active = count > 0;
+  const styles =
+    !active
+      ? 'border-gray-800 bg-gray-900/40 text-gray-500'
+      : tone === 'critical'
+        ? 'border-red-500/50 bg-red-500/[0.10] text-red-200'
+        : tone === 'warning'
+          ? 'border-yellow-500/40 bg-yellow-500/[0.08] text-yellow-200'
+          : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
+  return (
+    <div
+      title={helpText}
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${styles}`}
+    >
+      <span aria-hidden>{emoji}</span>
+      <span className="text-[12px] font-semibold">{count}</span>
+      <span className="text-[11px] opacity-80">{label}</span>
     </div>
   );
 }

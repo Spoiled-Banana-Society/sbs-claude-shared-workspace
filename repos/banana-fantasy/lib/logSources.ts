@@ -146,11 +146,14 @@ export const LOG_SOURCES = {
 
 /* ── Severity ──────────────────────────────────────────────────── */
 
-export type LogSeverity = 'critical' | 'warning';
+export type LogSeverity = 'critical' | 'warning' | 'low';
 
 // Critical = fix right away: money flows, app crashes, draft-blocking
-// failures, broken login. Everything else is a warning — something
-// failed but the app limps on.
+// failures, broken login. Everything else is a warning by default —
+// something failed but the app limps on. LOW is a small subset that
+// fires on fallback paths users never see (e.g. the draft watchdog,
+// transient RTDB hiccups) — segregated so the warning section stays
+// focused on stuff that actually needs human attention.
 const CRITICAL_PATTERNS: RegExp[] = [
   /^global\./i,                       // uncaught crashes + React boundary
   /unhandled/i,
@@ -168,10 +171,25 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.autopick_submit/i,
 ];
 
+// "Low" = fallback/transient/cosmetic errors that don't cause a
+// user-visible failure on the happy path. Keeps the warning section
+// uncluttered. Add a pattern here only after confirming the failure
+// path has a working primary recovery (so the error is genuinely
+// non-impacting).
+const LOW_PATTERNS: RegExp[] = [
+  /^draft\.watchdog_resync_failed/i,         // fallback path; RTDB primary still serves the user
+  /^draft\.firebase_rtdb_timeout/i,          // transient; reconnect logic handles it
+  /^draft\.firebase_rtdb_permission_denied/i,// usually a stale ruleset hit on a since-removed field
+  /^draft\.sort_preference_persist_failed/i, // user prefs; reverts on next reload
+  /^draft\.preferences_load_failed/i,        // defaults apply if load fails
+];
+
 /** Triage tier for an error source — drives the admin Logs sections. */
 export function logSeverity(source: string | undefined | null): LogSeverity {
   if (!source) return 'warning';
-  return CRITICAL_PATTERNS.some((p) => p.test(source)) ? 'critical' : 'warning';
+  if (CRITICAL_PATTERNS.some((p) => p.test(source))) return 'critical';
+  if (LOW_PATTERNS.some((p) => p.test(source))) return 'low';
+  return 'warning';
 }
 
 /* ── Test-traffic detection ────────────────────────────────────── */

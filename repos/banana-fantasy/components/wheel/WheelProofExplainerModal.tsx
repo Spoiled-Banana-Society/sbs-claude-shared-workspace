@@ -92,7 +92,7 @@ export function WheelProofExplainerModal({ open, onClose, contractAddress }: Whe
           <Step
             num="3"
             title="Wallet assignments committed every 100 spins"
-            body="Even though SBS knows the outcomes after Chainlink rolls, we can't quietly hand wins to specific wallets. Every 100 spins, the on-chain log records which wallet got which spinIndex. Reordering or skipping would be cryptographically visible to anyone watching."
+            body="Every 100 spins, the wallet→spinIndex assignments are bundled into a Merkle root and committed to Base mainnet. This creates a permanent, public record of which wallet received which outcome — anyone can verify the order is honest, with no swapping or skipping possible after the fact."
           />
           <Step
             num="4"

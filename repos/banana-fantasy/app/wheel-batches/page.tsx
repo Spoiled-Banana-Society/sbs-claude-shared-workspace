@@ -235,39 +235,39 @@ export default function WheelBatchesPage() {
             </p>
           </section>
 
-          {/* NEW: assignment-batch commits for this period — every 100
-              spins, the wallet→spinIndex assignments get bundled and
-              committed on-chain so the ORDER can't be quietly rewritten. */}
-          <AssignmentBatchesPanel periodNumber={period.periodNumber} />
-
+          {/* Spin feed — bounded to ~5 rows visible at once with an
+              inner scrollbar so the page doesn't grow infinitely on
+              long sessions. Most recent is on top (SSE prepends). */}
           <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md overflow-hidden">
             {spins.length === 0 && !loading && (
               <div className="p-8 text-white/40 text-sm text-center">No spins yet.</div>
             )}
             {spins.length > 0 && (
-              <table className="w-full text-[12px]">
-                <thead className="bg-white/5 text-white/40 uppercase tracking-wider text-[10px]">
-                  <tr>
-                    <th className="text-left px-4 py-2.5">Spin</th>
-                    <th className="text-left px-4 py-2.5">Result</th>
-                    <th className="text-right px-4 py-2.5">Proof</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {spins.map((s) => {
-                    const seg = segmentById.get(s.result);
-                    return (
-                      <tr key={s.spinId} className="border-t border-white/5 hover:bg-white/5">
-                        <td className="px-4 py-2 text-white/60 font-mono">#{s.spinIndex}</td>
-                        <td className="px-4 py-2 font-semibold" style={{ color: seg?.color ?? '#fff' }}>{seg?.label ?? s.result}</td>
-                        <td className="px-4 py-2 text-right">
-                          <Link href={`/spin-proof/${s.spinId}`} className="text-banana hover:underline">Verify →</Link>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="max-h-[230px] overflow-y-auto">
+                <table className="w-full text-[12px]">
+                  <thead className="sticky top-0 z-10 bg-bg-secondary/95 backdrop-blur text-white/40 uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="text-left px-4 py-2.5">Spin</th>
+                      <th className="text-left px-4 py-2.5">Result</th>
+                      <th className="text-right px-4 py-2.5">Proof</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {spins.map((s) => {
+                      const seg = segmentById.get(s.result);
+                      return (
+                        <tr key={s.spinId} className="border-t border-white/5 hover:bg-white/5">
+                          <td className="px-4 py-2 text-white/60 font-mono">#{s.spinIndex}</td>
+                          <td className="px-4 py-2 font-semibold" style={{ color: seg?.color ?? '#fff' }}>{seg?.label ?? s.result}</td>
+                          <td className="px-4 py-2 text-right">
+                            <Link href={`/spin-proof/${s.spinId}`} className="text-banana hover:underline">Verify →</Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
             {nextCursor !== null && (
               <div className="border-t border-white/5 p-3 text-center">
@@ -281,6 +281,12 @@ export default function WheelBatchesPage() {
               </div>
             )}
           </div>
+
+          {/* Assignment-batch commits — every 100 spins the wallet→
+              spinIndex assignments get bundled and committed on-chain.
+              Sits BELOW the live spin feed because it's a deeper-layer
+              audit detail, not the primary feed. */}
+          <AssignmentBatchesPanel periodNumber={period.periodNumber} />
 
         </>
       )}
@@ -343,7 +349,7 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
   const nextBatchProgress = status.unbatchedEntryCount;
 
   return (
-    <section className="rounded-2xl border border-banana/30 bg-banana/[0.04] p-5 mb-6 space-y-3">
+    <section className="rounded-2xl border border-banana/30 bg-banana/[0.04] p-5 mt-6 mb-6 space-y-3">
       <div className="flex items-center gap-2">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-banana animate-pulse" />
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-banana">
@@ -351,10 +357,10 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
         </h2>
       </div>
       <p className="text-xs text-white/60 leading-relaxed">
-        Even though SBS knows the outcomes after Chainlink rolls, we can&apos;t quietly hand
-        wins to specific wallets. Every {batchSize} spins, the on-chain log records which
-        wallet got which spinIndex — skipping or reordering would be cryptographically
-        visible to anyone watching.
+        Every {batchSize} spins, the wallet→spinIndex assignments are bundled into a
+        Merkle root and committed to Base mainnet. This creates a permanent, public
+        record of which wallet received which outcome — anyone can independently verify
+        the order is honest, with no swapping or skipping possible after the fact.
       </p>
 
       <div className="grid grid-cols-3 gap-2 text-center">

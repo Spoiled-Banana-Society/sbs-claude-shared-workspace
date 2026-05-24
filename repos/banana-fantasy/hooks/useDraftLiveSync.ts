@@ -646,6 +646,12 @@ export function useDraftLiveSync({
           });
 
           draftApi.getDraftInfo(draftId).then(info => {
+            // Defensive null-handling: the Go backend can return null for
+            // `adp` (and occasionally other arrays) during state
+            // transitions or after a draft completes. Without these
+            // fallbacks, `info.adp.map(...)` crashed the watchdog with
+            // "Cannot read properties of null (reading 'map')" — two
+            // users hit it 10× in the wild before this guard landed.
             engine.handleDraftInfoUpdate({
               draftId: info.draftId,
               displayName: info.displayName,
@@ -655,8 +661,8 @@ export function useDraftLiveSync({
               pickNumber: info.pickNumber,
               roundNum: info.roundNum,
               pickInRound: info.pickInRound,
-              draftOrder: info.draftOrder,
-              adp: info.adp.map(a => ({
+              draftOrder: info.draftOrder ?? [],
+              adp: (info.adp ?? []).map(a => ({
                 adp: a.adp,
                 byeWeek: String(a.bye ?? a.byeWeek ?? ''),
                 playerId: a.playerId,
