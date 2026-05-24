@@ -17,10 +17,13 @@ import { pushNotification } from '@/components/NotificationCenter';
 import { useWheelHistory, useSpin, type WheelSpinOutcome } from '@/hooks/useWheelData';
 import { usePromos } from '@/hooks/usePromos';
 import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
+import { SPIN_DURATION_MS } from '@/components/wheel/BananaWheel';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function BananaWheelPage() {
-  const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil } = useAuth();
+  const { user, updateUser, isLoading, isBalanceLoaded, refreshBalance, refreshBalanceUntil, freezeBalanceUpdates } = useAuth();
   const spinMutation = useSpin(user?.id);
+  const queryClient = useQueryClient();
   const promosQuery = usePromos({ userId: user?.id });
   const [queuedJP, setQueuedJP] = React.useState(0);
   const [queuedHOF, setQueuedHOF] = React.useState(0);
@@ -54,14 +57,32 @@ export default function BananaWheelPage() {
   const segmentMap = useMemo(() => new Map(wheelSegments.map((segment) => [segment.id, segment])), []);
 
   const handleSpin = useCallback(async (): Promise<WheelSpinOutcome | null> => {
+    // Freeze global balance updates for the duration of the wheel
+    // animation so the header's draft passes / wheel spins counts don't
+    // tick mid-spin (would spoil the reveal). The +800ms buffer covers
+    // the small window between mutation start and the wheel actually
+    // beginning to spin, plus the post-landing prize reveal frame. Any
+    // SSE payload arriving during the freeze is queued and applied
+    // automatically when the freeze expires — no balance data is lost.
+    freezeBalanceUpdates(SPIN_DURATION_MS + 800);
     return spinMutation.mutateAsync();
-  }, [spinMutation]);
+  }, [spinMutation, freezeBalanceUpdates]);
 
   const handleSpinComplete = useCallback(
     (_outcome: WheelSpinOutcome, segment: WheelSegment | null) => {
-      // Pull in the authoritative wheelSpins decrement + fresh history from the server.
-      // The useSpin mutation already invalidates ['wheel','history']; refreshBalance
-      // syncs the user's wheelSpins count so spinsAvailable updates without a local offset.
+      // Invalidate the spin-history query NOW (not on mutation success) so
+      // the right-column "Spin History" only shows the new win after the
+      // wheel lands. Used to fire from useSpin.onSuccess which ran the
+      // moment the server returned — that was ~5s before the wheel
+      // animation finished, spoiling the reveal.
+      if (user?.id) {
+        queryClient.invalidateQueries({ queryKey: ['wheel', 'history', user.id] });
+      }
+
+      // Pull in the authoritative wheelSpins decrement + fresh balance from
+      // the server. The global balance freeze (set in handleSpin) has just
+      // expired or is about to — any incoming SSE payload during the freeze
+      // was queued and is being applied right around now.
       refreshBalance().catch((err) => {
         reportClientError({
           source: LOG_SOURCES.wheel.BALANCE_REFRESH_TIMEOUT,
@@ -134,7 +155,7 @@ export default function BananaWheelPage() {
         });
       }
     },
-    [updateUser, user, refreshBalance, refreshBalanceUntil],
+    [updateUser, user, refreshBalance, refreshBalanceUntil, queryClient],
   );
 
   const prizeSummary = useMemo(() => {

@@ -70,6 +70,15 @@ interface AuthContextType {
     }) => boolean,
     opts?: { timeoutMs?: number; intervalMs?: number },
   ) => Promise<boolean>;
+  /**
+   * Suppress balance updates (SSE + polling fallback) for the next
+   * `durationMs`. Any payload that arrives during the freeze is queued
+   * and applied when the freeze expires — no updates are lost. Used by
+   * the wheel page to keep the header's "draft passes / wheel spins"
+   * count from updating mid-spin animation, which would spoil the
+   * prize reveal.
+   */
+  freezeBalanceUpdates: (durationMs: number) => void;
   showLoginModal: boolean;
   setShowLoginModal: (show: boolean) => void;
   isEmbeddedWallet: boolean;
@@ -168,6 +177,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [switchMode, setSwitchMode] = useState(false);
   const [isNewUser, setIsNewUser] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // Balance-update freeze. While the wheel is animating a spin, the
+  // server has already incremented the user's prize counters (freeDrafts,
+  // jackpotEntries, etc.) and decremented wheelSpins — and the SSE
+  // balance stream would normally push those new values to the client
+  // within ~200ms, updating the header's counters BEFORE the wheel even
+  // lands on the prize (spoils the reveal). `freezeBalanceUpdates(ms)`
+  // suppresses any applyPayload writes for that window, queueing the
+  // latest payload to apply once the freeze expires so no data is lost.
+  const balanceFrozenUntilRef = useRef<number>(0);
+  const pendingBalancePayloadRef = useRef<unknown>(null);
+  const applyPayloadRef = useRef<((data: unknown) => void) | null>(null);
+  const freezeBalanceUpdates = useCallback((durationMs: number) => {
+    if (durationMs <= 0) return;
+    const until = Date.now() + durationMs;
+    if (until > balanceFrozenUntilRef.current) {
+      balanceFrozenUntilRef.current = until;
+      // When the freeze expires, drain any payload queued during the
+      // freeze so the UI catches up without waiting for the next SSE
+      // push or poll cycle.
+      setTimeout(() => {
+        if (Date.now() < balanceFrozenUntilRef.current) return;
+        const queued = pendingBalancePayloadRef.current;
+        pendingBalancePayloadRef.current = null;
+        if (queued && applyPayloadRef.current) {
+          applyPayloadRef.current(queued);
+        }
+      }, durationMs + 10);
+    }
+  }, []);
 
   // Capture ?ref= param from URL into sessionStorage
   useEffect(() => {
@@ -595,6 +634,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled || !data || typeof data !== 'object') return;
       const d = data as Record<string, unknown>;
       if (typeof d.wheelSpins !== 'number') return;
+      // Honor the global balance-update freeze — queue the latest
+      // payload so the most recent value applies cleanly when the
+      // freeze expires (see freezeBalanceUpdates above).
+      if (Date.now() < balanceFrozenUntilRef.current) {
+        pendingBalancePayloadRef.current = data;
+        return;
+      }
       setUser((prev) => {
         if (!prev || prev.id !== userId) return prev;
         return {
@@ -609,6 +655,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setIsBalanceLoaded(true);
     };
+    // Expose applyPayload to the freeze drainer so deferred payloads
+    // can be applied via the same code path when the freeze expires.
+    applyPayloadRef.current = applyPayload;
 
     const startPollingFallback = () => {
       if (pollInterval) return;
@@ -875,6 +924,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateUser,
         refreshBalance,
         refreshBalanceUntil,
+        freezeBalanceUpdates,
         showLoginModal,
         setShowLoginModal,
         isEmbeddedWallet: user?.loginMethod === 'social',

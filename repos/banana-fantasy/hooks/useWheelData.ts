@@ -58,7 +58,12 @@ export function useWheelHistory(userId: string | undefined | null) {
 
 export function useSpin(userId: string | undefined | null) {
   const privy = usePrivy();
-  const qc = useQueryClient();
+  // NOTE: queryClient is intentionally NOT used here — spin-history
+  // invalidation lives on the wheel page's handleSpinComplete callback
+  // (after the wheel lands) instead of in onSuccess (which fires
+  // immediately on server response, ~5s before the animation finishes).
+  // Moving the invalidation prevents the spin from appearing in the
+  // history sidebar before the wheel even lands on the prize.
 
   return useMutation<WheelSpinOutcome, Error, void>({
     mutationFn: async () => {
@@ -82,9 +87,13 @@ export function useSpin(userId: string | undefined | null) {
         body: JSON.stringify({ userId, ...(forceResult ? { forceResult } : {}) }),
       });
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wheel', 'history', userId || ''] });
-    },
+    // NOTE: Spin-history invalidation deliberately NOT in onSuccess.
+    // It used to live here, but it fires the moment the server returns
+    // — which is BEFORE the wheel finishes its 5s landing animation.
+    // The spin history would refresh with the new win in the right
+    // column while the wheel was still spinning, spoiling the reveal.
+    // The wheel page now invalidates this query from handleSpinComplete
+    // (after the wheel lands) instead. See banana-wheel/page.tsx.
     onError: (err) => {
       // Spin failures were invisible to admin — React Query swallows the
       // error into mutation state. Report it with Privy state + session

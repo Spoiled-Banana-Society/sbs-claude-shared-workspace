@@ -83,7 +83,11 @@ function getPrizeMessage(segment: WheelSegment): string {
 }
 
 const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
-const SPIN_DURATION_MS = 5000;
+// Wheel animation duration. Exported so the page-level spin handler
+// can freeze the global balance state for the same window — keeps the
+// header's "draft passes / wheel spins" count from updating mid-spin
+// (would spoil the prize reveal).
+export const SPIN_DURATION_MS = 5000;
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
