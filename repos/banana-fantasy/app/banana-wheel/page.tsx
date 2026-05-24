@@ -221,14 +221,14 @@ export default function BananaWheelPage() {
           <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
-          <div className="flex flex-col gap-4 order-2 lg:order-1">
+          <div className="flex flex-col gap-4 order-3 lg:order-1">
             {skeletonCard}
             {skeletonCard}
           </div>
           <div className="flex justify-center order-1 lg:order-2">
             <div className="w-[300px] h-[300px] bg-bg-tertiary rounded-full animate-pulse" />
           </div>
-          <div className="flex flex-col gap-4 order-3">
+          <div className="flex flex-col gap-4 order-2 lg:order-3">
             {skeletonCard}
             {skeletonCard}
           </div>
@@ -245,11 +245,30 @@ export default function BananaWheelPage() {
         <p className="text-white text-[14px]">Spin to win Free Drafts and Special Entries</p>
       </div>
 
-      {/* Main Layout - Wheel in center, info on sides */}
+      {/*
+        Main Layout — three columns on desktop, single-column on mobile.
+
+        Information architecture (Boris-approved 2026-05-23):
+        - LEFT  ("what you're playing for"): Prizes on Wheel → What Are These?
+        - CENTER:                            the Wheel itself
+        - RIGHT ("your outcome + how to trust it"): My Winnings + history →
+                                             Verified Fair
+
+        Mobile stack order (most personal → least urgent):
+          1. Wheel (always first — the action)
+          2. My Winnings + history (your scoreboard)
+          3. Verified Fair (proof anchor)
+          4. Prizes on Wheel (reference)
+          5. What Are These? (educational, last)
+
+        Achieved by giving each COLUMN wrapper an `order-N` for mobile and a
+        `lg:order-N` for desktop. Items inside each wrapper keep DOM order on
+        both breakpoints.
+      */}
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
-        {/* Left Column */}
-        <div className="flex flex-col gap-4 order-2 lg:order-1">
-          {/* My Winnings */}
+        {/* LEFT column on desktop (order-1); mobile bottom (order-3) */}
+        <div className="flex flex-col gap-4 order-3 lg:order-1">
+          {/* Prizes on Wheel */}
           <div
             className="rounded-2xl p-6 backdrop-blur-md"
             style={{
@@ -259,20 +278,14 @@ export default function BananaWheelPage() {
               fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
             }}
           >
-            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">My Winnings</h3>
-            <div className="space-y-3.5">
-              <div className="flex justify-between items-center">
-                <span className="text-white text-[14px] font-medium">Free Drafts</span>
-                <span className="text-[#32d74b] font-semibold text-[16px]">{user?.freeDrafts || 0}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-white text-[14px] font-medium">Jackpot</span>
-                <span className="text-[#ff6b6b] font-semibold text-[16px]">{(user?.jackpotEntries || 0) + queuedJP}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-white text-[14px] font-medium">HOF</span>
-                <span className="text-[#ffd60a] font-semibold text-[16px]">{(user?.hofEntries || 0) + queuedHOF}</span>
-              </div>
+            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Prizes on Wheel</h3>
+            <div className="space-y-3.5 text-[14px]">
+              {prizeSummary.map((item) => (
+                <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
+                  <span className="font-semibold" style={{ color: item.color }}>{item.label}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -308,10 +321,9 @@ export default function BananaWheelPage() {
               </div>
             </div>
           </div>
-
         </div>
 
-        {/* Center - Wheel */}
+        {/* CENTER — Wheel. Mobile first (order-1), desktop middle column (order-2). */}
         <div className="flex justify-center order-1 lg:order-2">
           <BananaWheel
             spinsAvailable={spinsAvailable}
@@ -320,9 +332,13 @@ export default function BananaWheelPage() {
           />
         </div>
 
-        {/* Right Column */}
-        <div className="flex flex-col gap-4 order-3">
-          {/* Prizes */}
+        {/* RIGHT column on desktop (order-3); mobile sits right under the wheel (order-2) */}
+        <div className="flex flex-col gap-4 order-2 lg:order-3">
+          {/*
+            My Winnings + Recent Spins — combined card.
+            Top section = scoreboard (totals). Bottom section = history.
+            Joined by a hairline divider so they read as one card, not two.
+          */}
           <div
             className="rounded-2xl p-6 backdrop-blur-md"
             style={{
@@ -332,58 +348,68 @@ export default function BananaWheelPage() {
               fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
             }}
           >
-            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Prizes on Wheel</h3>
-            <div className="space-y-3.5 text-[14px]">
-              {prizeSummary.map((item) => (
-                <div key={`${item.label}-${item.probability}`} className="flex justify-between">
-                  <span className="font-bold" style={{ color: item.color }}>{item.label}</span>
-                  <span className="font-bold" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
-                </div>
-              ))}
+            <h3 className="text-[16px] font-semibold text-white tracking-tight">My Winnings</h3>
+
+            {/* Totals — your scoreboard, tabular numerals so digits line up */}
+            <div className="mt-4 space-y-3.5">
+              <div className="flex justify-between items-baseline">
+                <span className="text-white text-[14px] font-medium">Free Drafts</span>
+                <span className="text-[#32d74b] font-semibold text-[16px] tabular-nums">{user?.freeDrafts || 0}</span>
+              </div>
+              <div className="flex justify-between items-baseline">
+                <span className="text-white text-[14px] font-medium">Jackpot</span>
+                <span className="text-[#ff6b6b] font-semibold text-[16px] tabular-nums">{(user?.jackpotEntries || 0) + queuedJP}</span>
+              </div>
+              <div className="flex justify-between items-baseline">
+                <span className="text-white text-[14px] font-medium">HOF</span>
+                <span className="text-[#ffd60a] font-semibold text-[16px] tabular-nums">{(user?.hofEntries || 0) + queuedHOF}</span>
+              </div>
             </div>
+
+            {/* Hairline section divider — 1px @ 6% white, Apple-style */}
+            <div className="my-5 h-px bg-white/[0.06]" />
+
+            {/* Recent Spins — small-caps subheader keeps the section subordinate to "My Winnings" */}
+            <div className="flex items-baseline justify-between mb-3">
+              <h4 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest">Recent Spins</h4>
+              {spinHistory.length > 0 && (
+                <span className="text-white/25 text-[10px]">tap to verify</span>
+              )}
+            </div>
+
+            {spinHistory.length > 0 ? (
+              // 5-row visible window — same height target as the previous standalone
+              // history card. Custom scrollbar is the slim 6px style so it doesn't
+              // shout. Rows have a subtle hover state and the proof arrow tints to
+              // banana on hover for affordance.
+              <div
+                className="max-h-[180px] overflow-y-auto -mr-2 pr-2 [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/20"
+              >
+                <div className="space-y-0.5">
+                  {spinHistory.map((spin) => (
+                    <a
+                      key={spin.id}
+                      href={`/spin-proof/${spin.spinId}`}
+                      className="flex items-center justify-between gap-3 -mx-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.04] transition-colors group"
+                      title="View proof"
+                    >
+                      <span className="text-white/55 text-[12px] tabular-nums truncate">{formatSpinDate(spin.date)}</span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[13px] font-medium" style={{ color: getPrizeColor(spin.result) }}>
+                          {getPrizeLabel(spin.result)}
+                        </span>
+                        <span className="text-white/20 group-hover:text-banana text-[10px] transition-colors">↗</span>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="text-white/30 text-[12px] py-2 text-center">No spins yet — your wins will land here.</p>
+            )}
           </div>
 
           <WheelProofBanner />
-
-          {/* Spin History */}
-          <div
-            className="rounded-2xl p-6 backdrop-blur-md"
-            style={{
-              background: 'rgba(20, 20, 20, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
-            }}
-          >
-            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Spin History</h3>
-            {spinHistory.length > 0 ? (
-              // Sized to fit exactly 5 rows (each ≈ 22px text + 14px space-y-3.5
-              // gap → ~36px per row, 5 × 36 = ~180px). Scrollbar styled to match
-              // the rest of the dark panels — same thumb color/width as before.
-              <div
-                className="space-y-3.5 max-h-[180px] overflow-y-auto text-[13px] pr-6 [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#3a3a3a] [&::-webkit-scrollbar-thumb]:rounded-full"
-              >
-                {spinHistory.map((spin) => (
-                  <a
-                    key={spin.id}
-                    href={`/spin-proof/${spin.spinId}`}
-                    className="flex justify-between items-center hover:bg-white/5 rounded -mx-2 px-2 py-0.5 group"
-                    title="View proof"
-                  >
-                    <span className="text-white">{formatSpinDate(spin.date)}</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-medium" style={{ color: getPrizeColor(spin.result) }}>
-                        {getPrizeLabel(spin.result)}
-                      </span>
-                      <span className="text-white/30 group-hover:text-banana text-[10px]">↗</span>
-                    </span>
-                  </a>
-                ))}
-              </div>
-            ) : (
-              <p className="text-[#636366] text-center text-[13px] py-2">No spins yet</p>
-            )}
-          </div>
         </div>
       </div>
 
