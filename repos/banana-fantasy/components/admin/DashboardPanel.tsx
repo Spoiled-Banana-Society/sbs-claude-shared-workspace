@@ -1,24 +1,34 @@
 'use client';
 
 /**
- * Dashboard — at-a-glance overview, square-grid layout.
+ * Dashboard — 4 domain boxes, one screen.
  *
- * Boris's spec (May 2026 consolidation round):
- *   - Compact squares at top: every important domain in one glance
- *   - For each KPI: daily AND total visible together
- *   - All promos surfaced (even ones with zero claims) so coverage gaps show
- *   - 2-column rows below to minimize scrolling
- *   - Live data, every number polled, no graphs
+ * Boris's spec (May 2026, third consolidation): "much better than this.
+ * way too long of a page. i dont want to scroll. boxes that put certain
+ * things together. easily decipher between today vs total. minimalistic,
+ * smart, made for two founders to digest fast."
  *
- * Section order (top → bottom):
- *   1. Health + live indicator (one line)
- *   2. 8 KPI squares in 2 rows of 4: USERS · LOGINS · SPINS · MINTS
- *                                    PROMOS · JP HITS · HOF HITS · WITHDRAWALS
- *   3. ALL PROMOS table + WHEEL PRIZES table (2-column)
- *   4. JP/HOF pipeline + FREE vs PAID (2-column)
- *   5. SIGNUP RAILS + WITHDRAWAL AGING (2-column)
- *   6. PROMO PROGRESS + HEAVIEST USERS (2-column)
- *   7. RECENT ERRORS + LIVE ACTIVITY (2-column)
+ * LAYOUT (fits 1440×900 with minimal scroll):
+ *
+ *   [ Health bar — 1 line ]
+ *
+ *   ┌─── USERS ────────┬─── WHEEL ──────────┐
+ *   │ signups, logins  │ spins, JP/HOF hits  │
+ *   │ retention,       │ wins by prize,      │
+ *   │ signup rails     │ JP/HOF draft        │
+ *   │                  │ pipeline            │
+ *   ├─── PROMOS ───────┼─── MONEY ──────────┤
+ *   │ today + lifetime │ free vs paid passes │
+ *   │ all 12 promos    │ withdrawals:        │
+ *   │ stale starters   │ pending + aging     │
+ *   └──────────────────┴─────────────────────┘
+ *
+ *   [ TOP USERS · ERRORS · LIVE ACTIVITY  — 3-col on xl ]
+ *
+ * Each domain box is a self-contained Card with a consistent internal
+ * structure: title row → "Today / Total" mini-table → optional inline
+ * subsection (rails, prizes, all-promos, aging). Today and Total are
+ * always in two right-aligned columns so they read at a glance.
  */
 
 import Link from 'next/link';
@@ -26,17 +36,69 @@ import {
   useAdminMetrics,
   useRecentErrors,
   usePromoProgress,
+  useAdminWithdrawals,
+  useHeaviestUsers,
   type ErrorEventEntry,
   type MetricsResponse,
   type PromoProgressResponse,
+  type HeaviestUserEntry,
+  type AdminWithdrawalItem,
   AdminApiError,
 } from '@/hooks/admin/useAdminApi';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { WalletLink } from '@/components/admin/WalletLink';
-import { PromoProgressCard } from '@/components/admin/Dashboard/PromoProgressCard';
-import { HeaviestUsersCard } from '@/components/admin/Dashboard/HeaviestUsersCard';
-import { WithdrawalAgingCard } from '@/components/admin/Dashboard/WithdrawalAgingCard';
 import { explainError } from '@/lib/logSources';
+
+/* ─────────────────────────────────────────────────────────  Page  */
+
+export function DashboardPanel({ enabled }: { enabled: boolean }) {
+  const metricsQ = useAdminMetrics(enabled);
+  const errorsQ = useRecentErrors(enabled);
+  const promoQ = usePromoProgress(enabled);
+  const withdrawalsQ = useAdminWithdrawals(enabled);
+  const heaviestQ = useHeaviestUsers(enabled);
+  const m = metricsQ.data;
+  const errors = errorsQ.data?.errors ?? [];
+
+  const health = computeHealth(errors, m?.withdrawals.pending);
+  const ageSec = m?.generatedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(m.generatedAt).getTime()) / 1000))
+    : null;
+
+  return (
+    <div className="space-y-4">
+      <HealthBar
+        health={health}
+        ageSec={ageSec}
+        fetching={metricsQ.isFetching}
+        onRefresh={() => metricsQ.refetch()}
+      />
+
+      {metricsQ.isError && (
+        <div className="rounded-2xl border border-red-500/40 bg-red-500/[0.06] px-5 py-4 text-sm text-red-200">
+          {(metricsQ.error as AdminApiError)?.message || 'Failed to load metrics'}
+        </div>
+      )}
+
+      {/* MAIN 2x2: every primary domain in one self-contained box. */}
+      {m && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <UsersBox m={m} />
+          <WheelBox m={m} />
+          <PromosBox m={m} progress={promoQ.data} />
+          <MoneyBox m={m} withdrawals={withdrawalsQ.data ?? []} />
+        </div>
+      )}
+
+      {/* SECONDARY 3-col: top users · errors · live activity. */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <TopUsersBox data={heaviestQ.data?.topSpend} loading={heaviestQ.isLoading} />
+        <RecentErrorsBox errors={errors} loading={errorsQ.isLoading} />
+        <LiveActivityBox enabled={enabled} />
+      </div>
+    </div>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────  Health  */
 
@@ -71,84 +133,14 @@ function computeHealth(errors: ErrorEventEntry[] | undefined, pendingWithdrawals
   return { level: 'ok', reason: 'No critical issues — quiet hour' };
 }
 
-/* ─────────────────────────────────────────────────────────  Page  */
-
-export function DashboardPanel({ enabled }: { enabled: boolean }) {
-  const metricsQ = useAdminMetrics(enabled);
-  const errorsQ = useRecentErrors(enabled);
-  const promoQ = usePromoProgress(enabled);
-  const m = metricsQ.data;
-  const errors = errorsQ.data?.errors ?? [];
-
-  const health = computeHealth(errors, m?.withdrawals.pending);
-  const ageSec = m?.generatedAt
-    ? Math.max(0, Math.floor((Date.now() - new Date(m.generatedAt).getTime()) / 1000))
-    : null;
-
-  return (
-    <div className="space-y-5">
-      <HealthBar
-        health={health}
-        ageSec={ageSec}
-        fetching={metricsQ.isFetching}
-        onRefresh={() => metricsQ.refetch()}
-      />
-
-      {metricsQ.isError && (
-        <div className="rounded-2xl border border-red-500/40 bg-red-500/[0.06] px-5 py-4 text-sm text-red-200">
-          {(metricsQ.error as AdminApiError)?.message || 'Failed to load metrics'}
-        </div>
-      )}
-
-      {m && <KpiGrid m={m} />}
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {m && <AllPromosCard m={m} progress={promoQ.data} />}
-        {m && <WheelPrizesCard m={m} />}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {m && <WheelDraftsCard m={m} />}
-        {m && <PassesCard m={m} />}
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {m && <SignupRailsCard m={m} />}
-        <WithdrawalAgingCard enabled={enabled} />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <PromoProgressCard enabled={enabled} />
-        <HeaviestUsersCard enabled={enabled} />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        <RecentErrorsWidget errors={errors} loading={errorsQ.isLoading} />
-        <LiveActivityWidget enabled={enabled} />
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────  Header  */
-
-function HealthBar({
-  health,
-  ageSec,
-  fetching,
-  onRefresh,
-}: {
-  health: HealthState;
-  ageSec: number | null;
-  fetching: boolean;
-  onRefresh: () => void;
+function HealthBar({ health, ageSec, fetching, onRefresh }: {
+  health: HealthState; ageSec: number | null; fetching: boolean; onRefresh: () => void;
 }) {
   const palette = {
     ok: { dot: 'bg-emerald-400', text: 'text-emerald-300', border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.04]', label: 'Healthy' },
     warn: { dot: 'bg-amber-400', text: 'text-amber-300', border: 'border-amber-500/30', bg: 'bg-amber-500/[0.05]', label: 'Needs a look' },
     critical: { dot: 'bg-red-400', text: 'text-red-300', border: 'border-red-500/40', bg: 'bg-red-500/[0.06]', label: 'Attention required' },
   }[health.level];
-
   return (
     <div className={`rounded-2xl border ${palette.border} ${palette.bg} px-5 py-3 flex items-center justify-between gap-4`}>
       <div className="flex items-center gap-3 min-w-0">
@@ -159,7 +151,7 @@ function HealthBar({
       <div className="flex items-center gap-3 text-[11px] text-gray-500 shrink-0">
         <span className="flex items-center gap-1.5">
           <span className={`inline-block w-1.5 h-1.5 rounded-full ${fetching ? 'bg-amber-400 animate-pulse' : 'bg-emerald-400'}`} />
-          {fetching ? 'refreshing…' : ageSec !== null ? `live · ${ageSec}s ago · auto 10s` : 'loading…'}
+          {fetching ? 'refreshing…' : ageSec !== null ? `live · ${ageSec}s · auto 10s` : 'loading…'}
         </span>
         <button onClick={onRefresh} className="text-gray-400 hover:text-white" title="Refresh now">↻</button>
       </div>
@@ -167,149 +159,208 @@ function HealthBar({
   );
 }
 
-/* ─────────────────────────────────────────────────────────  KPI squares  */
+/* ─────────────────────────────────────────────────────────  Domain primitives  */
 
 /**
- * Single square KPI tile. Top: small label. Big number = today. Underneath:
- * "X total" lifetime + one extra context line. Sized so 4 fit on a row at
- * desktop with comfortable padding.
+ * One domain box. Title at top, optional sub-line, body fills the rest.
+ * Same height across the 2x2 grid via `h-full` so the layout stays clean.
  */
-function Sq({
-  label,
-  today,
-  total,
-  totalLabel,
-  extra,
-  accent = 'text-white',
-}: {
-  label: string;
-  today: number | string;
-  total?: number | string;
-  totalLabel?: string;
-  extra?: string;
+function DomainBox({ title, sub, accent, children }: {
+  title: string;
+  sub?: React.ReactNode;
   accent?: string;
+  children: React.ReactNode;
 }) {
-  const todayDisplay = typeof today === 'number' ? today.toLocaleString() : today;
-  const totalDisplay = typeof total === 'number' ? total.toLocaleString() : total;
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:p-5 flex flex-col min-h-[120px]">
-      <p className="text-[10px] uppercase tracking-[0.1em] text-gray-500">{label}</p>
-      <p className={`mt-1 text-2xl sm:text-3xl font-semibold tabular-nums ${accent}`}>{todayDisplay}</p>
-      <div className="mt-auto pt-2 text-[11px] text-gray-500 leading-tight">
-        {total !== undefined && (
-          <span className="block tabular-nums">
-            <span className="text-gray-300">{totalDisplay}</span>{' '}
-            {totalLabel ?? 'all-time'}
-          </span>
-        )}
-        {extra && <span className="block">{extra}</span>}
+    <div className="h-full rounded-2xl border border-white/[0.06] bg-white/[0.02] flex flex-col">
+      <div className="px-5 pt-4 pb-3 border-b border-white/[0.06] flex items-baseline justify-between gap-2">
+        <h3 className={`text-sm font-semibold ${accent ?? 'text-white'}`}>{title}</h3>
+        {sub && <p className="text-[11px] text-gray-500">{sub}</p>}
       </div>
+      <div className="flex-1 min-h-0">{children}</div>
     </div>
   );
 }
 
-function KpiGrid({ m }: { m: MetricsResponse }) {
-  // Retention proxy: lifetime logins / total users — "X.X average logins
-  // per signed-up user." Anything <1 means most signups never came back.
-  const retention = m.users.total > 0 ? (m.lifetime.logins / m.users.total).toFixed(1) : '0';
-  const freePasses = m.totalFreeDraftsFromWheel;
-  const paidPasses = m.lifetime.passesPurchased;
-  const totalPasses = freePasses + paidPasses;
-
+/**
+ * Today / Total mini-table. Right-aligned numeric columns; rows have
+ * hairline dividers. The two columns make the today-vs-total distinction
+ * obvious without extra label noise.
+ */
+function TodayTotalTable({ rows }: {
+  rows: Array<{ label: string; today?: string | number; total?: string | number; accent?: string; sub?: string }>;
+}) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-      <Sq
-        label="New users"
-        today={m.users.newToday}
-        total={m.users.total}
-        totalLabel="users total"
-        extra={`+${m.users.newThisWeek} this week`}
-      />
-      <Sq
-        label="Logins"
-        today={m.engagement.loginsToday}
-        total={m.lifetime.logins}
-        totalLabel="lifetime"
-        extra={`${retention}× per user · ${m.engagement.loginsThisWeek} this wk`}
-        accent="text-blue-300"
-      />
-      <Sq
-        label="Wheel spins"
-        today={m.wheel.spinsToday}
-        total={m.lifetime.wheelSpins}
-        totalLabel="spins ever"
-        extra={`JP odds 1% · HOF odds 5%`}
-        accent="text-[#F3E216]"
-      />
-      <Sq
-        label="Mints (paid passes)"
-        today={'—'}
-        total={paidPasses}
-        totalLabel="card + USDC ever"
-        extra={`${totalPasses.toLocaleString()} total passes (paid + free)`}
-        accent="text-emerald-300"
-      />
-
-      <Sq
-        label="Promos claimed"
-        today={m.promos.promoClaimsToday}
-        total={m.lifetime.promosClaimed}
-        totalLabel="lifetime"
-        extra={`${m.promos.sharesVerifiedToday} shares verified today`}
-        accent="text-pink-300"
-      />
-      <Sq
-        label="Jackpot wheel hits"
-        today={'—'}
-        total={m.lifetime.jackpotWins}
-        totalLabel="lifetime"
-        extra={`${m.wheelDrafts.jackpot.total} JP drafts created · ${m.reservedDrafts.jackpot} unredeemed`}
-        accent="text-red-400"
-      />
-      <Sq
-        label="HOF wheel hits"
-        today={'—'}
-        total={m.lifetime.hofWins}
-        totalLabel="lifetime"
-        extra={`${m.wheelDrafts.hof.total} HOF drafts created · ${m.reservedDrafts.hof} unredeemed`}
-        accent="text-[#D4AF37]"
-      />
-      <Sq
-        label="Withdrawals"
-        today={m.withdrawals.pending}
-        total={`$${m.lifetime.withdrawalsPaidVolume.toLocaleString()}`}
-        totalLabel="paid lifetime"
-        extra={`${m.withdrawals.pending} pending now`}
-        accent={m.withdrawals.pending > 0 ? 'text-amber-300' : 'text-white'}
-      />
-    </div>
+    <table className="w-full text-sm">
+      <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
+        <tr>
+          <th className="px-5 pt-3 pb-1.5 text-left font-medium">Metric</th>
+          <th className="pt-3 pb-1.5 text-right font-medium">Today</th>
+          <th className="px-5 pt-3 pb-1.5 text-right font-medium">Total</th>
+        </tr>
+      </thead>
+      <tbody className="tabular-nums">
+        {rows.map((r) => (
+          <tr key={r.label} className="border-t border-white/[0.06]">
+            <td className="px-5 py-2 align-top">
+              <p className={`text-sm ${r.accent ?? 'text-gray-200'}`}>{r.label}</p>
+              {r.sub && <p className="text-[10px] text-gray-500 leading-tight">{r.sub}</p>}
+            </td>
+            <td className={`py-2 text-right ${r.today !== undefined && r.today !== '—' ? 'text-white' : 'text-gray-600'}`}>
+              {r.today ?? '—'}
+            </td>
+            <td className={`px-5 py-2 text-right ${r.total !== undefined && r.total !== '—' ? 'text-gray-200' : 'text-gray-600'}`}>
+              {r.total ?? '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-/* ─────────────────────────────────────────────────────────  Section primitive  */
-
-function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+/**
+ * Small inline subsection inside a domain box. Title + content with
+ * its own top divider so it sits inside the parent box neatly.
+ */
+function Inline({ title, sub, children }: {
+  title: string; sub?: string; children: React.ReactNode;
+}) {
   return (
-    <section>
-      <div className="flex items-baseline justify-between mb-2 px-1">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">{title}</h3>
+    <div className="border-t border-white/[0.06]">
+      <div className="px-5 pt-3 pb-1.5 flex items-baseline justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-[0.1em] text-gray-500">{title}</p>
         {sub && <p className="text-[10px] text-gray-600">{sub}</p>}
       </div>
       {children}
-    </section>
+    </div>
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">{children}</div>;
+/* ─────────────────────────────────────────────────────────  USERS box  */
+
+function UsersBox({ m }: { m: MetricsResponse }) {
+  const retention = m.users.total > 0 ? (m.lifetime.logins / m.users.total).toFixed(1) : '0';
+  const rails: { key: keyof MetricsResponse['users']['byWalletType']; label: string }[] = [
+    { key: 'privy_embedded', label: 'Social (Gmail / X)' },
+    { key: 'privy_external', label: 'Privy + external wallet' },
+    { key: 'external_connect', label: 'Crypto wallet direct' },
+    { key: 'unknown', label: 'Unknown (pre-tracking)' },
+  ];
+  const total = m.users.total;
+  const pct = (n: number) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '—');
+
+  return (
+    <DomainBox title="Users">
+      <TodayTotalTable
+        rows={[
+          { label: 'New signups', today: m.users.newToday, total: m.users.total, sub: `${m.users.newThisWeek} this week` },
+          { label: 'Logins', today: m.engagement.loginsToday, total: m.lifetime.logins, sub: `${m.engagement.loginsThisWeek} this week`, accent: 'text-blue-300' },
+          { label: 'Logins per user', total: `${retention}×`, sub: 'lifetime ÷ total users — retention proxy' },
+        ]}
+      />
+      <Inline title="Signup rails" sub={`${total.toLocaleString()} users`}>
+        <table className="w-full text-sm">
+          <tbody className="tabular-nums">
+            {rails.map((r) => {
+              const count = m.users.byWalletType[r.key];
+              const dim = count === 0;
+              return (
+                <tr key={r.key} className="border-t border-white/[0.04]">
+                  <td className={`px-5 py-1.5 ${dim ? 'text-gray-500' : 'text-gray-200'}`}>{r.label}</td>
+                  <td className={`py-1.5 text-right ${dim ? 'text-gray-600' : 'text-white'}`}>{count.toLocaleString()}</td>
+                  <td className={`px-5 py-1.5 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{pct(count)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </Inline>
+    </DomainBox>
+  );
 }
 
-/* ─────────────────────────────────────────────────────────  ALL promos table  */
+/* ─────────────────────────────────────────────────────────  WHEEL box  */
 
-// Canonical promo list — every type defined in types/index.ts PromoType.
-// Rendering ALL of them (not just ones with claims) so coverage gaps are
-// obvious: a promo with 0 starts + 0 claims tells you "this promo is
-// live but nobody's engaging with it — investigate."
+function WheelBox({ m }: { m: MetricsResponse }) {
+  const prizeRows = Object.entries(m.wheelPrizeBreakdown).sort((a, b) => b[1] - a[1]);
+  const prizeTotal = prizeRows.reduce((s, [, n]) => s + n, 0);
+  const accentFor = (label: string) =>
+    /jackpot/i.test(label) ? 'text-red-300'
+    : /hof/i.test(label) ? 'text-[#D4AF37]'
+    : /nothing/i.test(label) ? 'text-gray-400'
+    : 'text-purple-300';
+
+  return (
+    <DomainBox title="Wheel" accent="text-[#F3E216]">
+      <TodayTotalTable
+        rows={[
+          { label: 'Spins', today: m.wheel.spinsToday, total: m.wheel.totalSpins, accent: 'text-[#F3E216]' },
+          { label: 'Jackpot hits', total: m.lifetime.jackpotWins, sub: '1% odds · created ' + m.wheelDrafts.jackpot.total + ' JP draft' + (m.wheelDrafts.jackpot.total === 1 ? '' : 's'), accent: 'text-red-300' },
+          { label: 'HOF hits', total: m.lifetime.hofWins, sub: '5% odds · created ' + m.wheelDrafts.hof.total + ' HOF draft' + (m.wheelDrafts.hof.total === 1 ? '' : 's'), accent: 'text-[#D4AF37]' },
+          { label: 'Free drafts given', total: m.totalFreeDraftsFromWheel, sub: 'sum of prize values across draft-pass spins', accent: 'text-purple-300' },
+        ]}
+      />
+
+      <Inline title="Wins by prize" sub={prizeTotal > 0 ? `last ${prizeTotal.toLocaleString()} spins` : 'no spins yet'}>
+        <table className="w-full text-sm">
+          <tbody className="tabular-nums">
+            {prizeRows.length === 0 ? (
+              <tr>
+                <td className="px-5 py-3 text-center text-[11px] text-gray-500">No spin data yet.</td>
+              </tr>
+            ) : (
+              prizeRows.map(([label, count]) => (
+                <tr key={label} className="border-t border-white/[0.04]">
+                  <td className={`px-5 py-1.5 ${accentFor(label)} capitalize`}>{label}</td>
+                  <td className="py-1.5 text-right text-gray-200">{count.toLocaleString()}</td>
+                  <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{prizeTotal > 0 ? `${((count / prizeTotal) * 100).toFixed(1)}%` : '—'}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </Inline>
+
+      <Inline title="JP / HOF draft pipeline" sub="wheel-won only">
+        <table className="w-full text-sm">
+          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
+            <tr>
+              <th className="px-5 pt-2 pb-1 text-left font-medium">Type</th>
+              <th className="pt-2 pb-1 text-right font-medium">Filling</th>
+              <th className="pt-2 pb-1 text-right font-medium">Drafting</th>
+              <th className="pt-2 pb-1 text-right font-medium">Done</th>
+              <th className="pt-2 pb-1 text-right font-medium">Total</th>
+              <th className="px-5 pt-2 pb-1 text-right font-medium">Unredm</th>
+            </tr>
+          </thead>
+          <tbody className="tabular-nums">
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-red-300 font-medium">Jackpot</td>
+              <td className="py-1.5 text-right text-gray-300">{m.wheelDrafts.jackpot.filling.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-gray-300">{m.wheelDrafts.jackpot.drafting.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-emerald-300">{m.wheelDrafts.jackpot.completed.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-white">{m.wheelDrafts.jackpot.total.toLocaleString()}</td>
+              <td className="px-5 py-1.5 text-right text-gray-300">{m.reservedDrafts.jackpot.toLocaleString()}</td>
+            </tr>
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-[#D4AF37] font-medium">HOF</td>
+              <td className="py-1.5 text-right text-gray-300">{m.wheelDrafts.hof.filling.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-gray-300">{m.wheelDrafts.hof.drafting.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-emerald-300">{m.wheelDrafts.hof.completed.toLocaleString()}</td>
+              <td className="py-1.5 text-right text-white">{m.wheelDrafts.hof.total.toLocaleString()}</td>
+              <td className="px-5 py-1.5 text-right text-gray-300">{m.reservedDrafts.hof.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+      </Inline>
+    </DomainBox>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────  PROMOS box  */
+
+// Canonical promo list — render every type so coverage gaps are visible.
 const CANONICAL_PROMOS: { key: string; label: string }[] = [
   { key: 'new-user', label: 'New user' },
   { key: 'buy-bonus', label: 'Buy bonus' },
@@ -318,19 +369,16 @@ const CANONICAL_PROMOS: { key: string; label: string }[] = [
   { key: 'pick-10', label: 'Pick 10' },
   { key: 'tweet-engagement', label: 'Tweet engagement' },
   { key: 'spin-share', label: 'Spin share' },
-  { key: 'add-to-home-screen', label: 'Add to home screen' },
+  { key: 'add-to-home-screen', label: 'Add to home' },
   { key: 'jackpot', label: 'Jackpot (in-draft)' },
   { key: 'hof', label: 'HOF (in-draft)' },
   { key: 'mint', label: 'Mint' },
   { key: 'founder-draft', label: 'Founder draft' },
 ];
 
-function AllPromosCard({ m, progress }: { m: MetricsResponse; progress?: PromoProgressResponse }) {
+function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgressResponse }) {
   const breakdown = m.promoBreakdown;
   const perType = progress?.perType ?? {};
-  // Build the row set: canonical list first, then any extras seen in
-  // the data that aren't on the canonical list (so we never silently
-  // hide a new promo type).
   const seenKeys = new Set([
     ...Object.keys(breakdown),
     ...Object.keys(perType),
@@ -344,17 +392,21 @@ function AllPromosCard({ m, progress }: { m: MetricsResponse; progress?: PromoPr
   ];
 
   return (
-    <Section title="All promos">
-      <Card>
+    <DomainBox
+      title="Promos"
+      accent="text-pink-300"
+      sub={`${m.promos.promoClaimsToday} today · ${m.lifetime.promosClaimed} lifetime`}
+    >
+      <div className="overflow-y-auto max-h-[440px]">
         <table className="w-full text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
+          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500 sticky top-0 bg-[#0f0f12] backdrop-blur">
             <tr>
-              <th className="px-4 pt-4 pb-2 text-left font-medium">Promo</th>
-              <th className="pt-4 pb-2 text-right font-medium">Today</th>
-              <th className="pt-4 pb-2 text-right font-medium">Lifetime</th>
-              <th className="pt-4 pb-2 text-right font-medium">Started</th>
-              <th className="pt-4 pb-2 text-right font-medium">Done</th>
-              <th className="px-4 pt-4 pb-2 text-right font-medium">Conv</th>
+              <th className="px-5 pt-3 pb-1.5 text-left font-medium">Promo</th>
+              <th className="pt-3 pb-1.5 text-right font-medium">Today</th>
+              <th className="pt-3 pb-1.5 text-right font-medium">Life</th>
+              <th className="pt-3 pb-1.5 text-right font-medium">Start</th>
+              <th className="pt-3 pb-1.5 text-right font-medium">Done</th>
+              <th className="px-5 pt-3 pb-1.5 text-right font-medium">Conv</th>
             </tr>
           </thead>
           <tbody className="tabular-nums">
@@ -369,207 +421,168 @@ function AllPromosCard({ m, progress }: { m: MetricsResponse; progress?: PromoPr
                 : prog.conversionRate >= 0.2 ? 'text-amber-300'
                 : 'text-red-300';
               return (
-                <tr key={row.key} className="border-t border-white/[0.06]">
-                  <td className={`px-4 py-2 capitalize ${inactive ? 'text-gray-500' : 'text-white'}`}>{row.label}</td>
-                  <td className={`py-2 text-right ${claims.claimsToday > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{claims.claimsToday}</td>
-                  <td className={`py-2 text-right ${claims.claimsTotal > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{claims.claimsTotal}</td>
-                  <td className={`py-2 text-right ${prog.started > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{prog.started}</td>
-                  <td className={`py-2 text-right ${prog.completed > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{prog.completed}</td>
-                  <td className={`px-4 py-2 text-right ${rateColor}`}>{prog.started > 0 ? `${ratePct}%` : '—'}</td>
+                <tr key={row.key} className="border-t border-white/[0.04]">
+                  <td className={`px-5 py-1.5 capitalize ${inactive ? 'text-gray-500' : 'text-white'}`}>{row.label}</td>
+                  <td className={`py-1.5 text-right ${claims.claimsToday > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{claims.claimsToday}</td>
+                  <td className={`py-1.5 text-right ${claims.claimsTotal > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{claims.claimsTotal}</td>
+                  <td className={`py-1.5 text-right ${prog.started > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{prog.started}</td>
+                  <td className={`py-1.5 text-right ${prog.completed > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{prog.completed}</td>
+                  <td className={`px-5 py-1.5 text-right ${rateColor}`}>{prog.started > 0 ? `${ratePct}%` : '—'}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        <p className="px-4 py-2 text-[11px] text-gray-500 border-t border-white/[0.06]">
-          Dim rows have zero activity. Started + Done track multi-step promos via promo-progress.
-        </p>
-      </Card>
-    </Section>
+      </div>
+      {progress && progress.stalePending.length > 0 && (
+        <Inline title="Stale starters" sub={`pending 48h+ · ${progress.stalePending.length} to DM`}>
+          <ul className="max-h-32 overflow-y-auto pb-2">
+            {progress.stalePending.slice(0, 8).map((p) => (
+              <li
+                key={`${p.wallet}-${p.promoId}`}
+                className="flex items-center justify-between gap-3 px-5 py-1.5 border-t border-white/[0.04]"
+              >
+                <WalletLink wallet={p.wallet} bare className="!text-xs !text-gray-200 hover:!text-banana" />
+                <span className="text-[11px] text-gray-400 capitalize">
+                  {p.promoType.replace(/-/g, ' ')} · {p.progress}/{p.progressMax}
+                </span>
+                <span className="text-[11px] text-amber-300 shrink-0 tabular-nums">
+                  {p.hoursStale !== null ? `${p.hoursStale}h` : '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Inline>
+      )}
+    </DomainBox>
   );
 }
 
-/* ─────────────────────────────────────────────────────────  Wheel prizes  */
+/* ─────────────────────────────────────────────────────────  MONEY box  */
 
-function WheelPrizesCard({ m }: { m: MetricsResponse }) {
-  const rows = Object.entries(m.wheelPrizeBreakdown).sort((a, b) => b[1] - a[1]);
-  const total = rows.reduce((s, [, n]) => s + n, 0);
-  const accentFor = (label: string) =>
-    /jackpot/i.test(label) ? 'text-red-300'
-    : /hof/i.test(label) ? 'text-[#D4AF37]'
-    : /nothing/i.test(label) ? 'text-gray-400'
-    : 'text-purple-300';
+const AGE_BUCKETS = [
+  { key: 'fresh' as const, label: '< 24h', accent: 'text-emerald-300' },
+  { key: '1to3' as const, label: '1–3 d', accent: 'text-amber-300' },
+  { key: '3to7' as const, label: '3–7 d', accent: 'text-orange-300' },
+  { key: 'week+' as const, label: '> 7 d', accent: 'text-red-300' },
+];
 
-  return (
-    <Section title="Wheel wins" sub={total > 0 ? `last ${total.toLocaleString()} spins` : 'no spins yet'}>
-      <Card>
-        <table className="w-full text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
-            <tr>
-              <th className="px-4 pt-4 pb-2 text-left font-medium">Prize</th>
-              <th className="pt-4 pb-2 text-right font-medium">Count</th>
-              <th className="px-4 pt-4 pb-2 text-right font-medium">Share</th>
-            </tr>
-          </thead>
-          <tbody className="tabular-nums">
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-4 py-6 text-center text-xs text-gray-500">
-                  No spin data yet.
-                </td>
-              </tr>
-            ) : (
-              rows.map(([label, count]) => (
-                <tr key={label} className="border-t border-white/[0.06]">
-                  <td className={`px-4 py-2 ${accentFor(label)} capitalize`}>{label}</td>
-                  <td className="py-2 text-right text-gray-200">{count.toLocaleString()}</td>
-                  <td className="px-4 py-2 text-right text-gray-500">{total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '—'}</td>
-                </tr>
-              ))
-            )}
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2.5 text-white font-semibold">Total free drafts given</td>
-              <td className="py-2.5 text-right text-purple-300 font-semibold">{m.totalFreeDraftsFromWheel.toLocaleString()}</td>
-              <td className="px-4 py-2.5" />
-            </tr>
-          </tbody>
-        </table>
-      </Card>
-    </Section>
-  );
+function bucketFor(ageHours: number): typeof AGE_BUCKETS[number]['key'] {
+  if (ageHours < 24) return 'fresh';
+  if (ageHours < 72) return '1to3';
+  if (ageHours < 168) return '3to7';
+  return 'week+';
 }
 
-/* ─────────────────────────────────────────────────────────  JP/HOF drafts  */
-
-function WheelDraftsCard({ m }: { m: MetricsResponse }) {
-  const jp = m.wheelDrafts.jackpot;
-  const hof = m.wheelDrafts.hof;
-  return (
-    <Section title="JP / HOF drafts" sub="wheel-won only · separate from 5%/1% distribution">
-      <Card>
-        <table className="w-full text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
-            <tr>
-              <th className="px-4 pt-4 pb-2 text-left font-medium">Type</th>
-              <th className="pt-4 pb-2 text-right font-medium">Filling</th>
-              <th className="pt-4 pb-2 text-right font-medium">Drafting</th>
-              <th className="pt-4 pb-2 text-right font-medium">Done</th>
-              <th className="pt-4 pb-2 text-right font-medium">Total</th>
-              <th className="px-4 pt-4 pb-2 text-right font-medium">Unredeemed</th>
-            </tr>
-          </thead>
-          <tbody className="tabular-nums">
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2 text-sm font-semibold text-red-300">Jackpot</td>
-              <td className="py-2 text-right text-gray-300">{jp.filling.toLocaleString()}</td>
-              <td className="py-2 text-right text-gray-300">{jp.drafting.toLocaleString()}</td>
-              <td className="py-2 text-right text-emerald-300">{jp.completed.toLocaleString()}</td>
-              <td className="py-2 text-right text-white font-semibold">{jp.total.toLocaleString()}</td>
-              <td className="px-4 py-2 text-right text-gray-300">{m.reservedDrafts.jackpot.toLocaleString()}</td>
-            </tr>
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2 text-sm font-semibold text-[#D4AF37]">HOF</td>
-              <td className="py-2 text-right text-gray-300">{hof.filling.toLocaleString()}</td>
-              <td className="py-2 text-right text-gray-300">{hof.drafting.toLocaleString()}</td>
-              <td className="py-2 text-right text-emerald-300">{hof.completed.toLocaleString()}</td>
-              <td className="py-2 text-right text-white font-semibold">{hof.total.toLocaleString()}</td>
-              <td className="px-4 py-2 text-right text-gray-300">{m.reservedDrafts.hof.toLocaleString()}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="px-4 py-2 text-[11px] text-gray-500 border-t border-white/[0.06]">
-          Unredeemed = wheel wins users earned but haven&apos;t entered a draft with yet.
-        </p>
-      </Card>
-    </Section>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────  Passes  */
-
-function PassesCard({ m }: { m: MetricsResponse }) {
+function MoneyBox({ m, withdrawals }: { m: MetricsResponse; withdrawals: AdminWithdrawalItem[] }) {
   const free = m.totalFreeDraftsFromWheel;
   const paid = m.lifetime.passesPurchased;
-  const total = free + paid;
-  const pct = (n: number) => (total > 0 ? ((n / total) * 100).toFixed(1) : '0.0');
+  const totalPasses = free + paid;
+  const pct = (n: number) => (totalPasses > 0 ? `${((n / totalPasses) * 100).toFixed(1)}%` : '—');
+
+  const pending = withdrawals.filter((w) => w.status === 'pending');
+  const now = Date.now();
+  const counts: Record<typeof AGE_BUCKETS[number]['key'], { count: number; amount: number }> = {
+    fresh: { count: 0, amount: 0 },
+    '1to3': { count: 0, amount: 0 },
+    '3to7': { count: 0, amount: 0 },
+    'week+': { count: 0, amount: 0 },
+  };
+  for (const w of pending) {
+    const t = w.createdAt ? new Date(w.createdAt).getTime() : NaN;
+    if (!Number.isFinite(t)) continue;
+    const ageHours = (now - t) / 3_600_000;
+    counts[bucketFor(ageHours)].count += 1;
+    counts[bucketFor(ageHours)].amount += w.amount;
+  }
+
   return (
-    <Section title="Passes — free vs paid">
-      <Card>
+    <DomainBox title="Money" accent="text-emerald-300">
+      <TodayTotalTable
+        rows={[
+          { label: 'Pending withdrawals', today: m.withdrawals.pending, sub: `$${m.withdrawals.totalVolume.toLocaleString()} approved + pending`, accent: m.withdrawals.pending > 0 ? 'text-amber-300' : 'text-gray-200' },
+          { label: 'Withdrawals paid', total: `$${m.lifetime.withdrawalsPaidVolume.toLocaleString()}`, sub: 'lifetime payouts', accent: 'text-green-300' },
+        ]}
+      />
+
+      <Inline title="Passes — free vs paid">
         <table className="w-full text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
-            <tr>
-              <th className="px-4 pt-4 pb-2 text-left font-medium">Source</th>
-              <th className="pt-4 pb-2 text-right font-medium">Count</th>
-              <th className="px-4 pt-4 pb-2 text-right font-medium">Share</th>
-            </tr>
-          </thead>
           <tbody className="tabular-nums">
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2 text-emerald-300">Paid (card + USDC)</td>
-              <td className="py-2 text-right text-gray-200">{paid.toLocaleString()}</td>
-              <td className="px-4 py-2 text-right text-gray-500">{pct(paid)}%</td>
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-emerald-300">Paid (card + USDC)</td>
+              <td className="py-1.5 text-right text-white">{paid.toLocaleString()}</td>
+              <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{pct(paid)}</td>
+            </tr>
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-purple-300">Free (wheel wins)</td>
+              <td className="py-1.5 text-right text-white">{free.toLocaleString()}</td>
+              <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{pct(free)}</td>
             </tr>
             <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2 text-purple-300">Free (wheel wins)</td>
-              <td className="py-2 text-right text-gray-200">{free.toLocaleString()}</td>
-              <td className="px-4 py-2 text-right text-gray-500">{pct(free)}%</td>
-            </tr>
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-4 py-2.5 text-white font-semibold">Total</td>
-              <td className="py-2.5 text-right text-white font-bold">{total.toLocaleString()}</td>
-              <td className="px-4 py-2.5" />
+              <td className="px-5 py-1.5 text-white font-semibold">Total</td>
+              <td className="py-1.5 text-right text-white font-semibold">{totalPasses.toLocaleString()}</td>
+              <td className="px-5 py-1.5" />
             </tr>
           </tbody>
         </table>
-      </Card>
-    </Section>
-  );
-}
+      </Inline>
 
-/* ─────────────────────────────────────────────────────────  Signup rails  */
-
-function SignupRailsCard({ m }: { m: MetricsResponse }) {
-  const segments: { key: keyof MetricsResponse['users']['byWalletType']; label: string; accent: string }[] = [
-    { key: 'privy_embedded', label: 'Social login (Gmail / X / etc.)', accent: 'text-blue-300' },
-    { key: 'privy_external', label: 'Privy + external wallet', accent: 'text-purple-300' },
-    { key: 'external_connect', label: 'Crypto wallet direct', accent: 'text-emerald-300' },
-    { key: 'unknown', label: 'Unknown (pre-tracking)', accent: 'text-gray-400' },
-  ];
-  const total = m.users.total;
-  const pct = (n: number) => (total > 0 ? ((n / total) * 100).toFixed(1) : '0.0');
-  return (
-    <Section title="Signup rails" sub={`lifetime · ${total.toLocaleString()} users`}>
-      <Card>
+      <Inline title="Pending withdrawals — by age" sub={pending.length === 0 ? 'nothing pending' : `${pending.length} total`}>
         <table className="w-full text-sm">
-          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
-            <tr>
-              <th className="px-4 pt-4 pb-2 text-left font-medium">Rail</th>
-              <th className="pt-4 pb-2 text-right font-medium">Count</th>
-              <th className="px-4 pt-4 pb-2 text-right font-medium">Share</th>
-            </tr>
-          </thead>
           <tbody className="tabular-nums">
-            {segments.map((s) => {
-              const count = m.users.byWalletType[s.key];
-              const dim = count === 0;
+            {AGE_BUCKETS.map((b) => {
+              const c = counts[b.key];
+              const dim = c.count === 0;
               return (
-                <tr key={s.key} className="border-t border-white/[0.06]">
-                  <td className={`px-4 py-2 ${dim ? 'text-gray-500' : s.accent}`}>{s.label}</td>
-                  <td className={`py-2 text-right ${dim ? 'text-gray-600' : 'text-gray-200'}`}>{count.toLocaleString()}</td>
-                  <td className={`px-4 py-2 text-right ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{pct(count)}%</td>
+                <tr key={b.key} className="border-t border-white/[0.04]">
+                  <td className={`px-5 py-1.5 ${dim ? 'text-gray-500' : b.accent}`}>{b.label}</td>
+                  <td className={`py-1.5 text-right ${dim ? 'text-gray-600' : 'text-white'}`}>{c.count.toLocaleString()}</td>
+                  <td className={`px-5 py-1.5 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>${c.amount.toLocaleString()}</td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </Card>
-    </Section>
+      </Inline>
+    </DomainBox>
   );
 }
 
-/* ─────────────────────────────────────────────────────────  Recent errors  */
+/* ─────────────────────────────────────────────────────────  Secondary row  */
 
-function RecentErrorsWidget({ errors, loading }: { errors: ErrorEventEntry[]; loading: boolean }) {
+function TopUsersBox({ data, loading }: { data: HeaviestUserEntry[] | undefined; loading: boolean }) {
+  return (
+    <DomainBox title="Top users · by spend" sub="see all → User Lookup">
+      <div className="px-5 py-3">
+        {loading ? (
+          <p className="text-xs text-gray-500">Loading…</p>
+        ) : !data || data.length === 0 ? (
+          <p className="text-xs text-gray-500">No spend data in scan window.</p>
+        ) : (
+          <ul>
+            {data.slice(0, 8).map((e, i) => (
+              <li key={e.userId} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
+                <div className="flex items-baseline gap-2 min-w-0">
+                  <span className="text-[10px] text-gray-500 tabular-nums w-4 shrink-0">{i + 1}.</span>
+                  <div className="min-w-0">
+                    {e.username && <p className="text-xs text-white truncate">{e.username}</p>}
+                    <WalletLink wallet={e.userId} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm text-emerald-300 font-semibold tabular-nums">${Math.round(e.spendUsd).toLocaleString()}</p>
+                  <p className="text-[10px] text-gray-500">{e.passesBought} pass{e.passesBought === 1 ? '' : 'es'}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </DomainBox>
+  );
+}
+
+function RecentErrorsBox({ errors, loading }: { errors: ErrorEventEntry[]; loading: boolean }) {
   const oneDayAgo = Date.now() - 86_400_000;
   const recent = errors.filter((e) => new Date(e.timestamp).getTime() > oneDayAgo);
   const counts = new Map<string, { count: number; latest: ErrorEventEntry; affected: Set<string> }>();
@@ -584,68 +597,54 @@ function RecentErrorsWidget({ errors, loading }: { errors: ErrorEventEntry[]; lo
       counts.set(e.source, { count: 1, latest: e, affected: actor ? new Set([actor]) : new Set<string>() });
     }
   }
-  const top5 = [...counts.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 5);
+  const top = [...counts.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 5);
 
   return (
-    <Section title="Recent errors · last 24h">
-      <Card>
-        <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-white">Top by source</h4>
-          <Link href="/admin?tab=logs" className="text-[11px] text-gray-400 hover:text-white">See all →</Link>
-        </div>
-        <div className="divide-y divide-white/[0.04]">
-          {loading ? (
-            <p className="px-5 py-6 text-center text-gray-500 text-xs">Loading…</p>
-          ) : top5.length === 0 ? (
-            <p className="px-5 py-6 text-center text-gray-500 text-xs">Nothing — quiet day.</p>
-          ) : (
-            top5.map(([source, { count, latest, affected }]) => {
-              const wallets = Array.from(affected);
-              const shown = wallets.slice(0, 3);
-              const extra = wallets.length - shown.length;
-              return (
-                <div key={source} className="px-5 py-2.5 hover:bg-white/[0.02] transition-colors">
-                  <Link href={`/admin?tab=logs&source=${encodeURIComponent(source)}`} className="block">
-                    <div className="flex items-baseline justify-between gap-3 mb-0.5">
-                      <span className="text-[12px] font-mono text-amber-300 truncate">{source}</span>
-                      <span className="text-[11px] text-gray-400 shrink-0 tabular-nums">
-                        {count.toLocaleString()}× · {wallets.length} {wallets.length === 1 ? 'user' : 'users'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-gray-500 truncate leading-snug">
-                      {explainError(source, latest.message) || latest.message}
-                    </p>
-                  </Link>
-                  {shown.length > 0 && (
-                    <div className="mt-1 flex items-center gap-2 flex-wrap">
-                      {shown.map((w) => (
-                        <WalletLink key={w} wallet={w} bare className="!text-[10px] !text-gray-400 hover:!text-banana" />
-                      ))}
-                      {extra > 0 && <span className="text-[10px] text-gray-500">+{extra} more</span>}
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-      </Card>
-    </Section>
+    <DomainBox title="Errors · last 24h" sub={<Link href="/admin?tab=logs" className="hover:text-white">all logs →</Link>}>
+      <div className="divide-y divide-white/[0.04] max-h-[300px] overflow-y-auto">
+        {loading ? (
+          <p className="px-5 py-6 text-center text-xs text-gray-500">Loading…</p>
+        ) : top.length === 0 ? (
+          <p className="px-5 py-6 text-center text-xs text-gray-500">Quiet day.</p>
+        ) : (
+          top.map(([source, { count, latest, affected }]) => {
+            const wallets = Array.from(affected);
+            const shown = wallets.slice(0, 3);
+            const extra = wallets.length - shown.length;
+            return (
+              <div key={source} className="px-5 py-2 hover:bg-white/[0.02]">
+                <Link href={`/admin?tab=logs&source=${encodeURIComponent(source)}`} className="block">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-mono text-amber-300 truncate">{source}</span>
+                    <span className="text-[10px] text-gray-400 shrink-0 tabular-nums">{count}× · {wallets.length}u</span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 truncate leading-snug">
+                    {explainError(source, latest.message) || latest.message}
+                  </p>
+                </Link>
+                {shown.length > 0 && (
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    {shown.map((w) => (
+                      <WalletLink key={w} wallet={w} bare className="!text-[10px] !text-gray-400 hover:!text-banana" />
+                    ))}
+                    {extra > 0 && <span className="text-[10px] text-gray-500">+{extra}</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </DomainBox>
   );
 }
 
-function LiveActivityWidget({ enabled }: { enabled: boolean }) {
+function LiveActivityBox({ enabled }: { enabled: boolean }) {
   return (
-    <Section title="Live activity">
-      <Card>
-        <div className="px-5 py-3 border-b border-white/[0.06] flex items-center justify-between">
-          <h4 className="text-sm font-semibold text-white">Recent events</h4>
-          <Link href="/admin?tab=audit&sub=live-activity" className="text-[11px] text-gray-400 hover:text-white">See all →</Link>
-        </div>
-        <div className="p-2 max-h-[440px] overflow-y-auto">
-          <LiveActivity enabled={enabled} />
-        </div>
-      </Card>
-    </Section>
+    <DomainBox title="Live activity" sub={<Link href="/admin?tab=audit&sub=live-activity" className="hover:text-white">see all →</Link>}>
+      <div className="p-2 max-h-[300px] overflow-y-auto">
+        <LiveActivity enabled={enabled} />
+      </div>
+    </DomainBox>
   );
 }
