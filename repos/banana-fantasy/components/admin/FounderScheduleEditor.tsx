@@ -160,6 +160,7 @@ export function FounderScheduleEditor({ enabled }: { enabled: boolean }) {
 function FounderDraftsRecent() {
   const { getAccessToken } = usePrivy();
   const [drafts, setDrafts] = useState<FounderDraftRow[] | null>(null);
+  const [summary, setSummary] = useState<FounderDraftsSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [granting, setGranting] = useState<string | null>(null);
@@ -175,8 +176,9 @@ function FounderDraftsRecent() {
         cache: 'no-store',
       });
       if (!res.ok) throw new Error(`${res.status}`);
-      const body = (await res.json()) as { drafts?: FounderDraftRow[] };
+      const body = (await res.json()) as { drafts?: FounderDraftRow[]; summary?: FounderDraftsSummary };
       setDrafts(body.drafts ?? []);
+      setSummary(body.summary ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -237,6 +239,18 @@ function FounderDraftsRecent() {
           ↻ refresh
         </button>
       </div>
+
+      {/* Season-level summary. Useful for the end-of-year bonus tally
+          Boris mentioned: every wallet that's been in a founder draft
+          this season qualifies for the extra reward. */}
+      {summary && (
+        <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <SummaryTile label="Founder drafts (lifetime)" value={summary.totalDrafts} />
+          <SummaryTile label="Unique participants" value={summary.uniqueParticipantWallets} />
+          <SummaryTile label="Spins granted" value={summary.fullyGranted} accent="text-emerald-300" />
+          <SummaryTile label="Pending grants" value={summary.pendingGrants} accent={summary.pendingGrants > 0 ? 'text-amber-300' : 'text-gray-200'} />
+        </div>
+      )}
 
       {error && (
         <div className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
@@ -334,6 +348,22 @@ interface FounderDraftRow {
   nonFounderCount: number;
   bulkSpinGrantedAt: string | null;
   bulkSpinGrantedBy: string | null;
+}
+
+interface FounderDraftsSummary {
+  totalDrafts: number;
+  uniqueParticipantWallets: number;
+  fullyGranted: number;
+  pendingGrants: number;
+}
+
+function SummaryTile({ label, value, accent = 'text-white' }: { label: string; value: number; accent?: string }) {
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+      <p className="text-[10px] uppercase tracking-[0.1em] text-gray-500">{label}</p>
+      <p className={`mt-1 text-xl font-semibold tabular-nums ${accent}`}>{value.toLocaleString()}</p>
+    </div>
+  );
 }
 
 // Backfill historical Founder Drafts that filled before the persistence

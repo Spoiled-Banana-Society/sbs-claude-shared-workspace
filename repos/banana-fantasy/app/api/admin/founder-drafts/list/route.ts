@@ -44,7 +44,11 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const FOUNDER_DRAFTS_COLLECTION = 'founderDrafts';
-const LIST_LIMIT = 50;
+// 200 covers ~4 founder drafts per week for a full year, with headroom.
+// Boris's ask: "would be good to write down all the wallets leagues
+// that are founder draft throughout the year too." This collection IS
+// the year-long log — every confirmed founder draft stays here forever.
+const LIST_LIMIT = 200;
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 function goApiBase(): string {
@@ -128,12 +132,33 @@ export async function GET(req: Request) {
     // Newest first.
     drafts.sort((a, b) => (b.markedAt ?? '').localeCompare(a.markedAt ?? ''));
 
+    // Season-level rollup so the admin UI can show "X founder drafts
+    // confirmed all-time · Y unique wallets have been in one" without
+    // a second request. Boris's ask: track participation across the
+    // year because there are end-of-season bonuses tied to it.
+    const uniqueWallets = new Set<string>();
+    for (const d of drafts) {
+      for (const p of d.participants) if (p.wallet) uniqueWallets.add(p.wallet);
+    }
+    const fullyGranted = drafts.filter((d) => !!d.bulkSpinGrantedAt).length;
+    const pendingGrants = drafts.length - fullyGranted;
+
     logger.info('admin.founder_drafts.list_ok', {
       requestId,
-      context: { count: drafts.length },
+      context: { count: drafts.length, uniqueWallets: uniqueWallets.size },
     });
 
-    return json({ ok: true, drafts, requestId });
+    return json({
+      ok: true,
+      drafts,
+      summary: {
+        totalDrafts: drafts.length,
+        uniqueParticipantWallets: uniqueWallets.size,
+        fullyGranted,
+        pendingGrants,
+      },
+      requestId,
+    });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status, { requestId });
     logger.error('admin.founder_drafts.list_failed', {
