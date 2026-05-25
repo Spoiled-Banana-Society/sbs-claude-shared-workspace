@@ -907,7 +907,21 @@ export function useDraftingPageState() {
                     patch.phase = 'pre-spin';
                   }
                 } else {
-                  patch.randomizingStartedAt = Date.now();
+                  // Trust the server's pre-spin timestamp. If we landed here
+                  // without ever running the bar locally (common on mobile:
+                  // user opens /drafting after the draft already filled, or
+                  // after backgrounding the tab), don't restart the 3s + 60s
+                  // cycle from now — that double-counts: type reveals early
+                  // because the freshly-set timestamp puts us past elapsed=23s
+                  // on subsequent polls, then the countdown visibly restarts.
+                  // Only run the bar if we're still actually in the pre-fill
+                  // window where serverPreSpin is in the future.
+                  if (Date.now() >= serverPreSpin) {
+                    patch.preSpinStartedAt = serverPreSpin;
+                    patch.phase = 'pre-spin';
+                  } else {
+                    patch.randomizingStartedAt = Date.now();
+                  }
                 }
               } else if (Math.abs(fresh.preSpinStartedAt - serverPreSpin) > 2000) {
                 patch.preSpinStartedAt = serverPreSpin;
