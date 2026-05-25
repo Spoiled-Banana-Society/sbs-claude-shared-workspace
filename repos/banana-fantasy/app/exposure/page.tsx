@@ -256,8 +256,19 @@ export default function ExposurePage() {
               <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Most Exposed</p>
               {summary.topExposure ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ backgroundColor: posColor(summary.topExposure.position) + '30', color: posColor(summary.topExposure.position) }}>
-                    {summary.topExposure.teamPosition}
+                  {/* Strip the slot-index suffix (RB1/RB2/RB3 → RB) so the
+                      most-exposed chip matches the position chips shown
+                      everywhere else in the page. The slot number was
+                      misleading — it's an internal "Nth player drafted
+                      from this team's depth" index, not a lineup slot. */}
+                  <span
+                    className="text-xs font-bold px-1.5 py-0.5 rounded"
+                    style={{
+                      backgroundColor: posColor(summary.topExposure.position) + '30',
+                      color: posColor(summary.topExposure.position),
+                    }}
+                  >
+                    {summary.topExposure.team} {summary.topExposure.position.replace(/\d+$/, '')}
                   </span>
                   <span className="text-white font-bold text-lg">{summary.topExposure.exposure}%</span>
                 </div>
@@ -266,8 +277,17 @@ export default function ExposurePage() {
               )}
             </div>
             <div>
-              <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Stacked Teams</p>
-              <p className="text-white font-bold text-2xl">{stackedTeams.length > 0 ? stackedTeams.length : '—'}</p>
+              {/* Renamed to "Stack Combos" to match the count shown in
+                  the Team Stacks section below ("14 stack combos across
+                  your portfolio"). Was using stackedTeams.length (unique
+                  NFL team count) which never lined up with stacks.length
+                  (combo count) — same metric, two different numbers
+                  under one label. Now both surface the combo count. */}
+              <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Stack Combos</p>
+              <p className="text-white font-bold text-2xl">{stacks.length > 0 ? stacks.length : '—'}</p>
+              {stacks.length > 0 && stackedTeams.length !== stacks.length && (
+                <p className="text-white/30 text-[11px] mt-0.5">across {stackedTeams.length} team{stackedTeams.length === 1 ? '' : 's'}</p>
+              )}
             </div>
           </div>
         </div>
