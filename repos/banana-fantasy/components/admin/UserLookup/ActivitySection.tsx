@@ -269,28 +269,77 @@ export function ActivitySection({ activity, promoState }: Props) {
         <Tile label="Cashouts" value={`${stats.cashoutsCompleted} · $${stats.cashoutsUsd.toLocaleString()}`} accent="text-green-300" />
       </div>
 
-      {/* Wheel prize breakdown table */}
-      {stats.wheelPrizeBreakdown.size > 0 && (
+      {/* Domain box pair — matches the dashboard's 2-column layout
+          (Promos | Spins) so users see per-user data the same way they
+          see system-wide totals. Stacks on mobile, side-by-side on md+. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Promos by type — sourced from canonical claimCount via promoState.
+            Surfaces "in progress" badge for users who started a multi-step
+            promo (daily-drafts, etc.) but haven't hit the next claim. */}
+        <Card>
+          <Header
+            title="Promos by type"
+            sub={`${stats.promosClaimed} claimed · ${promoState && !isSectionFail(promoState) ? promoState.startedTypes.length : 0} started`}
+          />
+          {stats.promoBreakdown.size === 0 && (!promoState || isSectionFail(promoState) || promoState.startedTypes.length === 0) ? (
+            <p className="px-5 py-6 text-center text-xs text-gray-500">
+              No promo activity yet.
+            </p>
+          ) : (
+            <ul className="divide-y divide-white/[0.04]">
+              {/* Claimed: from claimCount sum. Also surface started/pending
+                  types (users currently working through a promo). */}
+              {[...stats.promoBreakdown.entries()].sort((a, b) => b[1] - a[1]).map(([type, n]) => {
+                const isPending =
+                  promoState && !isSectionFail(promoState) && promoState.pendingTypes.includes(type);
+                return (
+                  <li key={type} className="flex items-center justify-between gap-2 px-5 py-2 text-xs">
+                    <span className="capitalize text-gray-200">{type.replace(/-/g, ' ')}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {isPending && (
+                        <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/30">
+                          in progress
+                        </span>
+                      )}
+                      <span className="text-pink-300 tabular-nums font-semibold">{n}</span>
+                    </div>
+                  </li>
+                );
+              })}
+              {/* In-progress promos that have never been claimed yet —
+                  show as a row with "—" claims and the in-progress pill so
+                  admins see they're mid-way through. */}
+              {promoState && !isSectionFail(promoState) &&
+                promoState.startedTypes
+                  .filter((t) => !stats.promoBreakdown.has(t))
+                  .map((type) => (
+                    <li key={`started-${type}`} className="flex items-center justify-between gap-2 px-5 py-2 text-xs">
+                      <span className="capitalize text-gray-200">{type.replace(/-/g, ' ')}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-amber-300 ring-1 ring-amber-500/30">
+                          in progress
+                        </span>
+                        <span className="text-gray-600 tabular-nums">—</span>
+                      </div>
+                    </li>
+                  ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Wheel prize breakdown */}
         <Card>
           <Header title="Wheel wins by prize" sub={`${stats.spinsWon} total spins won`} />
-          <Table
-            rows={[...stats.wheelPrizeBreakdown.entries()].sort((a, b) => b[1] - a[1])}
-            accentFor={(label) => /jackpot/i.test(label) ? 'text-red-300' : /hof/i.test(label) ? 'text-[#D4AF37]' : 'text-purple-300'}
-          />
+          {stats.wheelPrizeBreakdown.size === 0 ? (
+            <p className="px-5 py-6 text-center text-xs text-gray-500">No wheel spins yet.</p>
+          ) : (
+            <Table
+              rows={[...stats.wheelPrizeBreakdown.entries()].sort((a, b) => b[1] - a[1])}
+              accentFor={(label) => /jackpot/i.test(label) ? 'text-red-300' : /hof/i.test(label) ? 'text-[#D4AF37]' : 'text-purple-300'}
+            />
+          )}
         </Card>
-      )}
-
-      {/* Promo breakdown table */}
-      {stats.promoBreakdown.size > 0 && (
-        <Card>
-          <Header title="Promos claimed by type" sub={`${stats.promosClaimed} total`} />
-          <Table
-            rows={[...stats.promoBreakdown.entries()].sort((a, b) => b[1] - a[1])}
-            accentFor={() => 'text-pink-300'}
-            capitalize
-          />
-        </Card>
-      )}
+      </div>
 
       {/* Recent activity with filter chips */}
       <Card>

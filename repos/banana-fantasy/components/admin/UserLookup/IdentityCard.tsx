@@ -168,6 +168,7 @@ export function IdentityCard({
           >
             {kycLabel}
           </span>
+          <ActivityPill lastActiveAt={identity.lastActiveAt} />
         </div>
       </div>
 
@@ -229,6 +230,52 @@ export function IdentityCard({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * Glanceable activity status. Mirrors the color-coding used in the
+ * bottom Users table on the dashboard so admins read the same signal
+ * the same way across both surfaces.
+ *
+ * Buckets:
+ *   ≤ 7 days  → emerald "Active"
+ *   ≤ 14 days → gray "Recent"
+ *   ≤ 30 days → amber "Inactive"
+ *   > 30 days → red "Stale"
+ *   never     → gray "Never"
+ */
+function ActivityPill({ lastActiveAt }: { lastActiveAt: string | null }) {
+  if (!lastActiveAt) {
+    return (
+      <span className="rounded-md bg-gray-700/40 px-2 py-0.5 text-gray-400 ring-1 ring-gray-600">
+        Never active
+      </span>
+    );
+  }
+  const t = Date.parse(lastActiveAt);
+  if (!Number.isFinite(t)) return null;
+  const days = (Date.now() - t) / 86_400_000;
+  const ago = timeAgo(lastActiveAt) ?? '';
+  let cls = '';
+  let label = '';
+  if (days <= 7) {
+    cls = 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30';
+    label = `Active · ${ago}`;
+  } else if (days <= 14) {
+    cls = 'bg-gray-700/40 text-gray-300 ring-gray-600';
+    label = `Recent · ${ago}`;
+  } else if (days <= 30) {
+    cls = 'bg-amber-500/10 text-amber-300 ring-amber-500/30';
+    label = `Inactive · ${ago}`;
+  } else {
+    cls = 'bg-red-500/10 text-red-300 ring-red-500/30';
+    label = `Stale · ${ago}`;
+  }
+  return (
+    <span className={`rounded-md px-2 py-0.5 ring-1 ${cls}`} title={fmtDate(lastActiveAt)}>
+      {label}
+    </span>
   );
 }
 
