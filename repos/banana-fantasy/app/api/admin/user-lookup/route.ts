@@ -582,7 +582,7 @@ export async function GET(req: Request) {
       onrampRes,
       offrampRes,
       withdrawalsRes,
-      draftsRes,
+      _draftsRes,  // stub — drafts derived from activity events below
       errorsRes,
       auditRes,
       activityRes,
@@ -600,7 +600,16 @@ export async function GET(req: Request) {
         field: 'userId',
         limit: RECENT_LIMIT,
       }),
-      readList(wallet, { collection: 'v2_drafts', field: 'createdBy', limit: RECENT_LIMIT }),
+      // Drafts: derived below from the activity events stream — every
+      // draft_entered / draft_left / draft_won event has the draft's
+      // metadata in `metadata`. The previous v2_drafts.createdBy query
+      // returned 0 for everyone because the SBS frontend doesn't write
+      // a v2_drafts doc with createdBy; drafts live in the Go API and
+      // surface in v2_activity_events instead. Boris caught it: his
+      // wallet has 34 draft_entered events but the Drafts card said
+      // "no drafts found." Stub kept here for Promise.allSettled
+      // index alignment; the real derivation happens after the await.
+      Promise.resolve([] as Record<string, unknown>[]),
       readList(wallet, { collection: 'v2_error_events', field: 'actor', limit: ERROR_LIMIT }),
       readList(wallet, { collection: 'adminAuditLog', field: 'target', limit: AUDIT_LIMIT }),
       // ACTIVITY: read from `v2_activity_events` (the commerce + gameplay
@@ -646,6 +655,51 @@ export async function GET(req: Request) {
     const kyc = kycRes.status === 'fulfilled' ? kycRes.value : [];
     const withdrawals = withdrawalsRes.status === 'fulfilled' ? withdrawalsRes.value : [];
 
+    // Derive per-user draft history from activity events. Boris's
+    // wallet has 34+ draft_entered events but the legacy v2_drafts.
+    // createdBy query found 0 (SBS doesn't write that doc shape).
+    // Each draft_entered metadata carries draftId / draftType /
+    // draftSpeed / entryFee / draftedBy etc. — fold them into a per-
+    // draft row keyed by draftId so multiple events on the same draft
+    // (entered + won) collapse to one row with the latest state.
+    const activityList =
+      activityRes.status === 'fulfilled' ? (activityRes.value as Record<string, unknown>[]) : [];
+    const draftsById = new Map<string, Record<string, unknown>>();
+    for (const e of activityList) {
+      const type = String((e as { type?: string }).type ?? '');
+      if (type !== 'draft_entered' && type !== 'draft_left' && type !== 'draft_won') continue;
+      const meta = ((e as { metadata?: Record<string, unknown> }).metadata ?? {}) as Record<string, unknown>;
+      const draftId = String(meta.draftId ?? meta.draft_id ?? (e as { id?: string }).id ?? '');
+      if (!draftId) continue;
+      const iso = String(
+        (e as { createdAtIso?: string }).createdAtIso ?? (e as { createdAt?: string }).createdAt ?? '',
+      );
+      const prev = draftsById.get(draftId) ?? { id: draftId };
+      // Status mapping: draft_won wins out, then draft_left, else draft_entered.
+      const prevStatus = String(prev.status ?? '');
+      let nextStatus = prevStatus;
+      if (type === 'draft_won') nextStatus = 'won';
+      else if (type === 'draft_left' && prevStatus !== 'won') nextStatus = 'left';
+      else if (!prevStatus) nextStatus = 'entered';
+      draftsById.set(draftId, {
+        ...prev,
+        status: nextStatus,
+        draftType: meta.draftType ?? meta.type ?? prev.draftType ?? null,
+        draftSpeed: meta.draftSpeed ?? prev.draftSpeed ?? null,
+        entryFee: meta.entryFee ?? prev.entryFee ?? null,
+        leagueNumber: meta.leagueNumber ?? prev.leagueNumber ?? null,
+        prizePaid: type === 'draft_won' ? meta.amount : prev.prizePaid,
+        createdAt: prev.createdAt && (iso === '' || prev.createdAt > iso) ? prev.createdAt : iso || prev.createdAt,
+        lastEventAt: iso > String(prev.lastEventAt ?? '') ? iso : prev.lastEventAt,
+      });
+    }
+    const draftRows = [...draftsById.values()].sort((a, b) =>
+      String(b.lastEventAt ?? '').localeCompare(String(a.lastEventAt ?? '')),
+    );
+    logger.info('admin.user_lookup.drafts_derived_ok', {
+      context: { wallet, totalDrafts: draftRows.length, activityEvents: activityList.length },
+    });
+
     const healthSummary = computeHealthSummary({
       identity,
       prefs,
@@ -676,7 +730,10 @@ export async function GET(req: Request) {
         offramps: offrampRes.status === 'fulfilled' ? offrampRes.value : sectionFail('offramps', offrampRes.reason),
         withdrawals: withdrawalsRes.status === 'fulfilled' ? withdrawals : sectionFail('withdrawals', withdrawalsRes.reason),
       },
-      drafts: draftsRes.status === 'fulfilled' ? draftsRes.value : sectionFail('drafts', draftsRes.reason),
+      // Drafts sourced from activity-event derivation above (see
+      // `draftRows`). The original v2_drafts.createdBy promise is now
+      // a stub that resolves to []; we replace it with the real list.
+      drafts: draftRows,
       errors: errorsRes.status === 'fulfilled' ? recentErrors : sectionFail('errors', errorsRes.reason),
       audit: auditRes.status === 'fulfilled' ? auditRes.value : sectionFail('audit', auditRes.reason),
       activity: activityRes.status === 'fulfilled' ? activityRes.value : sectionFail('activity', activityRes.reason),

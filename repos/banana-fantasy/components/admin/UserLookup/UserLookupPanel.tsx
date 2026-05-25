@@ -93,17 +93,18 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
       {/* Data */}
       {wallet && lookup.data && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          {/* Main column.
-              Order mirrors the dashboard's "scan top → drill bottom"
-              rhythm but scoped to one user:
-                1. HealthSummary — banner: who needs attention?
+          {/* Reading order: who → what they've done → where money went →
+              admin support context → admin audit trail.
+                1. HealthSummary — banner: anything broken right now?
                 2. IdentityCard — name, pfp, status pills, balances
-                3. Notes — admin shared notes for this user
-                4. ActivitySection — lifetime tiles + Promos|Wheel pair
-                5. Domain pairs (2-col on lg+):
-                     PassesDrafts | Payments
-                     KYC          | Errors
-                6. Audit — admin action history (full width) */}
+                3. ActivitySection — lifetime tiles + Promos|Wheel +
+                   timeline (the MOST IMPORTANT block — answers "what
+                   has this user actually done?" at a glance)
+                4. Drafts — list of every draft they entered
+                5. Payments — onramps / offramps / withdrawals
+                6. Notes + Notifications (2-col) — admin context
+                7. KYC + Errors (2-col) — issue surfaces
+                8. Audit — admin actions on this wallet */}
           <div className="min-w-0 space-y-4">
             <HealthSummary
               status={lookup.data.healthSummary.status}
@@ -115,18 +116,18 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
               }
               walletShort={lookup.data.walletShort}
             />
-            <NotesSection wallet={wallet} notes={lookup.data.notes} />
-            <NotificationsSection
-              wallet={wallet}
-              notifications={lookup.data.notifications}
-            />
             <ActivitySection
               activity={lookup.data.activity}
               promoState={lookup.data.promoState}
             />
+            <PassesDraftsSection drafts={lookup.data.drafts} />
+            <PaymentsSection payments={lookup.data.payments} />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              <PassesDraftsSection drafts={lookup.data.drafts} />
-              <PaymentsSection payments={lookup.data.payments} />
+              <NotesSection wallet={wallet} notes={lookup.data.notes} />
+              <NotificationsSection
+                wallet={wallet}
+                notifications={lookup.data.notifications}
+              />
             </div>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               <KycSection kyc={lookup.data.kyc} wallet={wallet} />
