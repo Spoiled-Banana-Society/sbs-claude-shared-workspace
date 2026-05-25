@@ -6,7 +6,11 @@ import { getExposure, recomputeUserExposure } from '@/lib/db';
 import type { ExposureRecomputeDiag } from '@/lib/db-firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
-const RECOMPUTE_THROTTLE_MS = 60_000;
+// Concurrent-read dedupe window. Was 60s — Richard wants exposure to
+// reflect a just-completed draft on the next page load, so the throttle
+// is now just enough to prevent the same tab's parallel hooks from
+// firing two writes back-to-back. The recompute itself is idempotent.
+const RECOMPUTE_THROTTLE_MS = 2_000;
 
 export async function GET(req: Request, ctx: { params: { userId: string } }) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -19,10 +23,10 @@ export async function GET(req: Request, ctx: { params: { userId: string } }) {
     const force = req.url.includes('recompute=1');
     const debug = req.url.includes('debug=1');
 
-    // Throttled recompute on every read. Mirrors the badge sweep pattern:
-    // a `lastExposureRecomputeAt` timestamp on the user doc gates the
-    // Go-API hit so concurrent reads share the same throttle. The
-    // recompute is idempotent + writes the doc itself.
+    // Recompute on every read (modulo the 2s concurrent-dedupe window).
+    // A `lastExposureRecomputeAt` timestamp on the user doc lets parallel
+    // requests from the same page share a single write. The recompute is
+    // idempotent + writes the doc itself.
     const db = getAdminFirestore();
     const userRef = db.collection('v2_users').doc(lower);
     const userSnap = await userRef.get();
