@@ -138,8 +138,19 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const weekTs = Timestamp.fromMillis(week.getTime());
 
   const users = db.collection('v2_users');
-  const wheelSpins = db.collection('wheelSpins');
+  // Real spin data lives in per-user subcollections:
+  //   v2_users/{userId}/wheelSpins/{spinId}
+  // A `collectionGroup('wheelSpins')` query walks every subcollection
+  // at once. Reading the bare top-level `wheelSpins` collection (as
+  // we did until now) only saw legacy test data and produced wildly
+  // wrong counts — Boris caught "97 JP entries in 156 spins" which
+  // was reading 156 stale top-level docs.
+  const wheelSpinsGroup = db.collectionGroup('wheelSpins');
   const userEvents = db.collection('v2_user_events');
+  // Commerce / gameplay events (pass_purchased, pass_granted, spin_won,
+  // promo_claimed, draft_won, cashout_completed, …). Uses `type` field
+  // not `eventType`. Distinct from v2_user_events (auth lifecycle).
+  const activityEvents = db.collection('v2_activity_events');
   const spinShares = db.collection('v2_spin_shares');
   const xLinks = db.collection('v2_twitter_links');
   const referralCodes = db.collection('v2_referral_codes');
@@ -189,13 +200,16 @@ async function buildMetrics(): Promise<MetricsResponse> {
     count(userEvents.where('eventType', '==', 'promo_claimed').where('timestamp', '>=', todayIso)),
   ]);
 
-  // Wheel spins: timestamp is ISO string per app/api/wheel/spin/route.ts
+  // Wheel spins: timestamp is ISO string. Reads the per-user
+  // `wheelSpins` subcollections via collectionGroup so the counts
+  // reflect every spin every user has ever taken — not the (mostly
+  // empty / legacy) top-level `wheelSpins` collection.
   const [totalSpins, spinsToday, jackpotHits, hofHits, draftPassAwards] = await Promise.all([
-    count(wheelSpins),
-    count(wheelSpins.where('timestamp', '>=', todayIso)),
-    count(wheelSpins.where('result', '==', 'jackpot')),
-    count(wheelSpins.where('result', '==', 'hof')),
-    count(wheelSpins.where('prize.type', '==', 'draft_pass')),
+    count(wheelSpinsGroup),
+    count(wheelSpinsGroup.where('timestamp', '>=', todayIso)),
+    count(wheelSpinsGroup.where('result', '==', 'jackpot')),
+    count(wheelSpinsGroup.where('result', '==', 'hof')),
+    count(wheelSpinsGroup.where('prize.type', '==', 'draft_pass')),
   ]);
 
   // Shares: timestamp field is verifiedAt
@@ -261,11 +275,12 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const jackpotQueueBreakdown = summarizeQueue(jackpotQueueDoc?.data());
   const hofQueueBreakdown = summarizeQueue(hofQueueDoc?.data());
 
-  // Draft passes awarded (sum prize.value from wheelSpins where prize.type='draft_pass')
-  // Firestore can't sum — fetch recent up to 500 and total.
+  // Draft passes awarded (sum prize.value across every draft_pass spin).
+  // Firestore can't sum — bounded scan to 500 most-recent. Uses the
+  // collectionGroup so it reads from where spins actually live.
   let draftPassesAwardedTotal = 0;
   try {
-    const awardedSnap = await wheelSpins
+    const awardedSnap = await wheelSpinsGroup
       .where('prize.type', '==', 'draft_pass')
       .orderBy('timestamp', 'desc')
       .limit(500)
@@ -274,26 +289,40 @@ async function buildMetrics(): Promise<MetricsResponse> {
       const v = (d.data() as { prize?: { value?: unknown } }).prize?.value;
       if (typeof v === 'number') draftPassesAwardedTotal += v;
     }
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    // Non-fatal — collectionGroup ordered queries sometimes require an
+    // index on first use. Log so we know to add one.
+    logger.warn('metrics.draft_passes_awarded_failed', { err });
   }
 
   // ── Lifetime totals + promo breakdown ──────────────────────────────
   // All-time counters that complement the per-day KPIs above. Each one
   // is a single count() query unless noted; promo-by-type requires a
   // bounded scan because Firestore can't group_by.
+  //
+  // IMPORTANT collection routing:
+  //   v2_user_events  → signup / login / x_linked / first_purchase / wallet_linked / promo_claimed
+  //   v2_activity_events → pass_purchased / pass_granted / spin_won / promo_claimed /
+  //                        draft_entered / draft_left / draft_won / marketplace_sold / cashout_completed
+  // Using the WRONG collection per event = silent 0s on the dashboard.
 
   const [
     loginsLifetime,
     passesPurchasedLifetime,
     promosClaimedLifetime,
-    draftsCompletedLifetime,
   ] = await Promise.all([
     count(userEvents.where('eventType', '==', 'login')),
-    count(userEvents.where('eventType', '==', 'pass_purchased')),
+    // pass_purchased lives in v2_activity_events with field `type` (not
+    // `eventType`). Reading from v2_user_events returned 0 forever.
+    count(activityEvents.where('type', '==', 'pass_purchased')),
     count(userEvents.where('eventType', '==', 'promo_claimed')),
-    count(db.collection('v2_drafts').where('status', '==', 'completed')),
   ]);
+  // Drafts completed lives in the Go API, not Firestore — there's no
+  // v2_drafts collection. The queues' completed-round counts are the
+  // closest local proxy (already computed below as jackpot/hof
+  // breakdowns), so leave a placeholder 0 here and surface it from a
+  // dedicated source in a later pass.
+  const draftsCompletedLifetime = 0;
 
   // Withdrawals paid volume (lifetime). Bounded scan to keep the
   // metrics query fast — caps at the most-recent 2000 paid withdrawals.
@@ -325,7 +354,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const wheelPrizeBreakdown: Record<string, number> = {};
   let totalFreeDraftsFromWheel = 0;
   try {
-    const spinSnap = await wheelSpins.orderBy('timestamp', 'desc').limit(2000).get();
+    const spinSnap = await wheelSpinsGroup.orderBy('timestamp', 'desc').limit(2000).get();
     for (const d of spinSnap.docs) {
       const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string };
       const prizeType = data.prize?.type ?? '';
