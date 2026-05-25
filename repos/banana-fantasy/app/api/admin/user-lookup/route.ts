@@ -557,10 +557,12 @@ export async function GET(req: Request) {
       // stream that powers Live Activity) — NOT `userEvents`, which is a
       // stale collection name from an older auth pipeline that's never
       // populated. The previous code was reading from `userEvents` and
-      // finding 0 hits for every wallet. Bumped to 200 docs so the lifetime
-      // summary chips (logins / spins / promos / passes / wins / cashouts)
-      // have a meaningful denominator.
-      readList(wallet, { collection: 'v2_activity_events', field: 'userId', limit: 200 }),
+      // finding 0 hits for every wallet. Limit now 5000 — was 200, which
+      // truncated heavy users (Boris's wallet alone has 74+ spins +
+      // numerous purchases + promos), causing the lifetime tiles to
+      // undercount his real activity. 5k is well above any one user's
+      // actual event count.
+      readList(wallet, { collection: 'v2_activity_events', field: 'userId', limit: 5000 }),
       readNotes(wallet),
     ]);
 

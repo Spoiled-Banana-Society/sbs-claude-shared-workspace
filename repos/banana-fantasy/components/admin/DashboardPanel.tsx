@@ -268,10 +268,18 @@ function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgre
 
   const stalePending = progress?.stalePending ?? [];
 
+  // Visible-only totals — the box header used to read m.lifetime.
+  // promosClaimed (every promo_claimed event regardless of type),
+  // which included legacy types like "buy-bonus" that the per-row
+  // table filters out. Header now sums only the 6 visible promos so
+  // the row totals reconcile with the header.
+  const visibleTodayTotal = liveRows.reduce((s, r) => s + r.today, 0);
+  const visibleLifetimeTotal = liveRows.reduce((s, r) => s + r.total, 0);
+
   return (
     <Box
       title="Promos"
-      sub={`${m.promos.promoClaimsToday} today · ${m.lifetime.promosClaimed} lifetime`}
+      sub={`${visibleTodayTotal} today · ${visibleLifetimeTotal} lifetime`}
     >
       <table className="w-full text-sm">
         <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">

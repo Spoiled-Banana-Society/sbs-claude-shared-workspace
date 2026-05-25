@@ -436,32 +436,67 @@ async function buildMetrics(): Promise<MetricsResponse> {
     const spinSnap = await wheelSpinsGroup.limit(50000).get();
     wheelScanSize = spinSnap.size;
     for (const d of spinSnap.docs) {
-      const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string; timestamp?: string };
+      // Verified shapes from staging (scripts/inspect-promo-and-wheel-shapes.mjs):
+      //   LIVE (current):  prize: { type: 'draft_pass', value: 1|5|10|20 }, result: segment.id
+      //   LIVE (current):  prize: { type: 'custom', value: 'jackpot' | 'hof' }
+      //   SEED (every new user gets seeded 5 mock spins):
+      //     prize: { type: 'drafts', amount: 1|5|10 }   ← plural + `amount`
+      //     prize: { type: 'jackpot' }                  ← bare, no value
+      //     prize: { type: 'hof' }                      ← bare, no value
+      // Boris's "Legacy / unknown 255" was the union of the 3 seed
+      // shapes. We now parse all five canonically.
+      const data = d.data() as {
+        prize?: { type?: string; value?: unknown; amount?: unknown };
+        result?: string;
+        timestamp?: string;
+        date?: string;  // seed shape uses `date` not `timestamp`
+      };
       const prizeType = data.prize?.type ?? '';
       const prizeValue = data.prize?.value;
-      const tsIso = typeof data.timestamp === 'string' ? data.timestamp : '';
+      const prizeAmount = data.prize?.amount;
+      const tsIso = typeof data.timestamp === 'string'
+        ? data.timestamp
+        : (typeof data.date === 'string' ? data.date : '');
       const isToday = tsIso >= todayIso;
       if (isToday) spinsToday += 1;
       let label: string | null = null;
+
+      // 1. Live shape: prize.type=draft_pass + numeric prize.value
       if (prizeType === 'draft_pass' && typeof prizeValue === 'number') {
         label = `${prizeValue} free draft${prizeValue === 1 ? '' : 's'}`;
         totalFreeDraftsFromWheel += prizeValue;
         if (isToday) freeDraftsFromWheelToday += prizeValue;
         draftPassAwards += 1;
         draftPassesAwardedTotal += prizeValue;
+
+      // 2. Seed shape: prize.type='drafts' (plural) + numeric prize.amount
+      } else if (prizeType === 'drafts' && typeof prizeAmount === 'number') {
+        label = `${prizeAmount} free draft${prizeAmount === 1 ? '' : 's'}`;
+        totalFreeDraftsFromWheel += prizeAmount;
+        if (isToday) freeDraftsFromWheelToday += prizeAmount;
+        draftPassAwards += 1;
+        draftPassesAwardedTotal += prizeAmount;
+
+      // 3. Live shape: prize.type=custom + prize.value='jackpot'|'hof'
       } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
         label = 'Jackpot entry';
         jackpotHits += 1;
       } else if (prizeType === 'custom' && prizeValue === 'hof') {
         label = 'HOF entry';
         hofHits += 1;
+
+      // 4. Seed shape: bare prize.type='jackpot' / 'hof'
+      } else if (prizeType === 'jackpot') {
+        label = 'Jackpot entry';
+        jackpotHits += 1;
+      } else if (prizeType === 'hof') {
+        label = 'HOF entry';
+        hofHits += 1;
+
       } else if (prizeType === 'nothing') {
         label = 'Nothing';
       } else if (typeof data.result === 'string' && data.result.trim()) {
-        // Legacy spins wrote a free-form `result` string instead of
-        // `prize: {type, value}`. Try to map it back into a canonical
-        // label so 'jackpot' / 'hof' / '1' / '5' result strings still
-        // show up in the right row.
+        // Result-string only fallback (legacy free-form `result`).
         const r = data.result.trim().toLowerCase();
         if (r.includes('jackpot')) { label = 'Jackpot entry'; jackpotHits += 1; }
         else if (r.includes('hof')) { label = 'HOF entry'; hofHits += 1; }
@@ -478,7 +513,9 @@ async function buildMetrics(): Promise<MetricsResponse> {
         }
       }
       if (label === null) {
-        // No recognizable shape — bucket as legacy so totals reconcile.
+        // Should never happen now — every doc on staging maps to one
+        // of the five known shapes. Surfaces in UI if it ever does so
+        // we catch a new schema variant early.
         label = 'Legacy / unknown';
         wheelLegacyDocs += 1;
       }
@@ -540,42 +577,37 @@ async function buildMetrics(): Promise<MetricsResponse> {
   // Promo IDs are unique per (user, type) so we dedupe by doc id to
   // avoid double-counting when both collections recorded the same
   // claim.
+  // Verified against staging data (scripts/inspect-promo-and-wheel-shapes.mjs):
+  //   v2_user_events.eventType=promo_claimed → 20 docs (mint=11, pick-10=3,
+  //     buy-bonus=2, daily-drafts=2, new-user=1, referral=1)
+  //   v2_activity_events.type=promo_claimed → 19 docs (nearly identical
+  //     mirror of the same claims)
+  //
+  // Previous version cross-source-deduped by `meta.promoId`, but promoId
+  // in user-events is the promo TEMPLATE id (e.g. "mint-buy-10") shared
+  // across every user claiming that promo. The dedupe collapsed all 11
+  // mint claims into 1. Boris caught the bug ("how did we only do one
+  // total mint 10").
+  //
+  // Fix: scan v2_user_events ONLY (it's the canonical source — the
+  // lifetime count() headline reads from it). No dedupe — each doc IS
+  // one real claim. Headline (20) and breakdown sum (20) reconcile.
   const promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }> = {};
-  const seenClaimKeys = new Set<string>();
-  const bumpPromoOnce = (type: string, dayKey: string, key: string) => {
-    if (seenClaimKeys.has(key)) return;
-    seenClaimKeys.add(key);
-    if (!promoBreakdown[type]) promoBreakdown[type] = { claimsToday: 0, claimsTotal: 0 };
-    promoBreakdown[type].claimsTotal += 1;
-    if (dayKey >= todayIso) promoBreakdown[type].claimsToday += 1;
-  };
   try {
-    // Source 1: v2_user_events. Single-field where → auto-indexed.
-    const snap1 = await userEvents.where('eventType', '==', 'promo_claimed').limit(100000).get();
-    for (const d of snap1.docs) {
-      const data = d.data() as { timestamp?: string; meta?: { promoType?: unknown; promoId?: unknown }; userId?: string };
+    const snap = await userEvents.where('eventType', '==', 'promo_claimed').limit(100000).get();
+    for (const d of snap.docs) {
+      const data = d.data() as { timestamp?: string; meta?: { promoType?: unknown } };
       const t = String(data.meta?.promoType ?? 'unknown');
-      // Dedupe key: prefer explicit promoId, else (userId, type, day) so
-      // a duplicate event for the same claim collapses.
-      const dayKey = (data.timestamp ?? '').slice(0, 10);
-      const dedupe = data.meta?.promoId ? `pid:${String(data.meta.promoId)}` : `uet:${(data.userId ?? '').toLowerCase()}:${t}:${dayKey}`;
-      bumpPromoOnce(t, data.timestamp ?? '', dedupe);
-    }
-    // Source 2: v2_activity_events. Same single-field where pattern.
-    const snap2 = await activityEvents.where('type', '==', 'promo_claimed').limit(100000).get();
-    for (const d of snap2.docs) {
-      const data = d.data() as { createdAtIso?: string; metadata?: { promoType?: unknown; promoId?: unknown }; userId?: string };
-      const t = String(data.metadata?.promoType ?? 'unknown');
-      const dayKey = (data.createdAtIso ?? '').slice(0, 10);
-      const dedupe = data.metadata?.promoId ? `pid:${String(data.metadata.promoId)}` : `uet:${(data.userId ?? '').toLowerCase()}:${t}:${dayKey}`;
-      bumpPromoOnce(t, data.createdAtIso ?? '', dedupe);
+      const ts = data.timestamp ?? '';
+      if (!promoBreakdown[t]) promoBreakdown[t] = { claimsToday: 0, claimsTotal: 0 };
+      promoBreakdown[t].claimsTotal += 1;
+      if (ts >= todayIso) promoBreakdown[t].claimsToday += 1;
     }
     logger.info('metrics.promo_breakdown_ok', {
       context: {
         uniqueTypes: Object.keys(promoBreakdown).length,
         totalClaims: Object.values(promoBreakdown).reduce((s, v) => s + v.claimsTotal, 0),
-        userEventsRead: snap1.size,
-        activityEventsRead: snap2.size,
+        userEventsRead: snap.size,
       },
     });
   } catch (err) {
