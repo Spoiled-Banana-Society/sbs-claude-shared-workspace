@@ -256,11 +256,11 @@ export default function ExposurePage() {
               <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Most Exposed</p>
               {summary.topExposure ? (
                 <div className="flex items-center gap-2">
-                  {/* Strip the slot-index suffix (RB1/RB2/RB3 → RB) so the
-                      most-exposed chip matches the position chips shown
-                      everywhere else in the page. The slot number was
-                      misleading — it's an internal "Nth player drafted
-                      from this team's depth" index, not a lineup slot. */}
+                  {/* Keep the slot suffix (RB1 vs RB2, WR1 vs WR2) — Richard
+                      wants the distinction visible so users can see whether
+                      they're loading up on lead backs/receivers or skewing
+                      to second options. The slot is the user's Nth pick
+                      at that position for the draft. */}
                   <span
                     className="text-xs font-bold px-1.5 py-0.5 rounded"
                     style={{
@@ -268,7 +268,7 @@ export default function ExposurePage() {
                       color: posColor(summary.topExposure.position),
                     }}
                   >
-                    {summary.topExposure.team} {summary.topExposure.position.replace(/\d+$/, '')}
+                    {summary.topExposure.team} {summary.topExposure.position}
                   </span>
                   <span className="text-white font-bold text-lg">{summary.topExposure.exposure}%</span>
                 </div>
@@ -381,7 +381,7 @@ export default function ExposurePage() {
                       className="text-[11px] font-bold px-1.5 py-0.5 rounded"
                       style={{ backgroundColor: posColor(e.position) + '25', color: posColor(e.position) }}
                     >
-                      {e.position.replace(/\d/g, '')}
+                      {e.position}
                     </span>
                     <span className="text-white text-sm font-medium">{e.team}</span>
                   </div>
