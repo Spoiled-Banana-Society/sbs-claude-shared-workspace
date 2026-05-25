@@ -1312,7 +1312,9 @@ export async function getExposure(userId: string): Promise<UserExposure | null> 
  *
  * Slot convention (matches the seed):
  *  - QB / TE / DST → just the position (e.g. "KC QB")
- *  - RB / WR → 1-indexed position (e.g. "SF RB1", "MIA WR1", "MIA WR2")
+ *  - RB / WR → real team slot parsed from playerId (e.g. "SF RB1" vs
+ *    "SF RB2" — these are different slots in the game, not pick-order
+ *    labels). Determined by the suffix after "TEAM-" in playerId.
  *
  * Existing display fields (adp, projectedPoints, bye, displayName) are
  * preserved on a per-teamPosition basis so we don't blank them out on
@@ -1345,7 +1347,7 @@ export async function recomputeUserExposure(
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
 
-  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; displayName?: string }> | undefined> }> = [];
+  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
     const url = `${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`;
     if (diagOut) diagOut.url = url;
@@ -1374,14 +1376,27 @@ export async function recomputeUserExposure(
   const counts = new Map<string, { team: string; position: string; drafts: number; displayName?: string }>();
   let totalDrafts = 0;
 
-  const recordSlot = (positionGroup: 'QB' | 'RB' | 'WR' | 'TE' | 'DST', players: Array<{ team?: string; displayName?: string }> | undefined): boolean => {
+  const recordSlot = (positionGroup: 'QB' | 'RB' | 'WR' | 'TE' | 'DST', players: Array<{ team?: string; playerId?: string; position?: string; displayName?: string }> | undefined): boolean => {
     if (!players?.length) return false;
     let any = false;
-    players.forEach((p, idx) => {
+    players.forEach((p) => {
       if (!p?.team) return;
-      const slot = positionGroup === 'QB' || positionGroup === 'TE' || positionGroup === 'DST'
-        ? positionGroup
-        : `${positionGroup}${idx + 1}`;
+      // SF RB1 and SF RB2 are DIFFERENT team-position slots — the slot is a
+      // property of the pick, not the user's draft order. The Go API
+      // encodes it in playerId as "TEAM-SLOT" (e.g. "MIA-RB1", "SF-RB2",
+      // "KC-QB"). Parse the slot from there. Fall back to `position` if
+      // playerId is missing for any reason, then to just the position
+      // group (so the row still aggregates somewhere on legacy data).
+      const slotFromId = (() => {
+        if (!p.playerId) return null;
+        const dash = p.playerId.indexOf('-');
+        if (dash < 0) return null;
+        const suffix = p.playerId.slice(dash + 1).toUpperCase();
+        return suffix.startsWith(positionGroup) ? suffix : null;
+      })();
+      const slot = slotFromId
+        ?? (p.position && p.position.toUpperCase().startsWith(positionGroup) ? p.position.toUpperCase() : null)
+        ?? positionGroup;
       const teamPosition = `${p.team} ${slot}`;
       const prev = counts.get(teamPosition);
       counts.set(teamPosition, {
