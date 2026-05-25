@@ -28,6 +28,9 @@ import { useAdminMetrics, useRecentErrors, type ErrorEventEntry, type MetricsRes
 import { Sparkline } from '@/components/admin/Sparkline';
 import { LiveActivity } from '@/components/admin/LiveActivity';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { PromoProgressCard } from '@/components/admin/Dashboard/PromoProgressCard';
+import { HeaviestUsersCard } from '@/components/admin/Dashboard/HeaviestUsersCard';
+import { WithdrawalAgingCard } from '@/components/admin/Dashboard/WithdrawalAgingCard';
 import { explainError } from '@/lib/logSources';
 
 // How many polling samples we keep for each KPI's sparkline. At a 10s
@@ -226,11 +229,110 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         <PromoBreakdownCard breakdown={m.promoBreakdown} />
       )}
 
+      {/* PROMO PROGRESS — pending multi-step promos, conversion rates,
+          stale starters. Boris's "which promos aren't being completed
+          for specific users so we can DM them" view. */}
+      <PromoProgressCard enabled={enabled} />
+
+      {/* SIGNUP RAILS — breakdown of how users entered SBS: social-login
+          (Privy embedded wallet), Privy + external wallet, or direct
+          crypto-wallet connect. Boris's ask: "how many users are signing
+          up through crypto wallet rails and through gmail or x privy
+          rails." */}
+      {m && <SignupRailsCard breakdown={m.users.byWalletType} totalUsers={m.users.total} />}
+
+      {/* HEAVIEST USERS — top spend, top promos claimed, top wheel wins.
+          Three leaderboards; each wallet click → User Lookup. */}
+      <HeaviestUsersCard enabled={enabled} />
+
+      {/* WITHDRAWAL AGING — pending withdrawals bucketed by age so
+          stale items pop. */}
+      <WithdrawalAgingCard enabled={enabled} />
+
       {/* Two-column lower split: recent errors + live activity */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <RecentErrorsWidget errors={errors} loading={errorsQ.isLoading} />
         <LiveActivityWidget enabled={enabled} />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Signup rails — which paths users are coming in through. Each segment
+ * is one row with a bar sized to its share of the total. Helps Boris
+ * answer "is most growth crypto-native, social-login, or a mix?" at a
+ * glance, which informs which signup CTA to push.
+ */
+function SignupRailsCard({
+  breakdown,
+  totalUsers,
+}: {
+  breakdown: MetricsResponse['users']['byWalletType'];
+  totalUsers: number;
+}) {
+  const segments: { key: keyof typeof breakdown; label: string; sub: string; accent: string; bar: string }[] = [
+    {
+      key: 'privy_embedded',
+      label: 'Social login (Gmail / X / etc.)',
+      sub: 'Privy embedded wallet',
+      accent: 'text-blue-300',
+      bar: 'bg-blue-400/70',
+    },
+    {
+      key: 'privy_external',
+      label: 'Privy + external wallet',
+      sub: 'Privy session, user linked their own wallet',
+      accent: 'text-purple-300',
+      bar: 'bg-purple-400/70',
+    },
+    {
+      key: 'external_connect',
+      label: 'Crypto wallet direct',
+      sub: 'MetaMask / Coinbase Wallet / etc., no Privy',
+      accent: 'text-emerald-300',
+      bar: 'bg-emerald-400/70',
+    },
+    {
+      key: 'unknown',
+      label: 'Unknown / pre-tracking',
+      sub: 'Signed up before walletType was recorded',
+      accent: 'text-gray-400',
+      bar: 'bg-gray-500/60',
+    },
+  ];
+  const denominator = Math.max(1, totalUsers);
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
+      <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">Signup rails — how users entered</h3>
+        <span className="text-[11px] text-gray-500">lifetime · {totalUsers.toLocaleString()} users</span>
+      </div>
+      <ul className="divide-y divide-white/[0.04]">
+        {segments
+          .filter((s) => breakdown[s.key] > 0)
+          .map((s) => {
+            const count = breakdown[s.key];
+            const pct = (count / denominator) * 100;
+            return (
+              <li key={s.key} className="px-4 py-3">
+                <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                  <div className="min-w-0">
+                    <p className={`text-sm font-medium ${s.accent}`}>{s.label}</p>
+                    <p className="text-[11px] text-gray-500">{s.sub}</p>
+                  </div>
+                  <span className="text-xs text-gray-300 tabular-nums shrink-0">
+                    {count.toLocaleString()}
+                    <span className="text-gray-500 ml-1">({pct.toFixed(1)}%)</span>
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div className={`h-full rounded-full ${s.bar}`} style={{ width: `${Math.max(2, pct)}%` }} />
+                </div>
+              </li>
+            );
+          })}
+      </ul>
     </div>
   );
 }

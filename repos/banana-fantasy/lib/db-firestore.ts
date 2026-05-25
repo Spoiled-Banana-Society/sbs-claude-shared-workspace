@@ -1693,6 +1693,11 @@ export async function recordDraftCompletion(userId: string, draftId: string): Pr
       justBecameClaimable = true;
     }
 
+    // Stamp every progress write so the admin promo-progress endpoint
+    // can identify stalled multi-step promo starters (e.g. "did 1 of 4
+    // daily drafts, no movement in 48h"). Cheap, non-breaking add.
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
+
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     if (needsTimerDelete) {
       tx.update(promoRef, { timerEndTime: FieldValue.delete() });
@@ -1749,6 +1754,10 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
     promo.progressCurrent = 1;
     promo.claimable = true;
     promo.claimCount = claimableCount;
+    // Timestamp every progress write so the admin promo-progress
+    // endpoint can identify users who started a multi-step promo but
+    // stalled mid-way (e.g. did 1 of 4 daily drafts, didn't come back).
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
 
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     return { promo: deepClone(promo), justAdded: true };
@@ -1891,6 +1900,7 @@ export async function recordJackpotHit(userId: string, draftId: string): Promise
     promo.progressCurrent = 1;
     promo.claimable = true;
     promo.claimCount = (promo.claimCount || 0) + reward;
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
 
     tx.set(promoRef, stripUndefined(promo), { merge: true });
     return { promo: deepClone(promo), justAdded: true, awarded: reward };

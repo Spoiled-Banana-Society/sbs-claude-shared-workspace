@@ -298,7 +298,19 @@ export function useRecentUserEvents(enabled: boolean) {
 }
 
 export interface MetricsResponse {
-  users: { total: number; newToday: number; newThisWeek: number; verified: number; xLinked: number };
+  users: {
+    total: number;
+    newToday: number;
+    newThisWeek: number;
+    verified: number;
+    xLinked: number;
+    byWalletType: {
+      privy_embedded: number;
+      privy_external: number;
+      external_connect: number;
+      unknown: number;
+    };
+  };
   engagement: { signupsToday: number; signupsThisWeek: number; loginsToday: number; loginsThisWeek: number };
   wheel: { totalSpins: number; spinsToday: number; jackpotHits: number; hofHits: number; draftPassAwards: number; draftPassesAwardedTotal: number };
   promos: { sharesVerifiedTotal: number; sharesVerifiedToday: number; sharesEarnedCredit: number; promoClaimsToday: number };
@@ -384,6 +396,69 @@ export function useResolvedErrors(enabled: boolean) {
     enabled,
     queryFn: () =>
       adminFetch<{ resolved: Record<string, ResolvedErrorEntry> }>('/api/admin/error-resolved', getHeaders),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+export interface PromoProgressResponse {
+  ok: boolean;
+  perType: Record<string, { started: number; completed: number; pending: number; conversionRate: number }>;
+  pendingTotal: number;
+  stalePending: Array<{
+    wallet: string;
+    promoId: string;
+    promoType: string;
+    progress: number;
+    progressMax: number;
+    hoursStale: number | null;
+  }>;
+  scannedDocs: number;
+  warning?: string;
+}
+
+/**
+ * Aggregates "in-progress multi-step promos" across every user. Powers
+ * the dashboard's promo-progress card + the per-user lookup section.
+ * Polls less aggressively than headline metrics because the underlying
+ * collectionGroup scan is more expensive.
+ */
+export function usePromoProgress(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<PromoProgressResponse>({
+    queryKey: ['admin', 'promo-progress'],
+    enabled,
+    queryFn: () => adminFetch<PromoProgressResponse>('/api/admin/promo-progress', getHeaders),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
+export interface HeaviestUserEntry {
+  userId: string;
+  username: string | null;
+  spendUsd: number;
+  passesBought: number;
+  promosClaimed: number;
+  spinsWon: number;
+  lastActivityIso: string;
+}
+
+export interface HeaviestUsersResponse {
+  ok: boolean;
+  scannedDocs: number;
+  uniqueUsers: number;
+  topSpend: HeaviestUserEntry[];
+  topPromos: HeaviestUserEntry[];
+  topSpins: HeaviestUserEntry[];
+}
+
+export function useHeaviestUsers(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<HeaviestUsersResponse>({
+    queryKey: ['admin', 'heaviest-users'],
+    enabled,
+    queryFn: () => adminFetch<HeaviestUsersResponse>('/api/admin/heaviest-users', getHeaders),
     refetchInterval: 60_000,
     staleTime: 30_000,
   });

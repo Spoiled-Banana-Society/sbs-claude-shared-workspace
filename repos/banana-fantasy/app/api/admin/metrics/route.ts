@@ -24,6 +24,18 @@ export interface MetricsResponse {
     newThisWeek: number;
     verified: number;
     xLinked: number;
+    /**
+     * Signup rail breakdown by walletType. privy_embedded ≈ social login
+     * (Gmail / X / etc., user got an embedded wallet). privy_external ≈
+     * linked an existing wallet through Privy. external_connect ≈ direct
+     * wallet connect without Privy (MetaMask, Coinbase Wallet, …).
+     */
+    byWalletType: {
+      privy_embedded: number;
+      privy_external: number;
+      external_connect: number;
+      unknown: number;
+    };
   };
   engagement: {
     signupsToday: number;
@@ -143,6 +155,9 @@ async function buildMetrics(): Promise<MetricsResponse> {
     usersVerifiedBlueCheck,
     usersVerifiedLegacy,
     xLinkedCount,
+    usersPrivyEmbedded,
+    usersPrivyExternal,
+    usersExternalConnect,
   ] = await Promise.all([
     count(users),
     count(users.where('createdAt', '>=', todayIso)),
@@ -150,8 +165,20 @@ async function buildMetrics(): Promise<MetricsResponse> {
     count(users.where('blueCheckVerified', '==', true)),
     count(users.where('isBlueCheckVerified', '==', true)),
     count(xLinks),
+    // Signup rail breakdown — Boris's ask: how many users came in via
+    // Privy social login (Gmail/X, gives them an embedded wallet) vs
+    // Privy with an external wallet linked vs direct crypto-wallet
+    // connect (no Privy session). Each maps to a walletType tag we
+    // already write on signup. Counts are lifetime.
+    count(users.where('walletType', '==', 'privy_embedded')),
+    count(users.where('walletType', '==', 'privy_external')),
+    count(users.where('walletType', '==', 'external_connect')),
   ]);
   const usersVerified = Math.max(usersVerifiedBlueCheck, usersVerifiedLegacy);
+  const usersUnknownWalletType = Math.max(
+    0,
+    usersTotal - usersPrivyEmbedded - usersPrivyExternal - usersExternalConnect,
+  );
 
   // User events: timestamp is ISO string
   const [signupsToday, signupsWeek, loginsToday, loginsWeek, promoClaimsToday] = await Promise.all([
@@ -387,6 +414,12 @@ async function buildMetrics(): Promise<MetricsResponse> {
       newThisWeek: usersNewWeek,
       verified: usersVerified,
       xLinked: xLinkedCount,
+      byWalletType: {
+        privy_embedded: usersPrivyEmbedded,
+        privy_external: usersPrivyExternal,
+        external_connect: usersExternalConnect,
+        unknown: usersUnknownWalletType,
+      },
     },
     engagement: {
       signupsToday,
