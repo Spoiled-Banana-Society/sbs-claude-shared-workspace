@@ -130,19 +130,23 @@ export default function ExposurePage() {
   // ── Computed data ─────────────────────────────────────────────────────
 
   const filteredExposures = useMemo(() => {
-    let data = posFilter === 'all'
+    // Search chips override the position pill — searching "IND RB" with
+    // the QB pill active should still surface IND RB1/RB2 rows. Without
+    // this, the two filters AND together and the user sees the
+    // confusing "no positions match" empty state on what they know is
+    // in their portfolio.
+    const hasSearch = search.length > 0 && search.some(c => c.trim());
+    let data = hasSearch || posFilter === 'all'
       ? getTopExposures(exposures, 100)
       : getExposureByPosition(exposures, posFilter);
 
-    if (search.length > 0) {
+    if (hasSearch) {
       // OR across chips: a row is one team-position, so multiple chips
       // restrict the row set to anything matching any chip.
       const queries = search.map(c => c.trim().toLowerCase()).filter(Boolean);
-      if (queries.length > 0) {
-        data = data.filter(e =>
-          queries.some(q => e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q)),
-        );
-      }
+      data = data.filter(e =>
+        queries.some(q => e.teamPosition.toLowerCase().includes(q) || e.team.toLowerCase().includes(q)),
+      );
     }
 
     // Enrich with ADP/projected for sorting
