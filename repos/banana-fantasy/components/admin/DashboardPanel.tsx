@@ -27,13 +27,17 @@ import {
   useAdminMetrics,
   useRecentErrors,
   useHeaviestUsers,
+  usePromoProgress,
   type ErrorEventEntry,
   type MetricsResponse,
+  type PromoProgressResponse,
   AdminApiError,
 } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
+import { UsersTableBox } from '@/components/admin/Dashboard/UsersTableBox';
 import { explainError } from '@/lib/logSources';
+import { VISIBLE_PROMO_TYPES_ORDER } from '@/lib/promoFilter';
 
 /* ─────────────────────────────────────────────────────────  Page  */
 
@@ -41,6 +45,7 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
   const metricsQ = useAdminMetrics(enabled);
   const errorsQ = useRecentErrors(enabled);
   const heaviestQ = useHeaviestUsers(enabled);
+  const promoProgressQ = usePromoProgress(enabled);
   const m = metricsQ.data;
 
   const health = computeHealth(errorsQ.data?.errors, m?.withdrawals.pending);
@@ -78,7 +83,7 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
 
           {/* BOTTOM — Promos · Spins+Wheel (combined per Boris) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <PromosBox m={m} />
+            <PromosBox m={m} progress={promoProgressQ.data} />
             <SpinsAndWheelBox m={m} />
           </div>
         </>
@@ -89,6 +94,12 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         <TopUsersBox q={heaviestQ.data} loading={heaviestQ.isLoading} />
         <ErrorsBox errors={errorsQ.data?.errors ?? []} loading={errorsQ.isLoading} />
       </div>
+
+      {/* Every-user database. Filterable, sortable, paginated. Boris's
+          ask: "this is how many users we have these are all the users
+          let me filter to see oh ok heres the users who drafted a lot
+          but never completed or done a promo." */}
+      <UsersTableBox enabled={enabled} />
     </div>
   );
 }
@@ -208,55 +219,97 @@ function MintsBox({ m }: { m: MetricsResponse }) {
   );
 }
 
-function PromosBox({ m }: { m: MetricsResponse }) {
-  // The 6 promos live on the user-facing /promos page. Founder Draft
-  // is intentionally NOT here — it's an internal admin process
-  // (assigning weekly drafts + bulk-granting spins) that has its own
-  // section. Other event-triggered types (jackpot/hof/mint/daily-drafts)
-  // only render under "other" if they have lifetime claims.
-  const CANONICAL: { key: string; label: string }[] = [
-    { key: 'new-user', label: 'New user' },
-    { key: 'buy-bonus', label: 'Buy bonus' },
-    { key: 'referral', label: 'Referral' },
-    { key: 'pick-10', label: 'Pick 10' },
-    { key: 'tweet-engagement', label: 'Tweet engagement' },
-    { key: 'spin-share', label: 'Spin share' },
-  ];
-  const canonicalKeys = new Set(CANONICAL.map((p) => p.key));
-  // Founder draft is treated as canonical but rendered under a separate
-  // "Other / internal" subheader if it has activity, so the live front-
-  // page 6 stay visually grouped at the top.
-  const internalKeys = new Set(['founder-draft']);
-  const extras = Object.keys(m.promoBreakdown)
-    .filter((k) => !canonicalKeys.has(k))
-    .filter((k) => m.promoBreakdown[k].claimsTotal > 0)
-    .map((k) => ({
-      key: k,
-      label: k.replace(/-/g, ' ').replace(/_/g, ' '),
-      isInternal: internalKeys.has(k),
-    }));
+// Promo label overrides — the canonical set comes from lib/promoFilter
+// (VISIBLE_PROMO_TYPES_ORDER), and these are just nicer display names
+// than the kebab-case keys.
+const PROMO_LABEL: Record<string, string> = {
+  'new-user': 'New user',
+  'mint': 'Mint (buy 10)',
+  'daily-drafts': 'Daily drafts',
+  'pick-10': 'Pick 10',
+  'jackpot': 'Jackpot',
+  'referral': 'Referral',
+  'founder-draft': 'Founder draft',
+};
 
-  const buildRow = (key: string, label: string, dimWhenZero: boolean) => {
-    const c = m.promoBreakdown[key] ?? { claimsToday: 0, claimsTotal: 0 };
+function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgressResponse }) {
+  // Source of truth: lib/promoFilter.VISIBLE_PROMO_TYPES_ORDER — the
+  // exact same 6 the /promos page renders. Avoids drift between the
+  // admin view and what the user sees ("Boris is showing me promos
+  // that aren't live").
+  const liveKeys = VISIBLE_PROMO_TYPES_ORDER as readonly string[];
+
+  const perType = progress?.perType ?? {};
+
+  // Build rows for each live promo, then sort by lifetime claims desc
+  // so the most-popular one tops the list. Boris's ask: "which ones
+  // are the most popular to the least ones."
+  const liveRows = liveKeys.map((key) => {
+    const claims = m.promoBreakdown[key] ?? { claimsToday: 0, claimsTotal: 0 };
+    const prog = perType[key] ?? { started: 0, completed: 0, pending: 0, conversionRate: 0 };
     return {
-      label,
-      today: c.claimsToday,
-      total: c.claimsTotal,
-      dim: dimWhenZero && c.claimsTotal === 0,
+      key,
+      label: PROMO_LABEL[key] ?? key.replace(/-/g, ' '),
+      today: claims.claimsToday,
+      total: claims.claimsTotal,
+      // For single-step promos (claim button only), 'started' equals
+      // 'completed'. For multi-step (like daily-drafts, pick-10), this
+      // is "did at least one step but hasn't claimed reward yet."
+      inProgress: Math.max(0, prog.started - prog.completed),
     };
-  };
+  }).sort((a, b) => b.total - a.total);
 
-  const activeRows = CANONICAL.map((p) => buildRow(p.key, p.label, true));
-  const otherRows = extras.map((p) => buildRow(p.key, p.label, false));
+  // Other promo types that have ANY activity but aren't in the live
+  // visible set — surfaces internal/event-triggered types like
+  // founder-draft when they're firing.
+  const liveSet = new Set(liveKeys);
+  const otherRows = Object.keys(m.promoBreakdown)
+    .filter((k) => !liveSet.has(k))
+    .filter((k) => m.promoBreakdown[k].claimsTotal > 0)
+    .map((key) => {
+      const c = m.promoBreakdown[key];
+      const prog = perType[key] ?? { started: 0, completed: 0, pending: 0, conversionRate: 0 };
+      return {
+        key,
+        label: PROMO_LABEL[key] ?? key.replace(/-/g, ' '),
+        today: c.claimsToday,
+        total: c.claimsTotal,
+        inProgress: Math.max(0, prog.started - prog.completed),
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+
+  const stalePending = progress?.stalePending ?? [];
 
   return (
-    <Box title="Promos" sub={`${m.promos.promoClaimsToday} today · ${m.lifetime.promosClaimed} lifetime`}>
-      <StatTable
-        rows={[
-          { label: 'Promos claimed (all)', today: m.promos.promoClaimsToday, total: m.lifetime.promosClaimed, accent: 'text-pink-300' },
-          ...activeRows,
-        ]}
-      />
+    <Box
+      title="Promos"
+      sub={`${m.promos.promoClaimsToday} today · ${m.lifetime.promosClaimed} lifetime`}
+    >
+      <table className="w-full text-sm">
+        <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
+          <tr>
+            <th className="px-5 pt-3 pb-1.5 text-left font-medium">Promo</th>
+            <th className="pt-3 pb-1.5 text-right font-medium">Today</th>
+            <th className="pt-3 pb-1.5 text-right font-medium">Total</th>
+            <th className="px-5 pt-3 pb-1.5 text-right font-medium">In&nbsp;progress</th>
+          </tr>
+        </thead>
+        <tbody className="tabular-nums">
+          {liveRows.map((r) => {
+            const dim = r.total === 0 && r.inProgress === 0;
+            return (
+              <tr key={r.key} className="border-t border-white/[0.06]">
+                <td className={`px-5 py-2 capitalize ${dim ? 'text-gray-500' : 'text-white'}`}>{r.label}</td>
+                <td className={`py-2 text-right ${r.today > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{r.today.toLocaleString()}</td>
+                <td className={`py-2 text-right ${r.total > 0 ? 'text-pink-300' : 'text-gray-600'}`}>{r.total.toLocaleString()}</td>
+                <td className={`px-5 py-2 text-right ${r.inProgress > 0 ? 'text-amber-300' : 'text-gray-600'}`} title="Users who started a multi-step promo but haven't claimed the reward yet">{r.inProgress.toLocaleString()}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
       {otherRows.length > 0 && (
         <>
           <div className="px-5 pt-3 pb-1 text-[10px] uppercase tracking-[0.1em] text-gray-500 border-t border-white/[0.06]">
@@ -265,15 +318,45 @@ function PromosBox({ m }: { m: MetricsResponse }) {
           <table className="w-full text-sm">
             <tbody className="tabular-nums">
               {otherRows.map((r) => (
-                <tr key={r.label} className="border-t border-white/[0.04]">
+                <tr key={r.key} className="border-t border-white/[0.04]">
                   <td className="px-5 py-1.5 capitalize text-gray-200">{r.label}</td>
                   <td className="py-1.5 text-right text-white">{r.today.toLocaleString()}</td>
-                  <td className="px-5 py-1.5 text-right text-gray-200">{r.total.toLocaleString()}</td>
+                  <td className="py-1.5 text-right text-pink-300">{r.total.toLocaleString()}</td>
+                  <td className="px-5 py-1.5 text-right text-amber-300">{r.inProgress.toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </>
+      )}
+
+      {/* Stale starters — users who started a multi-step promo and stopped.
+          Top 5 with clickable wallets so Boris can DM them directly. */}
+      {stalePending.length > 0 && (
+        <div className="border-t border-white/[0.06] px-5 py-3 bg-amber-500/[0.03]">
+          <p className="text-[10px] uppercase tracking-[0.1em] text-amber-300/80 mb-2">
+            Stale starters · 48h+ no progress
+          </p>
+          <ul className="space-y-1">
+            {stalePending.slice(0, 5).map((p) => (
+              <li
+                key={`${p.wallet}-${p.promoId}`}
+                className="flex items-center justify-between gap-3 text-xs"
+              >
+                <WalletLink wallet={p.wallet} bare className="!text-[11px] !text-gray-300 hover:!text-banana" />
+                <span className="text-[11px] text-gray-400 capitalize">
+                  {p.promoType.replace(/-/g, ' ')} · {p.progress}/{p.progressMax}
+                </span>
+                <span className="text-[10px] text-amber-300 tabular-nums shrink-0">
+                  {p.hoursStale !== null ? `${p.hoursStale}h` : '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {stalePending.length > 5 && (
+            <p className="mt-1.5 text-[10px] text-gray-500">+{stalePending.length - 5} more</p>
+          )}
+        </div>
       )}
     </Box>
   );

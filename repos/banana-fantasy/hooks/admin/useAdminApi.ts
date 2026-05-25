@@ -461,6 +461,54 @@ export interface HeaviestUsersResponse {
   topFreeDrafts: HeaviestUserEntry[];
 }
 
+export interface AggregateUser {
+  wallet: string;
+  username: string | null;
+  walletType: string;
+  createdAt: string | null;
+  lastActiveAt: string | null;
+  balances: {
+    freeDrafts: number;
+    draftPasses: number;
+    wheelSpins: number;
+    jackpotEntries: number;
+    hofEntries: number;
+    cardPurchaseCount: number;
+  };
+  activity: {
+    draftsEntered: number;
+    draftsLeft: number;
+    draftsWon: number;
+    draftWinningsUsd: number;
+    passesBought: number;
+    spendUsd: number;
+    passesGranted: number;
+    spinsWon: number;
+    freeDraftsWon: number;
+    promosClaimed: number;
+    cashoutsCompleted: number;
+    cashoutsUsd: number;
+  };
+  promos: {
+    startedTypes: string[];
+    completedTypes: string[];
+    pendingTypes: string[];
+    hasStartedAny: boolean;
+    hasCompletedAny: boolean;
+  };
+}
+
+export function useUsersAggregate(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<{ ok: boolean; users: AggregateUser[] }>({
+    queryKey: ['admin', 'users-aggregate'],
+    enabled,
+    queryFn: () => adminFetch<{ ok: boolean; users: AggregateUser[] }>('/api/admin/users-aggregate', getHeaders),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+}
+
 export function useHeaviestUsers(enabled: boolean) {
   const getHeaders = useAdminAuthHeaders();
   return useQuery<HeaviestUsersResponse>({
