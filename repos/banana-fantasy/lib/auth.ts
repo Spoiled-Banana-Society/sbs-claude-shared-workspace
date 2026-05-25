@@ -268,11 +268,15 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
     }
   }
 
-  // Fire-and-forget throttled login event (at most once per 6h per user)
+  // Fire-and-forget session tracker. Definition of a "login":
+  // any authenticated request after ≥ 1h of inactivity. Updates the
+  // user's lastActiveAt in Firestore and writes a `login` event when
+  // the gap qualifies. Persistent across Vercel cold starts (unlike
+  // the previous in-memory throttle).
   const loginId = user.walletAddress || user.userId;
   if (loginId) {
     import('@/lib/userEvents')
-      .then(({ logLoginIfFresh }) => logLoginIfFresh(loginId))
+      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId))
       .catch(() => { /* non-fatal */ });
   }
 

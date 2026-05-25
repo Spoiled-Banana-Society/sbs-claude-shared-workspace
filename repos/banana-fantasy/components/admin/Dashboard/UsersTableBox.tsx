@@ -52,11 +52,39 @@ function Avatar({ src }: { src: string | null }) {
   );
 }
 
-type FilterKey = 'all' | 'drafters_no_promo' | 'promo_limbo' | 'big_spenders' | 'in_progress_promo';
-type SortKey = 'spend' | 'drafts' | 'spins' | 'promos' | 'signup';
+type FilterKey =
+  | 'all'
+  | 'drafters_no_promo'
+  | 'promo_limbo'
+  | 'big_spenders'
+  | 'in_progress_promo'
+  | 'active_week'
+  | 'inactive_14d';
+type SortKey = 'spend' | 'drafts' | 'spins' | 'promos' | 'signup' | 'last_active';
+
+// Activity-window predicates. lastActiveAt is an ISO string set by
+// lib/userEvents.recordActivityAndDetectLogin on every authenticated
+// API call (5-min throttled). Backfilled from v2_activity_events for
+// existing users.
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const FORTNIGHT_MS = 14 * 24 * 3600 * 1000;
+const lastActiveMs = (u: AggregateUser) => (u.lastActiveAt ? Date.parse(u.lastActiveAt) : 0);
 
 const FILTERS: { key: FilterKey; label: string; predicate: (u: AggregateUser) => boolean }[] = [
   { key: 'all', label: 'All', predicate: () => true },
+  {
+    key: 'active_week',
+    label: 'Active 7d',
+    predicate: (u) => lastActiveMs(u) >= Date.now() - WEEK_MS,
+  },
+  {
+    key: 'inactive_14d',
+    label: 'Inactive 14d+',
+    // Users who exist but haven't done anything in 14+ days. Excludes
+    // never-active (lastActiveMs===0) since those are signups that
+    // ghosted — surfaced via the 'drafters_no_promo' family already.
+    predicate: (u) => lastActiveMs(u) > 0 && lastActiveMs(u) < Date.now() - FORTNIGHT_MS,
+  },
   {
     key: 'drafters_no_promo',
     label: 'Drafters · no promo',
@@ -84,8 +112,24 @@ const SORTS: { key: SortKey; label: string; pick: (u: AggregateUser) => number }
   { key: 'drafts', label: 'Drafts', pick: (u) => u.activity.draftsEntered },
   { key: 'spins', label: 'Spins', pick: (u) => u.activity.spinsWon },
   { key: 'promos', label: 'Promos', pick: (u) => u.activity.promosClaimed },
+  { key: 'last_active', label: 'Last active', pick: lastActiveMs },
   { key: 'signup', label: 'Newest', pick: (u) => u.createdAt ? Date.parse(u.createdAt) : 0 },
 ];
+
+// Compact "Xm/h/d ago" for the Last active column. Returns '—' for
+// users with no recorded activity.
+function timeAgo(iso: string | null): string {
+  if (!iso) return '—';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '—';
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60) return `${sec}s`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h`;
+  const days = Math.floor(sec / 86400);
+  if (days < 30) return `${days}d`;
+  return `${Math.floor(days / 30)}mo`;
+}
 
 interface Props {
   enabled: boolean;
@@ -104,7 +148,15 @@ export function UsersTableBox({ enabled }: Props) {
   // Counts for each filter chip (so admins see "Drafters · no promo · 12"
   // without having to click).
   const filterCounts = useMemo(() => {
-    const m: Record<FilterKey, number> = { all: 0, drafters_no_promo: 0, promo_limbo: 0, big_spenders: 0, in_progress_promo: 0 };
+    const m: Record<FilterKey, number> = {
+      all: 0,
+      active_week: 0,
+      inactive_14d: 0,
+      drafters_no_promo: 0,
+      promo_limbo: 0,
+      big_spenders: 0,
+      in_progress_promo: 0,
+    };
     for (const u of all) for (const f of FILTERS) if (f.predicate(u)) m[f.key] += 1;
     return m;
   }, [all]);
@@ -201,14 +253,15 @@ export function UsersTableBox({ enabled }: Props) {
               <th className="pt-3 pb-2 text-right font-medium">Free won</th>
               <th className="pt-3 pb-2 text-right font-medium">Promos</th>
               <th className="pt-3 pb-2 text-right font-medium">In&nbsp;limbo</th>
+              <th className="pt-3 pb-2 text-right font-medium">Last&nbsp;active</th>
               <th className="px-5 pt-3 pb-2 text-right font-medium">Joined</th>
             </tr>
           </thead>
           <tbody className="tabular-nums">
             {q.isLoading ? (
-              <tr><td colSpan={9} className="px-5 py-10 text-center text-xs text-gray-500">Loading users…</td></tr>
+              <tr><td colSpan={10} className="px-5 py-10 text-center text-xs text-gray-500">Loading users…</td></tr>
             ) : pageRows.length === 0 ? (
-              <tr><td colSpan={9} className="px-5 py-10 text-center text-xs text-gray-500">
+              <tr><td colSpan={10} className="px-5 py-10 text-center text-xs text-gray-500">
                 No users match this filter.
               </td></tr>
             ) : (
@@ -246,6 +299,20 @@ export function UsersTableBox({ enabled }: Props) {
                     <td className={`py-2 text-right ${u.activity.freeDraftsWon > 0 ? 'text-purple-300' : 'text-gray-600'}`}>{u.activity.freeDraftsWon}</td>
                     <td className={`py-2 text-right ${u.activity.promosClaimed > 0 ? 'text-pink-300' : 'text-gray-600'}`}>{u.activity.promosClaimed}</td>
                     <td className={`py-2 text-right ${inLimbo > 0 ? 'text-amber-300' : 'text-gray-600'}`} title={u.promos.pendingTypes.join(', ')}>{inLimbo}</td>
+                    <td
+                      className={`py-2 text-right text-[11px] ${
+                        u.lastActiveAt
+                          ? Date.now() - Date.parse(u.lastActiveAt) < WEEK_MS
+                            ? 'text-emerald-300'
+                            : Date.now() - Date.parse(u.lastActiveAt) < FORTNIGHT_MS
+                              ? 'text-gray-300'
+                              : 'text-amber-400/80'
+                          : 'text-gray-600'
+                      }`}
+                      title={u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleString() : 'No recorded activity'}
+                    >
+                      {timeAgo(u.lastActiveAt)}
+                    </td>
                     <td className="px-5 py-2 text-right text-[11px] text-gray-500">
                       {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
                     </td>
