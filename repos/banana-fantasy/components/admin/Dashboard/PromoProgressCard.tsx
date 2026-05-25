@@ -1,17 +1,18 @@
 'use client';
 
 /**
- * Promo-progress dashboard card.
+ * Promo progress — per-type table + stale starters list.
  *
- * Boris's spec: for multi-step promos (4 daily drafts, Pick 10, etc.)
- * he wants to see who started and didn't finish — separately from total
- * claims. The endpoint walks every user's promos subcollection, buckets
- * by type, and surfaces a "stale starters" list (in-progress + no
- * activity in 48h) so an admin can DM them targeted re-engagement.
+ * Apple-clean rewrite (May 2026): no progress bars, no color-flooded
+ * banners. One dense table for the per-type breakdown, one inline list
+ * for stale starters, matching the rest of the Dashboard's hairline-
+ * divider aesthetic.
  *
- * Per-type table shows: started · completed · pending · conversion rate.
- * The list below shows the top stale starters with clickable wallets
- * (one-click into User Lookup).
+ * Boris's spec: a user has "started" a promo the moment they do at
+ * least one of its steps (not just by opening the modal). The endpoint
+ * walks every user's promos subcollection and surfaces:
+ *   - per-type: started / completed / pending / conversion rate
+ *   - stale list: in-progress + no activity in 48h (the cohort to DM)
  */
 
 import { usePromoProgress } from '@/hooks/admin/useAdminApi';
@@ -27,16 +28,20 @@ export function PromoProgressCard({ enabled }: Props) {
 
   if (q.isLoading) {
     return (
-      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-        <p className="text-sm text-gray-400">Loading promo progress…</p>
-      </div>
+      <Section title="Promos — progress & stale starters">
+        <Card>
+          <p className="px-5 py-4 text-sm text-gray-400">Loading…</p>
+        </Card>
+      </Section>
     );
   }
   if (q.isError) {
     return (
-      <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
-        Promo progress unavailable. {q.error?.message}
-      </div>
+      <Section title="Promos — progress & stale starters">
+        <div className="rounded-2xl border border-red-500/40 bg-red-500/[0.06] px-5 py-4 text-sm text-red-200">
+          Promo progress unavailable. {q.error?.message}
+        </div>
+      </Section>
     );
   }
   if (!data || (data.pendingTotal === 0 && Object.keys(data.perType).length === 0)) {
@@ -48,90 +53,98 @@ export function PromoProgressCard({ enabled }: Props) {
     .sort((a, b) => b[1].started - a[1].started);
 
   return (
-    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02]">
-      <div className="px-4 py-3 border-b border-white/[0.04] flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">Promos — in progress + completion rate</h3>
-        <span className="text-[11px] text-gray-500">
-          {data.pendingTotal} pending across all users · scanned {data.scannedDocs.toLocaleString()}
-        </span>
-      </div>
-
-      {/* Per-type breakdown */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm min-w-[520px]">
-          <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
+    <Section title="Promos — progress & stale starters" sub={`${data.pendingTotal} pending · scanned ${data.scannedDocs.toLocaleString()} promo docs`}>
+      <Card>
+        <table className="w-full text-sm">
+          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Promo type</th>
-              <th className="px-4 py-2.5 font-medium text-right">Started</th>
-              <th className="px-4 py-2.5 font-medium text-right">Completed</th>
-              <th className="px-4 py-2.5 font-medium text-right">Pending</th>
-              <th className="px-4 py-2.5 font-medium text-right">Conversion</th>
+              <th className="px-5 pt-4 pb-2 text-left font-medium">Type</th>
+              <th className="pt-4 pb-2 text-right font-medium">Started</th>
+              <th className="pt-4 pb-2 text-right font-medium">Done</th>
+              <th className="pt-4 pb-2 text-right font-medium">Pending</th>
+              <th className="px-5 pt-4 pb-2 text-right font-medium">Conversion</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="tabular-nums">
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-xs text-gray-500">
-                  No promo activity scanned. Promos start counting here as soon as a user does their first step.
+                <td colSpan={5} className="px-5 py-6 text-center text-xs text-gray-500">
+                  No promo activity yet. Multi-step promos appear here once a user does step 1.
                 </td>
               </tr>
             ) : (
               rows.map(([type, b]) => {
                 const ratePct = (b.conversionRate * 100).toFixed(0);
-                const ratePctColor =
+                const rateColor =
                   b.conversionRate >= 0.5 ? 'text-emerald-300' :
-                  b.conversionRate >= 0.2 ? 'text-yellow-300' :
+                  b.conversionRate >= 0.2 ? 'text-amber-300' :
                   'text-red-300';
                 return (
-                  <tr key={type} className="border-t border-white/[0.04]">
-                    <td className="px-4 py-2.5 text-white capitalize">{type.replace(/-/g, ' ')}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-200">{b.started.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-emerald-300">{b.completed.toLocaleString()}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums text-yellow-300">{b.pending.toLocaleString()}</td>
-                    <td className={`px-4 py-2.5 text-right tabular-nums ${ratePctColor}`}>{b.started > 0 ? `${ratePct}%` : '—'}</td>
+                  <tr key={type} className="border-t border-white/[0.06]">
+                    <td className="px-5 py-2.5 text-white capitalize">{type.replace(/-/g, ' ')}</td>
+                    <td className="py-2.5 text-right text-gray-200">{b.started.toLocaleString()}</td>
+                    <td className="py-2.5 text-right text-emerald-300">{b.completed.toLocaleString()}</td>
+                    <td className="py-2.5 text-right text-amber-300">{b.pending.toLocaleString()}</td>
+                    <td className={`px-5 py-2.5 text-right ${rateColor}`}>{b.started > 0 ? `${ratePct}%` : '—'}</td>
                   </tr>
                 );
               })
             )}
           </tbody>
         </table>
-      </div>
 
-      {/* Stale starters — users in the middle of a promo who haven't
-          moved in 48h. Click any wallet to drill into User Lookup. */}
-      {data.stalePending.length > 0 && (
-        <div className="border-t border-white/[0.04] px-4 py-3 bg-amber-500/[0.03]">
-          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-amber-300/80">
-            Stale starters — pending 48h+ ({data.stalePending.length})
-          </p>
-          <p className="mb-2 text-[11px] text-gray-400">
-            Users who started a multi-step promo and haven&apos;t made progress in 48 hours.
-            Good candidates for a targeted re-engagement DM.
-          </p>
-          <ul className="space-y-1 max-h-72 overflow-y-auto">
-            {data.stalePending.map((p) => (
-              <li
-                key={`${p.wallet}-${p.promoId}`}
-                className="flex items-center justify-between gap-3 px-2 py-1.5 rounded hover:bg-amber-500/[0.06]"
-              >
-                <WalletLink wallet={p.wallet} bare className="!text-xs !text-gray-300 hover:!text-banana" />
-                <span className="text-[11px] text-gray-400 capitalize">
-                  {p.promoType.replace(/-/g, ' ')} · {p.progress}/{p.progressMax} steps
-                </span>
-                <span className="text-[10px] text-amber-300 shrink-0">
-                  {p.hoursStale !== null ? `${p.hoursStale}h stale` : 'stale'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        {data.stalePending.length > 0 && (
+          <>
+            <div className="px-5 pt-4 pb-2 border-t border-white/[0.06] flex items-baseline justify-between">
+              <h4 className="text-sm font-semibold text-white">Stale starters</h4>
+              <p className="text-[11px] text-gray-500">
+                pending 48h+ · {data.stalePending.length} {data.stalePending.length === 1 ? 'user' : 'users'} to DM
+              </p>
+            </div>
+            <ul className="px-5 pb-4 max-h-72 overflow-y-auto">
+              {data.stalePending.map((p) => (
+                <li
+                  key={`${p.wallet}-${p.promoId}`}
+                  className="flex items-center justify-between gap-3 py-2 border-b border-white/[0.04] last:border-0"
+                >
+                  <WalletLink wallet={p.wallet} bare className="!text-xs !text-gray-200 hover:!text-banana" />
+                  <span className="text-[11px] text-gray-400 capitalize">
+                    {p.promoType.replace(/-/g, ' ')} · {p.progress}/{p.progressMax}
+                  </span>
+                  <span className="text-[11px] text-amber-300 shrink-0 tabular-nums">
+                    {p.hoursStale !== null ? `${p.hoursStale}h` : '—'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
-      {data.warning && (
-        <p className="border-t border-amber-500/20 bg-amber-500/[0.05] px-4 py-2 text-[11px] text-amber-300">
-          ⚠️ {data.warning}
-        </p>
-      )}
-    </div>
+        {data.warning && (
+          <p className="border-t border-amber-500/20 bg-amber-500/[0.05] px-5 py-2 text-[11px] text-amber-300">
+            ⚠️ {data.warning}
+          </p>
+        )}
+      </Card>
+    </Section>
   );
+}
+
+/* Local section/card helpers — keep this file self-contained so it can
+   live independently of DashboardPanel's primitives. */
+
+function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2 px-1">
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500">{title}</h3>
+        {sub && <p className="text-[10px] text-gray-600">{sub}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">{children}</div>;
 }
