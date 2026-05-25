@@ -223,18 +223,25 @@ export function UsersTableBox({ enabled }: Props) {
             ) : (
               pageRows.map((u) => {
                 const inLimbo = u.promos.pendingTypes.length;
-                // Show the user's chosen displayName if set, otherwise
-                // their auto-generated username, otherwise the short
-                // wallet. Boris's ask: "either their default images and
-                // name or if they changed their names and pfp that."
-                const name = u.displayName || u.username || `0x${u.wallet.slice(2, 6)}…${u.wallet.slice(-4)}`;
+                // Name resolution order:
+                //   1. displayName the user chose on the Profile page
+                //   2. auto-generated username (e.g. "BananaKing99",
+                //      "User-0x01aB")
+                //   3. derived default "Banana #XXXX" using the last 4
+                //      hex chars of the wallet — so older accounts that
+                //      have neither field still get a recognizable
+                //      label instead of duplicating the wallet on both
+                //      lines of the cell.
+                const fallback = `Banana #${u.wallet.slice(-4).toUpperCase()}`;
+                const name = u.displayName || u.username || fallback;
+                const nameIsFallback = !u.displayName && !u.username;
                 return (
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
                     <td className="px-5 py-2 min-w-0">
                       <div className="flex items-center gap-2.5">
                         <Avatar src={u.avatar} fallbackSeed={u.wallet} />
                         <div className="min-w-0">
-                          <p className="text-xs text-white truncate leading-tight">{name}</p>
+                          <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-400 italic' : 'text-white'}`} title={name}>{name}</p>
                           <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
                         </div>
                       </div>

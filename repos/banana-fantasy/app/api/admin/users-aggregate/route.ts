@@ -302,6 +302,59 @@ export async function GET(req: Request) {
       u.promos.hasCompletedAny = u.promos.completedTypes.length > 0;
     }
 
+    // Backfill displayName for users whose Firestore mirror lacks one
+    // (older accounts, or accounts that changed their name only on the
+    // Go side). One small fan-out: GET /owner/{wallet} per missing
+    // name, capped + parallelized, 2s timeout per call so a stale
+    // backend can't stall the whole response.
+    //
+    // Boris's wallet 0x438b…72e0 is the canonical example — his
+    // Firestore doc has no username/displayName, only the Go owner
+    // profile does.
+    const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const goBase =
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+      || process.env.STAGING_DRAFTS_API_URL
+      || process.env.NEXT_PUBLIC_SBS_API_URL
+      || process.env.SBS_API_URL
+      || STAGING_FALLBACK;
+    const missing = Array.from(byWallet.values()).filter(
+      (u) => !u.displayName && !u.username,
+    );
+    const BACKFILL_CAP = 60;  // bounded so a sudden spike of nameless users can't blow up the response
+    const toBackfill = missing.slice(0, BACKFILL_CAP);
+    await Promise.all(
+      toBackfill.map(async (u) => {
+        try {
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 2000);
+          const res = await fetch(`${goBase.replace(/\/$/, '')}/owner/${u.wallet}`, {
+            signal: ctl.signal,
+            headers: { accept: 'application/json' },
+          });
+          clearTimeout(timer);
+          if (!res.ok) return;
+          const body = (await res.json()) as { displayName?: string; username?: string; pfp?: { imageUrl?: string } };
+          if (typeof body.displayName === 'string' && body.displayName.trim()) {
+            u.displayName = body.displayName.trim();
+          }
+          if (!u.username && typeof body.username === 'string' && body.username.trim()) {
+            u.username = body.username.trim();
+          }
+          if (body.pfp?.imageUrl && typeof body.pfp.imageUrl === 'string') {
+            u.avatar = body.pfp.imageUrl;
+          }
+        } catch {
+          // Swallow individual failures — the table still renders, the
+          // row just keeps its derived "Banana #XXXX" fallback.
+        }
+      }),
+    );
+    logger.info('admin.users_aggregate.name_backfill', {
+      requestId,
+      context: { missingTotal: missing.length, attempted: toBackfill.length },
+    });
+
     const users = Array.from(byWallet.values());
     logger.info('admin.users_aggregate.ok', {
       requestId,
