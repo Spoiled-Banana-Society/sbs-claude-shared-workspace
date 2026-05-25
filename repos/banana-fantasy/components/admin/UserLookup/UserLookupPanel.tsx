@@ -25,6 +25,7 @@ import { KycSection } from './KycSection';
 import { ErrorsSection } from './ErrorsSection';
 import { AuditSection } from './AuditSection';
 import { ActivitySection } from './ActivitySection';
+import { TeamsLeaguesSection } from './TeamsLeaguesSection';
 import { ActionsPanel } from './ActionsPanel';
 
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -120,6 +121,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
               activity={lookup.data.activity}
               promoState={lookup.data.promoState}
             />
+            <TeamsLeaguesSection teams={lookup.data.teams} />
             <PassesDraftsSection drafts={lookup.data.drafts} />
             <PaymentsSection payments={lookup.data.payments} />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

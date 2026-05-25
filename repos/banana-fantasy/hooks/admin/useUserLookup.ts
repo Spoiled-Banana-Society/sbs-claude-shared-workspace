@@ -130,6 +130,29 @@ export interface UserLookupResponse {
         pendingTypes: string[];
       }
     | { ok: false; reason: string };
+  /**
+   * Full per-user teams + leagues + standings from the Go drafts API
+   * (`/league/all/{wallet}/draftTokenLeaderboard/...`). Null when the
+   * fetch failed (timeout, Go API down, network) — UI degrades cleanly.
+   * Each entry: which league, level (Pro/HOF/JP), current rank +
+   * scores, prize info, full roster of picks.
+   */
+  teams:
+    | {
+        draftId: string;
+        leagueNumber: number | null;
+        leagueLevel: string;
+        draftSpeed: string | null;
+        status: string;
+        seasonScore: number;
+        weeklyScore: number;
+        seasonRank: number | null;
+        totalEntrants: number | null;
+        prizePool: number | null;
+        prizeWon: number | null;
+        roster: { team: string; position: string; pickNum: number }[];
+      }[]
+    | null;
 }
 
 // Type guard — most sections return either the array/object or an

@@ -357,6 +357,98 @@ async function readPushDevices(wallet: string) {
   };
 }
 
+/* ───────────────────────────────────────────────────────── Per-user teams & leagues from Go API */
+
+interface TeamRow {
+  draftId: string;
+  leagueNumber: number | null;
+  leagueLevel: string;           // 'Pro' | 'HOF' | 'Jackpot'
+  draftSpeed: string | null;     // 'fast' | 'slow'
+  status: string;                // 'completed' | 'in_progress' | 'pending'
+  seasonScore: number;
+  weeklyScore: number;
+  seasonRank: number | null;
+  totalEntrants: number | null;
+  prizePool: number | null;
+  prizeWon: number | null;       // realized winnings (when contest finished)
+  roster: { team: string; position: string; pickNum: number }[];
+}
+
+async function readUserTeams(wallet: string, gameweek: string): Promise<TeamRow[] | null> {
+  const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+  const base =
+    process.env.NEXT_PUBLIC_DRAFTS_API_URL
+    || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    || process.env.STAGING_DRAFTS_API_URL
+    || STAGING_FALLBACK;
+
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 6000);
+    const url = `${base.replace(/\/$/, '')}/league/all/${wallet}/draftTokenLeaderboard/gameweek/${gameweek}/orderBy/scoreSeason/level/all`;
+    const res = await fetch(url, { signal: ctl.signal, headers: { accept: 'application/json' } });
+    clearTimeout(timer);
+    if (!res.ok) {
+      logger.warn('admin.user_lookup.teams_fetch_non_ok', { wallet, status: res.status });
+      return null;
+    }
+    const body = (await res.json()) as unknown;
+    // Response shape varies; normalize to a list.
+    let list: unknown[] = [];
+    if (Array.isArray(body)) list = body;
+    else if (body && typeof body === 'object') {
+      const obj = body as Record<string, unknown>;
+      if (Array.isArray(obj.teams)) list = obj.teams;
+      else if (Array.isArray(obj.entries)) list = obj.entries;
+      else if (Array.isArray(obj.leaderboard)) list = obj.leaderboard;
+    }
+    const rows: TeamRow[] = [];
+    for (const entry of list) {
+      if (!entry || typeof entry !== 'object') continue;
+      const e = entry as Record<string, unknown>;
+      const roster = Array.isArray(e.roster)
+        ? (e.roster as unknown[]).map((r) => {
+            if (typeof r === 'string') {
+              const [team, position] = r.split(' ');
+              return { team: team ?? '', position: position ?? '', pickNum: 0 };
+            }
+            const rr = (r ?? {}) as Record<string, unknown>;
+            return {
+              team: String(rr.team ?? rr.Team ?? ''),
+              position: String(rr.position ?? rr.Position ?? ''),
+              pickNum: Number(rr.pickNum ?? rr.PickNum ?? 0),
+            };
+          })
+        : [];
+      rows.push({
+        draftId: String(e.draftId ?? e.tokenId ?? e.id ?? ''),
+        leagueNumber:
+          typeof e.leagueNumber === 'number' ? e.leagueNumber
+          : typeof e.league === 'number' ? e.league
+          : null,
+        leagueLevel: String(e.leagueLevel ?? e.level ?? e.draftType ?? 'Pro'),
+        draftSpeed: typeof e.draftSpeed === 'string' ? e.draftSpeed : null,
+        status: String(e.status ?? (Number(e.seasonScore ?? 0) > 0 ? 'completed' : 'pending')),
+        seasonScore: Number(e.seasonScore ?? e.scoreSeason ?? 0) || 0,
+        weeklyScore: Number(e.weeklyScore ?? e.scoreWeek ?? 0) || 0,
+        seasonRank: typeof e.rank === 'number' ? e.rank : typeof e.seasonRank === 'number' ? e.seasonRank : null,
+        totalEntrants: typeof e.totalEntrants === 'number' ? e.totalEntrants : null,
+        prizePool: typeof e.prizePool === 'number' ? e.prizePool : null,
+        prizeWon: typeof e.prizeWon === 'number' ? e.prizeWon : null,
+        roster,
+      });
+    }
+    logger.info('admin.user_lookup.teams_fetched', {
+      wallet,
+      context: { teamCount: rows.length, gameweek },
+    });
+    return rows;
+  } catch (err) {
+    logger.warn('admin.user_lookup.teams_fetch_failed', { wallet, err: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+
 /* ───────────────────────────────────────────────────────── Per-user promo claim counts */
 
 /**
@@ -587,6 +679,7 @@ export async function GET(req: Request) {
       auditRes,
       activityRes,
       promoStateRes,
+      teamsRes,
       notesRes,
     ] = await Promise.allSettled([
       readIdentity(wallet),
@@ -626,6 +719,10 @@ export async function GET(req: Request) {
       // promos subcollection. Activity-event-derived counts dropped
       // claims for heavy users; this is atomic + transaction-safe.
       readPromoStateForUser(wallet),
+      // Full Go API per-user teams + leagues + standings. Returns null
+      // on failure (timeout, Go API down) — Activity-event-derived
+      // drafts list still renders the basic info even if this is null.
+      readUserTeams(wallet, '2025REG-01'),
       readNotes(wallet),
     ]);
 
@@ -740,6 +837,9 @@ export async function GET(req: Request) {
       // Canonical promo state — overrides whatever the activity events
       // imply, since activity events drop claims for heavy users.
       promoState: promoStateRes.status === 'fulfilled' ? promoStateRes.value : sectionFail('promoState', promoStateRes.reason),
+      // Full per-user teams from Go API. Null when the Go fetch fails
+      // (timeout, off, non-2xx); the page still renders the rest.
+      teams: teamsRes.status === 'fulfilled' ? teamsRes.value : null,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status, { requestId });
