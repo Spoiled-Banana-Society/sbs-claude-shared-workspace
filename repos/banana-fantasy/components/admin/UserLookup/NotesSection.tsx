@@ -164,7 +164,7 @@ export function NotesSection({ wallet, notes }: Props) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-[#F3E216]/20 bg-[#F3E216]/[0.03] p-4">
+    <section className="rounded-2xl border border-[#F3E216]/20 bg-[#F3E216]/[0.03] p-4">
       {children}
     </section>
   );

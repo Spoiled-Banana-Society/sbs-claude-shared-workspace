@@ -83,7 +83,7 @@ export function IdentityCard({
 }) {
   if (!identity) {
     return (
-      <div className="rounded-xl border border-gray-700 bg-gray-900/40 p-4 text-sm text-gray-400">
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-gray-400">
         No user record found for{' '}
         <span className="font-mono text-gray-300">{walletShort}</span>. They may not have
         signed in yet — most counters and notification prefs only exist once a user logs
@@ -106,7 +106,7 @@ export function IdentityCard({
         : 'KYC: not started';
 
   return (
-    <section className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
       {/* Owner-profile fetch diagnostic. Renders only when the Go owner
           endpoint returned no displayName/avatar. Tells the admin
           exactly why instead of leaving them guessing at a silent

@@ -58,7 +58,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
   return (
     <div className="space-y-4">
       {/* Search header */}
-      <div className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
         <h2 className="text-base font-semibold text-white">User Lookup</h2>
         <p className="mb-3 mt-0.5 text-xs text-gray-400">
           Search by wallet, username, or email to see everything historical
@@ -78,7 +78,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
 
       {/* Loading */}
       {wallet && lookup.isLoading && (
-        <div className="rounded-xl border border-gray-700 bg-gray-900/40 p-6 text-center text-sm text-gray-400">
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 text-center text-sm text-gray-400">
           Loading user data…
         </div>
       )}
@@ -93,19 +93,29 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
       {/* Data */}
       {wallet && lookup.data && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          {/* Main column */}
+          {/* Main column.
+              Order mirrors the dashboard's "scan top → drill bottom"
+              rhythm but scoped to one user:
+                1. HealthSummary — banner: who needs attention?
+                2. IdentityCard — name, pfp, status pills, balances
+                3. Notes — admin shared notes for this user
+                4. ActivitySection — lifetime tiles + Promos|Wheel pair
+                5. Domain pairs (2-col on lg+):
+                     PassesDrafts | Payments
+                     KYC          | Errors
+                6. Audit — admin action history (full width) */}
           <div className="min-w-0 space-y-4">
             <HealthSummary
               status={lookup.data.healthSummary.status}
               issues={lookup.data.healthSummary.issues}
             />
-            <NotesSection wallet={wallet} notes={lookup.data.notes} />
             <IdentityCard
               identity={
                 isSectionFail(lookup.data.identity) ? null : lookup.data.identity
               }
               walletShort={lookup.data.walletShort}
             />
+            <NotesSection wallet={wallet} notes={lookup.data.notes} />
             <NotificationsSection
               wallet={wallet}
               notifications={lookup.data.notifications}
@@ -114,10 +124,14 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
               activity={lookup.data.activity}
               promoState={lookup.data.promoState}
             />
-            <PassesDraftsSection drafts={lookup.data.drafts} />
-            <PaymentsSection payments={lookup.data.payments} />
-            <KycSection kyc={lookup.data.kyc} wallet={wallet} />
-            <ErrorsSection errors={lookup.data.errors} wallet={wallet} />
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <PassesDraftsSection drafts={lookup.data.drafts} />
+              <PaymentsSection payments={lookup.data.payments} />
+            </div>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <KycSection kyc={lookup.data.kyc} wallet={wallet} />
+              <ErrorsSection errors={lookup.data.errors} wallet={wallet} />
+            </div>
             <AuditSection audit={lookup.data.audit} />
           </div>
 

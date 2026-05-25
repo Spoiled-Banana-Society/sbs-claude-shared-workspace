@@ -136,7 +136,7 @@ export function ErrorsSection({ errors, wallet }: Props) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
       {children}
     </section>
   );
