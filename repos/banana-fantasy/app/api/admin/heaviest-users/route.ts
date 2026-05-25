@@ -22,7 +22,10 @@ import { getRequestId } from '@/lib/requestId';
 
 export const dynamic = 'force-dynamic';
 
-const SCAN_LIMIT = 2000;
+// Was 2000 — undercounts "top users by spend / spins / promos" the
+// moment activity-events crosses 2k (which staging already has). Now
+// 50k = ~100× current staging volume.
+const SCAN_LIMIT = 50_000;
 const TOP_N = 10;
 
 interface UserTotals {

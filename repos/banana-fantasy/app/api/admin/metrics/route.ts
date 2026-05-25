@@ -208,40 +208,51 @@ async function buildMetrics(): Promise<MetricsResponse> {
     usersTotal - usersPrivyEmbedded - usersPrivyExternal - usersExternalConnect,
   );
 
-  // User events: bucket by event type + day client-side from a single
-  // bounded scan. Compound .where('eventType', '==', X).where('timestamp',
-  // '>=', Y) queries require a per-pair Firestore composite index that
-  // doesn't exist, and silently throw → every per-day count read 0.
-  // Same root-cause family as the wheel scan bug Boris already caught.
-  // One scan, all buckets, no index needed.
+  // User events buckets — per-day counts of signup / login / promo_claimed.
+  //
+  // The wrong way (what we had): one giant `orderBy(timestamp).limit(5000)`
+  // scan + client-side bucketing. Silently undercounts the moment
+  // total events crosses 5k.
+  //
+  // The right way: ONE single-field where (auto-indexed) per event
+  // type, scan ALL matching docs, bucket by day client-side. Single-
+  // field where queries don't need composite indexes and the per-
+  // event-type doc volume stays small (signups ≪ logins). Limits set
+  // 10× ahead of where staging is today so a sudden surge can't blow
+  // through them silently.
   let signupsToday = 0;
   let signupsWeek = 0;
   let loginsToday = 0;
   let loginsWeek = 0;
   let promoClaimsToday = 0;
+  let signupsScanSize = 0;
+  let loginsScanSize = 0;
+  let promosScanSize = 0;
   try {
-    const ueSnap = await userEvents.orderBy('timestamp', 'desc').limit(5000).get();
-    for (const d of ueSnap.docs) {
-      const data = d.data() as { eventType?: string; timestamp?: string };
-      const ts = data.timestamp ?? '';
-      const inToday = ts >= todayIso;
-      const inWeek = ts >= weekIso;
-      switch (data.eventType) {
-        case 'signup':
-          if (inToday) signupsToday += 1;
-          if (inWeek) signupsWeek += 1;
-          break;
-        case 'login':
-          if (inToday) loginsToday += 1;
-          if (inWeek) loginsWeek += 1;
-          break;
-        case 'promo_claimed':
-          if (inToday) promoClaimsToday += 1;
-          break;
-      }
+    const [signupsSnap, loginsSnap, promosSnap] = await Promise.all([
+      userEvents.where('eventType', '==', 'signup').limit(50000).get(),
+      userEvents.where('eventType', '==', 'login').limit(200000).get(),
+      userEvents.where('eventType', '==', 'promo_claimed').limit(50000).get(),
+    ]);
+    signupsScanSize = signupsSnap.size;
+    loginsScanSize = loginsSnap.size;
+    promosScanSize = promosSnap.size;
+    for (const d of signupsSnap.docs) {
+      const ts = (d.data() as { timestamp?: string }).timestamp ?? '';
+      if (ts >= todayIso) signupsToday += 1;
+      if (ts >= weekIso) signupsWeek += 1;
+    }
+    for (const d of loginsSnap.docs) {
+      const ts = (d.data() as { timestamp?: string }).timestamp ?? '';
+      if (ts >= todayIso) loginsToday += 1;
+      if (ts >= weekIso) loginsWeek += 1;
+    }
+    for (const d of promosSnap.docs) {
+      const ts = (d.data() as { timestamp?: string }).timestamp ?? '';
+      if (ts >= todayIso) promoClaimsToday += 1;
     }
     logger.info('metrics.user_events_scan_ok', {
-      context: { scanned: ueSnap.size, signupsToday, loginsToday, promoClaimsToday },
+      context: { signupsScanSize, loginsScanSize, promosScanSize, signupsToday, loginsToday, promoClaimsToday },
     });
   } catch (err) {
     logger.warn('metrics.user_events_scan_failed', { err });
@@ -270,17 +281,19 @@ async function buildMetrics(): Promise<MetricsResponse> {
     count(withdrawals.where('status', '==', 'denied')),
   ]);
 
-  // Withdrawal volume (sum) — bounded scan, client-side filter by status.
-  // Was `.where('status', 'in', [...]).orderBy('createdAt')` which needs
-  // a composite index that doesn't exist → silent zero. Single orderBy
-  // works with the auto single-field index, then we filter in memory.
+  // Withdrawal volume (sum of approved+pending). Now uses a single-
+  // field where on `status` per bucket — auto-indexed, no truncation
+  // possible up to the (generous) limit. Old version was an orderBy
+  // scan with a 2k limit that undercounted as soon as we crossed 2k
+  // withdrawal docs.
   let totalVolume = 0;
   try {
-    const volSnap = await withdrawals.orderBy('createdAt', 'desc').limit(2000).get();
-    for (const d of volSnap.docs) {
-      const data = d.data();
-      if (data.status !== 'approved' && data.status !== 'pending') continue;
-      const amt = data.amount;
+    const [appSnap, pendSnap] = await Promise.all([
+      withdrawals.where('status', '==', 'approved').limit(50000).get(),
+      withdrawals.where('status', '==', 'pending').limit(50000).get(),
+    ]);
+    for (const d of [...appSnap.docs, ...pendSnap.docs]) {
+      const amt = (d.data() as { amount?: number }).amount;
       if (typeof amt === 'number' && Number.isFinite(amt)) totalVolume += amt;
     }
   } catch (err) {
@@ -353,15 +366,18 @@ async function buildMetrics(): Promise<MetricsResponse> {
   // dedicated source in a later pass.
   const draftsCompletedLifetime = 0;
 
-  // Withdrawals paid volume (lifetime). Same compound-where+orderBy
-  // bug — scan + client-side filter instead.
+  // Withdrawals paid volume (lifetime). Same single-field where +
+  // generous limit pattern as totalVolume above. Sums across both
+  // `paid` and `completed` statuses — historical records use the
+  // older 'paid' label, the current path writes 'completed'.
   let withdrawalsPaidVolume = 0;
   try {
-    const paidSnap = await withdrawals.orderBy('createdAt', 'desc').limit(2000).get();
-    for (const d of paidSnap.docs) {
-      const data = d.data();
-      if (data.status !== 'paid' && data.status !== 'completed') continue;
-      const amt = data.amount;
+    const [paidSnap, completedSnap] = await Promise.all([
+      withdrawals.where('status', '==', 'paid').limit(50000).get(),
+      withdrawals.where('status', '==', 'completed').limit(50000).get(),
+    ]);
+    for (const d of [...paidSnap.docs, ...completedSnap.docs]) {
+      const amt = (d.data() as { amount?: number }).amount;
       if (typeof amt === 'number' && Number.isFinite(amt)) withdrawalsPaidVolume += amt;
     }
   } catch (err) {
@@ -403,14 +419,22 @@ async function buildMetrics(): Promise<MetricsResponse> {
   let hofHits = 0;
   let draftPassAwards = 0;
   let draftPassesAwardedTotal = 0;
+  let wheelScanSize = 0;
+  let wheelLegacyDocs = 0;  // spins that don't match any known prize shape — surfaces in UI so the math reconciles with totalSpins.
   try {
-    // NO orderBy — collectionGroup('wheelSpins').orderBy('timestamp')
-    // requires an explicit collection-group index that Firestore creates
-    // per-collection by default. Without it the query throws, the catch
-    // logs it, and the dashboard sees 0 of everything (Boris's bug:
-    // "424 spins but 0 JP / 0 HOF / 0 free drafts"). Counts don't need
-    // ordering — we bucket by prize.type / result regardless of order.
-    const spinSnap = await wheelSpinsGroup.limit(2000).get();
+    // NO orderBy + NO limit (or limit set well above today's volume).
+    // collectionGroup('wheelSpins').orderBy('timestamp') needs a per-
+    // collection-group index that doesn't exist, so we walk every doc
+    // sans-ordering — counts don't need an order. We previously capped
+    // this at 2000 docs which already exceeds today's 424 total, but
+    // Boris pointed out the per-prize breakdown summed to 169 — the
+    // gap (255) is real spins whose doc shape doesn't match the
+    // current `prize: {type, value}` schema (legacy spins). We now
+    // surface that gap as a "Legacy / unknown" row so the breakdown
+    // ALWAYS sums to totalSpins. Limit 50k is 100× headroom for the
+    // wheel system; raise if we ever approach.
+    const spinSnap = await wheelSpinsGroup.limit(50000).get();
+    wheelScanSize = spinSnap.size;
     for (const d of spinSnap.docs) {
       const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string; timestamp?: string };
       const prizeType = data.prize?.type ?? '';
@@ -418,7 +442,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
       const tsIso = typeof data.timestamp === 'string' ? data.timestamp : '';
       const isToday = tsIso >= todayIso;
       if (isToday) spinsToday += 1;
-      let label = 'unknown';
+      let label: string | null = null;
       if (prizeType === 'draft_pass' && typeof prizeValue === 'number') {
         label = `${prizeValue} free draft${prizeValue === 1 ? '' : 's'}`;
         totalFreeDraftsFromWheel += prizeValue;
@@ -433,15 +457,45 @@ async function buildMetrics(): Promise<MetricsResponse> {
         hofHits += 1;
       } else if (prizeType === 'nothing') {
         label = 'Nothing';
-      } else if (data.result) {
-        label = String(data.result);
+      } else if (typeof data.result === 'string' && data.result.trim()) {
+        // Legacy spins wrote a free-form `result` string instead of
+        // `prize: {type, value}`. Try to map it back into a canonical
+        // label so 'jackpot' / 'hof' / '1' / '5' result strings still
+        // show up in the right row.
+        const r = data.result.trim().toLowerCase();
+        if (r.includes('jackpot')) { label = 'Jackpot entry'; jackpotHits += 1; }
+        else if (r.includes('hof')) { label = 'HOF entry'; hofHits += 1; }
+        else {
+          const m = r.match(/^(\d+)/);
+          if (m) {
+            const n = parseInt(m[1], 10);
+            label = `${n} free draft${n === 1 ? '' : 's'}`;
+            totalFreeDraftsFromWheel += n;
+            if (isToday) freeDraftsFromWheelToday += n;
+            draftPassAwards += 1;
+            draftPassesAwardedTotal += n;
+          }
+        }
+      }
+      if (label === null) {
+        // No recognizable shape — bucket as legacy so totals reconcile.
+        label = 'Legacy / unknown';
+        wheelLegacyDocs += 1;
       }
       if (!wheelPrizeBreakdown[label]) wheelPrizeBreakdown[label] = { today: 0, total: 0 };
       wheelPrizeBreakdown[label].total += 1;
       if (isToday) wheelPrizeBreakdown[label].today += 1;
     }
     logger.info('metrics.wheel_scan_ok', {
-      context: { scanned: spinsToday + 0 /* spinSnap.size not in scope */, totalSpinsTodayCounted: spinsToday, jackpotHits, hofHits, draftPassAwards, totalFreeDraftsFromWheel },
+      context: {
+        scanned: wheelScanSize,
+        spinsTodayCounted: spinsToday,
+        jackpotHits,
+        hofHits,
+        draftPassAwards,
+        totalFreeDraftsFromWheel,
+        legacyDocs: wheelLegacyDocs,
+      },
     });
   } catch (err) {
     logger.warn('metrics.wheel_scan_failed', { err });
@@ -455,7 +509,9 @@ async function buildMetrics(): Promise<MetricsResponse> {
   let jackpotReservedPending = 0;
   let hofReservedPending = 0;
   try {
-    const userSnap = await users.orderBy('createdAt', 'desc').limit(2000).get();
+    // Was limit(2000) — bumped to 50k so every user's JP/HOF reservation
+    // counts, not just the most-recent 2k signups. (Today: ~200 users.)
+    const userSnap = await users.orderBy('createdAt', 'desc').limit(50000).get();
     for (const d of userSnap.docs) {
       const data = d.data();
       const jp = typeof data.jackpotEntries === 'number' ? data.jackpotEntries : 0;
@@ -495,7 +551,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
   };
   try {
     // Source 1: v2_user_events. Single-field where → auto-indexed.
-    const snap1 = await userEvents.where('eventType', '==', 'promo_claimed').limit(20000).get();
+    const snap1 = await userEvents.where('eventType', '==', 'promo_claimed').limit(100000).get();
     for (const d of snap1.docs) {
       const data = d.data() as { timestamp?: string; meta?: { promoType?: unknown; promoId?: unknown }; userId?: string };
       const t = String(data.meta?.promoType ?? 'unknown');
@@ -506,7 +562,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
       bumpPromoOnce(t, data.timestamp ?? '', dedupe);
     }
     // Source 2: v2_activity_events. Same single-field where pattern.
-    const snap2 = await activityEvents.where('type', '==', 'promo_claimed').limit(20000).get();
+    const snap2 = await activityEvents.where('type', '==', 'promo_claimed').limit(100000).get();
     for (const d of snap2.docs) {
       const data = d.data() as { createdAtIso?: string; metadata?: { promoType?: unknown; promoId?: unknown }; userId?: string };
       const t = String(data.metadata?.promoType ?? 'unknown');
@@ -526,12 +582,11 @@ async function buildMetrics(): Promise<MetricsResponse> {
     logger.warn('metrics.promo_breakdown_failed', { err });
   }
 
-  // ── Single activity-events scan: revenue + drafters-without-promos +
-  //    drafts-entered count.
-  //    Scans the most-recent 2000 v2_activity_events docs once and
-  //    derives all of these client-side. No orderBy on collectionGroup-
-  //    style queries here either — activityEvents is a flat top-level
-  //    collection so orderBy works, but we keep the scan bounded.
+  // ── Activity-events: revenue + drafts-entered + drafters-without-
+  //    promos. Each metric runs as its own single-field where so the
+  //    auto-index handles it, then we bucket by day client-side. No
+  //    composite indexes needed, no compound-where silent-zero trap,
+  //    each scan limited 50k (100× current staging volume).
   let totalRevenueUsd = 0;
   let revenueTodayUsd = 0;
   let draftsEnteredTotal = 0;
@@ -539,30 +594,38 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const drafters = new Set<string>();
   const promoClaimers = new Set<string>();
   try {
-    const actSnap = await activityEvents.orderBy('createdAt', 'desc').limit(2000).get();
-    for (const d of actSnap.docs) {
-      const data = d.data() as {
-        type?: string;
-        userId?: string;
-        metadata?: Record<string, unknown>;
-        createdAtIso?: string;
-      };
-      const userId = (data.userId ?? '').toLowerCase();
-      const isToday = (data.createdAtIso ?? '') >= todayIso;
-      if (data.type === 'pass_purchased') {
-        const price = Number(data.metadata?.totalPrice);
-        if (Number.isFinite(price)) {
-          totalRevenueUsd += price;
-          if (isToday) revenueTodayUsd += price;
-        }
-      } else if (data.type === 'draft_entered') {
-        draftsEnteredTotal += 1;
-        if (isToday) draftsEnteredToday += 1;
-        if (userId) drafters.add(userId);
-      } else if (data.type === 'promo_claimed' && userId) {
-        promoClaimers.add(userId);
-      }
+    const [purchSnap, enterSnap, claimSnap] = await Promise.all([
+      activityEvents.where('type', '==', 'pass_purchased').limit(50000).get(),
+      activityEvents.where('type', '==', 'draft_entered').limit(50000).get(),
+      activityEvents.where('type', '==', 'promo_claimed').limit(50000).get(),
+    ]);
+    for (const d of purchSnap.docs) {
+      const data = d.data() as { metadata?: Record<string, unknown>; createdAtIso?: string };
+      const price = Number(data.metadata?.totalPrice);
+      if (!Number.isFinite(price)) continue;
+      totalRevenueUsd += price;
+      if ((data.createdAtIso ?? '') >= todayIso) revenueTodayUsd += price;
     }
+    for (const d of enterSnap.docs) {
+      const data = d.data() as { userId?: string; createdAtIso?: string };
+      draftsEnteredTotal += 1;
+      if ((data.createdAtIso ?? '') >= todayIso) draftsEnteredToday += 1;
+      const userId = (data.userId ?? '').toLowerCase();
+      if (userId) drafters.add(userId);
+    }
+    for (const d of claimSnap.docs) {
+      const userId = ((d.data() as { userId?: string }).userId ?? '').toLowerCase();
+      if (userId) promoClaimers.add(userId);
+    }
+    logger.info('metrics.activity_scan_ok', {
+      context: {
+        purchases: purchSnap.size,
+        enters: enterSnap.size,
+        claims: claimSnap.size,
+        totalRevenueUsd,
+        draftsEnteredTotal,
+      },
+    });
   } catch (err) {
     logger.warn('metrics.activity_scan_failed', { err });
   }

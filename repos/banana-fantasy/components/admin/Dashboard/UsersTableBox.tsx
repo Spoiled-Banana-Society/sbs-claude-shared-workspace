@@ -28,33 +28,24 @@ import { useUsersAggregate, type AggregateUser } from '@/hooks/admin/useAdminApi
 import { WalletLink } from '@/components/admin/WalletLink';
 
 /**
- * Avatar with onError fallback. Most users get a GCS PFP at a
- * deterministic URL; if they never uploaded one the URL 404s and we
- * fall back to a colored circle with the first letter of their wallet
- * (deterministic per wallet so it stays recognizable across sessions).
+ * Avatar — three-tier fallback, in this order:
+ *   1. user-supplied src (custom PFP they uploaded; Go API returns this)
+ *   2. on-error → /banana-profile.png (the same default banana the
+ *      drafting UI uses everywhere else — matches what the user sees
+ *      in-app when they haven't customized)
+ *
+ * No more colored-initial circles — Boris's spec: "default should show
+ * their banana default image, not a letter circle."
  */
-function Avatar({ src, fallbackSeed }: { src: string | null; fallbackSeed: string }) {
+function Avatar({ src }: { src: string | null }) {
   const [errored, setErrored] = useState(false);
-  if (!src || errored) {
-    // Deterministic color from wallet first byte.
-    const hex = (fallbackSeed || '').replace(/^0x/, '').slice(0, 2);
-    const hue = (parseInt(hex || '0', 16) * 360 / 255) | 0;
-    const initial = (fallbackSeed || '?').replace(/^0x/, '').charAt(0).toUpperCase();
-    return (
-      <div
-        className="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-        style={{ background: `hsl(${hue}, 35%, 30%)` }}
-      >
-        {initial}
-      </div>
-    );
-  }
+  const url = errored || !src ? '/banana-profile.png' : src;
   // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
-      src={src}
+      src={url}
       alt=""
-      className="h-7 w-7 shrink-0 rounded-full border border-white/10 object-cover"
+      className="h-7 w-7 shrink-0 rounded-full border border-white/10 object-cover bg-gray-900"
       loading="lazy"
       onError={() => setErrored(true)}
     />
@@ -239,7 +230,7 @@ export function UsersTableBox({ enabled }: Props) {
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
                     <td className="px-5 py-2 min-w-0">
                       <div className="flex items-center gap-2.5">
-                        <Avatar src={u.avatar} fallbackSeed={u.wallet} />
+                        <Avatar src={u.avatar} />
                         <div className="min-w-0">
                           <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-400 italic' : 'text-white'}`} title={name}>{name}</p>
                           <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />

@@ -30,11 +30,22 @@ import { getRequestId } from '@/lib/requestId';
 
 export const dynamic = 'force-dynamic';
 
-// Bounds. Hit each ceiling for SBS's current scale + ~3 months of
-// headroom; bump if we cross them.
-const USERS_LIMIT = 2000;
-const ACTIVITY_LIMIT = 10_000;
-const PROMOS_LIMIT = 5000;
+// Bounds — set deliberately high so we never silently undercount.
+// Staging is at ~200 users / few thousand activity events today; these
+// give 50–100× headroom. Raise if we ever approach.
+const USERS_LIMIT = 50_000;
+const ACTIVITY_LIMIT = 200_000;
+const PROMOS_LIMIT = 50_000;
+
+/**
+ * Module-level cache of Go owner profile lookups. Each entry expires
+ * after CACHE_TTL_MS so a name edit propagates within a minute, but
+ * back-to-back dashboard polls (every 60s) don't re-fetch the full
+ * staging user base on every refresh. Cleared automatically by
+ * lazy-expiry on read.
+ */
+const ownerProfileCache = new Map<string, { displayName: string | null; imageUrl: string | null; expiresAt: number }>();
+const CACHE_TTL_MS = 60_000;
 
 interface AggregateUser {
   wallet: string;
@@ -318,13 +329,28 @@ export async function GET(req: Request) {
       || process.env.NEXT_PUBLIC_SBS_API_URL
       || process.env.SBS_API_URL
       || STAGING_FALLBACK;
-    const missing = Array.from(byWallet.values()).filter(
-      (u) => !u.displayName && !u.username,
-    );
-    const BACKFILL_CAP = 60;  // bounded so a sudden spike of nameless users can't blow up the response
+    // Backfill ANY user missing a displayName — even if they have an
+    // auto-generated username in Firestore. The Go owner profile is
+    // the source of truth for the user's chosen name (Profile page
+    // edits land there first), so we prefer it whenever the Firestore
+    // mirror lacks one. Boris's row was the canonical bug: he set
+    // displayName="Boris Vagner" but his v2_users doc still only had
+    // an auto-username, so the dashboard showed "BananaKing99" /
+    // "Banana #XXXX" instead of his real name.
+    const missing = Array.from(byWallet.values()).filter((u) => !u.displayName);
+    const BACKFILL_CAP = 250;  // staging has ~200 users today — covers the whole base; raise as we grow.
     const toBackfill = missing.slice(0, BACKFILL_CAP);
+    const now = Date.now();
     await Promise.all(
       toBackfill.map(async (u) => {
+        // Serve from cache when fresh — keeps the broadened backfill
+        // free for back-to-back polls.
+        const cached = ownerProfileCache.get(u.wallet);
+        if (cached && cached.expiresAt > now) {
+          if (cached.displayName) u.displayName = cached.displayName;
+          if (cached.imageUrl) u.avatar = cached.imageUrl;
+          return;
+        }
         try {
           const ctl = new AbortController();
           const timer = setTimeout(() => ctl.abort(), 2000);
@@ -333,20 +359,33 @@ export async function GET(req: Request) {
             headers: { accept: 'application/json' },
           });
           clearTimeout(timer);
-          if (!res.ok) return;
-          const body = (await res.json()) as { displayName?: string; username?: string; pfp?: { imageUrl?: string } };
-          if (typeof body.displayName === 'string' && body.displayName.trim()) {
-            u.displayName = body.displayName.trim();
+          if (!res.ok) {
+            ownerProfileCache.set(u.wallet, { displayName: null, imageUrl: null, expiresAt: now + CACHE_TTL_MS });
+            return;
           }
+          // IMPORTANT: the Go owner endpoint nests both displayName AND
+          // imageUrl under `pfp`. Reading `body.displayName` directly
+          // (what we had) always returned undefined, so Boris's "Boris
+          // Vagner" name never made it through and his row stayed on
+          // the italic "Banana #XXXX" fallback. Matched the working
+          // shape in app/api/admin/user-lookup/route.ts.
+          const body = (await res.json()) as {
+            username?: string;
+            pfp?: { displayName?: string; imageUrl?: string };
+          };
+          const dn = body.pfp?.displayName?.trim() || null;
+          const img = body.pfp?.imageUrl?.trim() || null;
+          if (dn) u.displayName = dn;
           if (!u.username && typeof body.username === 'string' && body.username.trim()) {
             u.username = body.username.trim();
           }
-          if (body.pfp?.imageUrl && typeof body.pfp.imageUrl === 'string') {
-            u.avatar = body.pfp.imageUrl;
-          }
+          if (img) u.avatar = img;
+          ownerProfileCache.set(u.wallet, { displayName: dn, imageUrl: img, expiresAt: now + CACHE_TTL_MS });
         } catch {
           // Swallow individual failures — the table still renders, the
-          // row just keeps its derived "Banana #XXXX" fallback.
+          // row just keeps its derived "Banana #XXXX" fallback. Cache
+          // the miss for a short window to avoid retry storms.
+          ownerProfileCache.set(u.wallet, { displayName: null, imageUrl: null, expiresAt: now + 15_000 });
         }
       }),
     );

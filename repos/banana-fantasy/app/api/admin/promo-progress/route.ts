@@ -35,9 +35,11 @@ import { getRequestId } from '@/lib/requestId';
 
 export const dynamic = 'force-dynamic';
 
-// Bound the scan so a thousand-user staging dataset doesn't melt the
-// metrics endpoint. Adjust as the user base grows.
-const SCAN_LIMIT = 2000;
+// Was 2000 — promo-progress aggregates across every user's promos
+// subcollection (collectionGroup) so In Progress counts MUST cover
+// every doc, not just the most-recent 2k. Now 50k gives plenty of
+// runway; raise if SBS ever has tens of thousands of active promos.
+const SCAN_LIMIT = 50_000;
 const STALE_HOURS = 48;
 const STALE_RESULTS_LIMIT = 50;
 

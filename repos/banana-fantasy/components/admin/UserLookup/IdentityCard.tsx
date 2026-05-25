@@ -25,30 +25,19 @@ function deriveAvatarUrl(wallet: string): string {
 
 function Avatar({ src, fallbackWallet }: { src: string | null; fallbackWallet: string }) {
   const [errored, setErrored] = useState(false);
-  // Resolution order:
-  //   1. Go-API-returned pfp.imageUrl
+  // Three-tier fallback:
+  //   1. Go-API-returned pfp.imageUrl (uploaded custom PFP)
   //   2. Derived GCS URL pattern (works even when Go fetch was offline)
-  //   3. onError fallback: colored circle with wallet first letter
-  const url = errored ? null : (src || deriveAvatarUrl(fallbackWallet));
-  if (!url) {
-    const hex = fallbackWallet.replace(/^0x/, '').slice(0, 2);
-    const hue = (parseInt(hex || '0', 16) * 360 / 255) | 0;
-    const initial = fallbackWallet.replace(/^0x/, '').charAt(0).toUpperCase();
-    return (
-      <div
-        className="h-12 w-12 shrink-0 rounded-full flex items-center justify-center text-base font-bold text-white border border-white/10"
-        style={{ background: `hsl(${hue}, 35%, 30%)` }}
-      >
-        {initial}
-      </div>
-    );
-  }
+  //   3. onError → /banana-profile.png (the default banana shown
+  //      everywhere else in-app — Boris's spec: "default should be
+  //      their banana default image, not a letter circle.")
+  const url = errored ? '/banana-profile.png' : (src || deriveAvatarUrl(fallbackWallet));
   // eslint-disable-next-line @next/next/no-img-element
   return (
     <img
       src={url}
       alt=""
-      className="h-12 w-12 shrink-0 rounded-full border border-white/10 object-cover"
+      className="h-12 w-12 shrink-0 rounded-full border border-white/10 object-cover bg-gray-900"
       loading="lazy"
       onError={() => setErrored(true)}
     />

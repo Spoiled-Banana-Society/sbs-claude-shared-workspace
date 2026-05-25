@@ -349,13 +349,21 @@ function SpinsAndWheelBox({ m }: { m: MetricsResponse }) {
     counts: m.wheelPrizeBreakdown[label] ?? { today: 0, total: 0 },
   }));
   const prizeTotal = prizeRows.reduce((s, r) => s + r.counts.total, 0);
+  // The gap between the count() headline total and the sum of canonical
+  // prize buckets is real spin docs with a legacy / unrecognized shape
+  // (Boris caught the original "424 total but 169 in breakdown" gap).
+  // Surface it explicitly so the breakdown ALWAYS adds up to the
+  // headline — no silent missing rows.
+  const legacyCount = m.wheelPrizeBreakdown['Legacy / unknown']?.total ?? 0;
+  const legacyToday = m.wheelPrizeBreakdown['Legacy / unknown']?.today ?? 0;
+  const denomTotal = prizeTotal + legacyCount;
   const accentFor = (label: string) =>
     /jackpot/i.test(label) ? 'text-red-300'
     : /hof/i.test(label) ? 'text-[#D4AF37]'
     : 'text-purple-300';
 
   return (
-    <Box title="Spins" sub={prizeTotal > 0 ? `last ${prizeTotal.toLocaleString()} spins` : 'no spins yet'}>
+    <Box title="Spins" sub={m.wheel.totalSpins > 0 ? `${m.wheel.totalSpins.toLocaleString()} lifetime spins` : 'no spins yet'}>
       {/* Headline row: total wheel spins. */}
       <StatTable
         rows={[
@@ -380,10 +388,18 @@ function SpinsAndWheelBox({ m }: { m: MetricsResponse }) {
                 <td className={`px-5 py-2 ${dim ? 'text-gray-500' : accentFor(label)}`}>{label}</td>
                 <td className={`py-2 text-right ${c.today > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{c.today.toLocaleString()}</td>
                 <td className={`py-2 text-right ${dim ? 'text-gray-600' : 'text-gray-200'}`}>{c.total.toLocaleString()}</td>
-                <td className={`px-5 py-2 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{prizeTotal > 0 ? `${((c.total / prizeTotal) * 100).toFixed(1)}%` : '—'}</td>
+                <td className={`px-5 py-2 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{denomTotal > 0 ? `${((c.total / denomTotal) * 100).toFixed(1)}%` : '—'}</td>
               </tr>
             );
           })}
+          {legacyCount > 0 && (
+            <tr className="border-t border-white/[0.06]" title="Spins recorded under a legacy doc shape (no `prize.type/value` field). Counted in the headline total but unattributable to a specific prize.">
+              <td className="px-5 py-2 text-gray-500 italic">Legacy / unknown</td>
+              <td className={`py-2 text-right ${legacyToday > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{legacyToday.toLocaleString()}</td>
+              <td className="py-2 text-right text-gray-300">{legacyCount.toLocaleString()}</td>
+              <td className="px-5 py-2 text-right text-[11px] text-gray-500">{denomTotal > 0 ? `${((legacyCount / denomTotal) * 100).toFixed(1)}%` : '—'}</td>
+            </tr>
+          )}
         </tbody>
       </table>
     </Box>
