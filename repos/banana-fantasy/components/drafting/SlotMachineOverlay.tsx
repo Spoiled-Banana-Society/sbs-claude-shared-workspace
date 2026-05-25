@@ -87,8 +87,15 @@ export function SlotMachineOverlay({
             itemHeight (130px) → targetOffset math stays consistent. The
             negative bottom margin reclaims the empty layout space left
             behind by the transform (transform paints smaller but doesn't
-            shrink the layout box). */}
-        <div className="origin-top scale-[0.6] sm:scale-100 mb-[-180px] sm:mb-0">
+            shrink the layout box).
+            Inline transform instead of Tailwind's scale-[0.6] because this
+            project's Tailwind build emits the arbitrary-value scale class
+            without a transform: declaration, so the class sets the CSS
+            vars but never paints — the previous deploy silently no-op'd. */}
+        <div
+          className="mb-[-180px] sm:mb-0 sm:!transform-none"
+          style={{ transform: 'scale(0.6)', transformOrigin: 'top' }}
+        >
         <div
           className="relative rounded-2xl overflow-hidden mx-auto"
           style={{
