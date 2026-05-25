@@ -60,7 +60,7 @@ export function SlotMachineOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-[65] flex items-start justify-center pt-16 bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[65] flex items-start justify-center pt-8 sm:pt-16 bg-black/80 backdrop-blur-sm overflow-hidden"
       onClick={handleCloseSlotMachine}
     >
       {slotAnimationDone && (
@@ -75,14 +75,20 @@ export function SlotMachineOverlay({
       )}
 
       <div className="text-center">
-        <div className="mb-8">
-          <p className="text-white/50 text-base mb-2 uppercase tracking-widest">Draft starting in</p>
-          <div className="text-7xl font-black tabular-nums text-white" style={{ textShadow: '0 0 40px rgba(255,255,255,0.3)' }}>
+        <div className="mb-4 sm:mb-8">
+          <p className="text-white/50 text-sm sm:text-base mb-1 sm:mb-2 uppercase tracking-widest">Draft starting in</p>
+          <div className="text-5xl sm:text-7xl font-black tabular-nums text-white" style={{ textShadow: '0 0 40px rgba(255,255,255,0.3)' }}>
             {formatTime(mainCountdown)}
           </div>
         </div>
 
-        {/* Slot Machine */}
+        {/* Slot Machine — scale-wrapped so the fixed 572×458 reel block fits
+            on phones without clipping. Children all scale together so the
+            itemHeight (130px) → targetOffset math stays consistent. The
+            negative bottom margin reclaims the empty layout space left
+            behind by the transform (transform paints smaller but doesn't
+            shrink the layout box). */}
+        <div className="origin-top scale-[0.6] sm:scale-100 mb-[-180px] sm:mb-0">
         <div
           className="relative rounded-2xl overflow-hidden mx-auto"
           style={{
@@ -149,6 +155,7 @@ export function SlotMachineOverlay({
               </div>
             </div>
           </div>
+        </div>
         </div>
 
         {/* Result text */}
