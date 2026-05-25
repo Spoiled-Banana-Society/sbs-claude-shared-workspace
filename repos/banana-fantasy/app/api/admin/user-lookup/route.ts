@@ -357,6 +357,55 @@ async function readPushDevices(wallet: string) {
   };
 }
 
+/* ───────────────────────────────────────────────────────── Per-user promo claim counts */
+
+/**
+ * Read the user's promo claim ground truth — sums claimCount across
+ * their v2_users/{wallet}/promos/* subcollection. Replaces counting
+ * promo_claimed activity events, which are lossy fire-and-forget
+ * writes that miss claims for heavy users (Boris caught it — one
+ * wallet had 9 mint claims but only 2 activity events).
+ *
+ * Returns: { byType, totalClaims, startedTypes, completedTypes, pendingTypes }
+ */
+async function readPromoStateForUser(wallet: string): Promise<{
+  byType: Record<string, number>;
+  totalClaims: number;
+  startedTypes: string[];
+  completedTypes: string[];
+  pendingTypes: string[];
+}> {
+  const db = getAdminFirestore();
+  const snap = await db.collection('v2_users').doc(wallet).collection('promos').limit(1000).get();
+  const byType: Record<string, number> = {};
+  const started = new Set<string>();
+  const completed = new Set<string>();
+  const pending = new Set<string>();
+  let total = 0;
+  for (const doc of snap.docs) {
+    const d = doc.data() as { type?: string; claimCount?: number; progressCurrent?: number; progressMax?: number };
+    const t = typeof d.type === 'string' ? d.type : null;
+    if (!t) continue;
+    const cc = typeof d.claimCount === 'number' ? d.claimCount : 0;
+    const pc = typeof d.progressCurrent === 'number' ? d.progressCurrent : 0;
+    const pm = typeof d.progressMax === 'number' ? d.progressMax : 0;
+    if (cc > 0) {
+      byType[t] = (byType[t] ?? 0) + cc;
+      total += cc;
+      completed.add(t);
+    }
+    if (pc > 0 || cc > 0) started.add(t);
+    if (pm > 1 && (pc > 0 || cc > 0) && pc < pm) pending.add(t);
+  }
+  return {
+    byType,
+    totalClaims: total,
+    startedTypes: [...started],
+    completedTypes: [...completed],
+    pendingTypes: [...pending],
+  };
+}
+
 /* ───────────────────────────────────────────────────────── Lists with userId / actor */
 
 interface ListQuery {
@@ -537,6 +586,7 @@ export async function GET(req: Request) {
       errorsRes,
       auditRes,
       activityRes,
+      promoStateRes,
       notesRes,
     ] = await Promise.allSettled([
       readIdentity(wallet),
@@ -563,6 +613,10 @@ export async function GET(req: Request) {
       // undercount his real activity. 5k is well above any one user's
       // actual event count.
       readList(wallet, { collection: 'v2_activity_events', field: 'userId', limit: 5000 }),
+      // Promo claim ground truth — sum of claimCount across the user's
+      // promos subcollection. Activity-event-derived counts dropped
+      // claims for heavy users; this is atomic + transaction-safe.
+      readPromoStateForUser(wallet),
       readNotes(wallet),
     ]);
 
@@ -626,6 +680,9 @@ export async function GET(req: Request) {
       errors: errorsRes.status === 'fulfilled' ? recentErrors : sectionFail('errors', errorsRes.reason),
       audit: auditRes.status === 'fulfilled' ? auditRes.value : sectionFail('audit', auditRes.reason),
       activity: activityRes.status === 'fulfilled' ? activityRes.value : sectionFail('activity', activityRes.reason),
+      // Canonical promo state — overrides whatever the activity events
+      // imply, since activity events drop claims for heavy users.
+      promoState: promoStateRes.status === 'fulfilled' ? promoStateRes.value : sectionFail('promoState', promoStateRes.reason),
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status, { requestId });

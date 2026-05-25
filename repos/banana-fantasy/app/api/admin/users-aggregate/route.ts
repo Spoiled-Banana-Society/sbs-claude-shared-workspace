@@ -209,6 +209,9 @@ export async function GET(req: Request) {
       return entry;
     };
 
+    // Per-user count of promo_claimed activity events. Reconciled in
+    // step 3 with claimCount sum via max().
+    const promoEventsByUser = new Map<string, number>();
     try {
       const actSnap = await db.collection(ACTIVITY_EVENTS_COLLECTION)
         .orderBy('createdAt', 'desc')
@@ -245,9 +248,15 @@ export async function GET(req: Request) {
             }
             break;
           }
-          case 'promo_claimed':
-            entry.activity.promosClaimed += 1;
+          // Activity events count tracked separately in promoEventsByUser
+          // (declared above the scan). Reconciled with claimCount in
+          // step 3 via max() so single-claim promos that don't bump
+          // claimCount still show up. See lib/admin/metricSources.ts.
+          case 'promo_claimed': {
+            const cur = promoEventsByUser.get(userId) ?? 0;
+            promoEventsByUser.set(userId, cur + 1);
             break;
+          }
           case 'draft_entered':
             entry.activity.draftsEntered += 1;
             break;
@@ -272,12 +281,23 @@ export async function GET(req: Request) {
       logger.warn('admin.users_aggregate.activity_scan_failed', { err });
     }
 
-    // 3. collectionGroup('promos') — bounded scan. Each doc lives at
-    //    v2_users/{userId}/promos/{promoId} — extract userId from path.
+    // 3. collectionGroup('promos') — atomic ground truth for promo
+    //    state. Each doc lives at v2_users/{userId}/promos/{promoId}
+    //    with three meaningful counters:
+    //      claimCount        → number of times this user claimed this
+    //                           promo (multi-claim promos can be >1)
+    //      progressCurrent   → multi-step progress towards the next claim
+    //      progressMax       → number of steps required to claim once
+    //
+    //    promosClaimed (the user's lifetime total) = sum of claimCount
+    //    across all the user's promo docs. This replaces the lossy
+    //    activity-event count (Boris caught it: dashboard showed mint
+    //    total=11 when real claimCount sum=35).
+    let promoDocsScanned = 0;
     try {
       const promosSnap = await db.collectionGroup('promos').limit(PROMOS_LIMIT).get();
+      promoDocsScanned = promosSnap.size;
       for (const doc of promosSnap.docs) {
-        // Path looks like v2_users/<wallet>/promos/<id>
         const segments = doc.ref.path.split('/');
         const wallet = (segments[1] ?? '').toLowerCase();
         const entry = ensureUser(wallet);
@@ -287,22 +307,43 @@ export async function GET(req: Request) {
         if (!promoType) continue;
         const progressCurrent = typeof data.progressCurrent === 'number' ? data.progressCurrent : 0;
         const progressMax = typeof data.progressMax === 'number' ? data.progressMax : 0;
-        const claimed = typeof data.claimCount === 'number' && data.claimCount > 0;
+        const claimCount = typeof data.claimCount === 'number' ? data.claimCount : 0;
+        const claimed = claimCount > 0;
         const started = progressCurrent > 0 || claimed;
-        const completed = claimed;
         const isMultiStep = progressMax > 1;
-        const isPending = isMultiStep && started && !completed;
+        // True "in progress" — they started but haven't hit the next
+        // claim threshold yet. progressCurrent < progressMax is more
+        // accurate than `!completed` because multi-claim promos can
+        // be both completed AND in-progress towards the next claim.
+        const isPending = isMultiStep && started && progressCurrent < progressMax;
+
+        // Per-user lifetime promo claim count = sum of claimCount.
+        if (claimCount > 0) entry.activity.promosClaimed += claimCount;
 
         if (started && !entry.promos.startedTypes.includes(promoType)) {
           entry.promos.startedTypes.push(promoType);
         }
-        if (completed && !entry.promos.completedTypes.includes(promoType)) {
+        if (claimed && !entry.promos.completedTypes.includes(promoType)) {
           entry.promos.completedTypes.push(promoType);
         }
         if (isPending && !entry.promos.pendingTypes.includes(promoType)) {
           entry.promos.pendingTypes.push(promoType);
         }
       }
+      // Reconcile per-user promo claim count: max(claimCount sum,
+      // activity event count). Handles both multi-claim promos
+      // (claimCount > events) and single-claim promos (events > 0,
+      // claimCount stays 0).
+      for (const [wallet, eventCount] of promoEventsByUser) {
+        const entry = byWallet.get(wallet);
+        if (!entry) continue;
+        if (eventCount > entry.activity.promosClaimed) {
+          entry.activity.promosClaimed = eventCount;
+        }
+      }
+      logger.info('admin.users_aggregate.promos_scan_ok', {
+        context: { promoDocsScanned },
+      });
     } catch (err) {
       logger.warn('admin.users_aggregate.promos_scan_failed', { err });
     }

@@ -110,7 +110,10 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
               wallet={wallet}
               notifications={lookup.data.notifications}
             />
-            <ActivitySection activity={lookup.data.activity} />
+            <ActivitySection
+              activity={lookup.data.activity}
+              promoState={lookup.data.promoState}
+            />
             <PassesDraftsSection drafts={lookup.data.drafts} />
             <PaymentsSection payments={lookup.data.payments} />
             <KycSection kyc={lookup.data.kyc} wallet={wallet} />

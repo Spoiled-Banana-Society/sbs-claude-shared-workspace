@@ -116,6 +116,20 @@ export interface UserLookupResponse {
   errors: Record<string, unknown>[] | { ok: false; reason: string };
   audit: Record<string, unknown>[] | { ok: false; reason: string };
   activity: Record<string, unknown>[] | { ok: false; reason: string };
+  /**
+   * Canonical promo state for this user — sourced from atomic
+   * claimCount on the user's promos subcollection (NOT from activity
+   * events, which drop claims). See lib/admin/metricSources.ts.
+   */
+  promoState:
+    | {
+        byType: Record<string, number>;
+        totalClaims: number;
+        startedTypes: string[];
+        completedTypes: string[];
+        pendingTypes: string[];
+      }
+    | { ok: false; reason: string };
 }
 
 // Type guard — most sections return either the array/object or an

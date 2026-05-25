@@ -577,37 +577,28 @@ async function buildMetrics(): Promise<MetricsResponse> {
   // Promo IDs are unique per (user, type) so we dedupe by doc id to
   // avoid double-counting when both collections recorded the same
   // claim.
-  // Verified against staging data (scripts/inspect-promo-and-wheel-shapes.mjs):
-  //   v2_user_events.eventType=promo_claimed → 20 docs (mint=11, pick-10=3,
-  //     buy-bonus=2, daily-drafts=2, new-user=1, referral=1)
-  //   v2_activity_events.type=promo_claimed → 19 docs (nearly identical
-  //     mirror of the same claims)
+  // Promo breakdown — sourced from the canonical claimCount field on
+  // the promo doc (atomic, transaction-guaranteed). Previous version
+  // counted promo_claimed events from v2_user_events, which uses
+  // fire-and-forget writes that drop — Boris caught it: mint showed
+  // 11 lifetime when the true claimCount sum was 35 (some users had
+  // 9 mint claims each that never reached the event log).
   //
-  // Previous version cross-source-deduped by `meta.promoId`, but promoId
-  // in user-events is the promo TEMPLATE id (e.g. "mint-buy-10") shared
-  // across every user claiming that promo. The dedupe collapsed all 11
-  // mint claims into 1. Boris caught the bug ("how did we only do one
-  // total mint 10").
-  //
-  // Fix: scan v2_user_events ONLY (it's the canonical source — the
-  // lifetime count() headline reads from it). No dedupe — each doc IS
-  // one real claim. Headline (20) and breakdown sum (20) reconcile.
+  // See lib/admin/metricSources.ts for the canonical-source table.
   const promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }> = {};
   try {
-    const snap = await userEvents.where('eventType', '==', 'promo_claimed').limit(100000).get();
-    for (const d of snap.docs) {
-      const data = d.data() as { timestamp?: string; meta?: { promoType?: unknown } };
-      const t = String(data.meta?.promoType ?? 'unknown');
-      const ts = data.timestamp ?? '';
-      if (!promoBreakdown[t]) promoBreakdown[t] = { claimsToday: 0, claimsTotal: 0 };
-      promoBreakdown[t].claimsTotal += 1;
-      if (ts >= todayIso) promoBreakdown[t].claimsToday += 1;
+    const { readPromoCounts } = await import('@/lib/admin/metricSources');
+    const { byType, diag } = await readPromoCounts({ todayIso });
+    for (const [t, c] of Object.entries(byType)) {
+      promoBreakdown[t] = { claimsToday: c.claimsToday, claimsTotal: c.claimsTotal };
     }
     logger.info('metrics.promo_breakdown_ok', {
       context: {
         uniqueTypes: Object.keys(promoBreakdown).length,
         totalClaims: Object.values(promoBreakdown).reduce((s, v) => s + v.claimsTotal, 0),
-        userEventsRead: snap.size,
+        promoDocsScanned: diag.promoDocs,
+        eventsLifetimeScanned: diag.eventsLifetime,
+        eventsTodayScanned: diag.eventsToday,
       },
     });
   } catch (err) {

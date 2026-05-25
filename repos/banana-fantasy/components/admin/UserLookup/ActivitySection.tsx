@@ -104,9 +104,25 @@ const FILTERS: { key: FilterKey; label: string; types: string[] }[] = [
 
 interface Props {
   activity: Record<string, unknown>[] | { ok: false; reason: string };
+  /**
+   * Canonical per-user promo claim counts (sum of claimCount across
+   * the user's promo subcollection). When present, overrides the
+   * event-derived numbers below — activity events drop claims for
+   * heavy users (Boris caught it: 9 mint claims in claimCount, only
+   * 2 in activity events).
+   */
+  promoState?:
+    | {
+        byType: Record<string, number>;
+        totalClaims: number;
+        startedTypes: string[];
+        completedTypes: string[];
+        pendingTypes: string[];
+      }
+    | { ok: false; reason: string };
 }
 
-export function ActivitySection({ activity }: Props) {
+export function ActivitySection({ activity, promoState }: Props) {
   // Hooks must run unconditionally — pull events out before any early
   // return. Section-fail just leaves events empty.
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -171,6 +187,9 @@ export function ActivitySection({ activity }: Props) {
           break;
         }
         case 'promo_claimed': {
+          // Event-derived count — reconciled at the end with the
+          // canonical claimCount sum via max() so single-claim and
+          // multi-claim promos both report correctly.
           out.promosClaimed += 1;
           const promoType = String(meta.promoType ?? 'unknown');
           out.promoBreakdown.set(promoType, (out.promoBreakdown.get(promoType) ?? 0) + 1);
@@ -196,8 +215,22 @@ export function ActivitySection({ activity }: Props) {
         }
       }
     }
+    // Reconcile promo counts: take max(claimCount sum, event-derived).
+    // Multi-claim promos (mint, daily-drafts) → claimCount wins.
+    // Single-claim promos (new-user, referral) → event count wins
+    // (claimCount stays 0 because the promo uses claimable:true→false
+    // semantics instead of bumping a counter). See
+    // lib/admin/metricSources.ts.
+    if (promoState && !isSectionFail(promoState)) {
+      out.promosClaimed = Math.max(out.promosClaimed, promoState.totalClaims);
+      // Per-type breakdown: union of both, taking max per key.
+      for (const [t, n] of Object.entries(promoState.byType)) {
+        const cur = out.promoBreakdown.get(t) ?? 0;
+        if (n > cur) out.promoBreakdown.set(t, n);
+      }
+    }
     return out;
-  }, [events]);
+  }, [events, promoState]);
 
   // Filtered timeline
   const visible = useMemo(() => {
