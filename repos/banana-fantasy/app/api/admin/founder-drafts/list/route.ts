@@ -52,7 +52,9 @@ const LIST_LIMIT = 200;
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 function goApiBase(): string {
-  return (process.env.STAGING_DRAFTS_API_URL
+  // Vercel uses NEXT_PUBLIC_STAGING_DRAFTS_API_URL — check it first.
+  return (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    || process.env.STAGING_DRAFTS_API_URL
     || process.env.NEXT_PUBLIC_SBS_API_URL
     || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
 }

@@ -464,6 +464,11 @@ export interface HeaviestUsersResponse {
 export interface AggregateUser {
   wallet: string;
   username: string | null;
+  /** PFP image URL (GCS-derived, browser onError handles 404 fallback). */
+  avatar: string | null;
+  /** displayName the user chose on their profile page. Falls back through
+   *  username → short wallet in the UI. */
+  displayName: string | null;
   walletType: string;
   createdAt: string | null;
   lastActiveAt: string | null;

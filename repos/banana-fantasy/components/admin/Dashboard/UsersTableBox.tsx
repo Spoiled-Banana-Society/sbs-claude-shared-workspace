@@ -27,6 +27,40 @@ import { useMemo, useState } from 'react';
 import { useUsersAggregate, type AggregateUser } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
 
+/**
+ * Avatar with onError fallback. Most users get a GCS PFP at a
+ * deterministic URL; if they never uploaded one the URL 404s and we
+ * fall back to a colored circle with the first letter of their wallet
+ * (deterministic per wallet so it stays recognizable across sessions).
+ */
+function Avatar({ src, fallbackSeed }: { src: string | null; fallbackSeed: string }) {
+  const [errored, setErrored] = useState(false);
+  if (!src || errored) {
+    // Deterministic color from wallet first byte.
+    const hex = (fallbackSeed || '').replace(/^0x/, '').slice(0, 2);
+    const hue = (parseInt(hex || '0', 16) * 360 / 255) | 0;
+    const initial = (fallbackSeed || '?').replace(/^0x/, '').charAt(0).toUpperCase();
+    return (
+      <div
+        className="h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+        style={{ background: `hsl(${hue}, 35%, 30%)` }}
+      >
+        {initial}
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <img
+      src={src}
+      alt=""
+      className="h-7 w-7 shrink-0 rounded-full border border-white/10 object-cover"
+      loading="lazy"
+      onError={() => setErrored(true)}
+    />
+  );
+}
+
 type FilterKey = 'all' | 'drafters_no_promo' | 'promo_limbo' | 'big_spenders' | 'in_progress_promo';
 type SortKey = 'spend' | 'drafts' | 'spins' | 'promos' | 'signup';
 
@@ -189,16 +223,20 @@ export function UsersTableBox({ enabled }: Props) {
             ) : (
               pageRows.map((u) => {
                 const inLimbo = u.promos.pendingTypes.length;
+                // Show the user's chosen displayName if set, otherwise
+                // their auto-generated username, otherwise the short
+                // wallet. Boris's ask: "either their default images and
+                // name or if they changed their names and pfp that."
+                const name = u.displayName || u.username || `0x${u.wallet.slice(2, 6)}…${u.wallet.slice(-4)}`;
                 return (
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
                     <td className="px-5 py-2 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        {u.username ? (
-                          <span className="text-white text-xs truncate">{u.username}</span>
-                        ) : (
-                          <span className="text-gray-500 text-xs italic">unnamed</span>
-                        )}
-                        <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
+                      <div className="flex items-center gap-2.5">
+                        <Avatar src={u.avatar} fallbackSeed={u.wallet} />
+                        <div className="min-w-0">
+                          <p className="text-xs text-white truncate leading-tight">{name}</p>
+                          <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
+                        </div>
                       </div>
                     </td>
                     <td className={`py-2 text-right ${u.activity.draftsEntered > 0 ? 'text-blue-300' : 'text-gray-600'}`}>{u.activity.draftsEntered}</td>

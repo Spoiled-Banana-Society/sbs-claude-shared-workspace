@@ -39,6 +39,11 @@ const PROMOS_LIMIT = 5000;
 interface AggregateUser {
   wallet: string;
   username: string | null;
+  /** PFP image URL (Go owner profile if set, else null = use default fallback). */
+  avatar: string | null;
+  /** displayName the user chose on their profile page. Falls back to
+   *  username when null, then to the truncated wallet. */
+  displayName: string | null;
   walletType: string;
   createdAt: string | null;
   lastActiveAt: string | null;
@@ -100,14 +105,32 @@ export async function GET(req: Request) {
       .limit(USERS_LIMIT)
       .get();
 
+    // Avatar URL pattern: the Go owner endpoint reveals every user gets
+    // a GCS path of the form `<bucket>/<wallet>.jpg`. We construct the
+    // URL deterministically without fetching the Go API per user — if
+    // the user uploaded a custom PFP, the URL serves it; if not, the
+    // browser <img onError> falls back to a placeholder. Cheap, batchable.
+    const PFP_BUCKET = 'https://storage.googleapis.com/sbs-staging-pfps';
+
     const byWallet = new Map<string, AggregateUser>();
     for (const doc of usersSnap.docs) {
       const d = doc.data() ?? {};
       const wallet = (typeof d.walletAddress === 'string' ? d.walletAddress : doc.id).toLowerCase();
       if (!/^0x[0-9a-f]{40}$/.test(wallet)) continue;
+      // Pull a name from any of the candidate fields. Don't strip the
+      // 'User-' prefix here — Boris's ask is "show their default name
+      // if they haven't edited it"; the default IS something like
+      // "User-12345" which is a valid display string. Editing the name
+      // overwrites it via /api/owner/update.
+      const username = typeof d.username === 'string' && d.username.trim() ? d.username : null;
+      const displayName = typeof d.displayName === 'string' && d.displayName.trim()
+        ? d.displayName
+        : (typeof d.bananaName === 'string' && d.bananaName.trim() ? d.bananaName : null);
       byWallet.set(wallet, {
         wallet,
-        username: typeof d.username === 'string' && !d.username.startsWith('User-') ? d.username : null,
+        username,
+        displayName,
+        avatar: `${PFP_BUCKET}/${wallet}.jpg`,
         walletType: typeof d.walletType === 'string' ? d.walletType : 'unknown',
         createdAt: toIso(d.createdAt),
         lastActiveAt: toIso(d.lastActiveAt) ?? toIso(d.lastLoginAt),
@@ -157,6 +180,8 @@ export async function GET(req: Request) {
       entry = {
         wallet,
         username: null,
+        displayName: null,
+        avatar: `https://storage.googleapis.com/sbs-staging-pfps/${wallet}.jpg`,
         walletType: 'unknown',
         createdAt: null,
         lastActiveAt: null,

@@ -5,7 +5,55 @@
  * KYC status, banned, balance counters all at a glance.
  */
 
+import { useState } from 'react';
 import type { UserLookupIdentity } from '@/hooks/admin/useUserLookup';
+
+/**
+ * The default GCS bucket path follows `<bucket>/<wallet>.jpg`. Every user
+ * resolves to a URL whether or not they uploaded — uploads serve the
+ * custom PFP, non-uploads 404 and the browser onError swaps to a
+ * deterministic colored-initial fallback so admins still see SOMETHING
+ * recognizable. Was relying solely on the Go API's `pfp.imageUrl` field
+ * which only populated AFTER the env-var fix; now we have a belt-and-
+ * suspenders avatar source.
+ */
+const PFP_BUCKET_URL = 'https://storage.googleapis.com/sbs-staging-pfps';
+
+function deriveAvatarUrl(wallet: string): string {
+  return `${PFP_BUCKET_URL}/${wallet.toLowerCase()}.jpg`;
+}
+
+function Avatar({ src, fallbackWallet }: { src: string | null; fallbackWallet: string }) {
+  const [errored, setErrored] = useState(false);
+  // Resolution order:
+  //   1. Go-API-returned pfp.imageUrl
+  //   2. Derived GCS URL pattern (works even when Go fetch was offline)
+  //   3. onError fallback: colored circle with wallet first letter
+  const url = errored ? null : (src || deriveAvatarUrl(fallbackWallet));
+  if (!url) {
+    const hex = fallbackWallet.replace(/^0x/, '').slice(0, 2);
+    const hue = (parseInt(hex || '0', 16) * 360 / 255) | 0;
+    const initial = fallbackWallet.replace(/^0x/, '').charAt(0).toUpperCase();
+    return (
+      <div
+        className="h-12 w-12 shrink-0 rounded-full flex items-center justify-center text-base font-bold text-white border border-white/10"
+        style={{ background: `hsl(${hue}, 35%, 30%)` }}
+      >
+        {initial}
+      </div>
+    );
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return (
+    <img
+      src={url}
+      alt=""
+      className="h-12 w-12 shrink-0 rounded-full border border-white/10 object-cover"
+      loading="lazy"
+      onError={() => setErrored(true)}
+    />
+  );
+}
 
 function shortHex(w: string) {
   if (!w) return '—';
@@ -81,22 +129,10 @@ export function IdentityCard({
       )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
-          {/* PFP from the Go owner profile. Falls back to a 🍌 placeholder
-              when the user hasn't set one. Renders a round 48px avatar to
-              match the rest of SBS profile chrome. */}
-          {identity.avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={identity.avatar}
-              alt={name}
-              className="h-12 w-12 shrink-0 rounded-full border border-white/10 object-cover"
-              loading="lazy"
-            />
-          ) : (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/5 text-xl">
-              🍌
-            </div>
-          )}
+          {/* PFP — three-tier fallback so we ALWAYS show something
+              recognizable: Go-API URL → derived GCS pattern → colored
+              initial circle. */}
+          <Avatar src={identity.avatar} fallbackWallet={identity.walletAddress} />
           <div className="min-w-0">
             <h3
               className={`text-lg font-semibold ${

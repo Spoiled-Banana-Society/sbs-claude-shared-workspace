@@ -117,14 +117,19 @@ async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
     blueCheckEmail: null,
     diagnostic,
   });
-  const baseRaw = process.env.NEXT_PUBLIC_SBS_API_URL || process.env.SBS_API_URL;
-  if (!baseRaw) {
-    logger.warn('admin.user_lookup.owner_profile_no_base_url', {
-      route: 'admin/user-lookup',
-      context: { wallet },
-    });
-    return empty('NEXT_PUBLIC_SBS_API_URL env var not set on Vercel');
-  }
+  // Vercel env var is named NEXT_PUBLIC_STAGING_DRAFTS_API_URL (verified
+  // against the live env list). NEXT_PUBLIC_SBS_API_URL is a legacy
+  // name still referenced in /api/owner/update — check both, then fall
+  // back to the hardcoded staging URL so this works even if env is
+  // missing entirely. THIS WAS THE PFP/NAME BUG: env var I was checking
+  // didn't exist on Vercel, so every owner-profile call returned empty.
+  const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+  const baseRaw =
+    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    || process.env.STAGING_DRAFTS_API_URL
+    || process.env.NEXT_PUBLIC_SBS_API_URL
+    || process.env.SBS_API_URL
+    || STAGING_FALLBACK;
   const base = baseRaw.replace(/\/+$/, '');
   // 15s timeout — Vercel function max is ~30s; Cloud Run cold-start on
   // staging is 5-8s in the worst case. Previous 8s was still timing out
