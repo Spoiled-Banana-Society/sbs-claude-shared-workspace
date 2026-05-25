@@ -110,6 +110,9 @@ export interface MetricsResponse {
   /** Users who have draft_entered events but 0 promo_claimed events —
    *  the "engaged with the product but not the promo loop" cohort. */
   draftersWithoutPromos: number;
+  /** Drafts entered today + total (from v2_activity_events.draft_entered). */
+  draftsEnteredToday: number;
+  draftsEnteredTotal: number;
   // JP/HOF entries currently held by users — reservations from wheel
   // wins that haven't been redeemed into an actual JP/HOF draft yet.
   reservedDrafts: { jackpot: number; hof: number };
@@ -375,7 +378,13 @@ async function buildMetrics(): Promise<MetricsResponse> {
   let draftPassAwards = 0;
   let draftPassesAwardedTotal = 0;
   try {
-    const spinSnap = await wheelSpinsGroup.orderBy('timestamp', 'desc').limit(2000).get();
+    // NO orderBy — collectionGroup('wheelSpins').orderBy('timestamp')
+    // requires an explicit collection-group index that Firestore creates
+    // per-collection by default. Without it the query throws, the catch
+    // logs it, and the dashboard sees 0 of everything (Boris's bug:
+    // "424 spins but 0 JP / 0 HOF / 0 free drafts"). Counts don't need
+    // ordering — we bucket by prize.type / result regardless of order.
+    const spinSnap = await wheelSpinsGroup.limit(2000).get();
     for (const d of spinSnap.docs) {
       const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string; timestamp?: string };
       const prizeType = data.prize?.type ?? '';
@@ -462,14 +471,16 @@ async function buildMetrics(): Promise<MetricsResponse> {
     logger.warn('metrics.promo_breakdown_failed', { err });
   }
 
-  // ── Single activity-events scan: revenue + drafters-without-promos.
+  // ── Single activity-events scan: revenue + drafters-without-promos +
+  //    drafts-entered count.
   //    Scans the most-recent 2000 v2_activity_events docs once and
-  //    derives both metrics client-side.
-  //    - totalRevenueUsd: sum of pass_purchased metadata.totalPrice
-  //    - draftersWithoutPromos: distinct users with draft_entered but
-  //      0 promo_claimed in the window
+  //    derives all of these client-side. No orderBy on collectionGroup-
+  //    style queries here either — activityEvents is a flat top-level
+  //    collection so orderBy works, but we keep the scan bounded.
   let totalRevenueUsd = 0;
   let revenueTodayUsd = 0;
+  let draftsEnteredTotal = 0;
+  let draftsEnteredToday = 0;
   const drafters = new Set<string>();
   const promoClaimers = new Set<string>();
   try {
@@ -489,8 +500,10 @@ async function buildMetrics(): Promise<MetricsResponse> {
           totalRevenueUsd += price;
           if (isToday) revenueTodayUsd += price;
         }
-      } else if (data.type === 'draft_entered' && userId) {
-        drafters.add(userId);
+      } else if (data.type === 'draft_entered') {
+        draftsEnteredTotal += 1;
+        if (isToday) draftsEnteredToday += 1;
+        if (userId) drafters.add(userId);
       } else if (data.type === 'promo_claimed' && userId) {
         promoClaimers.add(userId);
       }
@@ -571,6 +584,8 @@ async function buildMetrics(): Promise<MetricsResponse> {
     totalRevenueUsd,
     revenueTodayUsd,
     draftersWithoutPromos,
+    draftsEnteredToday,
+    draftsEnteredTotal,
     reservedDrafts: { jackpot: jackpotReservedPending, hof: hofReservedPending },
     wheelDrafts: {
       jackpot: jackpotQueueBreakdown,

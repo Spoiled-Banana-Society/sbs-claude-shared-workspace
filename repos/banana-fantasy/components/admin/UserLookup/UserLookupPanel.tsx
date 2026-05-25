@@ -8,7 +8,7 @@
  * specific user.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   isSectionFail,
@@ -32,22 +32,18 @@ const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 export function UserLookupPanel({ enabled }: { enabled: boolean }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  // SINGLE source of truth: the URL. Killed the local useState + the
+  // urlWallet→state sync useEffect that fought each other and caused
+  // Boris's "Clear needs two clicks" bug — the state cleared on click 1
+  // but the URL hadn't updated yet, then the sync useEffect saw the
+  // still-present urlWallet and re-set the state from it on the next
+  // render. With URL as the only source, Clear deletes the URL param
+  // → next render reads empty → done in one click.
   const urlWallet = searchParams?.get('wallet')?.toLowerCase() ?? '';
-  const [wallet, setWallet] = useState<string>(
-    WALLET_REGEX.test(urlWallet) ? urlWallet : '',
-  );
-
-  // Keep state in sync if the URL changes (cross-tab navigation drops a
-  // ?wallet= param when the user clicks a WalletLink elsewhere).
-  useEffect(() => {
-    if (urlWallet && urlWallet !== wallet && WALLET_REGEX.test(urlWallet)) {
-      setWallet(urlWallet);
-    }
-  }, [urlWallet, wallet]);
+  const wallet = WALLET_REGEX.test(urlWallet) ? urlWallet : '';
 
   const setWalletAndUrl = useCallback(
     (next: string) => {
-      setWallet(next);
       const params = new URLSearchParams(searchParams?.toString() ?? '');
       params.set('tab', 'user-lookup');
       if (next) params.set('wallet', next);

@@ -146,6 +146,33 @@ export function IdentityCard({
         <Stat label="Card purchases" value={identity.balance.cardPurchaseCount} />
       </dl>
 
+      {/* Account money — credits sitting on the Go side that haven't
+          been withdrawn yet. Renders only when there's money in the
+          account (avoids visual noise for the typical $0 user). */}
+      {(identity.account.availableCreditUsd > 0
+        || identity.account.pendingCreditUsd > 0
+        || identity.account.numWithdrawalsLifetime > 0) && (
+        <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+          <Stat
+            label="Available credit"
+            value={`$${identity.account.availableCreditUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}
+            highlight
+          />
+          <Stat
+            label="Pending credit"
+            value={`$${identity.account.pendingCreditUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}
+          />
+          <Stat
+            label="ETH credit"
+            value={identity.account.availableEthCredit.toFixed(4)}
+          />
+          <Stat
+            label="Withdrawals (lifetime)"
+            value={identity.account.numWithdrawalsLifetime}
+          />
+        </dl>
+      )}
+
       <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-400">
         <div>
           Signed up:{' '}

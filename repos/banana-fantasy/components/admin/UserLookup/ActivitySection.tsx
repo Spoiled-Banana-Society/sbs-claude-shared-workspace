@@ -1,39 +1,34 @@
 'use client';
 
 /**
- * Activity section: per-user lifetime summary + recent event timeline.
+ * Per-user activity section — the comprehensive lifetime breakdown.
  *
- * Built May 2026 in response to Boris's "I want all the data that makes
- * sense — many promos they've won, pending ones, …" feedback. The
- * underlying data was already fetched (userEvents collection, 200 most
- * recent) but never surfaced anywhere in the lookup page.
+ * Boris's spec (May 2026):
+ *   "want way more data and info for the user. how much prizes they won.
+ *    do they have money in their account. all their txns their history.
+ *    clickable category filters to drill in. organized super clean."
  *
- * Two halves:
- *   - Summary chips: counts of each event type (promos claimed, spins,
- *     purchases, wins, etc.) computed client-side from the event array.
- *   - Recent events list: chronological, last 30 with type pill +
- *     when + tx link if present.
- *
- * If the underlying section fetch failed (Firestore index missing,
- * etc.) we render a graceful "unavailable" message instead of the
- * usual sections.
+ * Layout (clean Apple-style, no graphs):
+ *   1. Lifetime tiles — 8 big-number squares: spend, free drafts won,
+ *      jackpot/HOF wins, promos done, drafts entered, draft wins,
+ *      cashouts, spins
+ *   2. Wheel wins by prize — table: prize / count
+ *   3. Promos done by type — table: type / count
+ *   4. Recent activity — chronological list with CLICKABLE filter chips
+ *      across the top (All · Purchases · Grants · Spins · Promos · Drafts
+ *      · Cashouts). Default: All. Filter narrows the visible list.
  */
 
+import { useMemo, useState } from 'react';
 import { isSectionFail } from '@/hooks/admin/useUserLookup';
 
 interface RawEvent {
   id?: string;
-  // v2_activity_events uses `type`; the older v2_user_events used `eventType`.
-  // Read either so this section works no matter which collection the
-  // route ends up reading from.
   type?: string;
   eventType?: string;
-  // v2_activity_events stores `createdAt` (ms epoch) + `createdAtIso`.
-  // v2_user_events stores `timestamp` (ISO). Accept all.
   createdAt?: number | string | null;
   createdAtIso?: string;
   timestamp?: string;
-  // metadata (v2_activity_events) vs meta (v2_user_events).
   metadata?: Record<string, unknown>;
   meta?: Record<string, unknown>;
   txHash?: string;
@@ -42,11 +37,9 @@ interface RawEvent {
 function eventTypeOf(e: RawEvent): string {
   return e.type || e.eventType || 'unknown';
 }
-
 function metaOf(e: RawEvent): Record<string, unknown> {
   return (e.metadata ?? e.meta ?? {}) as Record<string, unknown>;
 }
-
 function isoOf(e: RawEvent): string | undefined {
   if (e.createdAtIso) return e.createdAtIso;
   if (typeof e.createdAt === 'number') return new Date(e.createdAt).toISOString();
@@ -81,7 +74,6 @@ const EVENT_LABEL: Record<string, string> = {
   withdrawal_requested: 'Withdrawal request',
   withdrawal_paid: 'Withdrawal paid',
 };
-
 const EVENT_COLOR: Record<string, string> = {
   signup: 'text-green-300',
   login: 'text-blue-300',
@@ -98,169 +90,222 @@ const EVENT_COLOR: Record<string, string> = {
   withdrawal_paid: 'text-green-300',
 };
 
+/** Filter chips at top of the activity timeline → groups of event types. */
+type FilterKey = 'all' | 'purchases' | 'grants' | 'spins' | 'promos' | 'drafts' | 'cashouts';
+const FILTERS: { key: FilterKey; label: string; types: string[] }[] = [
+  { key: 'all', label: 'All', types: [] },
+  { key: 'purchases', label: 'Purchases', types: ['pass_purchased'] },
+  { key: 'grants', label: 'Grants', types: ['pass_granted'] },
+  { key: 'spins', label: 'Spins', types: ['spin_won'] },
+  { key: 'promos', label: 'Promos', types: ['promo_claimed'] },
+  { key: 'drafts', label: 'Drafts', types: ['draft_entered', 'draft_left', 'draft_won'] },
+  { key: 'cashouts', label: 'Cashouts', types: ['cashout_completed', 'withdrawal_requested', 'withdrawal_paid', 'marketplace_sold'] },
+];
+
 interface Props {
   activity: Record<string, unknown>[] | { ok: false; reason: string };
 }
 
 export function ActivitySection({ activity }: Props) {
-  if (isSectionFail(activity)) {
+  // Hooks must run unconditionally — pull events out before any early
+  // return. Section-fail just leaves events empty.
+  const [filter, setFilter] = useState<FilterKey>('all');
+  const failed = isSectionFail(activity);
+  const events: RawEvent[] = failed ? [] : (activity as RawEvent[]);
+
+  // Lifetime aggregations — computed once per event list.
+  const stats = useMemo(() => {
+    const out = {
+      spendUsd: 0,
+      freeDraftsWon: 0,
+      jackpotWins: 0,
+      hofWins: 0,
+      spinsWon: 0,
+      promosClaimed: 0,
+      passesPurchased: 0,
+      passesGranted: 0,
+      draftsEntered: 0,
+      draftsLeft: 0,
+      draftsWon: 0,
+      draftWinningsUsd: 0,
+      cashoutsCompleted: 0,
+      cashoutsUsd: 0,
+      lastActivityIso: '',
+      firstActivityIso: '',
+      promoBreakdown: new Map<string, number>(),
+      wheelPrizeBreakdown: new Map<string, number>(),
+    };
+    for (const e of events) {
+      const t = eventTypeOf(e);
+      const meta = metaOf(e);
+      const iso = isoOf(e) ?? '';
+      if (iso > out.lastActivityIso) out.lastActivityIso = iso;
+      if (!out.firstActivityIso || iso < out.firstActivityIso) out.firstActivityIso = iso;
+      switch (t) {
+        case 'pass_purchased': {
+          out.passesPurchased += Number(meta.quantity ?? 1);
+          const price = Number(meta.totalPrice);
+          if (Number.isFinite(price)) out.spendUsd += price;
+          break;
+        }
+        case 'pass_granted':
+          out.passesGranted += Number(meta.quantity ?? meta.draftPassesAdded ?? 1);
+          break;
+        case 'spin_won': {
+          out.spinsWon += 1;
+          const prizeType = String(meta.prizeType ?? '');
+          const prizeValue = meta.prizeValue;
+          let label = String(meta.segmentLabel ?? 'unknown');
+          if (prizeType === 'draft_pass' && Number.isFinite(Number(prizeValue))) {
+            const v = Number(prizeValue);
+            out.freeDraftsWon += v;
+            label = `${v} free draft${v === 1 ? '' : 's'}`;
+          } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
+            out.jackpotWins += 1;
+            label = 'Jackpot entry';
+          } else if (prizeType === 'custom' && prizeValue === 'hof') {
+            out.hofWins += 1;
+            label = 'HOF entry';
+          }
+          out.wheelPrizeBreakdown.set(label, (out.wheelPrizeBreakdown.get(label) ?? 0) + 1);
+          break;
+        }
+        case 'promo_claimed': {
+          out.promosClaimed += 1;
+          const promoType = String(meta.promoType ?? 'unknown');
+          out.promoBreakdown.set(promoType, (out.promoBreakdown.get(promoType) ?? 0) + 1);
+          break;
+        }
+        case 'draft_entered':
+          out.draftsEntered += 1;
+          break;
+        case 'draft_left':
+          out.draftsLeft += 1;
+          break;
+        case 'draft_won': {
+          out.draftsWon += 1;
+          const amt = Number(meta.amount);
+          if (Number.isFinite(amt)) out.draftWinningsUsd += amt;
+          break;
+        }
+        case 'cashout_completed': {
+          out.cashoutsCompleted += 1;
+          const val = Number(meta.settledUsd ?? meta.amount);
+          if (Number.isFinite(val)) out.cashoutsUsd += val;
+          break;
+        }
+      }
+    }
+    return out;
+  }, [events]);
+
+  // Filtered timeline
+  const visible = useMemo(() => {
+    if (filter === 'all') return events;
+    const allowed = new Set(FILTERS.find((f) => f.key === filter)?.types ?? []);
+    return events.filter((e) => allowed.has(eventTypeOf(e)));
+  }, [events, filter]);
+
+  const sortedVisible = useMemo(
+    () => [...visible].sort((a, b) => (isoOf(b) || '').localeCompare(isoOf(a) || '')),
+    [visible],
+  );
+
+  if (failed) {
     return (
-      <section className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
-        <h3 className="text-sm font-semibold text-white">Activity</h3>
-        <p className="mt-1 text-xs text-amber-300">Activity log unavailable: {activity.reason}</p>
+      <section className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.04] px-5 py-4">
+        <h3 className="text-sm font-semibold text-amber-300">Activity unavailable</h3>
+        <p className="mt-1 text-xs text-gray-400">
+          {(activity as { ok: false; reason: string }).reason}
+        </p>
       </section>
     );
   }
 
-  const events = activity as RawEvent[];
-
-  // Summary counts — one tally per event type. Boris wanted "as much info
-  // as possible that makes sense" — these are the high-signal counters.
-  // We also break out spin wins by prize so admins can see "1 free draft × 12,
-  // 5 free drafts × 3, jackpot entry × 2, …" at a glance.
-  const tally = new Map<string, number>();
-  let promoTypeBreakdown = new Map<string, number>();
-  const spinPrizeBreakdown = new Map<string, number>();
-  for (const e of events) {
-    const t = eventTypeOf(e);
-    const meta = metaOf(e);
-    tally.set(t, (tally.get(t) ?? 0) + 1);
-    if (t === 'promo_claimed') {
-      const promoType = String(meta.promoType ?? 'unknown');
-      promoTypeBreakdown.set(promoType, (promoTypeBreakdown.get(promoType) ?? 0) + 1);
-    }
-    if (t === 'spin_won') {
-      // Surface prize label so the breakdown reads "1 free draft", "JP entry",
-      // "HOF entry" etc. Falls back to segmentLabel when prizeType isn't set.
-      const prizeType = String(meta.prizeType ?? '');
-      const prizeValue = meta.prizeValue;
-      let label = String(meta.segmentLabel ?? 'unknown');
-      if (prizeType === 'draft_pass') {
-        label = `${prizeValue} free draft${Number(prizeValue) === 1 ? '' : 's'}`;
-      } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
-        label = 'Jackpot entry';
-      } else if (prizeType === 'custom' && prizeValue === 'hof') {
-        label = 'HOF entry';
-      }
-      spinPrizeBreakdown.set(label, (spinPrizeBreakdown.get(label) ?? 0) + 1);
-    }
-  }
-  // Sort breakdown for stable display, most-claimed first.
-  promoTypeBreakdown = new Map(
-    [...promoTypeBreakdown.entries()].sort((a, b) => b[1] - a[1]),
-  );
-
-  const summaryChips: { label: string; value: number; accent?: string; emoji: string }[] = [
-    { label: 'Logins', value: tally.get('login') ?? 0, emoji: '🔑', accent: 'text-blue-300' },
-    { label: 'Wheel spins', value: tally.get('spin_won') ?? 0, emoji: '🎡', accent: 'text-purple-300' },
-    { label: 'Promos claimed', value: tally.get('promo_claimed') ?? 0, emoji: '🎯', accent: 'text-pink-300' },
-    { label: 'Passes bought', value: tally.get('pass_purchased') ?? 0, emoji: '💳', accent: 'text-emerald-300' },
-    { label: 'Passes granted', value: tally.get('pass_granted') ?? 0, emoji: '🎁', accent: 'text-[#F3E216]' },
-    { label: 'Drafts entered', value: tally.get('draft_entered') ?? 0, emoji: '🏟️' },
-    { label: 'Draft wins', value: tally.get('draft_won') ?? 0, emoji: '🏆', accent: 'text-amber-300' },
-    { label: 'Cashouts', value: tally.get('cashout_completed') ?? 0, emoji: '💸', accent: 'text-green-300' },
-  ];
-
-  // Sort events by timestamp desc (already sorted server-side, but defend
-  // against any reordering by Firestore index quirks).
-  const sortedEvents = [...events].sort((a, b) =>
-    (isoOf(b) || '').localeCompare(isoOf(a) || ''),
-  );
-  const recent = sortedEvents.slice(0, 30);
-
   return (
-    <section className="space-y-3 rounded-xl border border-gray-700 bg-gray-900/40 p-4">
-      <div className="flex items-baseline justify-between">
-        <h3 className="text-sm font-semibold text-white">Activity</h3>
-        <p className="text-[11px] text-gray-500">
-          {events.length} event{events.length === 1 ? '' : 's'} on file
-        </p>
+    <section className="space-y-3">
+      {/* Lifetime tiles — 8 squares */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Tile label="Total spend" value={`$${stats.spendUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`} accent="text-emerald-300" />
+        <Tile label="Free drafts won" value={stats.freeDraftsWon} accent="text-purple-300" />
+        <Tile label="Jackpot wins" value={stats.jackpotWins} accent="text-red-300" />
+        <Tile label="HOF wins" value={stats.hofWins} accent="text-[#D4AF37]" />
+        <Tile label="Promos claimed" value={stats.promosClaimed} accent="text-pink-300" />
+        <Tile label="Drafts entered" value={stats.draftsEntered} />
+        <Tile label="Draft wins" value={`${stats.draftsWon} · $${stats.draftWinningsUsd.toLocaleString()}`} accent="text-amber-300" />
+        <Tile label="Cashouts" value={`${stats.cashoutsCompleted} · $${stats.cashoutsUsd.toLocaleString()}`} accent="text-green-300" />
       </div>
 
-      {/* Lifetime summary chips */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {summaryChips.map((chip) => (
-          <div
-            key={chip.label}
-            className="flex items-center gap-2 rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1.5"
-          >
-            <span className="text-base shrink-0" aria-hidden>{chip.emoji}</span>
-            <div className="min-w-0">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 truncate">{chip.label}</p>
-              <p className={`text-base font-semibold tabular-nums ${chip.accent ?? 'text-white'}`}>
-                {chip.value.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
+      {/* Wheel prize breakdown table */}
+      {stats.wheelPrizeBreakdown.size > 0 && (
+        <Card>
+          <Header title="Wheel wins by prize" sub={`${stats.spinsWon} total spins won`} />
+          <Table
+            rows={[...stats.wheelPrizeBreakdown.entries()].sort((a, b) => b[1] - a[1])}
+            accentFor={(label) => /jackpot/i.test(label) ? 'text-red-300' : /hof/i.test(label) ? 'text-[#D4AF37]' : 'text-purple-300'}
+          />
+        </Card>
+      )}
 
-      {/* Promo-type breakdown — surfaces which promo this user actually
-          engages with. Hidden when no promos claimed. */}
-      {promoTypeBreakdown.size > 0 && (
-        <div className="rounded-md border border-pink-500/20 bg-pink-500/[0.04] px-3 py-2">
-          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-pink-300/80">
-            Promos by type
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {[...promoTypeBreakdown.entries()].map(([type, count]) => (
-              <span
-                key={type}
-                className="rounded-full bg-pink-500/[0.10] px-2 py-0.5 text-[11px] text-pink-200 ring-1 ring-pink-500/20"
+      {/* Promo breakdown table */}
+      {stats.promoBreakdown.size > 0 && (
+        <Card>
+          <Header title="Promos claimed by type" sub={`${stats.promosClaimed} total`} />
+          <Table
+            rows={[...stats.promoBreakdown.entries()].sort((a, b) => b[1] - a[1])}
+            accentFor={() => 'text-pink-300'}
+            capitalize
+          />
+        </Card>
+      )}
+
+      {/* Recent activity with filter chips */}
+      <Card>
+        <Header
+          title="Recent activity"
+          sub={`${events.length} event${events.length === 1 ? '' : 's'} on file · ${sortedVisible.length} shown`}
+        />
+        {/* Clickable filter chips. Boris's ask: "i should be able to click
+            into the specific categories to go deeper into things." */}
+        <div className="flex items-center gap-1.5 px-5 py-2 border-b border-white/[0.06] overflow-x-auto">
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] border transition-colors ${
+                  active
+                    ? 'bg-banana text-black border-banana font-semibold'
+                    : 'border-white/[0.08] text-gray-400 hover:text-white hover:border-white/[0.20]'
+                }`}
               >
-                {type.replace(/_/g, ' ')} · {count}
-              </span>
-            ))}
-          </div>
+                {f.label}
+              </button>
+            );
+          })}
         </div>
-      )}
-
-      {/* Wheel-spin prize breakdown — Boris's explicit ask: "how many won
-          1 draft, 5 draft, 20 drafts, JP, HOF etc." Each chip = one prize
-          label with its hit count for this wallet. */}
-      {spinPrizeBreakdown.size > 0 && (
-        <div className="rounded-md border border-purple-500/20 bg-purple-500/[0.04] px-3 py-2">
-          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-purple-300/80">
-            Wheel wins by prize
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {[...spinPrizeBreakdown.entries()]
-              .sort((a, b) => b[1] - a[1])
-              .map(([prize, count]) => (
-                <span
-                  key={prize}
-                  className="rounded-full bg-purple-500/[0.10] px-2 py-0.5 text-[11px] text-purple-200 ring-1 ring-purple-500/20"
-                >
-                  {prize} · {count}
-                </span>
-              ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent events */}
-      <div>
-        <p className="mb-1.5 text-[11px] uppercase tracking-wider text-gray-500">
-          Recent events
-        </p>
-        {recent.length === 0 ? (
-          <p className="rounded-md border border-dashed border-gray-700 px-3 py-4 text-center text-xs text-gray-500">
-            No activity events found for this wallet.
+        {sortedVisible.length === 0 ? (
+          <p className="px-5 py-6 text-center text-xs text-gray-500">
+            {events.length === 0
+              ? 'No activity events found for this wallet.'
+              : `No ${filter} events.`}
           </p>
         ) : (
-          <ul className="divide-y divide-white/[0.04] rounded-md border border-white/[0.04] bg-black/20">
-            {recent.map((e, i) => {
+          <ul className="divide-y divide-white/[0.04] max-h-96 overflow-y-auto">
+            {sortedVisible.slice(0, 50).map((e, i) => {
               const t = eventTypeOf(e);
               const label = EVENT_LABEL[t] ?? t;
               const color = EVENT_COLOR[t] ?? 'text-gray-300';
               const tx = e.txHash ? `https://basescan.org/tx/${e.txHash}` : null;
               const detail = describeEvent(e);
               return (
-                <li key={e.id ?? i} className="flex items-center gap-3 px-3 py-2 text-xs">
-                  <span className={`shrink-0 font-semibold ${color}`}>{label}</span>
+                <li key={e.id ?? i} className="flex items-center gap-3 px-5 py-2 text-xs">
+                  <span className={`shrink-0 font-semibold ${color} w-32 truncate`}>{label}</span>
                   {detail && <span className="text-gray-400 truncate flex-1">{detail}</span>}
                   {!detail && <span className="flex-1" />}
-                  <span className="shrink-0 text-gray-500">{fmtWhen(isoOf(e))}</span>
+                  <span className="shrink-0 text-gray-500 tabular-nums">{fmtWhen(isoOf(e))}</span>
                   {tx && (
                     <a
                       href={tx}
@@ -277,15 +322,61 @@ export function ActivitySection({ activity }: Props) {
             })}
           </ul>
         )}
-      </div>
+      </Card>
     </section>
   );
 }
 
-/**
- * One-line human description of an event derived from its meta payload.
- * Returns null when nothing useful can be said beyond the type label.
- */
+/* ─── Primitives ──────────────────────────────────────────────────── */
+
+function Tile({ label, value, accent = 'text-white' }: { label: string; value: number | string; accent?: string }) {
+  const display = typeof value === 'number' ? value.toLocaleString() : value;
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      <p className="text-[10px] uppercase tracking-[0.1em] text-gray-500">{label}</p>
+      <p className={`mt-1 text-lg font-semibold tabular-nums ${accent}`}>{display}</p>
+    </div>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">{children}</div>;
+}
+
+function Header({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="px-5 py-3 border-b border-white/[0.06] flex items-baseline justify-between gap-2">
+      <h4 className="text-sm font-semibold text-white">{title}</h4>
+      {sub && <p className="text-[11px] text-gray-500">{sub}</p>}
+    </div>
+  );
+}
+
+function Table({
+  rows,
+  accentFor,
+  capitalize,
+}: {
+  rows: [string, number][];
+  accentFor: (label: string) => string;
+  capitalize?: boolean;
+}) {
+  const total = rows.reduce((s, [, n]) => s + n, 0);
+  return (
+    <table className="w-full text-sm">
+      <tbody className="tabular-nums">
+        {rows.map(([label, count]) => (
+          <tr key={label} className="border-t border-white/[0.04]">
+            <td className={`px-5 py-1.5 ${accentFor(label)} ${capitalize ? 'capitalize' : ''}`}>{label.replace(/_/g, ' ').replace(/-/g, ' ')}</td>
+            <td className="py-1.5 text-right text-gray-200">{count.toLocaleString()}</td>
+            <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function describeEvent(e: RawEvent): string | null {
   const meta = metaOf(e);
   switch (eventTypeOf(e)) {

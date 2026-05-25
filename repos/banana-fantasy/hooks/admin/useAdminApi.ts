@@ -335,6 +335,8 @@ export interface MetricsResponse {
   totalRevenueUsd: number;
   revenueTodayUsd: number;
   draftersWithoutPromos: number;
+  draftsEnteredToday: number;
+  draftsEnteredTotal: number;
   reservedDrafts: { jackpot: number; hof: number };
   wheelDrafts: {
     jackpot: { filling: number; drafting: number; completed: number; total: number };

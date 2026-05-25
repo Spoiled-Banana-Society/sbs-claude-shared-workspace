@@ -90,20 +90,42 @@ function sectionFail(name: string, err: unknown): SectionFail {
  * tab surfaces what went wrong (silent null was making this look broken
  * when really the env var was unset / fetch timed out / etc.).
  */
-async function fetchOwnerProfile(wallet: string): Promise<{ displayName: string | null; avatar: string | null }> {
+interface OwnerProfile {
+  displayName: string | null;
+  avatar: string | null;
+  availableCreditUsd: number;
+  availableEthCredit: number;
+  pendingCreditUsd: number;
+  numWithdrawals: number;
+  isBlueCheckVerified: boolean;
+  blueCheckEmail: string | null;
+}
+
+async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
+  const empty: OwnerProfile = {
+    displayName: null,
+    avatar: null,
+    availableCreditUsd: 0,
+    availableEthCredit: 0,
+    pendingCreditUsd: 0,
+    numWithdrawals: 0,
+    isBlueCheckVerified: false,
+    blueCheckEmail: null,
+  };
   const baseRaw = process.env.NEXT_PUBLIC_SBS_API_URL || process.env.SBS_API_URL;
   if (!baseRaw) {
     logger.warn('admin.user_lookup.owner_profile_no_base_url', {
       route: 'admin/user-lookup',
       context: { wallet },
     });
-    return { displayName: null, avatar: null };
+    return empty;
   }
-  const base = baseRaw.replace(/\/+$/, ''); // strip trailing slash so we never produce //owner
-  // 3s timeout — owner endpoint is fast; if it hangs we don't want to
-  // block the whole consolidated user-lookup response on it.
+  const base = baseRaw.replace(/\/+$/, '');
+  // 8s timeout — Cloud Run cold-start on staging can take 4-5s. The
+  // previous 3s cap was timing out before the response arrived, which
+  // is what Boris was seeing as silently-missing PFP/name.
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 3_000);
+  const timer = setTimeout(() => ctrl.abort(), 8_000);
   try {
     const res = await fetch(`${base}/owner/${wallet}`, { cache: 'no-store', signal: ctrl.signal });
     if (!res.ok) {
@@ -111,29 +133,47 @@ async function fetchOwnerProfile(wallet: string): Promise<{ displayName: string 
         route: 'admin/user-lookup',
         context: { wallet, status: res.status, base },
       });
-      return { displayName: null, avatar: null };
+      return empty;
     }
-    const data = (await res.json()) as { pfp?: { displayName?: string; imageUrl?: string } };
+    const data = (await res.json()) as {
+      pfp?: { displayName?: string; imageUrl?: string };
+      availableCredit?: number;
+      availableEthCredit?: number;
+      pendingCredit?: number;
+      numWithdrawals?: number;
+      isBlueCheckVerified?: boolean;
+      blueCheckEmail?: string;
+    };
     const displayName = typeof data?.pfp?.displayName === 'string' && data.pfp.displayName.trim()
       ? data.pfp.displayName
       : null;
     const avatar = typeof data?.pfp?.imageUrl === 'string' && data.pfp.imageUrl.trim()
       ? data.pfp.imageUrl
       : null;
-    if (!displayName && !avatar) {
-      logger.info('admin.user_lookup.owner_profile_empty', {
-        route: 'admin/user-lookup',
-        context: { wallet, base, hasPfp: !!data?.pfp },
-      });
-    }
-    return { displayName, avatar };
+    // ALWAYS log success path so we can prove the call ran when the
+    // admin Logs tab is reviewed. Was logger.info on empty only before,
+    // which made "did this fetch even run?" hard to answer.
+    logger.info('admin.user_lookup.owner_profile_ok', {
+      route: 'admin/user-lookup',
+      context: { wallet, hasDisplayName: !!displayName, hasAvatar: !!avatar },
+    });
+    return {
+      displayName,
+      avatar,
+      availableCreditUsd: typeof data.availableCredit === 'number' ? data.availableCredit : 0,
+      availableEthCredit: typeof data.availableEthCredit === 'number' ? data.availableEthCredit : 0,
+      pendingCreditUsd: typeof data.pendingCredit === 'number' ? data.pendingCredit : 0,
+      numWithdrawals: typeof data.numWithdrawals === 'number' ? data.numWithdrawals : 0,
+      isBlueCheckVerified: data.isBlueCheckVerified === true,
+      blueCheckEmail: typeof data.blueCheckEmail === 'string' && data.blueCheckEmail.trim() ? data.blueCheckEmail : null,
+    };
   } catch (err) {
     logger.warn('admin.user_lookup.owner_profile_fetch_failed', {
       route: 'admin/user-lookup',
       err: err instanceof Error ? err.message : String(err),
       context: { wallet, base },
     });
-    return { displayName: null, avatar: null };
+    return empty;
   } finally {
     clearTimeout(timer);
   }
@@ -178,6 +218,14 @@ async function readIdentity(wallet: string) {
       hofEntries: typeof d.hofEntries === 'number' ? d.hofEntries : 0,
       cardPurchaseCount:
         typeof d.cardPurchaseCount === 'number' ? d.cardPurchaseCount : 0,
+    },
+    // Money — pulled from the Go owner endpoint. Boris's ask: "do they
+    // have money in their account or card all their txns their history."
+    account: {
+      availableCreditUsd: ownerProfile.availableCreditUsd,
+      availableEthCredit: ownerProfile.availableEthCredit,
+      pendingCreditUsd: ownerProfile.pendingCreditUsd,
+      numWithdrawalsLifetime: ownerProfile.numWithdrawals,
     },
   };
 }

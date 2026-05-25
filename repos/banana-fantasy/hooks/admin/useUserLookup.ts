@@ -57,6 +57,15 @@ export interface UserLookupIdentity {
     hofEntries: number;
     cardPurchaseCount: number;
   };
+  /** Money sourced from the Go owner endpoint (separate from passes/entries
+   *  which mirror in Firestore). credits = $-denominated prize money the
+   *  user has not yet withdrawn. */
+  account: {
+    availableCreditUsd: number;
+    availableEthCredit: number;
+    pendingCreditUsd: number;
+    numWithdrawalsLifetime: number;
+  };
 }
 
 export interface UserLookupResponse {
