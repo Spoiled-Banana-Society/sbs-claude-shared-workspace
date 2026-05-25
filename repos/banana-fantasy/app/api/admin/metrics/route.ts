@@ -8,6 +8,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
+import { wheelSegments } from '@/lib/wheelConfig';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -91,11 +92,24 @@ export interface MetricsResponse {
   // the promo_claimed event metadata (`refer`, `tweet_share`, etc.).
   promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
   // Wheel spin breakdown by exact prize label ("1 free draft", "5 free
-  // drafts", "Jackpot entry", "HOF entry", "Nothing"). Counts come from
-  // a bounded scan of the most-recent 2000 spins.
-  wheelPrizeBreakdown: Record<string, number>;
+  // drafts", "Jackpot entry", "HOF entry", "Nothing"). Each entry carries
+  // BOTH today and total counts so the dashboard can show both columns.
+  // Initialized from wheelConfig so every defined segment renders, even
+  // at 0. Computed from a single bounded scan of the most-recent 2000
+  // spins (no Firestore index needed).
+  wheelPrizeBreakdown: Record<string, { today: number; total: number }>;
   /** Sum of free draft passes given out via wheel wins (scan window). */
   totalFreeDraftsFromWheel: number;
+  /** Free drafts given today. */
+  freeDraftsFromWheelToday: number;
+  /** Total revenue (USD) from card + USDC pass purchases. Sum of
+   *  pass_purchased event metadata.totalPrice in v2_activity_events. */
+  totalRevenueUsd: number;
+  /** Revenue today. */
+  revenueTodayUsd: number;
+  /** Users who have draft_entered events but 0 promo_claimed events —
+   *  the "engaged with the product but not the promo loop" cohort. */
+  draftersWithoutPromos: number;
   // JP/HOF entries currently held by users — reservations from wheel
   // wins that haven't been redeemed into an actual JP/HOF draft yet.
   reservedDrafts: { jackpot: number; hof: number };
@@ -200,17 +214,14 @@ async function buildMetrics(): Promise<MetricsResponse> {
     count(userEvents.where('eventType', '==', 'promo_claimed').where('timestamp', '>=', todayIso)),
   ]);
 
-  // Wheel spins: timestamp is ISO string. Reads the per-user
-  // `wheelSpins` subcollections via collectionGroup so the counts
-  // reflect every spin every user has ever taken — not the (mostly
-  // empty / legacy) top-level `wheelSpins` collection.
-  const [totalSpins, spinsToday, jackpotHits, hofHits, draftPassAwards] = await Promise.all([
-    count(wheelSpinsGroup),
-    count(wheelSpinsGroup.where('timestamp', '>=', todayIso)),
-    count(wheelSpinsGroup.where('result', '==', 'jackpot')),
-    count(wheelSpinsGroup.where('result', '==', 'hof')),
-    count(wheelSpinsGroup.where('prize.type', '==', 'draft_pass')),
-  ]);
+  // Wheel spins: total count works without a filter (collectionGroup
+  // count is unindexed-OK). Every other per-prize / per-day count is
+  // computed CLIENT-SIDE from a single bounded scan further down,
+  // because collectionGroup + .where() requires a composite Firestore
+  // index per filter and silently returns 0 without one. Boris caught
+  // that bug: "424 total spins but 0 free drafts / 0 JP / 0 HOF" — all
+  // three were the indexless-where-returns-0 trap.
+  const totalSpins = await count(wheelSpinsGroup);
 
   // Shares: timestamp field is verifiedAt
   const [sharesTotal, sharesTodayCount, sharesEarnedCredit] = await Promise.all([
@@ -275,25 +286,10 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const jackpotQueueBreakdown = summarizeQueue(jackpotQueueDoc?.data());
   const hofQueueBreakdown = summarizeQueue(hofQueueDoc?.data());
 
-  // Draft passes awarded (sum prize.value across every draft_pass spin).
-  // Firestore can't sum — bounded scan to 500 most-recent. Uses the
-  // collectionGroup so it reads from where spins actually live.
-  let draftPassesAwardedTotal = 0;
-  try {
-    const awardedSnap = await wheelSpinsGroup
-      .where('prize.type', '==', 'draft_pass')
-      .orderBy('timestamp', 'desc')
-      .limit(500)
-      .get();
-    for (const d of awardedSnap.docs) {
-      const v = (d.data() as { prize?: { value?: unknown } }).prize?.value;
-      if (typeof v === 'number') draftPassesAwardedTotal += v;
-    }
-  } catch (err) {
-    // Non-fatal — collectionGroup ordered queries sometimes require an
-    // index on first use. Log so we know to add one.
-    logger.warn('metrics.draft_passes_awarded_failed', { err });
-  }
+  // (draftPassesAwardedTotal moved into the single wheel-scan below —
+  // see the wheelPrizeBreakdown block. Computing it from the same scan
+  // avoids the collectionGroup + .where() index trap that was returning
+  // 0 silently.)
 
   // ── Lifetime totals + promo breakdown ──────────────────────────────
   // All-time counters that complement the per-day KPIs above. Each one
@@ -343,39 +339,74 @@ async function buildMetrics(): Promise<MetricsResponse> {
     // Non-fatal — leave at 0
   }
 
-  // Wheel-prize breakdown by exact prize label. Boris's ask: "from the
-  // banana wheel spins how many wins are what — 1 draft, 5 draft, 20 drafts,
-  // JP and HOF." We scan up to 2000 most-recent spins and bucket by the
-  // resolved prize string ("1 free draft", "5 free drafts", "Jackpot entry",
-  // "HOF entry"). Bounded to keep latency under 1s on cold cache.
-  // Also accumulates totalFreeDraftsFromWheel (sum of prize.value across
-  // every draft_pass-prize spin), which feeds the free-vs-paid pass ratio
-  // shown on the dashboard.
-  const wheelPrizeBreakdown: Record<string, number> = {};
+  // ── Single wheel-spin scan: every per-prize / per-day / per-result
+  //    metric is computed CLIENT-SIDE here. Using collectionGroup +
+  //    .where() filters quietly errored when a Firestore index didn't
+  //    exist, leaving the dashboard at 0. One scan, all buckets, no
+  //    indexes needed. Bounded to most-recent 2000 spins.
+  //
+  //    Boris's exact ask: show every prize segment with today + total,
+  //    even when 0. We initialize the breakdown from wheelSegments so
+  //    every defined prize ("1 Draft", "5 Drafts", "10 Drafts",
+  //    "20 Drafts", "Jackpot", "HOF") always renders.
+  const wheelPrizeBreakdown: Record<string, { today: number; total: number }> = {};
+  // Seed with every wheel-config prize. Multiple segment IDs collapse
+  // onto the same human label (e.g. five 'draft-1-*' segments → "1 free
+  // draft") so we dedupe by label.
+  for (const seg of wheelSegments) {
+    let label = 'unknown';
+    if (seg.prizeType === 'draft_pass' && typeof seg.prizeValue === 'number') {
+      label = `${seg.prizeValue} free draft${seg.prizeValue === 1 ? '' : 's'}`;
+    } else if (seg.prizeType === 'custom' && seg.prizeValue === 'jackpot') {
+      label = 'Jackpot entry';
+    } else if (seg.prizeType === 'custom' && seg.prizeValue === 'hof') {
+      label = 'HOF entry';
+    } else if (seg.prizeType === 'nothing') {
+      label = 'Nothing';
+    }
+    if (!wheelPrizeBreakdown[label]) wheelPrizeBreakdown[label] = { today: 0, total: 0 };
+  }
+
   let totalFreeDraftsFromWheel = 0;
+  let freeDraftsFromWheelToday = 0;
+  let spinsToday = 0;
+  let jackpotHits = 0;
+  let hofHits = 0;
+  let draftPassAwards = 0;
+  let draftPassesAwardedTotal = 0;
   try {
     const spinSnap = await wheelSpinsGroup.orderBy('timestamp', 'desc').limit(2000).get();
     for (const d of spinSnap.docs) {
-      const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string };
+      const data = d.data() as { prize?: { type?: string; value?: unknown }; result?: string; timestamp?: string };
       const prizeType = data.prize?.type ?? '';
       const prizeValue = data.prize?.value;
+      const tsIso = typeof data.timestamp === 'string' ? data.timestamp : '';
+      const isToday = tsIso >= todayIso;
+      if (isToday) spinsToday += 1;
       let label = 'unknown';
       if (prizeType === 'draft_pass' && typeof prizeValue === 'number') {
         label = `${prizeValue} free draft${prizeValue === 1 ? '' : 's'}`;
         totalFreeDraftsFromWheel += prizeValue;
+        if (isToday) freeDraftsFromWheelToday += prizeValue;
+        draftPassAwards += 1;
+        draftPassesAwardedTotal += prizeValue;
       } else if (prizeType === 'custom' && prizeValue === 'jackpot') {
         label = 'Jackpot entry';
+        jackpotHits += 1;
       } else if (prizeType === 'custom' && prizeValue === 'hof') {
         label = 'HOF entry';
+        hofHits += 1;
       } else if (prizeType === 'nothing') {
         label = 'Nothing';
       } else if (data.result) {
         label = String(data.result);
       }
-      wheelPrizeBreakdown[label] = (wheelPrizeBreakdown[label] ?? 0) + 1;
+      if (!wheelPrizeBreakdown[label]) wheelPrizeBreakdown[label] = { today: 0, total: 0 };
+      wheelPrizeBreakdown[label].total += 1;
+      if (isToday) wheelPrizeBreakdown[label].today += 1;
     }
   } catch (err) {
-    logger.warn('metrics.wheel_prize_breakdown_failed', { err });
+    logger.warn('metrics.wheel_scan_failed', { err });
   }
 
   // JP/HOF reserved drafts — entries the user earned on the wheel but
@@ -430,6 +461,44 @@ async function buildMetrics(): Promise<MetricsResponse> {
   } catch (err) {
     logger.warn('metrics.promo_breakdown_failed', { err });
   }
+
+  // ── Single activity-events scan: revenue + drafters-without-promos.
+  //    Scans the most-recent 2000 v2_activity_events docs once and
+  //    derives both metrics client-side.
+  //    - totalRevenueUsd: sum of pass_purchased metadata.totalPrice
+  //    - draftersWithoutPromos: distinct users with draft_entered but
+  //      0 promo_claimed in the window
+  let totalRevenueUsd = 0;
+  let revenueTodayUsd = 0;
+  const drafters = new Set<string>();
+  const promoClaimers = new Set<string>();
+  try {
+    const actSnap = await activityEvents.orderBy('createdAt', 'desc').limit(2000).get();
+    for (const d of actSnap.docs) {
+      const data = d.data() as {
+        type?: string;
+        userId?: string;
+        metadata?: Record<string, unknown>;
+        createdAtIso?: string;
+      };
+      const userId = (data.userId ?? '').toLowerCase();
+      const isToday = (data.createdAtIso ?? '') >= todayIso;
+      if (data.type === 'pass_purchased') {
+        const price = Number(data.metadata?.totalPrice);
+        if (Number.isFinite(price)) {
+          totalRevenueUsd += price;
+          if (isToday) revenueTodayUsd += price;
+        }
+      } else if (data.type === 'draft_entered' && userId) {
+        drafters.add(userId);
+      } else if (data.type === 'promo_claimed' && userId) {
+        promoClaimers.add(userId);
+      }
+    }
+  } catch (err) {
+    logger.warn('metrics.activity_scan_failed', { err });
+  }
+  const draftersWithoutPromos = Array.from(drafters).filter((u) => !promoClaimers.has(u)).length;
 
   // Suppress unused warnings — weekTs/todayTs reserved for future Timestamp-typed
   // collections. We use ISO strings throughout for now.
@@ -498,6 +567,10 @@ async function buildMetrics(): Promise<MetricsResponse> {
     promoBreakdown,
     wheelPrizeBreakdown,
     totalFreeDraftsFromWheel,
+    freeDraftsFromWheelToday,
+    totalRevenueUsd,
+    revenueTodayUsd,
+    draftersWithoutPromos,
     reservedDrafts: { jackpot: jackpotReservedPending, hof: hofReservedPending },
     wheelDrafts: {
       jackpot: jackpotQueueBreakdown,

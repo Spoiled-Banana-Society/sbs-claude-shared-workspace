@@ -32,6 +32,8 @@ interface UserTotals {
   passesBought: number;
   promosClaimed: number;
   spinsWon: number;
+  /** Sum of prize.value across all draft_pass-prize spin_won events for this user. */
+  freeDraftsWon: number;
   lastActivityIso: string;
 }
 
@@ -70,6 +72,7 @@ export async function GET(req: Request) {
         passesBought: 0,
         promosClaimed: 0,
         spinsWon: 0,
+        freeDraftsWon: 0,
         lastActivityIso: d.createdAtIso ?? '',
       };
       if (d.username && !entry.username) entry.username = d.username;
@@ -86,9 +89,18 @@ export async function GET(req: Request) {
         case 'promo_claimed':
           entry.promosClaimed += 1;
           break;
-        case 'spin_won':
+        case 'spin_won': {
           entry.spinsWon += 1;
+          // Free drafts won = sum prize.value when prize.type='draft_pass'.
+          // metadata.prizeType + metadata.prizeValue are the canonical
+          // fields on spin_won activity events.
+          const prizeType = String(d.metadata?.prizeType ?? '');
+          if (prizeType === 'draft_pass') {
+            const v = Number(d.metadata?.prizeValue);
+            if (Number.isFinite(v)) entry.freeDraftsWon += v;
+          }
           break;
+        }
       }
       totals.set(userId, entry);
     }
@@ -97,6 +109,7 @@ export async function GET(req: Request) {
     const topSpend = [...all].sort((a, b) => b.spendUsd - a.spendUsd).slice(0, TOP_N);
     const topPromos = [...all].sort((a, b) => b.promosClaimed - a.promosClaimed).slice(0, TOP_N);
     const topSpins = [...all].sort((a, b) => b.spinsWon - a.spinsWon).slice(0, TOP_N);
+    const topFreeDrafts = [...all].sort((a, b) => b.freeDraftsWon - a.freeDraftsWon).slice(0, TOP_N);
 
     logger.info('admin.heaviest_users.ok', {
       requestId,
@@ -110,6 +123,7 @@ export async function GET(req: Request) {
       topSpend,
       topPromos,
       topSpins,
+      topFreeDrafts,
       requestId,
     });
   } catch (err) {

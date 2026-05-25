@@ -329,8 +329,12 @@ export interface MetricsResponse {
     draftsCompleted: number;
   };
   promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }>;
-  wheelPrizeBreakdown: Record<string, number>;
+  wheelPrizeBreakdown: Record<string, { today: number; total: number }>;
   totalFreeDraftsFromWheel: number;
+  freeDraftsFromWheelToday: number;
+  totalRevenueUsd: number;
+  revenueTodayUsd: number;
+  draftersWithoutPromos: number;
   reservedDrafts: { jackpot: number; hof: number };
   wheelDrafts: {
     jackpot: { filling: number; drafting: number; completed: number; total: number };
@@ -441,6 +445,7 @@ export interface HeaviestUserEntry {
   passesBought: number;
   promosClaimed: number;
   spinsWon: number;
+  freeDraftsWon: number;
   lastActivityIso: string;
 }
 
@@ -451,6 +456,7 @@ export interface HeaviestUsersResponse {
   topSpend: HeaviestUserEntry[];
   topPromos: HeaviestUserEntry[];
   topSpins: HeaviestUserEntry[];
+  topFreeDrafts: HeaviestUserEntry[];
 }
 
 export function useHeaviestUsers(enabled: boolean) {

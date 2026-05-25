@@ -31,6 +31,7 @@
  * always in two right-aligned columns so they read at a glance.
  */
 
+import React from 'react';
 import Link from 'next/link';
 import {
   useAdminMetrics,
@@ -90,11 +91,13 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
-      {/* SECONDARY 3-col: top users · errors · live activity. */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <TopUsersBox data={heaviestQ.data?.topSpend} loading={heaviestQ.isLoading} />
-        <RecentErrorsBox errors={errors} loading={errorsQ.isLoading} />
-        <LiveActivityBox enabled={enabled} />
+      {/* SECONDARY: top users (3 leaderboards in one box) · errors · live activity. */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <TopUsersBox q={heaviestQ.data} loading={heaviestQ.isLoading} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <RecentErrorsBox errors={errors} loading={errorsQ.isLoading} />
+          <LiveActivityBox enabled={enabled} />
+        </div>
       </div>
     </div>
   );
@@ -283,8 +286,19 @@ function UsersBox({ m }: { m: MetricsResponse }) {
 /* ─────────────────────────────────────────────────────────  WHEEL box  */
 
 function WheelBox({ m }: { m: MetricsResponse }) {
-  const prizeRows = Object.entries(m.wheelPrizeBreakdown).sort((a, b) => b[1] - a[1]);
-  const prizeTotal = prizeRows.reduce((s, [, n]) => s + n, 0);
+  // Sort prize labels by total desc so highest-frequency prize tops the
+  // list. Every defined segment is always present (seeded server-side
+  // from wheelConfig).
+  const PRIZE_ORDER = ['1 free draft', '5 free drafts', '10 free drafts', '20 free drafts', 'HOF entry', 'Jackpot entry', 'Nothing'];
+  const prizeRows = Object.entries(m.wheelPrizeBreakdown).sort((a, b) => {
+    const ai = PRIZE_ORDER.indexOf(a[0]);
+    const bi = PRIZE_ORDER.indexOf(b[0]);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return b[1].total - a[1].total;
+  });
+  const prizeTotal = prizeRows.reduce((s, [, c]) => s + c.total, 0);
   const accentFor = (label: string) =>
     /jackpot/i.test(label) ? 'text-red-300'
     : /hof/i.test(label) ? 'text-[#D4AF37]'
@@ -296,28 +310,34 @@ function WheelBox({ m }: { m: MetricsResponse }) {
       <TodayTotalTable
         rows={[
           { label: 'Spins', today: m.wheel.spinsToday, total: m.wheel.totalSpins, accent: 'text-[#F3E216]' },
-          { label: 'Jackpot hits', total: m.lifetime.jackpotWins, sub: '1% odds · created ' + m.wheelDrafts.jackpot.total + ' JP draft' + (m.wheelDrafts.jackpot.total === 1 ? '' : 's'), accent: 'text-red-300' },
-          { label: 'HOF hits', total: m.lifetime.hofWins, sub: '5% odds · created ' + m.wheelDrafts.hof.total + ' HOF draft' + (m.wheelDrafts.hof.total === 1 ? '' : 's'), accent: 'text-[#D4AF37]' },
-          { label: 'Free drafts given', total: m.totalFreeDraftsFromWheel, sub: 'sum of prize values across draft-pass spins', accent: 'text-purple-300' },
+          { label: 'Jackpot hits', today: m.wheelPrizeBreakdown['Jackpot entry']?.today ?? 0, total: m.lifetime.jackpotWins, sub: `1% odds · ${m.wheelDrafts.jackpot.total} JP draft${m.wheelDrafts.jackpot.total === 1 ? '' : 's'} created`, accent: 'text-red-300' },
+          { label: 'HOF hits', today: m.wheelPrizeBreakdown['HOF entry']?.today ?? 0, total: m.lifetime.hofWins, sub: `5% odds · ${m.wheelDrafts.hof.total} HOF draft${m.wheelDrafts.hof.total === 1 ? '' : 's'} created`, accent: 'text-[#D4AF37]' },
+          { label: 'Free drafts given', today: m.freeDraftsFromWheelToday, total: m.totalFreeDraftsFromWheel, sub: 'sum of prize values across draft-pass spins', accent: 'text-purple-300' },
         ]}
       />
 
       <Inline title="Wins by prize" sub={prizeTotal > 0 ? `last ${prizeTotal.toLocaleString()} spins` : 'no spins yet'}>
         <table className="w-full text-sm">
+          <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
+            <tr>
+              <th className="px-5 pt-2 pb-1 text-left font-medium">Prize</th>
+              <th className="pt-2 pb-1 text-right font-medium">Today</th>
+              <th className="pt-2 pb-1 text-right font-medium">Total</th>
+              <th className="px-5 pt-2 pb-1 text-right font-medium">Share</th>
+            </tr>
+          </thead>
           <tbody className="tabular-nums">
-            {prizeRows.length === 0 ? (
-              <tr>
-                <td className="px-5 py-3 text-center text-[11px] text-gray-500">No spin data yet.</td>
-              </tr>
-            ) : (
-              prizeRows.map(([label, count]) => (
+            {prizeRows.map(([label, c]) => {
+              const dim = c.total === 0;
+              return (
                 <tr key={label} className="border-t border-white/[0.04]">
-                  <td className={`px-5 py-1.5 ${accentFor(label)} capitalize`}>{label}</td>
-                  <td className="py-1.5 text-right text-gray-200">{count.toLocaleString()}</td>
-                  <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{prizeTotal > 0 ? `${((count / prizeTotal) * 100).toFixed(1)}%` : '—'}</td>
+                  <td className={`px-5 py-1.5 ${dim ? 'text-gray-500' : accentFor(label)} capitalize`}>{label}</td>
+                  <td className={`py-1.5 text-right ${c.today > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{c.today.toLocaleString()}</td>
+                  <td className={`py-1.5 text-right ${dim ? 'text-gray-600' : 'text-gray-200'}`}>{c.total.toLocaleString()}</td>
+                  <td className={`px-5 py-1.5 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{prizeTotal > 0 ? `${((c.total / prizeTotal) * 100).toFixed(1)}%` : '—'}</td>
                 </tr>
-              ))
-            )}
+              );
+            })}
           </tbody>
         </table>
       </Inline>
@@ -360,36 +380,38 @@ function WheelBox({ m }: { m: MetricsResponse }) {
 
 /* ─────────────────────────────────────────────────────────  PROMOS box  */
 
-// Canonical promo list — render every type so coverage gaps are visible.
+// The 6 ACTIVE user-facing promos + founder draft. Other promo types
+// in the codebase (jackpot/hof/mint/daily-drafts) are event-triggered
+// internals — surfaced under "Other" only when they have activity.
+// Boris's exact ask: "should only be our 6 promos plus founder draft."
 const CANONICAL_PROMOS: { key: string; label: string }[] = [
   { key: 'new-user', label: 'New user' },
   { key: 'buy-bonus', label: 'Buy bonus' },
   { key: 'referral', label: 'Referral' },
-  { key: 'daily-drafts', label: 'Daily drafts' },
   { key: 'pick-10', label: 'Pick 10' },
   { key: 'tweet-engagement', label: 'Tweet engagement' },
   { key: 'spin-share', label: 'Spin share' },
-  { key: 'add-to-home-screen', label: 'Add to home' },
-  { key: 'jackpot', label: 'Jackpot (in-draft)' },
-  { key: 'hof', label: 'HOF (in-draft)' },
-  { key: 'mint', label: 'Mint' },
   { key: 'founder-draft', label: 'Founder draft' },
 ];
 
 function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgressResponse }) {
   const breakdown = m.promoBreakdown;
   const perType = progress?.perType ?? {};
-  const seenKeys = new Set([
-    ...Object.keys(breakdown),
-    ...Object.keys(perType),
-    ...CANONICAL_PROMOS.map((p) => p.key),
-  ]);
+  // Active promo rows (always shown, even at 0 — coverage gaps matter).
+  const activeRows = CANONICAL_PROMOS;
+  // "Other" rows: any promo type seen in data that's NOT in the canonical
+  // active list. Only rendered when there's actual activity.
   const canonicalKeySet = new Set(CANONICAL_PROMOS.map((p) => p.key));
-  const extras = [...seenKeys].filter((k) => !canonicalKeySet.has(k));
-  const rows: { key: string; label: string }[] = [
-    ...CANONICAL_PROMOS,
-    ...extras.map((k) => ({ key: k, label: k.replace(/_/g, ' ').replace(/-/g, ' ') })),
-  ];
+  const seenKeys = new Set([...Object.keys(breakdown), ...Object.keys(perType)]);
+  const otherRows = [...seenKeys]
+    .filter((k) => !canonicalKeySet.has(k))
+    .filter((k) => {
+      const c = breakdown[k] ?? { claimsToday: 0, claimsTotal: 0 };
+      const p = perType[k] ?? { started: 0, completed: 0, pending: 0, conversionRate: 0 };
+      return c.claimsTotal > 0 || p.started > 0;
+    })
+    .map((k) => ({ key: k, label: k.replace(/_/g, ' ').replace(/-/g, ' ') }));
+  const allRows = [...activeRows, ...otherRows];
 
   return (
     <DomainBox
@@ -410,7 +432,7 @@ function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgre
             </tr>
           </thead>
           <tbody className="tabular-nums">
-            {rows.map((row) => {
+            {allRows.map((row, idx) => {
               const claims = breakdown[row.key] ?? { claimsToday: 0, claimsTotal: 0 };
               const prog = perType[row.key] ?? { started: 0, completed: 0, pending: 0, conversionRate: 0 };
               const inactive = claims.claimsTotal === 0 && prog.started === 0;
@@ -420,15 +442,26 @@ function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgre
                 : prog.conversionRate >= 0.5 ? 'text-emerald-300'
                 : prog.conversionRate >= 0.2 ? 'text-amber-300'
                 : 'text-red-300';
+              // Light divider before the first "Other / event-triggered" row.
+              const isFirstOther = idx === activeRows.length && otherRows.length > 0;
               return (
-                <tr key={row.key} className="border-t border-white/[0.04]">
-                  <td className={`px-5 py-1.5 capitalize ${inactive ? 'text-gray-500' : 'text-white'}`}>{row.label}</td>
-                  <td className={`py-1.5 text-right ${claims.claimsToday > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{claims.claimsToday}</td>
-                  <td className={`py-1.5 text-right ${claims.claimsTotal > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{claims.claimsTotal}</td>
-                  <td className={`py-1.5 text-right ${prog.started > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{prog.started}</td>
-                  <td className={`py-1.5 text-right ${prog.completed > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{prog.completed}</td>
-                  <td className={`px-5 py-1.5 text-right ${rateColor}`}>{prog.started > 0 ? `${ratePct}%` : '—'}</td>
-                </tr>
+                <React.Fragment key={row.key}>
+                  {isFirstOther && (
+                    <tr>
+                      <td colSpan={6} className="px-5 pt-2 pb-1 text-[10px] uppercase tracking-[0.1em] text-gray-500 border-t border-white/[0.08]">
+                        Other / event-triggered
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-t border-white/[0.04]">
+                    <td className={`px-5 py-1.5 capitalize ${inactive ? 'text-gray-500' : 'text-white'}`}>{row.label}</td>
+                    <td className={`py-1.5 text-right ${claims.claimsToday > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{claims.claimsToday}</td>
+                    <td className={`py-1.5 text-right ${claims.claimsTotal > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{claims.claimsTotal}</td>
+                    <td className={`py-1.5 text-right ${prog.started > 0 ? 'text-gray-200' : 'text-gray-600'}`}>{prog.started}</td>
+                    <td className={`py-1.5 text-right ${prog.completed > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{prog.completed}</td>
+                    <td className={`px-5 py-1.5 text-right ${rateColor}`}>{prog.started > 0 ? `${ratePct}%` : '—'}</td>
+                  </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -495,17 +528,18 @@ function MoneyBox({ m, withdrawals }: { m: MetricsResponse; withdrawals: AdminWi
     counts[bucketFor(ageHours)].count += 1;
     counts[bucketFor(ageHours)].amount += w.amount;
   }
+  const hasPending = pending.length > 0;
 
   return (
     <DomainBox title="Money" accent="text-emerald-300">
+      {/* Revenue + free-vs-paid — Boris's call: this is the vital info,
+          pin it to the top of the box. */}
       <TodayTotalTable
         rows={[
-          { label: 'Pending withdrawals', today: m.withdrawals.pending, sub: `$${m.withdrawals.totalVolume.toLocaleString()} approved + pending`, accent: m.withdrawals.pending > 0 ? 'text-amber-300' : 'text-gray-200' },
-          { label: 'Withdrawals paid', total: `$${m.lifetime.withdrawalsPaidVolume.toLocaleString()}`, sub: 'lifetime payouts', accent: 'text-green-300' },
+          { label: 'Revenue (USD)', today: `$${m.revenueTodayUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, total: `$${m.totalRevenueUsd.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`, sub: 'sum of card + USDC pass purchases', accent: 'text-emerald-300' },
         ]}
       />
-
-      <Inline title="Passes — free vs paid">
+      <Inline title="Passes — free vs paid" sub={`${totalPasses.toLocaleString()} total`}>
         <table className="w-full text-sm">
           <tbody className="tabular-nums">
             <tr className="border-t border-white/[0.04]">
@@ -518,31 +552,49 @@ function MoneyBox({ m, withdrawals }: { m: MetricsResponse; withdrawals: AdminWi
               <td className="py-1.5 text-right text-white">{free.toLocaleString()}</td>
               <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">{pct(free)}</td>
             </tr>
-            <tr className="border-t border-white/[0.06]">
-              <td className="px-5 py-1.5 text-white font-semibold">Total</td>
-              <td className="py-1.5 text-right text-white font-semibold">{totalPasses.toLocaleString()}</td>
-              <td className="px-5 py-1.5" />
-            </tr>
           </tbody>
         </table>
       </Inline>
-
-      <Inline title="Pending withdrawals — by age" sub={pending.length === 0 ? 'nothing pending' : `${pending.length} total`}>
+      {/* Drafters without promos — engagement-gap cohort. */}
+      <Inline title="Drafters with no promo claims" sub="users who use the product but aren't in the promo loop">
+        <p className="px-5 py-2 text-sm">
+          <span className="text-xl text-amber-300 font-semibold tabular-nums">{m.draftersWithoutPromos.toLocaleString()}</span>
+          <span className="ml-2 text-[11px] text-gray-500">good candidates for a promo nudge</span>
+        </p>
+      </Inline>
+      {/* Withdrawals — deprioritized per Boris ("not important in beginning").
+          Renders only counts at the bottom; full aging only when there's
+          something pending. */}
+      <Inline title="Withdrawals" sub={hasPending ? `${pending.length} pending now` : 'nothing pending'}>
         <table className="w-full text-sm">
           <tbody className="tabular-nums">
-            {AGE_BUCKETS.map((b) => {
-              const c = counts[b.key];
-              const dim = c.count === 0;
-              return (
-                <tr key={b.key} className="border-t border-white/[0.04]">
-                  <td className={`px-5 py-1.5 ${dim ? 'text-gray-500' : b.accent}`}>{b.label}</td>
-                  <td className={`py-1.5 text-right ${dim ? 'text-gray-600' : 'text-white'}`}>{c.count.toLocaleString()}</td>
-                  <td className={`px-5 py-1.5 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>${c.amount.toLocaleString()}</td>
-                </tr>
-              );
-            })}
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-gray-300">Paid lifetime</td>
+              <td className="px-5 py-1.5 text-right text-green-300">${m.lifetime.withdrawalsPaidVolume.toLocaleString()}</td>
+            </tr>
+            <tr className="border-t border-white/[0.04]">
+              <td className="px-5 py-1.5 text-gray-300">Pending volume</td>
+              <td className={`px-5 py-1.5 text-right ${hasPending ? 'text-amber-300' : 'text-gray-500'}`}>${m.withdrawals.totalVolume.toLocaleString()}</td>
+            </tr>
           </tbody>
         </table>
+        {hasPending && (
+          <table className="w-full text-sm border-t border-white/[0.04]">
+            <tbody className="tabular-nums">
+              {AGE_BUCKETS.map((b) => {
+                const c = counts[b.key];
+                if (c.count === 0) return null;
+                return (
+                  <tr key={b.key} className="border-t border-white/[0.04]">
+                    <td className={`px-5 py-1.5 ${b.accent}`}>{b.label}</td>
+                    <td className="py-1.5 text-right text-white">{c.count.toLocaleString()}</td>
+                    <td className="px-5 py-1.5 text-right text-[11px] text-gray-500">${c.amount.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </Inline>
     </DomainBox>
   );
@@ -550,35 +602,92 @@ function MoneyBox({ m, withdrawals }: { m: MetricsResponse; withdrawals: AdminWi
 
 /* ─────────────────────────────────────────────────────────  Secondary row  */
 
-function TopUsersBox({ data, loading }: { data: HeaviestUserEntry[] | undefined; loading: boolean }) {
+function TopUsersBox({ q, loading }: { q: import('@/hooks/admin/useAdminApi').HeaviestUsersResponse | undefined; loading: boolean }) {
+  // Sub-link goes to the Users tab (User Lookup is per-wallet — clicking
+  // it standalone shows the empty search input which confused Boris).
   return (
-    <DomainBox title="Top users · by spend" sub="see all → User Lookup">
-      <div className="px-5 py-3">
-        {loading ? (
-          <p className="text-xs text-gray-500">Loading…</p>
-        ) : !data || data.length === 0 ? (
-          <p className="text-xs text-gray-500">No spend data in scan window.</p>
-        ) : (
-          <ul>
-            {data.slice(0, 8).map((e, i) => (
-              <li key={e.userId} className="flex items-center justify-between gap-2 py-1.5 border-b border-white/[0.04] last:border-0">
-                <div className="flex items-baseline gap-2 min-w-0">
-                  <span className="text-[10px] text-gray-500 tabular-nums w-4 shrink-0">{i + 1}.</span>
-                  <div className="min-w-0">
-                    {e.username && <p className="text-xs text-white truncate">{e.username}</p>}
-                    <WalletLink wallet={e.userId} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm text-emerald-300 font-semibold tabular-nums">${Math.round(e.spendUsd).toLocaleString()}</p>
-                  <p className="text-[10px] text-gray-500">{e.passesBought} pass{e.passesBought === 1 ? '' : 'es'}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+    <DomainBox
+      title="Top users"
+      accent="text-banana"
+      sub={<Link href="/admin?tab=users" className="hover:text-white">all users →</Link>}
+    >
+      <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-white/[0.06]">
+        <Mini
+          title="By spend"
+          unit="$"
+          entries={q?.topSpend ?? []}
+          loading={loading}
+          format={(e) => `$${Math.round(e.spendUsd).toLocaleString()}`}
+          sub={(e) => `${e.passesBought} pass${e.passesBought === 1 ? '' : 'es'}`}
+          accent="text-emerald-300"
+        />
+        <Mini
+          title="By free drafts won"
+          unit="drafts"
+          entries={(q?.topFreeDrafts ?? []).filter((e) => e.freeDraftsWon > 0)}
+          loading={loading}
+          format={(e) => e.freeDraftsWon.toLocaleString()}
+          sub={(e) => `${e.spinsWon} spin${e.spinsWon === 1 ? '' : 's'}`}
+          accent="text-purple-300"
+        />
+        <Mini
+          title="By promos claimed"
+          unit="claims"
+          entries={(q?.topPromos ?? []).filter((e) => e.promosClaimed > 0)}
+          loading={loading}
+          format={(e) => e.promosClaimed.toLocaleString()}
+          sub={(e) => `$${Math.round(e.spendUsd).toLocaleString()} spend`}
+          accent="text-pink-300"
+        />
       </div>
     </DomainBox>
+  );
+}
+
+function Mini({
+  title, unit, entries, loading, format, sub, accent,
+}: {
+  title: string;
+  unit: string;
+  entries: HeaviestUserEntry[];
+  loading: boolean;
+  format: (e: HeaviestUserEntry) => string;
+  sub: (e: HeaviestUserEntry) => string;
+  accent: string;
+}) {
+  return (
+    <div className="px-4 py-3 min-w-0">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-[10px] uppercase tracking-[0.1em] text-gray-500">{title}</p>
+        <p className="text-[10px] text-gray-600">{unit}</p>
+      </div>
+      {loading ? (
+        <p className="text-[11px] text-gray-500 py-1">Loading…</p>
+      ) : entries.length === 0 ? (
+        <p className="text-[11px] text-gray-500 py-1">No data.</p>
+      ) : (
+        <ul>
+          {entries.slice(0, 6).map((e, i) => (
+            <li
+              key={e.userId}
+              className="flex items-center justify-between gap-2 py-1 border-b border-white/[0.04] last:border-0"
+            >
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="text-[10px] text-gray-500 tabular-nums w-3 shrink-0">{i + 1}</span>
+                <div className="min-w-0">
+                  {e.username && <p className="text-xs text-white truncate leading-tight">{e.username}</p>}
+                  <WalletLink wallet={e.userId} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className={`text-sm font-semibold tabular-nums ${accent}`}>{format(e)}</p>
+                <p className="text-[10px] text-gray-500 leading-tight">{sub(e)}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
