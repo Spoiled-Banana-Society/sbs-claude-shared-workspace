@@ -23,6 +23,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
+import { fetchRecentDeliveries } from '@/lib/notifications/activityLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -670,6 +671,7 @@ export async function GET(req: Request) {
       identityRes,
       prefsRes,
       pushRes,
+      deliveriesRes,
       kycRes,
       onrampRes,
       offrampRes,
@@ -685,6 +687,10 @@ export async function GET(req: Request) {
       readIdentity(wallet),
       readNotificationPrefs(wallet),
       readPushDevices(wallet),
+      // Per-wallet delivery history (v2_notification_deliveries). Surfaces
+      // every send/mute/dedup/fail so "why didn't I get a notification?"
+      // is answerable from one admin lookup without diving into Vercel logs.
+      fetchRecentDeliveries(wallet, 25),
       readList(wallet, { collection: 'kycAttempts', field: 'userId', limit: RECENT_LIMIT }),
       readList(wallet, { collection: 'onrampAttempts', field: 'userId', limit: RECENT_LIMIT }),
       readList(wallet, { collection: 'offrampAttempts', field: 'userId', limit: RECENT_LIMIT }),
@@ -740,6 +746,8 @@ export async function GET(req: Request) {
             updatedAt: null,
           };
     const push = pushRes.status === 'fulfilled' ? pushRes.value : null;
+    const recentDeliveries =
+      deliveriesRes.status === 'fulfilled' ? deliveriesRes.value : [];
 
     const errors = errorsRes.status === 'fulfilled' ? errorsRes.value : [];
     // Drop errors older than 7 days (we over-fetch then trim).
@@ -820,6 +828,10 @@ export async function GET(req: Request) {
       notifications: {
         prefs: prefsRes.status === 'fulfilled' ? prefs : sectionFail('prefs', prefsRes.reason),
         push: pushRes.status === 'fulfilled' ? push : sectionFail('push', pushRes.reason),
+        recentDeliveries:
+          deliveriesRes.status === 'fulfilled'
+            ? recentDeliveries
+            : sectionFail('recentDeliveries', deliveriesRes.reason),
       },
       kyc: kycRes.status === 'fulfilled' ? kyc : sectionFail('kyc', kycRes.reason),
       payments: {

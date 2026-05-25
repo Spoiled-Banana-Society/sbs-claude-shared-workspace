@@ -15,6 +15,7 @@ import type { NotifEvent } from './types';
 import { dedupKey, claimNotification, markSent, markFailed } from './dedup';
 import { getUserNotifPrefs, wantsEvent } from './prefs';
 import { dispatchNotification, settleOutcome } from './dispatch';
+import { recordDelivery } from './activityLog';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -56,7 +57,10 @@ export async function deliverToRecipient(
     });
     throw err;
   }
-  if (claim === 'deduped') return { walletAddress: wallet, outcome: 'deduped' };
+  if (claim === 'deduped') {
+    recordDelivery(wallet, event, 'deduped');
+    return { walletAddress: wallet, outcome: 'deduped' };
+  }
 
   const prefs = await getUserNotifPrefs(wallet);
 
@@ -71,6 +75,7 @@ export async function deliverToRecipient(
       draftId: event.draftId,
       actor: wallet,
     });
+    recordDelivery(wallet, event, 'muted');
     return { walletAddress: wallet, outcome: 'muted' };
   }
 
@@ -123,6 +128,11 @@ export async function deliverToRecipient(
       .map((r) => `${r.channel}:${r.status}${r.providerId ? `(${r.providerId})` : ''}`)
       .join(','),
   });
+
+  // Mirror the same trace into Firestore so the admin user-lookup can
+  // show per-wallet delivery history — "did this user get the alert,
+  // and which channels did/didn't fire."
+  recordDelivery(wallet, event, outcome, results);
 
   return {
     walletAddress: wallet,

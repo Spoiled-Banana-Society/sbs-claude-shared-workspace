@@ -136,6 +136,18 @@ export const LOG_SOURCES = {
     // The server-to-server secret is unset/blank — the dispatch routes
     // can't run, so every draft alert silently fails. Loud on purpose.
     SECRET_MISSING: 'notifications.config.secret_missing',
+    // Emitted by the Firebase Cloud Functions in ~/sbs-staging-functions
+    // (onPickAdvance / onDraftFilled). They previously only console.warn'd
+    // on POST failure, so a broken trigger looked identical to "no events
+    // happened" in the admin Logs tab. These surface trigger-side failures
+    // (HTTP non-OK, fetch threw, roster lookup failed, no human wallets
+    // in the roster) keyed to the affected wallet/draft.
+    FUNCTION_PICK_UP_FETCH_FAILED: 'notifications.functions.pick_up.fetch_failed',
+    FUNCTION_PICK_UP_ENDPOINT_ERROR: 'notifications.functions.pick_up.endpoint_error',
+    FUNCTION_DRAFT_FILLED_FETCH_FAILED: 'notifications.functions.draft_filled.fetch_failed',
+    FUNCTION_DRAFT_FILLED_ENDPOINT_ERROR: 'notifications.functions.draft_filled.endpoint_error',
+    FUNCTION_DRAFT_FILLED_ROSTER_FAILED: 'notifications.functions.draft_filled.roster_lookup_failed',
+    FUNCTION_DRAFT_FILLED_NO_WALLETS: 'notifications.functions.draft_filled.no_human_wallets',
   },
   // Admin-side operational sources. Added Phase 6 of the admin overhaul
   // (May 2026) so the new broadcast / bulk-grant / digest / runbook

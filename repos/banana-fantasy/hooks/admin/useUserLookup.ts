@@ -36,6 +36,26 @@ export interface UserLookupPushDevice {
   tags: Record<string, string>;
 }
 
+export interface UserLookupNotificationDeliveryChannel {
+  channel: 'push' | 'email' | 'telegram' | 'discord';
+  status: 'sent' | 'skipped' | 'failed';
+  reason?: string;
+  recipients?: number;
+  providerId?: string;
+}
+
+export interface UserLookupNotificationDelivery {
+  walletAddress: string;
+  event: 'draft.filled' | 'draft.your_turn';
+  draftId: string;
+  draftName?: string;
+  pickNumber?: number;
+  pickLengthSeconds?: number;
+  outcome: 'sent' | 'muted' | 'deduped' | 'failed';
+  channels?: UserLookupNotificationDeliveryChannel[];
+  timestamp: string;
+}
+
 export interface UserLookupIdentity {
   walletAddress: string;
   username: string | null;
@@ -104,6 +124,16 @@ export interface UserLookupResponse {
           devices: UserLookupPushDevice[];
         }
       | null
+      | { ok: false; reason: string };
+    /**
+     * Last 25 notification delivery attempts for this wallet —
+     * sourced from `v2_notification_deliveries`. Each row captures the
+     * event, draftId, outcome (sent / muted / deduped / failed), and
+     * per-channel results. Used to answer "did this user actually get
+     * the alert and which channels fired."
+     */
+    recentDeliveries:
+      | UserLookupNotificationDelivery[]
       | { ok: false; reason: string };
   };
   kyc: Record<string, unknown>[] | { ok: false; reason: string };

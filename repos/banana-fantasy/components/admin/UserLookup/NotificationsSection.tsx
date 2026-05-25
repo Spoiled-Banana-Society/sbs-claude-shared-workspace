@@ -13,6 +13,8 @@
 
 import {
   isSectionFail,
+  type UserLookupNotificationDelivery,
+  type UserLookupNotificationDeliveryChannel,
   type UserLookupPushDevice,
   type UserLookupResponse,
 } from '@/hooks/admin/useUserLookup';
@@ -124,7 +126,117 @@ export function NotificationsSection({ wallet, notifications }: Props) {
           No push devices subscribed for this wallet.
         </p>
       )}
+
+      <RecentDeliveries activity={notifications.recentDeliveries} />
     </Card>
+  );
+}
+
+/**
+ * Per-wallet delivery activity. Answers "did this user actually get
+ * the alert, and which channels fired" without diving into Vercel
+ * logs. Sourced from `v2_notification_deliveries` (one doc per
+ * dispatcher run per recipient).
+ */
+function RecentDeliveries({
+  activity,
+}: {
+  activity: UserLookupResponse['notifications']['recentDeliveries'];
+}) {
+  if (isSectionFail(activity)) {
+    return (
+      <p className="mt-4 text-sm text-red-300">
+        Delivery history unavailable: {activity.reason}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+        Recent delivery attempts {activity.length > 0 && `(${activity.length})`}
+      </h4>
+      {activity.length === 0 ? (
+        <p className="mt-2 text-xs text-gray-500">
+          No notification delivery attempts logged for this wallet yet — either
+          the user hasn&apos;t been in a draft that fired one, or the Cloud
+          Function triggers (`onPickAdvance` / `onDraftFilled`) never reached
+          the dispatcher.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {activity.map((d, i) => (
+            <DeliveryRow key={`${d.draftId}-${d.timestamp}-${i}`} delivery={d} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const OUTCOME_TONE: Record<UserLookupNotificationDelivery['outcome'], string> = {
+  sent: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  muted: 'bg-gray-700/30 text-gray-300 border-gray-700',
+  deduped: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
+  failed: 'bg-red-500/15 text-red-300 border-red-500/30',
+};
+
+const CHANNEL_TONE: Record<UserLookupNotificationDeliveryChannel['status'], string> = {
+  sent: 'bg-emerald-500/15 text-emerald-300',
+  skipped: 'bg-gray-700/30 text-gray-400',
+  failed: 'bg-red-500/15 text-red-300',
+};
+
+function DeliveryRow({ delivery }: { delivery: UserLookupNotificationDelivery }) {
+  const eventLabel = delivery.event === 'draft.filled' ? 'Draft filled' : 'Your turn';
+  // The interesting detail when push goes out but reaches 0 devices.
+  const pushChannel = delivery.channels?.find((c) => c.channel === 'push');
+  const zeroRecipients =
+    pushChannel?.status === 'sent' && (pushChannel.recipients ?? 0) === 0;
+  return (
+    <li className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span
+          className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${OUTCOME_TONE[delivery.outcome]}`}
+          title={`Outcome: ${delivery.outcome}`}
+        >
+          {delivery.outcome}
+        </span>
+        <span className="font-medium text-gray-100">{eventLabel}</span>
+        {delivery.draftName && (
+          <span className="text-gray-400">— {delivery.draftName}</span>
+        )}
+        <span className="font-mono text-[10px] text-gray-500" title={delivery.draftId}>
+          {delivery.draftId.length > 22
+            ? `${delivery.draftId.slice(0, 22)}…`
+            : delivery.draftId}
+        </span>
+        {delivery.pickNumber != null && (
+          <span className="text-gray-500">pick #{delivery.pickNumber}</span>
+        )}
+        <span className="ml-auto text-gray-500">{fmtAgo(delivery.timestamp)}</span>
+      </div>
+      {delivery.channels && delivery.channels.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {delivery.channels.map((c) => (
+            <span
+              key={c.channel}
+              className={`rounded px-1.5 py-0.5 text-[10px] ${CHANNEL_TONE[c.status]}`}
+              title={c.reason || (c.recipients != null ? `recipients: ${c.recipients}` : c.status)}
+            >
+              {c.channel}:{c.status}
+              {c.channel === 'push' && c.status === 'sent' && c.recipients != null && (
+                <> ({c.recipients})</>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+      {zeroRecipients && (
+        <p className="mt-1 text-[10px] text-amber-300/90">
+          ⚠️ Push accepted by OneSignal but reached 0 subscribed devices.
+        </p>
+      )}
+    </li>
   );
 }
 
