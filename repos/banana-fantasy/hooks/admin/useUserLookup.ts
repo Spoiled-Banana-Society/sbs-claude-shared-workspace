@@ -66,6 +66,11 @@ export interface UserLookupIdentity {
     pendingCreditUsd: number;
     numWithdrawalsLifetime: number;
   };
+  /** If the Go owner profile fetch failed, this carries the reason so
+   *  the admin UI can surface "Owner fetch: timeout after 15s" instead
+   *  of silently showing no PFP / no name. Null when the fetch
+   *  succeeded with full data. */
+  ownerFetchDiagnostic: string | null;
 }
 
 export interface UserLookupResponse {

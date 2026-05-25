@@ -99,10 +99,14 @@ interface OwnerProfile {
   numWithdrawals: number;
   isBlueCheckVerified: boolean;
   blueCheckEmail: string | null;
+  /** Diagnostic — why the profile is empty if it is. Surfaced to the
+   *  client so admins can see "fetch timed out" / "404" instead of a
+   *  silently-empty card. */
+  diagnostic?: string;
 }
 
 async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
-  const empty: OwnerProfile = {
+  const empty = (diagnostic: string): OwnerProfile => ({
     displayName: null,
     avatar: null,
     availableCreditUsd: 0,
@@ -111,29 +115,39 @@ async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
     numWithdrawals: 0,
     isBlueCheckVerified: false,
     blueCheckEmail: null,
-  };
+    diagnostic,
+  });
   const baseRaw = process.env.NEXT_PUBLIC_SBS_API_URL || process.env.SBS_API_URL;
   if (!baseRaw) {
     logger.warn('admin.user_lookup.owner_profile_no_base_url', {
       route: 'admin/user-lookup',
       context: { wallet },
     });
-    return empty;
+    return empty('NEXT_PUBLIC_SBS_API_URL env var not set on Vercel');
   }
   const base = baseRaw.replace(/\/+$/, '');
-  // 8s timeout — Cloud Run cold-start on staging can take 4-5s. The
-  // previous 3s cap was timing out before the response arrived, which
-  // is what Boris was seeing as silently-missing PFP/name.
+  // 15s timeout — Vercel function max is ~30s; Cloud Run cold-start on
+  // staging is 5-8s in the worst case. Previous 8s was still timing out
+  // when Boris's session hit a cold container. Generous timeout costs
+  // nothing because the call runs in parallel with other reads.
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 8_000);
+  const timer = setTimeout(() => ctrl.abort(), 15_000);
+  const start = Date.now();
   try {
+    // ALWAYS log the attempt so we can see in admin Logs whether the
+    // fetch even started — previous behavior logged only failures.
+    logger.info('admin.user_lookup.owner_profile_call', {
+      route: 'admin/user-lookup',
+      context: { wallet, base },
+    });
     const res = await fetch(`${base}/owner/${wallet}`, { cache: 'no-store', signal: ctrl.signal });
+    const elapsed = Date.now() - start;
     if (!res.ok) {
       logger.warn('admin.user_lookup.owner_profile_http_failed', {
         route: 'admin/user-lookup',
-        context: { wallet, status: res.status, base },
+        context: { wallet, status: res.status, base, elapsedMs: elapsed },
       });
-      return empty;
+      return empty(`Go owner endpoint returned HTTP ${res.status} after ${elapsed}ms`);
     }
     const data = (await res.json()) as {
       pfp?: { displayName?: string; imageUrl?: string };
@@ -150,12 +164,9 @@ async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
     const avatar = typeof data?.pfp?.imageUrl === 'string' && data.pfp.imageUrl.trim()
       ? data.pfp.imageUrl
       : null;
-    // ALWAYS log success path so we can prove the call ran when the
-    // admin Logs tab is reviewed. Was logger.info on empty only before,
-    // which made "did this fetch even run?" hard to answer.
     logger.info('admin.user_lookup.owner_profile_ok', {
       route: 'admin/user-lookup',
-      context: { wallet, hasDisplayName: !!displayName, hasAvatar: !!avatar },
+      context: { wallet, hasDisplayName: !!displayName, hasAvatar: !!avatar, elapsedMs: elapsed },
     });
     return {
       displayName,
@@ -166,14 +177,17 @@ async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
       numWithdrawals: typeof data.numWithdrawals === 'number' ? data.numWithdrawals : 0,
       isBlueCheckVerified: data.isBlueCheckVerified === true,
       blueCheckEmail: typeof data.blueCheckEmail === 'string' && data.blueCheckEmail.trim() ? data.blueCheckEmail : null,
+      diagnostic: !displayName && !avatar ? `Go owner endpoint returned no pfp data after ${elapsed}ms` : undefined,
     };
   } catch (err) {
+    const elapsed = Date.now() - start;
+    const reason = err instanceof Error ? err.message : String(err);
     logger.warn('admin.user_lookup.owner_profile_fetch_failed', {
       route: 'admin/user-lookup',
-      err: err instanceof Error ? err.message : String(err),
-      context: { wallet, base },
+      err: reason,
+      context: { wallet, base, elapsedMs: elapsed },
     });
-    return empty;
+    return empty(`Fetch threw after ${elapsed}ms: ${reason}`);
   } finally {
     clearTimeout(timer);
   }
@@ -227,6 +241,10 @@ async function readIdentity(wallet: string) {
       pendingCreditUsd: ownerProfile.pendingCreditUsd,
       numWithdrawalsLifetime: ownerProfile.numWithdrawals,
     },
+    // Diagnostic — surfaces "why is displayName/avatar empty" so the
+    // admin UI can show "Owner fetch failed: timeout" instead of just
+    // a silent 🍌 placeholder.
+    ownerFetchDiagnostic: ownerProfile.diagnostic ?? null,
   };
 }
 

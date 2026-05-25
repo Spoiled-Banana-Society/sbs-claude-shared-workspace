@@ -70,6 +70,15 @@ export function IdentityCard({
 
   return (
     <section className="rounded-xl border border-gray-700 bg-gray-900/40 p-4">
+      {/* Owner-profile fetch diagnostic. Renders only when the Go owner
+          endpoint returned no displayName/avatar. Tells the admin
+          exactly why instead of leaving them guessing at a silent
+          🍌 placeholder. */}
+      {identity.ownerFetchDiagnostic && !identity.displayName && (
+        <div className="mb-3 rounded-md border border-amber-500/30 bg-amber-500/[0.05] px-3 py-2 text-[11px] text-amber-300">
+          ⚠️ Owner profile unavailable: {identity.ownerFetchDiagnostic}
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           {/* PFP from the Go owner profile. Falls back to a 🍌 placeholder
@@ -137,14 +146,22 @@ export function IdentityCard({
         </div>
       </div>
 
+      {/* Available balances (decrement on use). Labels say "available"
+          so a 0 reads as "they have none left" rather than "they've
+          never had any" — Boris's confusion when his consumed-spins
+          showed 0 was real. The lifetime totals (spins done, promos
+          claimed, etc.) live in the Activity section below. */}
       <dl className="mt-4 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3 md:grid-cols-6">
-        <Stat label="Free drafts" value={identity.balance.freeDrafts} highlight />
-        <Stat label="Paid passes" value={identity.balance.draftPasses} />
-        <Stat label="Wheel spins" value={identity.balance.wheelSpins} />
-        <Stat label="JP entries" value={identity.balance.jackpotEntries} />
-        <Stat label="HOF entries" value={identity.balance.hofEntries} />
+        <Stat label="Free drafts left" value={identity.balance.freeDrafts} highlight />
+        <Stat label="Paid passes left" value={identity.balance.draftPasses} />
+        <Stat label="Spins left" value={identity.balance.wheelSpins} />
+        <Stat label="JP entries left" value={identity.balance.jackpotEntries} />
+        <Stat label="HOF entries left" value={identity.balance.hofEntries} />
         <Stat label="Card purchases" value={identity.balance.cardPurchaseCount} />
       </dl>
+      <p className="mt-2 text-[10px] text-gray-500">
+        Counters above are current balances (decrement when used). Lifetime totals — spins done, promos claimed, draft entries, etc. — live in the Activity section below.
+      </p>
 
       {/* Account money — credits sitting on the Go side that haven't
           been withdrawn yet. Renders only when there's money in the

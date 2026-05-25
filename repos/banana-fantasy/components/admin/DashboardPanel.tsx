@@ -32,6 +32,7 @@ import {
   AdminApiError,
 } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
 import { explainError } from '@/lib/logSources';
 
 /* ─────────────────────────────────────────────────────────  Page  */
@@ -62,23 +63,24 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
+      {/* Search bar — Boris's ask: 'you also took away the thing where
+          we can search all the different things in the dashboard'. */}
+      <GlobalSearch enabled={enabled} />
+
       {m && (
         <>
-          {/* TOP — 3 small boxes in a row: Users · Drafts · Mints */}
+          {/* TOP — 3 small boxes: Users · Drafts · Mints */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <UsersBox m={m} />
             <DraftsBox m={m} />
             <MintsBox m={m} />
           </div>
 
-          {/* MIDDLE — 2 wider boxes side by side: Promos · Spins (totals) */}
+          {/* BOTTOM — Promos · Spins+Wheel (combined per Boris) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <PromosBox m={m} />
-            <SpinsBox m={m} />
+            <SpinsAndWheelBox m={m} />
           </div>
-
-          {/* WHEEL PRIZE BREAKDOWN — full-width since it's the most data */}
-          <WheelPrizesBox m={m} />
         </>
       )}
 
@@ -207,7 +209,11 @@ function MintsBox({ m }: { m: MetricsResponse }) {
 }
 
 function PromosBox({ m }: { m: MetricsResponse }) {
-  // Active 6 + founder. Other types only appear if they have activity.
+  // The 6 promos live on the user-facing /promos page. Founder Draft
+  // is intentionally NOT here — it's an internal admin process
+  // (assigning weekly drafts + bulk-granting spins) that has its own
+  // section. Other event-triggered types (jackpot/hof/mint/daily-drafts)
+  // only render under "other" if they have lifetime claims.
   const CANONICAL: { key: string; label: string }[] = [
     { key: 'new-user', label: 'New user' },
     { key: 'buy-bonus', label: 'Buy bonus' },
@@ -215,110 +221,119 @@ function PromosBox({ m }: { m: MetricsResponse }) {
     { key: 'pick-10', label: 'Pick 10' },
     { key: 'tweet-engagement', label: 'Tweet engagement' },
     { key: 'spin-share', label: 'Spin share' },
-    { key: 'founder-draft', label: 'Founder draft' },
   ];
   const canonicalKeys = new Set(CANONICAL.map((p) => p.key));
+  // Founder draft is treated as canonical but rendered under a separate
+  // "Other / internal" subheader if it has activity, so the live front-
+  // page 6 stay visually grouped at the top.
+  const internalKeys = new Set(['founder-draft']);
   const extras = Object.keys(m.promoBreakdown)
     .filter((k) => !canonicalKeys.has(k))
     .filter((k) => m.promoBreakdown[k].claimsTotal > 0)
-    .map((k) => ({ key: k, label: k.replace(/-/g, ' ').replace(/_/g, ' ') }));
+    .map((k) => ({
+      key: k,
+      label: k.replace(/-/g, ' ').replace(/_/g, ' '),
+      isInternal: internalKeys.has(k),
+    }));
 
-  const promoRows = [...CANONICAL, ...extras].map((row) => {
-    const c = m.promoBreakdown[row.key] ?? { claimsToday: 0, claimsTotal: 0 };
-    const inactive = c.claimsTotal === 0;
+  const buildRow = (key: string, label: string, dimWhenZero: boolean) => {
+    const c = m.promoBreakdown[key] ?? { claimsToday: 0, claimsTotal: 0 };
     return {
-      label: row.label,
+      label,
       today: c.claimsToday,
       total: c.claimsTotal,
-      dim: inactive,
+      dim: dimWhenZero && c.claimsTotal === 0,
     };
-  });
+  };
+
+  const activeRows = CANONICAL.map((p) => buildRow(p.key, p.label, true));
+  const otherRows = extras.map((p) => buildRow(p.key, p.label, false));
 
   return (
     <Box title="Promos" sub={`${m.promos.promoClaimsToday} today · ${m.lifetime.promosClaimed} lifetime`}>
       <StatTable
         rows={[
-          { label: 'Promos claimed', today: m.promos.promoClaimsToday, total: m.lifetime.promosClaimed, accent: 'text-pink-300' },
-          ...promoRows,
+          { label: 'Promos claimed (all)', today: m.promos.promoClaimsToday, total: m.lifetime.promosClaimed, accent: 'text-pink-300' },
+          ...activeRows,
         ]}
       />
+      {otherRows.length > 0 && (
+        <>
+          <div className="px-5 pt-3 pb-1 text-[10px] uppercase tracking-[0.1em] text-gray-500 border-t border-white/[0.06]">
+            Other / internal
+          </div>
+          <table className="w-full text-sm">
+            <tbody className="tabular-nums">
+              {otherRows.map((r) => (
+                <tr key={r.label} className="border-t border-white/[0.04]">
+                  <td className="px-5 py-1.5 capitalize text-gray-200">{r.label}</td>
+                  <td className="py-1.5 text-right text-white">{r.today.toLocaleString()}</td>
+                  <td className="px-5 py-1.5 text-right text-gray-200">{r.total.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </Box>
   );
 }
 
-function SpinsBox({ m }: { m: MetricsResponse }) {
-  return (
-    <Box title="Spins">
-      <StatTable
-        rows={[
-          { label: 'Wheel spins', today: m.wheel.spinsToday, total: m.wheel.totalSpins, accent: 'text-[#F3E216]' },
-          { label: 'Jackpot hits', today: m.wheelPrizeBreakdown['Jackpot entry']?.today ?? 0, total: m.lifetime.jackpotWins, sub: '1% odds', accent: 'text-red-300' },
-          { label: 'HOF hits', today: m.wheelPrizeBreakdown['HOF entry']?.today ?? 0, total: m.lifetime.hofWins, sub: '5% odds', accent: 'text-[#D4AF37]' },
-          { label: 'Free drafts given', today: m.freeDraftsFromWheelToday, total: m.totalFreeDraftsFromWheel, sub: 'sum of prize values across draft-pass spins', accent: 'text-purple-300' },
-        ]}
-      />
-    </Box>
-  );
-}
+// Canonical wheel prizes Boris wants on the dashboard. NO "Unknown",
+// no "Nothing" — only the 6 prize types from wheelConfig (1/5/10/20
+// drafts + JP + HOF). If a prize ever appears outside this list, it
+// means a bad spin doc was written and should be investigated, but
+// the dashboard ignores it to stay clean.
+const CANONICAL_PRIZES = [
+  '1 free draft',
+  '5 free drafts',
+  '10 free drafts',
+  '20 free drafts',
+  'Jackpot entry',
+  'HOF entry',
+] as const;
 
-function WheelPrizesBox({ m }: { m: MetricsResponse }) {
-  // Canonical wheel-prize order from lib/wheelConfig (every defined
-  // segment, even at 0). Sorted in wheel-config order for readability.
-  const PRIZE_ORDER = [
-    '1 free draft',
-    '5 free drafts',
-    '10 free drafts',
-    '20 free drafts',
-    'Jackpot entry',
-    'HOF entry',
-    'Nothing',
-  ];
-  const sortedRows = Object.entries(m.wheelPrizeBreakdown).sort((a, b) => {
-    const ai = PRIZE_ORDER.indexOf(a[0]);
-    const bi = PRIZE_ORDER.indexOf(b[0]);
-    if (ai >= 0 && bi >= 0) return ai - bi;
-    if (ai >= 0) return -1;
-    if (bi >= 0) return 1;
-    return b[1].total - a[1].total;
-  });
-  const total = sortedRows.reduce((s, [, c]) => s + c.total, 0);
+function SpinsAndWheelBox({ m }: { m: MetricsResponse }) {
+  const prizeRows = CANONICAL_PRIZES.map((label) => ({
+    label,
+    counts: m.wheelPrizeBreakdown[label] ?? { today: 0, total: 0 },
+  }));
+  const prizeTotal = prizeRows.reduce((s, r) => s + r.counts.total, 0);
   const accentFor = (label: string) =>
     /jackpot/i.test(label) ? 'text-red-300'
     : /hof/i.test(label) ? 'text-[#D4AF37]'
-    : /nothing/i.test(label) ? 'text-gray-500'
     : 'text-purple-300';
 
   return (
-    <Box title="Wheel — prizes won" sub={total > 0 ? `last ${total.toLocaleString()} spins` : 'no spins yet'}>
+    <Box title="Spins" sub={prizeTotal > 0 ? `last ${prizeTotal.toLocaleString()} spins` : 'no spins yet'}>
+      {/* Headline row: total wheel spins. */}
+      <StatTable
+        rows={[
+          { label: 'Wheel spins', today: m.wheel.spinsToday, total: m.wheel.totalSpins, accent: 'text-[#F3E216]' },
+        ]}
+      />
+      {/* Per-prize breakdown — every canonical wheel prize, even 0s. */}
       <table className="w-full text-sm">
         <thead className="text-[10px] uppercase tracking-[0.1em] text-gray-500">
           <tr>
-            <th className="px-5 pt-3 pb-1.5 text-left font-medium">Prize</th>
-            <th className="pt-3 pb-1.5 text-right font-medium">Today</th>
-            <th className="pt-3 pb-1.5 text-right font-medium">Total</th>
-            <th className="px-5 pt-3 pb-1.5 text-right font-medium">Share</th>
+            <th className="px-5 pt-3 pb-1.5 text-left font-medium border-t border-white/[0.06]">Prize</th>
+            <th className="pt-3 pb-1.5 text-right font-medium border-t border-white/[0.06]">Today</th>
+            <th className="pt-3 pb-1.5 text-right font-medium border-t border-white/[0.06]">Total</th>
+            <th className="px-5 pt-3 pb-1.5 text-right font-medium border-t border-white/[0.06]">Share</th>
           </tr>
         </thead>
         <tbody className="tabular-nums">
-          {sortedRows.length === 0 ? (
-            <tr>
-              <td colSpan={4} className="px-5 py-6 text-center text-xs text-gray-500">
-                No spin data yet.
-              </td>
-            </tr>
-          ) : (
-            sortedRows.map(([label, c]) => {
-              const dim = c.total === 0;
-              return (
-                <tr key={label} className="border-t border-white/[0.06]">
-                  <td className={`px-5 py-2 capitalize ${dim ? 'text-gray-500' : accentFor(label)}`}>{label}</td>
-                  <td className={`py-2 text-right ${c.today > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{c.today.toLocaleString()}</td>
-                  <td className={`py-2 text-right ${dim ? 'text-gray-600' : 'text-gray-200'}`}>{c.total.toLocaleString()}</td>
-                  <td className={`px-5 py-2 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{total > 0 ? `${((c.total / total) * 100).toFixed(1)}%` : '—'}</td>
-                </tr>
-              );
-            })
-          )}
+          {prizeRows.map(({ label, counts: c }) => {
+            const dim = c.total === 0;
+            return (
+              <tr key={label} className="border-t border-white/[0.06]">
+                <td className={`px-5 py-2 ${dim ? 'text-gray-500' : accentFor(label)}`}>{label}</td>
+                <td className={`py-2 text-right ${c.today > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{c.today.toLocaleString()}</td>
+                <td className={`py-2 text-right ${dim ? 'text-gray-600' : 'text-gray-200'}`}>{c.total.toLocaleString()}</td>
+                <td className={`px-5 py-2 text-right text-[11px] ${dim ? 'text-gray-600' : 'text-gray-500'}`}>{prizeTotal > 0 ? `${((c.total / prizeTotal) * 100).toFixed(1)}%` : '—'}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </Box>
