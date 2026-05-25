@@ -467,31 +467,60 @@ async function buildMetrics(): Promise<MetricsResponse> {
     logger.warn('metrics.reserved_drafts_failed', { err });
   }
 
-  // Promo breakdown by type. Was running two compound queries —
-  // `where(eventType=promo_claimed).where(timestamp>=)` (needs (eventType,
-  // timestamp) composite index) AND `where(eventType=).orderBy(timestamp)`
-  // (same composite index). Neither index exists, so both threw and the
-  // dashboard showed 0 for every per-promo claim count — exactly Boris's
-  // "should have way more than 0 for daily drafts and buy 10" complaint.
+  // Promo breakdown by type. Earlier we ran two compound queries —
+  // `where(eventType=promo_claimed).where(timestamp>=)` and
+  // `where(eventType=).orderBy(timestamp)` — both needing the same
+  // (eventType, timestamp) composite index that doesn't exist, so both
+  // threw and the dashboard showed 0.
   //
-  // Fix: ONE scan with single orderBy (auto-indexed) → bucket by event
-  // type + day client-side.
+  // First fix used a single orderBy(timestamp).limit(5000), which works
+  // index-wise but undercounts on staging where total user_events has
+  // crossed 5k — older claims fall off the bottom. Boris caught this
+  // (mint showed 11 lifetime; he and Richard alone have ~that many).
+  //
+  // Real fix: scan with a single-field where (auto-indexed, no
+  // composite required) plus a hefty doc limit + cross-source merge
+  // from v2_activity_events which also writes promo_claimed events.
+  // Promo IDs are unique per (user, type) so we dedupe by doc id to
+  // avoid double-counting when both collections recorded the same
+  // claim.
   const promoBreakdown: Record<string, { claimsToday: number; claimsTotal: number }> = {};
-  const bumpPromo = (type: string, key: 'claimsToday' | 'claimsTotal') => {
+  const seenClaimKeys = new Set<string>();
+  const bumpPromoOnce = (type: string, dayKey: string, key: string) => {
+    if (seenClaimKeys.has(key)) return;
+    seenClaimKeys.add(key);
     if (!promoBreakdown[type]) promoBreakdown[type] = { claimsToday: 0, claimsTotal: 0 };
-    promoBreakdown[type][key] += 1;
+    promoBreakdown[type].claimsTotal += 1;
+    if (dayKey >= todayIso) promoBreakdown[type].claimsToday += 1;
   };
   try {
-    const snap = await userEvents.orderBy('timestamp', 'desc').limit(5000).get();
-    for (const d of snap.docs) {
-      const data = d.data() as { eventType?: string; timestamp?: string; meta?: { promoType?: unknown } };
-      if (data.eventType !== 'promo_claimed') continue;
+    // Source 1: v2_user_events. Single-field where → auto-indexed.
+    const snap1 = await userEvents.where('eventType', '==', 'promo_claimed').limit(20000).get();
+    for (const d of snap1.docs) {
+      const data = d.data() as { timestamp?: string; meta?: { promoType?: unknown; promoId?: unknown }; userId?: string };
       const t = String(data.meta?.promoType ?? 'unknown');
-      bumpPromo(t, 'claimsTotal');
-      if ((data.timestamp ?? '') >= todayIso) bumpPromo(t, 'claimsToday');
+      // Dedupe key: prefer explicit promoId, else (userId, type, day) so
+      // a duplicate event for the same claim collapses.
+      const dayKey = (data.timestamp ?? '').slice(0, 10);
+      const dedupe = data.meta?.promoId ? `pid:${String(data.meta.promoId)}` : `uet:${(data.userId ?? '').toLowerCase()}:${t}:${dayKey}`;
+      bumpPromoOnce(t, data.timestamp ?? '', dedupe);
+    }
+    // Source 2: v2_activity_events. Same single-field where pattern.
+    const snap2 = await activityEvents.where('type', '==', 'promo_claimed').limit(20000).get();
+    for (const d of snap2.docs) {
+      const data = d.data() as { createdAtIso?: string; metadata?: { promoType?: unknown; promoId?: unknown }; userId?: string };
+      const t = String(data.metadata?.promoType ?? 'unknown');
+      const dayKey = (data.createdAtIso ?? '').slice(0, 10);
+      const dedupe = data.metadata?.promoId ? `pid:${String(data.metadata.promoId)}` : `uet:${(data.userId ?? '').toLowerCase()}:${t}:${dayKey}`;
+      bumpPromoOnce(t, data.createdAtIso ?? '', dedupe);
     }
     logger.info('metrics.promo_breakdown_ok', {
-      context: { uniqueTypes: Object.keys(promoBreakdown).length, totalClaims: Object.values(promoBreakdown).reduce((s, v) => s + v.claimsTotal, 0) },
+      context: {
+        uniqueTypes: Object.keys(promoBreakdown).length,
+        totalClaims: Object.values(promoBreakdown).reduce((s, v) => s + v.claimsTotal, 0),
+        userEventsRead: snap1.size,
+        activityEventsRead: snap2.size,
+      },
     });
   } catch (err) {
     logger.warn('metrics.promo_breakdown_failed', { err });

@@ -259,25 +259,12 @@ function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgre
     };
   }).sort((a, b) => b.total - a.total);
 
-  // Other promo types that have ANY activity but aren't in the live
-  // visible set — surfaces internal/event-triggered types like
-  // founder-draft when they're firing.
-  const liveSet = new Set(liveKeys);
-  const otherRows = Object.keys(m.promoBreakdown)
-    .filter((k) => !liveSet.has(k))
-    .filter((k) => m.promoBreakdown[k].claimsTotal > 0)
-    .map((key) => {
-      const c = m.promoBreakdown[key];
-      const prog = perType[key] ?? { started: 0, completed: 0, pending: 0, conversionRate: 0 };
-      return {
-        key,
-        label: PROMO_LABEL[key] ?? key.replace(/-/g, ' '),
-        today: c.claimsToday,
-        total: c.claimsTotal,
-        inProgress: Math.max(0, prog.started - prog.completed),
-      };
-    })
-    .sort((a, b) => b.total - a.total);
+  // Note: there's no "Other / internal" rollup. Boris's explicit
+  // direction is that ONLY the six live promos (lib/promoFilter
+  // .VISIBLE_PROMO_TYPES_ORDER) ever appear here — internal/legacy
+  // promo types like "buy-bonus" are filtered out at the render layer.
+  // If we ever need to debug a legacy type, query metrics JSON directly
+  // (`.promoBreakdown`) — it still includes every type seen.
 
   const stalePending = progress?.stalePending ?? [];
 
@@ -309,26 +296,6 @@ function PromosBox({ m, progress }: { m: MetricsResponse; progress?: PromoProgre
           })}
         </tbody>
       </table>
-
-      {otherRows.length > 0 && (
-        <>
-          <div className="px-5 pt-3 pb-1 text-[10px] uppercase tracking-[0.1em] text-gray-500 border-t border-white/[0.06]">
-            Other / internal
-          </div>
-          <table className="w-full text-sm">
-            <tbody className="tabular-nums">
-              {otherRows.map((r) => (
-                <tr key={r.key} className="border-t border-white/[0.04]">
-                  <td className="px-5 py-1.5 capitalize text-gray-200">{r.label}</td>
-                  <td className="py-1.5 text-right text-white">{r.today.toLocaleString()}</td>
-                  <td className="py-1.5 text-right text-pink-300">{r.total.toLocaleString()}</td>
-                  <td className="px-5 py-1.5 text-right text-amber-300">{r.inProgress.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
 
       {/* Stale starters — users who started a multi-step promo and stopped.
           Top 5 with clickable wallets so Boris can DM them directly. */}
