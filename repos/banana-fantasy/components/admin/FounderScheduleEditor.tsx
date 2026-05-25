@@ -140,9 +140,200 @@ export function FounderScheduleEditor({ enabled }: { enabled: boolean }) {
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>
 
+      <FounderDraftsRecent />
+
       <BackfillFounderDrafts schedule={schedule} />
     </div>
   );
+}
+
+/**
+ * Lists every confirmed founder draft with its participants and a one-
+ * click "grant +1 spin to all non-founder participants" button. Boris's
+ * workflow: see at a glance which weekly drafts qualified + give the
+ * other 9 players in each one their free wheel spin.
+ *
+ * Each row tracks bulkSpinGrantedAt so we never double-grant. Re-running
+ * a row that's already been granted returns 'already_granted' and is a
+ * no-op.
+ */
+function FounderDraftsRecent() {
+  const { getAccessToken } = usePrivy();
+  const [drafts, setDrafts] = useState<FounderDraftRow[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [granting, setGranting] = useState<string | null>(null);
+  const [results, setResults] = useState<Record<string, string>>({});
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getAccessToken();
+      const res = await fetch('/api/admin/founder-drafts/list', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const body = (await res.json()) as { drafts?: FounderDraftRow[] };
+      setDrafts(body.drafts ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [getAccessToken]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const grant = async (draftId: string, nonFounderCount: number) => {
+    if (!window.confirm(
+      `Grant +1 wheel spin to ${nonFounderCount} non-founder participant${nonFounderCount === 1 ? '' : 's'} of draft ${draftId.slice(0, 16)}…?\n\nIdempotent: re-running is a no-op once granted.`,
+    )) return;
+    setGranting(draftId);
+    setResults((r) => ({ ...r, [draftId]: 'Granting…' }));
+    try {
+      const token = await getAccessToken();
+      const res = await fetch('/api/admin/founder-drafts/grant-spins', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ draftId }),
+      });
+      const body = (await res.json()) as { ok?: boolean; grantedCount?: number; failedCount?: number; skipped?: string };
+      if (!res.ok) throw new Error(`${res.status}`);
+      if (body.skipped === 'already_granted') {
+        setResults((r) => ({ ...r, [draftId]: '✓ Already granted earlier — no-op' }));
+      } else {
+        setResults((r) => ({
+          ...r,
+          [draftId]: `✓ Granted ${body.grantedCount ?? 0}${body.failedCount ? `, ${body.failedCount} failed` : ''}`,
+        }));
+      }
+      // Refresh the list so the bulkSpinGrantedAt timestamp shows.
+      void load();
+    } catch (e) {
+      setResults((r) => ({ ...r, [draftId]: `Error: ${e instanceof Error ? e.message : String(e)}` }));
+    } finally {
+      setGranting(null);
+    }
+  };
+
+  return (
+    <div className="border-t border-white/[0.06] pt-6 mt-6">
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <h4 className="text-base font-semibold text-white">Recent Founder Drafts</h4>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Each row is a confirmed founder draft. Hit <span className="text-emerald-300">Grant spins</span> to give every non-founder participant +1 wheel spin.
+          </p>
+        </div>
+        <button
+          onClick={() => void load()}
+          className="text-[11px] text-gray-400 hover:text-white underline underline-offset-2"
+        >
+          ↻ refresh
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-3 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+          Failed to load: {error}
+        </div>
+      )}
+
+      {loading && !drafts && <p className="text-xs text-gray-500">Loading…</p>}
+
+      {drafts && drafts.length === 0 && (
+        <p className="text-xs text-gray-500 py-4">
+          No founder drafts yet. They&apos;ll appear here automatically when the existing
+          <span className="font-mono text-gray-400 mx-1">/api/promos/founder-draft</span>
+          validator marks one, or use the backfill tool below for older drafts.
+        </p>
+      )}
+
+      {drafts && drafts.length > 0 && (
+        <ul className="space-y-2">
+          {drafts.map((d) => {
+            const alreadyGranted = !!d.bulkSpinGrantedAt;
+            const isGranting = granting === d.draftId;
+            const result = results[d.draftId];
+            return (
+              <li key={d.draftId} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3 space-y-2">
+                <div className="flex items-baseline justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <p className="text-sm text-white font-mono truncate">{d.draftId}</p>
+                    <p className="text-[11px] text-gray-500">
+                      marked {d.markedAt ? new Date(d.markedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}
+                      {' · '}
+                      {d.participantCount} player{d.participantCount === 1 ? '' : 's'}
+                      {' · '}
+                      <span className="text-amber-300">{d.nonFounderCount}</span> non-founder
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {alreadyGranted && (
+                      <span className="text-[11px] text-emerald-300">
+                        ✓ Spins granted {d.bulkSpinGrantedAt ? new Date(d.bulkSpinGrantedAt).toLocaleDateString() : ''}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => void grant(d.draftId, d.nonFounderCount)}
+                      disabled={isGranting || alreadyGranted || d.nonFounderCount === 0}
+                      className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                        alreadyGranted
+                          ? 'bg-white/[0.04] text-gray-500 cursor-not-allowed'
+                          : 'bg-emerald-500/90 text-black hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed'
+                      }`}
+                    >
+                      {isGranting ? 'Granting…' : alreadyGranted ? '✓ Granted' : `Grant +1 spin × ${d.nonFounderCount}`}
+                    </button>
+                  </div>
+                </div>
+                {/* Participant chips */}
+                {d.participants.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {d.participants.map((p) => (
+                      <a
+                        key={p.wallet}
+                        href={`/admin?tab=user-lookup&wallet=${encodeURIComponent(p.wallet)}`}
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-mono border transition ${
+                          p.isFounder
+                            ? 'border-banana/40 bg-banana/[0.08] text-banana'
+                            : 'border-white/[0.08] text-gray-400 hover:text-white hover:border-white/[0.20]'
+                        }`}
+                        title={p.wallet}
+                      >
+                        {p.isFounder && '👑 '}
+                        {p.wallet.slice(0, 6)}…{p.wallet.slice(-4)}
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {result && (
+                  <p className="text-[11px] text-gray-400">{result}</p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+interface FounderDraftRow {
+  draftId: string;
+  markedAt: string | null;
+  founderWallet: string | null;
+  scheduleAt: string | null;
+  participants: { wallet: string; isFounder: boolean }[];
+  participantCount: number;
+  nonFounderCount: number;
+  bulkSpinGrantedAt: string | null;
+  bulkSpinGrantedBy: string | null;
 }
 
 // Backfill historical Founder Drafts that filled before the persistence
