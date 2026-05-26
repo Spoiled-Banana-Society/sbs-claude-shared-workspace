@@ -4,6 +4,90 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## May 26 — Draft transport migrated to Firebase RTDB + how to delete ghost drafts
+
+### What changed
+
+The old `sbs-drafts-server` WebSocket flow is **off** on the frontend (`wsEnabled = false` in `hooks/useDraftLiveSync.ts`). The standalone WS server is going away. Live draft state now flows through:
+
+- **Initial load** — REST: `GET /draft/{id}/state/info`, `/state/summary`, `/state/rosters`, `/playerState/{wallet}` on `sbs-drafts-api-staging`
+- **Live updates** — Firebase RTDB listener on `/drafts/{leagueId}` (root snapshot — `numPlayers` + `realTimeDraftInfo`). Rules verified open for `realTimeDraftInfo`, `numPlayers`, `displayName`.
+- **Pick submit** — REST POST `/draft-actions/{id}/owner/{wallet}/actions/pick`
+- **Autopick** — server-driven via Cloud Task. Client just PATCHes `/draft-actions/{id}/owner/{wallet}/preferences` with `{autoDraft: true}` and the server picks (queue → rank → ADP, same priority as the old client logic).
+- **Slow draft timer** — new `utils/slowDraftClock.ts` mirrors the Go `slow_draft_clock.go` math (22:00–08:00 ET overnight pause + DST).
+
+WS files are still in the repo (`hooks/useDraftWebSocket.ts`, `lib/api/websocket.ts`) but unused; delete-on-sight is fine, just `git grep` for stragglers first.
+
+### How to delete a stuck/ghost draft via your Claude (replaces the "Clear All" button)
+
+The Clear All button on `/drafting` is gone — auto-prune handles it for users. For real cleanups (admin-side, recovering from bugs, etc.), do this:
+
+**Identifying a draft:**
+- **Filled drafts** — easy. League # (`BBB #1201` etc.) → look up via `displayName` in Firestore. UI shows the number.
+- **Unfilled drafts** — harder. Two options:
+  - Use the internal slot ID (`2024-fast-draft-{N}`). Find via Firestore console at `drafts/*`.
+  - Search by wallet address — query `drafts/{id}/cards/*` for that owner.
+
+**The cleanup script (firebase-admin SDK, run from `~/banana-fantasy`):**
+
+```js
+// /tmp/delete-draft.js
+const admin = require('firebase-admin');
+const sa = require('/tmp/sa.json'); // pull via: cd ~/banana-fantasy && npx vercel env pull
+admin.initializeApp({
+  credential: admin.credential.cert(sa),
+  databaseURL: 'https://sbs-staging-env-default-rtdb.firebaseio.com',
+});
+
+const DRAFT_ID = 'YOUR_SLOT_ID_HERE'; // e.g., '2024-fast-draft-1201'
+const API = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const db = admin.firestore();
+const rtdb = admin.database();
+
+(async () => {
+  // 1) Read cards, leave-with-each (returns tokens to wallets cleanly)
+  const cards = await db.collection('drafts').doc(DRAFT_ID).collection('cards').get();
+  for (const c of cards.docs) {
+    const { OwnerId, ownerId } = c.data();
+    const owner = OwnerId || ownerId;
+    await fetch(`${API}/league/${DRAFT_ID}/actions/leave`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ownerId: owner, tokenId: c.id }),
+    });
+  }
+  // 2) Wipe state subcollections + main doc
+  for (const sub of ['info','summary','playerState','rosters','connectionList','sortOrders']) {
+    await db.collection('drafts').doc(DRAFT_ID).collection('state').doc(sub).delete().catch(()=>{});
+  }
+  const remain = await db.collection('drafts').doc(DRAFT_ID).collection('cards').get();
+  for (const cd of remain.docs) await cd.ref.delete().catch(()=>{});
+  await db.collection('drafts').doc(DRAFT_ID).delete();
+  // 3) Wipe RTDB
+  await rtdb.ref(`drafts/${DRAFT_ID}`).remove();
+  console.log('Deleted', DRAFT_ID);
+  await admin.app().delete();
+})();
+```
+
+Run: `cd ~/banana-fantasy && NODE_PATH=$(pwd)/node_modules node /tmp/delete-draft.js`
+
+### Critical: do NOT delete `drafts/draftTracker`
+
+It holds the guaranteed-distribution counter (`CurrentLiveDraftCount`, `FilledLeaguesCount`, `JackpotLeagueIds`, `HofLeagueIds`). If you wipe it, the JP/HOF guaranteed-per-100 batch math resets to 0. Boris hit this 2026-05-25 — full recovery doc is in `~/banana-fantasy` memory at `project_vrf_merkle_setup.md` (the "Recovery: how to restore the counter without losing merkle state" section).
+
+If you DO need to reset the counter (after a bulk clear): `POST /staging/skip-draft-counter?to=N` where N is derived from `merkleRoundState.currentRoundNumber` × 100 + position-in-round. The script auto-populates `HofLeagueIds`/`JackpotLeagueIds` from `merkle_rounds/{N}` at the next batch boundary — don't seed them manually.
+
+### Auto-prune for users (already shipped)
+
+`drafting/page.tsx` → `useActiveDrafts` calls `pruneMissingDrafts()` on mount. Any draft in localStorage that 404s on `/draft/{id}/state/info` gets removed. Logs to the admin Logs tab under tag `prune` (start / remove / done events).
+
+### Staging Firebase is shared
+
+If you run scripts against `sbs-staging-env`, those writes are visible in Boris's view too — same Firebase project, same Firestore, same RTDB. Boris and I confirmed this on 2026-05-25 when his lobby filled with `2025-playoffs-rd2-*` drafts that were ~year-old artifacts from your round-2 script. If you ever need isolation while testing, use a local Firebase emulator instead.
+
+---
+
 ## May 6 — Self-serve backend deploys (Cloud Run + Firebase Functions)
 
 You should be able to deploy ALL the backend services yourself instead of pinging Boris every time. Scope of this note is **backend deploys only** — everything else stays as-is.
