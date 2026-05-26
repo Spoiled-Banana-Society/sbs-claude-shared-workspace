@@ -104,7 +104,6 @@ export default function DraftingPage() {
     handleDraftClick,
     handleClaim,
     confirmExitDraft,
-    clearAllDrafts,
     getLiveState,
     setExitingDraft,
     setShowBuyPasses,
@@ -135,14 +134,6 @@ export default function DraftingPage() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
-          <button
-            onClick={() => {
-              void clearAllDrafts();
-            }}
-            className="text-xs text-white/40 hover:text-white/70 transition-colors"
-          >
-            Clear All
-          </button>
         </div>
         <div className="flex items-center gap-2">
           {activeDrafts.length > 0 && (
