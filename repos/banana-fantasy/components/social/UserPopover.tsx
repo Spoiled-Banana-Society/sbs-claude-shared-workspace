@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 
 interface UserPopoverProps {
@@ -42,6 +43,7 @@ function shortWallet(w: string): string {
 export function UserPopover({ walletAddress, username, pfpUrl, children, side = 'auto' }: UserPopoverProps) {
   const { user } = useAuth();
   const privy = usePrivy();
+  const router = useRouter();
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const targetWallet = walletAddress.toLowerCase();
   const isSelf = !!myWallet && myWallet === targetWallet;
@@ -312,9 +314,20 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
             </div>
           </div>
 
-          {/* Action */}
-          <div className="p-3">
+          {/* Actions */}
+          <div className="p-3 space-y-2">
             {renderAction()}
+            {!isSelf && !!myWallet && (
+              <button
+                onClick={() => {
+                  router.push(`/messages?with=${encodeURIComponent(walletAddress)}`);
+                  setOpen(false);
+                }}
+                className="w-full px-3 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] text-white/80 hover:text-white text-sm font-medium transition-colors"
+              >
+                Send Message
+              </button>
+            )}
           </div>
 
           {/* Feedback toast */}
