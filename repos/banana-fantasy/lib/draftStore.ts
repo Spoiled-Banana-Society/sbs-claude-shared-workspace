@@ -153,3 +153,57 @@ export function removeDraft(id: string) {
   const all = readAll().filter((d) => d.id !== id);
   writeAll(all);
 }
+
+/**
+ * Drop drafts whose `state/info` endpoint returns 404 — i.e. the backend has
+ * deleted/expired/aborted the draft but the local cache still points at it,
+ * leaving a ghost row in the user's lobby. Designed to run on drafting-page
+ * mount so admin-side deletions propagate without a manual "Clear All" step.
+ *
+ * Conservative rules:
+ *   - Only prune drafts older than STALE_GUARD_MS, so in-flight joins aren't
+ *     wrongly dropped while their first `state/info` is still 404 mid-race.
+ *   - Only prune on a definite 404. 5xx / network errors leave the draft alone
+ *     so a transient backend blip can't wipe a real user's lobby.
+ *   - Skip `pending-*` ids — those are placeholder rows that exist before the
+ *     real draftId comes back from joinDraft.
+ *
+ * Returns the list of pruned ids.
+ */
+const STALE_GUARD_MS = 30_000;
+const DRAFTS_API_FALLBACK = 'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
+
+export async function pruneMissingDrafts(): Promise<string[]> {
+  if (typeof window === 'undefined') return [];
+  const all = readAll();
+  if (all.length === 0) return [];
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
+    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
+    DRAFTS_API_FALLBACK;
+  const now = Date.now();
+
+  const candidates = all.filter((d) => {
+    if (!d.id || d.id.startsWith('pending-')) return false;
+    const age = now - (d.joinedAt ?? d.lastUpdated ?? 0);
+    return age > STALE_GUARD_MS;
+  });
+
+  const pruned: string[] = [];
+  for (const d of candidates) {
+    try {
+      const res = await fetch(`${baseUrl}/draft/${d.id}/state/info`);
+      if (res.status === 404) pruned.push(d.id);
+    } catch {
+      // Network error — don't prune.
+    }
+  }
+
+  if (pruned.length > 0) {
+    const remaining = readAll().filter((d) => !pruned.includes(d.id));
+    writeAll(remaining);
+  }
+
+  return pruned;
+}

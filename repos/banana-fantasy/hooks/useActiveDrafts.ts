@@ -34,6 +34,14 @@ export function useActiveDrafts(): DraftState[] {
     // Initial read
     refresh();
 
+    // Prune drafts the backend has deleted — fires on every mount of the
+    // drafting page. Conservative: only 404s + only drafts older than 30s.
+    // 5xx / network errors leave the cache alone. Subscriber `refresh`
+    // picks up the change automatically when the prune writes back.
+    draftStore.pruneMissingDrafts().catch(() => {
+      // Failures here are non-fatal — UI stays consistent without the prune.
+    });
+
     // Subscribe to in-tab writes (same window)
     const unsub = draftStore.subscribe(refresh);
 
