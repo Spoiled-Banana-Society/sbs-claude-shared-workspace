@@ -535,8 +535,19 @@ export function useDraftingPageState() {
           };
         });
 
+        // Read hidden ids fresh from localStorage rather than the React-state
+        // closure. confirmExitDraft writes the just-left id to localStorage
+        // synchronously but setHiddenDraftIds is async; without this read,
+        // a poll firing in the gap re-adds the draft because its closure
+        // still has the stale set. That's the "had to leave twice" bug.
+        let freshHiddenIds: Set<string> = hiddenDraftIds;
+        try {
+          const raw = localStorage.getItem('banana-hidden-drafts');
+          if (raw) freshHiddenIds = new Set(JSON.parse(raw) as string[]);
+        } catch { /* fall through to closure value */ }
+
         for (const d of mapped) {
-          if (hiddenDraftIds.has(d.id)) continue;
+          if (freshHiddenIds.has(d.id)) continue;
           // Whenever the API returns a fresh non-empty leagueDisplayName,
           // push the parsed league # into the global cache. Survives
           // stale localStorage / module cache from earlier sessions
