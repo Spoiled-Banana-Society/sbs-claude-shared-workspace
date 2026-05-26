@@ -320,10 +320,13 @@ export function useDraftLiveSync({
     });
   }, [isLiveMode, draftId, walletParam]);
 
-  // Always enable WS — Firebase RTDB client reads are blocked by security rules on staging.
-  // WS provides real-time draft state (timer, current drafter, picks).
-  // Firebase can still supplement if it works, but WS is the primary source.
-  const wsEnabled = isLiveMode;
+  // Firebase RTDB is the primary live-state transport. The standalone
+  // WebSocket server (sbs-drafts-server) is being retired by the dev — staging
+  // rules now permit /drafts/{id}/realTimeDraftInfo reads (verified
+  // 2026-05-25), so the supplementary Firebase listener can fully drive the
+  // engine. WS handlers below remain for now as dead code but are not connected;
+  // removal of the WS hook + lib/api/websocket.ts is the next migration step.
+  const wsEnabled = false;
 
   const ws = useDraftWebSocket({
     walletAddress: walletParam,

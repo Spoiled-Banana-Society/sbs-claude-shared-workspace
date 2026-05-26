@@ -677,43 +677,23 @@ function DraftRoomContent() {
   }, []);
 
   useEffect(() => {
+    // In LIVE mode, the server's Cloud Task makes the autopick (queue → rank → ADP,
+    // same priority the client used). Client submission is intentionally skipped so
+    // the user's pick still fires when their device is off. Local-mode drafts keep
+    // the immediate client-side draft so the practice flow continues to work without
+    // a backend.
     if (!engine.airplaneMode || !engine.isUserTurn || phase !== 'drafting' || engine.draftStatus !== 'active') return;
+    if (isLiveMode) return;
 
-    // Defer to the next tick so the airplaneMode state change has a chance
-    // to settle in the engine, but no artificial visual buffer beyond that.
-    // Was 500ms — felt like a "thinking" pause; users want it instant.
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
-      logger.debug('[Airplane] Auto-picking immediately:', pickId);
-      if (isLiveMode && draftId) {
-        const payload = engine.draftPlayer(pickId);
-        if (payload) {
-          draftApi.submitPickREST(draftId, walletParam, {
-            playerId: payload.playerId,
-            displayName: payload.displayName,
-            team: payload.team,
-            position: payload.position,
-          }).catch(e => {
-            console.error('[Airplane] Auto-pick REST failed:', e);
-            reportClientError({
-              source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
-              message: e instanceof Error ? e.message : String(e),
-              route: 'draft-room',
-              actor: walletParam,
-              context: { draftId, playerId: payload.playerId },
-              stack: e instanceof Error ? e.stack : undefined,
-            });
-          });
-        }
-      } else {
-        engine.draftPlayer(pickId);
-      }
+      engine.draftPlayer(pickId);
     }, 0);
 
     return () => clearTimeout(timeoutId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.airplaneMode, engine.isUserTurn, phase, engine.draftStatus, engine.currentPickNumber]);
+  }, [engine.airplaneMode, engine.isUserTurn, phase, engine.draftStatus, engine.currentPickNumber, isLiveMode]);
 
   useEffect(() => {
     if (!draftId) return;

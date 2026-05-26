@@ -574,7 +574,19 @@ export function NotificationSettings() {
               {CHANNEL_ORDER.map((id, i) => {
                 const meta = CHANNEL_META[id];
                 const linked = channelLinked(id);
-                const on = id === 'push' ? push.state === 'connected' : channelOn(id);
+                // Push toggle is ON only when BOTH the per-wallet pref and
+                // the per-device OneSignal subscription are set. Previously
+                // the toggle read OneSignal state alone, which made the
+                // switch appear ON for a fresh wallet whose browser had a
+                // leftover OneSignal sub from another account — confusing,
+                // and asymmetric with the other channels (which gate on the
+                // per-wallet pref). Both must be true to deliver anyway —
+                // see lib/notifications/channels.ts:47 — so this UI now
+                // matches the actual delivery condition.
+                const on =
+                  id === 'push'
+                    ? channelOn('push') && push.state === 'connected'
+                    : channelOn(id);
                 const rowBusy =
                   busy === id ||
                   (id === 'push' && (push.state === 'loading' || push.busy));
