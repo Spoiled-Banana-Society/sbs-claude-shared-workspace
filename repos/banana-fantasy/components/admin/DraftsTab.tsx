@@ -3,16 +3,12 @@
 /**
  * Drafts — consolidated draft-operations tab.
  *
- * Sub-tabs: Active · Completed · Spectate · Founder.
+ * Sub-tabs: Active · Completed · Spectate · Founder · Manage.
  *
- * Built in Phase 3 of the admin overhaul. Replaces three separate
- * top-level tabs (drafts/spectate/founder) plus surfaces a dedicated
- * "Active" view that previously didn't exist as a first-class screen.
- *
- * "Active" today aliases the Spectate live-drafts list — same data,
- * same poll interval. We keep both as sub-tabs because Boris explicitly
- * wants quick filter access to spectator links separate from the
- * raw active-drafts table.
+ * "Manage" (added 2026-05-26) is the search-and-cleanup view: list every
+ * draft in the Go API's `drafts` collection, see who's in each, and
+ * delete + refund tokens for any ghost/stuck draft. Replaces the
+ * one-click "Clear All" + the manual cleanup scripts in Richard's notes.
  */
 
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
@@ -20,10 +16,11 @@ import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
+import { AdminDraftManage } from '@/components/admin/AdminDraftManage';
 import { SubTabBar, useSubTab, type SubTabItem } from '@/components/admin/SubTabBar';
 
-type DraftsSub = 'active' | 'completed' | 'spectate' | 'founder';
-const SUB_KEYS = ['active', 'completed', 'spectate', 'founder'] as const;
+type DraftsSub = 'active' | 'completed' | 'spectate' | 'founder' | 'manage';
+const SUB_KEYS = ['active', 'completed', 'spectate', 'founder', 'manage'] as const;
 
 export function DraftsTab({ enabled }: { enabled: boolean }) {
   const sub = useSubTab<DraftsSub>(SUB_KEYS, 'active');
@@ -34,6 +31,7 @@ export function DraftsTab({ enabled }: { enabled: boolean }) {
     { key: 'completed', label: 'Completed' },
     { key: 'spectate', label: 'Spectate' },
     { key: 'founder', label: 'Founder' },
+    { key: 'manage', label: 'Manage' },
   ];
 
   return (
@@ -43,6 +41,7 @@ export function DraftsTab({ enabled }: { enabled: boolean }) {
       {sub === 'completed' && <CompletedDraftsList enabled={enabled} />}
       {sub === 'spectate' && <SpectateBrowser enabled={enabled} />}
       {sub === 'founder' && <FounderScheduleEditor enabled={enabled} />}
+      {sub === 'manage' && <AdminDraftManage enabled={enabled} />}
     </div>
   );
 }

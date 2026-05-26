@@ -186,6 +186,72 @@ export function useAdminDrafts(enabled: boolean) {
   });
 }
 
+export interface ManageDraftRow {
+  id: string;
+  displayName: string | null;
+  status: string | null;
+  draftType: string | null;
+  numPlayers: number;
+  maxPlayers: number;
+  owners: string[];
+  startDate: string | null;
+  endDate: string | null;
+  isLocked: boolean;
+}
+
+interface ManageDraftsResponse {
+  drafts: ManageDraftRow[];
+  summary: { total: number; returned: number };
+  requestId?: string;
+}
+
+export function useAdminDraftsManage(
+  enabled: boolean,
+  filters: { wallet?: string; status?: string; query?: string } = {},
+) {
+  const getHeaders = useAdminAuthHeaders();
+  const params = new URLSearchParams();
+  if (filters.wallet) params.set('wallet', filters.wallet);
+  if (filters.status) params.set('status', filters.status);
+  if (filters.query) params.set('query', filters.query);
+  return useQuery<ManageDraftsResponse>({
+    queryKey: ['admin', 'drafts', 'manage', filters],
+    enabled,
+    queryFn: () =>
+      adminFetch<ManageDraftsResponse>(
+        `/api/admin/drafts/manage?${params.toString()}`,
+        getHeaders,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
+interface DeleteDraftWithRefundResponse {
+  slotId: string;
+  cardsTotal: number;
+  refundedCount: number;
+  failedLeaves: Array<{ ownerId: string; tokenId: string; status: number; error?: string }>;
+  leaveResults: Array<{ ownerId: string; tokenId: string; status: number; ok: boolean; error?: string }>;
+  requestId?: string;
+}
+
+export function useDeleteDraftWithRefund() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<DeleteDraftWithRefundResponse, AdminApiError, { slotId: string }>({
+    mutationFn: async ({ slotId }) =>
+      adminFetch<DeleteDraftWithRefundResponse>(
+        `/api/admin/drafts/manage/${encodeURIComponent(slotId)}`,
+        getHeaders,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'drafts', 'manage'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'drafts'] });
+    },
+  });
+}
+
 export interface ReconcilePassesResponse {
   success: boolean;
   wallet: string;
