@@ -42,37 +42,49 @@ async function verifyOneSignalSubscription(
     };
   }
 
-  // Five attempts × 1s = ~5s budget. Each attempt is one round-trip to
-  // OneSignal's player-by-id endpoint. We stop early once a definitive
-  // state appears (subscribed OR explicitly opted out / invalid).
+  // Up to ~3s of polling for the player record to appear in OneSignal's
+  // v1 API. We accept the device as verified if OneSignal has the player
+  // and hasn't flagged the identifier invalid. We CANNOT trust
+  // `notification_types` as ground truth — OneSignal v16 SDK uses the v2
+  // subscription model, which leaves notification_types null/0 in the v1
+  // API even for valid subscriptions. The original strict check rejected
+  // every legitimate v2 subscriber and broke push toggling completely.
+  //
+  // The real ground truth for delivery is the `recipients` count on each
+  // actual push send. The dispatcher already logs PUSH_ZERO_RECIPIENTS
+  // when a tag-targeted send hits 0 devices — that's where a busted sub
+  // surfaces, after one real fire. We optimistically mark verified here
+  // when the device exists, then rely on that downstream signal.
   const url = `https://onesignal.com/api/v1/players/${encodeURIComponent(playerId)}?app_id=${appId}`;
   let last: { notificationTypes: number | null; invalidIdentifier: boolean } = {
     notificationTypes: null,
     invalidIdentifier: false,
   };
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 3; i++) {
     if (i > 0) await new Promise((r) => setTimeout(r, 1000));
     let res: Response;
     try {
       res = await fetch(url, { headers: { Authorization: `Key ${apiKey}` } });
     } catch (err) {
+      // Network blip — fail open: assume the SDK got it right.
       return {
-        verified: false,
+        verified: true,
         notificationTypes: null,
         invalidIdentifier: false,
-        reason: `OneSignal network error: ${err instanceof Error ? err.message : String(err)}`,
+        reason: `OneSignal lookup failed (${err instanceof Error ? err.message : String(err)}); trusting SDK opt-in`,
       };
     }
     if (res.status === 404) {
-      // Device hasn't propagated to OneSignal yet — try again next iteration.
+      // Device hasn't propagated yet — try once more.
       continue;
     }
     if (!res.ok) {
+      // OneSignal API issue — fail open.
       return {
-        verified: false,
+        verified: true,
         notificationTypes: null,
         invalidIdentifier: false,
-        reason: `OneSignal ${res.status}: ${await res.text().catch(() => '')}`,
+        reason: `OneSignal ${res.status}; trusting SDK opt-in`,
       };
     }
     const data = (await res.json()) as {
@@ -84,27 +96,25 @@ async function verifyOneSignalSubscription(
       invalidIdentifier: !!data.invalid_identifier,
     };
     if (last.invalidIdentifier) {
-      return { ...last, verified: false, reason: 'OneSignal marked the device identifier invalid' };
-    }
-    if ((last.notificationTypes ?? 0) > 0) {
-      return { ...last, verified: true };
-    }
-    // Any explicit negative value means the user/OS revoked permission;
-    // no point polling further.
-    if ((last.notificationTypes ?? 0) < 0) {
       return {
         ...last,
         verified: false,
-        reason: `Notifications disabled at OS level (OneSignal notification_types=${last.notificationTypes})`,
+        reason:
+          'OneSignal marked the push token invalid — the browser revoked permission. Re-enable notifications for this site in your browser/OS settings, then toggle on again.',
       };
     }
-    // Still null/0 → keep polling.
+    // Device exists, identifier is valid — accept. Whether notification_types
+    // is null (v2 schema) or 1 (v1 schema), we let the first real push
+    // determine actual delivery.
+    return { ...last, verified: true };
   }
+  // Player never showed up after 3 polls — likely the SDK didn't actually
+  // create a subscription. Fail this one with a clear message.
   return {
     ...last,
     verified: false,
     reason:
-      'OneSignal still reports the device as not subscribed after 5s — the browser opt-in did not sync to the server',
+      'OneSignal never received the subscription. Allow notifications for this site in your browser/OS settings, then try again.',
   };
 }
 

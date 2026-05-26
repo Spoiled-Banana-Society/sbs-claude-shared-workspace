@@ -7,13 +7,17 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { logErrorEvent } from '@/lib/errorEvents';
 
 /**
- * Audit OneSignal for any device tagged with the wallet that is actually
- * subscribed (notification_types > 0, valid identifier). Returns the
- * count — 0 means push wouldn't deliver anywhere even though the user
- * may have `channels.push: true` saved from a stale toggle attempt.
+ * Audit OneSignal for any device tagged with the wallet that might
+ * receive push. Counts devices where OneSignal hasn't flagged the
+ * identifier invalid — null/0 `notification_types` is allowed because
+ * OneSignal v16 SDK leaves it null even for valid v2 subscriptions
+ * (querying `notification_types > 0` strictly was rejecting every
+ * legitimate v2 subscriber).
  *
- * Used by GET to keep the toggle truthful across page reloads: if 0,
- * we flip `channels.push: false` so the UI doesn't lie next time.
+ * Used by GET to flip a stale `channels.push:true` off only when the
+ * user has NO devices at all — that's an unambiguous "the toggle is
+ * lying" case. We no longer flip off when devices exist with null
+ * notification_types since those may well be subscribed.
  */
 async function countSubscribedPushDevices(wallet: string): Promise<{
   configured: boolean;
@@ -27,7 +31,7 @@ async function countSubscribedPushDevices(wallet: string): Promise<{
       `https://onesignal.com/api/v1/players?app_id=${appId}&limit=300`,
       { headers: { Authorization: `Key ${apiKey}` } },
     );
-    if (!res.ok) return { configured: true, count: 0 };
+    if (!res.ok) return { configured: true, count: -1 };
     const body = (await res.json()) as {
       players?: Array<{
         notification_types?: number | null;
@@ -39,7 +43,7 @@ async function countSubscribedPushDevices(wallet: string): Promise<{
       (p) =>
         (p.tags?.walletAddress || '').toLowerCase() === wallet &&
         !p.invalid_identifier &&
-        (p.notification_types ?? 0) > 0,
+        (p.notification_types ?? 0) >= 0, // accept null + positive; reject explicit negatives
     ).length;
     return { configured: true, count };
   } catch {
