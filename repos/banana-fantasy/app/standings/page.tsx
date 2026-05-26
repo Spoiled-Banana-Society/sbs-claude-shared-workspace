@@ -126,30 +126,24 @@ export default function StandingsPage() {
         });
       });
     }
-    // Sort by real draft chronology (timestamp embedded in cardId, surfaced
-    // as draftDate by mapDraftTokenToLeague). Cards with no parsable
-    // timestamp (very old serial-only IDs like "90099") get an empty
-    // draftDate and are treated as older than any timestamped card —
-    // newest-first puts them at the bottom, oldest-first at the top, with
-    // trailing-id digits as the tie-breaker among themselves.
+    // Sort by League # — the user-facing monotonic number in the
+    // displayName ("League #1201"). Higher league # = more recent draft.
+    // The previous cardId-timestamp sort surfaced when the NFT was MINTED,
+    // not when the draft was played — tokens minted months ago but used
+    // in a recent draft sorted to the bottom, hiding the user's newest
+    // results. League # increments per fill across the whole product, so
+    // it's the right monotonic signal.
+    //
+    // Tie-breaker: slot id trailing digits, then leaving order stable.
     result.sort((a, b) => {
-      const tA = a.draftDate ? Date.parse(a.draftDate) : NaN;
-      const tB = b.draftDate ? Date.parse(b.draftDate) : NaN;
-      const aHas = Number.isFinite(tA);
-      const bHas = Number.isFinite(tB);
-      if (aHas && bHas) {
-        if (tA !== tB) return sortOrder === 'oldest' ? tA - tB : tB - tA;
-      } else if (aHas !== bHas) {
-        // One side has a timestamp, the other doesn't. The timestamped
-        // side is always newer than a serial-only card.
-        const aIsNewer = aHas;
-        return sortOrder === 'oldest'
-          ? (aIsNewer ? 1 : -1)
-          : (aIsNewer ? -1 : 1);
+      const leagueNumA = parseInt(a.name.match(/#(\d+)/)?.[1] || '0', 10);
+      const leagueNumB = parseInt(b.name.match(/#(\d+)/)?.[1] || '0', 10);
+      if (leagueNumA !== leagueNumB) {
+        return sortOrder === 'oldest' ? leagueNumA - leagueNumB : leagueNumB - leagueNumA;
       }
-      const numA = parseInt(a.id.match(/(\d+)$/)?.[1] || '0', 10);
-      const numB = parseInt(b.id.match(/(\d+)$/)?.[1] || '0', 10);
-      return sortOrder === 'oldest' ? numA - numB : numB - numA;
+      const idNumA = parseInt(a.id.match(/(\d+)$/)?.[1] || '0', 10);
+      const idNumB = parseInt(b.id.match(/(\d+)$/)?.[1] || '0', 10);
+      return sortOrder === 'oldest' ? idNumA - idNumB : idNumB - idNumA;
     });
     return result;
   }, [leagues, teamSearch, sortOrder, typeFilter]);

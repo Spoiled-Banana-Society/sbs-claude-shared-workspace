@@ -535,19 +535,8 @@ export function useDraftingPageState() {
           };
         });
 
-        // Read hidden ids fresh from localStorage rather than the React-state
-        // closure. confirmExitDraft writes the just-left id to localStorage
-        // synchronously but setHiddenDraftIds is async; without this read,
-        // a poll firing in the gap re-adds the draft because its closure
-        // still has the stale set. That's the "had to leave twice" bug.
-        let freshHiddenIds: Set<string> = hiddenDraftIds;
-        try {
-          const raw = localStorage.getItem('banana-hidden-drafts');
-          if (raw) freshHiddenIds = new Set(JSON.parse(raw) as string[]);
-        } catch { /* fall through to closure value */ }
-
         for (const d of mapped) {
-          if (freshHiddenIds.has(d.id)) continue;
+          if (hiddenDraftIds.has(d.id)) continue;
           // Whenever the API returns a fresh non-empty leagueDisplayName,
           // push the parsed league # into the global cache. Survives
           // stale localStorage / module cache from earlier sessions
@@ -620,25 +609,6 @@ export function useDraftingPageState() {
           }
         }
         setLiveDrafts(mapped);
-
-        // Cross-device leave sync: if the user left a draft on another
-        // device, their token list (from /owner/{wallet}/draftToken/all)
-        // no longer includes that draft, but this device's localStorage
-        // still does. Drop any stored draft whose id isn't in the live
-        // token set. Scoped to current wallet so we don't nuke another
-        // account's cached rows during a wallet switch. Skips `pending-*`
-        // placeholder ids (an in-flight join hasn't yielded a real id yet).
-        const validLeagueIds = new Set(activeTokens.map(t => t.leagueId));
-        const currentWalletLower = user!.walletAddress!.toLowerCase();
-        for (const stored of draftStore.getActiveDrafts()) {
-          if (!stored.id || stored.id.startsWith('pending-')) continue;
-          if (stored.specialType) continue; // queue drafts have their own lifecycle
-          const storedWallet = stored.liveWalletAddress?.toLowerCase();
-          if (!storedWallet || storedWallet !== currentWalletLower) continue;
-          if (!validLeagueIds.has(stored.id)) {
-            draftStore.removeDraft(stored.id);
-          }
-        }
       } catch (err) {
         console.error('[Drafting] Failed to load live drafts:', err);
       } finally {
@@ -649,16 +619,8 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
-    // Re-poll every 5s so a leave on another device clears this one within
-    // ~5s instead of needing a manual refresh. Also re-poll on tab focus —
-    // common case is user switches back from phone to laptop.
-    const interval = setInterval(() => { void loadLiveDrafts(); }, 5000);
-    const onFocus = () => { void loadLiveDrafts(); };
-    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
-      clearInterval(interval);
-      window.removeEventListener('focus', onFocus);
     };
   }, [hiddenDraftIds, explicitlyClearedIds, isLive, user]);
 
@@ -914,7 +876,6 @@ export function useDraftingPageState() {
               timeRemaining: isUserTurn && effectivePickEnd
                 ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
                 : undefined,
-              enginePickNumber: info.pickNumber,
             };
 
             if (animStillRunning) {
@@ -1057,7 +1018,7 @@ export function useDraftingPageState() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as DraftingPageSocketMessage;
-            const { type } = data;
+            const { type, payload } = data;
             const draftId = draft.id;
 
             if (isTimerUpdateMessage(data)) {
@@ -1188,6 +1149,14 @@ export function useDraftingPageState() {
   // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
   // → 804). Within the same speed/year the slot counter increments per
   // fill, so highest slot = most recently filled = should be at top.
+  // This is deterministic and doesn't depend on the contestName, which
+  // can be stale (backend sometimes returns a fallback "League #{slot}"
+  // before the real DisplayName lands).
+  const slotNumberOf = (d: Draft): number => {
+    const m = /-draft-(\d+)$/.exec(d.id || '');
+    return m ? Number(m[1]) : 0;
+  };
+
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
     if (a.isYourTurn && !b.isYourTurn) return -1;
     if (!a.isYourTurn && b.isYourTurn) return 1;
