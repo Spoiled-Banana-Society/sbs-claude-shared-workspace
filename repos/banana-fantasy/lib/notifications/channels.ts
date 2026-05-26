@@ -69,43 +69,37 @@ export const sendPush: ChannelSender = async (message, event, prefs) => {
   }
 };
 
-// ── Email (Resend) ───────────────────────────────────────────────────────────
-// Swapped from Postmark 2026-05-26 — Postmark's 100/month free tier was
-// burning through during staging tests AND their sandbox-approval gate
-// silently accepted but didn't deliver. Resend's 3k/month free tier
-// covers heavy testing and there's no sandbox gate; once the sending
-// domain is DNS-verified, it just sends. The email_id Resend returns
-// is captured as providerId; the email-webhook route updates the
-// delivery row with the real outcome (delivered/bounced/complained).
+// ── Email (Postmark) ─────────────────────────────────────────────────────────
 export const sendEmail: ChannelSender = async (message, _event, prefs) => {
   if (!prefs.channels.email) return skip('email', 'channel off');
   if (!prefs.email) return skip('email', 'no email linked');
-  const apiKey = process.env.RESEND_API_KEY;
+  const token = process.env.POSTMARK_SERVER_TOKEN;
   const from = process.env.EMAIL_FROM;
-  if (!apiKey || !from) return skip('email', 'not configured');
+  if (!token || !from) return skip('email', 'not configured');
   try {
-    const res = await fetch('https://api.resend.com/emails', {
+    const res = await fetch('https://api.postmarkapp.com/email', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        Accept: 'application/json',
+        'X-Postmark-Server-Token': token,
       },
       body: JSON.stringify({
-        from,
-        to: [prefs.email],
-        subject: message.title,
-        html: emailHtml(message.title, message.body, message.url),
-        text: `${message.body}\n\n${message.url}`,
+        From: from,
+        To: prefs.email,
+        Subject: message.title,
+        HtmlBody: emailHtml(message.title, message.body, message.url),
+        TextBody: `${message.body}\n\n${message.url}`,
+        MessageStream: 'outbound',
       }),
     });
     if (!res.ok) {
-      return fail('email', `Resend ${res.status}: ${await res.text().catch(() => '')}`);
+      return fail('email', `Postmark ${res.status}: ${await res.text().catch(() => '')}`);
     }
-    // Capture Resend's email id as providerId — the email-webhook route
-    // uses it to match incoming delivered/bounced events back to the
-    // delivery row and update its emailDelivery status.
-    const body = (await res.json().catch(() => ({}))) as { id?: string };
-    return { channel: 'email', status: 'sent', providerId: body.id };
+    // Capture Postmark's MessageID so a log line can be traced straight
+    // into Postmark's delivery activity.
+    const pmBody = (await res.json().catch(() => ({}))) as { MessageID?: string };
+    return { channel: 'email', status: 'sent', providerId: pmBody.MessageID };
   } catch (err) {
     return fail('email', errText(err));
   }
