@@ -87,11 +87,41 @@ export async function GET(req: NextRequest) {
     tags: p.tags,
   });
 
+  // If ?probe=1, fetch the FULL v1 record for each matching device AND
+  // fire a direct-by-playerId send to learn whether OneSignal will
+  // actually deliver. `recipients > 0` from include_player_ids targeting
+  // is ground truth — bypasses tag filtering and v1-vs-v2 schema noise.
+  const probe = req.nextUrl.searchParams.get('probe') === '1';
+  const probeResults: unknown[] = [];
+  if (probe) {
+    for (const m of matches) {
+      if (!m.id) continue;
+      const fullRes = await fetch(
+        `https://onesignal.com/api/v1/players/${m.id}?app_id=${appId}`,
+        { headers: { Authorization: `Key ${apiKey}` } },
+      );
+      const full = fullRes.ok ? await fullRes.json() : { error: await fullRes.text().catch(() => '') };
+      const sendRes = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Key ${apiKey}` },
+        body: JSON.stringify({
+          app_id: appId,
+          include_player_ids: [m.id],
+          headings: { en: 'Push probe' },
+          contents: { en: 'Direct playerId targeting' },
+        }),
+      });
+      const send = sendRes.ok ? await sendRes.json() : { error: await sendRes.text().catch(() => '') };
+      probeResults.push({ playerId: m.id, fullRecord: full, directSend: send });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     wallet,
     totalPlayersInApp: body.total_count ?? 0,
     matchingDevices: matches.length,
+    probe: probe ? probeResults : undefined,
     devices: matches.map(summarize),
     recentSubscribedUntagged: recentSubscribedUntagged.map(summarize),
   });
