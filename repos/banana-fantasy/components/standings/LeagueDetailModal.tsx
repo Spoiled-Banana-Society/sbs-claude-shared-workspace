@@ -170,39 +170,16 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     })();
   }, [draftId, walletAddress]);
 
-  // Fetch board data — re-fetches if the summary comes back short of the
-  // expected 150 picks. The Go API occasionally returns the last pick(s)
-  // with empty playerInfo right after a draft finishes (race between final
-  // pick write and the summary read), which the normalizer in getDraftSummary
-  // filters out as malformed. Re-fetching after a beat almost always fills
-  // the hole. Capped at 6 retries (~30s) so we don't loop forever on a
-  // genuinely incomplete draft.
+  // Fetch board data
   useEffect(() => {
     if (!draftId) return;
-    const TOTAL_PICKS = NUM_TEAMS * NUM_ROUNDS;
-    const MAX_ATTEMPTS = 6;
-    let cancelled = false;
-    let attempt = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const fetchBoard = async () => {
+    (async () => {
       try {
         const picks = await getDraftSummary(draftId);
-        if (cancelled) return;
         setBoardPicks(picks);
-        if (picks.length < TOTAL_PICKS && attempt < MAX_ATTEMPTS) {
-          attempt += 1;
-          timer = setTimeout(fetchBoard, 5000);
-        }
-      } catch { /* silent — next attempt will retry */ }
-      finally { if (!cancelled) setBoardLoading(false); }
-    };
-
-    void fetchBoard();
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
+      } catch { /* silent */ }
+      finally { setBoardLoading(false); }
+    })();
   }, [draftId]);
 
   // Fetch per-owner scores (season/week + ranks) for the standings tab.
