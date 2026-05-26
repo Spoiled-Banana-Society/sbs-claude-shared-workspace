@@ -159,6 +159,20 @@ export function DraftRow({
           {draft.id && <FounderPill draftId={draft.id} size="sm" />}
         </div>
 
+        {/* Pick / Round column — only meaningful once the draft is actively
+            picking. Stays empty (dash) for filling / pre-spin / randomizing
+            so the column width is reserved and rows stay aligned. */}
+        <div className="sm:w-24 flex-shrink-0 flex items-center justify-center">
+          {effectiveLive.displayPhase === 'drafting' && draft.enginePickNumber && draft.enginePickNumber > 0 ? (
+            <span className="text-white/60 text-[11px] sm:text-sm whitespace-nowrap tabular-nums">
+              <span className="sm:hidden">P{draft.enginePickNumber}·R{Math.ceil(draft.enginePickNumber / 10)}</span>
+              <span className="hidden sm:inline">Pick {draft.enginePickNumber} · R{Math.ceil(draft.enginePickNumber / 10)}</span>
+            </span>
+          ) : (
+            <span className="text-white/20 text-[11px] sm:text-sm">—</span>
+          )}
+        </div>
+
         <div className="sm:w-28 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'filling' ? (
             <span className="text-xs sm:text-sm tabular-nums">

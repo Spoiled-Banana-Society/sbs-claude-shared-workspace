@@ -876,6 +876,7 @@ export function useDraftingPageState() {
               timeRemaining: isUserTurn && effectivePickEnd
                 ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
                 : undefined,
+              enginePickNumber: info.pickNumber,
             };
 
             if (animStillRunning) {
@@ -1018,7 +1019,7 @@ export function useDraftingPageState() {
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as DraftingPageSocketMessage;
-            const { type, payload } = data;
+            const { type } = data;
             const draftId = draft.id;
 
             if (isTimerUpdateMessage(data)) {
@@ -1149,14 +1150,6 @@ export function useDraftingPageState() {
   // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
   // → 804). Within the same speed/year the slot counter increments per
   // fill, so highest slot = most recently filled = should be at top.
-  // This is deterministic and doesn't depend on the contestName, which
-  // can be stale (backend sometimes returns a fallback "League #{slot}"
-  // before the real DisplayName lands).
-  const slotNumberOf = (d: Draft): number => {
-    const m = /-draft-(\d+)$/.exec(d.id || '');
-    return m ? Number(m[1]) : 0;
-  };
-
   const sortedDrafts = [...activeDrafts].sort((a, b) => {
     if (a.isYourTurn && !b.isYourTurn) return -1;
     if (!a.isYourTurn && b.isYourTurn) return 1;
