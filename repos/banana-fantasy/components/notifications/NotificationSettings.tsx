@@ -353,6 +353,14 @@ export function NotificationSettings() {
   };
 
   // Push: the switch IS the subscription — on subscribes, off unsubscribes.
+  // `push.connect()` calls /api/notifications/subscribe, which itself polls
+  // OneSignal for up to ~5s and ONLY returns ok when the device is really
+  // subscribed server-side. The same route sets `channels.push: true` in
+  // notificationPrefs on verification success, so we don't need a separate
+  // PUT here. If verification fails, `push.connect()` returns ok:false with
+  // a specific reason — we surface it in the banner so the user knows what
+  // to do (allow notifications in iOS Settings / click the browser lock
+  // icon / etc.) rather than seeing a false "Connected ✓".
   const togglePush = async (on: boolean) => {
     clientLog('notifications', 'push-toggle', { on });
     const r = on ? await push.connect() : await push.disconnect();
@@ -370,16 +378,10 @@ export function NotificationSettings() {
         ? 'Push notifications are on for this device.'
         : 'Push turned off on this device. Other devices stay subscribed unless you turn them off there too.',
     );
-    // Sync the shared "push enabled?" flag — but ONLY on connect.
-    // Turning OFF on one device must NOT flip the shared flag to false,
-    // because that would skip push delivery for every OTHER device the
-    // user has subscribed. Per-device opt-out only removes THIS device's
-    // OneSignal subscription (and untags it), leaving the others intact.
+    // Refresh prefs so the row reflects the channels.push:true the
+    // subscribe route just wrote post-verification.
     if (on) {
-      authedFetch('/api/notifications/profile', {
-        method: 'PUT',
-        body: JSON.stringify({ channels: { push: true } }),
-      })
+      authedFetch('/api/notifications/profile')
         .then(async (res) => {
           if (res.ok) setPrefs((await res.json()).prefs as Prefs);
         })

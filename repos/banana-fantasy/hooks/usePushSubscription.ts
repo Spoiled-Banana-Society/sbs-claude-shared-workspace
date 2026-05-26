@@ -113,21 +113,50 @@ export function usePushSubscription() {
         }
       }
 
-      // 5. Register with our backend (best-effort; tag targeting works regardless).
-      if (wallet) {
-        try {
-          const token = await getAccessToken();
-          await fetch('/api/notifications/subscribe', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({ walletAddress: wallet, playerId: subId }),
-          });
-        } catch {
-          /* non-fatal */
-        }
+      // 5. Register with our backend AND wait for it to verify with
+      // OneSignal that the subscription actually landed server-side.
+      // The browser SDK can think it's opted in while OneSignal still
+      // shows the device as unsubscribed — that mismatch is what made
+      // every "Connected" toggle a lie. The backend polls OneSignal for
+      // up to ~5s; only `verified: true` means real delivery will work.
+      // Without a wallet we can't tag the device, so we don't even try.
+      if (!wallet) {
+        const msg = 'Sign in before enabling push.';
+        setError(msg);
+        setState('disconnected');
+        return { ok: false, error: msg };
+      }
+      let verifyResp: {
+        ok?: boolean;
+        verified?: boolean;
+        reason?: string;
+        notificationTypes?: number | null;
+      } = {};
+      try {
+        const token = await getAccessToken();
+        const res = await fetch('/api/notifications/subscribe', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ walletAddress: wallet, playerId: subId }),
+        });
+        verifyResp = (await res.json().catch(() => ({}))) as typeof verifyResp;
+      } catch (err) {
+        const msg = `Couldn't reach our notification server: ${err instanceof Error ? err.message : String(err)}`;
+        setError(msg);
+        setState('disconnected');
+        return { ok: false, error: msg };
+      }
+
+      if (!verifyResp.verified) {
+        const msg =
+          verifyResp.reason ||
+          'Push subscription didn’t complete. Try enabling notifications for this site in your browser/OS settings and try again.';
+        setError(msg);
+        setState('disconnected');
+        return { ok: false, error: msg };
       }
 
       setState('connected');
