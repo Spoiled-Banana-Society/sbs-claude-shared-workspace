@@ -5,6 +5,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { ChatModerationMenu } from '@/components/chat/ChatModerationMenu';
+import { UserPopover } from '@/components/social/UserPopover';
 
 interface ChatMessage {
   id: string;
@@ -216,22 +217,26 @@ export function GlobalChat() {
           const initial = (msg.username || msg.walletAddress).slice(0, 1).toUpperCase();
           return (
             <div key={msg.id} className="group flex items-start gap-3 px-2 py-1.5 rounded-lg hover:bg-white/[0.02]">
-              {/* Avatar */}
-              {msg.pfpUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={msg.pfpUrl} alt={msg.username} className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10" />
-              ) : (
-                <div className="w-9 h-9 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-sm">
-                  {initial}
-                </div>
-              )}
+              {/* Avatar — clickable, opens UserPopover with friend actions. */}
+              <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
+                {msg.pfpUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={msg.pfpUrl} alt={msg.username} className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all" />
+                ) : (
+                  <div className="w-9 h-9 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-sm hover:ring-2 hover:ring-banana/40 transition-all">
+                    {initial}
+                  </div>
+                )}
+              </UserPopover>
 
               {/* Body */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className={`text-sm font-semibold ${isYou ? 'text-banana' : 'text-white'}`}>
-                    {msg.username || msg.walletAddress.slice(0, 8)}
-                  </span>
+                  <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
+                    <span className={`text-sm font-semibold hover:underline ${isYou ? 'text-banana' : 'text-white'}`}>
+                      {msg.username || msg.walletAddress.slice(0, 8)}
+                    </span>
+                  </UserPopover>
                   <span className="text-white/30 text-[10px]">
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                   </span>

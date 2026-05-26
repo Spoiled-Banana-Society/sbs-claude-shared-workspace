@@ -120,6 +120,33 @@ echo "Files that will sync:"
 echo "$CHANGES"
 echo ""
 
+# 2.5 Auto-recover deletions (lesson from 2026-05-26).
+# If the dry-run would delete files in sbs-frontend-v2 that aren't in
+# workspace, it usually means Boris pushed those files directly to
+# sbs-frontend-v2 without round-tripping through the shared workspace
+# (Mode B). The marker check above catches commit-level drift, but a
+# stale workspace can still propose individual file deletions if Boris's
+# direct-push files were never synced back. Before the real rsync, copy
+# any would-be-deleted file from deploy INTO workspace, so the real rsync
+# has nothing to delete. Loud warning so the user knows to follow up.
+DELETIONS=$(echo "$DRY_RUN" | awk '/^\*deleting/ {print $2}')
+if [ -n "$DELETIONS" ]; then
+  echo "⚠️  Auto-recovering files from deploy → workspace to prevent silent deletes:"
+  while IFS= read -r rel; do
+    [ -z "$rel" ] && continue
+    src="$DEPLOY_REPO/$rel"
+    dst="$WORKSPACE/$rel"
+    if [ -e "$src" ]; then
+      mkdir -p "$(dirname "$dst")"
+      cp -R "$src" "$dst"
+      echo "   recovered: $rel"
+    fi
+  done <<< "$DELETIONS"
+  echo "   These files were in sbs-frontend-v2 but missing from workspace."
+  echo "   Commit them to the shared workspace so they don't get re-flagged."
+  echo ""
+fi
+
 # 3. Apply for real.
 rsync -rc --delete "${RSYNC_EXCLUDES[@]}" "$WORKSPACE/" "$DEPLOY_REPO/" >/dev/null
 
