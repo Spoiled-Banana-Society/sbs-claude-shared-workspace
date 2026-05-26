@@ -122,10 +122,10 @@ export function DraftComplete({ draftId, generatedCardUrl: initialCardUrl, walle
       </h1>
       <p className="mt-3 text-white/70 text-sm sm:text-base max-w-sm animate-fade-in-up" style={{ animationDelay: '120ms' }}>
         {stepState === 'ready'
-          ? 'Card minted. Tap below to see your roster.'
+          ? 'Card generated. Tap below to see your roster.'
           : stepState === 'error'
             ? 'Your card is still being generated — it will appear on your profile shortly.'
-            : 'Hang tight — we’re minting your draft card right now.'}
+            : 'Hang tight — we’re generating your draft card right now.'}
       </p>
 
       {/* Three-step indicator. Step 1 is always complete by the time the user
