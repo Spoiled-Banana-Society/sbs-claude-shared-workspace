@@ -401,12 +401,30 @@ export function NotificationSettings() {
   const connectTelegram = async () => {
     setBusy('telegram');
     clientLog('notifications', 'telegram-connect', {});
+
+    // Pre-open the tab synchronously inside the user gesture so browsers
+    // (Safari especially) don't blacklist it as a popup. We point it at
+    // about:blank now, then set its href after the server hands back the
+    // Telegram deep link. Without this, `window.open` runs *after* the
+    // `await` and the user-gesture context is gone — popup blocked.
+    const tab: Window | null = window.open('about:blank', '_blank');
+
     try {
       const res = await authedFetch('/api/notifications/link/telegram');
       if (!res.ok) throw new Error(`link/telegram ${res.status}`);
-      window.open((await res.json()).url, '_blank', 'noopener');
-      setBanner('Open Telegram, tap Start, then press “Check connection.”');
+      const url = (await res.json()).url as string;
+      if (tab) {
+        tab.location.href = url;
+        setBanner('Open Telegram, tap Start, then press “Check connection.”');
+      } else {
+        // Pop-up was blocked anyway — give the user a path forward instead
+        // of a silent failure.
+        setBanner(
+          'Your browser blocked the Telegram pop-up. Allow pop-ups for this site, then try again.',
+        );
+      }
     } catch (err) {
+      if (tab) tab.close();
       setBanner('Telegram isn’t available right now — please try again in a moment.');
       reportIssue(
         LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
