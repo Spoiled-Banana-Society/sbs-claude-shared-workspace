@@ -23,6 +23,7 @@ import {
   type ManageDraftRow,
 } from '@/hooks/admin/useAdminApi';
 import { clientLog } from '@/lib/clientLog';
+import { normalizeContestName } from '@/lib/draftStore';
 
 interface Props {
   enabled: boolean;
@@ -215,7 +216,7 @@ export function AdminDraftManage({ enabled }: Props) {
             {drafts.map((row) => (
               <tr key={row.id} className="border-t border-white/5">
                 <td className="px-3 py-2 font-mono text-xs text-white/90">{row.id}</td>
-                <td className="px-3 py-2 text-white/80">{row.displayName ?? <span className="text-white/30">—</span>}</td>
+                <td className="px-3 py-2 text-white/80">{row.displayName ? normalizeContestName(row.displayName) : <span className="text-white/30">—</span>}</td>
                 <td className="px-3 py-2 text-white/70">
                   <span className="inline-block px-2 py-0.5 rounded-full text-[10px] bg-white/10 capitalize">
                     {row.status ?? 'unknown'}

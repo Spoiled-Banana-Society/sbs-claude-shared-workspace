@@ -44,6 +44,33 @@ function normalize(s: string | undefined | null): string {
   return (s ?? '').toLowerCase();
 }
 
+// Last numeric run in a string. Slot ids are like `2024-fast-draft-1201`
+// (we want 1201, not 2024), display names are like `BBB #1201` (1201).
+function lastNumber(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const m = s.match(/\d+/g);
+  return m ? m[m.length - 1] : null;
+}
+
+// Match a free-text query against a draft's id + display name. The UI
+// rewrites "BBB #N" → "League #N" on render, so a user typing
+// "League 1201" needs to match a stored "BBB #1201". We do that by
+// also comparing the trailing number of each string — if the query
+// contains a number and so does the target, we match on equality of
+// those numbers in addition to plain substring.
+function searchMatches(query: string, id: string, displayName: string | null | undefined): boolean {
+  const q = query.toLowerCase().trim();
+  if (!q) return true;
+  if (id.toLowerCase().includes(q)) return true;
+  if (displayName && displayName.toLowerCase().includes(q)) return true;
+  const qNum = lastNumber(q);
+  if (qNum) {
+    if (lastNumber(id) === qNum) return true;
+    if (lastNumber(displayName) === qNum) return true;
+  }
+  return false;
+}
+
 export async function GET(req: Request) {
   const requestId = getRequestId(req);
   const start = Date.now();
@@ -106,9 +133,7 @@ export async function GET(req: Request) {
       filtered = filtered.filter((r) => normalize(r.status) === statusFilter);
     }
     if (query) {
-      filtered = filtered.filter(
-        (r) => normalize(r.id).includes(query) || normalize(r.displayName).includes(query),
-      );
+      filtered = filtered.filter((r) => searchMatches(query, r.id, r.displayName));
     }
 
     logger.info('admin.drafts.manage.list.ok', {

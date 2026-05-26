@@ -79,8 +79,10 @@ export function subscribe(listener: Listener): () => void {
 // Migrate older cached display names to the current "League #N" shape.
 // Earlier builds cached "BBB #N" or "BBB League #N" — both flatten to
 // "League #N" so the UI is consistent regardless of when the entry was
-// first cached.
-function normalizeContestName(name: string | undefined): string {
+// first cached. Exported so admin views can normalize the raw
+// Firestore `displayName` (which the Go API still writes as "BBB #N")
+// the same way the live drafting UI does.
+export function normalizeContestName(name: string | undefined | null): string {
   if (!name) return '';
   if (name.startsWith('BBB League #')) return name.replace(/^BBB League\s*#/, 'League #');
   if (name.startsWith('BBB #')) return name.replace(/^BBB\s*#/, 'League #');
