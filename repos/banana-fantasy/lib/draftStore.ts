@@ -171,32 +171,55 @@ export function removeDraft(id: string) {
  * Returns the list of pruned ids.
  */
 const STALE_GUARD_MS = 30_000;
-const DRAFTS_API_FALLBACK = 'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
 
 export async function pruneMissingDrafts(): Promise<string[]> {
   if (typeof window === 'undefined') return [];
   const all = readAll();
   if (all.length === 0) return [];
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
-    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-    DRAFTS_API_FALLBACK;
-  const now = Date.now();
+  // Dynamic imports keep draftStore SSR-safe. `lib/staging` reads
+  // window-side flags during isStagingMode(); `lib/clientLog` ships to
+  // /api/debug/log so prune activity shows up in the admin Logs tab.
+  const [{ getDraftsApiUrl }, { clientLog }] = await Promise.all([
+    import('@/lib/staging'),
+    import('@/lib/clientLog'),
+  ]);
+  const baseUrl = getDraftsApiUrl();
+  if (!baseUrl) {
+    clientLog('prune', 'skip.no-base-url', { cached: all.length });
+    return [];
+  }
 
+  const now = Date.now();
   const candidates = all.filter((d) => {
     if (!d.id || d.id.startsWith('pending-')) return false;
     const age = now - (d.joinedAt ?? d.lastUpdated ?? 0);
     return age > STALE_GUARD_MS;
   });
 
+  clientLog('prune', 'start', {
+    cached: all.length,
+    candidates: candidates.length,
+    skippedFresh: all.length - candidates.length,
+    baseUrl,
+  });
+
   const pruned: string[] = [];
+  const errors: Array<{ id: string; reason: string }> = [];
   for (const d of candidates) {
     try {
       const res = await fetch(`${baseUrl}/draft/${d.id}/state/info`);
-      if (res.status === 404) pruned.push(d.id);
-    } catch {
-      // Network error — don't prune.
+      if (res.status === 404) {
+        pruned.push(d.id);
+        clientLog('prune', 'remove', { id: d.id });
+      } else if (res.status >= 500) {
+        errors.push({ id: d.id, reason: `http_${res.status}` });
+      }
+    } catch (e) {
+      errors.push({
+        id: d.id,
+        reason: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -204,6 +227,12 @@ export async function pruneMissingDrafts(): Promise<string[]> {
     const remaining = readAll().filter((d) => !pruned.includes(d.id));
     writeAll(remaining);
   }
+
+  clientLog('prune', 'done', {
+    prunedCount: pruned.length,
+    pruned,
+    errors,
+  });
 
   return pruned;
 }

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('@/lib/staging', () => ({
+  getDraftsApiUrl: () => 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app',
+}));
+vi.mock('@/lib/clientLog', () => ({
+  clientLog: vi.fn(),
+}));
+
 // jsdom-free env — stub localStorage + window for the module's window check.
 function fakeLocalStorage() {
   const store: Record<string, string> = {};
