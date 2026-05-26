@@ -165,8 +165,7 @@ export function DraftRow({
         <div className="sm:w-24 flex-shrink-0 flex items-center justify-center">
           {effectiveLive.displayPhase === 'drafting' && draft.enginePickNumber && draft.enginePickNumber > 0 ? (
             <span className="text-white/60 text-[11px] sm:text-sm whitespace-nowrap tabular-nums">
-              <span className="sm:hidden">P{draft.enginePickNumber}·R{Math.ceil(draft.enginePickNumber / 10)}</span>
-              <span className="hidden sm:inline">Pick {draft.enginePickNumber} · R{Math.ceil(draft.enginePickNumber / 10)}</span>
+              R{Math.ceil(draft.enginePickNumber / 10)} P{draft.enginePickNumber}
             </span>
           ) : (
             <span className="text-white/20 text-[11px] sm:text-sm">—</span>

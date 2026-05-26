@@ -609,6 +609,25 @@ export function useDraftingPageState() {
           }
         }
         setLiveDrafts(mapped);
+
+        // Cross-device leave sync: if the user left a draft on another
+        // device, their token list (from /owner/{wallet}/draftToken/all)
+        // no longer includes that draft, but this device's localStorage
+        // still does. Drop any stored draft whose id isn't in the live
+        // token set. Scoped to current wallet so we don't nuke another
+        // account's cached rows during a wallet switch. Skips `pending-*`
+        // placeholder ids (an in-flight join hasn't yielded a real id yet).
+        const validLeagueIds = new Set(activeTokens.map(t => t.leagueId));
+        const currentWalletLower = user!.walletAddress!.toLowerCase();
+        for (const stored of draftStore.getActiveDrafts()) {
+          if (!stored.id || stored.id.startsWith('pending-')) continue;
+          if (stored.specialType) continue; // queue drafts have their own lifecycle
+          const storedWallet = stored.liveWalletAddress?.toLowerCase();
+          if (!storedWallet || storedWallet !== currentWalletLower) continue;
+          if (!validLeagueIds.has(stored.id)) {
+            draftStore.removeDraft(stored.id);
+          }
+        }
       } catch (err) {
         console.error('[Drafting] Failed to load live drafts:', err);
       } finally {
@@ -619,8 +638,16 @@ export function useDraftingPageState() {
     };
 
     void loadLiveDrafts();
+    // Re-poll every 5s so a leave on another device clears this one within
+    // ~5s instead of needing a manual refresh. Also re-poll on tab focus —
+    // common case is user switches back from phone to laptop.
+    const interval = setInterval(() => { void loadLiveDrafts(); }, 5000);
+    const onFocus = () => { void loadLiveDrafts(); };
+    window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
     };
   }, [hiddenDraftIds, explicitlyClearedIds, isLive, user]);
 
