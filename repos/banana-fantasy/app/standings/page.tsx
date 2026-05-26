@@ -381,6 +381,7 @@ export default function StandingsPage() {
                       index={i}
                       nickname={nicknames[league.id]}
                       onRename={setNickname}
+                      walletAddress={user?.walletAddress}
                     />
                   ))}
                   {/* Pagination */}
