@@ -22,11 +22,14 @@ export function renderMessage(event: NotifEvent): RenderedMessage {
   const name = event.draftName?.trim() || '';
 
   if (event.type === 'draft.filled') {
+    // Fires the moment numPlayers hits 10 (see onDraftFilled in
+    // ~/sbs-staging-functions/functions/index.js) — i.e. when the draft
+    // *fills*, before the countdown + first pick. Copy reflects that.
+    // `url` deep-links into the specific draft room so tapping the
+    // notification takes the user straight to their draft.
     return {
-      title: '🍌 Your draft is starting!',
-      body: name
-        ? `${name} just filled — all 10 spots are in. Tap to join the draft.`
-        : 'Your draft just filled — all 10 spots are in. Tap to join.',
+      title: name ? `🍌 ${name} filled` : '🍌 Your draft filled',
+      body: 'Tap to join the draft.',
       url,
     };
   }

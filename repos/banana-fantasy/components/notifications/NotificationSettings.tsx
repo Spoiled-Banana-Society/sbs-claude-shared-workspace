@@ -122,7 +122,7 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
 
 const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   draftFilled: {
-    label: 'Draft starting',
+    label: 'Draft fills',
     tile: { Icon: IoAmericanFootball, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
   },
   pickFast: {
@@ -182,6 +182,15 @@ export function NotificationSettings() {
       const d = await res.json();
       setPrefs(d.prefs as Prefs);
       setEmailInput((d.prefs as Prefs).email || '');
+      // The GET endpoint audits OneSignal: if push was on in prefs but
+      // no device is actually subscribed, it auto-flips push off so the
+      // toggle reflects truth. Tell the user why their toggle just
+      // moved on its own — otherwise it looks like a bug.
+      if (d.pushAutoDisabled) {
+        setBanner(
+          'Push was on but isn’t actually delivering on any device for this wallet. Toggle it on again to re-subscribe — you’ll be asked to allow notifications.',
+        );
+      }
     } catch (err) {
       // Tell the user plainly, and surface it in the admin Logs tab.
       setBanner('Couldn’t load your notification settings — check your connection and reload.');
@@ -511,7 +520,7 @@ export function NotificationSettings() {
           margin-bottom to sit close to the section structure below. */}
       <header className="mb-3">
         <p className="whitespace-nowrap text-[12px] leading-snug tracking-tighter text-text-secondary sm:text-[13.5px] sm:tracking-normal">
-          Choose how you get notis when drafts fill and when it&apos;s your pick.
+          Choose how you get notis when a draft fills and when it&apos;s your pick.
         </p>
       </header>
 

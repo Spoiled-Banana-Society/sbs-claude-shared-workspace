@@ -4,6 +4,49 @@ import { getUserNotifPrefs, setUserNotifPrefs, unlinkChannel } from '@/lib/notif
 import type { ChannelId, EventPrefs } from '@/lib/notifications/types';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { logErrorEvent } from '@/lib/errorEvents';
+
+/**
+ * Audit OneSignal for any device tagged with the wallet that is actually
+ * subscribed (notification_types > 0, valid identifier). Returns the
+ * count — 0 means push wouldn't deliver anywhere even though the user
+ * may have `channels.push: true` saved from a stale toggle attempt.
+ *
+ * Used by GET to keep the toggle truthful across page reloads: if 0,
+ * we flip `channels.push: false` so the UI doesn't lie next time.
+ */
+async function countSubscribedPushDevices(wallet: string): Promise<{
+  configured: boolean;
+  count: number;
+}> {
+  const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+  const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+  if (!appId || !apiKey) return { configured: false, count: 0 };
+  try {
+    const res = await fetch(
+      `https://onesignal.com/api/v1/players?app_id=${appId}&limit=300`,
+      { headers: { Authorization: `Key ${apiKey}` } },
+    );
+    if (!res.ok) return { configured: true, count: 0 };
+    const body = (await res.json()) as {
+      players?: Array<{
+        notification_types?: number | null;
+        invalid_identifier?: boolean;
+        tags?: Record<string, string>;
+      }>;
+    };
+    const count = (body.players || []).filter(
+      (p) =>
+        (p.tags?.walletAddress || '').toLowerCase() === wallet &&
+        !p.invalid_identifier &&
+        (p.notification_types ?? 0) > 0,
+    ).length;
+    return { configured: true, count };
+  } catch {
+    // Fail open — don't flip the toggle just because OneSignal is slow.
+    return { configured: true, count: -1 };
+  }
+}
 
 const EDITABLE_CHANNELS: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
 const EDITABLE_EVENTS: (keyof EventPrefs)[] = ['draftFilled', 'pickSlow', 'pickFast'];
@@ -26,8 +69,34 @@ export async function GET(req: NextRequest) {
   const wallet = await authWallet(req);
   if (!wallet) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
-    const prefs = await getUserNotifPrefs(wallet);
-    return NextResponse.json({ ok: true, prefs });
+    let prefs = await getUserNotifPrefs(wallet);
+
+    // Auto-audit push: if the user has channels.push:true saved but
+    // OneSignal shows 0 subscribed devices tagged with this wallet, the
+    // toggle would lie ("Connected ✓") while every push silently hits
+    // recipients=0. Flip channels.push:false so the next page render
+    // shows the truth, and log it so admin can see the heal happened.
+    // count = -1 means OneSignal lookup itself failed — fail open
+    // (leave prefs alone) rather than disable push on a transient.
+    let pushAutoDisabled = false;
+    if (prefs.channels?.push === true) {
+      const audit = await countSubscribedPushDevices(wallet);
+      if (audit.configured && audit.count === 0) {
+        await setUserNotifPrefs(wallet, { channels: { push: false } });
+        prefs = await getUserNotifPrefs(wallet);
+        pushAutoDisabled = true;
+        logErrorEvent({
+          source: LOG_SOURCES.notifications.PUSH_ZERO_RECIPIENTS,
+          message:
+            'channels.push:true was set but OneSignal shows 0 subscribed devices for this wallet — auto-disabled push to keep the toggle truthful',
+          actor: wallet,
+          route: 'notifications/profile#GET',
+          context: { autoHealed: true },
+        });
+      }
+    }
+
+    return NextResponse.json({ ok: true, prefs, pushAutoDisabled });
   } catch (err) {
     // Surface in the admin Logs tab with the wallet attached, so a tester
     // who reports "my settings won't load" can be pinpointed.
