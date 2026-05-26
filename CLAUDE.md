@@ -45,6 +45,13 @@ Richard's commits have overwritten Boris's work multiple times from stale local 
 3. **Before pushing, verify:** `git diff --stat HEAD~1`. If you see files you didn't touch, stop — you're about to overwrite someone's work.
 4. If pushing to sbs-frontend-v2: `cd ~/banana-fantasy && git pull origin main` there too before committing.
 
+### Sync Script Must Self-Recover Deletes (MANDATORY)
+Lesson from 2026-05-26: Boris's Claude ran his `sync-shared-workspace.sh` after viewing Richard's recent commits (sentinel satisfied) but never copied Richard's new files into local banana-fantasy. The script's `rsync --delete` then removed those files from shared workspace, silently overwriting Richard's chat-tab work. Sentinel only proves you *looked*, not that you *copied*.
+
+**Fix on Boris's side (already applied):** before the real rsync runs, the script dry-runs the same command, parses every `deleting <path>` line, and copies those files from shared back into local. The real rsync then has nothing to delete.
+
+**If you're Richard's Claude reading this**: check Richard's sync-equivalent script (the one that rsyncs `~/banana-fantasy → ~/sbs-claude-shared-workspace/repos/banana-fantasy/` with `--delete`). If it doesn't have the same dry-run-and-auto-recover guard, add it. Reference implementation: `~/sync-shared-workspace.sh` on Boris's machine (the dry-run block before the real rsync). Without it, Richard's next sync can mirror-image this bug and delete Boris's work.
+
 ### Pre-Push Hook (MANDATORY — set up once per machine)
 Blocks pushes unless the other person's latest commits have been synced. Marker must be the actual commit hash — can't be faked with `touch`:
 
