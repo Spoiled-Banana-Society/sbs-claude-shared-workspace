@@ -238,7 +238,22 @@ export function useDraftLiveSync({
   }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, promoTypeParam, setDraftId]);
 
   const handleLiveDraft = useCallback((playerId: string) => {
+    // If airplane was on, the act of manually picking proves the user is
+    // back at the wheel — turn it off (client state + server preference)
+    // so the next pick isn't auto-stolen by the Cloud Task. Reset the
+    // 2-strike counter too so the user gets a fresh window before any
+    // future auto-enable.
+    const wasAirplane = engine.airplaneMode;
     engine.markManualPick();
+    if (wasAirplane) {
+      engine.setAirplaneMode(false);
+      engine.resetAirplaneTimeoutCounter();
+      if (isLiveMode && draftId) {
+        draftApi.patchDraftPreferences(draftId, walletParam, false).catch((e) => {
+          console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
+        });
+      }
+    }
     if (!isLiveMode) {
       engine.draftPlayer(playerId);
       return;

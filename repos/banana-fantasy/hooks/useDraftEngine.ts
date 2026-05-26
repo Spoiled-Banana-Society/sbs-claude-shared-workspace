@@ -770,6 +770,18 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     userPickedManuallyRef.current = true;
   }, []);
 
+  /**
+   * Reset the consecutive-timeout counter without altering airplane state
+   * or the manual-pick flag. Used when the live-mode toggle flips airplane
+   * off via setAirplaneMode directly (instead of toggleAirplaneMode, which
+   * resets the counter as a side effect). Without this, a user who hits
+   * the 2-strike auto-enable, then toggles off, would re-trigger airplane
+   * after a SINGLE further miss instead of the expected two.
+   */
+  const resetAirplaneTimeoutCounter = useCallback(() => {
+    consecutiveTimeoutsRef.current = 0;
+  }, []);
+
   /** Toggle airplane mode on/off. Turning off resets the consecutive timeout counter. */
   const toggleAirplaneMode = useCallback(() => {
     setAirplaneMode(prev => {
@@ -1005,6 +1017,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     autoPickSortPreference,
     setAutoPickSortPreference,
     markManualPick,
+    resetAirplaneTimeoutCounter,
     getAutoPickPlayer,
     consecutiveTimeouts: consecutiveTimeoutsRef.current,
   };

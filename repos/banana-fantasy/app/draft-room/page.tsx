@@ -904,6 +904,12 @@ function DraftRoomContent() {
     // pick landing.
     setAutoDraft(newValue);
     engine.setAirplaneMode(newValue);
+    // Toggling OFF clears the consecutive-timeout counter so a single
+    // subsequent miss can't immediately re-trigger airplane mode. Mirrors
+    // engine.toggleAirplaneMode's reset behavior — we use setAirplaneMode
+    // directly here to force a specific value (not flip), so the reset has
+    // to be explicit.
+    if (!newValue) engine.resetAirplaneTimeoutCounter();
     const id = getPersistId();
     if (id) localStorage.setItem(`airplane:${id}`, newValue ? '1' : '0');
 
