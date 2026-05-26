@@ -919,9 +919,15 @@ export function useDraftingPageState() {
 
             if (animStillRunning) {
               draftStore.updateDraft(draft.id, patch);
-            } else if (!fresh.randomizingStartedAt && !fresh.preSpinStartedAt) {
-              draftStore.updateDraft(draft.id, { ...patch, players: 10, randomizingStartedAt: nowMs });
             } else {
+              // Draft is actively drafting (pickNumber >= 1) and we don't have
+              // a still-running reveal animation in local state. Mark drafting
+              // directly and CLEAR any stale animation timestamps. The previous
+              // version kicked off a brand-new randomizingStartedAt here when
+              // the user exited a mid-draft and re-landed on /drafting — which
+              // made the lobby replay the slot-machine reveal for a draft that
+              // was already in round 2. Never replay; if you missed the reveal
+              // by being in the draft room, you missed it.
               draftStore.updateDraft(draft.id, {
                 ...patch,
                 status: 'drafting',
@@ -930,6 +936,7 @@ export function useDraftingPageState() {
                 type: fresh.type || fresh.draftType || null,
                 draftType: fresh.draftType || fresh.type || null,
                 randomizingStartedAt: undefined,
+                preSpinStartedAt: undefined,
               });
             }
           } else if (isFull) {
