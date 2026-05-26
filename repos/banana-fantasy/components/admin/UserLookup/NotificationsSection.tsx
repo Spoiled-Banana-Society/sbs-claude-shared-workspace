@@ -236,7 +236,101 @@ function DeliveryRow({ delivery }: { delivery: UserLookupNotificationDelivery })
           ⚠️ Push accepted by OneSignal but reached 0 subscribed devices.
         </p>
       )}
+      {delivery.pushStats && (
+        <PushDeliveryStats stats={delivery.pushStats} />
+      )}
+      {delivery.emailDelivery && (
+        <EmailDeliveryStatus delivery={delivery.emailDelivery} />
+      )}
     </li>
+  );
+}
+
+/**
+ * Real Postmark delivery outcome from the postmark-webhook receiver.
+ * Without this we'd only know "Postmark accepted" — which silently
+ * lies during sandbox mode or DKIM/SPF misconfiguration.
+ */
+function EmailDeliveryStatus({
+  delivery,
+}: {
+  delivery: NonNullable<UserLookupNotificationDelivery['emailDelivery']>;
+}) {
+  const tone =
+    delivery.status === 'delivered'
+      ? 'text-emerald-300'
+      : delivery.status === 'bounced'
+        ? 'text-red-300'
+        : delivery.status === 'spam'
+          ? 'text-amber-300'
+          : 'text-gray-400';
+  const icon =
+    delivery.status === 'delivered'
+      ? '✓'
+      : delivery.status === 'bounced'
+        ? '✗'
+        : delivery.status === 'spam'
+          ? '⚠'
+          : '·';
+  const label =
+    delivery.status === 'delivered'
+      ? 'delivered to inbox'
+      : delivery.status === 'bounced'
+        ? `bounced${delivery.bounceType ? ` (${delivery.bounceType})` : ''}`
+        : delivery.status === 'spam'
+          ? 'marked spam by recipient'
+          : delivery.recordType || 'unknown';
+  return (
+    <p
+      className={`mt-1 text-[10px] ${tone}`}
+      title={delivery.bounceDescription || `Postmark ${delivery.recordType || ''}`}
+    >
+      {icon} email: {label}
+    </p>
+  );
+}
+
+/**
+ * Real post-send OneSignal delivery stats. `recipients` from the send
+ * call only proves "OneSignal queued for N devices" — this row shows
+ * the real downstream outcome (delivered to device vs APNS/FCM dropped
+ * vs OneSignal-side error) fetched per row from /notifications/{id}.
+ */
+function PushDeliveryStats({
+  stats,
+}: {
+  stats: NonNullable<UserLookupNotificationDelivery['pushStats']>;
+}) {
+  const { successful, failed, errored, remaining } = stats;
+  const allSucceeded = successful > 0 && failed === 0 && errored === 0;
+  const partiallyFailed = successful > 0 && (failed > 0 || errored > 0);
+  const allFailed = successful === 0 && (failed > 0 || errored > 0);
+  const tone = allSucceeded
+    ? 'text-emerald-300'
+    : allFailed
+      ? 'text-red-300'
+      : partiallyFailed
+        ? 'text-amber-300'
+        : 'text-gray-400';
+  const icon = allSucceeded
+    ? '✓'
+    : allFailed
+      ? '✗'
+      : partiallyFailed
+        ? '⚠'
+        : '·';
+  const parts: string[] = [];
+  parts.push(`delivered ${successful}`);
+  if (failed > 0) parts.push(`APNS/FCM dropped ${failed}`);
+  if (errored > 0) parts.push(`errored ${errored}`);
+  if (remaining > 0) parts.push(`in flight ${remaining}`);
+  return (
+    <p
+      className={`mt-1 text-[10px] ${tone}`}
+      title="From OneSignal /notifications/{id} — real device-level outcome"
+    >
+      {icon} push delivery: {parts.join(' · ')}
+    </p>
   );
 }
 

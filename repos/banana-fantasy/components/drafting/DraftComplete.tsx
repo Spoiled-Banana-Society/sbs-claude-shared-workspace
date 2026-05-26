@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as draftStore from '@/lib/draftStore';
 import { logger } from '@/lib/logger';
-import { CardImage } from '@/components/draft/CardImage';
 
 interface DraftCompleteProps {
   draftId?: string;
@@ -150,7 +149,8 @@ export function DraftComplete({ draftId, generatedCardUrl: initialCardUrl, walle
         {cardUrl ? (
           <>
             <div className="absolute inset-0 rounded-xl blur-2xl opacity-50 bg-banana/40 animate-card-glow" />
-            <CardImage
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={cardUrl}
               alt="Generated Card"
               className="relative w-full h-full object-contain rounded-xl shadow-2xl border border-white/10 animate-card-in"

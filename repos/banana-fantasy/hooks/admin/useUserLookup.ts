@@ -54,6 +54,41 @@ export interface UserLookupNotificationDelivery {
   outcome: 'sent' | 'muted' | 'deduped' | 'failed';
   channels?: UserLookupNotificationDeliveryChannel[];
   timestamp: string;
+  /**
+   * Real post-send OneSignal delivery stats for this push (fetched
+   * lazily on read from /notifications/{id}). Undefined for non-push
+   * rows or when OneSignal can't find the notification.
+   *
+   * - `successful` — devices the push reached
+   * - `failed` — APNS / FCM rejected (dead tokens, etc.)
+   * - `errored` — OneSignal-side errors
+   * - `remaining` — still in flight (rare unless looked up immediately)
+   */
+  pushStats?: {
+    successful: number;
+    failed: number;
+    errored: number;
+    converted: number;
+    remaining: number;
+    completedAt: string | null;
+  };
+  /**
+   * Real post-send Postmark delivery status, populated by the
+   * /api/notifications/postmark-webhook receiver. Without it we only
+   * know "Postmark accepted the message" (which lies during sandbox
+   * mode or when SPF/DKIM is misconfigured). With it the admin row
+   * shows whether the email actually landed in the user's inbox,
+   * bounced, or was marked spam.
+   */
+  emailDelivery?: {
+    status: 'delivered' | 'bounced' | 'spam' | 'other';
+    recordType?: string;
+    receivedAt?: string;
+    recipient?: string;
+    bounceType?: string;
+    bounceDescription?: string;
+    complaintType?: string;
+  };
 }
 
 export interface UserLookupIdentity {

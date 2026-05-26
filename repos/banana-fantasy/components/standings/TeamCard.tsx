@@ -5,7 +5,6 @@ import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
 import type { ModalTab } from './LeagueDetailModal';
 import { FounderPill } from '@/components/drafting/FounderPill';
-import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
 
 interface TeamCardProps {
   league: League;
@@ -16,8 +15,6 @@ interface TeamCardProps {
   nickname?: string;
   /** Save handler — empty string clears the nickname. */
   onRename?: (leagueId: string, name: string) => Promise<void> | void;
-  /** Authenticated wallet — used to scope the chat unread badge. */
-  walletAddress?: string;
 }
 
 const typeConfig = {
@@ -84,8 +81,7 @@ function getPlaceBadge(place: number) {
   );
 }
 
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress }: TeamCardProps) {
-  const unreadCount = useUnreadChatCount(league.id, walletAddress);
+export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename }: TeamCardProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(nickname || '');
   useEffect(() => { setDraft(nickname || ''); }, [nickname]);
@@ -137,15 +133,6 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      ),
-    },
-    {
-      tab: 'chat',
-      label: 'Chat',
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       ),
     },
@@ -279,23 +266,15 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           )}
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             {actionButtons.map(({ tab, label, icon }) => (
               <button
                 key={tab}
                 onClick={() => onOpenModal(league, tab)}
-                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.06] text-white/50 hover:text-white/80 text-xs font-medium transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.10] border border-white/[0.06] text-white/50 hover:text-white/80 text-xs font-medium transition-colors"
               >
                 {icon}
                 {label}
-                {tab === 'chat' && unreadCount > 0 && (
-                  <span
-                    className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#ff3b30] text-white text-[10px] font-bold flex items-center justify-center shadow-md"
-                    aria-label={`${unreadCount} unread messages`}
-                  >
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
               </button>
             ))}
           </div>

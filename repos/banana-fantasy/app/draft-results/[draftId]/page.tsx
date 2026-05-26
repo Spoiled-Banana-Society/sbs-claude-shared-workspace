@@ -10,7 +10,6 @@ import { getDraftsApiUrl } from '@/lib/staging';
 import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { CardImage } from '@/components/draft/CardImage';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -550,9 +549,11 @@ export default function DraftResultsPage() {
         {/* NFT Card Image + Save */}
         {cardImageUrl && (
           <div className="text-center mb-6">
-            <CardImage
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={cardImageUrl}
-              className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl"
+              alt="Banana Best Ball Card"
+              className="block mx-auto w-[280px] md:w-[350px] rounded-xl"
             />
             <button
               onClick={handleSave}

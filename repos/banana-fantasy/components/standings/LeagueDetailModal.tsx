@@ -5,10 +5,8 @@ import { getDraftSummary, getDraftInfo, type ApiDraftPick } from '@/lib/api/draf
 import { getOwnerDraftTokens } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
 import type { League } from '@/types';
-import { LeagueChat } from '@/components/standings/LeagueChat';
-import { useAuth } from '@/hooks/useAuth';
 
-export type ModalTab = 'roster' | 'board' | 'standings' | 'team' | 'chat';
+export type ModalTab = 'roster' | 'board' | 'standings' | 'team';
 
 interface LeagueDetailModalProps {
   league: League;
@@ -98,7 +96,6 @@ const NUM_TEAMS = 10;
 const NUM_ROUNDS = 15;
 
 export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, onClose }: LeagueDetailModalProps) {
-  const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ModalTab>(initialTab);
   const [isClosing, setIsClosing] = useState(false);
   const config = typeConfig[league.type] || typeConfig.regular;
@@ -456,7 +453,6 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     { id: 'board', label: 'Board' },
     { id: 'standings', label: 'Standings' },
     { id: 'team', label: 'Team' },
-    { id: 'chat', label: 'Chat' },
   ];
 
   return (
@@ -992,17 +988,6 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                 </>
               )}
             </div>
-          )}
-
-          {/* CHAT TAB — keeps the draft-room conversation alive after the
-              draft completes. Same RTDB-backed messages as in the draft
-              room; unread badge on the TeamCard clears when this opens. */}
-          {activeTab === 'chat' && (
-            <LeagueChat
-              draftId={league.id}
-              walletAddress={walletAddress}
-              username={authUser?.username || walletAddress?.slice(0, 6)}
-            />
           )}
           </>
           )}

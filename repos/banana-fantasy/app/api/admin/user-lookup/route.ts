@@ -24,6 +24,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { fetchRecentDeliveries } from '@/lib/notifications/activityLog';
+import { fetchOneSignalNotificationStats } from '@/lib/notifications/onesignal';
 
 export const dynamic = 'force-dynamic';
 
@@ -746,8 +747,41 @@ export async function GET(req: Request) {
             updatedAt: null,
           };
     const push = pushRes.status === 'fulfilled' ? pushRes.value : null;
-    const recentDeliveries =
+    const rawDeliveries =
       deliveriesRes.status === 'fulfilled' ? deliveriesRes.value : [];
+
+    // For each delivery row, look up real OneSignal delivery stats per
+    // push notification id. Our send-time `recipients` count only says
+    // "OneSignal queued for N devices" — the actual successful/failed/
+    // errored counts come from /notifications/{id}, fetched lazily here
+    // so admin sees the truth without us needing to plumb webhooks.
+    // Cap the parallel lookups at the last 20 rows so a heavy-history
+    // wallet doesn't blow OneSignal's rate limit on every page load.
+    const recentDeliveries = await Promise.all(
+      rawDeliveries.map(async (d, idx) => {
+        if (idx >= 20) return d;
+        const pushChan = d.channels?.find((c) => c.channel === 'push');
+        const pushNotifId = pushChan?.providerId;
+        if (!pushNotifId) return d;
+        try {
+          const stats = await fetchOneSignalNotificationStats(pushNotifId);
+          if (!stats) return d;
+          return {
+            ...d,
+            pushStats: {
+              successful: stats.successful,
+              failed: stats.failed,
+              errored: stats.errored,
+              converted: stats.converted,
+              remaining: stats.remaining,
+              completedAt: stats.completedAt,
+            },
+          };
+        } catch {
+          return d;
+        }
+      }),
+    );
 
     const errors = errorsRes.status === 'fulfilled' ? errorsRes.value : [];
     // Drop errors older than 7 days (we over-fetch then trim).

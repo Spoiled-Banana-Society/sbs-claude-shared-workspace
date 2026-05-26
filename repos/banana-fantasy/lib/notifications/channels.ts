@@ -49,14 +49,21 @@ export const sendPush: ChannelSender = async (message, event, prefs) => {
     return skip('push', 'not configured');
   }
   try {
-    const recipients = await sendOneSignalPush({
+    const { notificationId, recipients } = await sendOneSignalPush({
       walletAddress: prefs.walletAddress,
       title: message.title,
       body: message.body,
       url: message.url,
       ttlSeconds: event.pickLengthSeconds ?? undefined,
     });
-    return { channel: 'push', status: 'sent', recipients };
+    // providerId is the OneSignal notification id — admin user-lookup
+    // uses it to fetch real delivery stats per push later.
+    return {
+      channel: 'push',
+      status: 'sent',
+      recipients,
+      providerId: notificationId ?? undefined,
+    };
   } catch (err) {
     return fail('push', errText(err));
   }
@@ -120,7 +127,19 @@ export const sendTelegram: ChannelSender = async (message, _event, prefs) => {
     if (!res.ok) {
       return fail('telegram', `Telegram ${res.status}: ${await res.text().catch(() => '')}`);
     }
-    return { channel: 'telegram', status: 'sent' };
+    // Capture Telegram's message_id as providerId so admin can trace a
+    // specific DM. Format: "<chat_id>:<message_id>" — both are needed
+    // to reconstruct a t.me link.
+    const tgBody = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      result?: { message_id?: number };
+    };
+    const messageId = tgBody.result?.message_id;
+    return {
+      channel: 'telegram',
+      status: 'sent',
+      providerId: messageId != null ? `${prefs.telegramChatId}:${messageId}` : undefined,
+    };
   } catch (err) {
     return fail('telegram', errText(err));
   }
@@ -161,7 +180,14 @@ export const sendDiscord: ChannelSender = async (message, _event, prefs) => {
     if (!msgRes.ok) {
       return fail('discord', `Discord DM send ${msgRes.status}: ${await msgRes.text().catch(() => '')}`);
     }
-    return { channel: 'discord', status: 'sent' };
+    // Capture Discord channel+message IDs as providerId — admin can
+    // jump straight to the DM in Discord with discord://discord.com/channels/@me/{channel}/{message}.
+    const msgBody = (await msgRes.json().catch(() => ({}))) as { id?: string };
+    return {
+      channel: 'discord',
+      status: 'sent',
+      providerId: msgBody.id ? `${dmChannelId}:${msgBody.id}` : undefined,
+    };
   } catch (err) {
     return fail('discord', errText(err));
   }

@@ -17,8 +17,18 @@ export interface OneSignalPushOptions {
   ttlSeconds?: number;
 }
 
+/** What `sendOneSignalPush` resolves to. */
+export interface OneSignalSendResult {
+  /** OneSignal notification id — pass to GET /api/v1/notifications/{id}
+   *  for actual delivery stats (successful / failed / errored counts).
+   *  null when the call short-circuited because no devices were tagged. */
+  notificationId: string | null;
+  /** Number of player IDs OneSignal accepted (lower bound on recipients). */
+  recipients: number;
+}
+
 /**
- * Send a OneSignal push; resolves to the recipient count.
+ * Send a OneSignal push; resolves to notification id + recipient count.
  *
  * Two-step delivery so v2 SDK subscriptions (which leave the legacy
  * `notification_types` field null on /players) still receive pushes:
@@ -36,7 +46,9 @@ export interface OneSignalPushOptions {
  * lookup finds zero tagged devices, return 0 — the dispatcher logs
  * PUSH_ZERO_RECIPIENTS for that case which is still the right signal.
  */
-export async function sendOneSignalPush(opts: OneSignalPushOptions): Promise<number> {
+export async function sendOneSignalPush(
+  opts: OneSignalPushOptions,
+): Promise<OneSignalSendResult> {
   const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
   const apiKey = process.env.ONESIGNAL_REST_API_KEY;
   if (!appId || !apiKey) throw new Error('OneSignal not configured');
@@ -68,7 +80,7 @@ export async function sendOneSignalPush(opts: OneSignalPushOptions): Promise<num
     )
     .map((p) => p.id as string);
 
-  if (playerIds.length === 0) return 0;
+  if (playerIds.length === 0) return { notificationId: null, recipients: 0 };
 
   // 2. Direct send to those player IDs.
   const res = await fetch('https://onesignal.com/api/v1/notifications', {
@@ -103,5 +115,62 @@ export async function sendOneSignalPush(opts: OneSignalPushOptions): Promise<num
     errors?: { invalid_player_ids?: string[]; invalid_external_user_ids?: string[] };
   };
   const invalidCount = result.errors?.invalid_player_ids?.length ?? 0;
-  return playerIds.length - invalidCount;
+  return {
+    notificationId: result.id ?? null,
+    recipients: playerIds.length - invalidCount,
+  };
+}
+
+/**
+ * Fetch delivery stats for a previously-sent OneSignal notification.
+ * Used by the admin user-lookup to show what actually happened after
+ * OneSignal accepted the send — `recipients` from the send call is only
+ * "OneSignal queued for N devices", whereas this returns the real
+ * downstream outcome (delivered to device, dropped by APNS/FCM, etc.).
+ *
+ * Returns null when OneSignal can't find the notification (id wrong,
+ * already purged) so the caller can render "stats unavailable" without
+ * crashing the panel.
+ */
+export interface OneSignalNotificationStats {
+  successful: number;
+  failed: number;
+  errored: number;
+  converted: number;
+  remaining: number;
+  completedAt: string | null;
+  queuedAt: string | null;
+}
+
+export async function fetchOneSignalNotificationStats(
+  notificationId: string,
+): Promise<OneSignalNotificationStats | null> {
+  const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
+  const apiKey = process.env.ONESIGNAL_REST_API_KEY;
+  if (!appId || !apiKey) return null;
+  const res = await fetch(
+    `https://onesignal.com/api/v1/notifications/${encodeURIComponent(notificationId)}?app_id=${appId}`,
+    { headers: { Authorization: `Key ${apiKey}` } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as {
+    successful?: number;
+    failed?: number;
+    errored?: number;
+    converted?: number;
+    remaining?: number;
+    completed_at?: number | null;
+    queued_at?: number | null;
+  };
+  const ts = (s: number | null | undefined) =>
+    s ? new Date(s * 1000).toISOString() : null;
+  return {
+    successful: data.successful ?? 0,
+    failed: data.failed ?? 0,
+    errored: data.errored ?? 0,
+    converted: data.converted ?? 0,
+    remaining: data.remaining ?? 0,
+    completedAt: ts(data.completed_at),
+    queuedAt: ts(data.queued_at),
+  };
 }
