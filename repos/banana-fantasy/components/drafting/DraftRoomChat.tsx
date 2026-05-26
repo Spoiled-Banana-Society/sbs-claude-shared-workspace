@@ -1,13 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserPopover } from '@/components/social/UserPopover';
 
 interface ChatMessage {
   id: string;
   sender: string;
   text: string;
-  walletAddress?: string;
   isYou: boolean;
   isSystem?: boolean;
   timestamp: number;
@@ -97,7 +95,6 @@ export function DraftRoomChat({
           id: r.id,
           sender: r.username || r.walletAddress.slice(0, 6),
           text: r.text,
-          walletAddress: r.walletAddress,
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
           timestamp: r.timestamp,
         }));
@@ -276,16 +273,9 @@ export function DraftRoomChat({
                   </div>
                 ) : (
                   <div className={`flex flex-col ${msg.isYou ? 'items-end' : 'items-start'}`}>
-                    {/* Show sender name only for first message in group from others.
-                        Clickable — opens UserPopover with friend actions. */}
+                    {/* Show sender name only for first message in group from others */}
                     {msg.isFirstInGroup && !msg.isYou && (
-                      msg.walletAddress ? (
-                        <UserPopover walletAddress={msg.walletAddress} username={msg.sender}>
-                          <span className="text-[10px] text-white/40 ml-3 mb-0.5 hover:text-white hover:underline cursor-pointer">{msg.sender}</span>
-                        </UserPopover>
-                      ) : (
-                        <span className="text-[10px] text-white/40 ml-3 mb-0.5">{msg.sender}</span>
-                      )
+                      <span className="text-[10px] text-white/40 ml-3 mb-0.5">{msg.sender}</span>
                     )}
                     <div
                       className={`

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { markChatRead } from '@/hooks/useUnreadChatCount';
-import { UserPopover } from '@/components/social/UserPopover';
 
 interface ChatMessage {
   id: string;
@@ -139,9 +138,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         {grouped.map((msg) => (
           <div key={msg.id} className={`flex flex-col ${msg.isYou ? 'items-end' : 'items-start'}`}>
             {msg.isFirstInGroup && !msg.isYou && (
-              <UserPopover walletAddress={msg.walletAddress} username={msg.sender}>
-                <span className="text-[10px] text-white/40 ml-3 mb-0.5 hover:text-white hover:underline cursor-pointer">{msg.sender}</span>
-              </UserPopover>
+              <span className="text-[10px] text-white/40 ml-3 mb-0.5">{msg.sender}</span>
             )}
             <div
               className={`

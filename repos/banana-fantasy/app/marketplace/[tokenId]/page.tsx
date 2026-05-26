@@ -15,7 +15,6 @@ import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
-import { UserPopover } from '@/components/social/UserPopover';
 import { logger } from '@/lib/logger';
 
 interface NftTrait {
@@ -817,16 +816,12 @@ export default function NftDetailPage() {
             {nftOwner && (
               <>
                 <span>&middot;</span>
-                <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
-                  <span className="inline-flex items-center gap-1.5 hover:underline cursor-pointer">
-                    {nft.ownerPfp ? (
-                      <Image src={nft.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
-                    ) : null}
-                    <span>
-                      Owner: {nft.ownerName || `${nftOwner.slice(0, 6)}...${nftOwner.slice(-4)}`}
-                    </span>
-                  </span>
-                </UserPopover>
+                {nft.ownerPfp ? (
+                  <Image src={nft.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
+                ) : null}
+                <span>
+                  Owner: {nft.ownerName || `${nftOwner.slice(0, 6)}...${nftOwner.slice(-4)}`}
+                </span>
               </>
             )}
           </div>

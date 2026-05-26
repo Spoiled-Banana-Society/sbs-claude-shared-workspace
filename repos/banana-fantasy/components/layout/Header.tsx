@@ -41,9 +41,6 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
     { href: '/leaderboard', label: 'Leaderboard', tooltip: 'Top players & teams', auth: false },
     { href: '/faq', label: 'FAQ', tooltip: 'Frequently asked questions', auth: false },
     { href: '/standings', label: 'Standings', tooltip: 'Check standings', auth: true },
-    { href: '/chat', label: 'Chat', tooltip: 'Community chat', auth: false },
-    { href: '/friends', label: 'Friends', tooltip: 'Manage friends', auth: true },
-    { href: '/messages', label: 'Messages', tooltip: 'Direct messages', auth: true },
     ...(isAdminWallet ? [{ href: '/admin', label: 'Admin', tooltip: 'Admin dashboard', auth: true }] : []),
   ].filter((item) => !item.auth || isLoading || isLoggedIn);
 
