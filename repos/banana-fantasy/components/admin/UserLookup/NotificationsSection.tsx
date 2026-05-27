@@ -247,9 +247,10 @@ function DeliveryRow({ delivery }: { delivery: UserLookupNotificationDelivery })
 }
 
 /**
- * Real Postmark delivery outcome from the postmark-webhook receiver.
- * Without this we'd only know "Postmark accepted" — which silently
- * lies during sandbox mode or DKIM/SPF misconfiguration.
+ * Real email-provider delivery outcome from the email-webhook receiver
+ * (Resend's email.delivered / email.bounced / email.complained events).
+ * Without this we'd only know "the provider accepted" — which lies
+ * when delivery later bounces, gets spam-flagged, or hits a quota.
  */
 function EmailDeliveryStatus({
   delivery,
@@ -283,7 +284,7 @@ function EmailDeliveryStatus({
   return (
     <p
       className={`mt-1 text-[10px] ${tone}`}
-      title={delivery.bounceDescription || `Postmark ${delivery.recordType || ''}`}
+      title={delivery.bounceDescription || `Email provider event: ${delivery.recordType || ''}`}
     >
       {icon} email: {label}
     </p>
