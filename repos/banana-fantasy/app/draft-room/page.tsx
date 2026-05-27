@@ -902,6 +902,78 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, defaultSortPreferenceLoaded, defaultSortPreference]);
 
+  // Re-sync server-authoritative preferences after each pick. Without this,
+  // autoDraft / missedPicksCount / engine.airplaneMode only load once on
+  // mount and immediately diverge from what the Go API is doing live —
+  // every pick the server may flip AutoDraft or increment
+  // NumPicksMissedConsecutive, and the client has no other path to see it.
+  //
+  // Concretely fixes three reports:
+  //   1. Position 1 needed 3 misses for airplane to turn on (counter race —
+  //      engine's lastPickRef gets set to 1 by initializeFromServer before
+  //      Firebase delivers pick #1, then the Firebase fire is rejected as
+  //      stale → engine counter never tracks pick #1. Server's counter is
+  //      always correct, mirroring it here closes the gap.)
+  //   2. Airplane icon shows the wrong state after manual pick / autopick
+  //      transitions — page-level autoDraft state was stuck at mount value.
+  //   3. "You missed N+ picks" text never updated past initial fetch.
+  //
+  // Pickup signal: engine.currentPickNumber changes after each Firebase
+  // pick. Skip while a user-initiated PATCH is in flight (autoDraftLoading)
+  // so we don't clobber an optimistic flip with stale server state.
+  useEffect(() => {
+    if (!isLiveMode || !draftId || !walletParam) return;
+    if (autoDraftLoading) return;
+    if (engine.draftStatus === 'completed') return;
+
+    let cancelled = false;
+    draftApi.getDraftPreferences(draftId, walletParam)
+      .then((prefs) => {
+        if (cancelled) return;
+        const serverMissed = prefs.numPicksMissedConsecutive || 0;
+
+        // Mirror server's authoritative counter into the engine so its own
+        // setAirplaneMode(true) trigger (counter >= 2 in processPick) stays
+        // aligned with what the server has decided. Without this the engine
+        // can flicker airplane on then off as we correct it from the server
+        // a beat later.
+        engine.setConsecutiveTimeouts(serverMissed);
+
+        if (autoDraft !== prefs.autoDraft) {
+          logger.info('[Airplane] setAirplaneMode — source=post-pick-prefs-sync', {
+            draftId,
+            wallet: walletParam,
+            serverValue: prefs.autoDraft,
+            clientValue: autoDraft,
+            serverMissedCount: serverMissed,
+            pickNum: engine.currentPickNumber,
+          });
+          setAutoDraft(prefs.autoDraft);
+          engine.setAirplaneMode(prefs.autoDraft);
+          const id = getPersistId();
+          if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
+        } else if (prefs.autoDraft !== engine.airplaneMode) {
+          // Page state and server agree but engine drifted — pull engine in.
+          logger.info('[Airplane] setAirplaneMode — source=post-pick-engine-realign', {
+            draftId,
+            wallet: walletParam,
+            serverValue: prefs.autoDraft,
+            engineValue: engine.airplaneMode,
+            pickNum: engine.currentPickNumber,
+          });
+          engine.setAirplaneMode(prefs.autoDraft);
+        }
+        setMissedPicksCount(serverMissed);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.warn('[Preferences] post-pick sync failed:', e);
+      });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine.currentPickNumber, isLiveMode, draftId, walletParam, autoDraftLoading]);
+
   const handleToggleAutoDraft = useCallback(async () => {
     if (!isLiveMode || !draftId || !walletParam || autoDraftLoading) return;
     const newValue = !autoDraft;
@@ -2124,9 +2196,17 @@ function DraftRoomContent() {
                 if (isLiveMode && draftId && walletParam) {
                   const id = getPersistId();
                   if (id) localStorage.setItem(`airplane:${id}`, '0');
-                  draftApi.patchDraftPreferences(draftId, walletParam, false).catch((e) => {
-                    console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
-                  });
+                  // Gate the post-pick sync effect while this PATCH is in
+                  // flight, so it can't fetch stale server state (still
+                  // autoDraft=true) and revert our optimistic flip.
+                  setAutoDraftLoading(true);
+                  draftApi.patchDraftPreferences(draftId, walletParam, false)
+                    .catch((e) => {
+                      console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
+                    })
+                    .finally(() => {
+                      setAutoDraftLoading(false);
+                    });
                 }
               }
               handleLiveDraft(playerId);

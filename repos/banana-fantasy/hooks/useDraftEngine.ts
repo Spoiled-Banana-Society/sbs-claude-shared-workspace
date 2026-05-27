@@ -791,6 +791,18 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     consecutiveTimeoutsRef.current = 0;
   }, []);
 
+  /**
+   * Mirror the server-authoritative consecutive-missed-pick counter into the
+   * engine. Called from page.tsx after each Firebase pick when GET preferences
+   * returns. The engine's own counter can race the server's around pick #1
+   * (initializeFromServer can set lastPickRef before Firebase delivers pick
+   * #1, so engine's counter never increments for it). Using the server's
+   * value as the source of truth eliminates that drift.
+   */
+  const setConsecutiveTimeouts = useCallback((n: number) => {
+    consecutiveTimeoutsRef.current = n;
+  }, []);
+
   /** Toggle airplane mode on/off. Turning off resets the consecutive timeout counter. */
   const toggleAirplaneMode = useCallback(() => {
     setAirplaneMode(prev => {
@@ -1027,6 +1039,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setAutoPickSortPreference,
     markManualPick,
     resetAirplaneTimeoutCounter,
+    setConsecutiveTimeouts,
     getAutoPickPlayer,
     consecutiveTimeouts: consecutiveTimeoutsRef.current,
   };
