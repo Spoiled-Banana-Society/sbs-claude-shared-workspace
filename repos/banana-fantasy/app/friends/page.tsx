@@ -1,11 +1,7 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { FriendsView } from '@/components/friends/FriendsView';
-
+// /friends is now part of /messages (the unified Messages hub). Permanent
+// redirect so any old bookmark or link still lands on the right place.
 export default function FriendsPage() {
-  return (
-    <main className="min-h-screen">
-      <FriendsView />
-    </main>
-  );
+  redirect('/messages?view=friends');
 }

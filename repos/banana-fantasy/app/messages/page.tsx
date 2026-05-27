@@ -1,13 +1,13 @@
 'use client';
 
 import { Suspense } from 'react';
-import { MessagesView } from '@/components/messages/MessagesView';
+import { MessagesHub } from '@/components/messages/MessagesHub';
 
 export default function MessagesPage() {
   return (
     <main className="min-h-screen">
       <Suspense fallback={null}>
-        <MessagesView />
+        <MessagesHub />
       </Suspense>
     </main>
   );

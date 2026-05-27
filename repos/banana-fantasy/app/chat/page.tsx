@@ -1,11 +1,7 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { GlobalChat } from '@/components/chat/GlobalChat';
-
+// /chat is now part of /messages (the unified Messages hub). Permanent
+// redirect so any old bookmark or link still lands on the right place.
 export default function ChatPage() {
-  return (
-    <main className="min-h-screen px-4 sm:px-6 py-6">
-      <GlobalChat />
-    </main>
-  );
+  redirect('/messages?view=general');
 }
