@@ -7,7 +7,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
 import { useFriends } from '@/hooks/useFriends';
 import { GlobalChat } from '@/components/chat/GlobalChat';
-import { DiscordGeneralChat } from '@/components/chat/DiscordGeneralChat';
 
 /**
  * Unified messages hub: #general chat + Friends + DMs + Requests in one page.
@@ -256,57 +255,6 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
   );
 }
 
-// ─── General channel (in-house vs Discord toggle) ───────────────────────────
-// Prototype: lets us compare the existing wallet-identity GlobalChat against
-// a Discord-backed embed (Widgetbot). Toggle state lives in localStorage so
-// it sticks across page loads while we're evaluating.
-
-function GeneralChannel({ onBack }: { onBack: () => void }) {
-  const [backend, setBackend] = useState<'inhouse' | 'discord'>('inhouse');
-
-  useEffect(() => {
-    const saved = (typeof window !== 'undefined' && window.localStorage.getItem('chat-backend')) as 'inhouse' | 'discord' | null;
-    if (saved === 'discord' || saved === 'inhouse') setBackend(saved);
-  }, []);
-
-  const setAndPersist = (next: 'inhouse' | 'discord') => {
-    setBackend(next);
-    try { window.localStorage.setItem('chat-backend', next); } catch { /* ignore */ }
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0">
-        <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        <h2 className="text-white font-semibold flex-1">#general</h2>
-        <div className="flex bg-white/[0.04] rounded-lg p-0.5">
-          <button
-            onClick={() => setAndPersist('inhouse')}
-            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${
-              backend === 'inhouse' ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
-            }`}
-          >
-            In-house
-          </button>
-          <button
-            onClick={() => setAndPersist('discord')}
-            className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${
-              backend === 'discord' ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
-            }`}
-          >
-            Discord
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-hidden">
-        {backend === 'inhouse' ? <GlobalChat /> : <DiscordGeneralChat />}
-      </div>
-    </div>
-  );
-}
-
 // ─── Friends pane ───────────────────────────────────────────────────────────
 
 function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => void; onBack: () => void }) {
@@ -470,7 +418,7 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
           className="w-full bg-[#1c1c1e] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-banana/50"
           maxLength={60}
         />
-        <p className="text-white/30 text-xs mt-2">Exact username or full wallet address.</p>
+        <p className="text-white/30 text-xs mt-2">Type a username (prefix matches) or paste a full wallet address.</p>
         {feedback && <p className="text-white/50 text-xs text-center mt-3">{feedback}</p>}
 
         <div className="mt-4 space-y-2">
@@ -694,7 +642,17 @@ export function MessagesHub() {
         {/* Main pane */}
         <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
           {view.kind === 'general' && (
-            <GeneralChannel onBack={() => navigate({ kind: 'general' })} />
+            <div className="flex flex-col h-full">
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
+                <button onClick={() => navigate({ kind: 'general' })} className="text-white/40 hover:text-white" aria-label="Back">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+                </button>
+                <h2 className="text-white font-semibold">#general</h2>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <GlobalChat />
+              </div>
+            </div>
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
           {view.kind === 'add-friend' && <AddFriendPane onBack={() => navigate({ kind: 'friends' })} />}

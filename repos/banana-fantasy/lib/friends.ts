@@ -231,8 +231,14 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
 }
 
 /**
- * Search users by exact username (case-insensitive) OR wallet address.
+ * Search users by username prefix (case-tolerant) OR exact wallet address.
  * Returns up to `limit` matches. Excludes the requesting wallet from results.
+ *
+ * Username prefix search uses Firestore's `>= q AND < q + ''` range
+ * trick. Firestore is case-sensitive on string ranges and we don't keep a
+ * denormalized lowercase field yet, so we run the range against a few
+ * common casings of the query (as-typed, lowercase, Title Case, UPPER) and
+ * merge — that covers "banana" finding "Banana #1234", "BananaKid", etc.
  */
 export async function searchUsers(query: string, requesterWallet: string, limit = 10): Promise<PublicUser[]> {
   const q = query.trim();
@@ -257,12 +263,19 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
     return out;
   }
 
-  // Username search — exact match (Firestore can't do case-insensitive natively
-  // without a denormalized lowercased field). Try a few common casings.
-  const candidates = [q, q.toLowerCase(), q.toUpperCase()];
-  for (const cand of new Set(candidates)) {
+  // Generate case-variant prefixes. Using a Set dedupes when the input is
+  // already in a given casing (e.g. "BANANA" makes upper === as-typed).
+  const titleCase = q.length > 0 ? q[0].toUpperCase() + q.slice(1).toLowerCase() : q;
+  const prefixes = Array.from(new Set([q, q.toLowerCase(), q.toUpperCase(), titleCase]));
+
+  //  is the highest Unicode private-use char — used as an upper bound
+  // sentinel to express "anything starting with this prefix".
+  const HIGH_SENTINEL = '';
+
+  await Promise.all(prefixes.map(async (prefix) => {
     const snap = await db.collection('v2_users')
-      .where('username', '==', cand)
+      .where('username', '>=', prefix)
+      .where('username', '<', prefix + HIGH_SENTINEL)
       .limit(limit)
       .get();
     snap.forEach((doc) => {
@@ -276,7 +289,9 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
         profilePicture: d.profilePicture,
       });
     });
-    if (out.length >= limit) break;
-  }
+  }));
+
+  // Stable order: shortest username first (best prefix matches), then alpha.
+  out.sort((a, b) => a.username.length - b.username.length || a.username.localeCompare(b.username));
   return out.slice(0, limit);
 }
