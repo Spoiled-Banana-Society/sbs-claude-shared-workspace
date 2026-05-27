@@ -207,6 +207,11 @@ export async function rejectOrRemove(myWallet: string, otherWallet: string): Pro
 /**
  * Batch-load public profile info for a list of wallets. Keys returned in the
  * Map are lowercased wallet addresses.
+ *
+ * Also lazily backfills `username_lower` on any doc that has `username` but
+ * is missing (or has a stale) lowercased copy. Cheap fire-and-forget write,
+ * makes the case-insensitive search converge to "works for everyone" the
+ * first time each user is touched.
  */
 export async function getPublicUsers(wallets: string[]): Promise<Map<string, PublicUser>> {
   const out = new Map<string, PublicUser>();
@@ -216,9 +221,10 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
   // since wallet === userId at v2_users.
   const refs = wallets.map((w) => db.collection('v2_users').doc(w.toLowerCase()));
   const snaps = await db.getAll(...refs);
+  const backfills: Array<Promise<unknown>> = [];
   for (const snap of snaps) {
     if (!snap.exists) continue;
-    const data = snap.data() as { walletAddress?: string; username?: string; profilePicture?: string } | undefined;
+    const data = snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string } | undefined;
     if (!data) continue;
     const w = (data.walletAddress || snap.id).toLowerCase();
     out.set(w, {
@@ -226,7 +232,13 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
       username: data.username || w.slice(0, 8),
       profilePicture: data.profilePicture,
     });
+    const expectedLower = data.username ? data.username.toLowerCase() : undefined;
+    if (expectedLower && data.username_lower !== expectedLower) {
+      backfills.push(snap.ref.set({ username_lower: expectedLower }, { merge: true }).catch(() => {}));
+    }
   }
+  // Don't await — page renders don't need to block on the backfill write.
+  if (backfills.length > 0) void Promise.all(backfills);
   return out;
 }
 
@@ -263,33 +275,49 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
     return out;
   }
 
-  // Generate case-variant prefixes. Using a Set dedupes when the input is
-  // already in a given casing (e.g. "BANANA" makes upper === as-typed).
+  // Fallback case variants for docs without username_lower yet.
   const titleCase = q.length > 0 ? q[0].toUpperCase() + q.slice(1).toLowerCase() : q;
   const prefixes = Array.from(new Set([q, q.toLowerCase(), q.toUpperCase(), titleCase]));
+  const qLower = q.toLowerCase();
 
   //  is the highest Unicode private-use char — used as an upper bound
   // sentinel to express "anything starting with this prefix".
   const HIGH_SENTINEL = '';
 
-  await Promise.all(prefixes.map(async (prefix) => {
-    const snap = await db.collection('v2_users')
+  const seen = new Set<string>();
+  const pushDoc = (doc: FirebaseFirestore.QueryDocumentSnapshot) => {
+    const d = doc.data() as { walletAddress?: string; username?: string; profilePicture?: string };
+    const wallet = (d.walletAddress || doc.id).toLowerCase();
+    if (wallet === requester || seen.has(wallet)) return;
+    seen.add(wallet);
+    out.push({
+      walletAddress: wallet,
+      username: d.username || wallet.slice(0, 8),
+      profilePicture: d.profilePicture,
+    });
+  };
+
+  // Primary: prefix range on username_lower (truly case-insensitive once
+  // the field is backfilled across all docs).
+  const primary = db.collection('v2_users')
+    .where('username_lower', '>=', qLower)
+    .where('username_lower', '<', qLower + HIGH_SENTINEL)
+    .limit(limit)
+    .get();
+
+  // Fallback: range on raw username across common casings, for docs that
+  // haven't been backfilled with username_lower yet.
+  const fallback = Promise.all(prefixes.map((prefix) =>
+    db.collection('v2_users')
       .where('username', '>=', prefix)
       .where('username', '<', prefix + HIGH_SENTINEL)
       .limit(limit)
-      .get();
-    snap.forEach((doc) => {
-      const d = doc.data() as { walletAddress?: string; username?: string; profilePicture?: string };
-      const wallet = (d.walletAddress || doc.id).toLowerCase();
-      if (wallet === requester) return;
-      if (out.some((u) => u.walletAddress === wallet)) return;
-      out.push({
-        walletAddress: wallet,
-        username: d.username || wallet.slice(0, 8),
-        profilePicture: d.profilePicture,
-      });
-    });
-  }));
+      .get()
+  ));
+
+  const [primarySnap, fallbackSnaps] = await Promise.all([primary, fallback]);
+  primarySnap.forEach(pushDoc);
+  fallbackSnaps.forEach((s) => s.forEach(pushDoc));
 
   // Stable order: shortest username first (best prefix matches), then alpha.
   out.sort((a, b) => a.username.length - b.username.length || a.username.localeCompare(b.username));

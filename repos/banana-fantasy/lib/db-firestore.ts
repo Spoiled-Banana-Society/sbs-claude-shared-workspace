@@ -192,7 +192,13 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   const seed = buildSeedUser(userId);
   const batch = db.batch();
 
-  batch.set(userRef, stripUndefined(seed.user));
+  // Denormalized lowercase username powers case-insensitive friend search.
+  // Keep this in sync at every write site that touches `username`.
+  const seedUserWithLower = {
+    ...seed.user,
+    username_lower: seed.user.username ? seed.user.username.toLowerCase() : undefined,
+  };
+  batch.set(userRef, stripUndefined(seedUserWithLower));
 
   for (const promo of seed.promos) {
     const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(promo.id);
