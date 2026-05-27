@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 
 export interface PublicUser {
@@ -54,15 +54,24 @@ export function useFriends(enabled: boolean): {
     finally { setLoading(false); }
   }, [enabled, authHeaders]);
 
+  // Ref the refresh function so the polling effect only re-runs when
+  // `enabled` actually flips — never on refresh's identity churn. Without
+  // this, Privy hook re-renders rebuild `refresh`, which would re-fire the
+  // effect (one immediate request per render) and amplify into a fetch
+  // storm if the parent re-renders frequently. See feedback memory:
+  // [[render-loop-self-ddos]].
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   useEffect(() => {
     if (!enabled) {
       setLoading(false);
       return;
     }
-    void refresh();
-    const id = setInterval(refresh, POLL_MS);
+    void refreshRef.current();
+    const id = setInterval(() => { void refreshRef.current(); }, POLL_MS);
     return () => clearInterval(id);
-  }, [enabled, refresh]);
+  }, [enabled]);
 
   const sendRequest = useCallback(async (targetWallet: string) => {
     try {

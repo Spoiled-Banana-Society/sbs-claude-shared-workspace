@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 
 export interface PublicUser {
@@ -81,12 +81,19 @@ export function useDmInbox(enabled: boolean): {
     finally { setLoading(false); }
   }, [enabled, headers]);
 
+  // Ref the refresh fn so the polling effect doesn't re-run every time
+  // Privy renders a new identity for headers/refresh. Without this, the
+  // effect fires an immediate request on every parent re-render — a fetch
+  // amplifier that can self-DDoS the site. See [[render-loop-self-ddos]].
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   useEffect(() => {
     if (!enabled) { setLoading(false); return; }
-    void refresh();
-    const id = setInterval(refresh, INBOX_POLL_MS);
+    void refreshRef.current();
+    const id = setInterval(() => { void refreshRef.current(); }, INBOX_POLL_MS);
     return () => clearInterval(id);
-  }, [enabled, refresh]);
+  }, [enabled]);
 
   const reject = useCallback(async (otherWallet: string) => {
     try {
@@ -146,6 +153,12 @@ export function useDmThread(otherWallet: string | null): {
     finally { setLoading(false); }
   }, [otherWallet, headers]);
 
+  // Same render-loop guard as useDmInbox. The 2s thread poll is the
+  // tightest loop in the app — without the ref, a re-rendering parent
+  // would fire many more requests than intended.
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   useEffect(() => {
     if (!otherWallet) {
       setMessages([]);
@@ -154,10 +167,10 @@ export function useDmThread(otherWallet: string | null): {
       return;
     }
     setLoading(true);
-    void refresh();
-    const id = setInterval(refresh, THREAD_POLL_MS);
+    void refreshRef.current();
+    const id = setInterval(() => { void refreshRef.current(); }, THREAD_POLL_MS);
     return () => clearInterval(id);
-  }, [otherWallet, refresh]);
+  }, [otherWallet]);
 
   const send = useCallback(async (text: string) => {
     if (!otherWallet) return { ok: false, error: 'no thread' };
@@ -246,10 +259,13 @@ export function useBlockedUsers(enabled: boolean): {
     finally { setLoading(false); }
   }, [enabled, headers]);
 
+  const refreshRef = useRef(refresh);
+  useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
   useEffect(() => {
     if (!enabled) { setLoading(false); return; }
-    void refresh();
-  }, [enabled, refresh]);
+    void refreshRef.current();
+  }, [enabled]);
 
   const unblock = useCallback(async (wallet: string) => {
     try {
