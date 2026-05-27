@@ -2,6 +2,48 @@
 
 Bridge between Boris and Richard. Both work on banana-fantasy from their own machines using personal branches to avoid conflicts. Keep this file tight — if something is resolved or lives in code, don't write it here.
 
+## ⚠️ RULE #0 — DO NOT SELF-DDOS THE STAGING SITE
+
+**Read this before writing any `useEffect` that contains a `fetch`.** Violating it took the entire staging site down on May 27, 2026 — Vercel's edge protection auto-tripped because a React render loop was hammering the API thousands of times per minute from one browser tab. Took ~hour to diagnose and recover. Affects ALL features (DMs, Promos, Drafting, login) because Vercel 403s the whole site at the edge.
+
+**The bug pattern that caused it:**
+```ts
+//  BROKEN — fetch fires on every parent re-render
+useEffect(() => {
+  void refresh();
+  setInterval(refresh, POLL_MS);
+}, [enabled, refresh]);  //  ← refresh derives from usePrivy() → unstable identity
+```
+
+**Why it self-DDoSes:** `usePrivy()` returns a new object identity on many renders. Any `useCallback` that depends on `privy` gets a new identity each render. Any effect that lists that callback in its deps re-fires on each render. Each fire = an immediate fetch. A frequently re-rendering parent = thousands of fetches/minute from one tab. Vercel's DDoS Mitigation sees this and 403s the whole project.
+
+**The fix — required pattern for any effect with a fetch:**
+```ts
+const fnRef = useRef(fn);
+useEffect(() => { fnRef.current = fn; }, [fn]);
+
+useEffect(() => {
+  if (!enabled) return;
+  void fnRef.current();
+  const id = setInterval(() => { void fnRef.current(); }, POLL_MS);
+  return () => clearInterval(id);
+}, [enabled]);  //  ← deps are SCALARS ONLY (enabled, otherWallet, query string)
+```
+
+**Three-question checklist before committing any `useEffect` with a `fetch`:**
+1. Does this effect call a function that does network I/O?
+2. Is that function in the effect's dep array?
+3. Does that function come from a hook that uses Privy / Auth / any context provider?
+
+**If all three are yes → fix it with the ref pattern above before committing.**
+
+**Related rules (also part of staying off Vercel's bot-detection radar):**
+- Cap deploys at **2–3 per hour** on this project. Bundle features into one commit when possible. Compounds the blast radius if a render-loop bug ships.
+- **Never burst-curl the live site** (`banana-fantasy-sbs.vercel.app`) during debugging. One HEAD/GET to verify a route exists is the max. Use `scripts/*.mjs` against the Firestore admin SDK for functional testing instead.
+- Treat "stuck Loading…" / "stuck Searching…" as a render-loop suspect FIRST, not a slow-network suspect. Open DevTools → Network and count requests/sec before chasing other theories.
+
+If the site is already 403'd at the edge: check Vercel team Firewall → Rules → DDoS Mitigation. If it's firing, add a System Bypass Rule for the user's IP OR wait ~30–60 min for the auto-mitigation cooldown, OR email Vercel support with the error ID for instant lift.
+
 ## Shared Workspace Sync (Read First)
 
 ### Branch Structure
