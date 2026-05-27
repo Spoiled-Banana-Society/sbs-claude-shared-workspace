@@ -238,22 +238,13 @@ export function useDraftLiveSync({
   }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, promoTypeParam, setDraftId]);
 
   const handleLiveDraft = useCallback((playerId: string) => {
-    // If airplane was on, the act of manually picking proves the user is
-    // back at the wheel — turn it off (client state + server preference)
-    // so the next pick isn't auto-stolen by the Cloud Task. Reset the
-    // 2-strike counter too so the user gets a fresh window before any
-    // future auto-enable.
-    const wasAirplane = engine.airplaneMode;
+    // Manual-pick / airplane auto-off side effects are handled at the
+    // page level (app/draft-room/page.tsx → onDraftPlayer prop) because
+    // the airplane icon in live mode reads from the page's `autoDraft`
+    // state, which this hook can't touch. Here we just mark the pick as
+    // manual so the engine's consecutive-timeout counter resets when the
+    // pick echoes back through Firebase.
     engine.markManualPick();
-    if (wasAirplane) {
-      engine.setAirplaneMode(false);
-      engine.resetAirplaneTimeoutCounter();
-      if (isLiveMode && draftId) {
-        draftApi.patchDraftPreferences(draftId, walletParam, false).catch((e) => {
-          console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
-        });
-      }
-    }
     if (!isLiveMode) {
       engine.draftPlayer(playerId);
       return;

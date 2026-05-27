@@ -2083,6 +2083,26 @@ function DraftRoomContent() {
                 return;
               }
               if (phase !== 'drafting') setPhase('drafting');
+              // If airplane mode is on and the user manually picks, take them
+              // out of airplane immediately — update the page-level autoDraft
+              // state (the source the airplane icon reads from in live mode,
+              // see line ~1835), the engine's state, the strike counter, AND
+              // the server preference. Done here at the page level because
+              // useDraftLiveSync doesn't have access to setAutoDraft, so its
+              // earlier auto-off attempt only flipped engine state and the
+              // icon stayed lit.
+              if (autoDraft) {
+                setAutoDraft(false);
+                engine.setAirplaneMode(false);
+                engine.resetAirplaneTimeoutCounter();
+                if (isLiveMode && draftId && walletParam) {
+                  const id = getPersistId();
+                  if (id) localStorage.setItem(`airplane:${id}`, '0');
+                  draftApi.patchDraftPreferences(draftId, walletParam, false).catch((e) => {
+                    console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
+                  });
+                }
+              }
               handleLiveDraft(playerId);
             }}
             onQueueSync={(queue) => {

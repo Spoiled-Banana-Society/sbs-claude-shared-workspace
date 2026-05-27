@@ -124,23 +124,24 @@ export function useRealTimeDraftInfo(
         setHasError(false);
         setData(value);
 
-        // Detect new picks by comparing against the tracked ref. The first
-        // snapshot we see initializes the ref without firing a detection —
-        // that snapshot represents the world as it already was when we
-        // mounted, not a new event. Every subsequent snapshot where
-        // pickNumber moves forward IS a new pick.
-        //
-        // Previously this guarded on `pickNumber > 1` instead, which silently
-        // dropped pick #1 entirely. For position-1 users (whose first pick
-        // IS pick #1), their first auto-pick never reached the engine's
-        // consecutive-timeout counter, so airplane-mode auto-enable fired
-        // one pick late.
+        // Fire detection any time we see a lastPick whose pickNumber is
+        // higher than what we've already reported (or it's the first one
+        // we've ever seen). Dedup against stale picks is handled by the
+        // engine's own lastPickRef — initialized from existing picks in
+        // initializeFromServer — so re-firing for a pick the engine has
+        // already processed is harmless. Critically: position-1 users get
+        // their first snapshot AFTER pick #1 has already happened (the
+        // server flips pickNumber to 2 in the same Firebase write that
+        // sets lastPick.pickNum=1). Any "skip the first snapshot" rule
+        // here loses that pick → their consecutive-timeout counter never
+        // ticks on their first miss → airplane-mode auto-enable fires
+        // one pick late. So always fire when we see a fresh lastPick.
         if (value.lastPick) {
           const currentPickNum = value.pickNumber;
-          if (lastPickNumberRef.current === null) {
-            // First snapshot — initialize tracking, do not fire detection.
-            lastPickNumberRef.current = currentPickNum;
-          } else if (currentPickNum > lastPickNumberRef.current) {
+          if (
+            lastPickNumberRef.current === null ||
+            currentPickNum > lastPickNumberRef.current
+          ) {
             logger.debug(
               '[Firebase RTDB] New pick detected: pickNumber',
               currentPickNum,
@@ -152,8 +153,8 @@ export function useRealTimeDraftInfo(
             lastPickNumberRef.current = currentPickNum;
           }
         } else if (lastPickNumberRef.current === null) {
-          // Snapshot has no lastPick yet (e.g., pre-draft). Initialize so
-          // the very first pick-bearing snapshot is treated as new.
+          // Pre-draft snapshot with no picks yet — track pickNumber so
+          // the first real pick is correctly identified as a forward step.
           lastPickNumberRef.current = value.pickNumber;
         }
       },
