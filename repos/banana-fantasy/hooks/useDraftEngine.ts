@@ -11,6 +11,8 @@ import {
 import type { PlayerData, DraftPick, PositionRoster } from '@/lib/draftRoomConstants';
 import type { RealTimeDraftInfo, LastPickInfo } from '@/hooks/useRealTimeDraftInfo';
 import { logger } from '@/lib/logger';
+import { reportClientEvent } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { DEFAULT_POSITION_LIMITS, type Position, type PositionLimits } from '@/lib/positionLimits';
 import { usePositionLimits } from '@/hooks/usePositionLimits';
 
@@ -509,6 +511,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       if (userPickedManuallyRef.current) {
         consecutiveTimeoutsRef.current = 0;
         logger.info('[Airplane] Manual pick — counter reset to 0', { pickNum: pickData.pickNum, wallet });
+        reportClientEvent({
+          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+          message: '[Airplane] manual pick — engine counter reset to 0',
+          route: 'useDraftEngine.processPick',
+          actor: wallet,
+          context: { event: 'manual_pick_counter_reset', pickNum: pickData.pickNum },
+        }, { skipThrottle: true });
       } else {
         consecutiveTimeoutsRef.current += 1;
         logger.info('[Airplane] Server auto-pick — counter incremented', {
@@ -516,12 +525,35 @@ export function useDraftEngine(mode: DraftMode = 'local') {
           pickNum: pickData.pickNum,
           wallet,
         });
+        reportClientEvent({
+          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+          message: `[Airplane] server auto-pick — engine counter ${consecutiveTimeoutsRef.current}`,
+          route: 'useDraftEngine.processPick',
+          actor: wallet,
+          context: {
+            event: 'autopick_counter_increment',
+            counter: consecutiveTimeoutsRef.current,
+            pickNum: pickData.pickNum,
+          },
+        }, { skipThrottle: true });
         if (consecutiveTimeoutsRef.current >= 2) {
           logger.info('[Airplane] setAirplaneMode(true) — source=consecutive-timeouts', {
             counter: consecutiveTimeoutsRef.current,
             pickNum: pickData.pickNum,
             wallet,
           });
+          reportClientEvent({
+            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+            message: '[Airplane] engine setAirplaneMode(true) via consecutive-timeouts',
+            route: 'useDraftEngine.processPick',
+            actor: wallet,
+            context: {
+              event: 'engine_set_airplane_true',
+              counter: consecutiveTimeoutsRef.current,
+              pickNum: pickData.pickNum,
+              trigger: 'consecutive-timeouts',
+            },
+          }, { skipThrottle: true });
           setAirplaneMode(true);
         }
       }

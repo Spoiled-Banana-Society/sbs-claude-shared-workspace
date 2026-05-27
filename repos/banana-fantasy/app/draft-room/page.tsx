@@ -14,7 +14,7 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { reportClientError } from '@/lib/clientErrors';
+import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
@@ -765,6 +765,12 @@ function DraftRoomContent() {
     const existing = draftStore.getDraft(id);
     if (existing && localStorage.getItem(`airplane:${id}`) === '1') {
       logger.info('[Airplane] setAirplaneMode(true) — source=localStorage-restore', { draftId: id });
+      reportClientEvent({
+        source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+        message: '[Airplane] setAirplaneMode(true) on mount — source=localStorage-restore',
+        route: 'draft-room.localstorage-effect',
+        context: { event: 'set_airplane_true', trigger: 'localStorage-restore', draftId: id },
+      }, { skipThrottle: true });
       engine.setAirplaneMode(true);
     } else {
       localStorage.removeItem(`airplane:${id}`);
@@ -883,6 +889,20 @@ function DraftRoomContent() {
             clientValue: engine.airplaneMode,
             serverMissedCount: prefs.numPicksMissedConsecutive,
           });
+          reportClientEvent({
+            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+            message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=initial-prefs-sync`,
+            route: 'draft-room.mount-prefs-effect',
+            actor: walletParam,
+            context: {
+              event: 'set_airplane',
+              trigger: 'initial-prefs-sync',
+              draftId,
+              serverValue: prefs.autoDraft,
+              clientValue: engine.airplaneMode,
+              serverMissedCount: prefs.numPicksMissedConsecutive,
+            },
+          }, { skipThrottle: true });
           engine.setAirplaneMode(prefs.autoDraft);
         }
       })
@@ -948,6 +968,21 @@ function DraftRoomContent() {
             serverMissedCount: serverMissed,
             pickNum: engine.currentPickNumber,
           });
+          reportClientEvent({
+            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+            message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=post-pick-prefs-sync`,
+            route: 'draft-room.post-pick-sync-effect',
+            actor: walletParam,
+            context: {
+              event: 'set_airplane',
+              trigger: 'post-pick-prefs-sync',
+              draftId,
+              serverValue: prefs.autoDraft,
+              clientValue: autoDraft,
+              serverMissedCount: serverMissed,
+              pickNum: engine.currentPickNumber,
+            },
+          }, { skipThrottle: true });
           setAutoDraft(prefs.autoDraft);
           engine.setAirplaneMode(prefs.autoDraft);
           const id = getPersistId();
@@ -961,8 +996,40 @@ function DraftRoomContent() {
             engineValue: engine.airplaneMode,
             pickNum: engine.currentPickNumber,
           });
+          reportClientEvent({
+            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+            message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=post-pick-engine-realign`,
+            route: 'draft-room.post-pick-sync-effect',
+            actor: walletParam,
+            context: {
+              event: 'set_airplane',
+              trigger: 'post-pick-engine-realign',
+              draftId,
+              serverValue: prefs.autoDraft,
+              engineValue: engine.airplaneMode,
+              pickNum: engine.currentPickNumber,
+            },
+          }, { skipThrottle: true });
           engine.setAirplaneMode(prefs.autoDraft);
         }
+        // Always log the pick-by-pick sync result for diagnostics, even
+        // when nothing flipped — gives us a complete server-truth trace.
+        reportClientEvent({
+          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+          message: `[Airplane] post-pick sync — server says autoDraft=${prefs.autoDraft}, missed=${serverMissed}`,
+          route: 'draft-room.post-pick-sync-effect',
+          actor: walletParam,
+          context: {
+            event: 'post_pick_sync_observed',
+            draftId,
+            pickNum: engine.currentPickNumber,
+            serverAutoDraft: prefs.autoDraft,
+            serverMissedCount: serverMissed,
+            clientAutoDraft: autoDraft,
+            engineAirplaneMode: engine.airplaneMode,
+            engineCounterBeforeSync: engine.consecutiveTimeouts,
+          },
+        }, { skipThrottle: true });
         setMissedPicksCount(serverMissed);
       })
       .catch((e) => {
@@ -988,6 +1055,19 @@ function DraftRoomContent() {
       newValue,
       counterBeforeReset: engine.consecutiveTimeouts,
     });
+    reportClientEvent({
+      source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+      message: `[Airplane] setAirplaneMode(${newValue}) — source=user-toggle`,
+      route: 'draft-room.handleToggleAutoDraft',
+      actor: walletParam,
+      context: {
+        event: 'set_airplane',
+        trigger: 'user-toggle',
+        draftId,
+        newValue,
+        counterBeforeReset: engine.consecutiveTimeouts,
+      },
+    }, { skipThrottle: true });
     setAutoDraft(newValue);
     engine.setAirplaneMode(newValue);
     // Toggling OFF clears the consecutive-timeout counter so a single
@@ -1011,6 +1091,20 @@ function DraftRoomContent() {
           serverValue: prefs.autoDraft,
           serverMissedCount: prefs.numPicksMissedConsecutive,
         });
+        reportClientEvent({
+          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+          message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=patch-reconcile-disagreement`,
+          route: 'draft-room.handleToggleAutoDraft',
+          actor: walletParam,
+          context: {
+            event: 'set_airplane',
+            trigger: 'patch-reconcile-disagreement',
+            draftId,
+            requestedValue: newValue,
+            serverValue: prefs.autoDraft,
+            serverMissedCount: prefs.numPicksMissedConsecutive,
+          },
+        }, { skipThrottle: true });
         setAutoDraft(prefs.autoDraft);
         engine.setAirplaneMode(prefs.autoDraft);
         if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
@@ -2190,6 +2284,18 @@ function DraftRoomContent() {
                   wallet: walletParam,
                   playerId,
                 });
+                reportClientEvent({
+                  source: LOG_SOURCES.draft.AIRPLANE_TRACE,
+                  message: '[Airplane] setAirplaneMode(false) — source=manual-pick-auto-off',
+                  route: 'draft-room.onDraftPlayer',
+                  actor: walletParam,
+                  context: {
+                    event: 'set_airplane',
+                    trigger: 'manual-pick-auto-off',
+                    draftId,
+                    playerId,
+                  },
+                }, { skipThrottle: true });
                 setAutoDraft(false);
                 engine.setAirplaneMode(false);
                 engine.resetAirplaneTimeoutCounter();

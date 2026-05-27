@@ -29,12 +29,38 @@ interface ClientErrorPayload {
 const lastFiredAt = new Map<string, number>();
 const THROTTLE_MS = 60_000;
 
+interface ReportOptions {
+  /**
+   * Bypass the 60s per-source throttle. Use ONLY for diagnostic state-
+   * change traces (e.g. airplane mode transitions) where every event
+   * matters. Errors should leave this false so we don't flood the log.
+   */
+  skipThrottle?: boolean;
+}
+
+export function reportClientEvent(payload: ClientErrorPayload, options: ReportOptions = {}): void {
+  if (typeof window === 'undefined') return;
+  if (!options.skipThrottle) {
+    const now = Date.now();
+    const last = lastFiredAt.get(payload.source) ?? 0;
+    if (now - last < THROTTLE_MS) return;
+    lastFiredAt.set(payload.source, now);
+  }
+
+  postEvent(payload);
+}
+
 export function reportClientError(payload: ClientErrorPayload): void {
   if (typeof window === 'undefined') return;
   const now = Date.now();
   const last = lastFiredAt.get(payload.source) ?? 0;
   if (now - last < THROTTLE_MS) return;
   lastFiredAt.set(payload.source, now);
+
+  postEvent(payload);
+}
+
+function postEvent(payload: ClientErrorPayload): void {
 
   // Auto-attach the debug session id (links to the breadcrumb trace)
   // and the logged-in wallet as `actor` (so every error shows which
