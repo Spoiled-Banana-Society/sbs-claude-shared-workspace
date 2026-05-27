@@ -40,7 +40,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     { href: '/leaderboard', label: 'Leaderboard', tooltip: 'Top players & teams', auth: false },
     { href: '/faq', label: 'FAQ', tooltip: 'Frequently asked questions', auth: false },
-    { href: '/standings', label: 'Standings', tooltip: 'Check standings', auth: true },
+    { href: '/standings', label: 'My Teams', tooltip: 'Your drafted teams', auth: true },
     ...(isAdminWallet ? [{ href: '/admin', label: 'Admin', tooltip: 'Admin dashboard', auth: true }] : []),
   ].filter((item) => !item.auth || isLoading || isLoggedIn);
 

@@ -198,7 +198,9 @@ export default function StandingsPage() {
       {/* Page header with toggle + gameweek selector */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Standings</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+            {isLoggedIn && viewMode === 'myteams' ? 'My Teams' : 'Standings'}
+          </h1>
           <p className="text-white/40 text-sm">
             {isLoggedIn ? 'Track your teams and league performance' : 'View the global leaderboard'}
           </p>
@@ -421,7 +423,7 @@ export default function StandingsPage() {
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center mb-8">
               <div className="text-4xl mb-4">🏈</div>
               <p className="text-white/50 font-medium mb-2">No teams yet</p>
-              <p className="text-white/30 text-sm mb-6">Draft to get started!</p>
+              <p className="text-white/30 text-sm mb-6">Your drafted teams will show here.</p>
               <a
                 href="/"
                 className="inline-block px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:bg-banana-dark transition-colors"

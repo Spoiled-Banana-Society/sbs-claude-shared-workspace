@@ -592,7 +592,7 @@ export default function ExposurePage() {
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center">
           <div className="text-4xl mb-4">&#x1F4CA;</div>
           <p className="text-white/50 font-medium mb-2">No exposure data yet</p>
-          <p className="text-white/30 text-sm mb-6">Complete a draft to start tracking your portfolio.</p>
+          <p className="text-white/30 text-sm mb-6">Your exposures from your drafted teams will show here.</p>
           <a
             href="/drafting"
             className="inline-block px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:bg-banana-dark transition-colors"
