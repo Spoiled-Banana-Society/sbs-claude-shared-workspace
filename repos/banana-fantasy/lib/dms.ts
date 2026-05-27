@@ -215,6 +215,26 @@ export async function markThreadRead(walletAddress: string, otherWallet: string)
   }, { merge: true });
 }
 
+/**
+ * Reject a pending DM request (recipient deletes the unread request).
+ * Only the recipient of a pending thread can call this — the originator
+ * gets a 403. Removes the Firestore doc and the RTDB messages.
+ */
+export async function rejectThread(rejectorWallet: string, otherWallet: string): Promise<void> {
+  const rejector = rejectorWallet.toLowerCase();
+  const ref = threadDocRef(rejector, otherWallet);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const d = snap.data() as Partial<DmThread>;
+  if (d.status === 'accepted') throw new Error('cannot reject an accepted thread');
+  if (d.startedBy === rejector) throw new Error('only the recipient can reject');
+  const tid = threadId(rejector, otherWallet);
+  await Promise.all([
+    ref.delete(),
+    messagesRef(tid).remove().catch(() => {}),
+  ]);
+}
+
 // ─── Messages ───────────────────────────────────────────────────────────────
 
 export async function listMessages(tid: string): Promise<DmMessage[]> {

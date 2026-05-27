@@ -7,6 +7,7 @@ export interface PublicUser {
   walletAddress: string;
   username: string;
   profilePicture?: string;
+  equippedBadge?: string | null;
 }
 
 export interface DmThreadView {
@@ -58,6 +59,7 @@ export function useDmInbox(enabled: boolean): {
   inbox: DmInbox;
   loading: boolean;
   refresh: () => Promise<void>;
+  reject: (otherWallet: string) => Promise<{ ok: boolean; error?: string }>;
 } {
   const headers = useAuthHeaders();
   const [inbox, setInbox] = useState<DmInbox>({ messages: [], requests: [], sent: [] });
@@ -86,7 +88,20 @@ export function useDmInbox(enabled: boolean): {
     return () => clearInterval(id);
   }, [enabled, refresh]);
 
-  return { inbox, loading, refresh };
+  const reject = useCallback(async (otherWallet: string) => {
+    try {
+      const h = await headers();
+      const res = await fetch(`/api/dms/${encodeURIComponent(otherWallet)}`, { method: 'DELETE', headers: h });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: json.error || `error ${res.status}` };
+      await refresh();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'failed' };
+    }
+  }, [headers, refresh]);
+
+  return { inbox, loading, refresh, reject };
 }
 
 /**

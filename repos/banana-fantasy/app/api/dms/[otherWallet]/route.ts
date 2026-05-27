@@ -18,6 +18,7 @@ import {
   listMessages,
   markThreadRead,
   permissionFor,
+  rejectThread,
   sendMessage,
   threadId,
 } from '@/lib/dms';
@@ -113,6 +114,38 @@ export async function POST(
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';
     const status = /pending|self|empty|blocked/.test(msg) ? 400 : 500;
+    return NextResponse.json({ error: msg }, { status });
+  }
+}
+
+/**
+ * DELETE /api/dms/{otherWallet} — recipient rejects a pending DM request.
+ * Only valid on pending threads where the caller is the recipient.
+ */
+export async function DELETE(
+  req: Request,
+  { params }: { params: { otherWallet: string } },
+) {
+  let user: { userId: string; walletAddress: string | null };
+  try {
+    user = await getPrivyUser(req);
+  } catch (err) {
+    if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  if (!user.walletAddress) return NextResponse.json({ error: 'wallet required' }, { status: 400 });
+
+  const otherWallet = params.otherWallet;
+  if (!WALLET_RE.test(otherWallet)) {
+    return NextResponse.json({ error: 'invalid otherWallet' }, { status: 400 });
+  }
+
+  try {
+    await rejectThread(user.walletAddress, otherWallet);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'failed';
+    const status = /recipient|accepted/.test(msg) ? 403 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
 }

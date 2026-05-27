@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
 import { GlobalChat } from '@/components/chat/GlobalChat';
 
@@ -16,7 +17,6 @@ import { GlobalChat } from '@/components/chat/GlobalChat';
  *   ?view=friends              → friends panel
  *   ?view=requests             → pending DM requests
  *   ?view=dm&with=0x…          → individual thread
- *   ?view=add-friend           → friend search
  *
  * On mobile, sidebar and main pane toggle: a selection hides the sidebar; the
  * back arrow returns to it.
@@ -26,7 +26,6 @@ type View =
   | { kind: 'general' }
   | { kind: 'friends' }
   | { kind: 'requests' }
-  | { kind: 'add-friend' }
   | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
 
@@ -35,16 +34,15 @@ function shortWallet(w: string): string {
 }
 
 function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' }) {
-  const px = size === 'sm' ? 'w-8 h-8' : 'w-10 h-10';
-  if (user.profilePicture) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={user.profilePicture} alt={user.username} className={`${px} rounded-full object-cover bg-white/5 border border-white/10 flex-shrink-0`} />;
-  }
-  const initial = (user.username || user.walletAddress).slice(0, 1).toUpperCase();
+  const px = size === 'sm' ? 32 : 40;
   return (
-    <div className={`${px} rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-sm`}>
-      {initial}
-    </div>
+    <AvatarWithBadge
+      imageUrl={user.profilePicture}
+      alt={user.username}
+      size={px}
+      equippedBadge={user.equippedBadge ?? null}
+      useNextImage={false}
+    />
   );
 }
 
@@ -255,138 +253,21 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
   );
 }
 
-// ─── Friends pane ───────────────────────────────────────────────────────────
+// ─── Friends pane (merged: search at top, friends list below) ───────────────
 
 function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => void; onBack: () => void }) {
   const { user, isLoggedIn } = useAuth();
+  const myWallet = (user?.walletAddress || '').toLowerCase();
   const enabled = !!user?.walletAddress && isLoggedIn;
-  const { data, loading, accept, remove } = useFriends(enabled);
+  const { data, loading, accept, remove, sendRequest, search } = useFriends(enabled);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  const flash = (text: string) => {
-    setFeedback(text);
-    setTimeout(() => setFeedback(null), 2000);
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0">
-        <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        <h2 className="text-white text-lg font-semibold flex-1">Friends</h2>
-        <span className="text-white/40 text-xs">{data.friends.length} friend{data.friends.length === 1 ? '' : 's'}</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-3 py-3">
-        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
-
-        {/* Incoming requests */}
-        {data.incoming.length > 0 && (
-          <section className="mb-4">
-            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Incoming requests</p>
-            <div className="space-y-1">
-              {data.incoming.map((u) => (
-                <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <Avatar user={u} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                    <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
-                  </div>
-                  <button
-                    onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }}
-                    className="px-2.5 py-1 rounded-md bg-banana text-black text-xs font-bold hover:bg-banana-light"
-                  >
-                    Accept
-                  </button>
-                  <button
-                    onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Rejected' : r.error || 'Failed'); }}
-                    className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
-                  >
-                    Reject
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Outgoing requests */}
-        {data.outgoing.length > 0 && (
-          <section className="mb-4">
-            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Sent</p>
-            <div className="space-y-1">
-              {data.outgoing.map((u) => (
-                <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                  <Avatar user={u} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                    <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
-                  </div>
-                  <button
-                    onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Cancelled' : r.error || 'Failed'); }}
-                    className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Friends */}
-        <section>
-          <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">All friends</p>
-          {loading && data.friends.length === 0 && <p className="text-white/30 text-xs text-center py-6">Loading…</p>}
-          {!loading && data.friends.length === 0 && <p className="text-white/30 text-xs text-center py-6">No friends yet. Use Add Friend in the sidebar.</p>}
-          <div className="space-y-1">
-            {data.friends.map((u) => (
-              <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
-                <Avatar user={u} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                  <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
-                </div>
-                <button
-                  onClick={() => onSelectDm(u.walletAddress)}
-                  className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs"
-                >
-                  Message
-                </button>
-                <button
-                  onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Unfriended' : r.error || 'Failed'); }}
-                  className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-// ─── Add-friend pane ────────────────────────────────────────────────────────
-
-function AddFriendPane({ onBack }: { onBack: () => void }) {
-  const { user } = useAuth();
-  const myWallet = (user?.walletAddress || '').toLowerCase();
-  const { data, sendRequest, accept, search } = useFriends(true);
+  // Search state — merged from the old Add Friend pane.
   const [q, setQ] = useState('');
   const [results, setResults] = useState<PublicUser[]>([]);
   const [searching, setSearching] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  // Capture `search` in a ref so the debounce effect doesn't re-run every
-  // time `usePrivy()` rerenders. Without this, the 300ms timer keeps
-  // getting cancelled and restarted on Privy churn — the fetch never fires
-  // and the UI is stuck on "Searching…".
   const searchRef = useRef(search);
   useEffect(() => { searchRef.current = search; }, [search]);
-
   useEffect(() => {
     if (!q.trim()) { setResults([]); setSearching(false); return; }
     let cancelled = false;
@@ -398,6 +279,11 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
     return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
 
+  const flash = (text: string) => {
+    setFeedback(text);
+    setTimeout(() => setFeedback(null), 2000);
+  };
+
   const stateFor = (wallet: string): 'friend' | 'incoming' | 'outgoing' | 'none' => {
     const w = wallet.toLowerCase();
     if (data.friends.some((u) => u.walletAddress.toLowerCase() === w)) return 'friend';
@@ -406,7 +292,7 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
     return 'none';
   };
 
-  const flash = (text: string) => { setFeedback(text); setTimeout(() => setFeedback(null), 2000); };
+  const isSearching = q.trim().length > 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -414,51 +300,153 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
         <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
         </button>
-        <h2 className="text-white text-lg font-semibold flex-1">Add Friend</h2>
+        <h2 className="text-white text-lg font-semibold flex-1">Friends</h2>
+        <span className="text-white/40 text-xs">{data.friends.length} friend{data.friends.length === 1 ? '' : 's'}</span>
       </div>
-      <div className="px-4 py-4 flex-1 overflow-y-auto">
+
+      {/* Search bar at the top — replaces the old Add Friend pane. */}
+      <div className="px-4 pt-4 pb-2 flex-shrink-0">
         <input
           type="text"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by username or wallet (0x…)"
+          placeholder="Add a friend — search username or paste wallet (0x…)"
           className="w-full bg-[#1c1c1e] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-banana/50"
           maxLength={60}
         />
-        <p className="text-white/30 text-xs mt-2">Type a username (prefix matches) or paste a full wallet address.</p>
-        {feedback && <p className="text-white/50 text-xs text-center mt-3">{feedback}</p>}
+      </div>
 
-        <div className="mt-4 space-y-2">
-          {searching && <p className="text-white/30 text-sm text-center py-4">Searching…</p>}
-          {!searching && q.trim() && results.length === 0 && <p className="text-white/30 text-sm text-center py-4">No users found.</p>}
-          {results.map((u) => {
-            const state = stateFor(u.walletAddress);
-            let action: React.ReactNode = null;
-            if (u.walletAddress.toLowerCase() === myWallet) action = <span className="text-white/30 text-xs px-3 py-1.5">That&apos;s you</span>;
-            else if (state === 'friend') action = <span className="text-green-400 text-xs px-3 py-1.5">Friends</span>;
-            else if (state === 'incoming') action = (
-              <button onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Accept</button>
-            );
-            else if (state === 'outgoing') action = <span className="text-white/40 text-xs px-3 py-1.5">Requested</span>;
-            else action = (
-              <button onClick={async () => { const r = await sendRequest(u.walletAddress); flash(r.ok ? 'Request sent' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Add Friend</button>
-            );
-            return (
-              <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
-                <Avatar user={u} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                  <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
+
+        {/* Search results — only shown while typing. */}
+        {isSearching && (
+          <section className="mb-4">
+            <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Search results</p>
+            {searching && <p className="text-white/30 text-sm text-center py-4">Searching…</p>}
+            {!searching && results.length === 0 && <p className="text-white/30 text-sm text-center py-4">No users found.</p>}
+            <div className="space-y-1">
+              {results.map((u) => {
+                const state = stateFor(u.walletAddress);
+                let action: React.ReactNode = null;
+                if (u.walletAddress.toLowerCase() === myWallet) action = <span className="text-white/30 text-xs px-3 py-1.5">That&apos;s you</span>;
+                else if (state === 'friend') action = <span className="text-green-400 text-xs px-3 py-1.5">Friends</span>;
+                else if (state === 'incoming') action = (
+                  <button onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Accept</button>
+                );
+                else if (state === 'outgoing') action = <span className="text-white/40 text-xs px-3 py-1.5">Requested</span>;
+                else action = (
+                  <button onClick={async () => { const r = await sendRequest(u.walletAddress); flash(r.ok ? 'Request sent' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Add Friend</button>
+                );
+                return (
+                  <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                    <Avatar user={u} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                    </div>
+                    {action}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Hide the friends sections while searching to keep focus on results. */}
+        {!isSearching && (
+          <>
+            {/* Incoming requests */}
+            {data.incoming.length > 0 && (
+              <section className="mb-4">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Incoming requests</p>
+                <div className="space-y-1">
+                  {data.incoming.map((u) => (
+                    <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                      <Avatar user={u} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      </div>
+                      <button
+                        onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }}
+                        className="px-2.5 py-1 rounded-md bg-banana text-black text-xs font-bold hover:bg-banana-light"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Rejected' : r.error || 'Failed'); }}
+                        className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                {action}
+              </section>
+            )}
+
+            {/* Outgoing requests */}
+            {data.outgoing.length > 0 && (
+              <section className="mb-4">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Sent</p>
+                <div className="space-y-1">
+                  {data.outgoing.map((u) => (
+                    <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                      <Avatar user={u} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      </div>
+                      <button
+                        onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Cancelled' : r.error || 'Failed'); }}
+                        className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Friends */}
+            <section>
+              <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">All friends</p>
+              {loading && data.friends.length === 0 && <p className="text-white/30 text-xs text-center py-6">Loading…</p>}
+              {!loading && data.friends.length === 0 && <p className="text-white/30 text-xs text-center py-6">No friends yet. Search above to find someone.</p>}
+              <div className="space-y-1">
+                {data.friends.map((u) => (
+                  <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
+                    <Avatar user={u} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                    </div>
+                    <button
+                      onClick={() => onSelectDm(u.walletAddress)}
+                      className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs"
+                    >
+                      Message
+                    </button>
+                    <button
+                      onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Unfriended' : r.error || 'Failed'); }}
+                      className="px-2.5 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
               </div>
-            );
-          })}
-        </div>
+            </section>
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+// ─── (Old Add-friend pane removed — search lives at the top of Friends) ─────
 
 // ─── Blocked-users pane ─────────────────────────────────────────────────────
 
@@ -543,7 +531,7 @@ export function MessagesHub() {
   const searchParams = useSearchParams();
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
-  const { inbox, loading } = useDmInbox(enabled);
+  const { inbox, loading, reject: rejectDmRequest } = useDmInbox(enabled);
   const { data: friendsData } = useFriends(enabled);
   const privy = usePrivy();
 
@@ -552,7 +540,7 @@ export function MessagesHub() {
     const w = searchParams?.get('with') || '';
     if (v === 'friends') return { kind: 'friends' };
     if (v === 'requests') return { kind: 'requests' };
-    if (v === 'add-friend') return { kind: 'add-friend' };
+    if (v === 'add-friend') return { kind: 'friends' };
     if (v === 'blocked') return { kind: 'blocked' };
     if (v === 'general') return { kind: 'general' };
     if (w) return { kind: 'dm', wallet: w };
@@ -569,7 +557,7 @@ export function MessagesHub() {
     const fromUrl: View = (() => {
       if (v === 'friends') return { kind: 'friends' };
       if (v === 'requests') return { kind: 'requests' };
-      if (v === 'add-friend') return { kind: 'add-friend' };
+      if (v === 'add-friend') return { kind: 'friends' };
       if (v === 'blocked') return { kind: 'blocked' };
       if (v === 'general') return { kind: 'general' };
       if (w) return { kind: 'dm', wallet: w };
@@ -585,7 +573,6 @@ export function MessagesHub() {
     if (next.kind === 'general') url = '/messages?view=general';
     else if (next.kind === 'friends') url = '/messages?view=friends';
     else if (next.kind === 'requests') url = '/messages?view=requests';
-    else if (next.kind === 'add-friend') url = '/messages?view=add-friend';
     else if (next.kind === 'blocked') url = '/messages?view=blocked';
     else if (next.kind === 'dm') url = `/messages?with=${encodeURIComponent(next.wallet)}`;
     router.replace(url, { scroll: false });
@@ -624,7 +611,7 @@ export function MessagesHub() {
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-4 py-4">
       <div className="h-full flex bg-[#0f0f12] border border-white/[0.06] rounded-2xl overflow-hidden">
         {/* Sidebar */}
-        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
           <SidebarContent
             view={view}
             inbox={inbox}
@@ -651,7 +638,7 @@ export function MessagesHub() {
         )}
 
         {/* Main pane */}
-        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
+        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
           {view.kind === 'general' && (
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
@@ -666,10 +653,9 @@ export function MessagesHub() {
             </div>
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'add-friend' && <AddFriendPane onBack={() => navigate({ kind: 'friends' })} />}
           {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} />}
           {view.kind === 'requests' && (
-            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />
+            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
           )}
           {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} />}
         </main>
@@ -726,11 +712,6 @@ function SidebarContent({
             badge={friendRequestCount}
             active={isActive('friends')}
             onClick={() => onNavigate({ kind: 'friends' })}
-          />
-          <SidebarLink
-            label="Add Friend"
-            active={isActive('add-friend')}
-            onClick={() => onNavigate({ kind: 'add-friend' })}
           />
           <SidebarLink
             label="Message Requests"
@@ -799,17 +780,21 @@ function SidebarLink({ label, badge, active, onClick }: { label: string; badge?:
 
 // ─── Requests pane (full list) ──────────────────────────────────────────────
 
-function RequestsPane({ inbox, onSelectDm, onBack }: {
+function RequestsPane({ inbox, onSelectDm, onBack, onReject }: {
   inbox: { messages: DmThreadView[]; requests: DmThreadView[]; sent: DmThreadView[] };
   onSelectDm: (wallet: string) => void;
   onBack: () => void;
+  onReject: (wallet: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
+  const [feedback, setFeedback] = useState<string | null>(null);
   const both = useMemo(() => {
     return [
       ...inbox.requests.map((t) => ({ ...t, kind: 'incoming' as const })),
       ...inbox.sent.map((t) => ({ ...t, kind: 'sent' as const })),
     ];
   }, [inbox]);
+
+  const flash = (text: string) => { setFeedback(text); setTimeout(() => setFeedback(null), 2000); };
 
   return (
     <div className="flex flex-col h-full">
@@ -820,20 +805,32 @@ function RequestsPane({ inbox, onSelectDm, onBack }: {
         <h2 className="text-white text-lg font-semibold flex-1">Message Requests</h2>
       </div>
       <div className="flex-1 overflow-y-auto px-3 py-3">
+        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
         {both.length === 0 && <p className="text-white/30 text-sm text-center py-6">No pending requests.</p>}
         {inbox.requests.length > 0 && (
           <section className="mb-4">
             <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Incoming</p>
             <div className="space-y-1">
               {inbox.requests.map((t) => (
-                <button key={t.threadId} onClick={() => onSelectDm(t.other.walletAddress)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04] hover:bg-white/[0.04] text-left">
+                <div key={t.threadId} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                   <Avatar user={t.other} />
-                  <div className="flex-1 min-w-0">
+                  <button onClick={() => onSelectDm(t.other.walletAddress)} className="flex-1 min-w-0 text-left">
                     <p className="text-white text-sm font-medium truncate">{t.other.username}</p>
                     <p className="text-white/40 text-xs truncate">{t.lastMessagePreview || 'wants to message you'}</p>
-                  </div>
-                  <span className="text-banana text-xs px-2 py-1 rounded-md bg-banana/10">View</span>
-                </button>
+                  </button>
+                  <button
+                    onClick={() => onSelectDm(t.other.walletAddress)}
+                    className="text-banana text-xs px-2 py-1 rounded-md bg-banana/10 hover:bg-banana/20"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={async () => { const r = await onReject(t.other.walletAddress); flash(r.ok ? 'Request deleted' : r.error || 'Failed'); }}
+                    className="px-2 py-1 rounded-md text-white/40 hover:text-red-400 hover:bg-red-400/10 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
               ))}
             </div>
           </section>

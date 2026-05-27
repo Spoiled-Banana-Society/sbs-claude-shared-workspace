@@ -34,6 +34,9 @@ export interface PublicUser {
   walletAddress: string;
   username: string;
   profilePicture?: string;
+  /** The badge id the user has equipped, if any. Drives the badge overlay
+   *  on avatars across messages / friends / DMs (matches the draft room). */
+  equippedBadge?: string | null;
 }
 
 export function friendshipId(walletA: string, walletB: string): string {
@@ -261,13 +264,14 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i];
     const wallet = wallets[i].toLowerCase();
-    const data = snap.exists ? (snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string } | undefined) : undefined;
+    const data = snap.exists ? (snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string; equippedBadge?: string | null } | undefined) : undefined;
     if (data) {
       const w = (data.walletAddress || snap.id).toLowerCase();
       out.set(w, {
         walletAddress: w,
         username: data.username || '',
         profilePicture: data.profilePicture,
+        equippedBadge: data.equippedBadge ?? null,
       });
       const expectedLower = data.username ? data.username.toLowerCase() : undefined;
       if (expectedLower && data.username_lower !== expectedLower) {
@@ -292,6 +296,7 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
         walletAddress: w,
         username: existing?.username || goName || w.slice(0, 8),
         profilePicture: existing?.profilePicture || pfp?.imageUrl,
+        equippedBadge: existing?.equippedBadge ?? null,
       });
     }
   }

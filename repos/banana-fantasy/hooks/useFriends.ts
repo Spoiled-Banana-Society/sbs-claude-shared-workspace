@@ -7,6 +7,7 @@ export interface PublicUser {
   walletAddress: string;
   username: string;
   profilePicture?: string;
+  equippedBadge?: string | null;
 }
 
 export interface FriendBuckets {
