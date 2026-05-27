@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
@@ -56,6 +56,11 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     }).catch(() => { /* clipboard blocked — silently no-op */ });
   };
 
+  // Ref getAccessToken so the 5s polling effect doesn't refire on every
+  // Privy re-render. See [[render-loop-self-ddos]].
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
+
   useEffect(() => {
     if (!enabled || !walletAddress) return;
     let cancelled = false;
@@ -64,7 +69,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     const tick = async () => {
       try {
         setLoading(true);
-        const token = await getAccessToken();
+        const token = await getAccessTokenRef.current();
         const [activeRes, queuesRes] = await Promise.all([
           fetch('/api/spectate/active-drafts', {
             headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -93,7 +98,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [enabled, walletAddress, getAccessToken]);
+  }, [enabled, walletAddress]);
 
   const filtered = (drafts ?? []).filter(d => {
     if (filter === 'all') return true;

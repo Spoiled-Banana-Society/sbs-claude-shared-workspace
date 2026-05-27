@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 
@@ -36,6 +36,11 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'fast' | 'slow' | 'jackpot' | 'hof'>('all');
 
+  // Ref getAccessToken so the polling effect deps stay scalar-only.
+  // See [[render-loop-self-ddos]].
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
+
   useEffect(() => {
     if (!enabled || !walletAddress) return;
     let cancelled = false;
@@ -44,7 +49,7 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
     const tick = async () => {
       try {
         setLoading(true);
-        const token = await getAccessToken();
+        const token = await getAccessTokenRef.current();
         const res = await fetch('/api/spectate/active-drafts', {
           headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         });
@@ -68,7 +73,7 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [enabled, walletAddress, getAccessToken]);
+  }, [enabled, walletAddress]);
 
   const filtered = (drafts ?? []).filter(d => {
     if (filter === 'all') return true;

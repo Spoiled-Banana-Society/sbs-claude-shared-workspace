@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useFounderSchedule } from '@/hooks/useFounderSchedule';
 import type { FounderSchedule } from '@/lib/founderDraft';
@@ -186,7 +186,11 @@ function FounderDraftsRecent() {
     }
   }, [getAccessToken]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Ref load so the mount effect fires once (and on a real reload trigger
+  // if we add one), not on every Privy re-render. See [[render-loop-self-ddos]].
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  useEffect(() => { void loadRef.current(); }, []);
 
   const grant = async (draftId: string, nonFounderCount: number) => {
     if (!window.confirm(

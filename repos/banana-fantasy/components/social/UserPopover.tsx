@@ -62,6 +62,11 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   }, [privy]);
 
+  // Ref authHeaders so the friend-state fetch effect doesn't re-fire on
+  // every Privy re-render. See [[render-loop-self-ddos]].
+  const authHeadersRef = useRef(authHeaders);
+  useEffect(() => { authHeadersRef.current = authHeaders; }, [authHeaders]);
+
   // Compute position whenever opened.
   useEffect(() => {
     if (!open || !triggerRef.current) return;
@@ -88,7 +93,7 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     let cancelled = false;
     void (async () => {
       try {
-        const headers = await authHeaders();
+        const headers = await authHeadersRef.current();
         const [friendsRes, mutualRes] = await Promise.all([
           fetch('/api/friends', { headers, cache: 'no-store' }),
           fetch(`/api/friends/mutual?wallet=${encodeURIComponent(targetWallet)}`, { headers, cache: 'no-store' }),
@@ -114,7 +119,7 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
       }
     })();
     return () => { cancelled = true; };
-  }, [open, isSelf, myWallet, targetWallet, authHeaders]);
+  }, [open, isSelf, myWallet, targetWallet]);
 
   // Outside click / Escape close.
   useEffect(() => {

@@ -62,6 +62,12 @@ export function GlobalChat() {
     return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   }, [privy]);
 
+  // Ref authHeaders so polling effect deps stay scalar-only. Privy hook
+  // identity churns on every render; without the ref, the mute poll
+  // re-fires per render and can self-DDoS the site. See [[render-loop-self-ddos]].
+  const authHeadersRef = useRef(authHeaders);
+  useEffect(() => { authHeadersRef.current = authHeaders; }, [authHeaders]);
+
   // Poll messages every 2s.
   useEffect(() => {
     let cancelled = false;
@@ -91,7 +97,7 @@ export function GlobalChat() {
     let cancelled = false;
     const check = async () => {
       try {
-        const headers = await authHeaders();
+        const headers = await authHeadersRef.current();
         const res = await fetch('/api/global-chat/my-mute', { headers, cache: 'no-store' });
         if (!res.ok) return;
         const data = (await res.json()) as { mute: ActiveMute | null };
@@ -101,7 +107,7 @@ export function GlobalChat() {
     void check();
     const id = setInterval(check, MUTE_POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
-  }, [walletAddress, authHeaders]);
+  }, [walletAddress]);
 
   // Scroll to bottom on new messages.
   useEffect(() => {

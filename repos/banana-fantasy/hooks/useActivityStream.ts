@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 
 import type { ActivityEventType, WalletType, PaymentMethod, DevicePlatform } from '@/lib/activityEvents';
@@ -47,6 +47,11 @@ export function useActivityStream(url: string | null): UseActivityStreamResult {
   const [error, setError] = useState<string | null>(null);
   const [authedUrl, setAuthedUrl] = useState<string | null>(null);
 
+  // Ref getAccessToken so the resolve-token effect doesn't re-run on every
+  // Privy re-render. See [[render-loop-self-ddos]].
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
+
   // Native EventSource can't send custom headers — so for the admin
   // stream (which requires a Bearer JWT), we resolve the Privy access
   // token first and append it as ?token=… The server (lib/auth.ts)
@@ -72,7 +77,7 @@ export function useActivityStream(url: string | null): UseActivityStreamResult {
     }
     (async () => {
       try {
-        const token = await getAccessToken();
+        const token = await getAccessTokenRef.current();
         if (cancelled) return;
         if (!token) {
           setAuthedUrl(null);
@@ -87,7 +92,7 @@ export function useActivityStream(url: string | null): UseActivityStreamResult {
     return () => {
       cancelled = true;
     };
-  }, [url, authenticated, getAccessToken]);
+  }, [url, authenticated]);
 
   useEffect(() => {
     if (!authedUrl) {
