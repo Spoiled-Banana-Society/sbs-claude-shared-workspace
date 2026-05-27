@@ -544,6 +544,7 @@ export function MessagesHub() {
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { inbox, loading } = useDmInbox(enabled);
+  const { data: friendsData } = useFriends(enabled);
   const privy = usePrivy();
 
   const initialView = useCallback((): View => {
@@ -591,6 +592,7 @@ export function MessagesHub() {
   };
 
   const requestCount = inbox.requests.length;
+  const friendRequestCount = friendsData.incoming.length;
   const isMobilePaneOpen = view.kind !== 'general' || false; // for layout decisions
   void isMobilePaneOpen;
   void privy;
@@ -628,6 +630,7 @@ export function MessagesHub() {
             inbox={inbox}
             loading={loading}
             requestCount={requestCount}
+            friendRequestCount={friendRequestCount}
             onNavigate={navigate}
           />
         </aside>
@@ -641,6 +644,7 @@ export function MessagesHub() {
               inbox={inbox}
               loading={loading}
               requestCount={requestCount}
+              friendRequestCount={friendRequestCount}
               onNavigate={navigate}
             />
           </aside>
@@ -681,12 +685,14 @@ function SidebarContent({
   inbox,
   loading,
   requestCount,
+  friendRequestCount,
   onNavigate,
 }: {
   view: View;
   inbox: { messages: DmThreadView[]; requests: DmThreadView[]; sent: DmThreadView[] };
   loading: boolean;
   requestCount: number;
+  friendRequestCount: number;
   onNavigate: (v: View) => void;
 }) {
   const isActive = (kind: View['kind'], extra?: string): boolean => {
@@ -717,6 +723,7 @@ function SidebarContent({
           <p className="px-3 py-1 text-white/40 text-[10px] uppercase tracking-wider">Social</p>
           <SidebarLink
             label="Friends"
+            badge={friendRequestCount}
             active={isActive('friends')}
             onClick={() => onNavigate({ kind: 'friends' })}
           />

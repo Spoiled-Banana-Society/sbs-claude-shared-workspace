@@ -204,14 +204,48 @@ export async function rejectOrRemove(myWallet: string, otherWallet: string): Pro
 
 // ─── User profile resolution ───────────────────────────────────────────────
 
+const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+
+function getServerDraftsApiUrl(): string {
+  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
+}
+
+interface GoApiOwnerPfp {
+  displayName?: string;
+  imageUrl?: string;
+}
+
+/**
+ * Pull a display name from the Go API's `owners/{wallet}.pfp.displayName`
+ * for wallets that don't have a username in v2_users. Many legacy wallets
+ * only ever set their name in the old draft frontend, so v2_users misses
+ * them entirely. Mirrors what /api/users/display-batch does for the draft
+ * room. Returns null on miss or error — caller falls back to wallet slice.
+ */
+async function fetchGoApiOwnerPfp(wallet: string): Promise<GoApiOwnerPfp | null> {
+  try {
+    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { pfp?: GoApiOwnerPfp };
+    return body.pfp ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Batch-load public profile info for a list of wallets. Keys returned in the
  * Map are lowercased wallet addresses.
  *
- * Also lazily backfills `username_lower` on any doc that has `username` but
- * is missing (or has a stale) lowercased copy. Cheap fire-and-forget write,
- * makes the case-insensitive search converge to "works for everyone" the
- * first time each user is touched.
+ * Resolution order per wallet:
+ *  1. Firestore v2_users.username + profilePicture (authoritative for users
+ *     who've set a name in banana-fantasy).
+ *  2. Go API /owner/{wallet}.pfp.displayName + imageUrl (legacy users who
+ *     only ever set a name in the old draft frontend — without this, every
+ *     incoming friend request from a legacy wallet shows as "0xabc1...").
+ *  3. Wallet slice as last resort.
+ *
+ * Also lazily backfills v2_users.username_lower for case-insensitive search.
  */
 export async function getPublicUsers(wallets: string[]): Promise<Map<string, PublicUser>> {
   const out = new Map<string, PublicUser>();
@@ -222,19 +256,55 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
   const refs = wallets.map((w) => db.collection('v2_users').doc(w.toLowerCase()));
   const snaps = await db.getAll(...refs);
   const backfills: Array<Promise<unknown>> = [];
-  for (const snap of snaps) {
-    if (!snap.exists) continue;
-    const data = snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string } | undefined;
-    if (!data) continue;
-    const w = (data.walletAddress || snap.id).toLowerCase();
-    out.set(w, {
-      walletAddress: w,
-      username: data.username || w.slice(0, 8),
-      profilePicture: data.profilePicture,
-    });
-    const expectedLower = data.username ? data.username.toLowerCase() : undefined;
-    if (expectedLower && data.username_lower !== expectedLower) {
-      backfills.push(snap.ref.set({ username_lower: expectedLower }, { merge: true }).catch(() => {}));
+  const needsGoApi: string[] = [];
+
+  for (let i = 0; i < snaps.length; i++) {
+    const snap = snaps[i];
+    const wallet = wallets[i].toLowerCase();
+    const data = snap.exists ? (snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string } | undefined) : undefined;
+    if (data) {
+      const w = (data.walletAddress || snap.id).toLowerCase();
+      out.set(w, {
+        walletAddress: w,
+        username: data.username || '',
+        profilePicture: data.profilePicture,
+      });
+      const expectedLower = data.username ? data.username.toLowerCase() : undefined;
+      if (expectedLower && data.username_lower !== expectedLower) {
+        backfills.push(snap.ref.set({ username_lower: expectedLower }, { merge: true }).catch(() => {}));
+      }
+    }
+    // Anyone with no v2_users doc OR no username OR no pfp gets a Go API
+    // fallback lookup so legacy wallets still show real names + avatars.
+    const current = out.get(wallet);
+    if (!current?.username || !current?.profilePicture) {
+      needsGoApi.push(wallet);
+    }
+  }
+
+  if (needsGoApi.length > 0) {
+    const results = await Promise.all(needsGoApi.map(async (w) => [w, await fetchGoApiOwnerPfp(w)] as const));
+    for (const [w, pfp] of results) {
+      const existing = out.get(w);
+      const dn = pfp?.displayName?.trim();
+      const goName = dn && dn.toLowerCase() !== w ? dn : undefined;
+      out.set(w, {
+        walletAddress: w,
+        username: existing?.username || goName || w.slice(0, 8),
+        profilePicture: existing?.profilePicture || pfp?.imageUrl,
+      });
+    }
+  }
+
+  // Final pass: anyone still missing a username (no v2 doc, no Go API hit)
+  // falls back to the wallet slice so the UI never shows empty.
+  for (const w of wallets) {
+    const lw = w.toLowerCase();
+    if (!out.has(lw)) {
+      out.set(lw, { walletAddress: lw, username: lw.slice(0, 8) });
+    } else {
+      const cur = out.get(lw)!;
+      if (!cur.username) out.set(lw, { ...cur, username: lw.slice(0, 8) });
     }
   }
   // Don't await — page renders don't need to block on the backfill write.
