@@ -241,6 +241,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Proactively refresh the Privy access token when the tab becomes
+  // visible. Privy's SDK handles refresh on-demand when getAccessToken
+  // is called, but if a user taps a notification hours later and the
+  // first thing the page does is read state (no auth call), a stale
+  // token can briefly look like "logged out" before refreshing on the
+  // next auth-gated request. Calling getAccessToken on visibility-
+  // change forces Privy to refresh silently — by the time any
+  // component needs an authenticated fetch, the token is fresh.
+  // Pair this with extending the session length in the Privy
+  // dashboard (Settings → Sessions, max 30d) so the refresh window
+  // stays open long enough for normal "tap noti later" usage.
+  useEffect(() => {
+    if (!privyAvailable || !privy.authenticated) return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      // Fire and forget — Privy throttles internally; harmless if the
+      // token is already fresh.
+      privy.getAccessToken().catch(() => {
+        /* ignore — UI will surface a real auth issue on next gated call */
+      });
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [privyAvailable, privy.authenticated, privy]);
+
   // Twitter/X verification state
   const [isTwitterVerified, setIsTwitterVerified] = useState(false);
   const [isTwitterLinking, setIsTwitterLinking] = useState(false);

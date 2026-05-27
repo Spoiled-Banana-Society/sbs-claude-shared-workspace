@@ -55,6 +55,10 @@ export const sendPush: ChannelSender = async (message, event, prefs) => {
       body: message.body,
       url: message.url,
       ttlSeconds: event.pickLengthSeconds ?? undefined,
+      // Collapse by draftId so rapid pick alerts for the same draft
+      // replace each other on the lock screen instead of stacking. See
+      // OneSignalPushOptions.collapseKey for full rationale.
+      collapseKey: event.draftId,
     });
     // providerId is the OneSignal notification id — admin user-lookup
     // uses it to fetch real delivery stats per push later.

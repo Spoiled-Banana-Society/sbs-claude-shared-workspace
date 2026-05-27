@@ -31,6 +31,34 @@ function mockFetch(ok = true, json: unknown = { recipients: 3 }) {
   return fn;
 }
 
+/**
+ * Two-step mockFetch for the new sendPush flow: first call returns
+ * OneSignal /players lookup, second call returns the /notifications
+ * send response. Lets one test cover both halves of the player-id
+ * targeting path.
+ */
+function mockOneSignalFetch(opts: {
+  players: Array<{ id: string; tags?: Record<string, string>; invalid_identifier?: boolean }>;
+  sendResponse?: Record<string, unknown>;
+}) {
+  const fn = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ players: opts.players }),
+      text: async () => '',
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => opts.sendResponse ?? { id: 'notif-xyz' },
+      text: async () => '',
+    });
+  global.fetch = fn as unknown as typeof fetch;
+  return fn;
+}
+
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -54,17 +82,81 @@ describe('sendPush', () => {
     expect(r.reason).toMatch(/configured/);
   });
 
-  it('sends and targets the wallet tag when configured', async () => {
+  it('looks up player ids by wallet tag then sends with include_player_ids', async () => {
+    // The dispatcher's send is two-step: list players tagged with the
+    // wallet (so v2 SDK subscriptions are reachable — the tag-filtered
+    // send path silently drops them), then target by include_player_ids.
     vi.stubEnv('NEXT_PUBLIC_ONESIGNAL_APP_ID', 'app1');
     vi.stubEnv('ONESIGNAL_REST_API_KEY', 'key1');
-    const fetchFn = mockFetch(true, { recipients: 5 });
+    const fetchFn = mockOneSignalFetch({
+      players: [
+        { id: 'player-1', tags: { walletAddress: '0xabc' } },
+        { id: 'player-2', tags: { walletAddress: '0xabc' } },
+        { id: 'player-other', tags: { walletAddress: '0xother' } }, // not us
+      ],
+      sendResponse: { id: 'notif-abc' },
+    });
     const r = await sendPush(message, event, prefs({ channels: { push: true } }));
     expect(r.status).toBe('sent');
-    expect(r.recipients).toBe(5);
-    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
-    expect(body.app_id).toBe('app1');
-    expect(body.filters[0]).toMatchObject({ key: 'walletAddress', value: '0xabc' });
-    expect(body.ttl).toBe(30);
+    expect(r.recipients).toBe(2); // matches the 2 player IDs we sent to
+    expect(r.providerId).toBe('notif-abc'); // notification id captured for delivery stats
+
+    // Lookup call
+    expect(fetchFn.mock.calls[0][0]).toContain('/api/v1/players');
+    // Send call
+    const sendBody = JSON.parse(fetchFn.mock.calls[1][1].body);
+    expect(sendBody.app_id).toBe('app1');
+    expect(sendBody.include_player_ids).toEqual(['player-1', 'player-2']);
+    expect(sendBody.ttl).toBe(30);
+  });
+
+  it('drops players OneSignal marked invalid_identifier', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ONESIGNAL_APP_ID', 'app1');
+    vi.stubEnv('ONESIGNAL_REST_API_KEY', 'key1');
+    const fetchFn = mockOneSignalFetch({
+      players: [
+        { id: 'player-good', tags: { walletAddress: '0xabc' } },
+        { id: 'player-dead', tags: { walletAddress: '0xabc' }, invalid_identifier: true },
+      ],
+      sendResponse: { id: 'notif-abc' },
+    });
+    const r = await sendPush(message, event, prefs({ channels: { push: true } }));
+    expect(r.status).toBe('sent');
+    expect(r.recipients).toBe(1); // only the good one
+    const sendBody = JSON.parse(fetchFn.mock.calls[1][1].body);
+    expect(sendBody.include_player_ids).toEqual(['player-good']);
+  });
+
+  it('returns recipients:0 when no players are tagged with this wallet', async () => {
+    vi.stubEnv('NEXT_PUBLIC_ONESIGNAL_APP_ID', 'app1');
+    vi.stubEnv('ONESIGNAL_REST_API_KEY', 'key1');
+    mockOneSignalFetch({
+      players: [{ id: 'someone-else', tags: { walletAddress: '0xother' } }],
+    });
+    const r = await sendPush(message, event, prefs({ channels: { push: true } }));
+    expect(r.status).toBe('sent');
+    expect(r.recipients).toBe(0);
+    // No notification id when nothing was sent
+    expect(r.providerId).toBeUndefined();
+  });
+
+  it('sets web_push_topic to the draftId so rapid picks collapse into one banner', async () => {
+    // Without web_push_topic, 8 picks in quick succession = 8 stacked
+    // banners on the user's lock screen. With it, each new notification
+    // for the same draft REPLACES the previous one in-place. User sees
+    // one always-current banner ("pick 7 → pick 8 → pick 9") instead
+    // of a noisy stack of stale alerts.
+    vi.stubEnv('NEXT_PUBLIC_ONESIGNAL_APP_ID', 'app1');
+    vi.stubEnv('ONESIGNAL_REST_API_KEY', 'key1');
+    const fetchFn = mockOneSignalFetch({
+      players: [{ id: 'p1', tags: { walletAddress: '0xabc' } }],
+      sendResponse: { id: 'notif-1' },
+    });
+    await sendPush(message, event, prefs({ channels: { push: true } }));
+    const sendBody = JSON.parse(fetchFn.mock.calls[1][1].body);
+    expect(sendBody.web_push_topic).toBe('d1');
+    // iOS APNS-collapse-id mirrors web_push_topic for iOS PWA pushes.
+    expect(sendBody.collapse_id).toBe('d1');
   });
 });
 
@@ -80,17 +172,28 @@ describe('sendEmail', () => {
     expect(r.reason).toMatch(/email/);
   });
 
-  it('posts a Postmark payload when configured', async () => {
-    vi.stubEnv('POSTMARK_SERVER_TOKEN', 'pm-token');
+  it('posts a Resend payload when configured', async () => {
+    vi.stubEnv('RESEND_API_KEY', 're_key');
     vi.stubEnv('EMAIL_FROM', 'alerts@sbs.com');
-    const fetchFn = mockFetch(true);
+    const fetchFn = mockFetch(true, { id: 'resend-email-id-1' });
     const r = await sendEmail(message, event, prefs({ channels: { email: true }, email: 'u@x.com' }));
     expect(r.status).toBe('sent');
-    expect(fetchFn.mock.calls[0][0]).toBe('https://api.postmarkapp.com/email');
-    const body = JSON.parse(fetchFn.mock.calls[0][1].body);
-    expect(body.To).toBe('u@x.com');
-    expect(body.From).toBe('alerts@sbs.com');
-    expect(body.Subject).toBe('On the clock');
+    expect(r.providerId).toBe('resend-email-id-1'); // captured for the email-webhook to match against
+    expect(fetchFn.mock.calls[0][0]).toBe('https://api.resend.com/emails');
+    const init = fetchFn.mock.calls[0][1];
+    expect(init.headers.Authorization).toBe('Bearer re_key');
+    const body = JSON.parse(init.body);
+    expect(body.to).toEqual(['u@x.com']);
+    expect(body.from).toBe('alerts@sbs.com');
+    expect(body.subject).toBe('On the clock');
+  });
+
+  it('skips when RESEND_API_KEY is unset', async () => {
+    vi.stubEnv('EMAIL_FROM', 'alerts@sbs.com');
+    // No RESEND_API_KEY stubbed
+    const r = await sendEmail(message, event, prefs({ channels: { email: true }, email: 'u@x.com' }));
+    expect(r.status).toBe('skipped');
+    expect(r.reason).toMatch(/configured/);
   });
 });
 

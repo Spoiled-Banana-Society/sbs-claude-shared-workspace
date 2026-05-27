@@ -3,20 +3,26 @@ import { renderMessage } from '@/lib/notifications/messages';
 
 describe('renderMessage', () => {
   describe('draft.filled', () => {
-    it('includes the draft name and "starting" language', () => {
+    it('includes the draft name in the title and "filled" language', () => {
       const m = renderMessage({
         type: 'draft.filled',
         draftId: 'd1',
         draftName: 'Sunday Slugfest',
       });
-      expect(m.title).toMatch(/start/i);
-      expect(m.body).toContain('Sunday Slugfest');
+      // Per Boris 2026-05-25: title carries the league name + "filled".
+      // Body stays generic so it's short enough to render fully in an
+      // iOS lock-screen banner: "Tap to join the draft."
+      expect(m.title).toMatch(/filled/i);
+      expect(m.title).toContain('Sunday Slugfest');
+      expect(m.body.length).toBeGreaterThan(0);
     });
 
     it('falls back to generic copy when draftName is missing', () => {
       const m = renderMessage({ type: 'draft.filled', draftId: 'd1' });
+      expect(m.title).toMatch(/filled/i);
       expect(m.body.length).toBeGreaterThan(0);
       expect(m.body).not.toContain('undefined');
+      expect(m.title).not.toContain('undefined');
     });
   });
 

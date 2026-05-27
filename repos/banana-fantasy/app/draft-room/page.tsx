@@ -333,6 +333,52 @@ function DraftRoomContent() {
     draftIdRef,
   });
 
+  // Force a live resync when the user comes back to this page from any
+  // "stale" state — backgrounded tab, bfcache restore, or service worker
+  // signal that a push click just focused this tab. Without this, the
+  // draft-room shows whatever state it had when last active (could be
+  // minutes-to-hours stale on a frozen iOS PWA) until something else
+  // jiggles the engine. The user sees the wrong pick / wrong timer.
+  //
+  // Three triggers, all calling the same retryLiveSync():
+  //   1. `pageshow` with event.persisted === true: bfcache restore
+  //      (Safari iOS / Chrome desktop after back-button etc.)
+  //   2. `visibilitychange` to "visible": user switched away and back
+  //      to this tab. Cheap re-validation — if state was current, the
+  //      retry is essentially a no-op; if stale, it re-fetches.
+  //   3. Service worker `sbs:notification-clicked` postMessage:
+  //      dispatched when the SW focused an existing tab for a push
+  //      click (see public/OneSignalSDKWorker.js).
+  useEffect(() => {
+    if (!isLiveMode || !draftId) return;
+
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) retryLiveSync();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') retryLiveSync();
+    };
+    const onSwMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (data && typeof data === 'object' && data.type === 'sbs:notification-clicked') {
+        retryLiveSync();
+      }
+    };
+
+    window.addEventListener('pageshow', onPageShow);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', onSwMessage);
+    }
+    return () => {
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', onSwMessage);
+      }
+    };
+  }, [isLiveMode, draftId, retryLiveSync]);
+
   const loadingHandledRef = useRef(false);
   useEffect(() => {
     if (phase !== 'loading' || loadingHandledRef.current) return;

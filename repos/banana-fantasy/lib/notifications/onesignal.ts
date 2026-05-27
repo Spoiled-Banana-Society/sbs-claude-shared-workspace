@@ -15,6 +15,14 @@ export interface OneSignalPushOptions {
   body: string;
   url: string;
   ttlSeconds?: number;
+  /**
+   * Sets OneSignal's `web_push_topic` + `collapse_id`. Notifications with
+   * the same value REPLACE prior ones on the user's lock screen instead of
+   * stacking. For SBS we pass the draftId — so 8 picks in rapid succession
+   * show as ONE always-current banner ("pick 7 → pick 8 → pick 9") rather
+   * than a stale stack the user has to clear.
+   */
+  collapseKey?: string;
 }
 
 /** What `sendOneSignalPush` resolves to. */
@@ -100,6 +108,14 @@ export async function sendOneSignalPush(
       chrome_web_badge: ICON,
       chrome_web_icon: ICON,
       ttl: opts.ttlSeconds ?? 600,
+      // Web push (Chrome / Firefox / Edge / Safari desktop) uses the
+      // `web_push_topic` field; iOS APNS for PWA pushes uses
+      // `collapse_id`. Setting both covers every platform OneSignal
+      // routes through. Same value (the draftId) on both so rapid pick
+      // alerts for the same draft replace in place.
+      ...(opts.collapseKey
+        ? { web_push_topic: opts.collapseKey, collapse_id: opts.collapseKey }
+        : {}),
     }),
   });
 
