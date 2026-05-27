@@ -380,16 +380,23 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
   const [searching, setSearching] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // Capture `search` in a ref so the debounce effect doesn't re-run every
+  // time `usePrivy()` rerenders. Without this, the 300ms timer keeps
+  // getting cancelled and restarted on Privy churn — the fetch never fires
+  // and the UI is stuck on "Searching…".
+  const searchRef = useRef(search);
+  useEffect(() => { searchRef.current = search; }, [search]);
+
   useEffect(() => {
-    if (!q.trim()) { setResults([]); return; }
+    if (!q.trim()) { setResults([]); setSearching(false); return; }
     let cancelled = false;
     setSearching(true);
     const t = setTimeout(async () => {
-      const r = await search(q);
+      const r = await searchRef.current(q);
       if (!cancelled) { setResults(r); setSearching(false); }
     }, 300);
-    return () => { cancelled = true; clearTimeout(t); setSearching(false); };
-  }, [q, search]);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
 
   const stateFor = (wallet: string): 'friend' | 'incoming' | 'outgoing' | 'none' => {
     const w = wallet.toLowerCase();
