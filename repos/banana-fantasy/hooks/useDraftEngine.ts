@@ -508,11 +508,20 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     if (wallet && pickData.ownerAddress.toLowerCase() === wallet) {
       if (userPickedManuallyRef.current) {
         consecutiveTimeoutsRef.current = 0;
+        logger.info('[Airplane] Manual pick — counter reset to 0', { pickNum: pickData.pickNum, wallet });
       } else {
         consecutiveTimeoutsRef.current += 1;
-        logger.debug('[Airplane] Consecutive timeouts:', consecutiveTimeoutsRef.current);
+        logger.info('[Airplane] Server auto-pick — counter incremented', {
+          counter: consecutiveTimeoutsRef.current,
+          pickNum: pickData.pickNum,
+          wallet,
+        });
         if (consecutiveTimeoutsRef.current >= 2) {
-          logger.debug('[Airplane] 2 consecutive server auto-picks — enabling airplane mode');
+          logger.info('[Airplane] setAirplaneMode(true) — source=consecutive-timeouts', {
+            counter: consecutiveTimeoutsRef.current,
+            pickNum: pickData.pickNum,
+            wallet,
+          });
           setAirplaneMode(true);
         }
       }

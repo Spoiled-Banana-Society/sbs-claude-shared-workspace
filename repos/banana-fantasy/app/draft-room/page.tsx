@@ -764,6 +764,7 @@ function DraftRoomContent() {
     if (!id) return;
     const existing = draftStore.getDraft(id);
     if (existing && localStorage.getItem(`airplane:${id}`) === '1') {
+      logger.info('[Airplane] setAirplaneMode(true) — source=localStorage-restore', { draftId: id });
       engine.setAirplaneMode(true);
     } else {
       localStorage.removeItem(`airplane:${id}`);
@@ -875,6 +876,13 @@ function DraftRoomContent() {
 
         // Sync local airplaneMode with server autoDraft preference
         if (prefs.autoDraft !== engine.airplaneMode) {
+          logger.info('[Airplane] setAirplaneMode — source=initial-prefs-sync', {
+            draftId,
+            wallet: walletParam,
+            serverValue: prefs.autoDraft,
+            clientValue: engine.airplaneMode,
+            serverMissedCount: prefs.numPicksMissedConsecutive,
+          });
           engine.setAirplaneMode(prefs.autoDraft);
         }
       })
@@ -902,6 +910,12 @@ function DraftRoomContent() {
     // while we patch prefs server-side. Was awaiting the PATCH first which
     // added 500-1000ms of perceived latency between the click and the
     // pick landing.
+    logger.info('[Airplane] setAirplaneMode — source=user-toggle', {
+      draftId,
+      wallet: walletParam,
+      newValue,
+      counterBeforeReset: engine.consecutiveTimeouts,
+    });
     setAutoDraft(newValue);
     engine.setAirplaneMode(newValue);
     // Toggling OFF clears the consecutive-timeout counter so a single
@@ -918,6 +932,13 @@ function DraftRoomContent() {
       const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue);
       // Reconcile with server in case it disagreed.
       if (prefs.autoDraft !== newValue) {
+        logger.info('[Airplane] setAirplaneMode — source=patch-reconcile-disagreement', {
+          draftId,
+          wallet: walletParam,
+          requestedValue: newValue,
+          serverValue: prefs.autoDraft,
+          serverMissedCount: prefs.numPicksMissedConsecutive,
+        });
         setAutoDraft(prefs.autoDraft);
         engine.setAirplaneMode(prefs.autoDraft);
         if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
@@ -2092,6 +2113,11 @@ function DraftRoomContent() {
               // earlier auto-off attempt only flipped engine state and the
               // icon stayed lit.
               if (autoDraft) {
+                logger.info('[Airplane] setAirplaneMode(false) — source=manual-pick-auto-off', {
+                  draftId,
+                  wallet: walletParam,
+                  playerId,
+                });
                 setAutoDraft(false);
                 engine.setAirplaneMode(false);
                 engine.resetAirplaneTimeoutCounter();
