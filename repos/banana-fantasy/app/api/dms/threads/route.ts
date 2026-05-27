@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
-import { listThreadsForUser, type DmThread } from '@/lib/dms';
+import { getBlockedUsers, listThreadsForUser, type DmThread } from '@/lib/dms';
 import { getPublicUsers, type PublicUser } from '@/lib/friends';
 
 interface ThreadView {
@@ -34,7 +34,17 @@ export async function GET(req: Request) {
     if (!user.walletAddress) return NextResponse.json({ error: 'wallet required' }, { status: 400 });
     const myWallet = user.walletAddress.toLowerCase();
 
-    const threads = await listThreadsForUser(myWallet);
+    const [allThreads, blockedList] = await Promise.all([
+      listThreadsForUser(myWallet),
+      getBlockedUsers(myWallet),
+    ]);
+    const blocked = new Set(blockedList);
+    // Hide threads where I've blocked the other party. They stay in storage
+    // so unblocking restores them; we just don't surface them in the inbox.
+    const threads = allThreads.filter((t) => {
+      const other = t.participants[0] === myWallet ? t.participants[1] : t.participants[0];
+      return !blocked.has(other);
+    });
     const otherWallets = threads.map((t) => (t.participants[0] === myWallet ? t.participants[1] : t.participants[0]));
     const profileMap = await getPublicUsers(otherWallets);
 

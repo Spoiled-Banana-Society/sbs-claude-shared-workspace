@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
-import { useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
+import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
 import { useFriends } from '@/hooks/useFriends';
 import { GlobalChat } from '@/components/chat/GlobalChat';
 
@@ -27,6 +27,7 @@ type View =
   | { kind: 'friends' }
   | { kind: 'requests' }
   | { kind: 'add-friend' }
+  | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
 
 function shortWallet(w: string): string {
@@ -52,15 +53,26 @@ function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' })
 function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () => void }) {
   const { user } = useAuth();
   const myWallet = (user?.walletAddress || '').toLowerCase();
-  const { messages, other, permission, loading, send, accept } = useDmThread(otherWallet);
+  const { messages, other, permission, block, loading, send, accept, block_: blockUser, unblock } = useDmThread(otherWallet);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
   }, [messages.length]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [menuOpen]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -84,7 +96,38 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
     }
   };
 
-  const composeMode: 'send' | 'request' | 'wait' = permission === 'wait' ? 'wait' : permission === 'request' ? 'request' : 'send';
+  const handleBlock = async () => {
+    setMenuOpen(false);
+    const r = await blockUser();
+    if (!r.ok) {
+      setFeedback(r.error || 'Failed to block');
+      setTimeout(() => setFeedback(null), 3000);
+    } else {
+      setFeedback('User blocked');
+      setTimeout(() => setFeedback(null), 2000);
+    }
+  };
+
+  const handleUnblock = async () => {
+    setMenuOpen(false);
+    const r = await unblock();
+    if (!r.ok) {
+      setFeedback(r.error || 'Failed to unblock');
+      setTimeout(() => setFeedback(null), 3000);
+    } else {
+      setFeedback('User unblocked');
+      setTimeout(() => setFeedback(null), 2000);
+    }
+  };
+
+  const isBlocked = block.myBlock || block.theirBlock;
+  const composeMode: 'send' | 'request' | 'wait' | 'blocked' = isBlocked
+    ? 'blocked'
+    : permission === 'wait'
+      ? 'wait'
+      : permission === 'request'
+        ? 'request'
+        : 'send';
 
   return (
     <div className="flex flex-col h-full">
@@ -97,19 +140,57 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
           <p className="text-white font-medium truncate">{other?.username || shortWallet(otherWallet)}</p>
           <p className="text-white/40 text-[10px] font-mono truncate">{shortWallet(otherWallet)}</p>
         </div>
-        {permission === 'reply' && (
+        {permission === 'reply' && !isBlocked && (
           <button onClick={handleAccept} className="px-3 py-1.5 rounded-lg bg-banana text-black text-xs font-bold hover:bg-banana-light">
             Accept request
           </button>
         )}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="w-8 h-8 rounded-full text-white/40 hover:text-white hover:bg-white/[0.06] flex items-center justify-center"
+            aria-label="Thread options"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg>
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-9 z-20 min-w-[160px] rounded-lg bg-[#1c1c1e] border border-white/[0.08] shadow-lg py-1">
+              {block.myBlock ? (
+                <button
+                  onClick={handleUnblock}
+                  className="w-full text-left px-3 py-2 text-sm text-banana hover:bg-white/[0.06]"
+                >
+                  Unblock user
+                </button>
+              ) : (
+                <button
+                  onClick={handleBlock}
+                  className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-400/10"
+                >
+                  Block user
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {permission === 'wait' && (
+      {block.myBlock && (
+        <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-xs text-center">
+          You&apos;ve blocked this user. Unblock to exchange messages.
+        </div>
+      )}
+      {!block.myBlock && block.theirBlock && (
+        <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/60 text-xs text-center">
+          You can no longer message this user.
+        </div>
+      )}
+      {!isBlocked && permission === 'wait' && (
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06] text-white/60 text-xs text-center">
           Request sent. Waiting for them to approve.
         </div>
       )}
-      {permission === 'reply' && (
+      {!isBlocked && permission === 'reply' && (
         <div className="mx-4 mt-3 px-3 py-2 rounded-lg bg-banana/10 border border-banana/30 text-banana/90 text-xs text-center">
           New message request — replying will accept.
         </div>
@@ -138,7 +219,11 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
 
       <div className="p-3 border-t border-white/[0.06] flex-shrink-0">
         {feedback && <p className="text-red-400 text-xs mb-2 text-center">{feedback}</p>}
-        {composeMode === 'wait' ? (
+        {composeMode === 'blocked' ? (
+          <div className="bg-white/[0.04] border border-white/[0.06] text-white/40 text-sm rounded-lg px-3 py-2 text-center">
+            {block.myBlock ? 'Unblock to send messages.' : 'Messaging is unavailable.'}
+          </div>
+        ) : composeMode === 'wait' ? (
           <div className="bg-white/[0.04] border border-white/[0.06] text-white/40 text-sm rounded-lg px-3 py-2 text-center">
             Can&apos;t send more until they accept.
           </div>
@@ -368,6 +453,62 @@ function AddFriendPane({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ─── Blocked-users pane ─────────────────────────────────────────────────────
+
+function BlockedPane({ onBack }: { onBack: () => void }) {
+  const { user, isLoggedIn } = useAuth();
+  const enabled = !!user?.walletAddress && isLoggedIn;
+  const { blocked, loading, unblock } = useBlockedUsers(enabled);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const flash = (text: string) => {
+    setFeedback(text);
+    setTimeout(() => setFeedback(null), 2000);
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0">
+        <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <h2 className="text-white text-lg font-semibold flex-1">Blocked</h2>
+        <span className="text-white/40 text-xs">{blocked.length} blocked</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3">
+        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
+        {loading && blocked.length === 0 && (
+          <p className="text-white/30 text-xs text-center py-6">Loading…</p>
+        )}
+        {!loading && blocked.length === 0 && (
+          <div className="text-center py-10 px-4">
+            <p className="text-white/50 text-sm mb-1">You haven&apos;t blocked anyone.</p>
+            <p className="text-white/30 text-xs">Blocking a user stops messages between you. You can unblock them here at any time.</p>
+          </div>
+        )}
+        <div className="space-y-1">
+          {blocked.map((u) => (
+            <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+              <Avatar user={u} />
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+              </div>
+              <button
+                onClick={async () => { const r = await unblock(u.walletAddress); flash(r.ok ? 'Unblocked' : r.error || 'Failed'); }}
+                className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-banana hover:text-black text-white/70 text-xs font-medium transition-colors"
+              >
+                Unblock
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sidebar thread row ─────────────────────────────────────────────────────
 
 function ThreadRow({ view, active, onClick }: { view: DmThreadView; active: boolean; onClick: () => void }) {
@@ -404,6 +545,7 @@ export function MessagesHub() {
     if (v === 'friends') return { kind: 'friends' };
     if (v === 'requests') return { kind: 'requests' };
     if (v === 'add-friend') return { kind: 'add-friend' };
+    if (v === 'blocked') return { kind: 'blocked' };
     if (v === 'general') return { kind: 'general' };
     if (w) return { kind: 'dm', wallet: w };
     // Default: general chat for unauth; messages list for auth with no selection.
@@ -420,6 +562,7 @@ export function MessagesHub() {
       if (v === 'friends') return { kind: 'friends' };
       if (v === 'requests') return { kind: 'requests' };
       if (v === 'add-friend') return { kind: 'add-friend' };
+      if (v === 'blocked') return { kind: 'blocked' };
       if (v === 'general') return { kind: 'general' };
       if (w) return { kind: 'dm', wallet: w };
       return { kind: 'general' };
@@ -435,6 +578,7 @@ export function MessagesHub() {
     else if (next.kind === 'friends') url = '/messages?view=friends';
     else if (next.kind === 'requests') url = '/messages?view=requests';
     else if (next.kind === 'add-friend') url = '/messages?view=add-friend';
+    else if (next.kind === 'blocked') url = '/messages?view=blocked';
     else if (next.kind === 'dm') url = `/messages?with=${encodeURIComponent(next.wallet)}`;
     router.replace(url, { scroll: false });
   };
@@ -471,7 +615,7 @@ export function MessagesHub() {
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-4 py-4">
       <div className="h-full flex bg-[#0f0f12] border border-white/[0.06] rounded-2xl overflow-hidden">
         {/* Sidebar */}
-        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
           <SidebarContent
             view={view}
             inbox={inbox}
@@ -496,7 +640,7 @@ export function MessagesHub() {
         )}
 
         {/* Main pane */}
-        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
+        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'add-friend' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
           {view.kind === 'general' && (
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
@@ -512,6 +656,7 @@ export function MessagesHub() {
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
           {view.kind === 'add-friend' && <AddFriendPane onBack={() => navigate({ kind: 'friends' })} />}
+          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} />}
           {view.kind === 'requests' && (
             <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />
           )}
@@ -578,6 +723,11 @@ function SidebarContent({
             badge={requestCount}
             active={isActive('requests')}
             onClick={() => onNavigate({ kind: 'requests' })}
+          />
+          <SidebarLink
+            label="Blocked"
+            active={isActive('blocked')}
+            onClick={() => onNavigate({ kind: 'blocked' })}
           />
         </div>
 

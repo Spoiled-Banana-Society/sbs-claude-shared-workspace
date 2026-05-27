@@ -13,6 +13,7 @@ import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import {
+  getBlockState,
   getThread,
   listMessages,
   markThreadRead,
@@ -48,11 +49,12 @@ export async function GET(
 
   try {
     const tid = threadId(user.walletAddress, otherWallet);
-    const [thread, messages, perm, profileMap] = await Promise.all([
+    const [thread, messages, perm, profileMap, block] = await Promise.all([
       getThread(user.walletAddress, otherWallet),
       listMessages(tid),
       permissionFor(user.walletAddress, otherWallet),
       getPublicUsers([otherWallet]),
+      getBlockState(user.walletAddress, otherWallet),
     ]);
     const otherProfile = profileMap.get(otherWallet.toLowerCase()) ?? {
       walletAddress: otherWallet.toLowerCase(),
@@ -70,6 +72,7 @@ export async function GET(
       messages,
       permission: perm,
       other: otherProfile,
+      block,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';
@@ -109,7 +112,7 @@ export async function POST(
     return NextResponse.json({ ok: true, thread, message });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';
-    const status = /pending|self|empty/.test(msg) ? 400 : 500;
+    const status = /pending|self|empty|blocked/.test(msg) ? 400 : 500;
     return NextResponse.json({ error: msg }, { status });
   }
 }

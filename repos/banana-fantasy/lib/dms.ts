@@ -40,10 +40,23 @@ import { getAdminDatabase, getAdminFirestore } from '@/lib/firebaseAdmin';
 import { friendshipId, getFriendship } from '@/lib/friends';
 
 const THREADS_COLLECTION = 'dm_threads';
+const BLOCKS_COLLECTION = 'dm_blocks';
 const HISTORY_LIMIT = 200;
 const PREVIEW_MAX = 80;
 
 export type DmThreadStatus = 'pending' | 'accepted';
+
+/**
+ * Block state between the caller and another wallet.
+ *  - myBlock:    I have them on my blocklist (I hid them).
+ *  - theirBlock: They have me on their blocklist (I can't reach them).
+ *
+ * Either flag prevents new messages from flowing in either direction.
+ */
+export interface BlockState {
+  myBlock: boolean;
+  theirBlock: boolean;
+}
 
 export interface DmThread {
   id: string;
@@ -75,6 +88,63 @@ function threadDocRef(walletA: string, walletB: string) {
 
 function messagesRef(tid: string) {
   return getAdminDatabase().ref(`/dm_messages/${tid}`);
+}
+
+// ─── Blocks ─────────────────────────────────────────────────────────────────
+// Each user has one doc at dm_blocks/{wallet} with their blocked-users array.
+// "Symmetric enforcement": when EITHER party has blocked the other, new
+// messages between them are rejected. We don't tear down past threads —
+// they just disappear from the blocker's inbox until they unblock.
+
+function blocksDocRef(wallet: string) {
+  return getAdminFirestore().collection(BLOCKS_COLLECTION).doc(wallet.toLowerCase());
+}
+
+export async function getBlockedUsers(wallet: string): Promise<string[]> {
+  const snap = await blocksDocRef(wallet).get();
+  if (!snap.exists) return [];
+  const d = snap.data() as { blockedUsers?: unknown } | undefined;
+  if (!d || !Array.isArray(d.blockedUsers)) return [];
+  return d.blockedUsers.filter((w): w is string => typeof w === 'string').map((w) => w.toLowerCase());
+}
+
+export async function getBlockState(wallet: string, otherWallet: string): Promise<BlockState> {
+  const me = wallet.toLowerCase();
+  const them = otherWallet.toLowerCase();
+  const [myList, theirList] = await Promise.all([
+    getBlockedUsers(me),
+    getBlockedUsers(them),
+  ]);
+  return {
+    myBlock: myList.includes(them),
+    theirBlock: theirList.includes(me),
+  };
+}
+
+export async function blockUser(blockerWallet: string, targetWallet: string): Promise<void> {
+  const blocker = blockerWallet.toLowerCase();
+  const target = targetWallet.toLowerCase();
+  if (blocker === target) throw new Error('cannot block self');
+  const ref = blocksDocRef(blocker);
+  const snap = await ref.get();
+  const current = snap.exists ? (snap.data()?.blockedUsers as string[] | undefined) ?? [] : [];
+  const lower = current.map((w) => w.toLowerCase());
+  if (lower.includes(target)) return;
+  await ref.set({
+    blockedUsers: [...lower, target],
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+export async function unblockUser(blockerWallet: string, targetWallet: string): Promise<void> {
+  const blocker = blockerWallet.toLowerCase();
+  const target = targetWallet.toLowerCase();
+  const ref = blocksDocRef(blocker);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const current = (snap.data()?.blockedUsers as string[] | undefined) ?? [];
+  const next = current.map((w) => w.toLowerCase()).filter((w) => w !== target);
+  await ref.set({ blockedUsers: next, updatedAt: Date.now() }, { merge: true });
 }
 
 // ─── Threads ────────────────────────────────────────────────────────────────
@@ -183,6 +253,13 @@ export async function sendMessage(input: {
   const recipient = input.recipientWallet.toLowerCase();
   if (sender === recipient) throw new Error('cannot DM self');
   if (!input.text.trim()) throw new Error('empty text');
+
+  // Block check. Reject in either direction so neither side can route
+  // around the other's block. The error string lets the API route map
+  // each case to a clear user-facing message.
+  const block = await getBlockState(sender, recipient);
+  if (block.myBlock) throw new Error('blocked: you have blocked this user');
+  if (block.theirBlock) throw new Error('blocked: message could not be delivered');
 
   const tid = threadId(sender, recipient);
   const ref = getAdminFirestore().collection(THREADS_COLLECTION).doc(tid);
