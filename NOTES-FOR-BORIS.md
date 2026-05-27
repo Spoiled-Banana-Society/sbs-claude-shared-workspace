@@ -4,6 +4,89 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## ⚠️ ACTIVE INCIDENT — Vercel DDoS Mitigation 403'ing the whole site (May 27)
+
+**Status when this note was written:** Site returning `403 Forbidden` with `x-vercel-mitigated: deny` for both Richard's and Boris's IPs. Cooldown likely still active. Code-side cause has been identified and fixed in two deploys today. Pending: browser cache cleanup + Vercel support ticket.
+
+**See `CLAUDE.md` Rule #0 at the top of the repo** — that's the durable rule that came out of this. Read it before touching any `useEffect` with a fetch inside.
+
+### What broke
+
+Whole staging site returns 403 at the Vercel edge — every route, every user. Not a Next.js app error (those return 500). The 403 comes with `x-vercel-mitigated: deny` which means Vercel's DDoS Mitigation rule fired. From the Firewall dashboard I saw `DDoS Mitigation` count = 1 with a 13k-request traffic spike at ~3:28 PM PT.
+
+### Root cause (confirmed, then refined)
+
+**First theory (wrong, but informative):** I thought my rapid deploy cadence (8 deploys in 90 minutes) plus burst-curling the live site for testing tripped Vercel's bot detection. Richard pushed back — said he's deployed that frequently before without issues. He was right.
+
+**Real cause:** A React render-loop I shipped earlier in the day in `AddFriendPane` inside `components/messages/MessagesHub.tsx`. The bug pattern:
+
+```ts
+//  BROKEN — what I shipped
+const { search } = useFriends(true);   // search captures privy via useAuthHeaders
+useEffect(() => {
+  if (!q.trim()) { setResults([]); return; }
+  const t = setTimeout(async () => {
+    const r = await search(q);
+    setResults(r);
+  }, 300);
+  return () => clearTimeout(t);
+}, [q, search]);  //  ← search identity churns on every Privy re-render
+```
+
+`usePrivy()` returns a new object identity on many renders. Anything that `useCallback`s against it (like `authHeaders` and downstream `search`/`refresh`) gets a new identity each render. Any effect listing those callbacks in its deps re-runs on every parent render. Each re-run fires a fetch. The parent re-rendered fast enough that Richard's Chrome was firing **thousands of `/api/users/search` requests per minute** from one tab. Vercel's edge saw the pattern as an attack and tripped DDoS Mitigation.
+
+Bug class is the same one Discord users hit constantly with Privy — Privy's hook return value isn't reference-stable across renders.
+
+### What we did about it
+
+1. **First fix (just AddFriendPane)** — committed `e5d0754` (richard branch) → ref'd `search` so the debounce effect only re-runs on `q` changes:
+   ```ts
+   const searchRef = useRef(search);
+   useEffect(() => { searchRef.current = search; }, [search]);
+   useEffect(() => { /* uses searchRef.current */ }, [q]);
+   ```
+   This stopped NEW render loops but didn't audit the rest of the codebase.
+
+2. **Audit + broader fix** — committed `c02c508` after Richard called out that I'd only patched one spot. Same anti-pattern existed in **3 more polling hooks**:
+   - `useDmInbox` (15s `/api/dms/threads` poll)
+   - `useDmThread` (2s `/api/dms/{wallet}` poll — tightest loop)
+   - `useFriends` (15s `/api/friends` poll)
+   - `useBlockedUsers` (one-shot `/api/dms/blocks` load)
+
+   All four had `useEffect(..., [enabled, refresh])` or similar where `refresh` derived from `headers` which derived from `usePrivy()`. Same fix applied — refresh stashed in `useRef`, effect deps reduced to stable scalars only (`enabled`, `otherWallet`).
+
+3. **Rule #0 written** to durable memory + repo `CLAUDE.md` so this can't happen again from either of our sessions. Three-question checklist before committing any `useEffect` with a fetch:
+   1. Does the effect call a function that does network I/O?
+   2. Is that function in the effect's dep array?
+   3. Does the function come from a hook that uses Privy / Auth / any context provider?
+
+   If yes-yes-yes → apply ref pattern before committing.
+
+### Things we tried that did NOT solve it (rule out so you don't redo them)
+
+- **Hard refresh Chrome** — didn't help; old SW was still serving stale buggy JS
+- **Toggling Vercel Settings → Firewall → Attack Challenge Mode** — wasn't on
+- **Checking Bot Management in team Firewall** — Bot Protection was "Inactive"; not the source
+- **Checking Vercel Settings → Deployment Protection** — fine
+- **Trying Safari** — worked at first (because Safari had no cached SW running the bug), then 403'd later too once the mitigation expanded
+- **Waiting 30 min** — mitigation didn't auto-lift in that window
+
+### What's left to do
+
+These are what Richard needs to do (or coordinate with you on). Don't deploy more code unless something else breaks — the four hook fixes are sufficient.
+
+1. **Both Richard and Boris must fully clear Chrome site data** for `banana-fantasy-sbs.vercel.app`. Old cached JS bundle still has the render loop, and even after my deploy the cached bundle keeps hammering the API in the background, which extends Vercel's mitigation cooldown. Path: DevTools → Application → Storage → "Clear site data" → close ALL tabs → reopen.
+2. **Add Vercel Firewall System Bypass Rules** for Richard's home IP and Boris's home IP — Vercel → SBS → Firewall → Rules → "Add Bypass Rule". Both get past DDoS Mitigation regardless.
+3. **Email Vercel support** with the latest error ID (Richard has it from the 403 page) to lift the active mitigation immediately. They respond fast for active outages.
+
+### Why I'm flagging this for you specifically
+
+If Boris hits an identical 403 outage in the future, please don't burst-deploy "fixes" in response — that compounds the Vercel-side problem. The right move is: figure out if anything is fetching in a loop client-side (DevTools → Network → count requests/sec), fix that, then let the mitigation cooldown run out. Bypass rules + Vercel support are the fast unsticks.
+
+Also, every line of code I shipped today is in commits `e5d0754` through `725a51c` on `main`. Browse if you want the full diff. The hook fixes are isolated to `hooks/useDms.ts` and `hooks/useFriends.ts` — small surface area, easy to review.
+
+---
+
 ## Open asks
 
 ### Self-serve backend deploys — ready for the secrets tarball + 2FA pairing (May 6)
