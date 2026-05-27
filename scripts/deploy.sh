@@ -120,31 +120,38 @@ echo "Files that will sync:"
 echo "$CHANGES"
 echo ""
 
-# 2.5 Auto-recover deletions (lesson from 2026-05-26).
+# 2.5 Deletion guard (lesson from 2026-05-26).
 # If the dry-run would delete files in sbs-frontend-v2 that aren't in
-# workspace, it usually means Boris pushed those files directly to
-# sbs-frontend-v2 without round-tripping through the shared workspace
-# (Mode B). The marker check above catches commit-level drift, but a
-# stale workspace can still propose individual file deletions if Boris's
-# direct-push files were never synced back. Before the real rsync, copy
-# any would-be-deleted file from deploy INTO workspace, so the real rsync
-# has nothing to delete. Loud warning so the user knows to follow up.
+# workspace, that's *usually* a sign of drift (Boris pushed direct to
+# sbs-frontend-v2 without syncing back) — but it CAN also be an intentional
+# refactor. Distinguish by asking git: was this file ever in a workspace
+# commit and then removed? If yes → intentional, let it through. If the
+# file isn't tracked by workspace git history at all → drift, abort with a
+# list so the operator can verify and either commit the file or pass
+# DEPLOY_ALLOW_DELETES=1 to bypass.
 DELETIONS=$(echo "$DRY_RUN" | awk '/^\*deleting/ {print $2}')
 if [ -n "$DELETIONS" ]; then
-  echo "⚠️  Auto-recovering files from deploy → workspace to prevent silent deletes:"
+  UNEXPECTED_DELETIONS=""
   while IFS= read -r rel; do
     [ -z "$rel" ] && continue
-    src="$DEPLOY_REPO/$rel"
-    dst="$WORKSPACE/$rel"
-    if [ -e "$src" ]; then
-      mkdir -p "$(dirname "$dst")"
-      cp -R "$src" "$dst"
-      echo "   recovered: $rel"
+    # Strip trailing slash for directory deletions; git log handles either.
+    clean="${rel%/}"
+    # Was this file (or anything under this path) ever tracked in workspace history?
+    # `git log` returns nothing if the path has no history → that's drift.
+    if [ -z "$(cd "$HOME/sbs-claude-shared-workspace" && git log -1 --format='%H' -- "repos/banana-fantasy/$clean" 2>/dev/null)" ]; then
+      UNEXPECTED_DELETIONS="${UNEXPECTED_DELETIONS}${rel}\n"
     fi
   done <<< "$DELETIONS"
-  echo "   These files were in sbs-frontend-v2 but missing from workspace."
-  echo "   Commit them to the shared workspace so they don't get re-flagged."
-  echo ""
+  if [ -n "$UNEXPECTED_DELETIONS" ] && [ "${DEPLOY_ALLOW_DELETES:-0}" != "1" ]; then
+    echo "⛔ DEPLOY ABORTED — would delete files that aren't tracked in workspace git history:"
+    printf "$UNEXPECTED_DELETIONS" | sed 's/^/   /'
+    echo ""
+    echo "   These were probably pushed direct to sbs-frontend-v2 without syncing"
+    echo "   back to workspace. Either:"
+    echo "     1) Copy them into workspace first, then commit, then re-run."
+    echo "     2) If you really mean to delete them, re-run with DEPLOY_ALLOW_DELETES=1."
+    exit 1
+  fi
 fi
 
 # 3. Apply for real.
