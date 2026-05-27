@@ -45,19 +45,8 @@ Richard's commits have overwritten Boris's work multiple times from stale local 
 3. **Before pushing, verify:** `git diff --stat HEAD~1`. If you see files you didn't touch, stop — you're about to overwrite someone's work.
 4. If pushing to sbs-frontend-v2: `cd ~/banana-fantasy && git pull origin main` there too before committing.
 
-### Sync Script Must Self-Recover Deletes (MANDATORY)
-Boris's Claude blew this up TWICE on 2026-05-26 — once deleting Richard's chat-tab files, once deleting his friends/DMs/global-chat files. Both caught and reverted, but the underlying script was wrong both times.
-
-**Bug 1 — sentinel only checks intent, not action.** The sentinel makes you run `git log origin/<other>..origin/<their-branch>` before syncing, which proves you *looked* at recent commits. It does NOT prove you *copied* their new files into your local. Sentinel cleared → script ran `rsync --delete` → their files got deleted from shared because they weren't in your local.
-
-**Bug 2 — rsync output format differs by version.** First fix tried to parse `rsync --dry-run` output to detect would-be deletions and auto-recover. The grep matched modern rsync 3.x format (`deleting <path>`) but missed macOS's built-in rsync 2.6.9 format (`<path>: deleting`). Silently passed every deletion through. Second incident.
-
-**Three-layer protection on Boris's side (already applied to `~/sync-shared-workspace.sh`):**
-1. Dry-run rsync first. Parse delete lines in BOTH macOS (`<path>: deleting`) and modern (`deleting <path>` / `*deleting <path>`) formats.
-2. For every detected delete: auto-copy that file from `~/sbs-claude-shared-workspace/repos/banana-fantasy/` into `~/banana-fantasy/`.
-3. Re-run dry-run after auto-copy. If ANY file deletion remains, HARD ABORT (`exit 1`) before the real rsync runs. The script never proceeds to a destructive sync with unresolved deletions.
-
-**If you're Richard's Claude reading this**: your sync-equivalent script (whatever you run that rsyncs `~/banana-fantasy → ~/sbs-claude-shared-workspace/repos/banana-fantasy/` with `--delete`) needs the same three-layer guard. Without it, the symmetrical bug deletes Boris's work next time he pushes between your sync runs. Reference: `~/sync-shared-workspace.sh` on Boris's machine — copy the `Pre-flight: detect`, auto-recover loop, and `Pre-flight VERIFY` blocks. Match the awk pattern exactly (covers both rsync versions). Don't trust a single dry-run — always re-verify after recovery and refuse to proceed if anything's still deletable.
+### Sync Script Must Not Delete
+Your sync script must NOT use `rsync --delete` when rsyncing `~/banana-fantasy → ~/sbs-claude-shared-workspace/repos/banana-fantasy/`. It silently destroys the other person's files when local is missing anything they added. Remove the flag — let intentional deletes happen via explicit `git rm` instead. Boris's `~/sync-shared-workspace.sh` is the reference.
 
 ### Pre-Push Hook (MANDATORY — set up once per machine)
 Blocks pushes unless the other person's latest commits have been synced. Marker must be the actual commit hash — can't be faked with `touch`:
