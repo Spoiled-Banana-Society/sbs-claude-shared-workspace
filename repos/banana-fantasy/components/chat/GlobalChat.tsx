@@ -191,7 +191,7 @@ export function GlobalChat() {
   }, [authHeaders]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)] sm:h-[calc(100vh-7rem)] max-w-3xl mx-auto bg-[#1c1c1e]/40 border border-white/[0.06] rounded-2xl overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-[#1c1c1e]/40 overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
         <div>
