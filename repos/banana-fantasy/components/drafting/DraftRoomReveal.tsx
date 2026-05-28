@@ -6,6 +6,7 @@ import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -206,15 +207,12 @@ export function DraftRoomReveal({
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
             const otherBadge = playerUser?.equippedBadge ?? null;
-            // Prefer the resolved username (already applied to displayName upstream),
-            // then fall back to truncated wallet.
-            const rawName = player ? (player.displayName || player.name || '') : '???';
+            // Prefer the resolved username; otherwise an on-brand Banana #
+            // default derived from the wallet — never a raw/truncated wallet.
             const displayName = player
               ? (player.isYou
                   ? myName
-                  : (playerUser?.displayName
-                      ? playerUser.displayName
-                      : (rawName.length > 14 ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}` : rawName)))
+                  : (playerUser?.displayName || getTruncatedAccountName(player.name || '', player.name || '')))
               : '???';
             const truncatedName = displayName.length > 14 ? `${displayName.substring(0, 12)}...` : displayName;
             const showCountdown = i === 0;

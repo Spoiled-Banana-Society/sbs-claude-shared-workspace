@@ -28,8 +28,8 @@ export const truncate = (string: string, limiter = 11) => {
     return string
 }
 
-export const truncateDisplayName = (string: string, limiter = 15) => {
-    if (!string) return
+export const truncateDisplayName = (string: string, limiter = 15): string => {
+    if (!string) return string
     if (string.length >= limiter) {
         const truncatedString = string.slice(0, 15) + "..."
         return truncatedString
@@ -66,10 +66,11 @@ export const isWalletAddress = (address: string) => {
 const PLACEHOLDER_NAMES = new Set(["testname", "testuser", "test"])
 
 // Deterministic FNV-1a 32-bit hash of the wallet hex, mapped into a
-// 7-digit space [1_000_000, 9_999_999]. ~9M handles. Stable per user,
-// no server coordination needed. Birthday-paradox collision odds:
-// ~5% at ~1.5k users; revisit / move to server-assigned if we grow past.
-// Boris's prior 4-hex `Banana #93e2` was 65k space — this is 138x wider.
+// 5-digit space [10_000, 99_999]. Always exactly 5 digits so the handle
+// shows in full inside a draft slot — no ellipsis, no truncation. Stable
+// per user (deterministic from the address), no server coordination.
+// Trade-off: 90k handles means birthday-paradox collisions get likely past
+// a few hundred users — revisit / move to server-assigned names if we grow.
 export const bananaNumberFromWallet = (walletAddress: string): number => {
     const hex = (walletAddress || "").replace(/^0x/i, "").toLowerCase()
     let h = 0x811c9dc5
@@ -77,15 +78,16 @@ export const bananaNumberFromWallet = (walletAddress: string): number => {
         h ^= hex.charCodeAt(i)
         h = Math.imul(h, 0x01000193)
     }
-    return ((h >>> 0) % 9_000_000) + 1_000_000
+    return ((h >>> 0) % 90_000) + 10_000
 }
 
 // On-brand default handle for users who haven't set a name. Stable per
 // wallet (deterministic from the address) so the same user always sees
-// the same number across devices and sessions.
+// the same handle across devices and sessions. No space, no "#", exactly
+// 5 digits — e.g. "Banana24789" — so it never truncates in a draft slot.
 export const bananaDefaultName = (walletAddress: string): string => {
     if (!walletAddress) return "Banana"
-    return `Banana #${bananaNumberFromWallet(walletAddress)}`
+    return `Banana${bananaNumberFromWallet(walletAddress)}`
 }
 
 // Returns the user's display name if it's a real, user-chosen one;

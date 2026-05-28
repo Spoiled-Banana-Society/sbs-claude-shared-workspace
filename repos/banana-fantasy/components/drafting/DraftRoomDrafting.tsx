@@ -11,6 +11,7 @@ import { DraftQueue } from '@/components/drafting/DraftQueue';
 import { DraftBoardGrid } from '@/components/drafting/DraftBoardGrid';
 import { DraftRoster } from '@/components/drafting/DraftRoster';
 import { DraftComplete } from '@/components/drafting/DraftComplete';
+import { getTruncatedAccountName } from '@/utils/helpers';
 import {
   getPositionColorHex,
   POSITION_COLORS,
@@ -183,8 +184,7 @@ export function DraftRoomDrafting({
                   } else if (playerUser?.displayName) {
                     displayName = playerUser.displayName;
                   } else {
-                    const raw = playerData.name || playerData.displayName || '';
-                    displayName = raw.length > 14 ? `${raw.slice(0, 6)}...${raw.slice(-4)}` : raw;
+                    displayName = getTruncatedAccountName(playerData.name || playerData.displayName || '', playerData.name || '');
                   }
                 } else {
                   displayName = slot.ownerName || '';
@@ -311,10 +311,13 @@ export function DraftRoomDrafting({
                 (() => {
                   const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;
                   const onClockName = onClockIdx !== undefined
-                    ? (engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '')
+                    ? getTruncatedAccountName(
+                        engine.draftOrder[onClockIdx]?.displayName || engine.draftOrder[onClockIdx]?.name || '',
+                        engine.draftOrder[onClockIdx]?.name || '',
+                      )
                     : '';
                   const truncated = onClockName.length > 14
-                    ? `${onClockName.slice(0, 6)}…${onClockName.slice(-4)}`
+                    ? `${onClockName.substring(0, 12)}…`
                     : onClockName;
                   return (
                     <span className="text-white/80">
@@ -360,7 +363,24 @@ export function DraftRoomDrafting({
           return (
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
-            <div className="flex-1 overflow-auto flex flex-col min-w-0">
+            <div className="relative flex-1 overflow-auto flex flex-col min-w-0">
+              {/* Draft completion screen — generates the team card and
+                  redirects to /draft-results. Rendered as a full overlay over
+                  the content area so it shows regardless of which tab the user
+                  happens to be on when the final pick lands. Previously this was
+                  gated behind `activeTab === 'draft'`, so a user sitting on any
+                  other tab (queue/board/roster/chat) at draft completion never
+                  saw the card and was never redirected. The underlying tabs stay
+                  mounted (chat polling/history persists) until the redirect. */}
+              {isCompleted && (
+                <div className="absolute inset-0 z-20 overflow-auto bg-black">
+                  <DraftComplete
+                    draftId={draftId || urlDraftId}
+                    generatedCardUrl={generatedCardUrl}
+                    walletAddress={walletParam}
+                  />
+                </div>
+              )}
               <DraftTabs
                 activeTab={activeTab}
                 onTabChange={onTabChange}
@@ -368,13 +388,6 @@ export function DraftRoomDrafting({
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
               />
-              {activeTab === 'draft' && isCompleted && (
-                <DraftComplete
-                  draftId={draftId || urlDraftId}
-                  generatedCardUrl={generatedCardUrl}
-                  walletAddress={walletParam}
-                />
-              )}
               {activeTab === 'draft' && !isCompleted && (
                 <DraftPlayerList
                   availablePlayers={engine.availablePlayers}
@@ -537,7 +550,7 @@ export function DraftRoomDrafting({
                   }
                   const teamCount = engine.picks.filter(p => p.ownerIndex === viewedIdx).length;
                   const teamLabel = spectator
-                    ? (engine.draftOrder[viewedIdx]?.displayName || viewedName || 'Team').slice(0, 14)
+                    ? getTruncatedAccountName(engine.draftOrder[viewedIdx]?.displayName || viewedName || '', viewedName || '').slice(0, 14)
                     : 'My Team';
                   return (
                 <>

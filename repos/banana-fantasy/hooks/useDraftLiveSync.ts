@@ -47,6 +47,9 @@ interface UseDraftLiveSyncParams {
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
   setPlayerCount: Dispatch<SetStateAction<number | null>>;
+  /** Stamped with Date.now() when our join lands, to gate the post-join
+   *  stale-count grace window in the draft room. */
+  joinAtRef: MutableRefObject<number>;
   draftIdRef: MutableRefObject<string>;
 }
 
@@ -67,6 +70,7 @@ export function useDraftLiveSync({
   setMainCountdown,
   setShowSlotMachine,
   setPlayerCount,
+  joinAtRef,
   draftIdRef,
 }: UseDraftLiveSyncParams) {
   const { getAccessToken } = usePrivy();
@@ -140,7 +144,6 @@ export function useDraftLiveSync({
     async function joinAndFill() {
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
-
       // Auto-mint a token before joining so the wallet always has one available
       try {
         const { getStagingApiUrl } = await import('@/lib/staging');
@@ -179,6 +182,10 @@ export function useDraftLiveSync({
           // for the RTDB push or the 2.5s poll to catch up.
           if (typeof joinedCount === 'number' && joinedCount > 0) {
             clientLog('pcdiag', 'set.join', { numPlayers: joinedCount });
+            // Mark our join time so the draft room ignores the brief stale
+            // downward RTDB/poll reading that follows (our own count bump
+            // hasn't propagated yet), while still showing real leaves live.
+            joinAtRef.current = Date.now();
             setPlayerCount(Math.min(Math.max(joinedCount, 1), 10));
           }
 
@@ -210,6 +217,14 @@ export function useDraftLiveSync({
             passType: passTypeParam || 'paid',
             cardId: draftRoom.cardId,
           });
+          // addDraft no-ops if a record for this draftId already exists, which
+          // would leave a STALE cardId from a previous join — and leaving then
+          // sends the wrong token → 409 ("said good but kept me in"). Force the
+          // exact token this join landed on so leave refunds the token we
+          // actually entered with.
+          if (draftRoom.cardId) {
+            draftStore.updateDraft(newId, { cardId: draftRoom.cardId });
+          }
 
           return;
         } catch (err) {
