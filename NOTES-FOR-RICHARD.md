@@ -4,6 +4,55 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## May 27 — DDoS incident follow-up: 6 more spots patched, smoke test + rate-limit rule added
+
+Thanks for the diagnosis + write-up + the four-hook fix (`c02c508`). Boris's Claude picked it up from your `NOTES-FOR-BORIS.md` brief, verified your fix landed, then did an independent audit on top because the four polling hooks weren't the full surface area.
+
+### Six more spots that had the same anti-pattern (now fixed)
+
+Your audit covered the polling hooks (`useDmInbox`, `useDmThread`, `useFriends`, `useBlockedUsers`) + `AddFriendPane`. The same `useEffect` + Privy-derived callback pattern was alive in 6 more places. Shipped in `cbcf08c`:
+
+| File | What it was doing |
+|---|---|
+| `components/chat/GlobalChat.tsx:104` | Mute-status poll every 15s, on `/messages` (public) |
+| `components/social/UserPopover.tsx:117` | Friend-state fetch on popover open (draft chat, league chat, marketplace) |
+| `hooks/useActivityStream.ts:90` | Privy access-token resolve (admin LiveActivity + profile ActivityHistory) |
+| `components/admin/CompletedDraftsList.tsx:71` | 10s admin poll |
+| `components/admin/SpectateBrowser.tsx:96` | 5s admin poll |
+| `components/admin/FounderScheduleEditor.tsx:189` | Mount-load via `load` callback |
+
+Same ref pattern you used — stash callback in `useRef`, keep effect deps to stable scalars. No `useStableAuthHeaders` refactor yet — would touch ~20 files; deferred until the architecture call.
+
+### New: smoke test at `e2e/render-loop-guard.spec.ts`
+
+Opens `/messages`, `/draft-room`, `/coming-soon`, `/lobby-world`, watches outbound `/api/*` requests for 10s, fails if any page exceeds 75 in the window. Catches the entire bug class (not just Privy-specific). Threshold: real heavy pages baseline ~20–30 in 10s, storms are 1000+/min (167+/10s), so 75 sits comfortably between.
+
+Run before deploying anything that adds a `useEffect` with a fetch:
+```
+cd ~/banana-fantasy && npx playwright test e2e/render-loop-guard.spec.ts
+```
+
+### New: Vercel Firewall rate-limit rule (the structural fix)
+
+Custom Rule "API rate limit — render-loop guard" now live at vercel.com/sbs/banana-fantasy/firewall/rules.
+
+- **Match:** Request Path starts with `/api`
+- **Rate:** 1500 req/min per IP, fixed window
+- **Action:** 429 (Too Many Requests), 1-minute throttle
+- **Effect:** if a future render-loop ships, ONE user gets a 1-min 429 instead of Vercel's project-wide DDoS Mitigation 403'ing everyone for an hour
+
+**Heads-up for your dev workflow:** if you write a render-loop bug, your own browser will trip the rule and you'll see 429s in DevTools. That's the rule doing early-warning duty, not something to bypass. Catch + fix locally before pushing.
+
+Real-user ceiling is ~400–500 req/min (heavy drafting + chat + multiple tabs). 1500 has comfortable headroom — no legitimate user will hit it.
+
+### Companion update
+
+Banana-fantasy `CLAUDE.md` got a new "Render-Loop Self-DDoS" section under Hard Rules that points at your Rule #0 + the smoke test command. So future-Claude (yours or mine) reads the rule before touching effect+fetch code regardless of which CLAUDE.md it loaded first.
+
+— Boris's Claude
+
+---
+
 ## May 26 — Draft transport migrated to Firebase RTDB + how to delete ghost drafts
 
 ### What changed
