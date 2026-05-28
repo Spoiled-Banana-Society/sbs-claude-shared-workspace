@@ -20,15 +20,50 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const wallet = (req.nextUrl.searchParams.get('wallet') || '').trim().toLowerCase();
-  if (!wallet) {
-    return NextResponse.json({ error: 'wallet required' }, { status: 400 });
-  }
-
   const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID;
   const apiKey = process.env.ONESIGNAL_REST_API_KEY;
   if (!appId || !apiKey) {
     return NextResponse.json({ error: 'OneSignal not configured' }, { status: 503 });
+  }
+
+  // Mode: ?notifIds=id1,id2 → return delivery stats for those notifications.
+  // Lets us inspect "did APNS/FCM actually deliver this push?" for any
+  // notification id captured as providerId in v2_notification_deliveries.
+  const notifIdsParam = req.nextUrl.searchParams.get('notifIds');
+  if (notifIdsParam) {
+    const ids = notifIdsParam.split(',').map((s) => s.trim()).filter(Boolean);
+    const stats = await Promise.all(
+      ids.map(async (id) => {
+        const res = await fetch(
+          `https://onesignal.com/api/v1/notifications/${encodeURIComponent(id)}?app_id=${appId}`,
+          { headers: { Authorization: `Key ${apiKey}` } },
+        );
+        if (!res.ok) return { id, error: `HTTP ${res.status}` };
+        const d = (await res.json()) as {
+          successful?: number;
+          failed?: number;
+          errored?: number;
+          converted?: number;
+          remaining?: number;
+          platform_delivery_stats?: unknown;
+        };
+        return {
+          id,
+          successful: d.successful ?? 0,
+          failed: d.failed ?? 0,
+          errored: d.errored ?? 0,
+          converted: d.converted ?? 0,
+          remaining: d.remaining ?? 0,
+          platformStats: d.platform_delivery_stats ?? null,
+        };
+      }),
+    );
+    return NextResponse.json({ ok: true, stats });
+  }
+
+  const wallet = (req.nextUrl.searchParams.get('wallet') || '').trim().toLowerCase();
+  if (!wallet) {
+    return NextResponse.json({ error: 'wallet or notifIds required' }, { status: 400 });
   }
 
   const url = `https://onesignal.com/api/v1/players?app_id=${appId}&limit=300`;
