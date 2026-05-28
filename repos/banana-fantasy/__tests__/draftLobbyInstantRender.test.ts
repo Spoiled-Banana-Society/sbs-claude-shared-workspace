@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeInitialPlayerCount, shouldShowPlayerCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers } from '@/lib/draftRoomLobby';
 
 describe('Draft lobby instant render — no false "1/10" flash', () => {
   describe('computeInitialPlayerCount', () => {
@@ -36,6 +36,31 @@ describe('Draft lobby instant render — no false "1/10" flash', () => {
     it('clamps known counts into 1..10', () => {
       expect(computeInitialPlayerCount({ storedPlayers: 99 })).toBe(10);
       expect(computeInitialPlayerCount({ initialPlayers: 50 })).toBe(10);
+    });
+  });
+
+  describe('parseInitialPlayers — the URL hint that caused the flash', () => {
+    it('returns null when the players param is absent (the normal Enter-draft case)', () => {
+      // This is the exact bug: no `players` param previously defaulted to 1.
+      expect(parseInitialPlayers(null)).toBeNull();
+      expect(parseInitialPlayers(undefined)).toBeNull();
+      expect(parseInitialPlayers('')).toBeNull();
+    });
+
+    it('end-to-end: no param → initial count is null (pulse), never 1', () => {
+      const initialPlayers = parseInitialPlayers(null);
+      expect(initialPlayers).toBeNull();
+      expect(computeInitialPlayerCount({ initialPlayers })).toBeNull();
+    });
+
+    it('returns the count when a valid param is present', () => {
+      expect(parseInitialPlayers('6')).toBe(6);
+    });
+
+    it('returns null for non-positive or garbage params', () => {
+      expect(parseInitialPlayers('0')).toBeNull();
+      expect(parseInitialPlayers('-3')).toBeNull();
+      expect(parseInitialPlayers('abc')).toBeNull();
     });
   });
 

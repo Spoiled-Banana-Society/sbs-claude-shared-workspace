@@ -40,3 +40,15 @@ export function computeInitialPlayerCount(args: InitialPlayerCountArgs): number 
 export function shouldShowPlayerCount(playerCount: number | null): boolean {
   return playerCount != null && playerCount > 0;
 }
+
+/**
+ * Parse the `players` URL hint into a known count or null. Absent/empty/invalid
+ * → null ("unknown"), so the lobby pulses instead of flashing a default "1".
+ * This is the value that previously defaulted to `1` and caused the flash even
+ * after computeInitialPlayerCount stopped hardcoding 1.
+ */
+export function parseInitialPlayers(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}

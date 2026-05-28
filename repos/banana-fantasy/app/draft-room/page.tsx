@@ -14,7 +14,7 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { computeInitialPlayerCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, parseInitialPlayers } from '@/lib/draftRoomLobby';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -47,7 +47,10 @@ function DraftRoomContent() {
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
   const [contestName, setContestName] = useState(urlName || 'Draft Room');
-  const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
+  // null when the URL has no `players` hint (the normal "Enter draft" case) —
+  // so the lobby shows a pulse until the join response gives the real count,
+  // instead of flashing a hardcoded "1".
+  const initialPlayers = parseInitialPlayers(searchParams?.get('players'));
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
   const walletParam = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
@@ -754,7 +757,7 @@ function DraftRoomContent() {
       status: 'filling',
       type: null,
       draftSpeed: speedParam || 'fast',
-      players: initialPlayers,
+      players: initialPlayers ?? 1,
       maxPlayers: 10,
       joinedAt: Date.now(),
       phase: 'filling',
