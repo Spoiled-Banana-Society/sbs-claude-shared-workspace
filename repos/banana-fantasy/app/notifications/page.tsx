@@ -20,6 +20,8 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   purchase_complete: { emoji: '🛒', color: '#22c55e', label: 'Purchase' },
   sale_complete: { emoji: '💵', color: '#3b82f6', label: 'Sale' },
   listing_created: { emoji: '📋', color: '#a855f7', label: 'Listing' },
+  friend_request: { emoji: '👋', color: '#3b82f6', label: 'Friend' },
+  message_received: { emoji: '💬', color: '#22c55e', label: 'Message' },
 };
 
 function timeAgo(iso: string): string {

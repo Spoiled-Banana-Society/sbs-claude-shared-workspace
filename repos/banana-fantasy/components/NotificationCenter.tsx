@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created';
+export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received';
 
 export interface Notification {
   id: string;
@@ -37,6 +37,8 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = 
   purchase_complete: { emoji: '🛒', color: '#22c55e' },
   sale_complete: { emoji: '💵', color: '#3b82f6' },
   listing_created: { emoji: '📋', color: '#a855f7' },
+  friend_request: { emoji: '👋', color: '#3b82f6' },
+  message_received: { emoji: '💬', color: '#22c55e' },
 };
 
 const STORAGE_KEY = 'sbs-notifications';
@@ -46,7 +48,7 @@ const PREFS_KEY = 'sbs-notification-prefs';
 
 // ─── Notification Categories ────────────────────────────────────────────
 
-export type NotificationCategory = 'drafts' | 'promos' | 'marketplace' | 'special' | 'system';
+export type NotificationCategory = 'drafts' | 'promos' | 'marketplace' | 'special' | 'system' | 'friends' | 'messages';
 
 const CATEGORY_MAP: Record<NotificationType, NotificationCategory> = {
   draft_starting: 'drafts',
@@ -63,6 +65,8 @@ const CATEGORY_MAP: Record<NotificationType, NotificationCategory> = {
   purchase_complete: 'marketplace',
   sale_complete: 'marketplace',
   listing_created: 'marketplace',
+  friend_request: 'friends',
+  message_received: 'messages',
 };
 
 export const CATEGORY_LABELS: Record<NotificationCategory, { label: string; emoji: string }> = {
@@ -71,11 +75,13 @@ export const CATEGORY_LABELS: Record<NotificationCategory, { label: string; emoj
   marketplace: { label: 'Marketplace', emoji: '💰' },
   special: { label: 'Special Drafts', emoji: '🔥' },
   system: { label: 'System & Referrals', emoji: '📢' },
+  friends: { label: 'Friend Requests', emoji: '👋' },
+  messages: { label: 'Messages', emoji: '💬' },
 };
 
 export type NotificationPrefs = Record<NotificationCategory, boolean>;
 
-const DEFAULT_PREFS: NotificationPrefs = { drafts: true, promos: true, marketplace: true, special: true, system: true };
+const DEFAULT_PREFS: NotificationPrefs = { drafts: true, promos: true, marketplace: true, special: true, system: true, friends: true, messages: true };
 
 export function getNotificationPrefs(): NotificationPrefs {
   if (typeof window === 'undefined') return DEFAULT_PREFS;

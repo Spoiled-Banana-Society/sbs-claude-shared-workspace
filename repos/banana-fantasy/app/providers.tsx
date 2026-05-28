@@ -23,6 +23,7 @@ import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
+import { SocialNotifier } from '@/components/social/SocialNotifier';
 
 // Context to expose triggerOptIn to any component in the tree
 type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
@@ -81,6 +82,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
         {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
         <CrispChat />
+        {/* Fires in-app notis for new friend requests / messages. Renders
+            nothing; runs app-wide incl. the draft room. */}
+        <SocialNotifier />
         {!isDraftRoom && <SupportChatButton />}
         <NotificationOptIn
           show={notif.showPrompt}

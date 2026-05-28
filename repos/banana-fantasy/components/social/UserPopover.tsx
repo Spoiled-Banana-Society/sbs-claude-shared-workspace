@@ -53,6 +53,12 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
   const [relationship, setRelationship] = useState<Relationship>('loading');
   const [mutualCount, setMutualCount] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  // Inline compose: tapping "Message" expands a little box right here in
+  // the popover (Richard's ask) instead of navigating away to /messages.
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -138,9 +144,44 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     };
   }, [open]);
 
+  // Reset the compose box whenever the popover closes, so reopening on a
+  // different user never shows a stale half-typed message.
+  useEffect(() => {
+    if (!open) {
+      setComposing(false);
+      setDraft('');
+      setSent(false);
+      setSending(false);
+    }
+  }, [open]);
+
   const flash = (text: string) => {
     setFeedback(text);
     setTimeout(() => setFeedback(null), 2000);
+  };
+
+  const handleSendMessage = async () => {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const headers = await authHeaders();
+      const res = await fetch(`/api/dms/${encodeURIComponent(targetWallet)}`, {
+        method: 'POST', headers, body: JSON.stringify({ text }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        flash(json.error || 'Couldn’t send');
+        setSending(false);
+        return;
+      }
+      setDraft('');
+      setSent(true);
+    } catch (err) {
+      flash(err instanceof Error ? err.message : 'Couldn’t send');
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleSendRequest = async () => {
@@ -321,16 +362,73 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           {/* Actions */}
           <div className="p-3 space-y-2">
             {renderAction()}
-            {!isSelf && !!myWallet && (
+            {!isSelf && !!myWallet && !composing && (
               <button
-                onClick={() => {
-                  router.push(`/messages?with=${encodeURIComponent(walletAddress)}`);
-                  setOpen(false);
-                }}
+                onClick={() => setComposing(true)}
                 className="w-full px-3 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] text-white/80 hover:text-white text-sm font-medium transition-colors"
               >
-                Send Message
+                Message
               </button>
+            )}
+
+            {/* Inline compose box — the "little box they can write in". */}
+            {!isSelf && !!myWallet && composing && (
+              <div className="space-y-2">
+                {sent ? (
+                  <div className="text-center py-2 space-y-2">
+                    <p className="text-green-400 text-sm font-medium">Message sent ✓</p>
+                    <button
+                      onClick={() => {
+                        router.push(`/messages?with=${encodeURIComponent(walletAddress)}`);
+                        setOpen(false);
+                      }}
+                      className="text-banana/80 hover:text-banana text-xs underline underline-offset-2"
+                    >
+                      Open conversation
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      autoFocus
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        // Enter sends; Shift+Enter makes a newline.
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendMessage();
+                        }
+                      }}
+                      maxLength={1000}
+                      rows={3}
+                      placeholder={`Message ${displayName}…`}
+                      className="w-full resize-none rounded-lg bg-black/40 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-banana/50 transition-colors"
+                    />
+                    {/* First message to a non-friend lands as a request. */}
+                    {relationship !== 'friend' && (
+                      <p className="text-white/40 text-[11px] leading-snug">
+                        They&apos;ll get this as a message request until they accept.
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setComposing(false); setDraft(''); }}
+                        className="px-3 py-2 rounded-lg text-white/40 hover:text-white/70 text-sm transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => void handleSendMessage()}
+                        disabled={!draft.trim() || sending}
+                        className="flex-1 px-3 py-2 rounded-lg bg-banana text-black hover:bg-banana-light text-sm font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {sending ? 'Sending…' : 'Send'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
