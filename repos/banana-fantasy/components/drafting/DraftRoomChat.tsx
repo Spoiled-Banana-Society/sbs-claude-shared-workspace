@@ -6,6 +6,7 @@ import { UserPopover } from '@/components/social/UserPopover';
 interface ChatMessage {
   id: string;
   sender: string;
+  pfpUrl?: string;
   text: string;
   walletAddress?: string;
   isYou: boolean;
@@ -88,6 +89,7 @@ export function DraftRoomChat({
             id: string;
             walletAddress: string;
             username: string;
+            pfpUrl?: string;
             text: string;
             timestamp: number;
           }>;
@@ -96,6 +98,7 @@ export function DraftRoomChat({
         const next = data.messages.map((r) => ({
           id: r.id,
           sender: r.username || r.walletAddress.slice(0, 6),
+          pfpUrl: r.pfpUrl,
           text: r.text,
           walletAddress: r.walletAddress,
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
@@ -280,7 +283,7 @@ export function DraftRoomChat({
                         Clickable — opens UserPopover with friend actions. */}
                     {msg.isFirstInGroup && !msg.isYou && (
                       msg.walletAddress ? (
-                        <UserPopover walletAddress={msg.walletAddress} username={msg.sender}>
+                        <UserPopover walletAddress={msg.walletAddress} username={msg.sender} pfpUrl={msg.pfpUrl}>
                           <span className="text-[10px] text-white/40 ml-3 mb-0.5 hover:text-white hover:underline cursor-pointer">{msg.sender}</span>
                         </UserPopover>
                       ) : (

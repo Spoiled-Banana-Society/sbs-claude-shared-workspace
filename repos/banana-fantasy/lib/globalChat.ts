@@ -12,6 +12,7 @@
  */
 
 import { getAdminDatabase, getAdminFirestore } from '@/lib/firebaseAdmin';
+import { enrichChatIdentities } from '@/lib/chatProfiles';
 
 const MUTES_COLLECTION = 'chat_mutes';
 const HISTORY_LIMIT = 200;
@@ -59,7 +60,9 @@ export async function listMessages(): Promise<GlobalChatMessage[]> {
       });
     }
   });
-  return out;
+  // Overlay each sender's *live* profile (name + picture) so a message never
+  // shows a stale wallet fragment or a missing avatar — see lib/chatProfiles.
+  return enrichChatIdentities(out);
 }
 
 /**

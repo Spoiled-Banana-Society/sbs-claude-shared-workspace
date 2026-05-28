@@ -277,7 +277,6 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
   };
 
   const displayName = username || shortWallet(walletAddress);
-  const initial = (username || walletAddress).slice(0, 1).toUpperCase();
 
   return (
     <>
@@ -301,14 +300,14 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-white/[0.06]">
             <div className="flex items-start gap-3">
-              {pfpUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={pfpUrl} alt={displayName} className="w-14 h-14 rounded-full object-cover bg-white/5 border border-white/10 flex-shrink-0" />
-              ) : (
-                <div className="w-14 h-14 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-xl">
-                  {initial}
-                </div>
-              )}
+              {/* Always a real picture or the banana default; never a wallet initial. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pfpUrl || '/banana-profile.png'}
+                alt={displayName}
+                onError={(e) => { e.currentTarget.src = '/banana-profile.png'; }}
+                className="w-14 h-14 rounded-full object-cover bg-white/5 border border-white/10 flex-shrink-0"
+              />
               <div className="flex-1 min-w-0 mt-1">
                 <p className="text-white font-semibold truncate">{displayName}</p>
                 <p className="text-white/40 text-xs font-mono truncate">{shortWallet(walletAddress)}</p>

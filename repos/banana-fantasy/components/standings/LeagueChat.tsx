@@ -7,6 +7,7 @@ import { UserPopover } from '@/components/social/UserPopover';
 interface ChatMessage {
   id: string;
   sender: string;
+  pfpUrl?: string;
   walletAddress: string;
   text: string;
   isYou: boolean;
@@ -50,6 +51,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
             id: string;
             walletAddress: string;
             username: string;
+            pfpUrl?: string;
             text: string;
             timestamp: number;
           }>;
@@ -58,6 +60,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         setMessages(data.messages.slice(-HISTORY_LIMIT).map((r) => ({
           id: r.id,
           sender: r.username || r.walletAddress.slice(0, 6),
+          pfpUrl: r.pfpUrl,
           walletAddress: r.walletAddress,
           text: r.text,
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
@@ -139,7 +142,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         {grouped.map((msg) => (
           <div key={msg.id} className={`flex flex-col ${msg.isYou ? 'items-end' : 'items-start'}`}>
             {msg.isFirstInGroup && !msg.isYou && (
-              <UserPopover walletAddress={msg.walletAddress} username={msg.sender}>
+              <UserPopover walletAddress={msg.walletAddress} username={msg.sender} pfpUrl={msg.pfpUrl}>
                 <span className="text-[10px] text-white/40 ml-3 mb-0.5 hover:text-white hover:underline cursor-pointer">{msg.sender}</span>
               </UserPopover>
             )}

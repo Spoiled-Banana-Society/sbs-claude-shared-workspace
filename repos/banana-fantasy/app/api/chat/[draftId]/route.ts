@@ -18,10 +18,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getAdminDatabase } from '@/lib/firebaseAdmin';
+import { enrichChatIdentities } from '@/lib/chatProfiles';
 
 interface ChatMessageRecord {
   walletAddress: string;
   username: string;
+  pfpUrl?: string;
   text: string;
   timestamp: number;
 }
@@ -55,12 +57,16 @@ export async function GET(
           id: child.key || `${v.timestamp ?? Date.now()}`,
           walletAddress: v.walletAddress,
           username: typeof v.username === 'string' ? v.username : v.walletAddress,
+          pfpUrl: typeof v.pfpUrl === 'string' ? v.pfpUrl : undefined,
           text: v.text,
           timestamp: typeof v.timestamp === 'number' ? v.timestamp : Date.now(),
         });
       }
     });
-    return NextResponse.json({ messages: out });
+    // Overlay each sender's live profile (name + picture) so chat never shows
+    // a stale wallet fragment or a missing avatar — see lib/chatProfiles.
+    const messages = await enrichChatIdentities(out);
+    return NextResponse.json({ messages });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'read failed';
     return NextResponse.json({ error: msg }, { status: 500 });

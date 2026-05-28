@@ -220,19 +220,19 @@ export function GlobalChat() {
         )}
         {messages.map((msg) => {
           const isYou = !!myWallet && msg.walletAddress.toLowerCase() === myWallet;
-          const initial = (msg.username || msg.walletAddress).slice(0, 1).toUpperCase();
           return (
             <div key={msg.id} className="group flex items-start gap-3 px-2 py-1.5 rounded-lg hover:bg-white/[0.02]">
-              {/* Avatar — clickable, opens UserPopover with friend actions. */}
+              {/* Avatar — clickable, opens UserPopover with friend actions.
+                  Always a real picture or the banana default; never a wallet
+                  initial. onError swaps a broken pfp URL back to the banana. */}
               <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
-                {msg.pfpUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={msg.pfpUrl} alt={msg.username} className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all" />
-                ) : (
-                  <div className="w-9 h-9 rounded-full flex-shrink-0 bg-banana/20 border border-banana/30 flex items-center justify-center text-banana font-bold text-sm hover:ring-2 hover:ring-banana/40 transition-all">
-                    {initial}
-                  </div>
-                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={msg.pfpUrl || '/banana-profile.png'}
+                  alt={msg.username}
+                  onError={(e) => { e.currentTarget.src = '/banana-profile.png'; }}
+                  className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all"
+                />
               </UserPopover>
 
               {/* Body */}
