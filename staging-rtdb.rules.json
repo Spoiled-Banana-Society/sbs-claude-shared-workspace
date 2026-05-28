@@ -4,6 +4,7 @@
       "$draftId": {
         "realTimeDraftInfo": { ".read": true, ".write": false },
         "numPlayers": { ".read": true, ".write": false },
+        "randomizeStartAt": { ".read": true, ".write": false },
         "displayName": { ".read": true, ".write": false }
       }
     }

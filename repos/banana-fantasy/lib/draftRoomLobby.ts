@@ -83,3 +83,26 @@ export function reconcileLiveCount(
   // incoming < cur → a decrease.
   return msSinceJoin >= graceMs ? incoming : cur;
 }
+
+/**
+ * Pick the anchor (epoch ms) the randomize bar measures its progress from.
+ *
+ * Prefer the backend's shared `randomizeStartAt` (RTDB) so EVERY client's bar
+ * runs on the same clock and reveals together — including the 10th joiner, who
+ * reads the same value and snaps to the correct elapsed position. Fall back to
+ * a previously-stored local anchor (resume), then to `now` (old backend with
+ * no shared value, so nothing breaks during the deploy crossover).
+ *
+ * Only the START anchor is chosen here; the existing bar-finish, reveal, and
+ * 15s/60s countdown logic are unchanged and stay anchored to the server's
+ * draftStartTime.
+ */
+export function resolveRandomizeAnchor(
+  sharedMs: number | null | undefined,
+  storedMs: number | null | undefined,
+  nowMs: number,
+): number {
+  if (typeof sharedMs === 'number' && sharedMs > 0) return sharedMs;
+  if (typeof storedMs === 'number' && storedMs > 0) return storedMs;
+  return nowMs;
+}

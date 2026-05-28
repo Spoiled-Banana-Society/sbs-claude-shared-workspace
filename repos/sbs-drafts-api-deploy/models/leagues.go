@@ -396,11 +396,22 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 		// the right wallets. The later realTimeDraftInfoRef.Update in
 		// draft-actions.go:48 also writes numPlayers:10, but that's a
 		// no-op for the trigger (before>=10 && after>=10 → bails).
+		// randomizeStartAt is a SHARED anchor (epoch ms) written at fill-time so
+		// every client's "randomizing" bar runs on the same clock and reveals
+		// together — including the 10th joiner, who reads the same value and
+		// snaps to the right elapsed position. Written alongside numPlayers:10
+		// in one atomic Update, BEFORE CreateLeagueDraftStateUponFilling, so the
+		// bar can start covering the (now-parallelized) backend work immediately.
+		// Frontend only READS it; downstream reveal + 15s/60s countdowns are
+		// unchanged (still anchored to the server draftStartTime).
+		randomizeStartAt := time.Now().UnixMilli()
 		ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", l.LeagueId))
-		if err := ref.Update(context.TODO(), map[string]interface{}{"numPlayers": 10}); err != nil {
-			fmt.Println("WARN: failed to write numPlayers:10 to RTDB at fill-time (notification will fire late): ", err)
+		if err := ref.Update(context.TODO(), map[string]interface{}{"numPlayers": 10, "randomizeStartAt": randomizeStartAt}); err != nil {
+			fmt.Println("WARN: failed to write numPlayers:10 + randomizeStartAt to RTDB at fill-time (notification/bar-sync will lag): ", err)
 			// Non-fatal — the draft-start path will still set numPlayers:10
-			// and the user just gets the notification a few seconds later.
+			// and the bar falls back to a local anchor.
+		} else {
+			fmt.Printf("[fill-timing] wrote numPlayers:10 + randomizeStartAt:%d to RTDB for %s\n", randomizeStartAt, l.LeagueId)
 		}
 		err := CreateLeagueDraftStateUponFilling(draftId, draftType)
 		if err != nil {

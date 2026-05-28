@@ -11,10 +11,10 @@ import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
-import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
+import { subscribeDraftDisplayName, subscribeDraftNumPlayers, subscribeDraftRandomizeStartAt } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -206,6 +206,9 @@ function DraftRoomContent() {
   // yet) while still letting genuine leaves lower the count live afterwards.
   // 0 = never joined here (a pure observer) → leaves show immediately.
   const joinAtRef = useRef(0);
+  // Shared randomize-bar anchor (epoch ms) from RTDB, written by the Go API at
+  // fill-time so every client's bar runs on the same clock. 0 until it arrives.
+  const randomizeStartAtRef = useRef(0);
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'mount', {
@@ -1393,6 +1396,24 @@ function DraftRoomContent() {
     return () => { unsub(); };
   }, [draftId, phase]);
 
+  // Shared randomize-bar anchor via RTDB — the Go API writes
+  // drafts/{draftId}/randomizeStartAt at fill-time so every client runs the
+  // "randomizing" bar on the same clock (the at-10 effect reads this ref).
+  // Persist to draftStore too so a resume/late mount picks up the shared anchor
+  // instead of a local Date.now(). Subscribe through 'filling' AND the
+  // randomize/reveal phases so a client that mounts mid-randomize still gets it.
+  useEffect(() => {
+    if (!draftId) return;
+    const unsub = subscribeDraftRandomizeStartAt(draftId, (startAtMs) => {
+      if (startAtMs > 0 && randomizeStartAtRef.current !== startAtMs) {
+        randomizeStartAtRef.current = startAtMs;
+        clientLog('pcdiag', 'set.randomizeStartAt', { startAtMs });
+        draftStore.updateDraft(draftId, { randomizingStartedAt: startAtMs });
+      }
+    });
+    return () => { unsub(); };
+  }, [draftId]);
+
   useEffect(() => {
     if (!isLiveMode || !draftId) return;
     if (phase === 'drafting' || phase === 'loading') return;
@@ -1457,7 +1478,11 @@ function DraftRoomContent() {
     setWaitingForServer(true);
 
     const existingTimestamp = draftId ? draftStore.getDraft(draftId)?.randomizingStartedAt : undefined;
-    const randomizingStartedAt = existingTimestamp || Date.now();
+    // Prefer the backend's shared anchor so every client's bar (and therefore
+    // the reveal, which is anchored to start + MIN) lines up. Falls back to a
+    // stored anchor (resume) then now (old backend) — nothing downstream changes.
+    const randomizingStartedAt = resolveRandomizeAnchor(randomizeStartAtRef.current, existingTimestamp, Date.now());
+    clientLog('pcdiag', 'randomize.anchor', { randomizingStartedAt, shared: randomizeStartAtRef.current || null, stored: existingTimestamp ?? null });
     const progressDuration = 3000;
     const initialElapsed = Date.now() - randomizingStartedAt;
     const initialT = Math.min(1, initialElapsed / progressDuration);

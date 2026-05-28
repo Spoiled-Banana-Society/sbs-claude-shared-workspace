@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers, reconcileLiveCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
 
 describe('Draft lobby instant render — no false "1/10" flash', () => {
   describe('computeInitialPlayerCount', () => {
@@ -101,6 +101,29 @@ describe('Draft lobby instant render — no false "1/10" flash', () => {
       expect(pc).toBe(4);
       pc = reconcileLiveCount(pc, 3, 99999); // someone leaves
       expect(pc).toBe(3);
+    });
+  });
+
+  describe('resolveRandomizeAnchor — synced bar start across all clients', () => {
+    it('prefers the shared backend randomizeStartAt so every client matches', () => {
+      expect(resolveRandomizeAnchor(1000, 5000, 9999)).toBe(1000);
+    });
+
+    it('falls back to a stored local anchor on resume', () => {
+      expect(resolveRandomizeAnchor(null, 5000, 9999)).toBe(5000);
+      expect(resolveRandomizeAnchor(0, 5000, 9999)).toBe(5000);
+    });
+
+    it('falls back to now when neither exists (old backend, no break)', () => {
+      expect(resolveRandomizeAnchor(null, null, 9999)).toBe(9999);
+      expect(resolveRandomizeAnchor(undefined, undefined, 9999)).toBe(9999);
+    });
+
+    it('two clients with the same shared anchor get identical bar timing', () => {
+      const shared = 1_700_000_000_000;
+      // observer (stored from a prior render) and 10th joiner (no stored yet)
+      expect(resolveRandomizeAnchor(shared, 1_700_000_001_111, 1_700_000_002_222)).toBe(shared);
+      expect(resolveRandomizeAnchor(shared, null, 1_700_000_002_999)).toBe(shared);
     });
   });
 
