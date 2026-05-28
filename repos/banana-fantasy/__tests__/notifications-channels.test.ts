@@ -107,7 +107,12 @@ describe('sendPush', () => {
     const sendBody = JSON.parse(fetchFn.mock.calls[1][1].body);
     expect(sendBody.app_id).toBe('app1');
     expect(sendBody.include_player_ids).toEqual(['player-1', 'player-2']);
-    expect(sendBody.ttl).toBe(30);
+    // TTL is always the 10-min default (not the pick-timer length).
+    // A 30s pick timer used to be passed through verbatim — APNS
+    // silently dropped any push that couldn't reach a backgrounded
+    // iPhone within 30s. See the comment on the sendPush call site
+    // in lib/notifications/channels.ts for the full incident.
+    expect(sendBody.ttl).toBe(600);
   });
 
   it('drops players OneSignal marked invalid_identifier', async () => {

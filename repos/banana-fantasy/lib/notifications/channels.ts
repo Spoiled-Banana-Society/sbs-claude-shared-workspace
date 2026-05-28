@@ -54,10 +54,16 @@ export const sendPush: ChannelSender = async (message, event, prefs) => {
       title: message.title,
       body: message.body,
       url: message.url,
-      ttlSeconds: event.pickLengthSeconds ?? undefined,
-      // Collapse by draftId so rapid pick alerts for the same draft
-      // replace each other on the lock screen instead of stacking. See
-      // OneSignalPushOptions.collapseKey for full rationale.
+      // Always use the 10-minute default TTL (sendOneSignalPush's
+      // fallback when ttlSeconds is undefined). The earlier behavior
+      // passed the pick timer length (30s for fast drafts) which made
+      // APNS silently drop pushes that couldn't reach a backgrounded
+      // iPhone within 30s — confirmed pattern: draft.filled landed
+      // (TTL=600) while your_turn picks didn't (TTL=30). A late banner
+      // is still useful awareness ("you missed pick 8, you're now at
+      // pick 9") — collapseKey below ensures only the LATEST pick alert
+      // for a given draft shows, so late ones can't mislead.
+      ttlSeconds: undefined,
       collapseKey: event.draftId,
     });
     // providerId is the OneSignal notification id — admin user-lookup
