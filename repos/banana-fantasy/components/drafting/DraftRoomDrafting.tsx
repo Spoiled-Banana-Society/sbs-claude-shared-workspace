@@ -360,7 +360,24 @@ export function DraftRoomDrafting({
           return (
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
-            <div className="flex-1 overflow-auto flex flex-col min-w-0">
+            <div className="relative flex-1 overflow-auto flex flex-col min-w-0">
+              {/* Draft completion screen — generates the team card and
+                  redirects to /draft-results. Rendered as a full overlay over
+                  the content area so it shows regardless of which tab the user
+                  happens to be on when the final pick lands. Previously this was
+                  gated behind `activeTab === 'draft'`, so a user sitting on any
+                  other tab (queue/board/roster/chat) at draft completion never
+                  saw the card and was never redirected. The underlying tabs stay
+                  mounted (chat polling/history persists) until the redirect. */}
+              {isCompleted && (
+                <div className="absolute inset-0 z-20 overflow-auto bg-black">
+                  <DraftComplete
+                    draftId={draftId || urlDraftId}
+                    generatedCardUrl={generatedCardUrl}
+                    walletAddress={walletParam}
+                  />
+                </div>
+              )}
               <DraftTabs
                 activeTab={activeTab}
                 onTabChange={onTabChange}
@@ -368,13 +385,6 @@ export function DraftRoomDrafting({
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
               />
-              {activeTab === 'draft' && isCompleted && (
-                <DraftComplete
-                  draftId={draftId || urlDraftId}
-                  generatedCardUrl={generatedCardUrl}
-                  walletAddress={walletParam}
-                />
-              )}
               {activeTab === 'draft' && !isCompleted && (
                 <DraftPlayerList
                   availablePlayers={engine.availablePlayers}
