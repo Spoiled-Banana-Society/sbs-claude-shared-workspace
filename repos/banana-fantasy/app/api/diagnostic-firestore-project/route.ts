@@ -14,15 +14,36 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // touch Firestore to ensure the lazy init happens
-    getAdminFirestore();
+    const db = getAdminFirestore();
     const app = getAdminApp();
+
+    // Try an actual write and report exactly what happens. Removes the
+    // ambiguity of "app.options.projectId is null but maybe the SA works
+    // anyway" — if writes actually land, we know the pipeline is fine.
+    let writeResult: { success: boolean; docId?: string; error?: string };
+    try {
+      const ref = await db.collection('v2_error_events').add({
+        source: 'diagnostic.endpoint_probe',
+        message: 'write attempt from /api/diagnostic-firestore-project',
+        actor: 'diagnostic-endpoint',
+        timestamp: new Date().toISOString(),
+      });
+      writeResult = { success: true, docId: ref.id };
+    } catch (writeErr) {
+      writeResult = {
+        success: false,
+        error: writeErr instanceof Error
+          ? `${writeErr.name}: ${writeErr.message}`
+          : String(writeErr),
+      };
+    }
+
     return NextResponse.json({
       projectId: app.options.projectId ?? null,
       databaseURL: app.options.databaseURL ?? null,
-      // also include any obvious env signals
       envName: process.env.NEXT_PUBLIC_ENVIRONMENT ?? null,
       hasServiceAccountEnv: !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
+      writeResult,
     });
   } catch (err) {
     return NextResponse.json(
