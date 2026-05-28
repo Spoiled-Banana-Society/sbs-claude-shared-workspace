@@ -186,16 +186,20 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 			time.Sleep(waitDuration)
 		}
 
-		// Process the pick
-		err = models.ProcessNewPick(draftId, calculatedPick, false)
-		if err != nil {
-			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Pick processed successfully"))
-			return
-		}
-
-		// Update SortByObj to reflect missed pick
+		// Apply the missed-pick effects to userInfo and PERSIST BEFORE
+		// ProcessNewPick. ProcessNewPick spawns a goroutine that calls
+		// scheduleAutoDraftTask for the NEXT pick — and that scheduler
+		// re-reads userInfo from Firestore to decide whether to fire the
+		// next Cloud Task immediately (AutoDraft=true) or after the full
+		// 30s clock. If we write userInfo AFTER ProcessNewPick the goroutine
+		// races us and reads the pre-increment value. For most positions
+		// the next pick isn't theirs and the race never matters. For
+		// position 1's back-to-back picks (snake reversal: pick 20 → pick
+		// 21, pick 40 → pick 41, etc.), the next pick IS them, the
+		// scheduler reads stale AutoDraft=false, NumPicksMissedConsecutive=1,
+		// and schedules a full 30s wait — so what should be an instant
+		// auto-pick on miss #3 onward actually still burns 30s on miss #3.
+		// Persisting first closes the race.
 		userInfo.NumPicksMissedConsecutive++
 
 		// After 2 consecutive timer-expired picks (server auto-pick), enable auto-draft for future picks.
@@ -205,11 +209,24 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 			userInfo.AutoDraft = true
 		}
 
-		// Update the SortByObj in the database
+		// Update the SortByObj in the database BEFORE processing the pick.
+		// Failure here is logged but non-fatal — losing a counter increment
+		// is far less bad than skipping the pick entirely. The next handler
+		// invocation will see one of two correct states: (a) we already
+		// wrote (instant branch fires), or (b) we didn't write and the
+		// 30s timer rolls again, which is the pre-fix behavior anyway.
 		err = models.UpdateSortForDrafter(draftId, ownerId, userInfo)
 		if err != nil {
-			fmt.Printf("autoDraft error (UpdateSortForDrafter): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
+		}
+
+		// Process the pick (also spawns next-pick scheduling goroutine,
+		// which now reads the just-persisted userInfo).
+		err = models.ProcessNewPick(draftId, calculatedPick, false)
+		if err != nil {
+			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Pick processed successfully"))
 			return
 		}
 	}
