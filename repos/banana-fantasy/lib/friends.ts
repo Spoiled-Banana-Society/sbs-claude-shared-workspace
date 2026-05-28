@@ -16,6 +16,25 @@
  */
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { bananaDefaultName } from '@/utils/helpers';
+
+/**
+ * A stored/legacy display name that isn't a real, user-chosen name: empty, a
+ * leftover test placeholder, or any raw/truncated wallet form (e.g. "0xc0d1c2"
+ * or "0x709.a4e9"). Mirrors lib/api/owner.ts `isPlaceholderName` so the
+ * friends/DMs/search resolver shows the on-brand "Banana #1234" default
+ * instead of a wallet address. Every account effectively has a name — a real
+ * one or this default — so a raw 0x… should never surface as someone's name.
+ */
+function isPlaceholderProfileName(name: string | undefined | null, wallet: string): boolean {
+  const t = (name || '').trim();
+  if (t === '') return true;
+  if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
+  if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true;             // raw / truncated wallet
+  if (/^0x[0-9a-fA-F]+\.[0-9a-fA-F]+$/.test(t)) return true; // "0x709.a4e9" form
+  if (t.toLowerCase() === wallet.toLowerCase()) return true;
+  return false;
+}
 
 const COLLECTION = 'friendships';
 
@@ -101,7 +120,7 @@ export async function listForUser(walletAddress: string): Promise<FriendListBuck
 
   const toPublic = (w: string): PublicUser => profileMap.get(w.toLowerCase()) ?? {
     walletAddress: w,
-    username: w.slice(0, 8),
+    username: bananaDefaultName(w),
   };
 
   return {
@@ -140,7 +159,7 @@ export async function getMutualFriends(walletA: string, walletB: string): Promis
   const mutual: string[] = [];
   for (const w of aFriends) if (bFriends.has(w)) mutual.push(w);
   const profileMap = await getPublicUsers(mutual);
-  return mutual.map((w) => profileMap.get(w) ?? { walletAddress: w, username: w.slice(0, 8) });
+  return mutual.map((w) => profileMap.get(w) ?? { walletAddress: w, username: bananaDefaultName(w) });
 }
 
 // ─── Writes ────────────────────────────────────────────────────────────────
@@ -291,25 +310,27 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
     for (const [w, pfp] of results) {
       const existing = out.get(w);
       const dn = pfp?.displayName?.trim();
-      const goName = dn && dn.toLowerCase() !== w ? dn : undefined;
+      const goName = dn && !isPlaceholderProfileName(dn, w) ? dn : undefined;
       out.set(w, {
         walletAddress: w,
-        username: existing?.username || goName || w.slice(0, 8),
+        username: existing?.username || goName || bananaDefaultName(w),
         profilePicture: existing?.profilePicture || pfp?.imageUrl,
         equippedBadge: existing?.equippedBadge ?? null,
       });
     }
   }
 
-  // Final pass: anyone still missing a username (no v2 doc, no Go API hit)
-  // falls back to the wallet slice so the UI never shows empty.
+  // Final pass: guarantee every wallet resolves to a real, non-wallet name.
+  // Anything empty or wallet-shaped — no v2 doc, a placeholder, or a Go-API
+  // miss — becomes the on-brand "Banana #1234" default. A raw 0x… address
+  // must never surface as a person's name.
   for (const w of wallets) {
     const lw = w.toLowerCase();
-    if (!out.has(lw)) {
-      out.set(lw, { walletAddress: lw, username: lw.slice(0, 8) });
-    } else {
-      const cur = out.get(lw)!;
-      if (!cur.username) out.set(lw, { ...cur, username: lw.slice(0, 8) });
+    const cur = out.get(lw);
+    if (!cur) {
+      out.set(lw, { walletAddress: lw, username: bananaDefaultName(lw) });
+    } else if (isPlaceholderProfileName(cur.username, lw)) {
+      out.set(lw, { ...cur, username: bananaDefaultName(lw) });
     }
   }
   // Don't await — page renders don't need to block on the backfill write.
@@ -343,7 +364,7 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
       const d = snap.data() as { walletAddress?: string; username?: string; profilePicture?: string } | undefined;
       if (d) out.push({
         walletAddress: lower,
-        username: d.username || lower.slice(0, 8),
+        username: d.username || bananaDefaultName(lower),
         profilePicture: d.profilePicture,
       });
     }
@@ -367,7 +388,7 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
     seen.add(wallet);
     out.push({
       walletAddress: wallet,
-      username: d.username || wallet.slice(0, 8),
+      username: d.username || bananaDefaultName(wallet),
       profilePicture: d.profilePicture,
     });
   };
