@@ -90,6 +90,18 @@ export function getAdminFirestore(): Firestore {
   if (_db) return _db;
   const app = getAdminApp();
   _db = getFirestore(app);
+  // Accept payloads with undefined-valued fields by silently dropping
+  // those fields instead of throwing. Without this, any caller passing
+  // an object spread with optional fields (e.g. logErrorEvent receiving
+  // {stack, route, sessionId, context} where most are undefined) would
+  // hit `Value for argument "data" is not a valid Firestore document.
+  // Cannot use "undefined" as a Firestore value (found in field …)` and
+  // the entire write would throw. That's why v2_error_events stopped
+  // receiving Vercel-originated client errors — every POST to
+  // /api/client-errors that omitted optional fields was rejected by
+  // the SDK before reaching Firestore. Setting this globally is safe;
+  // Firestore-side validation still rejects any actually-invalid data.
+  _db.settings({ ignoreUndefinedProperties: true });
   return _db;
 }
 
