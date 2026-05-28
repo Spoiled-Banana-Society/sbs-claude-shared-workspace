@@ -52,3 +52,15 @@ export function parseInitialPlayers(raw: string | null | undefined): number | nu
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+
+/**
+ * Merge a live count reading (from the RTDB push or the poll) into the current
+ * count during filling. The count only ever climbs while a lobby fills, so a
+ * reading LOWER than what we already know is stale (e.g. the RTDB subscription
+ * attaching right after join reads the pre-increment value before our own
+ * join's bump has propagated). Taking the max prevents the "shows 2, snaps
+ * back to 1, then 2 again" box flicker. `prev` null means nothing known yet.
+ */
+export function mergePlayerCount(prev: number | null, incoming: number): number {
+  return Math.max(prev ?? 0, incoming);
+}

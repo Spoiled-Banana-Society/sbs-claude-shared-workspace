@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers, mergePlayerCount } from '@/lib/draftRoomLobby';
 
 describe('Draft lobby instant render — no false "1/10" flash', () => {
   describe('computeInitialPlayerCount', () => {
@@ -61,6 +61,30 @@ describe('Draft lobby instant render — no false "1/10" flash', () => {
       expect(parseInitialPlayers('0')).toBeNull();
       expect(parseInitialPlayers('-3')).toBeNull();
       expect(parseInitialPlayers('abc')).toBeNull();
+    });
+  });
+
+  describe('mergePlayerCount — count never flickers backwards during filling', () => {
+    it('keeps the higher count when a stale lower reading arrives (the 2→1→2 box flicker)', () => {
+      // Join set the count to 2; a stale RTDB push of 1 must NOT knock it back.
+      expect(mergePlayerCount(2, 1)).toBe(2);
+    });
+
+    it('accepts a higher reading (a real new joiner)', () => {
+      expect(mergePlayerCount(2, 3)).toBe(3);
+    });
+
+    it('treats null prev as 0', () => {
+      expect(mergePlayerCount(null, 2)).toBe(2);
+    });
+
+    it('end-to-end: join=2 then stale rtdb=1 then push=2 stays at 2 throughout', () => {
+      let pc: number | null = null;
+      pc = 2;                       // join response
+      pc = mergePlayerCount(pc, 1); // stale RTDB attach — must stay 2
+      expect(pc).toBe(2);
+      pc = mergePlayerCount(pc, 2); // corrected RTDB push
+      expect(pc).toBe(2);
     });
   });
 

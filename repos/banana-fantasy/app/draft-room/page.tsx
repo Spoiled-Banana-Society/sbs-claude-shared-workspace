@@ -14,7 +14,7 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { computeInitialPlayerCount, parseInitialPlayers } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, parseInitialPlayers, mergePlayerCount } from '@/lib/draftRoomLobby';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -1364,7 +1364,7 @@ function DraftRoomContent() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(count); }
+        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(prev => mergePlayerCount(prev, count)); }
       } catch { /* ignore */ }
     };
 
@@ -1382,7 +1382,7 @@ function DraftRoomContent() {
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     const unsub = subscribeDraftNumPlayers(draftId, (count) => {
-      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(count); }
+      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(prev => mergePlayerCount(prev, count)); }
     });
     return () => { unsub(); };
   }, [draftId, phase]);
