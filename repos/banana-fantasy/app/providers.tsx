@@ -110,6 +110,47 @@ function OneSignalInit() {
     });
   }, []);
 
+  // Auto-refresh the OneSignal push subscription whenever the PWA
+  // becomes visible. iOS occasionally rotates APNS push tokens — when
+  // that happens, OneSignal's stored token goes stale and pushes start
+  // arriving at APNS but never reaching the device (successful=1,
+  // received=0). The standard workaround is asking the user to toggle
+  // push off/on in settings, which is terrible UX. Instead: on every
+  // PWA foregrounding, call optIn() (no-op if state hasn't changed,
+  // forces a token sync with OneSignal if it has) and re-POST the
+  // current subscription id to our /api/notifications/subscribe so
+  // the server-side wallet → playerId mapping stays current. User
+  // never has to think about it.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const refreshIfOptedIn = async () => {
+      try {
+        const sub = OneSignal?.User?.PushSubscription;
+        // Only refresh if the user previously opted in — otherwise we'd
+        // be silently re-prompting users who deliberately turned push off.
+        if (!sub || sub.optedIn !== true) return;
+        // Calling optIn when already opted in is a no-op for state but
+        // forces the SDK to re-sync the subscription with OneSignal —
+        // which is what triggers OneSignal to pick up a rotated APNS
+        // token. The playerId (server-side mapping key) is stable, so
+        // no separate /api/notifications/subscribe POST is needed.
+        await OneSignal.User.PushSubscription.optIn();
+      } catch (err) {
+        console.warn('OneSignal subscription refresh failed:', err);
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refreshIfOptedIn();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    // Also run once on mount so freshly-opened PWAs immediately refresh,
+    // not just on subsequent foregrounding.
+    refreshIfOptedIn();
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
   return null;
 }
 
