@@ -924,7 +924,11 @@ function DraftRoomContent() {
 
         setSortPreference(newSort);
         engine.setAutoPickSortPreference(newSort);
-        setMissedPicksCount(prefs.numPicksMissedConsecutive || 0);
+        const initialMissed = prefs.numPicksMissedConsecutive || 0;
+        setMissedPicksCount(initialMissed);
+        // Seed engine counter from server on mount so a page refresh
+        // mid-draft doesn't reset the airplane state machine to zero.
+        engine.setConsecutiveTimeouts(initialMissed);
 
         // Sync local airplaneMode with server autoDraft preference
         if (prefs.autoDraft !== engine.airplaneMode) {
@@ -998,25 +1002,47 @@ function DraftRoomContent() {
         if (cancelled) return;
         const serverMissed = prefs.numPicksMissedConsecutive || 0;
 
-        // Mirror server's authoritative counter into the engine so its own
-        // setAirplaneMode(true) trigger (counter >= 2 in processPick) stays
-        // aligned with what the server has decided. Without this the engine
-        // can flicker airplane on then off as we correct it from the server
-        // a beat later.
-        engine.setConsecutiveTimeouts(serverMissed);
+        // RACE GUARD (this is the position-1-needs-3-misses bug fix):
+        // the Go server writes RTDB realTimeDraftInfo BEFORE it writes
+        // Firestore sortOrders (autoDraft.handler line 190 vs 209). Our
+        // sync is triggered by the RTDB write landing on the client, so
+        // a GET /preferences fired immediately after it can race the
+        // server and return the OLD counter (server hasn't done the
+        // increment yet). Blindly mirroring that value CLOBBERS the
+        // engine counter that processPick just correctly incremented.
+        //
+        // Strategy: MAX(engine, server) for the counter (never let
+        // server lag pull the counter backwards) and OR the airplane
+        // flags (engine's processPick can flip airplane true at
+        // counter>=2 before the server has written its own AutoDraft
+        // flip — that's correct, don't reverse it).
+        //
+        // Downward sync still works: manual pick → processPick resets
+        // engine counter to 0 AND server submitPick resets sortOrders
+        // to 0; max(0,0)=0, OR(false,false)=false. Toggle-off is gated
+        // upstream by autoDraftLoading so this sync doesn't fight an
+        // in-flight PATCH.
+        const desiredCounter = Math.max(engine.consecutiveTimeouts, serverMissed);
+        const desiredAirplane = engine.airplaneMode || prefs.autoDraft;
 
-        if (autoDraft !== prefs.autoDraft) {
+        engine.setConsecutiveTimeouts(desiredCounter);
+
+        if (autoDraft !== desiredAirplane) {
           logger.info('[Airplane] setAirplaneMode — source=post-pick-prefs-sync', {
             draftId,
             wallet: walletParam,
             serverValue: prefs.autoDraft,
+            engineValue: engine.airplaneMode,
+            desiredAirplane,
             clientValue: autoDraft,
             serverMissedCount: serverMissed,
+            engineMissedCount: engine.consecutiveTimeouts,
+            desiredCounter,
             pickNum: engine.currentPickNumber,
           });
           reportClientEvent({
             source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-            message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=post-pick-prefs-sync`,
+            message: `[Airplane] setAirplaneMode(${desiredAirplane}) — source=post-pick-prefs-sync`,
             route: 'draft-room.post-pick-sync-effect',
             actor: walletParam,
             context: {
@@ -1024,27 +1050,32 @@ function DraftRoomContent() {
               trigger: 'post-pick-prefs-sync',
               draftId,
               serverValue: prefs.autoDraft,
+              engineValue: engine.airplaneMode,
+              desiredAirplane,
               clientValue: autoDraft,
               serverMissedCount: serverMissed,
+              engineMissedCount: engine.consecutiveTimeouts,
+              desiredCounter,
               pickNum: engine.currentPickNumber,
             },
           }, { skipThrottle: true });
-          setAutoDraft(prefs.autoDraft);
-          engine.setAirplaneMode(prefs.autoDraft);
+          setAutoDraft(desiredAirplane);
+          engine.setAirplaneMode(desiredAirplane);
           const id = getPersistId();
-          if (id) localStorage.setItem(`airplane:${id}`, prefs.autoDraft ? '1' : '0');
-        } else if (prefs.autoDraft !== engine.airplaneMode) {
-          // Page state and server agree but engine drifted — pull engine in.
+          if (id) localStorage.setItem(`airplane:${id}`, desiredAirplane ? '1' : '0');
+        } else if (engine.airplaneMode !== desiredAirplane) {
+          // Page state already correct but engine drifted — pull engine in.
           logger.info('[Airplane] setAirplaneMode — source=post-pick-engine-realign', {
             draftId,
             wallet: walletParam,
             serverValue: prefs.autoDraft,
             engineValue: engine.airplaneMode,
+            desiredAirplane,
             pickNum: engine.currentPickNumber,
           });
           reportClientEvent({
             source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-            message: `[Airplane] setAirplaneMode(${prefs.autoDraft}) — source=post-pick-engine-realign`,
+            message: `[Airplane] setAirplaneMode(${desiredAirplane}) — source=post-pick-engine-realign`,
             route: 'draft-room.post-pick-sync-effect',
             actor: walletParam,
             context: {
@@ -1053,16 +1084,17 @@ function DraftRoomContent() {
               draftId,
               serverValue: prefs.autoDraft,
               engineValue: engine.airplaneMode,
+              desiredAirplane,
               pickNum: engine.currentPickNumber,
             },
           }, { skipThrottle: true });
-          engine.setAirplaneMode(prefs.autoDraft);
+          engine.setAirplaneMode(desiredAirplane);
         }
         // Always log the pick-by-pick sync result for diagnostics, even
         // when nothing flipped — gives us a complete server-truth trace.
         reportClientEvent({
           source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-          message: `[Airplane] post-pick sync — server says autoDraft=${prefs.autoDraft}, missed=${serverMissed}`,
+          message: `[Airplane] post-pick sync — server=(autoDraft=${prefs.autoDraft}, missed=${serverMissed}); engine=(airplane=${engine.airplaneMode}, counter=${engine.consecutiveTimeouts}); desired=(airplane=${desiredAirplane}, counter=${desiredCounter})`,
           route: 'draft-room.post-pick-sync-effect',
           actor: walletParam,
           context: {
@@ -1074,9 +1106,11 @@ function DraftRoomContent() {
             clientAutoDraft: autoDraft,
             engineAirplaneMode: engine.airplaneMode,
             engineCounterBeforeSync: engine.consecutiveTimeouts,
+            desiredAirplane,
+            desiredCounter,
           },
         }, { skipThrottle: true });
-        setMissedPicksCount(serverMissed);
+        setMissedPicksCount(desiredCounter);
       })
       .catch((e) => {
         if (cancelled) return;
