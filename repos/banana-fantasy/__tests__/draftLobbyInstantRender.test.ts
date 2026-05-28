@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers, mergePlayerCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, shouldShowPlayerCount, parseInitialPlayers, reconcileLiveCount } from '@/lib/draftRoomLobby';
 
 describe('Draft lobby instant render — no false "1/10" flash', () => {
   describe('computeInitialPlayerCount', () => {
@@ -64,27 +64,43 @@ describe('Draft lobby instant render — no false "1/10" flash', () => {
     });
   });
 
-  describe('mergePlayerCount — count never flickers backwards during filling', () => {
-    it('keeps the higher count when a stale lower reading arrives (the 2→1→2 box flicker)', () => {
-      // Join set the count to 2; a stale RTDB push of 1 must NOT knock it back.
-      expect(mergePlayerCount(2, 1)).toBe(2);
+  describe('reconcileLiveCount — no flicker on join, but leaves update live', () => {
+    const GRACE = 2500;
+
+    it('always accepts an increase immediately (new joiner)', () => {
+      expect(reconcileLiveCount(2, 3, 0)).toBe(3);
+      expect(reconcileLiveCount(2, 3, 999999)).toBe(3);
+      expect(reconcileLiveCount(null, 2, 0)).toBe(2);
     });
 
-    it('accepts a higher reading (a real new joiner)', () => {
-      expect(mergePlayerCount(2, 3)).toBe(3);
+    it('ignores a downward reading within the grace window (stale post-join dip)', () => {
+      // Joined just now, count is 2, RTDB attaches with stale 1 → keep 2.
+      expect(reconcileLiveCount(2, 1, 50)).toBe(2);
     });
 
-    it('treats null prev as 0', () => {
-      expect(mergePlayerCount(null, 2)).toBe(2);
+    it('accepts a downward reading after the grace window (a real leave)', () => {
+      // Been in the lobby a while; someone leaves 4→3 → show 3 live.
+      expect(reconcileLiveCount(4, 3, GRACE + 1)).toBe(3);
     });
 
-    it('end-to-end: join=2 then stale rtdb=1 then push=2 stays at 2 throughout', () => {
-      let pc: number | null = null;
-      pc = 2;                       // join response
-      pc = mergePlayerCount(pc, 1); // stale RTDB attach — must stay 2
+    it('a long-time watcher (large msSinceJoin) sees leaves immediately', () => {
+      expect(reconcileLiveCount(5, 4, Number.POSITIVE_INFINITY)).toBe(4);
+    });
+
+    it('end-to-end joiner: 2 → stale 1 (ignored) → 2, no flicker', () => {
+      let pc: number | null = 2;            // join response
+      pc = reconcileLiveCount(pc, 1, 80);   // stale RTDB attach within grace
       expect(pc).toBe(2);
-      pc = mergePlayerCount(pc, 2); // corrected RTDB push
+      pc = reconcileLiveCount(pc, 2, 120);  // corrected push
       expect(pc).toBe(2);
+    });
+
+    it('end-to-end watcher: 3 → 4 (join) → 3 (leave) all live', () => {
+      let pc: number | null = 3;
+      pc = reconcileLiveCount(pc, 4, 99999); // new joiner
+      expect(pc).toBe(4);
+      pc = reconcileLiveCount(pc, 3, 99999); // someone leaves
+      expect(pc).toBe(3);
     });
   });
 

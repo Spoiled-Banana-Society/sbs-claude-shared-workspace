@@ -47,6 +47,9 @@ interface UseDraftLiveSyncParams {
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
   setPlayerCount: Dispatch<SetStateAction<number | null>>;
+  /** Stamped with Date.now() when our join lands, to gate the post-join
+   *  stale-count grace window in the draft room. */
+  joinAtRef: MutableRefObject<number>;
   draftIdRef: MutableRefObject<string>;
 }
 
@@ -67,6 +70,7 @@ export function useDraftLiveSync({
   setMainCountdown,
   setShowSlotMachine,
   setPlayerCount,
+  joinAtRef,
   draftIdRef,
 }: UseDraftLiveSyncParams) {
   const { getAccessToken } = usePrivy();
@@ -179,6 +183,10 @@ export function useDraftLiveSync({
           // for the RTDB push or the 2.5s poll to catch up.
           if (typeof joinedCount === 'number' && joinedCount > 0) {
             clientLog('pcdiag', 'set.join', { numPlayers: joinedCount });
+            // Mark our join time so the draft room ignores the brief stale
+            // downward RTDB/poll reading that follows (our own count bump
+            // hasn't propagated yet), while still showing real leaves live.
+            joinAtRef.current = Date.now();
             setPlayerCount(Math.min(Math.max(joinedCount, 1), 10));
           }
 

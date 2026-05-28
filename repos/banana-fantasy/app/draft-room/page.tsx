@@ -14,7 +14,7 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { computeInitialPlayerCount, parseInitialPlayers, mergePlayerCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount } from '@/lib/draftRoomLobby';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -201,6 +201,11 @@ function DraftRoomContent() {
       initialPlayers,
     }),
   );
+  // When THIS client's join landed. Used to ignore the brief stale downward
+  // RTDB/poll reading right after join (our own count bump hasn't propagated
+  // yet) while still letting genuine leaves lower the count live afterwards.
+  // 0 = never joined here (a pure observer) → leaves show immediately.
+  const joinAtRef = useRef(0);
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'mount', {
@@ -337,6 +342,7 @@ function DraftRoomContent() {
     setMainCountdown,
     setShowSlotMachine,
     setPlayerCount,
+    joinAtRef,
     draftIdRef,
   });
 
@@ -1364,7 +1370,7 @@ function DraftRoomContent() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(prev => mergePlayerCount(prev, count)); }
+        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(prev => reconcileLiveCount(prev, count, joinAtRef.current ? Date.now() - joinAtRef.current : Number.POSITIVE_INFINITY)); }
       } catch { /* ignore */ }
     };
 
@@ -1382,7 +1388,7 @@ function DraftRoomContent() {
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     const unsub = subscribeDraftNumPlayers(draftId, (count) => {
-      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(prev => mergePlayerCount(prev, count)); }
+      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(prev => reconcileLiveCount(prev, count, joinAtRef.current ? Date.now() - joinAtRef.current : Number.POSITIVE_INFINITY)); }
     });
     return () => { unsub(); };
   }, [draftId, phase]);

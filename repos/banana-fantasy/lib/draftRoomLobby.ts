@@ -53,14 +53,33 @@ export function parseInitialPlayers(raw: string | null | undefined): number | nu
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** How long after joining we treat a downward live reading as a stale dip. */
+export const JOIN_COUNT_GRACE_MS = 2500;
+
 /**
- * Merge a live count reading (from the RTDB push or the poll) into the current
- * count during filling. The count only ever climbs while a lobby fills, so a
- * reading LOWER than what we already know is stale (e.g. the RTDB subscription
- * attaching right after join reads the pre-increment value before our own
- * join's bump has propagated). Taking the max prevents the "shows 2, snaps
- * back to 1, then 2 again" box flicker. `prev` null means nothing known yet.
+ * Reconcile a live count reading (RTDB push or poll) into the current count
+ * during filling.
+ *
+ * Upward readings are always accepted immediately (a new joiner). A *downward*
+ * reading is ambiguous: it's either a stale post-join dip (the RTDB
+ * subscription attaching right after join reads the pre-increment value before
+ * our own bump propagates) or a genuine leave. We distinguish them by time
+ * since *this client* joined: within the grace window → treat as the stale dip
+ * and keep the higher count (kills the "2 → 1 → 2" box flicker); after the
+ * grace window → accept the decrease so leaves update live for everyone.
+ *
+ * `prev` null means nothing known yet. `msSinceJoin` should be large
+ * (effectively Infinity) for clients that have been in the lobby a while, so
+ * they always see leaves immediately.
  */
-export function mergePlayerCount(prev: number | null, incoming: number): number {
-  return Math.max(prev ?? 0, incoming);
+export function reconcileLiveCount(
+  prev: number | null,
+  incoming: number,
+  msSinceJoin: number,
+  graceMs: number = JOIN_COUNT_GRACE_MS,
+): number {
+  const cur = prev ?? 0;
+  if (incoming >= cur) return incoming; // joiners (and no-change) always win
+  // incoming < cur → a decrease.
+  return msSinceJoin >= graceMs ? incoming : cur;
 }

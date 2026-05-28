@@ -52,8 +52,15 @@ export function DraftRoomFilling({
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
-            const isFilled = isRandomizing ? true : (isUser || i < (playerCount ?? 0));
-            const borderColor = isUser ? '#F3E216' : isFilled ? '#444' : '#333';
+            // During filling, fill boxes purely by the live count so all
+            // joined players' boxes appear at the SAME moment. We must NOT
+            // also force the user's own box (isUser) filled independently —
+            // that made box 0 (you) show first, then the others trickle in by
+            // count ("you, then the second person after"). isUser still drives
+            // this box's highlight/avatar/name styling below; it just no
+            // longer fills ahead of the count.
+            const isFilled = isRandomizing ? true : i < (playerCount ?? 0);
+            const borderColor = isUser && isFilled ? '#F3E216' : isFilled ? '#444' : '#333';
             const hasWalletData = player && !player.isYou && player.name && player.name.length > 10;
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
@@ -96,7 +103,7 @@ export function DraftRoomFilling({
                 }}
               >
                 <div>
-                  {isUser ? (
+                  {isUser && isFilled ? (
                     <div className="flex justify-center">
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
