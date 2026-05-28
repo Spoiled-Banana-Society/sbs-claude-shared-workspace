@@ -12,17 +12,70 @@ export type DraftRoomUsersMap = Record<string, DraftRoomUser>;
 
 const EMPTY: DraftRoomUsersMap = {};
 
+// Retry transient failures within a single fetch attempt. A flaky phone
+// connection (or a brief server hiccup) used to make the whole board fall back
+// to wallet / "Banana#####" names for the rest of the draft, because a failed
+// request was returned as an empty-but-successful result and never retried.
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [300, 800]; // backoff before attempts 2 and 3
+
+// setTimeout-based delay that bails immediately if the caller aborts
+// (component unmount / wallet-list change), so we never keep retrying a
+// request nobody is waiting on.
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function fetchUsers(wallets: string[], signal: AbortSignal): Promise<DraftRoomUsersMap> {
   if (wallets.length === 0) return EMPTY;
-  const res = await fetch('/api/users/display-batch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wallets }),
-    signal,
-  });
-  if (!res.ok) return EMPTY;
-  const body = (await res.json()) as { users?: DraftRoomUsersMap };
-  return body.users ?? EMPTY;
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      // Bounded backoff between attempts. delay() rejects on abort, which
+      // breaks the loop via the catch below.
+      await delay(RETRY_DELAYS_MS[attempt - 1] ?? 800, signal);
+    }
+    try {
+      const res = await fetch('/api/users/display-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallets }),
+        signal,
+      });
+      if (!res.ok) {
+        // Treat any non-OK as transient and retry; give up after the last attempt.
+        lastErr = new Error(`display-batch responded ${res.status}`);
+        continue;
+      }
+      const body = (await res.json()) as { users?: DraftRoomUsersMap };
+      return body.users ?? EMPTY;
+    } catch (err) {
+      // Abort = caller cancelled; stop and propagate, don't burn retries.
+      if (signal.aborted) throw err;
+      lastErr = err;
+    }
+  }
+
+  // All attempts failed. Throw (instead of returning EMPTY) so useSWRLike
+  // records this as an error rather than caching an empty map as a successful
+  // result — that way a later remount / page reload re-fetches cleanly instead
+  // of being stuck showing wallets for the rest of the session.
+  throw lastErr ?? new Error('display-batch failed');
 }
 
 /**
