@@ -115,6 +115,12 @@ export async function GET(req: Request) {
       const m = /^BBB\s*#(\d+)$/i.exec(dn);
       const globalNumber = m ? Number(m[1]) : c.draftNumber;
       if (globalNumber < earliestMerkleDraft) continue;
+      // Skip pre-fill slot docs: a freshly-created slot temporarily has
+      // DisplayName equal to its slot number ("BBB #1215"), overwritten
+      // on fill with the real league number ("BBB #1214"). If we catch
+      // the doc mid-write, filter anything above the counter so phantom
+      // future leagues don't render.
+      if (globalNumber > filled) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       // updateTime = last write to the doc = slot machine reveal moment.
@@ -162,10 +168,36 @@ export async function GET(req: Request) {
         });
       }
 
-      // The draftTracker doc is the cheapest "something happened" signal —
-      // it increments the moment a draft fills, before per-draft state
-      // propagates. By the time we re-query the drafts collection, the
-      // Level / DisplayName fields are written (set in the same flow).
+      // Trailing re-pulls per tracker tick. The tracker increments the
+      // instant a draft fills, but the per-draft DisplayName/Level write
+      // lands a moment later (and at every-100th-draft batch boundaries,
+      // up to ~60s later when Chainlink VRF for the next batch is in
+      // flight). Without these, the row either renders with a stale
+      // Level=Pro default or doesn't appear at all until the next fill
+      // or the 55s SSE reconnect. Schedule a small ladder of debounced
+      // re-pulls after each tracker tick so the row updates reactively.
+      const REFETCH_DELAYS_MS = [1000, 4000, 15000, 60000];
+      let lastPayloadSig = '';
+      const trailingTimers: ReturnType<typeof setTimeout>[] = [];
+      const clearTrailing = () => {
+        for (const t of trailingTimers) clearTimeout(t);
+        trailingTimers.length = 0;
+      };
+      const refetchAndMaybeSend = async (filled: number) => {
+        try {
+          const payload = await buildPayload(filled);
+          const sig = JSON.stringify(payload);
+          if (sig === lastPayloadSig) return;
+          lastPayloadSig = sig;
+          send('update', payload);
+        } catch (err) {
+          logger.warn('drafts.feed.stream.refetch_failed', {
+            route: '/api/drafts/proof-feed/stream',
+            err: (err as Error).message,
+          });
+        }
+      };
+
       const unsubscribe = trackerRef.onSnapshot(
         async (snap) => {
           if (!firstSnapshotSent) {
@@ -176,14 +208,17 @@ export async function GET(req: Request) {
           const filled = Number((data as { FilledLeaguesCount?: number }).FilledLeaguesCount ?? 0);
           if (filled === lastFilled) return;
           lastFilled = filled;
-          try {
-            const payload = await buildPayload(filled);
-            send('update', payload);
-          } catch (err) {
-            logger.warn('drafts.feed.stream.refetch_failed', {
-              route: '/api/drafts/proof-feed/stream',
-              err: (err as Error).message,
-            });
+          // Immediate refetch for the tracker change itself.
+          await refetchAndMaybeSend(filled);
+          // Trailing re-pulls to catch the DisplayName/Level write that
+          // lags the counter. New tracker tick supersedes pending ones.
+          clearTrailing();
+          for (const delay of REFETCH_DELAYS_MS) {
+            const t = setTimeout(() => {
+              if (closed) return;
+              void refetchAndMaybeSend(lastFilled);
+            }, delay);
+            trailingTimers.push(t);
           }
         },
         (err) => {
@@ -208,6 +243,7 @@ export async function GET(req: Request) {
         closed = true;
         try { unsubscribe(); } catch { /* ignore */ }
         clearInterval(keepalive);
+        clearTrailing();
         try { controller.close(); } catch { /* ignore */ }
       }, STREAM_LIFETIME_MS);
 
@@ -216,6 +252,7 @@ export async function GET(req: Request) {
         closed = true;
         try { unsubscribe(); } catch { /* ignore */ }
         clearInterval(keepalive);
+        clearTrailing();
         clearTimeout(lifetime);
         try { controller.close(); } catch { /* ignore */ }
       });
