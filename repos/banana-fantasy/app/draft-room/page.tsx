@@ -14,6 +14,7 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
+import { computeInitialPlayerCount } from '@/lib/draftRoomLobby';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -190,10 +191,13 @@ function DraftRoomContent() {
     if (!isLiveMode && stored?.phase) return stored.phase;
     return 'filling';
   });
-  const [playerCount, setPlayerCount] = useState(() => {
-    if (stored?.phase && stored.phase !== 'filling') return 10;
-    return Math.min(Math.max(stored?.players || initialPlayers || 1, 1), 10);
-  });
+  const [playerCount, setPlayerCount] = useState<number | null>(() =>
+    computeInitialPlayerCount({
+      storedPhase: stored?.phase,
+      storedPlayers: stored?.players,
+      initialPlayers,
+    }),
+  );
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'mount', {
@@ -1407,7 +1411,7 @@ function DraftRoomContent() {
             setDraftOrder(mappedOrder);
             const userPos = mappedOrder.findIndex((p: { isYou: boolean }) => p.isYou);
             if (userPos >= 0) setUserDraftPosition(userPos);
-            setPlayerCount(prev => Math.max(prev, info.draftOrder.length));
+            setPlayerCount(prev => Math.max(prev ?? 0, info.draftOrder.length));
           }
         }
       } catch (err) {
@@ -1428,7 +1432,7 @@ function DraftRoomContent() {
   const serverPollStartedRef = useRef(false);
 
   useEffect(() => {
-    if (phase !== 'filling' || playerCount < 10) return;
+    if (phase !== 'filling' || (playerCount ?? 0) < 10) return;
     if (isLiveMode && !draftId) return;
 
     const currentState = draftId ? draftStore.getDraft(draftId) : null;
@@ -1693,7 +1697,7 @@ function DraftRoomContent() {
     // begins. The Founder Draft rule is: be in the draft when it fills.
     // If the user navigates away during the slot-machine reveal or
     // post-reveal countdown, they should still get credit.
-    if (!isLiveMode || playerCount < 10) return;
+    if (!isLiveMode || (playerCount ?? 0) < 10) return;
     // Privy must be authenticated before we can mint a Bearer token.
     // Without it the route returns 401 and we'd waste an attempt — server
     // dedupe makes the wait-and-retry safe.
@@ -2336,7 +2340,7 @@ function DraftRoomContent() {
             urlDraftId={urlDraftId}
             generatedCardUrl={generatedCardUrl}
             walletParam={walletParam}
-            playerCount={playerCount}
+            playerCount={playerCount ?? 10}
             user={user}
             controls={bannerControls}
             bannerRef={bannerRef}

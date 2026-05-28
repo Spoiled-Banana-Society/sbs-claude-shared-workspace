@@ -37,6 +37,34 @@ type Owner struct {
 	PendingCredit       float64           `json:"pendingCredit"`
 	WithdrawnAmount     WithdrawalTracker `json:"withdrawnAmount"`
 	PFP                 PfpInfo           `json:"pfp"`
+
+	// SMS (OneSignal): no phone numbers stored here.
+	SmsOnboardingCompleted bool  `json:"smsOnboardingCompleted,omitempty"`
+	SmsPickReminderEnabled *bool `json:"smsPickReminderEnabled,omitempty"`
+}
+
+// SmsPickRemindersEnabled is true when unset (legacy users default to on).
+func (o *Owner) SmsPickRemindersEnabled() bool {
+	if o == nil || o.SmsPickReminderEnabled == nil {
+		return true
+	}
+	return *o.SmsPickReminderEnabled
+}
+
+// OwnerEligibleForSmsDraftStart is true when the user completed SMS onboarding in the app.
+func OwnerEligibleForSmsDraftStart(o *Owner) bool {
+	if o == nil || !o.SmsOnboardingCompleted {
+		return false
+	}
+	return true
+}
+
+// OwnerEligibleForSmsPickReminder adds the in-app pick-reminder toggle.
+func OwnerEligibleForSmsPickReminder(o *Owner) bool {
+	if !OwnerEligibleForSmsDraftStart(o) {
+		return false
+	}
+	return o.SmsPickRemindersEnabled()
 }
 
 func CreateOwnerDocument(ownerId string) (*Owner, error) {
@@ -281,3 +309,4 @@ func (o *Owner) UpdateDisplayNameForUser(ownerId, displayName string) error {
 
 	return nil
 }
+

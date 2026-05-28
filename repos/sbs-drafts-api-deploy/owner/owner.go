@@ -19,7 +19,6 @@ func (or *OwnerResources) Routes() chi.Router {
 
 	r.Post("/{ownerId}/draftToken/mint", or.CreateTokensInDatabase)
 	r.Post("/{ownerId}/drafts/state/rankings", or.UpdateUserRankings)
-	r.Delete("/{ownerId}/drafts/state/rankings", or.RemoveUserRankings)
 	r.Get("/{ownerId}/draftToken/all", or.ReturnTokensOwnedByUser)
 	r.Get("/{ownerId}/rankings/get", or.ReturnUserRankings)
 	r.Get("/{ownerId}/promoCode/get", or.ReturnPromoCode)
@@ -35,6 +34,8 @@ func (or *OwnerResources) Routes() chi.Router {
 	r.Get("/{ownerId}/drafts/{draftId}/state/queue", or.GetQueueForDraft)
 	r.Post("/{ownerId}/drafts/{draftId}/state/queue", or.UpdateQueueForDraft)
 	r.Get("/auth/type", or.GetAuthType)
+	r.Patch("/{ownerId}/sms/preferences", or.UpdateSmsPreferences)
+	r.Post("/{ownerId}/sms/onboarding-complete", or.CompleteSmsOnboarding)
 	return r
 }
 
@@ -307,31 +308,6 @@ func (or *OwnerResources) UpdateUserRankings(w http.ResponseWriter, r *http.Requ
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-}
-
-// RemoveUserRankings clears the user's saved rankings doc so the next
-// GET re-seeds from playerStats2024 (i.e., resets to ADP default).
-// Frontend's "Reset to defaults" button hits this via DELETE.
-func (or *OwnerResources) RemoveUserRankings(w http.ResponseWriter, r *http.Request) {
-	ownerId := chi.URLParam(r, "ownerId")
-	if ownerId == "" {
-		http.Error(w, "Did not find an ownerId in the url path", http.StatusBadRequest)
-		return
-	}
-	ownerId = strings.ToLower(ownerId)
-
-	err := utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/drafts", ownerId), "rankings")
-	if err != nil {
-		// NotFound is the happy case for "already at defaults" — treat as success.
-		if strings.Contains(strings.ToLower(err.Error()), "notfound") {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		fmt.Println("Error deleting user rankings:", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 type GetRankingsResponse struct {
@@ -856,4 +832,96 @@ func (or *OwnerResources) GetAuthType(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+type smsPreferencesRequest struct {
+	SmsPickReminderEnabled bool `json:"smsPickReminderEnabled"`
+}
+
+type smsPreferencesResponse struct {
+	SmsOnboardingCompleted bool `json:"smsOnboardingCompleted"`
+	SmsPickReminderEnabled bool `json:"smsPickReminderEnabled"`
+}
+
+func (or *OwnerResources) UpdateSmsPreferences(w http.ResponseWriter, r *http.Request) {
+	ownerId := chi.URLParam(r, "ownerId")
+	if ownerId == "" {
+		http.Error(w, "Did not find an ownerId in the url path", http.StatusBadRequest)
+		return
+	}
+	ownerId = strings.ToLower(ownerId)
+
+	var req smsPreferencesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	owner, err := models.ReturnOwnerObjectById(ownerId)
+	if err != nil {
+		fmt.Println("UpdateSmsPreferences: read owner: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	v := req.SmsPickReminderEnabled
+	owner.SmsPickReminderEnabled = &v
+
+	if err := utils.Db.CreateOrUpdateDocument("owners", ownerId, owner); err != nil {
+		fmt.Println("UpdateSmsPreferences: save owner: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := smsPreferencesResponse{
+		SmsOnboardingCompleted: owner.SmsOnboardingCompleted,
+		SmsPickReminderEnabled: owner.SmsPickRemindersEnabled(),
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
+}
+
+func (or *OwnerResources) CompleteSmsOnboarding(w http.ResponseWriter, r *http.Request) {
+	ownerId := chi.URLParam(r, "ownerId")
+	if ownerId == "" {
+		http.Error(w, "Did not find an ownerId in the url path", http.StatusBadRequest)
+		return
+	}
+	ownerId = strings.ToLower(ownerId)
+
+	owner, err := models.ReturnOwnerObjectById(ownerId)
+	if err != nil {
+		fmt.Println("CompleteSmsOnboarding: read owner: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	owner.SmsOnboardingCompleted = true
+	if owner.SmsPickReminderEnabled == nil {
+		t := true
+		owner.SmsPickReminderEnabled = &t
+	}
+
+	if err := utils.Db.CreateOrUpdateDocument("owners", ownerId, owner); err != nil {
+		fmt.Println("CompleteSmsOnboarding: save owner: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp := smsPreferencesResponse{
+		SmsOnboardingCompleted: owner.SmsOnboardingCompleted,
+		SmsPickReminderEnabled: owner.SmsPickRemindersEnabled(),
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
 }

@@ -9,7 +9,10 @@ ENV PROD_RT_DB_URL=https://sbs-prod-env-default-rtdb.firebaseio.com
 # INFURA_API_KEY should be set via GCP Secret Manager or environment variable
 # Set via: gcloud run services update <service-name> --set-env-vars=INFURA_API_KEY=<key>
 ENV INFURA_API_KEY=""
-
+# OneSignal SMS (notifications/onesignal). Empty = SMS sends no-op.
+# Set via: gcloud run services update <service-name> --set-env-vars=ONESIGNAL_APP_ID=...,ONESIGNAL_REST_API_KEY=...
+ENV ONESIGNAL_APP_ID="b7e8d393-68de-4cde-94e3-d013f35a4d25"
+ENV ONESIGNAL_REST_API_KEY="oa2qwxvayucyesj4oukpzgsxo"
 COPY . /usr/local/go/src/sbs-drafts-api
 
 WORKDIR /usr/local/go/src/sbs-drafts-api

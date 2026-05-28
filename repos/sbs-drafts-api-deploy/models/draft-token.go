@@ -39,6 +39,8 @@ type DraftToken struct {
 	// frontend can show the right number on the very first paint without
 	// waiting for an RTDB push or the 2.5s poll. Zero/absent on other
 	// endpoints — those don't have a meaningful per-token player count.
+	// (Restored 2026-05-28: lost in the rev-00124→00130 deploy that shipped
+	// the fill-time notification change from a branch missing this field.)
 	NumPlayers int `json:"numPlayers,omitempty" firestore:"-"`
 }
 

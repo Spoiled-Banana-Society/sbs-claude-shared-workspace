@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { DRAFT_PLAYERS } from '@/lib/draftRoomConstants';
+import { shouldShowPlayerCount } from '@/lib/draftRoomLobby';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
@@ -16,7 +17,8 @@ interface UserLike {
 
 interface DraftRoomFillingProps {
   draftOrder: DraftRoomPlayer[];
-  playerCount: number;
+  /** null = count not known yet (show a pulse, never a false "1/10"). */
+  playerCount: number | null;
   waitingForServer: boolean;
   isRandomizingFromStore: boolean;
   serverWaitProgress: number;
@@ -50,7 +52,7 @@ export function DraftRoomFilling({
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
-            const isFilled = isRandomizing ? true : (isUser || i < playerCount);
+            const isFilled = isRandomizing ? true : (isUser || i < (playerCount ?? 0));
             const borderColor = isUser ? '#F3E216' : isFilled ? '#444' : '#333';
             const hasWalletData = player && !player.isYou && player.name && player.name.length > 10;
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
@@ -174,7 +176,16 @@ export function DraftRoomFilling({
             </div>
           ) : (
             <span className="text-yellow-400">
-              <span className="text-2xl font-black tabular-nums">{playerCount}/10</span>
+              {shouldShowPlayerCount(playerCount) ? (
+                <span className="text-2xl font-black tabular-nums">{playerCount}/10</span>
+              ) : (
+                // Count not known yet — a subtle pulse instead of a false "1/10".
+                // The number fades in the instant the join response lands.
+                <span
+                  className="inline-block align-middle h-6 w-16 rounded bg-yellow-400/20 animate-pulse"
+                  aria-hidden="true"
+                />
+              )}
               <span className="text-white/60 ml-2 text-sm">Waiting for players...</span>
             </span>
           )}

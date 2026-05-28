@@ -5,11 +5,91 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
+
+// runConcurrently runs every fn in its own goroutine, waits for all of them
+// to finish, and returns the first non-nil error (if any). Used for
+// independent writes that must all complete before we return but don't depend
+// on each other (e.g. the two double-spend cleanup writes, the per-user draft
+// state writes). All fns always run even if one fails.
+func runConcurrently(fns ...func() error) error {
+	if len(fns) == 0 {
+		return nil
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, len(fns))
+	for i, fn := range fns {
+		wg.Add(1)
+		go func(i int, fn func() error) {
+			defer wg.Done()
+			errs[i] = fn()
+		}(i, fn)
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// selectLowestPartialLeague fires up to maxLookback candidate reads
+// concurrently (read returns the league and whether it exists), then scans the
+// same backwards order the old sequential loop used and returns the lowest
+// numbered league with 1-9 players that ownerId is not already in. Returns 0
+// if none match within the window. The selection result is identical to the
+// old sequential scan — only the reads are parallelized.
+func selectLowestPartialLeague(startFrom int, maxLookback int, ownerId string, read func(n int) (*League, bool)) int {
+	// Candidate set matches the old loop: n from startFrom down to
+	// startFrom-maxLookback+1, n > 0.
+	candidates := make([]int, 0, maxLookback)
+	for n := startFrom; n > 0 && n > startFrom-maxLookback; n-- {
+		candidates = append(candidates, n)
+	}
+
+	leagues := make([]*League, len(candidates))
+	founds := make([]bool, len(candidates))
+	var wg sync.WaitGroup
+	for i, n := range candidates {
+		wg.Add(1)
+		go func(i, n int) {
+			defer wg.Done()
+			leagues[i], founds[i] = read(n)
+		}(i, n)
+	}
+	wg.Wait()
+
+	lowest := 0
+	for i, n := range candidates {
+		if !founds[i] || leagues[i] == nil {
+			continue
+		}
+		l := leagues[i]
+		if l.NumPlayers <= 0 || l.NumPlayers >= 10 {
+			continue
+		}
+		alreadyIn := false
+		for _, u := range l.CurrentUsers {
+			if u.OwnerId == ownerId {
+				alreadyIn = true
+				break
+			}
+		}
+		if alreadyIn {
+			continue
+		}
+		// candidates are in descending n order; keep overwriting so the last
+		// (lowest) eligible n wins — same as the old sequential scan.
+		lowest = n
+	}
+	return lowest
+}
 
 type League struct {
 	LeagueId     string            `json:"leagueId"`
@@ -182,28 +262,18 @@ func JoinLeagues(ownerId string, numLeaguesToJoin int, draftType string) ([]Draf
 // caller should then fall back to the counter-based forward iteration below.
 func scanForPartialLeague(startFrom int, draftType string, ownerId string) int {
 	const maxLookback = 30
-	lowest := 0
-	for n := startFrom; n > 0 && n > startFrom-maxLookback; n-- {
+	start := time.Now()
+	read := func(n int) (*League, bool) {
 		var l League
 		draftId := fmt.Sprintf("2024-%s-draft-%d", draftType, n)
 		if err := utils.Db.ReadDocument("drafts", draftId, &l); err != nil {
-			continue
+			return nil, false
 		}
-		if l.NumPlayers <= 0 || l.NumPlayers >= 10 {
-			continue
-		}
-		alreadyIn := false
-		for _, u := range l.CurrentUsers {
-			if u.OwnerId == ownerId {
-				alreadyIn = true
-				break
-			}
-		}
-		if alreadyIn {
-			continue
-		}
-		lowest = n
+		return &l, true
 	}
+	lowest := selectLowestPartialLeague(startFrom, maxLookback, ownerId, read)
+	fmt.Printf("[join-timing] scanForPartialLeague startFrom=%d type=%s owner=%s -> %d in %v\n",
+		startFrom, draftType, ownerId, lowest, time.Since(start))
 	return lowest
 }
 
@@ -291,30 +361,52 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 	token.DraftType = draftType
 	token.LeagueDisplayName = l.DisplayName
 
-	// add card to league
-	err := token.updateInUseDraftTokenInDatabase(draftId)
-	if err != nil {
-		return -1, err
+	// Early count ping for the non-fill case, BEFORE the cleanup writes, so
+	// observers' lobbies update within ~100ms instead of after the two
+	// Firestore cleanup writes complete. Best-effort: the 2.5s poll reconciles
+	// the count if this fails, and we must not return early here or we'd skip
+	// the double-spend cleanup below. (The fill case writes numPlayers:10 in
+	// its own branch.)
+	if l.NumPlayers < 10 {
+		ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", l.LeagueId))
+		if err := ref.Set(context.TODO(), map[string]interface{}{"numPlayers": l.NumPlayers}); err != nil {
+			fmt.Println("WARN: failed early numPlayers ping to RTDB on join (poll will reconcile): ", err)
+		}
 	}
 
-	_, err = utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId).Delete(context.Background())
-	if err != nil {
+	// Double-spend cleanup: mark the token in-use and remove it from the
+	// owner's validDraftTokens. Both must complete before we return; they're
+	// independent, so run them concurrently and surface the first error.
+	if err := runConcurrently(
+		func() error { return token.updateInUseDraftTokenInDatabase(draftId) },
+		func() error {
+			_, e := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId).Delete(context.Background())
+			return e
+		},
+	); err != nil {
 		return -1, err
 	}
 
 	if l.NumPlayers == 10 {
+		// Write numPlayers:10 to RTDB BEFORE CreateLeagueDraftStateUponFilling
+		// so the Firebase Function onDraftFilled fires at fill-time, not at
+		// draft-start. The function reads the roster from Firestore — humans
+		// in `drafts/{draftId}.CurrentUsers` are already committed by the
+		// time we get here, so the fallback path in onDraftFilled returns
+		// the right wallets. The later realTimeDraftInfoRef.Update in
+		// draft-actions.go:48 also writes numPlayers:10, but that's a
+		// no-op for the trigger (before>=10 && after>=10 → bails).
+		ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", l.LeagueId))
+		if err := ref.Update(context.TODO(), map[string]interface{}{"numPlayers": 10}); err != nil {
+			fmt.Println("WARN: failed to write numPlayers:10 to RTDB at fill-time (notification will fire late): ", err)
+			// Non-fatal — the draft-start path will still set numPlayers:10
+			// and the user just gets the notification a few seconds later.
+		}
 		err := CreateLeagueDraftStateUponFilling(draftId, draftType)
 		if err != nil {
 			fmt.Println("error creating draft state upon league filling: ", err)
 			RemoveUserFromDraftWithRTBUpdate(token.CardId, token.OwnerId, l.LeagueId, false)
 			fmt.Printf("Removed user from draft after it failed to complete the draft state for %v with error: %v", token, err)
-			return -1, err
-		}
-	} else {
-		ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", l.LeagueId))
-
-		if err := ref.Set(context.TODO(), map[string]interface{}{"numPlayers": l.NumPlayers}); err != nil {
-			fmt.Println("ERROR in setting real time database when user joins league: ", err)
 			return -1, err
 		}
 	}

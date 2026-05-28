@@ -100,26 +100,46 @@ type LeaveRequest struct {
 	pass in the proper draft id into the url along with this body and this route
 	will take a draft card out of the league and add it to their available draft tokens to join drafts
 */
+// leaveErrorStatus maps a leave-draft failure to the right HTTP status.
+// Expected rejections — the draft already filled, the user isn't in the
+// draft, or the draft no longer exists — are client-side 4xx. Only a
+// genuine fault is a 500. This keeps the error logs from being flooded
+// with false 500s every time someone simply can't leave a draft.
+func leaveErrorStatus(err error) int {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "already has 10 members"):
+		return http.StatusConflict // 409 — draft is full, can't leave
+	case strings.Contains(msg, "not found to be in the current"):
+		return http.StatusConflict // 409 — user isn't in this draft
+	case strings.Contains(msg, "NotFound"):
+		return http.StatusNotFound // 404 — draft doesn't exist
+	default:
+		return http.StatusInternalServerError // genuine server error
+	}
+}
+
 func (lr *LeagueResources) RemoveUserFromDraft(w http.ResponseWriter, r *http.Request) {
 	draftId := chi.URLParam(r, "draftId")
 	if draftId == "" {
 		errMess := fmt.Errorf("no draft id was passed in for this request to leave a league")
 		fmt.Println(errMess)
-		http.Error(w, errMess.Error(), http.StatusInternalServerError)
+		http.Error(w, errMess.Error(), http.StatusBadRequest)
+		return
 	}
 
 	var req LeaveRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		fmt.Println("Error in decoding the request body for leaving league")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	_, err = models.RemoveUserFromDraftWithRTBUpdate(req.TokenId, req.OwnerId, draftId, true)
 	if err != nil {
 		fmt.Println("Error in removing user from league: ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), leaveErrorStatus(err))
 		return
 	}
 

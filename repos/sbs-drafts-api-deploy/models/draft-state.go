@@ -434,6 +434,10 @@ type Players struct {
 }
 
 func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
+	fillStart := time.Now()
+	defer func() {
+		fmt.Printf("[fill-timing] CreateLeagueDraftStateUponFilling(%s) total %v\n", draftId, time.Since(fillStart))
+	}()
 	var leagueInfo League
 	err := utils.Db.ReadDocument("drafts", draftId, &leagueInfo)
 	if err != nil {
@@ -572,40 +576,44 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		return err
 	}
 
-	err = utils.Db.CreateOrUpdateDocument("drafts", draftId, &leagueInfo)
-	if err != nil {
+	// Per-user draft state: read the card, stamp league info + display name,
+	// and seed an empty queue. Each user is independent (different token doc,
+	// different queue doc), so run all 10 concurrently instead of ~30
+	// sequential Firestore round-trips — this is the main 10th-joiner latency
+	// win. Stays synchronous: we wait for all of them before returning.
+	userStart := time.Now()
+	userFns := make([]func() error, len(leagueInfo.CurrentUsers))
+	for i := range leagueInfo.CurrentUsers {
+		i := i
+		userFns[i] = func() error {
+			rosterObj := NewEmptyRoster(leagueInfo.CurrentUsers[i].OwnerId)
+			token := DraftToken{
+				Roster: rosterObj,
+			}
+			if err := utils.Db.ReadDocument("draftTokens", leagueInfo.CurrentUsers[i].TokenId, &token); err != nil {
+				return err
+			}
+
+			if token.LeagueId == "" {
+				token.LeagueId = draftId
+				token.DraftType = draftType
+			}
+
+			token.LeagueDisplayName = leagueInfo.DisplayName
+			if err := token.updateInUseDraftTokenInDatabase(draftId); err != nil {
+				return err
+			}
+			fmt.Println("Updated display name on card ", leagueInfo.CurrentUsers[i].TokenId)
+
+			// add queues
+			var emptyQueue DraftQueue
+			return UpdateQueueForDraft(draftId, leagueInfo.CurrentUsers[i].OwnerId, emptyQueue)
+		}
+	}
+	if err = runConcurrently(userFns...); err != nil {
 		return err
 	}
-
-	for i := 0; i < len(leagueInfo.CurrentUsers); i++ {
-		rosterObj := NewEmptyRoster(leagueInfo.CurrentUsers[i].OwnerId)
-		token := DraftToken{
-			Roster: rosterObj,
-		}
-		err = utils.Db.ReadDocument("draftTokens", leagueInfo.CurrentUsers[i].TokenId, &token)
-		if err != nil {
-			return err
-		}
-
-		if token.LeagueId == "" {
-			token.LeagueId = draftId
-			token.DraftType = draftType
-		}
-
-		token.LeagueDisplayName = leagueInfo.DisplayName
-		err = token.updateInUseDraftTokenInDatabase(draftId)
-		if err != nil {
-			return err
-		}
-		fmt.Println("Updated display name on card ", leagueInfo.CurrentUsers[i].TokenId)
-
-		// add queues
-		var emptyQueue DraftQueue
-		err = UpdateQueueForDraft(draftId, leagueInfo.CurrentUsers[i].OwnerId, emptyQueue)
-		if err != nil {
-			return err
-		}
-	}
+	fmt.Printf("[fill-timing] per-user state for %d users in %v (draft %s)\n", len(leagueInfo.CurrentUsers), time.Since(userStart), draftId)
 
 	// Tracker increments + batch lists were already persisted atomically
 	// in PHASE 1 / PHASE 3 above. No bare CreateOrUpdate here — that would
@@ -706,9 +714,14 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		CurrentRound:      1,
 		PickInRound:       1,
 		DraftStartTime:    info.DraftStartTime,
-		PickEndTime:       info.DraftStartTime + info.PickLength,
+		PickStartTime:     info.DraftStartTime,
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
+	}
+	if strings.ToLower(leagueInfo.DraftType) == "slow" {
+		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
+	} else {
+		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength
 	}
 
 	fmt.Printf("[league#] rtdb.write.start draftId=%s displayName=%q numPlayers=%d\n", draftId, leagueInfo.DisplayName, leagueInfo.NumPlayers)
@@ -769,6 +782,11 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 			fmt.Printf("[deferred] MakeLeagueHOF for draft %s failed (non-fatal — RTDB already up): %v\n", draftId, mlErr)
 		}
 	}
+	ownerIDs := make([]string, len(leagueInfo.CurrentUsers))
+	for i := range leagueInfo.CurrentUsers {
+		ownerIDs[i] = leagueInfo.CurrentUsers[i].OwnerId
+	}
+	go NotifyDraftStartingSMS(draftId, leagueInfo.DisplayName, ownerIDs)
 
 	return nil
 }

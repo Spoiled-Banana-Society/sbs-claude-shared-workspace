@@ -21,6 +21,7 @@ type RealTimeDraftInfo struct {
 	CurrentRound      int             `json:"roundNum"`
 	PickInRound       int             `json:"pickInRound"`
 	PickEndTime       int64           `json:"pickEndTime"`
+	PickStartTime     int64           `json:"pickStartTime"` // Unix when current pick's timer started (wall clock)
 	PickLength        int64           `json:"pickLength"`
 	DraftStartTime    int64           `json:"draftStartTime"` // Unix timestamp when draft starts
 	LastPick          PlayerStateInfo `json:"lastPick"`
@@ -126,13 +127,25 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		return err
 	}
 
+	var league League
+	leagueReadErr := utils.Db.ReadDocument("drafts", draftId, &league)
+	if leagueReadErr != nil {
+		fmt.Printf("ProcessNewPick warning (ReadDocument league): draftId=%s err=%v — using non-slow pick end semantics\n", draftId, leagueReadErr)
+	}
+
 	realTimeDraftInfo.LastPick = *pickInfo
 	if isLastPick {
 		realTimeDraftInfo.IsDraftComplete = true
 	} else {
 		realTimeDraftInfo.CurrentPickNumber++
 		draftInfo.CurrentPickNumber++
-		realTimeDraftInfo.PickEndTime = time.Now().Unix() + realTimeDraftInfo.PickLength
+		nowUnix := time.Now().Unix()
+		realTimeDraftInfo.PickStartTime = nowUnix
+		if leagueReadErr == nil && strings.EqualFold(league.DraftType, "slow") {
+			realTimeDraftInfo.PickEndTime = SlowDraftPickEndUnix(nowUnix, realTimeDraftInfo.PickLength)
+		} else {
+			realTimeDraftInfo.PickEndTime = nowUnix + realTimeDraftInfo.PickLength
+		}
 		realTimeDraftInfo.PickInRound++
 		draftInfo.PickInRound++
 		if realTimeDraftInfo.PickInRound > 10 {
@@ -172,6 +185,11 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 			realTimeDraftInfo.CurrentRound,
 			realTimeDraftInfo.PickEndTime,
 		)
+		nextDrafter := realTimeDraftInfo.CurrentDrafter
+		leagueDisplayName := draftInfo.DisplayName
+		// Pick reminder runs only after a pick is recorded, so the first on-clock user is notified by
+		// draft-start SMS at room fill, not here (avoids duplicate "your turn" right after the blast).
+		go NotifyPickReminderSMS(draftId, leagueDisplayName, nextDrafter)
 	} else {
 		go CloseDraftForAllUsers(draftId)
 	}
@@ -194,13 +212,10 @@ func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickE
 	var scheduleTime int64
 	now := time.Now().Unix()
 
-	// If user has AutoPick turned on, fire immediately — they explicitly
-	// opted in, so the prior 2-second "give the human a chance" buffer was
-	// unnecessary and made background wallets feel bot-like (~3s pick) vs
-	// the foreground tab's instant client-side airplane-mode pick (~1s).
+	// If user has AutoPick turned on, schedule for 2 seconds from now
 	if sortByObj.AutoDraft {
-		scheduleTime = now
-		fmt.Printf("User has AutoDraft enabled, scheduling auto-draft task immediately for pick %d\n", pickNum)
+		scheduleTime = now + 2
+		fmt.Printf("User has AutoDraft enabled, scheduling auto-draft task for 2 seconds from now for pick %d\n", pickNum)
 	} else if sortByObj.NumPicksMissedConsecutive == 2 {
 		scheduleTime = now + 8
 		fmt.Printf("User has missed 2 picks in a row, scheduling auto-draft task for 5 seconds from now for pick %d\n", pickNum)

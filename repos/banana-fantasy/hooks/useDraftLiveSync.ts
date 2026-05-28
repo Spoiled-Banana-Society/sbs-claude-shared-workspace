@@ -46,7 +46,7 @@ interface UseDraftLiveSyncParams {
   setPhase: Dispatch<SetStateAction<RoomPhase>>;
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
-  setPlayerCount: Dispatch<SetStateAction<number>>;
+  setPlayerCount: Dispatch<SetStateAction<number | null>>;
   draftIdRef: MutableRefObject<string>;
 }
 

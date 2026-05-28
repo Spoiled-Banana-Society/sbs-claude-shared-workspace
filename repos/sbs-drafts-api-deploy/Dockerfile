@@ -10,9 +10,13 @@ ENV GCP_LOCATION=us-central1
 ENV CLOUD_TASKS_QUEUE_NAME=auto-draft-queue
 ENV DEV_API_URL="https://sbs-drafts-api-1026708014901.us-central1.run.app"
 ENV INFURA_API_KEY="0d15d12afb094dbe97df37f8b62d6c96"
+# OneSignal SMS (notifications/onesignal). Empty = SMS sends no-op.
+# Set via: gcloud run services update <service-name> --set-env-vars=ONESIGNAL_APP_ID=...,ONESIGNAL_REST_API_KEY=...
+ENV ONESIGNAL_APP_ID="b7e8d393-68de-4cde-94e3-d013f35a4d25"
+ENV ONESIGNAL_REST_API_KEY="os_v2_app_xxoktv4ol5falaj26b7czeduqlkyxmot3pduxsedypntmahyfpus45hifrzpx2fdjmmtiqsxlob5cphez7ho46hsknixll4f67jpuhi"
 
 # Cache bust to force rebuild with staging routes
-ARG CACHEBUST=1
+ARG CACHEBUST=2026-05-22-leave-fix
 
 COPY . /usr/local/go/src/sbs-drafts-api
 
