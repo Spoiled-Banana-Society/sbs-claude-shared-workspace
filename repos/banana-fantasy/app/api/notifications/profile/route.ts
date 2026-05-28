@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
         await setUserNotifPrefs(wallet, { channels: { push: false } });
         prefs = await getUserNotifPrefs(wallet);
         pushAutoDisabled = true;
-        logErrorEvent({
+        await logErrorEvent({
           source: LOG_SOURCES.notifications.PUSH_ZERO_RECIPIENTS,
           message:
             'channels.push:true was set but OneSignal shows 0 subscribed devices for this wallet — auto-disabled push to keep the toggle truthful',

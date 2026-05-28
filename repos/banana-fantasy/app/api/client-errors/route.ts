@@ -57,7 +57,12 @@ export async function POST(req: Request) {
     const sessionId = asString(body.sessionId, 64);
     const context = asObject(body.context);
 
-    logErrorEvent({
+    // Await the Firestore write — on Vercel serverless the function
+    // instance dies when this response returns, so a fire-and-forget
+    // promise (the prior pattern) would get reaped before completing
+    // and the event would silently drop. Cost is ~50-100ms per call,
+    // acceptable for a low-volume diagnostic endpoint.
+    await logErrorEvent({
       source,
       message,
       route,

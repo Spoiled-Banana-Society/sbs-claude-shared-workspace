@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
       // logger → dynamic-import → Firestore pipeline that's been losing
       // writes from Vercel) so the row lands in the admin Logs tab tied
       // to the wallet.
-      logErrorEvent({
+      await logErrorEvent({
         source: LOG_SOURCES.notifications.CHANNEL_CONNECT_FAILED,
         message: verification.reason ?? 'OneSignal verification failed',
         actor: walletAddress,

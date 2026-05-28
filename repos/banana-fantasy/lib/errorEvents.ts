@@ -15,23 +15,33 @@ export interface ErrorEventRecord {
 const COLLECTION = 'v2_error_events';
 
 /**
- * Fire-and-forget error event write. Never throws — silently drops if Firestore
- * is unreachable so the caller's error handling isn't disrupted by our logging.
+ * Persist an error event to v2_error_events. Returns a Promise the caller
+ * MUST await before responding, otherwise on Vercel serverless the function
+ * instance gets reaped before the Firestore write completes and the write
+ * silently drops — that's the bug that hollowed out v2_error_events for two
+ * days, including all of today's draft.airplane.trace diagnostics.
+ *
+ * Never throws — internal errors are caught and logged via console so
+ * caller's response flow isn't affected. Returns false on failure so the
+ * caller can surface that in their own logger if they care.
  */
-export function logErrorEvent(record: Omit<ErrorEventRecord, 'timestamp'>): void {
-  if (!isFirestoreConfigured()) return;
+export async function logErrorEvent(
+  record: Omit<ErrorEventRecord, 'timestamp'>,
+): Promise<boolean> {
+  if (!isFirestoreConfigured()) return false;
   try {
     const db = getAdminFirestore();
     const doc: ErrorEventRecord = {
       ...record,
       timestamp: new Date().toISOString(),
     };
-    // Intentional fire-and-forget — we don't await
-    void db.collection(COLLECTION).add(doc).catch(() => {
-      /* swallow */
-    });
-  } catch {
-    /* swallow */
+    await db.collection(COLLECTION).add(doc);
+    return true;
+  } catch (err) {
+    // Last-chance visibility — at minimum the Vercel runtime log captures this
+    // so we never end up silently dropping events again.
+    console.error('[errorEvents] Firestore write failed', err);
+    return false;
   }
 }
 
