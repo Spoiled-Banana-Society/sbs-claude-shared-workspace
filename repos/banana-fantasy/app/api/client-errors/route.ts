@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     // promise (the prior pattern) would get reaped before completing
     // and the event would silently drop. Cost is ~50-100ms per call,
     // acceptable for a low-volume diagnostic endpoint.
-    await logErrorEvent({
+    const written = await logErrorEvent({
       source,
       message,
       route,
@@ -73,9 +73,9 @@ export async function POST(req: Request) {
       requestId,
     });
 
-    logger.info('client.error_reported', { requestId, source, route, actor, sessionId });
+    logger.info('client.error_reported', { requestId, source, route, actor, sessionId, written });
 
-    return json({ ok: true, requestId });
+    return json({ ok: true, requestId, written });
   } catch (err) {
     logger.error('client.error_endpoint.failed', { requestId, err });
     return jsonError('Internal Server Error', 500, { requestId });

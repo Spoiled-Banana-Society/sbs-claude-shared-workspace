@@ -64,15 +64,15 @@ export async function GET(req: Request) {
     const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
     // Iterate slot numbers (not global league numbers) because the doc
-    // ID encodes the slot. Slot/global offset varies — we've seen +/-1
-    // already in staging because slow drafts pad the global counter
-    // without bumping fast slot. Scan a buffer past the merkle cutoff
-    // and filter using the doc's DisplayName below (the source of truth
-    // for global league number). Scan range capped at FEED_LIMIT * 2
-    // so a large offset doesn't pull pre-merkle docs in.
+    // ID encodes the slot. Slot/global offset varies — slow drafts pad
+    // the global counter without bumping fast slot, AND staging test
+    // drafts can push the slot counter ahead of FilledLeaguesCount. So
+    // scan a buffer BOTH above and below `filled`. Without the high-side
+    // buffer the newest league becomes invisible when slot > filled
+    // (seen in staging: 2024-fast-draft-1215 holds BBB #1214).
     const SLOT_BUFFER = 20;
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
-    for (let i = 0; i < FEED_LIMIT * 2; i++) {
+    for (let i = -SLOT_BUFFER; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
       if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
@@ -103,6 +103,12 @@ export async function GET(req: Request) {
       const globalNumber = m ? Number(m[1]) : c.draftNumber;
       // Pre-merkle drafts used commit-reveal — they don't belong here.
       if (globalNumber < earliestMerkleDraft) continue;
+      // Skip pre-fill slot docs: a freshly-created slot temporarily has
+      // DisplayName equal to its slot number ("BBB #1215"), which gets
+      // overwritten with the real league number on fill ("BBB #1214").
+      // If we catch the doc mid-write we'd render a phantom league
+      // ahead of the counter. Filter anything above the counter.
+      if (globalNumber > filled) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       // updateTime is when the doc was last written — for a filled

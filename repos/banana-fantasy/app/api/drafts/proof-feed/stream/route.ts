@@ -82,10 +82,13 @@ export async function GET(req: Request) {
     const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
 
     // See non-stream route for rationale: scan slot numbers (not global),
-    // buffer past the merkle cutoff, then filter by parsed DisplayName.
+    // buffer past the merkle cutoff AND above the counter (staging slot
+    // counters can run ahead of FilledLeaguesCount — e.g.
+    // 2024-fast-draft-1215 holds BBB #1214), then filter by parsed
+    // DisplayName.
     const SLOT_BUFFER = 20;
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
-    for (let i = 0; i < FEED_LIMIT * 2; i++) {
+    for (let i = -SLOT_BUFFER; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
       if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
