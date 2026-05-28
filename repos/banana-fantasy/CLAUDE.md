@@ -27,6 +27,12 @@
 - **draftId race**: URL has no draftId — set async by `joinDraft`. The "at 10" effect MUST guard `if (isLiveMode && !draftId) return` + include `draftId` in deps.
 - **Poll race**: 2.5s poll must NOT set `draftOrder` during filling — only `playerCount`. The "at 10" effect owns the transition.
 
+### Render-Loop Self-DDoS (DO NOT REINTRODUCE — incident May 27, 2026)
+- A `useEffect` containing a `fetch` MUST NOT list a Privy-derived callback (anything that flows from `usePrivy()` — `getAccessToken`, custom `authHeaders`, etc.) in its dep array. Privy hook identity churns per render → effect re-fires per render → fetch storm → Vercel DDoS Mitigation 403s the whole site for ALL users.
+- The fix is the ref pattern: stash the callback in `useRef`, then keep effect deps to stable scalars (`enabled`, `walletAddress`, etc.). See `hooks/useDms.ts:84-90` for a reference implementation.
+- Smoke test: `npx playwright test e2e/render-loop-guard.spec.ts` opens high-risk pages and fails CI if any page makes >75 `/api/*` requests in 10s. Run before deploying anything that adds a `useEffect` with a fetch.
+- Full incident write-up + the three-question checklist before committing: `~/sbs-claude-shared-workspace/CLAUDE.md` Rule #0.
+
 ## Company & Product
 - **Company:** Spoiled Banana Society (SBS), founded 2021
 - **Product:** Onchain fantasy football (best ball format) on Base chain
