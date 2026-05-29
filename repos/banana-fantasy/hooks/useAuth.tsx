@@ -7,6 +7,7 @@ import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDispl
 import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
+import { clientLog } from '@/lib/clientLog';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
@@ -391,6 +392,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }).catch(() => { /* silent — Sentry is optional */ });
   }, [walletAddress]);
 
+  // DIAGNOSTIC (temp): log every Privy auth-state transition so we can catch
+  // a transient `ready && !authenticated` blink that wipes `user` and pops a
+  // spurious login modal / disrupts the join overlay. Deps are auth scalars,
+  // so this fires only on real transitions — not per render. Pull with:
+  //   node scripts/logs.mjs trace --tag=authblink --wallet=<wallet>
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    clientLog('authblink', 'privy-state', {
+      ready: privy.ready,
+      authenticated: privy.authenticated,
+      hasPrivyUser: !!privy.user,
+      walletAddress: walletAddress || null,
+      hasLocalUser: !!user,
+    });
+  }, [privy.ready, privy.authenticated, privy.user, walletAddress, user]);
+
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode
@@ -546,6 +563,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         });
     } else if (privy.ready && !privy.authenticated) {
+      // DIAGNOSTIC (temp): record EVERY time we wipe the local user. If this
+      // fires while Boris is actively logged in, it's the transient blink that
+      // causes the login-modal-while-logged-in + broken join overlay.
+      clientLog('authblink', 'user-wiped', {
+        hadLocalUser: !!user,
+        wallet: walletAddress || null,
+        reason: 'privy.ready && !privy.authenticated',
+      });
       setUser(null);
       fetchingRef.current = null;
       setIsNewUser(false);

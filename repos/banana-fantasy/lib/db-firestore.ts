@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { logActivityEvent } from '@/lib/activityEvents';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
@@ -487,6 +488,11 @@ export async function claimPromo(userId: string, promoId: string) {
           txHash: mintRes.txHash,
           reason: `promo_claim:${promoId}`,
         });
+        // Register into the Go API immediately, typed `free`, so the bonus
+        // pass is usable for draft entry without waiting on the Alchemy webhook.
+        await registerMintedTokens(userId, mintRes.tokenIds, 'free').catch((e) =>
+          logger.warn('promo.claim.register_go_api_failed', { userId, promoId, err: (e as Error).message }),
+        );
         logger.info('promo.claim.mint_ok', {
           userId,
           promoId,
@@ -1662,7 +1668,13 @@ export async function resetQueue(type: 'jackpot' | 'hof'): Promise<void> {
 const DAILY_DRAFTS_PROMO_ID = '1';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
-export async function recordDraftCompletion(userId: string, draftId: string): Promise<Promo | null> {
+export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
+  // Only PAID drafts count toward promos. A draft entered with a FREE pass
+  // earns zero promo credit (free passes are join-only). Server-enforced so it
+  // holds even if the client mis-gates (the URL passType is deleted post-join).
+  if (passType === 'free') {
+    return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
+  }
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -1739,7 +1751,10 @@ export async function recordDraftCompletion(userId: string, draftId: string): Pr
 
 const PICK10_PROMO_ID = '2';
 
-export async function recordPick10(userId: string, draftId: string, _draftName: string): Promise<Promo | null> {
+export async function recordPick10(userId: string, draftId: string, _draftName: string, passType?: string): Promise<Promo | null> {
+  // Free-pass drafts earn NO promo credit — only paid drafts count toward
+  // Pick 10. Server-enforced so it holds even if the client mis-gates.
+  if (passType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -1870,7 +1885,10 @@ async function getCurrentBatchPosition(): Promise<number> {
   }
 }
 
-export async function recordJackpotHit(userId: string, draftId: string): Promise<Promo | null> {
+export async function recordJackpotHit(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
+  // Free-pass drafts earn NO promo credit — only paid drafts count toward the
+  // jackpot-hit promo. Server-enforced so it holds even if the client mis-gates.
+  if (passType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -2180,28 +2198,71 @@ export async function getEquippedBadgesBatch(userIds: string[]): Promise<Record<
  * Returns `null` username when the v2_users doc doesn't exist OR the
  * stored username is just the wallet — caller falls back to Go API.
  */
+// Counter doc that hands out permanent, unique banana handle numbers.
+// First handle is 10000 (always 5 digits), incrementing by 1 per user.
+const BANANA_NUMBER_COUNTER_DOC = 'banana_user_number';
+const BANANA_NUMBER_START = 10000;
+
+// Assigns (once) and returns a permanent unique banana number for a user
+// who has no username. Concurrency-safe via a Firestore transaction on a
+// shared counter, so two users can never get the same number. Idempotent:
+// returns the existing number if one was already assigned.
+async function assignBananaNumber(userId: string): Promise<number> {
+  const db = getAdminFirestore();
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+  const counterRef = db.collection('counters').doc(BANANA_NUMBER_COUNTER_DOC);
+  return db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    const existing = userSnap.exists ? (userSnap.data() as User).bananaNumber : undefined;
+    if (typeof existing === 'number') return existing;
+    const counterSnap = await tx.get(counterRef);
+    const counterData = counterSnap.exists ? (counterSnap.data() as { next?: number }) : null;
+    const next = typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START;
+    tx.set(counterRef, { next: next + 1 }, { merge: true });
+    tx.set(userRef, { bananaNumber: next }, { merge: true });
+    return next;
+  });
+}
+
 export async function getUserDisplayBatch(userIds: string[]): Promise<Record<string, {
   username: string | null;
   profilePicture: string | null;
   equippedBadge: string | null;
+  bananaNumber: number | null;
 }>> {
   if (userIds.length === 0) return {};
   const db = getAdminFirestore();
   const refs = userIds.map(id => db.collection(USERS_COLLECTION).doc(id));
   const snaps = await db.getAll(...refs);
-  const out: Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null }> = {};
+  const out: Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null }> = {};
+  const needsAssignment: string[] = [];
   for (let i = 0; i < userIds.length; i++) {
     const data = snaps[i].exists ? (snaps[i].data() as User) : null;
     const id = userIds[i];
     const u = (data?.username || '').trim();
     // A username equal to the raw wallet means the user never set one.
     const username = u && u.toLowerCase() !== id ? u : null;
+    const existingNumber = typeof data?.bananaNumber === 'number' ? data.bananaNumber : null;
     out[id] = {
       username,
       profilePicture: data?.profilePicture || null,
       equippedBadge: data?.equippedBadge ?? null,
+      bananaNumber: existingNumber,
     };
+    // Only users who actually SHOW a banana handle (no username set) and
+    // don't have a number yet need one assigned.
+    if (!username && existingNumber === null) needsAssignment.push(id);
   }
+  // Assign permanent numbers for the unassigned. One transaction each, but
+  // it only ever runs once per user — after that it's a plain read above.
+  await Promise.all(needsAssignment.map(async (id) => {
+    try {
+      out[id].bananaNumber = await assignBananaNumber(id);
+    } catch {
+      // Assignment failed (transient): leave null, caller falls back to the
+      // deterministic client-side placeholder. Never blocks the response.
+    }
+  }));
   return out;
 }
 

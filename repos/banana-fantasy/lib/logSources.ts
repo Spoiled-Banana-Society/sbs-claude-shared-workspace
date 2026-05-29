@@ -182,27 +182,49 @@ export const LOG_SOURCES = {
 
 export type LogSeverity = 'critical' | 'warning' | 'low';
 
-// Critical = fix right away: money flows, app crashes, draft-blocking
-// failures, broken login. Everything else is a warning by default —
-// something failed but the app limps on. LOW is a small subset that
-// fires on fallback paths users never see (e.g. the draft watchdog,
-// transient RTDB hiccups) — segregated so the warning section stays
-// focused on stuff that actually needs human attention.
+// Critical = "wake me up, fix it NOW." Reserved for failures that
+// stop a user cold or touch money/security:
+//   • drafts freezing or failing to start/advance
+//   • promos not paying out
+//   • payments, mints, prize withdrawals, marketplace funds
+//   • auth/security integrity (forged tokens, bad webhook sigs, the
+//     admin wallet, a missing server secret)
+//   • a page that actually crashed to the error screen
+// Everything else is a warning by default — something failed but the
+// app limps on. Generic uncaught JS errors and React hydration
+// mismatches are intentionally NOT critical: they're usually cosmetic
+// (a flicker, a recoverable re-render) and were drowning out the real
+// fires. They still show up in the Warnings section. LOW is a small
+// subset that fires on fallback paths users never see.
 const CRITICAL_PATTERNS: RegExp[] = [
-  /^global\./i,                       // uncaught crashes + React boundary
-  /unhandled/i,
+  // ── Drafts freezing / not starting / not advancing ──
+  /^draft\.join_failed/i,
+  /^draft\.live_load_exhausted/i,
+  /^draft\.ws\.token_fetch_failed/i,
+  /^draft\.ws\.reconnect_failed/i,
+  /^draft\.pick_submit/i,
+  /^draft\.autopick_submit/i,
+  /^draft\.phase_check_failed/i,
+  // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
   /mint_failed/i,
   /transferFrom_failed/i,
-  /^auth\./i,                         // login broken
-  /^prizes\.withdrawal/i,
   /admin_wallet/i,
-  /^draft\.join_failed/i,
-  /^draft\.live_load_exhausted/i,
-  /^draft\.ws\.token_fetch_failed/i,
-  /^draft\.pick_submit/i,
-  /^draft\.autopick_submit/i,
+  /^prizes\.withdrawal/i,
+  /^marketplace\.buy_execution_failed/i,
+  /^marketplace\.buy_card_funding_failed/i,
+  // ── Promos not working / not paying out ──
+  /^promo\.claim/i,
+  /^promo\.jp_reveal_failed/i,
+  /^draft\.promo_jackpot/i,
+  // ── Security / auth integrity (not user-side connect hiccups) ──
+  /^auth\.jwt_signature_invalid/i,
+  /^auth\.jwks_fetch_failed/i,
+  /^kyc\.webhook_invalid_signature/i,
+  /^notifications\.config\.secret_missing/i,
+  // ── A page genuinely crashed to the error screen for the user ──
+  /^global\.react\.boundary/i,
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a

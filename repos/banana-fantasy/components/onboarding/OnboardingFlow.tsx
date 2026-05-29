@@ -4,9 +4,11 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePrivy } from '@privy-io/react-auth';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { usernameErrorText } from '@/lib/usernameMessages';
 
 // Extended steps: profile setup → draft tutorial → first-draft promo → done
 const steps = ['welcome', 'display', 'avatar', 'howItWorks', 'promo', 'done'] as const;
@@ -70,6 +72,7 @@ const fadeUp = {
 
 export function OnboardingFlow() {
   const router = useRouter();
+  const privy = usePrivy();
   const { user, walletAddress } = useAuth();
   const { isNewUser, isSubmitting, error, createProfile, updateProfile, completeOnboarding } = useOnboarding();
   const [stepIndex, setStepIndex] = useState(0);
@@ -129,6 +132,21 @@ export function OnboardingFlow() {
         if (!trimmedName) {
           setLocalError('Please enter a display name.');
           return;
+        }
+        // Usernames must be unique — claim it before creating/updating the
+        // profile. A 409 means someone already has that name.
+        if (trimmedName.toLowerCase() !== (user?.username ?? '').toLowerCase()) {
+          const token = await privy.getAccessToken();
+          const res = await fetch('/api/username', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: trimmedName }),
+          });
+          if (!res.ok) {
+            const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
+            setLocalError(usernameErrorText(data.reason || data.error));
+            return;
+          }
         }
         if (isNewUser && !profileCreated) {
           await createProfile(trimmedName, avatarPreview);

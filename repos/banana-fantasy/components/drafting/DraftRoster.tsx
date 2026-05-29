@@ -5,6 +5,7 @@ import { POSITION_COLORS, ALL_POSITIONS } from '@/lib/draftRoomConstants';
 import type { PositionRoster, DraftPick } from '@/lib/draftRoomConstants';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface DraftRosterProps {
   draftOrder: DraftPlayer[];
@@ -33,13 +34,14 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
 
   // Find the display name for the selected player
   const selectedDraftPlayer = draftOrder.find(p => p.name === selectedPlayer);
-  const rawName = selectedDraftPlayer?.isYou && userName
+  // Never surface a wallet: prefer a real/resolved name, otherwise the
+  // on-brand Banana # default derived from the wallet.
+  const displayName = selectedDraftPlayer?.isYou && userName
     ? userName
-    : selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer;
-  // Shorten wallet addresses: 0xd330...9362
-  const displayName = rawName.startsWith('0x') && rawName.length > 12
-    ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}`
-    : rawName;
+    : getTruncatedAccountName(
+        selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer,
+        selectedDraftPlayer?.name || selectedPlayer,
+      );
 
   // Count players per position
   const positionCounts: Record<string, number> = {};
@@ -71,10 +73,7 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
         }}
       >
         {draftOrder.map(p => {
-          const label = p.isYou ? 'Your Team' : p.displayName || p.name;
-          const shortLabel = label.startsWith('0x') && label.length > 12
-            ? `${label.slice(0, 6)}...${label.slice(-4)}`
-            : label;
+          const shortLabel = p.isYou ? 'Your Team' : getTruncatedAccountName(p.displayName || p.name, p.name);
           return (
             <option key={p.id} value={p.name} className="bg-[#1a1a24] font-bold">
               {shortLabel}

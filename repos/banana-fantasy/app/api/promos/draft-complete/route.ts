@@ -11,8 +11,10 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
     const draftId = requireString(body.draftId, 'draftId');
+    // Free-pass drafts earn no promo credit (server-enforced).
+    const passType = typeof body.passType === 'string' ? body.passType : undefined;
 
-    const promo = await recordDraftCompletion(userId, draftId);
+    const promo = await recordDraftCompletion(userId, draftId, passType);
 
     // Fire-and-forget exposure recompute. Idempotent + reads from the Go
     // API, so runs in the background without blocking the response.

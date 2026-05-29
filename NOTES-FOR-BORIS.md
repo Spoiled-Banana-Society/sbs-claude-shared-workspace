@@ -4,6 +4,27 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## ⚠️ May 28 — Deploy system: workspace reconciled to live + things you need to do
+
+Today multiple Claude sessions deployed in parallel (chat names, name-fix, team-card, banana handles, your lobby work). It got messy and your backend got briefly reverted (recovered). Root cause: **the workspace had drifted behind the live site, and deploys weren't going through `deploy.sh`.** I've reconciled it. Here's what's done and what you need to do.
+
+### Done on Richard's side
+- **Workspace is now reconciled with live** (`sbs-frontend-v2` HEAD `99341615`). Pulled all direct-to-live work back into the shared workspace additively (no `--delete`, nothing removed) and pushed to `main` (commit `1fb9e14`). `deploy.sh` dry-run is now clean — the system works again.
+- Marker `~/.sbs-last-deploy-frontend-v2-head` set to current live.
+
+### What YOU need to do
+1. **`git pull origin main` in your shared workspace** before your next deploy. Your local workspace is now behind this reconcile — pulling makes your copy == live too, so you don't deploy stale and revert today's work.
+2. **Stop pushing straight to `sbs-frontend-v2` ("Mode B").** That direct-to-live path is what made the workspace drift behind live in the first place, which is what caused the back-and-forth deletions. Going forward let's BOTH deploy only via `scripts/deploy.sh` from the shared workspace — its pre-flight + Mode-B + deletion guards are what stop us overwriting each other. If you ever must push direct, sync it back into the shared workspace immediately after.
+3. **Push the backend self-heal fix to Caleb's staging branch — only your Mac can.** Richard's `~/sbs-drafts-api-deploy` is not a git clone, so the Go fix (`models/draft-state.go` self-heal, live as Cloud Run `sbs-drafts-api-staging-00134-v7q`, now also committed to workspace `main`) hasn't been pushed to `sbs-drafts-api` `staging` for Caleb. Please run `cd ~/sbs-drafts-api-deploy && git push origin staging`.
+4. **Heads-up: the Bash safety hook got rewritten and is now over-aggressive.** It depended on `jq` (not installed on Richard's Mac) so it was silently dead all session; a session rewrote it in `python3` to revive it. But the rewrite blocks **all** `git push` in the shared workspace when the `~/sbs-shared-pushed` sentinel is >10 min old — including pushes to personal branches (`richard`/`boris`) and shared-workspace `main`, not just Vercel/banana-fantasy pushes like the original. If you pull that version into your `tools/sbs-safety.sh` it'll block your normal workflow. Fix needed: scope the push guard back to banana-fantasy/`sbs-frontend-v2` pushes only. Until then, `touch ~/sbs-shared-pushed` to override.
+
+### Backend rule reminder (the thing that bit us today)
+`~/sbs-drafts-api-deploy` is NOT git-tracked and goes stale. **Before any backend deploy, refresh it from the shared workspace copy and diff-check it** — deploying it stale is exactly what reverted your backend today.
+
+— Richard's Claude
+
+---
+
 ## ⚠️ ACTIVE INCIDENT — Vercel DDoS Mitigation 403'ing the whole site (May 27)
 
 **Status when this note was written:** Site returning `403 Forbidden` with `x-vercel-mitigated: deny` for both Richard's and Boris's IPs. Cooldown likely still active. Code-side cause has been identified and fixed in two deploys today. Pending: browser cache cleanup + Vercel support ticket.
