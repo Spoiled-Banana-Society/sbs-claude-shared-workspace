@@ -96,6 +96,14 @@ export function DraftRoomChat({
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
           timestamp: r.timestamp,
         }));
+        // While the panel is collapsed, accrue an unread badge for new
+        // messages from other people (own messages never count as unread).
+        if (isCollapsedRef.current && next.length) {
+          const prevSeenId = lastSeenIdRef.current;
+          const prevIdx = prevSeenId ? next.findIndex((m) => m.id === prevSeenId) : -1;
+          const newFromOthers = next.slice(prevIdx + 1).filter((m) => !m.isYou).length;
+          if (newFromOthers > 0) setUnreadCount((c) => c + newFromOthers);
+        }
         if (next.length) lastSeenIdRef.current = next[next.length - 1].id;
         setMessages(next);
       } catch {
@@ -170,7 +178,7 @@ export function DraftRoomChat({
     return (
       <div className="sticky top-0 flex flex-col items-center py-2 px-1.5 bg-[#1c1c1e] border-l border-white/10 flex-shrink-0 rounded-bl-lg">
         <button
-          onClick={() => setIsCollapsed(false)}
+          onClick={() => { setIsCollapsed(false); setUnreadCount(0); }}
           className="relative w-10 h-10 rounded-full bg-[#2c2c2e] hover:bg-[#3a3a3c] flex items-center justify-center transition-all group"
           title="Open chat"
         >
