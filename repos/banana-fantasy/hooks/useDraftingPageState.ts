@@ -847,7 +847,7 @@ export function useDraftingPageState() {
               fetch('/api/promos/draft-complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, draftId: draft.id }),
+                body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
               }).catch(() => {});
             }
 
@@ -862,7 +862,7 @@ export function useDraftingPageState() {
                   fetch('/api/promos/pick10', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName }),
+                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
                   }).catch(() => {});
                 }
               }
@@ -1412,7 +1412,7 @@ export function useDraftingPageState() {
         await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
+          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId }),
         });
         await refreshBalance();
       } catch (err) {

@@ -1645,7 +1645,7 @@ function DraftRoomContent() {
         fetch('/api/promos/pick10', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
           reportClientError({
@@ -1697,7 +1697,7 @@ function DraftRoomContent() {
     fetch('/api/promos/jackpot-hit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+      body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
     }).catch(err => {
       console.error('[Promo] Jackpot tracking failed:', err);
       reportClientError({
@@ -2536,7 +2536,7 @@ function DraftRoomContent() {
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                        body: JSON.stringify({ userId, passType, leagueId: draftId, tokenId: storedDraft?.cardId }),
                       });
                       await refreshBalance();
                     } catch (err) {
