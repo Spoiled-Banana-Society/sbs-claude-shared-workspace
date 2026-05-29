@@ -400,15 +400,16 @@ body {
   animation: fade-in 0.5s ease-out forwards;
 }
 
-/* "Joining lobby…" overlay: fades in only AFTER a ~140ms delay so a fast
-   join (sub-140ms) barely flashes it, while a slow join gets the full
-   branded beat. `both` fill keeps it at opacity 0 during the delay. */
+/* "Joining lobby…" overlay: fades in immediately. The entry handler holds the
+   overlay for a minimum ~700ms (see MIN_OVERLAY_MS in useDraftingPageState) so
+   the branded beat is always clearly visible even when the join resolves
+   instantly — perceptible but still snappy. */
 @keyframes joining-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1); }
 }
 .animate-joining-in {
-  animation: joining-in 0.28s ease-out 0.14s both;
+  animation: joining-in 0.2s ease-out both;
 }
 
 /* Indeterminate banana-gradient progress bar that slides across the track. */

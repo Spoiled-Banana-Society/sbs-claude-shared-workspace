@@ -419,6 +419,11 @@ export function useDraftingPageState() {
     // no pulse, no async draftId race (the old flow navigated with no id and
     // joined inside the room, which caused the "0 then 1 then 2" flash).
     setJoiningLobby(true);
+    // Hold the overlay for a minimum beat so the branded "Joining lobby…"
+    // transition is always clearly visible, even when joinDraft resolves
+    // near-instantly. Perceptible but snappy — never pads beyond this.
+    const MIN_OVERLAY_MS = 700;
+    const overlayStart = Date.now();
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
@@ -480,6 +485,9 @@ export function useDraftingPageState() {
       passType,
       joinedAt: String(joinedAt),
     });
+    // Let the branded overlay breathe for its minimum beat before we swap routes.
+    const elapsed = Date.now() - overlayStart;
+    if (elapsed < MIN_OVERLAY_MS) await new Promise(r => setTimeout(r, MIN_OVERLAY_MS - elapsed));
     router.push(`/draft-room?${params.toString()}`);
   };
 
