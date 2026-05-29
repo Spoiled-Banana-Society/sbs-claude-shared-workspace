@@ -90,7 +90,9 @@ function DraftRoomContent() {
       return;
     }
     params.set('id', resolved);
-    params.delete('passType');
+    // Keep `passType` in the URL — it's the durable record of which pass type
+    // (free/paid) this draft was entered with. Deleting it made isPaidDraft
+    // flip to true after join, which let FREE drafts wrongly earn promo credit.
     const newSearch = params.toString();
     const newUrl = `${pathname}?${newSearch}`;
     console.log('[DraftRoom] setDraftId → updating URL to', newUrl);
@@ -327,6 +329,8 @@ function DraftRoomContent() {
     firebaseRtdb,
     ws,
     bestTimeRemaining,
+    isSlowDraft,
+    isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
   } = useDraftLiveSync({
@@ -1625,7 +1629,7 @@ function DraftRoomContent() {
         fetch('/api/promos/draft-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Failed to track draft:', err);
           reportClientError({
@@ -2368,6 +2372,8 @@ function DraftRoomContent() {
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}
             bestTimeRemaining={bestTimeRemaining}
+            isSlowDraft={isSlowDraft}
+            isSlowDraftPaused={isSlowDraftPaused}
             formatTime={formatTime}
             activeTab={activeTab}
             onTabChange={setActiveTab}
