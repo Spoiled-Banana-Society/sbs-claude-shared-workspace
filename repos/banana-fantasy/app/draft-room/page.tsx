@@ -206,7 +206,10 @@ function DraftRoomContent() {
   // RTDB/poll reading right after join (our own count bump hasn't propagated
   // yet) while still letting genuine leaves lower the count live afterwards.
   // 0 = never joined here (a pure observer) → leaves show immediately.
-  const joinAtRef = useRef(0);
+  // Seeded from the `joinedAt` URL param on a fresh join-before-navigate entry
+  // so the grace window is already counting from the real join time — the
+  // count can't dip below the joined value before RTDB catches up.
+  const joinAtRef = useRef(Number(searchParams?.get('joinedAt')) || 0);
   // Shared randomize-bar anchor (epoch ms) from RTDB, written by the Go API at
   // fill-time so every client's bar runs on the same clock. 0 until it arrives.
   const randomizeStartAtRef = useRef(0);
@@ -1645,7 +1648,7 @@ function DraftRoomContent() {
         fetch('/api/promos/pick10', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
           reportClientError({
@@ -1697,7 +1700,7 @@ function DraftRoomContent() {
     fetch('/api/promos/jackpot-hit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+      body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
     }).catch(err => {
       console.error('[Promo] Jackpot tracking failed:', err);
       reportClientError({
@@ -2536,7 +2539,7 @@ function DraftRoomContent() {
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                        body: JSON.stringify({ userId, passType, leagueId: draftId, tokenId: storedDraft?.cardId }),
                       });
                       await refreshBalance();
                     } catch (err) {

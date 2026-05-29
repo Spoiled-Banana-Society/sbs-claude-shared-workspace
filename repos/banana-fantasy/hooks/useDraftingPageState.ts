@@ -11,7 +11,7 @@ import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
 import type { ApiDraftToken } from '@/lib/api/owner';
 import * as draftApi from '@/lib/draftApi';
-import { leaveDraft } from '@/lib/api/leagues';
+import { leaveDraft, joinDraft } from '@/lib/api/leagues';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -147,6 +147,11 @@ export function useDraftingPageState() {
   const [promoIndex, setPromoIndex] = useState(0);
   const [promoAutoRotate, setPromoAutoRotate] = useState(true);
   const [showEntryFlow, setShowEntryFlow] = useState(false);
+  // True while the join network call is in flight after the user confirms
+  // entry — drives the branded "Joining lobby…" overlay. Cleared on failure;
+  // on success the page navigates away (drafting page unmounts) so it just
+  // fades out with the route change.
+  const [joiningLobby, setJoiningLobby] = useState(false);
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -407,12 +412,82 @@ export function useDraftingPageState() {
       return;
     }
 
+    // Join-before-navigate: do the actual joinDraft HERE (on tap), while a
+    // branded "Joining lobby…" overlay is showing, then navigate to the room
+    // with the resolved draftId + player count already in the URL. This drops
+    // the user straight into a FULLY POPULATED lobby on first paint — no blank,
+    // no pulse, no async draftId race (the old flow navigated with no id and
+    // joined inside the room, which caused the "0 then 1 then 2" flash).
+    setJoiningLobby(true);
+    // Hold the overlay for a minimum beat so the branded "Joining lobby…"
+    // transition is always clearly visible, even when joinDraft resolves
+    // near-instantly. Perceptible but snappy — never pads beyond this.
+    const MIN_OVERLAY_MS = 700;
+    const overlayStart = Date.now();
+    let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
+    const MAX_JOIN_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
+      try {
+        draftRoom = await joinDraft(user.walletAddress, speed, 1, undefined, passType);
+        if (draftRoom?.id) break;
+        throw new Error('Join failed: no draft ID');
+      } catch (err) {
+        logger.warn(`[Enter] join attempt ${attempt}/${MAX_JOIN_RETRIES} failed`, { err: err instanceof Error ? err.message : String(err) });
+        if (attempt < MAX_JOIN_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
+    }
+
+    if (!draftRoom?.id) {
+      // Join failed after retries. Refund the pass we just spent (use-pass
+      // decremented Firestore; no league was actually joined) and bail.
+      setJoiningLobby(false);
+      void fetch('/api/owner/refund-pass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
+      }).catch(() => {});
+      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
+      void refreshBalance();
+      alert('Could not join a draft right now. Your pass was not used — please try again.');
+      return;
+    }
+
+    const newId = draftRoom.id;
+    const joinedCount = Math.min(Math.max(Number(draftRoom.players) || 1, 1), 10);
+    const joinedAt = Date.now();
+
+    // Persist the draft so the room + leave flow have the exact token/passType.
+    draftStore.addDraft({
+      id: newId,
+      contestName: draftRoom.contestName || '',
+      status: 'filling',
+      type: null,
+      draftSpeed: speed,
+      players: joinedCount,
+      maxPlayers: 10,
+      joinedAt,
+      phase: 'filling',
+      liveWalletAddress: user.walletAddress,
+      passType,
+      cardId: draftRoom.cardId,
+    });
+
+    // Navigate to the room with everything seeded — same URL shape as
+    // re-entering an active draft (the proven id-in-URL path), plus joinedAt
+    // so the room's post-join grace window keeps the count from dipping.
     const params = new URLSearchParams({
+      id: newId,
+      name: 'Draft Room',
       speed,
+      players: String(joinedCount),
       mode: 'live',
       wallet: user.walletAddress,
       passType,
+      joinedAt: String(joinedAt),
     });
+    // Let the branded overlay breathe for its minimum beat before we swap routes.
+    const elapsed = Date.now() - overlayStart;
+    if (elapsed < MIN_OVERLAY_MS) await new Promise(r => setTimeout(r, MIN_OVERLAY_MS - elapsed));
     router.push(`/draft-room?${params.toString()}`);
   };
 
@@ -847,7 +922,7 @@ export function useDraftingPageState() {
               fetch('/api/promos/draft-complete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, draftId: draft.id }),
+                body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
               }).catch(() => {});
             }
 
@@ -862,7 +937,7 @@ export function useDraftingPageState() {
                   fetch('/api/promos/pick10', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName }),
+                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
                   }).catch(() => {});
                 }
               }
@@ -1412,7 +1487,7 @@ export function useDraftingPageState() {
         await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id }),
+          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId }),
         });
         await refreshBalance();
       } catch (err) {
@@ -1489,6 +1564,7 @@ export function useDraftingPageState() {
     claimSuccess,
     promoIndex,
     showEntryFlow,
+    joiningLobby,
     showContestDetails,
     infoTopic,
     handleEnterDraft,

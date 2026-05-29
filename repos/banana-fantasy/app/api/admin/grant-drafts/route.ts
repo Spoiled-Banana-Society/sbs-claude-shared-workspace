@@ -11,6 +11,7 @@ import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 
 const USERS_COLLECTION = 'v2_users';
@@ -115,6 +116,11 @@ export async function POST(req: Request) {
         txHash,
         reason: `admin_grant:${actorWallet}`,
       });
+      // Register into the Go API immediately, typed `free`, so the granted
+      // pass is usable for draft entry without waiting on the Alchemy webhook.
+      await registerMintedTokens(targetWallet, mintedTokenIds, 'free').catch((e) =>
+        logger.warn('admin.grant_drafts.register_go_api_failed', { requestId, target: userDocId, err: (e as Error).message }),
+      );
     }
 
     // Atomic Firestore commit: counter increment + pass_granted activity
