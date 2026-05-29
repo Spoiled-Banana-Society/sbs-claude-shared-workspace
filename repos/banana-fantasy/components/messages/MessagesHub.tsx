@@ -358,10 +358,10 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
         {/* Hide the friends sections while searching to keep focus on results. */}
         {!isSearching && (
           <>
-            {/* People you recently drafted with — quick-add suggestions. */}
+            {/* Suggested friends — people you recently drafted with. */}
             {suggestions.length > 0 && (
               <section className="mb-4">
-                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">People you drafted with</p>
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Suggested friends</p>
                 <div className="space-y-1">
                   {suggestions.map((u) => (
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
