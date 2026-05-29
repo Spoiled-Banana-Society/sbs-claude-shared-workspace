@@ -71,6 +71,9 @@ export default function ExposurePage() {
   const [stackMinSize, setStackMinSize] = useState<2 | 3 | 4>(2);
   const [stackSearch, setStackSearch] = useState('');
   const [selectedStack, setSelectedStack] = useState<RealStack | null>(null);
+  // Which sub-view of the Exposure page is showing. Team Stacks used to live
+  // at the very bottom (scroll-only); it's now its own tab up top.
+  const [exposureTab, setExposureTab] = useState<'positions' | 'stacks'>('positions');
 
   // Leagues whose roster contains the selected team+position. Match by
   // team + base position group (RB / WR / QB / TE / DST), since roster
@@ -297,8 +300,35 @@ export default function ExposurePage() {
         </div>
       )}
 
+      {/* ── Sub-view tabs: Position Exposure / Team Stacks ─────────────── */}
+      {totalDrafts > 0 && (
+        <div className="flex gap-1 bg-white/[0.04] rounded-xl p-1 mb-6 w-fit">
+          <button
+            onClick={() => setExposureTab('positions')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              exposureTab === 'positions' ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white/70'
+            }`}
+          >
+            Position Exposure
+          </button>
+          <button
+            onClick={() => setExposureTab('stacks')}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+              exposureTab === 'stacks' ? 'bg-white/15 text-white' : 'text-white/45 hover:text-white/70'
+            }`}
+          >
+            Team Stacks
+            {stacks.length > 0 && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-banana/20 text-banana">
+                {stacks.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* ── Section 2: Position Exposure Table ─────────────────────────── */}
-      <div className="mb-10">
+      <div className={exposureTab === 'positions' ? 'mb-10' : 'hidden'}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           {/* Position filter pills */}
           <div className="flex gap-1.5 overflow-x-auto pb-1">
@@ -419,7 +449,7 @@ export default function ExposurePage() {
       </div>
 
       {/* ── Matching Drafts (any chip search) ───────────────────────────── */}
-      {search.length > 0 && comboMatchingLeagues.length > 0 && (
+      {exposureTab === 'positions' && search.length > 0 && comboMatchingLeagues.length > 0 && (
         <div className="mb-10">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -464,7 +494,7 @@ export default function ExposurePage() {
           </div>
         </div>
       )}
-      {search.length > 0 && comboMatchingLeagues.length === 0 && (
+      {exposureTab === 'positions' && search.length > 0 && comboMatchingLeagues.length === 0 && (
         <div className="mb-10 rounded-xl border border-white/[0.06] bg-white/[0.02] px-6 py-8 text-center">
           <p className="text-white/50 text-sm">No drafts contain {search.map(s => s.toUpperCase()).join(' + ')}.</p>
           <button onClick={() => setSearch([])} className="text-banana text-xs mt-2 hover:underline">
@@ -480,7 +510,7 @@ export default function ExposurePage() {
           Click a card to drill into the leagues containing the stack.
           Hidden once a chip search is active — drill into Matching
           Drafts above instead. */}
-      {search.length === 0 && stacks.length > 0 && (
+      {exposureTab === 'stacks' && stacks.length > 0 && (
         <div className="mb-10">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
             <div>
@@ -584,6 +614,14 @@ export default function ExposurePage() {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Stacks tab, but no stacks built yet */}
+      {exposureTab === 'stacks' && stacks.length === 0 && totalDrafts > 0 && (
+        <div className="mb-10 text-center py-12 rounded-xl border border-white/[0.04] bg-white/[0.02]">
+          <p className="text-white/50 text-sm">No team stacks yet.</p>
+          <p className="text-white/30 text-xs mt-1">Draft a QB plus a pass-catcher from the same NFL team to build a stack.</p>
         </div>
       )}
 

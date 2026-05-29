@@ -22,6 +22,7 @@ import {
   reserveTokensToWallet,
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
@@ -248,6 +249,13 @@ export async function POST(req: Request) {
         500,
       );
     }
+
+    // 3b. Register the minted tokens into the Go API immediately, typed
+    //     `paid`, so they're usable for draft entry without depending on the
+    //     Alchemy webhook/reconcile. Best-effort — never roll back a paid mint.
+    void registerMintedTokens(userId, mintResult.tokenIds, 'paid').catch((e) =>
+      logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message }),
+    );
 
     // 4. Atomic Firestore commit: counter + cardPurchaseCount + activity
     //    event all written in ONE transaction. Activity feed and counter

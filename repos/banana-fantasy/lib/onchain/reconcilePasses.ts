@@ -1,6 +1,7 @@
 import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -152,7 +153,7 @@ export async function fetchGoApiAvailableCount(wallet: string): Promise<number |
  * in `owners/{wallet}/validDraftTokens`. Backfill for new mints or for
  * wallets that existed before we started recording token ids server-side.
  */
-async function registerTokensWithGoApi(wallet: string, tokenIds: number[]): Promise<number> {
+async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passType: 'paid' | 'free'): Promise<number> {
   if (tokenIds.length === 0) return 0;
   const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return 0;
@@ -178,7 +179,7 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[]): Prom
       const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/mint`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minId, maxId }),
+        body: JSON.stringify({ minId, maxId, passType }),
       });
       if (res.ok) {
         registered += maxId - minId + 1;
@@ -198,6 +199,34 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[]): Prom
     }
   }
   return registered;
+}
+
+/**
+ * Registers freshly-minted token ids into the Go API immediately at mint time,
+ * stamped with their known passType — WITHOUT waiting for the Alchemy webhook
+ * or a full reconcile. This is the guaranteed path: every mint call site
+ * (staging-mint, card/MoonPay purchase, MetaMask purchase, wheel spin, admin
+ * grant) knows the exact token ids and their type the moment it mints, so it
+ * calls this directly. The Alchemy Transfer webhook remains a backstop (and the
+ * only thing that catches secondary-market transfers), but entry never has to
+ * wait on it.
+ *
+ * Does NOT touch the user's counter — each mint path owns its own
+ * draftPasses/freeDrafts increment, so there's no Alchemy-indexing-lag race
+ * (this only POSTs token ids to the Go API; it never reads on-chain balance).
+ * Best-effort: callers should not let a failure here roll back a successful
+ * on-chain mint. Already-registered ids are skipped by the Go API.
+ */
+export async function registerMintedTokens(
+  wallet: string,
+  tokenIds: Array<string | number>,
+  passType: 'paid' | 'free',
+): Promise<number> {
+  const numeric = tokenIds
+    .map((id) => (typeof id === 'number' ? id : Number.parseInt(String(id), 10)))
+    .filter((n) => Number.isFinite(n));
+  if (numeric.length === 0) return 0;
+  return registerTokensWithGoApi(wallet.toLowerCase(), numeric, passType);
 }
 
 /**
@@ -259,8 +288,17 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   const missingFromGo = ownedNumericIds.filter((n) => !goApiSet.has(String(n)));
   const staleInGo = goApiAvailable.filter((id) => !ownedSet.has(id));
 
-  // 4. Repair each side.
-  const registered = await registerTokensWithGoApi(w, missingFromGo);
+  // 4. Repair each side. Stamp each newly-registered token with its real
+  //    passType: a token with a pass_origin doc (wheel/admin grant) is FREE,
+  //    everything else is a PAID purchase. This is the source of truth the
+  //    backend uses to honor the user's free/paid choice at entry and to keep
+  //    free drafts out of promos.
+  const freeOriginSet = new Set((await listFreeOriginTokenIds(w)).map((id) => String(id)));
+  const freeMissing = missingFromGo.filter((n) => freeOriginSet.has(String(n)));
+  const paidMissing = missingFromGo.filter((n) => !freeOriginSet.has(String(n)));
+  const registered =
+    (await registerTokensWithGoApi(w, paidMissing, 'paid')) +
+    (await registerTokensWithGoApi(w, freeMissing, 'free'));
   const removed = await removeTransferredOutFromGoApi(w, staleInGo);
 
   // 5. Compute the spendable count and write Firestore.

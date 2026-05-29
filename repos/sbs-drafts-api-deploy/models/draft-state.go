@@ -111,6 +111,64 @@ func ReturnDraftSummaryForDraft(draftId string) (*DraftSummary, error) {
 		return nil, err
 	}
 
+	// Self-heal: a pick can be absent from the summary doc even though it was
+	// saved to playerState + rosters (seen on the final pick, when the summary
+	// write loses a race with draft completion — the card + roster come out
+	// fine but the board renders a blank slot). The board reads the summary,
+	// so backfill any empty slot from playerState (the source of truth) and
+	// persist the repair so it's fixed for good. Enrichment only — this never
+	// clears or overwrites a slot that already has a player.
+	missing := false
+	for i := range sum.Summary {
+		if sum.Summary[i].PlayerInfo.PlayerId == "" {
+			missing = true
+			break
+		}
+	}
+	if missing {
+		state := make(map[string]PlayerStateInfo)
+		if sErr := utils.Db.ReadDocument(collectionString, "playerState", &state); sErr == nil {
+			byPick := make(map[int]PlayerStateInfo, len(state))
+			for _, p := range state {
+				if p.PlayerId != "" && p.PickNum >= 1 {
+					byPick[p.PickNum] = p
+				}
+			}
+			healed := false
+			for i := range sum.Summary {
+				slot := &sum.Summary[i]
+				if slot.PlayerInfo.PlayerId != "" {
+					continue
+				}
+				p, ok := byPick[slot.PlayerInfo.PickNum]
+				if !ok {
+					continue
+				}
+				// Keep the slot's prefilled OwnerAddress/Round/PickNum; fill the player.
+				slot.PlayerInfo.PlayerId = p.PlayerId
+				slot.PlayerInfo.DisplayName = p.DisplayName
+				slot.PlayerInfo.Team = p.Team
+				slot.PlayerInfo.Position = p.Position
+				if slot.PlayerInfo.OwnerAddress == "" {
+					slot.PlayerInfo.OwnerAddress = p.OwnerAddress
+				}
+				if slot.PlayerInfo.Round == 0 {
+					slot.PlayerInfo.Round = p.Round
+				}
+				healed = true
+			}
+			if healed {
+				if wErr := sum.Update(draftId); wErr != nil {
+					fmt.Printf("WARN could not persist healed summary for %s: %v\r", draftId, wErr)
+				} else {
+					fmt.Printf("INFO healed missing summary slot(s) for %s from playerState\r", draftId)
+				}
+			}
+		} else {
+			fmt.Printf("WARN summary has empty slot but playerState read failed for %s: %v\r", draftId, sErr)
+		}
+	}
+
 	return &sum, nil
 }
 

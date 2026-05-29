@@ -11,8 +11,10 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
     const draftId = requireString(body.draftId, 'draftId');
+    // Free-pass drafts earn no promo credit (server-enforced in recordJackpotHit).
+    const passType = typeof body.passType === 'string' ? body.passType : undefined;
 
-    const promo = await recordJackpotHit(userId, draftId);
+    const promo = await recordJackpotHit(userId, draftId, passType);
     return json({ promo }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

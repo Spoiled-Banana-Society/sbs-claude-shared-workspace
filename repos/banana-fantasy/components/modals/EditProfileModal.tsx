@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
+import { usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { usernameErrorText } from '@/lib/usernameMessages';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -14,10 +16,13 @@ interface EditProfileModalProps {
 
 export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
   const { user, updateUser } = useAuth();
+  const privy = usePrivy();
   const [username, setUsername] = useState('');
   const [profilePicturePreview, setProfilePicturePreview] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [checkingName, setCheckingName] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -25,8 +30,39 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
       setUsername(user.username);
       setProfilePicturePreview(user.profilePicture || null);
       setPendingFile(null);
+      setNameError(null);
     }
   }, [user]);
+
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await privy.getAccessToken();
+    return { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' };
+  }, [privy]);
+
+  // Live "username taken" check while typing. Ref the header getter so the
+  // effect's deps stay scalar (just the typed name) — Privy's hook identity
+  // churns per render and listing it here would re-fire the fetch every render
+  // (Rule #0 self-DDoS). Skips the check when the name is unchanged/empty.
+  const authHeadersRef = useRef(authHeaders);
+  useEffect(() => { authHeadersRef.current = authHeaders; }, [authHeaders]);
+  const currentName = user?.username ?? '';
+  useEffect(() => {
+    const name = username.trim();
+    if (!name || name.toLowerCase() === currentName.toLowerCase()) { setNameError(null); setCheckingName(false); return; }
+    let cancelled = false;
+    setCheckingName(true);
+    const t = setTimeout(async () => {
+      try {
+        const headers = await authHeadersRef.current();
+        const res = await fetch(`/api/username?name=${encodeURIComponent(name)}`, { headers, cache: 'no-store' });
+        const data = (await res.json()) as { available?: boolean; reason?: string };
+        if (cancelled) return;
+        setNameError(data.available ? null : usernameErrorText(data.reason));
+      } catch { /* ignore — save-time check is the hard gate */ }
+      finally { if (!cancelled) setCheckingName(false); }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [username, currentName]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -42,6 +78,30 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
 
   const handleSave = async () => {
     setSaving(true);
+
+    // Enforce unique usernames. Only when the name actually changed — claiming
+    // your own current name is a no-op but the server would treat it as fine
+    // anyway. A 409 means someone already has it.
+    const nameChanged = username.trim().toLowerCase() !== (user?.username ?? '').toLowerCase();
+    if (nameChanged) {
+      try {
+        const headers = await authHeaders();
+        const res = await fetch('/api/username', {
+          method: 'POST', headers, body: JSON.stringify({ name: username.trim() }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
+          setNameError(usernameErrorText(data.reason || data.error));
+          setSaving(false);
+          return;
+        }
+      } catch {
+        setNameError('Could not check username — try again.');
+        setSaving(false);
+        return;
+      }
+    }
+
     let pic = profilePicturePreview || undefined;
 
     // Upload custom image to Firebase Storage if user selected a file
@@ -61,7 +121,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
     }
 
     updateUser({
-      username,
+      username: username.trim(),
       profilePicture: pic,
     });
     setSaving(false);
@@ -107,10 +167,18 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
             type="text"
             id="username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => { setUsername(e.target.value); setNameError(null); }}
             className="w-full input"
             placeholder="Enter username"
+            maxLength={20}
           />
+          {nameError ? (
+            <p className="text-xs text-red-400 mt-1.5">{nameError}</p>
+          ) : checkingName ? (
+            <p className="text-xs text-text-muted mt-1.5">Checking availability…</p>
+          ) : username.trim() && username.trim().toLowerCase() !== (user.username ?? '').toLowerCase() ? (
+            <p className="text-xs text-success mt-1.5">Username available</p>
+          ) : null}
         </div>
 
         {/* X (Twitter) Connection */}
@@ -175,7 +243,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
           <Button variant="ghost" onClick={onClose} className="flex-1">
             Cancel
           </Button>
-          <Button onClick={handleSave} className="flex-1" disabled={saving}>
+          <Button onClick={handleSave} className="flex-1" disabled={saving || checkingName || !!nameError}>
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>

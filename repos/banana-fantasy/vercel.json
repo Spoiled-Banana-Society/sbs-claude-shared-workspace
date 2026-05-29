@@ -1,5 +1,10 @@
 {
   "installCommand": "npm install --legacy-peer-deps",
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  },
   "crons": [
     {
       "path": "/api/crons/skim-bbb4-usdc",
