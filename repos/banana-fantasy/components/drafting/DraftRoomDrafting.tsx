@@ -21,7 +21,6 @@ import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
-import { UserPopover } from '@/components/social/UserPopover';
 
 interface UserLike {
   username?: string | null;
@@ -141,26 +140,17 @@ export function DraftRoomDrafting({
 
   return (
     <>
-      {/* Radial halo during the drafting phase too — paired with the
-          thin viewport-edge border so the "double glow" persists from
-          reveal all the way through drafting. Gold for HOF, red for JP. */}
-      {(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') && engine.draftStatus !== 'completed' && (
-        <div
-          className="fixed inset-0 z-0 pointer-events-none animate-pulse-glow"
-          style={{
-            background: visibleDraftType === 'jackpot'
-              ? 'radial-gradient(circle at center, rgba(239, 68, 68, 0.3) 0%, transparent 70%)'
-              : 'radial-gradient(circle at center, rgba(255, 215, 0, 0.3) 0%, transparent 70%)',
-          }}
-        />
-      )}
+      {/* New HOF/JP look: the gold/red lives on the top BANNER (below),
+          and the drafting area stays clean/dark — so the old full-screen
+          radial halo during drafting was removed. The dramatic reveal
+          halo still plays pre-draft (see DraftRoomReveal). */}
 
       {/* Founder pill is rendered at the draft-room page level (z-[70])
           so it persists across all phases — see app/draft-room/page.tsx. */}
 
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
-          <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
+          <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: visibleDraftType === 'hof' ? '#C9A227' : visibleDraftType === 'jackpot' ? '#C0282D' : '#000' }}>
             <div
               ref={bannerRef}
               className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar"
@@ -174,9 +164,9 @@ export function DraftRoomDrafting({
                 const posHex = isPicked ? getPositionColorHex(slot.position) : '';
                 const counts = getPositionCountsForPlayer(slot.ownerName);
                 const borderColor = isUserCard ? '#F3E216' : isCurrent ? '#fff' : '#444';
-                const textColor = visibleDraftType === 'hof' && isUserCard ? '#111'
-                  : visibleDraftType === 'jackpot' && isUserCard ? '#222'
-                  : '#fff';
+                // New look: cards stay dark on every draft type; "you" is the
+                // gold border + gold pfp ring. So text is always white.
+                const textColor = '#fff';
 
                 const playerData = engine.draftOrder[slot.ownerIndex];
                 const playerUser = !isUserCard && playerData?.name
@@ -184,12 +174,6 @@ export function DraftRoomDrafting({
                   : null;
                 const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
                 const otherBadge = playerUser?.equippedBadge ?? null;
-                // A drafter is friend/message-able only if it's a real user
-                // (live-mode name is their wallet, starts with 0x) and not you.
-                // Bots (name `bot-…`) and empty slots are skipped.
-                const friendWallet = !isUserCard && playerData?.name?.toLowerCase().startsWith('0x')
-                  ? playerData.name
-                  : null;
                 let displayName = '';
                 if (playerData) {
                   if (playerData.isYou) {
@@ -219,15 +203,11 @@ export function DraftRoomDrafting({
                       borderStyle: 'solid',
                       borderColor,
                       transition: 'all 0.25s ease-in-out',
-                      background: isUserCard
-                        ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-                        : '#222',
+                      background: '#222',
                     }}
                     onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; e.currentTarget.style.borderColor = '#fff'; }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.background = isUserCard
-                        ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-                        : '#222';
+                      e.currentTarget.style.background = '#222';
                       e.currentTarget.style.borderColor = borderColor;
                     }}
                     onClick={() => onViewRoster(slot.ownerName)}
@@ -241,24 +221,8 @@ export function DraftRoomDrafting({
                             size={48}
                             equippedBadge={user?.equippedBadge}
                             useNextImage={false}
-                            className="border border-gray-500"
+                            className="border-2 border-[#F3E216]"
                           />
-                        </div>
-                      ) : friendWallet ? (
-                        // Tapping a real drafter's avatar opens the friend /
-                        // message popover. stopPropagation in UserPopover keeps
-                        // this from also firing the card's view-roster click.
-                        <div className="flex justify-center">
-                          <UserPopover walletAddress={friendWallet} username={displayName} pfpUrl={otherPfp}>
-                            <AvatarWithBadge
-                              imageUrl={otherPfp}
-                              alt={displayName}
-                              size={48}
-                              equippedBadge={otherBadge}
-                              useNextImage={false}
-                              className="border border-gray-500 cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
-                            />
-                          </UserPopover>
                         </div>
                       ) : (
                         <div className="flex justify-center">
@@ -294,7 +258,7 @@ export function DraftRoomDrafting({
                             fontSize: '16px',
                             margin: '2px auto 0px auto',
                             textAlign: 'center',
-                            color: bestTimeRemaining > 10 ? '#fff' : (visibleDraftType === 'jackpot' ? 'yellow' : 'red'),
+                            color: bestTimeRemaining > 10 ? '#fff' : 'red',
                           }}>
                             {formatTime(bestTimeRemaining)}
                           </div>
@@ -347,7 +311,7 @@ export function DraftRoomDrafting({
               })}
             </div>
 
-            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary">
+            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: visibleDraftType === 'hof' ? '#1a1400' : '#fff' }}>
               {spectator ? (
                 (() => {
                   const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;

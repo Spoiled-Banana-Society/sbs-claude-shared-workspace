@@ -281,16 +281,7 @@ export function DraftRow({
                 color: isYourTurn ? '#000' : '#fff',
               }}
             >
-              {isYourTurn ? (
-                <>
-                  {/* "Pick Now" overflows the 52px mobile box — shorten to
-                      "Pick" on mobile, keep the fuller label on sm+. */}
-                  <span className="sm:hidden">Pick</span>
-                  <span className="hidden sm:inline">Pick Now</span>
-                </>
-              ) : (
-                'Enter'
-              )}
+              {isYourTurn ? 'Pick Now' : 'Enter'}
             </button>
           )}
         </div>
