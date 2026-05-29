@@ -123,10 +123,19 @@ export async function GET(req: Request) {
 
     if (picked.length === 0) return NextResponse.json({ suggestions: [] });
 
+    // Resolve names/avatars, and drop duplicate display names so the list
+    // never shows the same name twice (legacy accounts share names until
+    // uniqueness is enforced everywhere).
     const profiles = await getPublicUsers(picked);
-    const suggestions: PublicUser[] = picked.map(
-      (w) => profiles.get(w) ?? { walletAddress: w, username: w.slice(0, 8) },
-    );
+    const suggestions: PublicUser[] = [];
+    const seenNames = new Set<string>();
+    for (const w of picked) {
+      const p = profiles.get(w) ?? { walletAddress: w, username: w.slice(0, 8) };
+      const key = p.username.trim().toLowerCase();
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+      suggestions.push(p);
+    }
     return NextResponse.json({ suggestions });
   } catch (err) {
     if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });
