@@ -21,6 +21,7 @@ import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { UserPopover } from '@/components/social/UserPopover';
 
 interface UserLike {
   username?: string | null;
@@ -183,6 +184,12 @@ export function DraftRoomDrafting({
                   : null;
                 const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
                 const otherBadge = playerUser?.equippedBadge ?? null;
+                // A drafter is friend/message-able only if it's a real user
+                // (live-mode name is their wallet, starts with 0x) and not you.
+                // Bots (name `bot-…`) and empty slots are skipped.
+                const friendWallet = !isUserCard && playerData?.name?.toLowerCase().startsWith('0x')
+                  ? playerData.name
+                  : null;
                 let displayName = '';
                 if (playerData) {
                   if (playerData.isYou) {
@@ -236,6 +243,22 @@ export function DraftRoomDrafting({
                             useNextImage={false}
                             className="border border-gray-500"
                           />
+                        </div>
+                      ) : friendWallet ? (
+                        // Tapping a real drafter's avatar opens the friend /
+                        // message popover. stopPropagation in UserPopover keeps
+                        // this from also firing the card's view-roster click.
+                        <div className="flex justify-center">
+                          <UserPopover walletAddress={friendWallet} username={displayName} pfpUrl={otherPfp}>
+                            <AvatarWithBadge
+                              imageUrl={otherPfp}
+                              alt={displayName}
+                              size={48}
+                              equippedBadge={otherBadge}
+                              useNextImage={false}
+                              className="border border-gray-500 cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
+                            />
+                          </UserPopover>
                         </div>
                       ) : (
                         <div className="flex justify-center">

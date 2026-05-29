@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { PrivyProvider } from '@/providers/PrivyProvider';
 import { QueryProvider } from '@/providers/QueryProvider';
@@ -16,19 +16,12 @@ import { SupportChatButton } from '@/components/SupportChatButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
-import { useNotificationOptIn, type NotifOptInTrigger } from '@/hooks/useNotificationOptIn';
-import { NotificationOptIn } from '@/components/notifications/NotificationOptIn';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
-
-// Context to expose triggerOptIn to any component in the tree
-type NotifContextType = { triggerOptIn: (trigger?: NotifOptInTrigger) => void };
-const NotifContext = createContext<NotifContextType>({ triggerOptIn: () => {} });
-export const useNotifOptIn = () => useContext(NotifContext);
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -47,7 +40,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const isDraftRoom = pathname === '/draft-room';
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const notif = useNotificationOptIn();
   // Real-time push from RTDB — primary source for badge unlocks +
   // promo events (toast + bell within ~100ms). Mounted app-wide so any
   // page sees the unlock the moment it happens server-side.
@@ -73,7 +65,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <NotifContext.Provider value={{ triggerOptIn: notif.triggerOptIn }}>
       <div className="min-h-screen bg-bg-primary">
         {!isDraftRoom && <Header onEditProfile={() => setShowEditProfile(true)} onShowTutorial={handleShowTutorial} />}
         <main className="pb-16 md:pb-0">{children}</main>
@@ -86,14 +77,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
         {!isDraftRoom && <SupportChatButton />}
-        <NotificationOptIn
-          show={notif.showPrompt}
-          isLoading={notif.isLoading}
-          onAccept={notif.acceptOptIn}
-          onDismiss={notif.dismissOptIn}
-        />
       </div>
-    </NotifContext.Provider>
   );
 }
 
