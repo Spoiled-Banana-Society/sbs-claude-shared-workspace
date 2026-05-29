@@ -206,7 +206,10 @@ function DraftRoomContent() {
   // RTDB/poll reading right after join (our own count bump hasn't propagated
   // yet) while still letting genuine leaves lower the count live afterwards.
   // 0 = never joined here (a pure observer) → leaves show immediately.
-  const joinAtRef = useRef(0);
+  // Seeded from the `joinedAt` URL param on a fresh join-before-navigate entry
+  // so the grace window is already counting from the real join time — the
+  // count can't dip below the joined value before RTDB catches up.
+  const joinAtRef = useRef(Number(searchParams?.get('joinedAt')) || 0);
   // Shared randomize-bar anchor (epoch ms) from RTDB, written by the Go API at
   // fill-time so every client's bar runs on the same clock. 0 until it arrives.
   const randomizeStartAtRef = useRef(0);
