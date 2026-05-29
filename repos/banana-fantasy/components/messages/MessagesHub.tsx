@@ -7,7 +7,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
+import { useFriendSuggestions } from '@/hooks/useFriendSuggestions';
 import { GlobalChat } from '@/components/chat/GlobalChat';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 /**
  * Unified messages hub: #general chat + Friends + DMs + Requests in one page.
@@ -29,10 +31,6 @@ type View =
   | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
 
-function shortWallet(w: string): string {
-  return `${w.slice(0, 6)}…${w.slice(-4)}`;
-}
-
 function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' }) {
   const px = size === 'sm' ? 32 : 40;
   return (
@@ -48,7 +46,7 @@ function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' })
 
 // ─── Thread pane ────────────────────────────────────────────────────────────
 
-function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () => void }) {
+function ThreadPane({ otherWallet, onBack, onBlockChange }: { otherWallet: string; onBack: () => void; onBlockChange?: () => void }) {
   const { user } = useAuth();
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const { messages, other, permission, block, loading, send, accept, block_: blockUser, unblock } = useDmThread(otherWallet);
@@ -101,6 +99,7 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to block');
       setTimeout(() => setFeedback(null), 3000);
     } else {
+      onBlockChange?.(); // drop the thread from the inbox list right away
       setFeedback('User blocked');
       setTimeout(() => setFeedback(null), 2000);
     }
@@ -113,7 +112,8 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to unblock');
       setTimeout(() => setFeedback(null), 3000);
     } else {
-      setFeedback('User unblocked');
+      onBlockChange?.(); // restore the thread + history in the inbox list
+      setFeedback('User unblocked — chat restored');
       setTimeout(() => setFeedback(null), 2000);
     }
   };
@@ -135,8 +135,7 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
         </button>
         {other && <Avatar user={other} />}
         <div className="flex-1 min-w-0">
-          <p className="text-white font-medium truncate">{other?.username || shortWallet(otherWallet)}</p>
-          <p className="text-white/40 text-[10px] font-mono truncate">{shortWallet(otherWallet)}</p>
+          <p className="text-white font-medium truncate">{getTruncatedAccountName(other?.username || '', otherWallet)}</p>
         </div>
         {permission === 'reply' && !isBlocked && (
           <button onClick={handleAccept} className="px-3 py-1.5 rounded-lg bg-banana text-black text-xs font-bold hover:bg-banana-light">
@@ -260,6 +259,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { data, loading, accept, remove, sendRequest, search } = useFriends(enabled);
+  const { suggestions, dismiss: dismissSuggestion } = useFriendSuggestions(enabled);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Search state — merged from the old Add Friend pane.
@@ -342,8 +342,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     {action}
                   </div>
@@ -356,6 +355,33 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
         {/* Hide the friends sections while searching to keep focus on results. */}
         {!isSearching && (
           <>
+            {/* Suggested friends — people you recently drafted with. */}
+            {suggestions.length > 0 && (
+              <section className="mb-4">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">Suggested friends</p>
+                <div className="space-y-1">
+                  {suggestions.map((u) => (
+                    <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                      <Avatar user={u} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          dismissSuggestion(u.walletAddress);
+                          const r = await sendRequest(u.walletAddress);
+                          flash(r.ok ? 'Request sent' : r.error || 'Failed');
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light"
+                      >
+                        Add Friend
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Incoming requests */}
             {data.incoming.length > 0 && (
               <section className="mb-4">
@@ -365,8 +391,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }}
@@ -395,8 +420,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Cancelled' : r.error || 'Failed'); }}
@@ -420,8 +444,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     <button
                       onClick={() => onSelectDm(u.walletAddress)}
@@ -450,7 +473,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
 
 // ─── Blocked-users pane ─────────────────────────────────────────────────────
 
-function BlockedPane({ onBack }: { onBack: () => void }) {
+function BlockedPane({ onBack, onChange }: { onBack: () => void; onChange?: () => void }) {
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { blocked, loading, unblock } = useBlockedUsers(enabled);
@@ -487,11 +510,10 @@ function BlockedPane({ onBack }: { onBack: () => void }) {
             <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
               <Avatar user={u} />
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
               </div>
               <button
-                onClick={async () => { const r = await unblock(u.walletAddress); flash(r.ok ? 'Unblocked' : r.error || 'Failed'); }}
+                onClick={async () => { const r = await unblock(u.walletAddress); if (r.ok) onChange?.(); flash(r.ok ? 'Unblocked — chat restored' : r.error || 'Failed'); }}
                 className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-banana hover:text-black text-white/70 text-xs font-medium transition-colors"
               >
                 Unblock
@@ -531,7 +553,7 @@ export function MessagesHub() {
   const searchParams = useSearchParams();
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
-  const { inbox, loading, reject: rejectDmRequest } = useDmInbox(enabled);
+  const { inbox, loading, reject: rejectDmRequest, refresh: refreshInbox } = useDmInbox(enabled);
   const { data: friendsData } = useFriends(enabled);
   const privy = usePrivy();
 
@@ -653,11 +675,11 @@ export function MessagesHub() {
             </div>
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} onChange={refreshInbox} />}
           {view.kind === 'requests' && (
             <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
           )}
-          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} onBlockChange={refreshInbox} />}
         </main>
       </div>
     </div>

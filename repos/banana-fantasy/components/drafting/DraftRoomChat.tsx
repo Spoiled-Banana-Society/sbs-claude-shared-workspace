@@ -96,17 +96,8 @@ export function DraftRoomChat({
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
           timestamp: r.timestamp,
         }));
-        setMessages((prev) => {
-          if (isCollapsedRef.current && next.length > prev.length) {
-            const known = new Set(prev.map((m) => m.id));
-            const newFromOthers = next.filter((m) => !known.has(m.id) && !m.isYou);
-            if (newFromOthers.length > 0) {
-              setUnreadCount((c) => c + newFromOthers.length);
-            }
-          }
-          if (next.length) lastSeenIdRef.current = next[next.length - 1].id;
-          return next;
-        });
+        if (next.length) lastSeenIdRef.current = next[next.length - 1].id;
+        setMessages(next);
       } catch {
         // network blip — let next tick retry
       }
@@ -132,14 +123,6 @@ export function DraftRoomChat({
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
-
-  // Clear unread when expanded
-  useEffect(() => {
-    if (!isCollapsed) {
-      setUnreadCount(0);
-    }
-  }, [isCollapsed]);
-
 
   const sendMessage = async () => {
     const text = inputValue.trim();

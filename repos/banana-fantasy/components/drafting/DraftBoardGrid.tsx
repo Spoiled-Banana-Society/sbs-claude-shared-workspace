@@ -6,6 +6,7 @@ import type { DraftSummarySlot } from '@/hooks/useDraftEngine';
 import type { DraftPlayer } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface DraftBoardGridProps {
   draftOrder: DraftPlayer[];
@@ -71,14 +72,11 @@ export function DraftBoardGrid({
           const resolvedUser = !player?.isYou && player?.name
             ? usersMap?.[player.name.toLowerCase()]
             : null;
-          const rawName = player
+          const displayLabel = player
             ? (player.isYou
                 ? (player.displayName || 'You')
-                : (resolvedUser?.displayName || player.displayName || player.name))
+                : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
-          const displayLabel = rawName && rawName.startsWith('0x') && rawName.length > 12
-            ? `${rawName.slice(0, 6)}...${rawName.slice(-4)}`
-            : rawName;
 
           const avatarUrl = player?.isYou
             ? (userProfilePicture || '/banana-profile.png')

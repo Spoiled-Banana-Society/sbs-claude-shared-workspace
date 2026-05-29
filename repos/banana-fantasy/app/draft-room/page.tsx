@@ -11,10 +11,11 @@ import { useDraftLiveSync } from '@/hooks/useDraftLiveSync';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
-import { subscribeDraftDisplayName, subscribeDraftNumPlayers } from '@/lib/api/firebase';
+import { subscribeDraftDisplayName, subscribeDraftNumPlayers, subscribeDraftRandomizeStartAt } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
-import { computeInitialPlayerCount } from '@/lib/draftRoomLobby';
+import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
+import { bananaDefaultName } from '@/utils/helpers';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -46,7 +47,10 @@ function DraftRoomContent() {
   // The backend assigns the real name (e.g., "League #2024-fast-draft-30") after 10/10 fill.
   const urlName = searchParams?.get('name');
   const [contestName, setContestName] = useState(urlName || 'Draft Room');
-  const initialPlayers = parseInt(searchParams?.get('players') || '1', 10);
+  // null when the URL has no `players` hint (the normal "Enter draft" case) —
+  // so the lobby shows a pulse until the join response gives the real count,
+  // instead of flashing a hardcoded "1".
+  const initialPlayers = parseInitialPlayers(searchParams?.get('players'));
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
   const walletParam = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
@@ -85,7 +89,9 @@ function DraftRoomContent() {
       return;
     }
     params.set('id', resolved);
-    params.delete('passType');
+    // Keep `passType` in the URL — it's the durable record of which pass type
+    // (free/paid) this draft was entered with. Deleting it made isPaidDraft
+    // flip to true after join, which let FREE drafts wrongly earn promo credit.
     const newSearch = params.toString();
     const newUrl = `${pathname}?${newSearch}`;
     console.log('[DraftRoom] setDraftId → updating URL to', newUrl);
@@ -196,6 +202,17 @@ function DraftRoomContent() {
       initialPlayers,
     }),
   );
+  // When THIS client's join landed. Used to ignore the brief stale downward
+  // RTDB/poll reading right after join (our own count bump hasn't propagated
+  // yet) while still letting genuine leaves lower the count live afterwards.
+  // 0 = never joined here (a pure observer) → leaves show immediately.
+  // Seeded from the `joinedAt` URL param on a fresh join-before-navigate entry
+  // so the grace window is already counting from the real join time — the
+  // count can't dip below the joined value before RTDB catches up.
+  const joinAtRef = useRef(Number(searchParams?.get('joinedAt')) || 0);
+  // Shared randomize-bar anchor (epoch ms) from RTDB, written by the Go API at
+  // fill-time so every client's bar runs on the same clock. 0 until it arrives.
+  const randomizeStartAtRef = useRef(0);
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'mount', {
@@ -313,6 +330,8 @@ function DraftRoomContent() {
     firebaseRtdb,
     ws,
     bestTimeRemaining,
+    isSlowDraft,
+    isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
   } = useDraftLiveSync({
@@ -332,6 +351,7 @@ function DraftRoomContent() {
     setMainCountdown,
     setShowSlotMachine,
     setPlayerCount,
+    joinAtRef,
     draftIdRef,
   });
 
@@ -401,7 +421,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -452,7 +472,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -474,7 +494,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -599,7 +619,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}`,
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -752,7 +772,7 @@ function DraftRoomContent() {
       status: 'filling',
       type: null,
       draftSpeed: speedParam || 'fast',
-      players: initialPlayers,
+      players: initialPlayers ?? 1,
       maxPlayers: 10,
       joinedAt: Date.now(),
       phase: 'filling',
@@ -1353,7 +1373,7 @@ function DraftRoomContent() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         const count = Number(data.numPlayers) || 0;
-        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(count); }
+        if (count > 0 && !cancelled) { clientLog('pcdiag', 'set.poll', { count }); setPlayerCount(prev => reconcileLiveCount(prev, count, joinAtRef.current ? Date.now() - joinAtRef.current : Number.POSITIVE_INFINITY)); }
       } catch { /* ignore */ }
     };
 
@@ -1371,10 +1391,28 @@ function DraftRoomContent() {
   useEffect(() => {
     if (!draftId || phase !== 'filling') return;
     const unsub = subscribeDraftNumPlayers(draftId, (count) => {
-      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(count); }
+      if (count > 0) { clientLog('pcdiag', 'set.rtdb', { count }); setPlayerCount(prev => reconcileLiveCount(prev, count, joinAtRef.current ? Date.now() - joinAtRef.current : Number.POSITIVE_INFINITY)); }
     });
     return () => { unsub(); };
   }, [draftId, phase]);
+
+  // Shared randomize-bar anchor via RTDB — the Go API writes
+  // drafts/{draftId}/randomizeStartAt at fill-time so every client runs the
+  // "randomizing" bar on the same clock (the at-10 effect reads this ref).
+  // Persist to draftStore too so a resume/late mount picks up the shared anchor
+  // instead of a local Date.now(). Subscribe through 'filling' AND the
+  // randomize/reveal phases so a client that mounts mid-randomize still gets it.
+  useEffect(() => {
+    if (!draftId) return;
+    const unsub = subscribeDraftRandomizeStartAt(draftId, (startAtMs) => {
+      if (startAtMs > 0 && randomizeStartAtRef.current !== startAtMs) {
+        randomizeStartAtRef.current = startAtMs;
+        clientLog('pcdiag', 'set.randomizeStartAt', { startAtMs });
+        draftStore.updateDraft(draftId, { randomizingStartedAt: startAtMs });
+      }
+    });
+    return () => { unsub(); };
+  }, [draftId]);
 
   useEffect(() => {
     if (!isLiveMode || !draftId) return;
@@ -1395,7 +1433,7 @@ function DraftRoomContent() {
               return {
                 id: String(idx + 1),
                 name: entry.ownerId,
-                displayName: isUser ? 'You' : `${entry.ownerId.slice(0, 6)}...${entry.ownerId.slice(-4)}`,
+                displayName: isUser ? 'You' : bananaDefaultName(entry.ownerId),
                 isYou: isUser,
                 avatar: '🍌',
               };
@@ -1440,7 +1478,11 @@ function DraftRoomContent() {
     setWaitingForServer(true);
 
     const existingTimestamp = draftId ? draftStore.getDraft(draftId)?.randomizingStartedAt : undefined;
-    const randomizingStartedAt = existingTimestamp || Date.now();
+    // Prefer the backend's shared anchor so every client's bar (and therefore
+    // the reveal, which is anchored to start + MIN) lines up. Falls back to a
+    // stored anchor (resume) then now (old backend) — nothing downstream changes.
+    const randomizingStartedAt = resolveRandomizeAnchor(randomizeStartAtRef.current, existingTimestamp, Date.now());
+    clientLog('pcdiag', 'randomize.anchor', { randomizingStartedAt, shared: randomizeStartAtRef.current || null, stored: existingTimestamp ?? null });
     const progressDuration = 3000;
     const initialElapsed = Date.now() - randomizingStartedAt;
     const initialT = Math.min(1, initialElapsed / progressDuration);
@@ -1478,7 +1520,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.length > 10 ? `${u.ownerId.slice(0, 6)}...${u.ownerId.slice(-4)}` : u.ownerId,
+            displayName: bananaDefaultName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -1582,7 +1624,7 @@ function DraftRoomContent() {
         fetch('/api/promos/draft-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Failed to track draft:', err);
           reportClientError({
@@ -1606,7 +1648,7 @@ function DraftRoomContent() {
         fetch('/api/promos/pick10', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName }),
+          body: JSON.stringify({ userId: promoUserId, draftId: id, draftName: contestName, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
         }).then(r => r.json()).catch(err => {
           console.error('[Promo] Pick 10 tracking failed:', err);
           reportClientError({
@@ -1658,7 +1700,7 @@ function DraftRoomContent() {
     fetch('/api/promos/jackpot-hit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+      body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
     }).catch(err => {
       console.error('[Promo] Jackpot tracking failed:', err);
       reportClientError({
@@ -2325,6 +2367,8 @@ function DraftRoomContent() {
             visibleDraftType={visibleDraftType}
             mainCountdown={mainCountdown}
             bestTimeRemaining={bestTimeRemaining}
+            isSlowDraft={isSlowDraft}
+            isSlowDraftPaused={isSlowDraftPaused}
             formatTime={formatTime}
             activeTab={activeTab}
             onTabChange={setActiveTab}
@@ -2495,7 +2539,7 @@ function DraftRoomContent() {
                       await fetch('/api/owner/refund-pass', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ userId, passType, leagueId: draftId }),
+                        body: JSON.stringify({ userId, passType, leagueId: draftId, tokenId: storedDraft?.cardId }),
                       });
                       await refreshBalance();
                     } catch (err) {
