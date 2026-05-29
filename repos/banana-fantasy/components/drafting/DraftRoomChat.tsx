@@ -96,17 +96,8 @@ export function DraftRoomChat({
           isYou: !!myWallet && r.walletAddress.toLowerCase() === myWallet,
           timestamp: r.timestamp,
         }));
-        setMessages((prev) => {
-          if (isCollapsedRef.current && next.length > prev.length) {
-            const known = new Set(prev.map((m) => m.id));
-            const newFromOthers = next.filter((m) => !known.has(m.id) && !m.isYou);
-            if (newFromOthers.length > 0) {
-              setUnreadCount((c) => c + newFromOthers.length);
-            }
-          }
-          if (next.length) lastSeenIdRef.current = next[next.length - 1].id;
-          return next;
-        });
+        if (next.length) lastSeenIdRef.current = next[next.length - 1].id;
+        setMessages(next);
       } catch {
         // network blip — let next tick retry
       }
@@ -116,15 +107,7 @@ export function DraftRoomChat({
     const id = setInterval(fetchOnce, 2000);
     return () => { cancelled = true; clearInterval(id); };
   }, [draftId, myWallet]);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const isCollapsedRef = useRef(isCollapsed);
-
-  // Keep ref in sync
-  useEffect(() => {
-    isCollapsedRef.current = isCollapsed;
-  }, [isCollapsed]);
 
   // Scroll to bottom on new messages (only within chat container, not the page)
   useEffect(() => {
@@ -132,14 +115,6 @@ export function DraftRoomChat({
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
-
-  // Clear unread when expanded
-  useEffect(() => {
-    if (!isCollapsed) {
-      setUnreadCount(0);
-    }
-  }, [isCollapsed]);
-
 
   const sendMessage = async () => {
     const text = inputValue.trim();
@@ -182,42 +157,11 @@ export function DraftRoomChat({
     return acc;
   }, []);
 
-  // Collapsed state - just a button
-  if (isCollapsed) {
-    return (
-      <div className="sticky top-0 flex flex-col items-center py-2 px-1.5 bg-[#1c1c1e] border-l border-white/10 flex-shrink-0 rounded-bl-lg">
-        <button
-          onClick={() => setIsCollapsed(false)}
-          className="relative w-10 h-10 rounded-full bg-[#2c2c2e] hover:bg-[#3a3a3c] flex items-center justify-center transition-all group"
-          title="Open chat"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/60 group-hover:text-white">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-5 h-5 bg-[#ff3b30] text-white text-xs font-bold rounded-full flex items-center justify-center">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="w-full max-w-[400px] mx-auto flex-1 flex flex-col bg-[#1c1c1e] rounded-lg">
       {/* Header with tabs - iOS style */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
         <span className="px-1 text-xs font-medium text-white">Chat</span>
-        <button
-          onClick={() => setIsCollapsed(true)}
-          className="w-6 h-6 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-all"
-          title="Collapse"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
       </div>
 
       {/* Chat Panel - iMessage style */}

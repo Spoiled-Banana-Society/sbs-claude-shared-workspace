@@ -64,7 +64,11 @@ export default withSentryConfig(nextConfig, {
   // Quieter build logs — Sentry's defaults are noisy. Errors still surface.
   silent: !process.env.CI,
   // Source maps need to be uploaded but NOT served publicly (privacy).
-  widenClientFileUpload: true,
+  // widenClientFileUpload uploads a BROADER set of source maps (prettier
+  // stack traces) at the cost of extra build memory/time. Disabled because
+  // the broadened pass was contributing to Vercel build OOM (SIGKILL).
+  // Core source maps are still uploaded — traces stay readable.
+  widenClientFileUpload: false,
   hideSourceMaps: true,
   disableLogger: true,
   // Tunnel Sentry client-side traffic through a Next route to bypass

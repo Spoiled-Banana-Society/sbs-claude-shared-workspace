@@ -83,11 +83,19 @@ function getPrizeMessage(segment: WheelSegment): string {
 }
 
 const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
-// Wheel animation duration. Exported so the page-level spin handler
-// can freeze the global balance state for the same window — keeps the
-// header's "draft passes / wheel spins" count from updating mid-spin
-// (would spoil the prize reveal).
-export const SPIN_DURATION_MS = 5000;
+// Deceleration ("landing") duration once the RNG result is known — the
+// wheel eases from its current free-spin position onto the winning segment.
+// Exported so the page-level spin handler can freeze the global balance
+// state for the same window (keeps the header's "draft passes / wheel
+// spins" count from updating mid-spin, which would spoil the reveal).
+export const SPIN_DURATION_MS = 1300;
+
+// Free-spin (pre-result) phase: the wheel starts spinning at a constant
+// speed the instant the user taps, while the RNG request is in flight, so
+// it never sits frozen waiting on the network. Linear so we can estimate
+// its live angle when the result lands and decelerate forward onto it.
+const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
+const FREE_SPIN_TURNS = 12;  // ~0.67s per revolution — energetic, not frantic
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
@@ -98,6 +106,11 @@ interface PendingSpin {
 
 export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin }: BananaWheelProps) {
   const [isSpinning, setIsSpinning] = useState(false);
+  // 'free' = constant-speed spin while waiting on RNG; 'landing' = decel onto
+  // the result; 'idle' = stopped (no transition). Drives the CSS transition.
+  const [spinPhase, setSpinPhase] = useState<'idle' | 'free' | 'landing'>('idle');
+  const freeSpinStartRef = useRef(0);
+  const freeSpinStartRotationRef = useRef(0);
   const [rotation, setRotation] = useState(0);
   const [wonSegment, setWonSegment] = useState<WheelSegment | null>(null);
   const [wonSpinId, setWonSpinId] = useState<string | null>(null);
@@ -122,11 +135,13 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       const segment = pending.segmentId ? wheelSegments.find(s => s.id === pending.segmentId) ?? null : null;
 
       if (elapsed < SPIN_DURATION_MS) {
-        // Spin still in progress — resume animation
+        // Spin still in progress — resume the landing animation
+        setSpinPhase('landing');
         setRotation(pending.rotation);
         setIsSpinning(true);
         const remaining = SPIN_DURATION_MS - elapsed;
         setTimeout(() => {
+          setSpinPhase('idle');
           setIsSpinning(false);
           setWonSegment(segment);
           setWonSpinId(pending.outcome.spinId);
@@ -160,12 +175,27 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     localStorage.removeItem(PENDING_SPIN_KEY);
   }, []);
 
+  // Estimate the wheel's live angle mid-free-spin (the free spin is linear,
+  // so this matches the actual CSS-interpolated position).
+  const estimateCurrentRotation = useCallback(() => {
+    const elapsed = Math.min(Date.now() - freeSpinStartRef.current, FREE_SPIN_MS);
+    return freeSpinStartRotationRef.current + (elapsed / FREE_SPIN_MS) * 360 * FREE_SPIN_TURNS;
+  }, []);
+
   const spin = async () => {
     if (spinsAvailable <= 0 || isSpinning) return;
 
     setIsSpinning(true);
     setWonSegment(null);
     setSpinError(null);
+
+    // Start spinning IMMEDIATELY at a constant speed, before/while the RNG
+    // request is in flight, so the wheel moves the instant you tap instead of
+    // freezing until the network responds.
+    freeSpinStartRef.current = Date.now();
+    freeSpinStartRotationRef.current = rotation;
+    setSpinPhase('free');
+    setRotation(rotation + 360 * FREE_SPIN_TURNS);
 
     let outcome: WheelSpinOutcome | null = null;
     try {
@@ -177,20 +207,26 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     }
 
     if (!outcome) {
+      // Stop where we currently are (no jump) and reset.
+      setSpinPhase('idle');
+      setRotation(estimateCurrentRotation());
       setIsSpinning(false);
       return;
     }
 
+    // Decelerate from the live free-spin position onto the winning segment.
+    // CSS transitions hand off smoothly from the current computed transform,
+    // so retargeting mid-spin eases forward without a jump. Landing angle is
+    // exact (mod 360) regardless of the estimate.
+    const current = estimateCurrentRotation();
     const targetFinalAngle = outcome.angle;
-    const currentAngle = rotation % 360;
-
-    let deltaRotation = targetFinalAngle - currentAngle;
+    let deltaRotation = targetFinalAngle - (((current % 360) + 360) % 360);
     if (deltaRotation <= 0) deltaRotation += 360;
-
-    const fullRotations = 5 + Math.floor(Math.random() * 4);
+    const fullRotations = 2 + Math.floor(Math.random() * 2); // a couple decel turns
     deltaRotation += 360 * fullRotations;
 
-    const newRotation = rotation + deltaRotation;
+    const newRotation = current + deltaRotation;
+    setSpinPhase('landing');
     setRotation(newRotation);
 
     const segment = wheelSegments.find((seg) => seg.id === outcome?.result) ?? null;
@@ -232,6 +268,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
 
     setTimeout(() => {
       stopSpinSound();
+      setSpinPhase('idle');
       setIsSpinning(false);
       setWonSegment(segment);
       setWonSpinId(outcome.spinId);
@@ -276,7 +313,11 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           className="w-full h-full rounded-full shadow-[0_4px_30px_rgba(0,0,0,0.4),inset_0_0_0_3px_rgba(255,255,255,0.1)] overflow-hidden"
           style={{
             transform: `rotate(${rotation}deg)`,
-            transition: isSpinning ? 'transform 5s cubic-bezier(0.2, 0.8, 0.2, 1)' : 'none',
+            transition: spinPhase === 'free'
+              ? `transform ${FREE_SPIN_MS}ms linear`
+              : spinPhase === 'landing'
+                ? `transform ${SPIN_DURATION_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
+                : 'none',
             background: 'linear-gradient(145deg, rgba(30,30,40,1) 0%, rgba(15,15,20,1) 100%)',
           }}
         >
