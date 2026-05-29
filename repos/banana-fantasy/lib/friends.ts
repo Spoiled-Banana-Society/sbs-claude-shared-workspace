@@ -339,6 +339,28 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
 }
 
 /**
+ * Members who have set a real, custom display name (a `username` in v2_users
+ * that isn't a placeholder/wallet). Used to backfill friend suggestions when a
+ * user has no draft-based suggestions yet — better to show real people who've
+ * made themselves identifiable than an empty list. Returns lowercased wallets;
+ * the caller resolves names/avatars and applies its own exclusions.
+ */
+export async function getNamedMembers(limit: number): Promise<string[]> {
+  const db = getAdminFirestore();
+  // orderBy('username') only returns docs that HAVE a username field — i.e.
+  // members who engaged enough to get a name. Over-fetch so the caller still
+  // has enough after dropping placeholders, self, friends, and pending.
+  const snap = await db.collection('v2_users').orderBy('username').limit(Math.max(limit, 1)).get();
+  const out: string[] = [];
+  for (const doc of snap.docs) {
+    const d = doc.data() as { walletAddress?: string; username?: string } | undefined;
+    const wallet = (d?.walletAddress || doc.id).toLowerCase();
+    if (!isPlaceholderProfileName(d?.username, wallet)) out.push(wallet);
+  }
+  return out;
+}
+
+/**
  * Search users by username prefix (case-tolerant) OR exact wallet address.
  * Returns up to `limit` matches. Excludes the requesting wallet from results.
  *
