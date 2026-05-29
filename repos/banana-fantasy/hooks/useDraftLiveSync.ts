@@ -6,6 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
 import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
+import { isSlowDraftPickLength, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
@@ -112,9 +113,11 @@ export function useDraftLiveSync({
 
   const firebaseEndOfTurn = firebaseRtdb.data?.pickEndTime ?? null;
   const firebaseDraftStart = firebaseRtdb.data?.draftStartTime ?? null;
+  const firebasePickLength = firebaseRtdb.data?.pickLength ?? null;
   const firebaseTimeRemaining = useTimeRemaining(
     firebaseActive ? firebaseEndOfTurn : null,
     firebaseActive ? firebaseDraftStart : null,
+    firebaseActive ? firebasePickLength : null,
   );
 
   useEffect(() => {
@@ -144,21 +147,12 @@ export function useDraftLiveSync({
     async function joinAndFill() {
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
-      // Auto-mint a token before joining so the wallet always has one available
-      try {
-        const { getStagingApiUrl } = await import('@/lib/staging');
-        const apiBase = getStagingApiUrl();
-        if (apiBase) {
-          const mintId = Date.now();
-          await fetch(`${apiBase}/owner/${walletParam}/draftToken/mint`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ minId: mintId, maxId: mintId }),
-          });
-        }
-      } catch {
-        // Mint may fail if token already exists — that's fine
-      }
+      // NOTE: no auto-mint here. Entry uses the real draft pass the wallet
+      // already holds (free or paid), exactly like prod — the backend selects
+      // a pass of the chosen type and binds that exact token to the league.
+      // (Previously this minted a fake Date.now() staging token every join,
+      // which bypassed the real pass, piled up stray tokens, and broke leave/
+      // refund. Stock test wallets via /staging/mint-tokens instead.)
 
       for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
         try {
@@ -739,6 +733,23 @@ export function useDraftLiveSync({
     return value ?? 0;
   }, [firebaseActive, firebaseTimeRemaining, engine.timeRemaining]);
 
+  // Slow drafts pause overnight (22:00–05:00 PT). Surface whether this is a slow
+  // draft and whether the clock is currently frozen so the UI can show the
+  // "paused, you can still pick" copy. Polled because during the pause the timer
+  // value is constant (no re-render) — we still need to flip the flag at 05:00.
+  const isSlowDraft = isSlowDraftPickLength(firebasePickLength ?? 0);
+  const [isSlowDraftPaused, setIsSlowDraftPaused] = useState(false);
+  useEffect(() => {
+    if (!firebaseActive || !isSlowDraft) {
+      setIsSlowDraftPaused(false);
+      return;
+    }
+    const check = () => setIsSlowDraftPaused(isSlowDraftNightPause(Math.floor(Date.now() / 1000)));
+    check();
+    const id = setInterval(check, 15000);
+    return () => clearInterval(id);
+  }, [firebaseActive, isSlowDraft]);
+
   return {
     liveLoading,
     liveError,
@@ -750,6 +761,8 @@ export function useDraftLiveSync({
     firebaseRtdb,
     ws,
     bestTimeRemaining,
+    isSlowDraft,
+    isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
     liveInitializedRef,

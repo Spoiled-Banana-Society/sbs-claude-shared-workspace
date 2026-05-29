@@ -34,6 +34,10 @@ interface DraftRoomDraftingProps {
   visibleDraftType: DraftType | null;
   mainCountdown: number;
   bestTimeRemaining: number;
+  /** True when this is a slow draft (8h picks with an overnight pause). */
+  isSlowDraft?: boolean;
+  /** True when the slow-draft clock is currently paused (22:00–05:00 PT). */
+  isSlowDraftPaused?: boolean;
   formatTime: (seconds: number) => string;
   activeTab: DraftTab;
   onTabChange: (tab: DraftTab) => void;
@@ -67,6 +71,8 @@ export function DraftRoomDrafting({
   visibleDraftType,
   mainCountdown,
   bestTimeRemaining,
+  isSlowDraft = false,
+  isSlowDraftPaused = false,
   formatTime,
   activeTab,
   onTabChange,
@@ -249,15 +255,27 @@ export function DraftRoomDrafting({
                       </div>
 
                       {isCurrent && engine.draftStatus !== 'completed' ? (
-                        <div style={{
-                          fontWeight: 'bold',
-                          fontSize: '16px',
-                          margin: '2px auto 0px auto',
-                          textAlign: 'center',
-                          color: bestTimeRemaining > 10 ? '#fff' : (visibleDraftType === 'jackpot' ? 'yellow' : 'red'),
-                        }}>
-                          {formatTime(bestTimeRemaining)}
-                        </div>
+                        isSlowDraftPaused ? (
+                          <div style={{
+                            fontWeight: 'bold',
+                            fontSize: '12px',
+                            margin: '2px auto 0px auto',
+                            textAlign: 'center',
+                            color: '#fbbf24',
+                          }}>
+                            ⏸ Paused
+                          </div>
+                        ) : (
+                          <div style={{
+                            fontWeight: 'bold',
+                            fontSize: '16px',
+                            margin: '2px auto 0px auto',
+                            textAlign: 'center',
+                            color: bestTimeRemaining > 10 ? '#fff' : (visibleDraftType === 'jackpot' ? 'yellow' : 'red'),
+                          }}>
+                            {formatTime(bestTimeRemaining)}
+                          </div>
+                        )
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
                           <span style={{ fontSize: '12px', fontWeight: 700, color: textColor, opacity: 0.7 }}>R{slot.round}</span>
@@ -349,6 +367,18 @@ export function DraftRoomDrafting({
                 <span className="text-white/70">Draft starting in {formatTime(mainCountdown)}</span>
               )}
             </div>
+
+            {isSlowDraft && (
+              isSlowDraftPaused ? (
+                <div className="text-center text-[13px] font-semibold mt-1 px-3" style={{ color: '#fbbf24' }}>
+                  ⏸ Paused till 5am PT — you can still make picks
+                </div>
+              ) : (
+                <div className="text-center text-[11px] mt-1 px-3 text-white/40">
+                  Drafting pauses daily 10pm–5am PT · you can still pick during that time
+                </div>
+              )
+            )}
 
             {controls}
           </div>
