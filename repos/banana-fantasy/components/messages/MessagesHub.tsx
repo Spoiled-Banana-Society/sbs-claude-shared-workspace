@@ -49,7 +49,7 @@ function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' })
 
 // ─── Thread pane ────────────────────────────────────────────────────────────
 
-function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () => void }) {
+function ThreadPane({ otherWallet, onBack, onBlockChange }: { otherWallet: string; onBack: () => void; onBlockChange?: () => void }) {
   const { user } = useAuth();
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const { messages, other, permission, block, loading, send, accept, block_: blockUser, unblock } = useDmThread(otherWallet);
@@ -102,6 +102,7 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to block');
       setTimeout(() => setFeedback(null), 3000);
     } else {
+      onBlockChange?.(); // drop the thread from the inbox list right away
       setFeedback('User blocked');
       setTimeout(() => setFeedback(null), 2000);
     }
@@ -114,7 +115,8 @@ function ThreadPane({ otherWallet, onBack }: { otherWallet: string; onBack: () =
       setFeedback(r.error || 'Failed to unblock');
       setTimeout(() => setFeedback(null), 3000);
     } else {
-      setFeedback('User unblocked');
+      onBlockChange?.(); // restore the thread + history in the inbox list
+      setFeedback('User unblocked — chat restored');
       setTimeout(() => setFeedback(null), 2000);
     }
   };
@@ -480,7 +482,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
 
 // ─── Blocked-users pane ─────────────────────────────────────────────────────
 
-function BlockedPane({ onBack }: { onBack: () => void }) {
+function BlockedPane({ onBack, onChange }: { onBack: () => void; onChange?: () => void }) {
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { blocked, loading, unblock } = useBlockedUsers(enabled);
@@ -521,7 +523,7 @@ function BlockedPane({ onBack }: { onBack: () => void }) {
                 <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
               </div>
               <button
-                onClick={async () => { const r = await unblock(u.walletAddress); flash(r.ok ? 'Unblocked' : r.error || 'Failed'); }}
+                onClick={async () => { const r = await unblock(u.walletAddress); if (r.ok) onChange?.(); flash(r.ok ? 'Unblocked — chat restored' : r.error || 'Failed'); }}
                 className="px-2.5 py-1 rounded-md bg-white/[0.06] hover:bg-banana hover:text-black text-white/70 text-xs font-medium transition-colors"
               >
                 Unblock
@@ -561,7 +563,7 @@ export function MessagesHub() {
   const searchParams = useSearchParams();
   const { user, isLoggedIn } = useAuth();
   const enabled = !!user?.walletAddress && isLoggedIn;
-  const { inbox, loading, reject: rejectDmRequest } = useDmInbox(enabled);
+  const { inbox, loading, reject: rejectDmRequest, refresh: refreshInbox } = useDmInbox(enabled);
   const { data: friendsData } = useFriends(enabled);
   const privy = usePrivy();
 
@@ -683,11 +685,11 @@ export function MessagesHub() {
             </div>
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} onChange={refreshInbox} />}
           {view.kind === 'requests' && (
             <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
           )}
-          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} onBlockChange={refreshInbox} />}
         </main>
       </div>
     </div>
