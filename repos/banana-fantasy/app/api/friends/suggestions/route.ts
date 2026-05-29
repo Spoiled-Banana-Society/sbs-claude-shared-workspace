@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
-import { listForUser, getPublicUsers, type PublicUser } from '@/lib/friends';
+import { listForUser, getPublicUsers, getNamedMembers, type PublicUser } from '@/lib/friends';
 
 const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL
   || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
@@ -80,35 +80,51 @@ export async function GET(req: Request) {
   }
 
   try {
-    const leagueIds = await getUserLeagueIds(wallet);
-    if (leagueIds.length === 0) return NextResponse.json({ suggestions: [] });
-
-    // Tally how many shared drafts we have with each co-drafter — more shared
-    // drafts ranks higher.
-    const counts = new Map<string, number>();
-    const perDraft = await Promise.all(leagueIds.map((id) => getCoDrafters(id, wallet)));
-    for (const wallets of perDraft) {
-      for (const w of wallets) counts.set(w, (counts.get(w) ?? 0) + 1);
-    }
-    if (counts.size === 0) return NextResponse.json({ suggestions: [] });
-
-    // Exclude existing friends + anyone with a pending request either way.
+    // Exclude self + existing friends + anyone with a pending request either way.
     const buckets = await listForUser(wallet);
     const exclude = new Set<string>([wallet]);
     for (const u of [...buckets.friends, ...buckets.incoming, ...buckets.outgoing]) {
       exclude.add(u.walletAddress.toLowerCase());
     }
 
+    // 1. People you recently drafted with, ranked by shared-draft count.
+    const counts = new Map<string, number>();
+    const leagueIds = await getUserLeagueIds(wallet);
+    if (leagueIds.length > 0) {
+      const perDraft = await Promise.all(leagueIds.map((id) => getCoDrafters(id, wallet)));
+      for (const wallets of perDraft) {
+        for (const w of wallets) counts.set(w, (counts.get(w) ?? 0) + 1);
+      }
+    }
     const ranked = Array.from(counts.entries())
       .filter(([w]) => !exclude.has(w))
       .sort((a, b) => b[1] - a[1])
-      .slice(0, MAX_SUGGESTIONS)
       .map(([w]) => w);
 
-    if (ranked.length === 0) return NextResponse.json({ suggestions: [] });
+    // Pick draft-based suggestions first…
+    const picked: string[] = [];
+    const taken = new Set<string>(exclude);
+    for (const w of ranked) {
+      if (picked.length >= MAX_SUGGESTIONS) break;
+      if (taken.has(w)) continue;
+      taken.add(w); picked.push(w);
+    }
 
-    const profiles = await getPublicUsers(ranked);
-    const suggestions: PublicUser[] = ranked.map(
+    // 2. …then top up with other members who've set a real name, so the list
+    //    is never empty just because you haven't drafted with anyone yet.
+    if (picked.length < MAX_SUGGESTIONS) {
+      const named = await getNamedMembers(MAX_SUGGESTIONS * 5);
+      for (const w of named) {
+        if (picked.length >= MAX_SUGGESTIONS) break;
+        if (taken.has(w)) continue;
+        taken.add(w); picked.push(w);
+      }
+    }
+
+    if (picked.length === 0) return NextResponse.json({ suggestions: [] });
+
+    const profiles = await getPublicUsers(picked);
+    const suggestions: PublicUser[] = picked.map(
       (w) => profiles.get(w) ?? { walletAddress: w, username: w.slice(0, 8) },
     );
     return NextResponse.json({ suggestions });
