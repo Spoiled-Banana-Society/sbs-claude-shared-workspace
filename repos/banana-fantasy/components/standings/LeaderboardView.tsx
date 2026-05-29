@@ -6,6 +6,7 @@ import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useLeagueDetail } from '@/hooks/useStandings';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { getTruncatedAccountName, bananaDefaultName } from '@/utils/helpers';
 import type { LeaderboardEntry } from '@/types';
 
 /** Owner wallet off a global-leaderboard row, whatever the Go API named it. */
@@ -76,7 +77,8 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
       const e = entry as Record<string, unknown>;
       return {
         rank: typeof e.rank === 'number' ? e.rank : idx + 1,
-        displayName: String(e.displayName || e.ownerWallet || e.cardId || '-').slice(0, 20),
+        // Real name if there is one; otherwise the "Banana #1234" default — never a wallet.
+        displayName: getTruncatedAccountName(String(e.displayName || ''), String(e.ownerWallet || e.cardId || '')) ?? '',
         ownerWallet: String(e.ownerWallet || e.cardId || ''),
         weeklyScore: Number(e.weeklyScore ?? e.weekScore ?? e.scoreWeek ?? 0),
         seasonScore: Number(e.seasonScore ?? e.scoreSeason ?? 0),
@@ -357,7 +359,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
                 {/* Player */}
                 <div className="min-w-0">
                   <p className={`text-sm font-medium truncate ${entry.isCurrentUser ? 'text-banana' : 'text-white'}`}>
-                    {(() => { const w = rowWallet(entry); return (w && pageUsers[w.toLowerCase()]?.displayName) || entry.username; })()}
+                    {(() => { const w = rowWallet(entry); if (w) return pageUsers[w.toLowerCase()]?.displayName || bananaDefaultName(w); return getTruncatedAccountName(String(entry.username || ''), '') ?? ''; })()}
                     {entry.isCurrentUser && <span className="ml-1.5 text-[10px] text-banana/60">(You)</span>}
                   </p>
                   {entry.teamName && (

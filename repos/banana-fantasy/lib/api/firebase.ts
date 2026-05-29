@@ -155,6 +155,18 @@ export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: numbe
 }
 
 /**
+ * Subscribe to the shared randomize-bar anchor (epoch ms) the Go API writes at
+ * fill-time. Lets every client run the "randomizing" bar on the same clock so
+ * the bar + reveal line up across windows.
+ *
+ * Firebase path: /drafts/{draftId}/randomizeStartAt
+ * (needs a matching `.read` rule in staging-rtdb.rules.json or reads return null.)
+ */
+export function subscribeDraftRandomizeStartAt(draftId: string, cb: (startAtMs: number) => void): Unsubscribe {
+  return subscribeValue<number>(`/drafts/${draftId}/randomizeStartAt`, (v) => cb(Number(v || 0)));
+}
+
+/**
  * Subscribe to the league display name (e.g. "BBB #811") for a draft.
  *
  * Firebase path:

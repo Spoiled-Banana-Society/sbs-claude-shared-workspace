@@ -100,8 +100,12 @@ export async function POST(req: Request) {
     const out: Record<string, UserDisplay> = {};
     for (const w of realWallets) {
       const v = v2[w];
+      // Order: real username → legacy Go-API name → permanent unique banana
+      // handle ("Banana10000", server-assigned, never collides). The banana
+      // handle is the guaranteed non-null floor, so a wallet never leaks.
+      const bananaName = v?.bananaNumber != null ? `Banana${v.bananaNumber}` : null;
       out[w] = {
-        displayName: v?.username || goApiData[w]?.displayName || null,
+        displayName: v?.username || goApiData[w]?.displayName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
         equippedBadge: v?.equippedBadge ?? null,
       };

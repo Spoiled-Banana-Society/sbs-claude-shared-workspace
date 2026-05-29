@@ -1,16 +1,16 @@
 /**
- * Slow-draft pick clock: only 08:00–22:00 America/New_York counts (22:00–08:00 paused).
+ * Slow-draft pick clock: only 05:00–22:00 America/Los_Angeles counts (22:00–05:00 PT paused).
  * Mirrors sbs-drafts-api/models/slow_draft_clock.go — keep in sync.
  */
 
-const AMERICA_NEW_YORK = 'America/New_York';
+const PACIFIC = 'America/Los_Angeles';
 
 type NYWall = { y: number; mon: number; d: number; sod: number };
 
 function nyWallFromUnixSec(unixSec: number): NYWall {
   const ms = unixSec * 1000;
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: AMERICA_NEW_YORK,
+    timeZone: PACIFIC,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -84,7 +84,7 @@ function addCalendarDays(
 }
 
 function inNightPause(w: NYWall): boolean {
-  return w.sod >= 22 * 3600 || w.sod < 8 * 3600;
+  return w.sod >= 22 * 3600 || w.sod < 5 * 3600;
 }
 
 function advanceToNextActiveUnix(unixSec: number): number {
@@ -92,9 +92,9 @@ function advanceToNextActiveUnix(unixSec: number): number {
   if (!inNightPause(w)) return unixSec;
   if (w.sod >= 22 * 3600) {
     const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-    return unixAtNYWallClock(y2, m2, d2, 8, 0, 0);
+    return unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
   }
-  return unixAtNYWallClock(w.y, w.mon, w.d, 8, 0, 0);
+  return unixAtNYWallClock(w.y, w.mon, w.d, 5, 0, 0);
 }
 
 export function slowDraftPickEndUnix(fromUnix: number, pickLengthSec: number): number {
@@ -107,7 +107,7 @@ export function slowDraftPickEndUnix(fromUnix: number, pickLengthSec: number): n
     const avail = windowClose - cur;
     if (avail <= 0) {
       const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-      cur = unixAtNYWallClock(y2, m2, d2, 8, 0, 0);
+      cur = unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
       continue;
     }
     if (remaining <= avail) {
@@ -115,7 +115,7 @@ export function slowDraftPickEndUnix(fromUnix: number, pickLengthSec: number): n
     }
     remaining -= avail;
     const [y3, m3, d3] = addCalendarDays(w.y, w.mon, w.d, 1);
-    cur = unixAtNYWallClock(y3, m3, d3, 8, 0, 0);
+    cur = unixAtNYWallClock(y3, m3, d3, 5, 0, 0);
   }
   return cur;
 }
@@ -129,7 +129,7 @@ export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: num
     const windowClose = unixAtNYWallClock(w.y, w.mon, w.d, 22, 0, 0);
     if (windowClose <= cur) {
       const [y2, m2, d2] = addCalendarDays(w.y, w.mon, w.d, 1);
-      cur = unixAtNYWallClock(y2, m2, d2, 8, 0, 0);
+      cur = unixAtNYWallClock(y2, m2, d2, 5, 0, 0);
       continue;
     }
     let chunkEnd = windowClose;
@@ -137,7 +137,7 @@ export function slowDraftEffectiveElapsedSeconds(startUnix: number, endUnix: num
     total += chunkEnd - cur;
     if (chunkEnd >= endUnix) break;
     const [y3, m3, d3] = addCalendarDays(w.y, w.mon, w.d, 1);
-    cur = unixAtNYWallClock(y3, m3, d3, 8, 0, 0);
+    cur = unixAtNYWallClock(y3, m3, d3, 5, 0, 0);
   }
   return total;
 }
@@ -153,4 +153,19 @@ export function slowDraftDisplayedSecondsRemaining(
 
 export function isSlowDraftPickLength(pickLengthSec: number): boolean {
   return pickLengthSec >= 3600;
+}
+
+/** True if `nowUnixSec` falls inside the slow-draft night pause (22:00–05:00 PT). */
+export function isSlowDraftNightPause(nowUnixSec: number): boolean {
+  return inNightPause(nyWallFromUnixSec(nowUnixSec));
+}
+
+/**
+ * Active (non-paused) seconds remaining from `nowUnixSec` until the pick expires
+ * at `pickEndUnixSec`. This is what a slow-draft countdown should display: it
+ * reads the full pick length at the start, ticks down only during active hours,
+ * and freezes overnight.
+ */
+export function slowDraftActiveSecondsUntil(nowUnixSec: number, pickEndUnixSec: number): number {
+  return slowDraftEffectiveElapsedSeconds(nowUnixSec, pickEndUnixSec);
 }

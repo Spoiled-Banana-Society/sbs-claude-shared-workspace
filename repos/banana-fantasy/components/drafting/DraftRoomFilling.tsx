@@ -6,6 +6,7 @@ import { shouldShowPlayerCount } from '@/lib/draftRoomLobby';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { bananaDefaultName } from '@/utils/helpers';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -52,8 +53,21 @@ export function DraftRoomFilling({
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
-            const isFilled = isRandomizing ? true : (isUser || i < (playerCount ?? 0));
-            const borderColor = isUser ? '#F3E216' : isFilled ? '#444' : '#333';
+            // During filling, fill boxes purely by the live count so all
+            // joined players' boxes appear at the SAME moment. We must NOT
+            // also force the user's own box (isUser) filled independently —
+            // that made box 0 (you) show first, then the others trickle in by
+            // count ("you, then the second person after"). isUser still drives
+            // this box's highlight/avatar/name styling below; it just no
+            // longer fills ahead of the count.
+            const isFilled = isRandomizing ? true : i < (playerCount ?? 0);
+            // While the count is still unknown (the brief gap before the join
+            // response lands), show a polished shimmer "loading" placeholder in
+            // every box instead of empty "Waiting…" slots — reads as the lobby
+            // loading, not blank. Once the count is known, unfilled slots use
+            // the normal "Waiting…" state.
+            const showSkeleton = !isRandomizing && !isFilled && playerCount == null;
+            const borderColor = isUser && isFilled ? '#F3E216' : isFilled ? '#444' : '#333';
             const hasWalletData = player && !player.isYou && player.name && player.name.length > 10;
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
@@ -64,7 +78,7 @@ export function DraftRoomFilling({
             if (isRandomizing) {
               displayName = isUser
                 ? myName
-                : (otherDisplayName || (hasWalletData ? `${player!.name.slice(0, 6)}...${player!.name.slice(-4)}` : `Player ${i + 1}`));
+                : (otherDisplayName || (hasWalletData ? bananaDefaultName(player!.name) : `Player ${i + 1}`));
             } else if (isFilled) {
               displayName = isUser ? myName : (otherDisplayName || `Player ${i + 1}`);
             } else {
@@ -96,7 +110,7 @@ export function DraftRoomFilling({
                 }}
               >
                 <div>
-                  {isUser ? (
+                  {isUser && isFilled ? (
                     <div className="flex justify-center">
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
@@ -118,6 +132,8 @@ export function DraftRoomFilling({
                         className="border border-gray-500"
                       />
                     </div>
+                  ) : showSkeleton ? (
+                    <div className="animate-shimmer rounded-full w-[48px] h-[48px] mx-auto border border-white/10" />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -128,15 +144,23 @@ export function DraftRoomFilling({
                     />
                   )}
 
-                  <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
-                    {truncatedName}
-                  </div>
+                  {showSkeleton ? (
+                    <div className="lg:mt-1 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
+                  ) : (
+                    <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
+                      {truncatedName}
+                    </div>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 2, paddingBottom: 3 }}>
                     <span style={{ fontSize: '12px', fontWeight: 700, color: isFilled ? textColor : '#444', opacity: 0.7 }}>#{i + 1}</span>
                   </div>
 
-                  {!isFilled ? (
+                  {showSkeleton ? (
+                    <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div className="animate-shimmer rounded h-[10px] w-[70%]" />
+                    </div>
+                  ) : !isFilled ? (
                     <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span className="animate-pulse" style={{ fontSize: '12px', color: '#444' }}>Waiting...</span>
                     </div>

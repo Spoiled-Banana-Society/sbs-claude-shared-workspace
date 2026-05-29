@@ -140,47 +140,77 @@ export function SpinWheel({
     setVerifyExpanded(false);
     hasSpun.current = true;
 
+    // Start spinning IMMEDIATELY at a constant speed the instant the user
+    // taps, BEFORE/while the backend RNG request is in flight. Previously we
+    // awaited the network call first, so on mobile the wheel sat frozen for
+    // ~5s before moving. We decelerate onto the real winning segment once the
+    // result lands.
+    const FREE_SPIN_DEG_PER_SEC = 360 / 0.7; // ~0.7s per revolution
+    const FREE_SPIN_MAX_SEC = 30; // safety cap — the result almost always lands first
+    const freeSpin = animate(
+      rotation,
+      currentRotation.current + FREE_SPIN_DEG_PER_SEC * FREE_SPIN_MAX_SEC,
+      { duration: FREE_SPIN_MAX_SEC, ease: 'linear' },
+    );
+
+    let spinResult: SpinResult | null = null;
     try {
-      // Call backend for RNG result
-      const spinResult = await onSpin();
-      if (!spinResult) {
-        setSpinning(false);
-        return;
-      }
+      // Backend RNG result — runs in parallel with the free spin above.
+      spinResult = await onSpin();
+    } catch {
+      freeSpin.stop();
+      currentRotation.current = rotation.get();
+      setSpinning(false);
+      return;
+    }
+    if (!spinResult) {
+      freeSpin.stop();
+      currentRotation.current = rotation.get();
+      setSpinning(false);
+      return;
+    }
 
-      // Calculate target rotation
-      const targetSliceAngle = spinResult.winningIndex * segmentAngle;
-      // We want the pointer (at top/0°) to land in the middle of the winning segment
-      // Wheel rotates clockwise, so we need to rotate to align the segment with the pointer
-      const targetOffset = targetSliceAngle + segmentAngle / 2;
-      // Add multiple full rotations for dramatic effect (5-8 full spins)
-      const extraSpins = (5 + Math.random() * 3) * 360;
-      const targetRotation = currentRotation.current + extraSpins + (360 - targetOffset + (currentRotation.current % 360));
+    // Stop the free spin and decelerate from wherever we currently are onto
+    // the winning segment.
+    freeSpin.stop();
+    const now = rotation.get();
 
-      // Animate with deceleration
+    // Wheel rotates clockwise; segment i's center sits at `targetOffset`
+    // measured clockwise from the top pointer in the wheel's own coords, so
+    // the final rotation (mod 360) must be (360 - targetOffset) to land that
+    // segment under the pointer.
+    const targetOffset = spinResult.winningIndex * segmentAngle + segmentAngle / 2;
+    const desiredMod = (((360 - targetOffset) % 360) + 360) % 360;
+    const extraSpins = (3 + Math.random() * 2) * 360; // a few decel revolutions
+    const minTarget = now + extraSpins;
+    const targetRotation = minTarget + ((((desiredMod - (minTarget % 360)) % 360) + 360) % 360);
+
+    try {
       await animate(rotation, targetRotation, {
-        duration: 4 + Math.random() * 1.5,
+        duration: 3 + Math.random() * 1.5,
         ease: [0.2, 0.8, 0.3, 1], // Custom cubic-bezier for realistic deceleration
         onComplete: () => {
           currentRotation.current = targetRotation;
         },
       });
-
-      // Show result
-      setResult(spinResult);
-      setShowResult(true);
-      setSpinning(false);
-
-      // Fire confetti
-      const slice = slices[spinResult.winningIndex];
-      const isSpecial = slice?.id === 'jackpot' || slice?.id === 'hof' ||
-        (typeof slice?.weight === 'number' && slice.weight <= 0.02);
-      fireWinConfetti(isSpecial);
-
-      onComplete?.(spinResult);
     } catch {
+      currentRotation.current = rotation.get();
       setSpinning(false);
+      return;
     }
+
+    // Show result
+    setResult(spinResult);
+    setShowResult(true);
+    setSpinning(false);
+
+    // Fire confetti
+    const slice = slices[spinResult.winningIndex];
+    const isSpecial = slice?.id === 'jackpot' || slice?.id === 'hof' ||
+      (typeof slice?.weight === 'number' && slice.weight <= 0.02);
+    fireWinConfetti(isSpecial);
+
+    onComplete?.(spinResult);
   }, [spinning, disabled, spinsAvailable, onSpin, onComplete, slices, segmentAngle, rotation]);
 
   const winningSlice = result ? slices[result.winningIndex] : null;
