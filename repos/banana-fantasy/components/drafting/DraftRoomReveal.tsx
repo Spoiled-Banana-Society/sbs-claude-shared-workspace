@@ -7,6 +7,7 @@ import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { getTruncatedAccountName } from '@/utils/helpers';
+import { UserPopover } from '@/components/social/UserPopover';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -207,6 +208,11 @@ export function DraftRoomReveal({
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
             const otherBadge = playerUser?.equippedBadge ?? null;
+            // Real (non-bot, non-you) drafters are friend/message-able during the
+            // reveal + pre-draft countdown (live-mode name is a wallet).
+            const friendWallet = !isUser && player?.name?.toLowerCase().startsWith('0x')
+              ? player.name
+              : null;
             // Prefer the resolved username; otherwise an on-brand Banana #
             // default derived from the wallet — never a raw/truncated wallet.
             const displayName = player
@@ -248,6 +254,19 @@ export function DraftRoomReveal({
                         useNextImage={false}
                         className="border-2 border-[#F3E216]"
                       />
+                    </div>
+                  ) : friendWallet ? (
+                    <div className="flex justify-center">
+                      <UserPopover walletAddress={friendWallet} username={displayName} pfpUrl={otherPfp}>
+                        <AvatarWithBadge
+                          imageUrl={otherPfp}
+                          alt={displayName}
+                          size={48}
+                          equippedBadge={otherBadge}
+                          useNextImage={false}
+                          className="border border-gray-500 cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
+                        />
+                      </UserPopover>
                     </div>
                   ) : (
                     <div className="flex justify-center">
