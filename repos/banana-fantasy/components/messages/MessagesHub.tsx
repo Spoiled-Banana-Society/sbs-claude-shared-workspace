@@ -9,6 +9,7 @@ import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
 import { useFriendSuggestions } from '@/hooks/useFriendSuggestions';
 import { GlobalChat } from '@/components/chat/GlobalChat';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 /**
  * Unified messages hub: #general chat + Friends + DMs + Requests in one page.
@@ -29,10 +30,6 @@ type View =
   | { kind: 'requests' }
   | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
-
-function shortWallet(w: string): string {
-  return `${w.slice(0, 6)}…${w.slice(-4)}`;
-}
 
 function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' }) {
   const px = size === 'sm' ? 32 : 40;
@@ -138,8 +135,7 @@ function ThreadPane({ otherWallet, onBack, onBlockChange }: { otherWallet: strin
         </button>
         {other && <Avatar user={other} />}
         <div className="flex-1 min-w-0">
-          <p className="text-white font-medium truncate">{other?.username || shortWallet(otherWallet)}</p>
-          <p className="text-white/40 text-[10px] font-mono truncate">{shortWallet(otherWallet)}</p>
+          <p className="text-white font-medium truncate">{getTruncatedAccountName(other?.username || '', otherWallet)}</p>
         </div>
         {permission === 'reply' && !isBlocked && (
           <button onClick={handleAccept} className="px-3 py-1.5 rounded-lg bg-banana text-black text-xs font-bold hover:bg-banana-light">
@@ -346,8 +342,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     {action}
                   </div>
@@ -369,8 +364,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => {
@@ -397,8 +391,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }}
@@ -427,8 +420,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                     <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
                       <Avatar user={u} />
                       <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                        <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                       </div>
                       <button
                         onClick={async () => { const r = await remove(u.walletAddress); flash(r.ok ? 'Cancelled' : r.error || 'Failed'); }}
@@ -452,8 +444,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
                   <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-white/[0.04] transition-colors">
                     <Avatar user={u} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                      <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
                     </div>
                     <button
                       onClick={() => onSelectDm(u.walletAddress)}
@@ -519,8 +510,7 @@ function BlockedPane({ onBack, onChange }: { onBack: () => void; onChange?: () =
             <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
               <Avatar user={u} />
               <div className="flex-1 min-w-0">
-                <p className="text-white text-sm font-medium truncate">{u.username}</p>
-                <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                <p className="text-white text-sm font-medium truncate">{getTruncatedAccountName(u.username, u.walletAddress)}</p>
               </div>
               <button
                 onClick={async () => { const r = await unblock(u.walletAddress); if (r.ok) onChange?.(); flash(r.ok ? 'Unblocked — chat restored' : r.error || 'Failed'); }}

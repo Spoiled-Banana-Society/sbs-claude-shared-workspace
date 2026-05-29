@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
+import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -54,6 +55,14 @@ export async function POST(req: Request) {
 
     // 1. Real on-chain mint.
     const { txHash, tokenIds } = await reserveTokensToWallet({ to: userId, count: quantity });
+
+    // 1b. Register the freshly-minted tokens into the Go API immediately,
+    //     typed `paid`, so they're usable for draft entry without waiting on
+    //     the (staging-flaky) Alchemy webhook/reconcile. Best-effort — a
+    //     failure here must not roll back the on-chain mint.
+    void registerMintedTokens(userId, tokenIds, 'paid').catch((e) =>
+      logger.warn('staging-mint.register_go_api_failed', { userId, err: (e as Error).message }),
+    );
 
     // 2. Atomic Firestore commit: the counter increment AND the activity
     //    event are written in ONE Firestore transaction. Either both land

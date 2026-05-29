@@ -65,8 +65,16 @@ export default function BananaWheelPage() {
     // the post-landing prize reveal frame. Any SSE payload arriving
     // during the freeze is queued and applied automatically when the
     // freeze expires — no balance data is lost.
+    // The wheel now starts spinning instantly and only the ~1.3s landing
+    // happens AFTER the RNG request resolves. The network leg is variable
+    // (slow on mobile), so freeze once up front, then re-extend the freeze
+    // the moment the result lands to cover the landing window — otherwise a
+    // slow network could let the balance tick before the wheel stops and
+    // spoil the prize.
     freezeSpinReveal(SPIN_DURATION_MS + 800);
-    return spinMutation.mutateAsync();
+    const outcome = await spinMutation.mutateAsync();
+    freezeSpinReveal(SPIN_DURATION_MS + 800);
+    return outcome;
   }, [spinMutation, freezeSpinReveal]);
 
   const handleSpinComplete = useCallback(

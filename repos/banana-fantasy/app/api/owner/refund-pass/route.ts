@@ -24,15 +24,34 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
-    const passType = body.passType === 'free' ? 'free' : 'paid';
+    const clientPassType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
+    const tokenId = typeof body.tokenId === 'string' ? body.tokenId : null;
 
     if (!isFirestoreConfigured()) {
       return json({ success: true, note: 'Firestore not configured' });
     }
 
-    const field = passType === 'paid' ? 'draftPasses' : 'freeDrafts';
     const db = getAdminFirestore();
+
+    // Authoritative type: read the EXACT token that was just returned to the
+    // pool on leave (RemoveTokenFromLeague preserves its PassType) and refund
+    // THAT type — never the client's remembered guess. Falls back to the
+    // client-supplied passType only if the token can't be read.
+    let passType: 'free' | 'paid' = clientPassType;
+    if (tokenId) {
+      try {
+        const tokDoc =
+          (await db.collection(`owners/${userId.toLowerCase()}/validDraftTokens`).doc(tokenId).get()).data() ??
+          (await db.collection('draftTokens').doc(tokenId).get()).data();
+        const real = tokDoc?.PassType;
+        if (real === 'free' || real === 'paid') passType = real;
+      } catch {
+        /* fall back to clientPassType */
+      }
+    }
+
+    const field = passType === 'paid' ? 'draftPasses' : 'freeDrafts';
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
     const activityDoc = await buildActivityEventDoc({

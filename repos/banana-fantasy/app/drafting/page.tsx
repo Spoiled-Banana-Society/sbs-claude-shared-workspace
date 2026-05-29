@@ -10,6 +10,7 @@ import { PromosSidebar } from '@/components/drafting/PromosSidebar';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
+import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 
 const BuyPassesModal = dynamic(
@@ -97,6 +98,7 @@ export default function DraftingPage() {
     claimSuccess,
     promoIndex,
     showEntryFlow,
+    joiningLobby,
     showContestDetails,
     infoTopic,
     handleEnterDraft,
@@ -362,6 +364,8 @@ export default function DraftingPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
       />
+
+      <JoiningLobbyOverlay show={joiningLobby} />
 
       {topic && (
         <div

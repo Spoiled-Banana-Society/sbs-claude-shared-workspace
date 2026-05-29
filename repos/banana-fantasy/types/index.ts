@@ -21,6 +21,11 @@ export interface User {
   // avatar across the app. Null/undefined = no badge shown. The user
   // doesn't have to display one — they can clear this anytime.
   equippedBadge?: string | null;
+  // Permanent, server-assigned unique number for the default "Banana12345"
+  // handle (shown only to users who never set a username). Assigned once
+  // from the `counters/banana_user_number` counter and never changes, so
+  // no two users ever share a banana handle. See getOrAssignBananaNumbers.
+  bananaNumber?: number;
 }
 
 // Badges

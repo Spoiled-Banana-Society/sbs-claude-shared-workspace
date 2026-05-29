@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { ChatModerationMenu } from '@/components/chat/ChatModerationMenu';
 import { UserPopover } from '@/components/social/UserPopover';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 interface ChatMessage {
   id: string;
@@ -49,6 +50,15 @@ export function GlobalChat() {
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+
+  // Resolve sender names/pfps LIVE from each sender's current profile rather
+  // than trusting the username snapshotted onto the message at send time.
+  // Old messages stored the wallet prefix (0x…) as the name whenever the
+  // sender had no username loaded at send time; this backfills the real name
+  // retroactively. Cached + batched (useSWRLike) so it never re-fetches on
+  // re-render — safe under the render-loop rule.
+  const senderWallets = useMemo(() => messages.map((m) => m.walletAddress), [messages]);
+  const usersMap = useDraftRoomUsers(senderWallets);
   const [isSending, setIsSending] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [myMute, setMyMute] = useState<ActiveMute | null>(null);
@@ -220,16 +230,23 @@ export function GlobalChat() {
         )}
         {messages.map((msg) => {
           const isYou = !!myWallet && msg.walletAddress.toLowerCase() === myWallet;
+          // Prefer the sender's current profile, then the message's stored
+          // username, then the wallet prefix. This is what fixes the "shows my
+          // wallet" case: a user who has since set a username now renders it
+          // even on messages that baked in the 0x… fallback.
+          const resolved = usersMap[msg.walletAddress.toLowerCase()];
+          const displayName = resolved?.displayName || msg.username || msg.walletAddress.slice(0, 8);
+          const avatarUrl = resolved?.imageUrl || msg.pfpUrl || '/banana-profile.png';
           return (
             <div key={msg.id} className="group flex items-start gap-3 px-2 py-1.5 rounded-lg hover:bg-white/[0.02]">
               {/* Avatar — clickable, opens UserPopover with friend actions.
                   Always a real picture or the banana default; never a wallet
                   initial. onError swaps a broken pfp URL back to the banana. */}
-              <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
+              <UserPopover walletAddress={msg.walletAddress} username={displayName} pfpUrl={avatarUrl}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={msg.pfpUrl || '/banana-profile.png'}
-                  alt={msg.username}
+                  src={avatarUrl}
+                  alt={displayName}
                   onError={(e) => { e.currentTarget.src = '/banana-profile.png'; }}
                   className="w-9 h-9 rounded-full object-cover flex-shrink-0 bg-white/5 border border-white/10 hover:ring-2 hover:ring-banana/40 transition-all"
                 />
@@ -238,9 +255,9 @@ export function GlobalChat() {
               {/* Body */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2 flex-wrap">
-                  <UserPopover walletAddress={msg.walletAddress} username={msg.username} pfpUrl={msg.pfpUrl}>
+                  <UserPopover walletAddress={msg.walletAddress} username={displayName} pfpUrl={avatarUrl}>
                     <span className={`text-sm font-semibold hover:underline ${isYou ? 'text-banana' : 'text-white'}`}>
-                      {msg.username || msg.walletAddress.slice(0, 8)}
+                      {displayName}
                     </span>
                   </UserPopover>
                   <span className="text-white/30 text-[10px]">
