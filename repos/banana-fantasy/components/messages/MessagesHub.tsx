@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type PublicUser } from '@/hooks/useDms';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
+import { useFriendSuggestions } from '@/hooks/useFriendSuggestions';
 import { GlobalChat } from '@/components/chat/GlobalChat';
 
 /**
@@ -260,6 +261,7 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
   const myWallet = (user?.walletAddress || '').toLowerCase();
   const enabled = !!user?.walletAddress && isLoggedIn;
   const { data, loading, accept, remove, sendRequest, search } = useFriends(enabled);
+  const { suggestions, dismiss: dismissSuggestion } = useFriendSuggestions(enabled);
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Search state — merged from the old Add Friend pane.
@@ -356,6 +358,34 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
         {/* Hide the friends sections while searching to keep focus on results. */}
         {!isSearching && (
           <>
+            {/* People you recently drafted with — quick-add suggestions. */}
+            {suggestions.length > 0 && (
+              <section className="mb-4">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider mb-2 px-1">People you drafted with</p>
+                <div className="space-y-1">
+                  {suggestions.map((u) => (
+                    <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                      <Avatar user={u} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-sm font-medium truncate">{u.username}</p>
+                        <p className="text-white/40 text-xs truncate">{shortWallet(u.walletAddress)}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          dismissSuggestion(u.walletAddress);
+                          const r = await sendRequest(u.walletAddress);
+                          flash(r.ok ? 'Request sent' : r.error || 'Failed');
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light"
+                      >
+                        Add Friend
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Incoming requests */}
             {data.incoming.length > 0 && (
               <section className="mb-4">
