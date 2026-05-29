@@ -31,7 +31,6 @@ import {
   generateReelItemsForReel,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
-import { useNotifOptIn } from '@/app/providers';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -114,7 +113,6 @@ function DraftRoomContent() {
     playNewPickSound,
     cleanup: cleanupAudio,
   } = useDraftAudio();
-  const { triggerOptIn } = useNotifOptIn();
 
   useEffect(() => {
     return () => cleanupAudio();
@@ -887,12 +885,6 @@ function DraftRoomContent() {
       localStorage.removeItem(`queue:${draftId}`);
     }
   }, [engine.draftStatus, draftId]);
-
-  useEffect(() => {
-    if (engine.draftStatus === 'completed') {
-      triggerOptIn('post-draft');
-    }
-  }, [engine.draftStatus, triggerOptIn]);
 
   useEffect(() => {
     if (!isLiveMode || !draftId || !walletParam) return;
