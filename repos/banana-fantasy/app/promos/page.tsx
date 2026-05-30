@@ -32,7 +32,6 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'new-user':           { accent: '#ec4899', label: 'New User' },
   'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
-  'add-to-home-screen': { accent: '#64748b', label: 'Install' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
   'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
