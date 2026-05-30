@@ -8,6 +8,8 @@ import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
 import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
@@ -312,8 +314,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('[SBS Auth] unlinkTwitter after failed verify failed:', unlinkErr);
         }
       }
-    } catch {
+    } catch (err) {
       setTwitterError('Failed to verify X account');
+      reportClientError({
+        source: LOG_SOURCES.auth.TWITTER_VERIFY_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'auth',
+        actor: walletAddress ?? undefined,
+        context: { stage: 'verify-twitter-client' },
+      });
     } finally {
       setIsTwitterLinking(false);
     }

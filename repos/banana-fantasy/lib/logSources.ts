@@ -135,6 +135,15 @@ export const LOG_SOURCES = {
     WALLET_CONNECT_TIMEOUT: 'auth.wallet_connect_timeout',
     WALLET_CONNECT_FAILED: 'auth.wallet_connect_failed',
     WALLET_CONNECT_ABANDONED: 'auth.wallet_connect_abandoned',
+    // Social-login wallet resolution via the Privy User API. When this fails,
+    // social-login users lose their wallet downstream (the May incident).
+    // Already notify-matched by /privy\.fetch_user\.error/i.
+    PRIVY_USER_API_FAILED: 'auth.privy.fetch_user.error',
+    // Twitter/X verify Firestore write + username claim + client login.
+    TWITTER_VERIFY_FAILED: 'auth.twitter.verify_write_failed',
+    USERNAME_CLAIM_FAILED: 'auth.username.claim_failed',
+    LOGIN_FAILED: 'auth.login_failed',
+    LINK_TWITTER_FAILED: 'auth.link_twitter_failed',
   },
   kyc: {
     DIDIT_API_FAILED: 'kyc.didit_api_failed',
