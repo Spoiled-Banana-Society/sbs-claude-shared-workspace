@@ -425,9 +425,8 @@ export function useDraftingPageState() {
     clientLog('joinoverlay', 'overlay-shown', { passType, speed, wallet: user.walletAddress });
     // Hold the overlay for a minimum beat so the branded "Joining lobby…"
     // transition is always clearly visible, even when joinDraft resolves
-    // near-instantly (~300-430ms). 700ms felt like a blink because the ~200ms
-    // fade-in eats into it; 1100ms gives a clearly-visible, intentional beat.
-    const MIN_OVERLAY_MS = 1100;
+    // near-instantly. Perceptible but snappy — never pads beyond this.
+    const MIN_OVERLAY_MS = 700;
     const overlayStart = Date.now();
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
