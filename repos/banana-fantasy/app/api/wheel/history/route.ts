@@ -5,7 +5,9 @@ import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getWheelHistory } from '@/lib/db';
 
 export async function GET(req: Request) {
-  const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
+  // Read route polled by the wheel page — use the general limit (60/min), not
+  // the tight spin bucket, so page reads don't eat the user's spin budget.
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
     const userId = getSearchParam(req, 'userId');
