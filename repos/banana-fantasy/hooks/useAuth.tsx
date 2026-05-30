@@ -28,6 +28,9 @@ const USER_STORAGE_KEYS = [
 // failures: a ~30-day age = clean Privy expiry; a MISSING record while
 // the session is dead = storage was cleared early (mobile eviction).
 const SESSION_STARTED_KEY = 'banana-session-started';
+// Debounce window before a transient Privy `!authenticated` blink wipes the
+// local user. Module-scoped so it's a stable reference (no effect-dep churn).
+const AUTH_WIPE_DEBOUNCE_MS = 1200;
 
 interface SavedProfile {
   username?: string;
@@ -354,6 +357,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
+  // Pending "wipe the local user" timer. Privy briefly reports
+  // `ready && !authenticated` during page load, route changes, and token
+  // refreshes (a transient blink). Wiping `user` on that blink pops a
+  // spurious login modal + flashes the join overlay. We debounce the wipe:
+  // only clear the user if Privy STAYS unauthenticated past AUTH_WIPE_DEBOUNCE_MS.
+  // A real logout stays unauthenticated, so it still wipes (just ~1.2s later).
+  const wipeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Clear any pending wipe on unmount so it can't fire against a torn-down tree.
+  useEffect(() => () => {
+    if (wipeTimerRef.current) clearTimeout(wipeTimerRef.current);
+  }, []);
 
   // Check for existing Twitter link on login (also triggers after linkTwitter OAuth redirect)
   useEffect(() => {
@@ -412,6 +426,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode
     if (privy.ready && privy.authenticated && privy.user && walletAddress) {
+      // Auth confirmed — cancel any pending blink-wipe. This is what turns a
+      // transient `!authenticated` flicker into a no-op: the wipe was scheduled,
+      // auth came back, we cancel before it ever fires.
+      if (wipeTimerRef.current) {
+        clearTimeout(wipeTimerRef.current);
+        wipeTimerRef.current = null;
+      }
       // Avoid duplicate fetches for the same wallet
       if (fetchingRef.current === walletAddress) return;
       fetchingRef.current = walletAddress;
@@ -563,18 +584,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         });
     } else if (privy.ready && !privy.authenticated) {
-      // DIAGNOSTIC (temp): record EVERY time we wipe the local user. If this
-      // fires while Boris is actively logged in, it's the transient blink that
-      // causes the login-modal-while-logged-in + broken join overlay.
-      clientLog('authblink', 'user-wiped', {
+      // Privy says "not authenticated". Could be a real logout OR a transient
+      // blink (page load, route change, token refresh). DEBOUNCE the wipe: only
+      // clear the user if we're STILL unauthenticated after the debounce window.
+      // If auth recovers in time, the sync branch above cancels this timer and
+      // the blink becomes a no-op. Guard so we schedule at most one timer.
+      clientLog('authblink', 'wipe-scheduled', {
         hadLocalUser: !!user,
         wallet: walletAddress || null,
-        reason: 'privy.ready && !privy.authenticated',
+        debounceMs: AUTH_WIPE_DEBOUNCE_MS,
       });
-      setUser(null);
-      fetchingRef.current = null;
-      setIsNewUser(false);
-      setShowOnboarding(false);
+      if (!wipeTimerRef.current) {
+        wipeTimerRef.current = setTimeout(() => {
+          wipeTimerRef.current = null;
+          // DIAGNOSTIC (temp): a wipe that actually fired = a sustained
+          // unauthenticated state (real logout), not a blink.
+          clientLog('authblink', 'user-wiped', {
+            reason: 'privy.ready && !privy.authenticated (debounced)',
+          });
+          setUser(null);
+          fetchingRef.current = null;
+          setIsNewUser(false);
+          setShowOnboarding(false);
+        }, AUTH_WIPE_DEBOUNCE_MS);
+      }
     }
   }, [privy.ready, privy.authenticated, privy.user, walletAddress]);
 
