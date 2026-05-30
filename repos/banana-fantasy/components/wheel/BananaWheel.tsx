@@ -105,19 +105,20 @@ function rainPrizes(segment: WheelSegment) {
     shapes = undefined; // older confetti without emoji shapes — fall back to default
   }
   const huge = isHugeWin(segment);
-  const end = Date.now() + (huge ? 3500 : 2400);
+  // Keep raining for as long as the music celebrates (big-four outro is long).
+  const end = Date.now() + (huge ? 5200 : 3600);
   const tick = () => {
     confetti({
-      particleCount: huge ? 9 : 5,
+      particleCount: huge ? 12 : 7,
       startVelocity: 0,            // no launch — just let them fall
       gravity: huge ? 0.9 : 0.7,
-      ticks: 260,
+      ticks: 320,
       spread: 0,
       origin: { x: Math.random(), y: -0.12 }, // drop in from above the top edge
       scalar: huge ? 4 : 3,
       ...(shapes ? { shapes } : {}),
     });
-    if (Date.now() < end) setTimeout(tick, huge ? 110 : 160);
+    if (Date.now() < end) setTimeout(tick, huge ? 90 : 130);
   };
   tick();
 }
@@ -324,8 +325,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         // The screen shake is applied to the result modal on mount below.
         if (isBigWin(segment)) rainPrizes(segment);
       }
-      // Let the groove ride a beat past the landing, then fade (continues after).
-      stopSpinSound();
+      // Tier-aware outro: small wins fade quick, the big four keep the music
+      // going crazy for several seconds.
+      stopSpinSound(segment ? getWinTier(segment) : undefined);
       if (onSpinComplete) onSpinComplete(outcome, segment);
     }, SPIN_DURATION_MS);
   };
@@ -533,9 +535,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50"
           style={{
-            // Big wins jolt the whole screen as the prize card lands.
+            // Big wins jolt the whole screen as the prize card lands — the
+            // hardest tier shakes bigger and twice as long.
             animation: isBigWin(wonSegment)
-              ? `fadeIn 0.3s ease-out, ${isHugeWin(wonSegment) ? 'wheelShakeHard' : 'wheelShake'} 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.05s`
+              ? `fadeIn 0.3s ease-out, ${isHugeWin(wonSegment) ? 'wheelShakeHard 1.1s' : 'wheelShake 0.7s'} cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.05s`
               : 'fadeIn 0.3s ease-out',
           }}
           onClick={dismissResult}
@@ -679,13 +682,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         }
         @keyframes wheelShakeHard {
           0%, 100% { transform: translate(0, 0) rotate(0); }
-          10% { transform: translate(-13px, 7px) rotate(-1.4deg); }
-          20% { transform: translate(12px, -9px) rotate(1.4deg); }
-          30% { transform: translate(-14px, -6px) rotate(-1.2deg); }
-          40% { transform: translate(12px, 8px) rotate(1.1deg); }
-          55% { transform: translate(-9px, 5px) rotate(-0.8deg); }
-          70% { transform: translate(7px, -5px) rotate(0.6deg); }
-          85% { transform: translate(-4px, 3px) rotate(-0.3deg); }
+          6% { transform: translate(-18px, 10px) rotate(-1.8deg); }
+          13% { transform: translate(17px, -12px) rotate(1.8deg); }
+          20% { transform: translate(-19px, -8px) rotate(-1.6deg); }
+          28% { transform: translate(16px, 11px) rotate(1.5deg); }
+          38% { transform: translate(-14px, 7px) rotate(-1.2deg); }
+          50% { transform: translate(13px, -8px) rotate(1deg); }
+          62% { transform: translate(-10px, 6px) rotate(-0.8deg); }
+          74% { transform: translate(8px, -5px) rotate(0.6deg); }
+          86% { transform: translate(-4px, 3px) rotate(-0.3deg); }
         }
       `}</style>
     </div>
