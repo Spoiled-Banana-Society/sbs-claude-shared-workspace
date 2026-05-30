@@ -47,7 +47,7 @@ function exposureColor(pct: number): string {
   return '#64748b';
 }
 
-type SortField = 'exposure' | 'adp' | 'projected';
+type SortField = 'exposure' | 'adp';
 
 // ─── Page ────────────────────────────────────────────────────────────────
 
@@ -64,8 +64,8 @@ export default function ExposurePage() {
   // server-side from each draft's stats.adp — the same value the draft room
   // shows. We deliberately do NOT use /api/rankings here: its backend
   // (/league/rankings/global) 404s on staging and silently serves mock ADP,
-  // which is what made PHI QB show a bogus ADP of 5. getTeamPosition (mock)
-  // is kept ONLY for the Proj column, which has no real per-team source yet.
+  // which is what made PHI QB show a bogus ADP of 5. (getTeamPosition mock is
+  // only used now for the detail modal's Season / depth-chart fields.)
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState<string[]>([]);
@@ -158,7 +158,7 @@ export default function ExposurePage() {
       );
     }
 
-    // Enrich with real ADP/projected for sorting + display. avgPick is the
+    // Enrich with real ADP for sorting + display. avgPick is the
     // actual average pick number we drafted this team-position at (computed
     // server-side in recomputeUserExposure). vsAdp = avgPick − adp:
     //   negative → we drafted EARLIER than ADP (a reach),
@@ -167,16 +167,14 @@ export default function ExposurePage() {
       .map(e => {
         // Real ADP straight from the exposure doc (999 = none, render as —).
         const adp = typeof e.adp === 'number' && e.adp > 0 ? e.adp : 999;
-        const projected = getTeamPosition(e.team, e.position)?.projectedPoints ?? 0;
         // undefined (not null) so the enriched row stays assignable to
         // ExposureEntry (avgPick?: number) when we open the detail modal.
         const avgPick = typeof e.avgPick === 'number' && e.avgPick > 0 ? e.avgPick : undefined;
         const vsAdp = avgPick !== undefined && adp < 999 ? Math.round((avgPick - adp) * 10) / 10 : undefined;
-        return { ...e, adp, projected, avgPick, vsAdp };
+        return { ...e, adp, avgPick, vsAdp };
       })
       .sort((a, b) => {
         if (sortBy === 'adp') return a.adp - b.adp;
-        if (sortBy === 'projected') return b.projected - a.projected;
         return b.exposure - a.exposure;
       });
   }, [exposures, posFilter, search, sortBy]);
@@ -244,7 +242,7 @@ export default function ExposurePage() {
   const selectedDepthChart = selectedExposure
     ? getTeamPositionDepthChart(selectedExposure.team, selectedExposure.position)
     : [];
-  // Mock — used ONLY for the modal's Projected / season / depth-chart fields.
+  // Mock — used ONLY for the modal's Season / depth-chart fields.
   const selectedTP = selectedExposure
     ? getTeamPosition(selectedExposure.team, selectedExposure.position)
     : null;
@@ -395,7 +393,7 @@ export default function ExposurePage() {
           {/* Sort + Search */}
           <div className="flex items-center gap-2">
             <div className="flex bg-white/[0.04] rounded-lg p-0.5">
-              {([['exposure', 'Exp%'], ['adp', 'ADP'], ['projected', 'Proj']] as [SortField, string][]).map(([key, label]) => (
+              {([['exposure', 'Exp%'], ['adp', 'ADP']] as [SortField, string][]).map(([key, label]) => (
                 <button
                   key={key}
                   onClick={() => setSortBy(key)}
@@ -421,7 +419,7 @@ export default function ExposurePage() {
         {filteredExposures.length > 0 ? (
           <div className="rounded-xl border border-white/[0.06] overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
+            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
               <div className="hidden sm:block">#</div>
               <div>Position</div>
               <div>Exposure</div>
@@ -429,7 +427,6 @@ export default function ExposurePage() {
               <div className="text-right">%</div>
               <div className="hidden sm:block text-right">ADP</div>
               <div className="hidden sm:block text-right" title="Your average actual pick vs ADP">Actual</div>
-              <div className="hidden sm:block text-right">Proj</div>
               <div className="hidden sm:block text-right">Bye</div>
             </div>
 
@@ -440,7 +437,7 @@ export default function ExposurePage() {
                 <div
                   key={e.teamPosition}
                   onClick={() => setSelectedExposure(e)}
-                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
+                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
                 >
                   <span className="hidden sm:block text-white/30 text-xs">{idx + 1}</span>
                   <div className="flex items-center">
@@ -485,7 +482,6 @@ export default function ExposurePage() {
                       <span className="text-white/30">—</span>
                     )}
                   </span>
-                  <span className="hidden sm:block text-white/50 text-xs text-right">{e.projected > 0 ? e.projected.toFixed(1) : '—'}</span>
                   <span className="hidden sm:block text-white/30 text-xs text-right">{bye}</span>
                 </div>
               );
@@ -755,13 +751,9 @@ export default function ExposurePage() {
               </div>
             </div>
 
-            {/* Projected points */}
+            {/* Season points */}
             {selectedTP && (
               <div className="mb-5 flex items-center gap-4">
-                <div>
-                  <p className="text-white/40 text-[10px] uppercase tracking-wider">Projected</p>
-                  <p className="text-banana font-bold text-xl">{selectedTP.projectedPoints.toFixed(1)} <span className="text-xs text-white/30 font-normal">pts/wk</span></p>
-                </div>
                 <div>
                   <p className="text-white/40 text-[10px] uppercase tracking-wider">Season</p>
                   <p className="text-white font-bold text-xl">{selectedTP.seasonPoints.toFixed(1)}</p>
