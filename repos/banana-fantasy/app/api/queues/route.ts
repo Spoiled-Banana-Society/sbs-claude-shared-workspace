@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getQueueStatus, joinQueue } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { notifyQueueJoined, notifyQueueFilled } from '@/lib/queueNotifications';
 
 export async function GET() {
@@ -11,6 +12,7 @@ export async function GET() {
     return json(status, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
+    logger.error('draft.queues.unhandled', { err, context: { op: 'status' } });
     const msg = err instanceof Error ? err.message : String(err);
     return jsonError(msg, 500);
   }
@@ -45,6 +47,7 @@ export async function POST(req: Request) {
     return json({ queue }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
+    logger.error('draft.queues.unhandled', { err, context: { op: 'join' } });
     const msg = err instanceof Error ? err.message : String(err);
     return jsonError(msg, 500);
   }
