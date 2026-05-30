@@ -82,6 +82,46 @@ function getPrizeMessage(segment: WheelSegment): string {
   return 'Added to your balance';
 }
 
+// The "big four" that get the over-the-top outro (screen shake + prize rain):
+// Jackpot, HOF, 10 drafts, 20 drafts.
+function isBigWin(segment: WheelSegment): boolean {
+  return segment.id === 'jackpot' || segment.id === 'hof'
+    || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10);
+}
+
+// The very top tier gets a harder shake + heavier rain.
+function isHugeWin(segment: WheelSegment): boolean {
+  return segment.id === 'jackpot' || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20);
+}
+
+// Rain the prize itself down the screen — banana for big draft hauls, 🎰 for
+// jackpot, 🏆 for HOF, etc. (uses the same emoji as the result card).
+function rainPrizes(segment: WheelSegment) {
+  const emoji = getPrizeEmoji(segment);
+  let shapes: ReturnType<typeof confetti.shapeFromText>[] | undefined;
+  try {
+    shapes = [confetti.shapeFromText({ text: emoji, scalar: 4 })];
+  } catch {
+    shapes = undefined; // older confetti without emoji shapes — fall back to default
+  }
+  const huge = isHugeWin(segment);
+  const end = Date.now() + (huge ? 3500 : 2400);
+  const tick = () => {
+    confetti({
+      particleCount: huge ? 9 : 5,
+      startVelocity: 0,            // no launch — just let them fall
+      gravity: huge ? 0.9 : 0.7,
+      ticks: 260,
+      spread: 0,
+      origin: { x: Math.random(), y: -0.12 }, // drop in from above the top edge
+      scalar: huge ? 4 : 3,
+      ...(shapes ? { shapes } : {}),
+    });
+    if (Date.now() < end) setTimeout(tick, huge ? 110 : 160);
+  };
+  tick();
+}
+
 const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
 // Deceleration ("landing") duration once the RNG result is known — the
 // wheel eases from its current free-spin position onto the winning segment.
@@ -150,6 +190,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           if (segment) {
             fireCelebration(segment);
             playWinSound(getWinTier(segment));
+            if (isBigWin(segment)) rainPrizes(segment);
           }
           if (onSpinComplete) onSpinComplete(pending.outcome, segment);
         }, remaining);
@@ -197,6 +238,11 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     setSpinPhase('free');
     setRotation(rotation + 360 * FREE_SPIN_TURNS);
 
+    // Music starts the INSTANT the wheel starts moving and loops for as long as
+    // the spin takes. Previously it only fired after the RNG request resolved,
+    // so it came in seconds late (after the free-spin was already underway).
+    const stopSpinSound = startSpinSound();
+
     let outcome: WheelSpinOutcome | null = null;
     try {
       outcome = await onSpin();
@@ -207,6 +253,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     }
 
     if (!outcome) {
+      stopSpinSound();
       // Stop where we currently are (no jump) and reset.
       setSpinPhase('idle');
       setRotation(estimateCurrentRotation());
@@ -242,9 +289,6 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       localStorage.setItem(PENDING_SPIN_KEY, JSON.stringify(pending));
     } catch { /* ignore */ }
 
-    // Start the spin build — pass the real spin length so it climaxes on the stop
-    const stopSpinSound = startSpinSound(SPIN_DURATION_MS);
-
     // Verify the Merkle proof now (before the result modal shows) so the
     // "Verified ✓" badge can render alongside the prize. Pure crypto in
     // the browser, no network — runs in <1ms.
@@ -267,7 +311,6 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     }
 
     setTimeout(() => {
-      stopSpinSound();
       setSpinPhase('idle');
       setIsSpinning(false);
       setWonSegment(segment);
@@ -277,7 +320,12 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       if (segment) {
         fireCelebration(segment);
         playWinSound(getWinTier(segment));
+        // Big four (jackpot / HOF / 10 / 20): rain the prize down the screen.
+        // The screen shake is applied to the result modal on mount below.
+        if (isBigWin(segment)) rainPrizes(segment);
       }
+      // Let the groove ride a beat past the landing, then fade (continues after).
+      stopSpinSound();
       if (onSpinComplete) onSpinComplete(outcome, segment);
     }, SPIN_DURATION_MS);
   };
@@ -484,7 +532,12 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       {wonSegment && showResult && !isSpinning && (
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50"
-          style={{ animation: 'fadeIn 0.3s ease-out' }}
+          style={{
+            // Big wins jolt the whole screen as the prize card lands.
+            animation: isBigWin(wonSegment)
+              ? `fadeIn 0.3s ease-out, ${isHugeWin(wonSegment) ? 'wheelShakeHard' : 'wheelShake'} 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.05s`
+              : 'fadeIn 0.3s ease-out',
+          }}
           onClick={dismissResult}
         >
           <div
@@ -614,6 +667,25 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           from { opacity: 0; transform: scale(0.3); }
           50% { transform: scale(1.1); }
           to { opacity: 1; transform: scale(1); }
+        }
+        @keyframes wheelShake {
+          0%, 100% { transform: translate(0, 0) rotate(0); }
+          15% { transform: translate(-7px, 4px) rotate(-0.8deg); }
+          30% { transform: translate(6px, -5px) rotate(0.8deg); }
+          45% { transform: translate(-6px, -3px) rotate(-0.6deg); }
+          60% { transform: translate(5px, 4px) rotate(0.5deg); }
+          75% { transform: translate(-3px, 2px) rotate(-0.3deg); }
+          90% { transform: translate(2px, -1px) rotate(0.2deg); }
+        }
+        @keyframes wheelShakeHard {
+          0%, 100% { transform: translate(0, 0) rotate(0); }
+          10% { transform: translate(-13px, 7px) rotate(-1.4deg); }
+          20% { transform: translate(12px, -9px) rotate(1.4deg); }
+          30% { transform: translate(-14px, -6px) rotate(-1.2deg); }
+          40% { transform: translate(12px, 8px) rotate(1.1deg); }
+          55% { transform: translate(-9px, 5px) rotate(-0.8deg); }
+          70% { transform: translate(7px, -5px) rotate(0.6deg); }
+          85% { transform: translate(-4px, 3px) rotate(-0.3deg); }
         }
       `}</style>
     </div>

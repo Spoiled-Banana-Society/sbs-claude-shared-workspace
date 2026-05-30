@@ -70,21 +70,7 @@ function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.9) {
   osc.stop(at + 0.18);
 }
 
-// Short bright blip — the accelerating "ratchet" of the wheel ticking faster.
-function blip(ctx: AudioContext, dest: AudioNode, at: number, freq: number, vol = 0.16) {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = 'square';
-  osc.frequency.setValueAtTime(freq, at);
-  gain.gain.setValueAtTime(vol, at);
-  gain.gain.exponentialRampToValueAtTime(0.0008, at + 0.06);
-  osc.connect(gain);
-  gain.connect(dest);
-  osc.start(at);
-  osc.stop(at + 0.07);
-}
-
-// Noise impact / crash — used for the build climax and big wins.
+// Noise impact / crash — used for hats, claps and big wins.
 function noiseHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.4, dur = 0.5, hp = 1200) {
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer(ctx, dur + 0.05);
@@ -106,87 +92,97 @@ export function playTick(pitch = 800) {
   playTone(pitch, 0.05, 0.08, 'square');
 }
 
-// The spin build: a riser that swells over the whole spin and climaxes exactly
-// when the wheel lands, with an accelerating kick + ratchet underneath.
-function startSpinBuild(durationMs: number): () => void {
+// The spin groove: a driving EDM loop that starts AUDIBLE the instant the
+// wheel starts (not after the result lands), keeps looping for as long as the
+// wheel spins (variable — depends on network), and on stop() rides a beat past
+// the landing then fades, so the music clearly continues after the wheel stops.
+function startGroove(): () => void {
   const ctx = getAudioContext();
   const master = masterChain(ctx);
-  const now = ctx.currentTime;
-  const dur = Math.max(0.3, durationMs / 1000);
-  const end = now + dur;
+  const t0 = ctx.currentTime;
+  // ~instant fade-in (just avoids a click), so it reads as "starts immediately".
+  master.gain.setValueAtTime(0.0001, t0);
+  master.gain.exponentialRampToValueAtTime(0.85, t0 + 0.07);
 
-  // --- Riser 1: filtered white-noise sweep (the "whoosh" build) ---
-  const noise = ctx.createBufferSource();
-  noise.buffer = noiseBuffer(ctx, dur + 0.2);
-  noise.loop = true;
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.setValueAtTime(350, now);
-  hp.frequency.exponentialRampToValueAtTime(7000, end);
-  const noiseGain = ctx.createGain();
-  noiseGain.gain.setValueAtTime(0.0001, now);
-  noiseGain.gain.exponentialRampToValueAtTime(0.22, end);
-  noise.connect(hp); hp.connect(noiseGain); noiseGain.connect(master);
-  noise.start(now); noise.stop(end + 0.05);
+  const tempo = 142;                       // BPM — driving house/EDM
+  const sixteenth = 60 / tempo / 4;        // seconds per 16th note
+  const bassRoot = 55;                     // A1
+  const arp = [220.0, 261.6, 329.6, 440.0, 329.6, 261.6, 392.0, 329.6]; // A-min-ish
 
-  // --- Riser 2: saw pitch-riser (the tonal lift) ---
-  const riser = ctx.createOscillator();
-  const riserGain = ctx.createGain();
-  riser.type = 'sawtooth';
-  riser.frequency.setValueAtTime(220, now);
-  riser.frequency.exponentialRampToValueAtTime(1760, end); // up 3 octaves
-  riserGain.gain.setValueAtTime(0.0001, now);
-  riserGain.gain.exponentialRampToValueAtTime(0.1, end);
-  riser.connect(riserGain); riserGain.connect(master);
-  riser.start(now); riser.stop(end + 0.02);
+  // Closed hat = a tiny high-passed noise tick.
+  const hat = (t: number, vol: number) => noiseHit(ctx, master, t, vol, 0.035, 7000);
 
-  // --- Rising sub bass for weight ---
-  const sub = ctx.createOscillator();
-  const subGain = ctx.createGain();
-  sub.type = 'sine';
-  sub.frequency.setValueAtTime(55, now);
-  sub.frequency.linearRampToValueAtTime(110, end);
-  subGain.gain.setValueAtTime(0.0001, now);
-  subGain.gain.exponentialRampToValueAtTime(0.45, end);
-  sub.connect(subGain); subGain.connect(master);
-  sub.start(now); sub.stop(end + 0.02);
+  // Plucky sub-bass note through a lowpass.
+  const bass = (t: number, freq: number, vol = 0.5) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    lp.type = 'lowpass';
+    lp.frequency.value = 420;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(lp); lp.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.2);
+  };
 
-  // --- Driving kick: 4 hits, the last one landing on the drop ---
-  for (let i = 0; i < 4; i++) {
-    kick(ctx, master, now + (dur * i) / 4, 0.7 + i * 0.1);
-  }
+  // Schedule one 16th-note step of the bar.
+  const scheduleStep = (s: number, t: number) => {
+    const b = s % 16; // position within the 16-step bar
+    if (b % 4 === 0) kick(ctx, master, t, 0.95);                 // four-on-the-floor
+    if (b % 2 === 0) hat(t, b % 4 === 2 ? 0.13 : 0.06);          // hats, offbeat accent
+    if (b === 4 || b === 12) noiseHit(ctx, master, t, 0.16, 0.13, 1800); // clap backbeat
+    if (b === 0 || b === 6 || b === 10) bass(t, bassRoot * 2);   // bass groove
+    if (b === 8) bass(t, bassRoot * 3);
+    // bright square arp on every 16th
+    const note = arp[s % arp.length] * 2;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = note;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + sixteenth * 0.9);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + sixteenth);
+  };
 
-  // --- Accelerating ratchet: blips packed tighter + pitched higher toward
-  // the end, so the ear hears the wheel "spinning up" into the climax. ---
-  const N = 16;
-  for (let i = 0; i < N; i++) {
-    const frac = i / N;
-    // ease-in so hits bunch up near the end
-    const at = now + Math.pow(frac, 1.7) * dur;
-    const freq = 480 + frac * frac * 1400;
-    blip(ctx, master, at, freq, 0.07 + frac * 0.1);
-  }
-
-  // --- Climax impact right as it lands ---
-  noiseHit(ctx, master, end - 0.02, 0.3, 0.35, 2000);
-
+  // Lookahead scheduler — keeps the loop going for any spin length.
+  let step = 0;
+  let nextTime = t0 + 0.06;
   let stopped = false;
-  return () => {
+  const timer = setInterval(() => {
     if (stopped) return;
-    stopped = true;
+    const horizon = ctx.currentTime + 0.2;
+    while (nextTime < horizon) {
+      scheduleStep(step, nextTime);
+      step += 1;
+      nextTime += sixteenth;
+    }
+  }, 40);
+
+  let outroStarted = false;
+  return () => {
+    if (outroStarted) return;
+    outroStarted = true;
+    const now = ctx.currentTime;
     try {
-      master.gain.cancelScheduledValues(ctx.currentTime);
-      master.gain.setValueAtTime(master.gain.value, ctx.currentTime);
-      master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.06);
-    } catch { /* already stopped */ }
+      // Hold full volume for ~0.9s past the stop, THEN fade — the music keeps
+      // grooving after the wheel lands instead of cutting off.
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.setValueAtTime(0.85, now + 0.9);
+      master.gain.exponentialRampToValueAtTime(0.0008, now + 2.8);
+    } catch { /* ignore */ }
+    // Keep scheduling through the tail, then stop.
+    setTimeout(() => { stopped = true; clearInterval(timer); }, 2900);
   };
 }
 
-// Public: start the spin soundbed. durationMs should match the wheel's
-// SPIN_DURATION_MS so the build climaxes exactly on the stop.
-export function startSpinSound(durationMs = 1300): () => void {
+// Public: start the spin soundbed the moment the wheel starts moving.
+export function startSpinSound(): () => void {
   try {
-    return startSpinBuild(durationMs);
+    return startGroove();
   } catch {
     return () => { /* audio unavailable — no-op */ };
   }
