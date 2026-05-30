@@ -54,7 +54,7 @@ export function BatchProgressIndicator() {
         </div>
       }
     >
-      <div className="flex flex-col items-center w-[56px] sm:w-[72px] py-1 cursor-help">
+      <div className="flex flex-col items-center w-[56px] sm:w-[72px] py-1 mr-2 md:mr-0 cursor-help">
         <span className="text-[13px] sm:text-[16px] font-semibold tabular-nums text-white/75 leading-tight">
           {currentDraft}<span className="text-white/40 font-normal">/{batchEnd}</span>
         </span>

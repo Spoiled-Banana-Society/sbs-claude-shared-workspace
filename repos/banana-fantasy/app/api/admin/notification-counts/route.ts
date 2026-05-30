@@ -81,6 +81,24 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Draft money + blocking gaps (Phase 1 coverage). Note: `^ws\.` does NOT
+  // match `draft.ws.*`, and `autopick_failed` does NOT match
+  // `autopick_submit_failed` — so these are listed explicitly.
+  /^draft\.leave/i,
+  /^draft\.join_refund/i,
+  /^draft\.autopick_submit_failed/i,
+  /^draft\.ws\.message_parse_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
+  // Promo gaps (Phase 2). `^promo\.claim\.` doesn't cover these.
+  /^promo\.founder_draft\./i,
+  /^promo\.raffle\./i,
+  /^promo\.draft_complete\./i,
+  // Money/prizes/marketplace gaps (Phase 3). `prizes.withdrawal` was already
+  // critical-tier but had no notify pattern.
+  /^prizes\.(withdrawal|cumulative_increment|offramp_audit)/i,
+  /^marketplace\.(sweep_fund|sweep_team|cancel)/i,
+  // Auth/profile gaps (Phase 4). privy.fetch_user.error already matched above.
+  /^auth\.(twitter|username|login|spurious_login)/i,
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise

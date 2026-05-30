@@ -283,13 +283,27 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
             break;
         }
       } catch (err) {
-        // Ignore non-JSON messages (e.g. pong frames)
+        // Ignore non-JSON messages (e.g. pong/heartbeat frames) — keep the
+        // CLI breadcrumb for all of them.
         clientLog('draft#', 'ws_message_parse_failed', {
           source: LOG_SOURCES.draft.WS_MESSAGE_PARSE_FAILED,
           draftName,
           error: err instanceof Error ? err.message : String(err),
           raw: typeof event.data === 'string' ? event.data.slice(0, 120) : typeof event.data,
         });
+        // Only surface to the admin feed when the frame LOOKED like an intended
+        // JSON message (starts with { or [) but failed to parse — i.e. a real
+        // malformed draft message, not a benign pong frame. (throttled 60s/source)
+        const raw = typeof event.data === 'string' ? event.data.trimStart() : '';
+        if (raw.startsWith('{') || raw.startsWith('[')) {
+          reportClientError({
+            source: LOG_SOURCES.draft.WS_MESSAGE_PARSE_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletAddress,
+            context: { draftName, raw: raw.slice(0, 200) },
+          });
+        }
       }
     };
 

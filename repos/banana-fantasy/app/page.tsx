@@ -7,7 +7,7 @@ import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { AddToHomeScreenCard } from '@/components/home/AddToHomeScreenCard';
 import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
-import { usePWAInstallPromo } from '@/hooks/usePWAInstallPromo';
+import { FirstPurchaseBanner } from '@/components/home/FirstPurchaseBanner';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 
@@ -89,42 +89,9 @@ export default function HomePage() {
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
-  const pwaPromo = usePWAInstallPromo();
   usePromoReminders(promosQuery.promos);
 
-  // Build combined promos including PWA install promo
-  const allPromos = React.useMemo(() => {
-    const base = promosQuery.promos || [];
-    // Only show PWA promo if active or user has entered (to show draw state)
-    if (!pwaPromo.loading && (pwaPromo.promoActive || pwaPromo.hasEntered || pwaPromo.raffleResult)) {
-      const pwaPromoObj: import('@/types').Promo = {
-        id: 'pwa-install-promo',
-        type: 'add-to-home-screen',
-        title: pwaPromo.raffleResult?.status === 'drawn'
-          ? 'Raffle Complete'
-          : !pwaPromo.promoActive
-            ? 'Raffle Draw Coming'
-            : 'Install App → FREE SPINS',
-        description: pwaPromo.raffleResult?.status === 'drawn'
-          ? `Winner: ${pwaPromo.raffleResult.winnerWallet?.slice(0, 6)}...${pwaPromo.raffleResult.winnerWallet?.slice(-4)}`
-          : !pwaPromo.promoActive
-            ? `${pwaPromo.entryCount} entered — draw starting soon`
-            : `${pwaPromo.entryCount} entered`,
-        ctaText: pwaPromo.hasEntered ? 'Entered' : 'Install',
-        ctaLink: '#',
-        backgroundColor: '#1a1a2e',
-        isNew: pwaPromo.promoActive,
-        timerEndTime: pwaPromo.promoActive ? pwaPromo.promoEnd : pwaPromo.drawTime,
-        claimable: false,
-        modalContent: {
-          title: 'Install SBS App → Win Free Spins',
-          explanation: 'Add SBS to your home screen and open it from there — you\'re automatically entered into the raffle. 1 random winner gets 5 free spins! Winner drawn live on site after the timer ends.',
-        },
-      };
-      return [pwaPromoObj, ...base];
-    }
-    return base;
-  }, [promosQuery.promos, pwaPromo]);
+  const allPromos = promosQuery.promos || [];
 
   const selectedContest = contestsQuery.data?.[0];
   const modals = useModalStack();
@@ -269,8 +236,14 @@ export default function HomePage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 pt-16 flex flex-col min-h-[calc(100vh-64px)]">
-      {/* Get the App banner */}
+      {/* Get the App banner — top priority for everyone (new + returning),
+          shows how to install on mobile. Self-hides permanently once they
+          engage with the install steps. */}
       <AddToHomeScreenCard />
+
+      {/* First-purchase bonus nudge — for eligible (pre-purchase) users.
+          Self-hides once they buy or dismiss it. */}
+      <FirstPurchaseBanner />
 
       {/* Special Draft Banner removed — special drafts now show on /drafting page */}
 

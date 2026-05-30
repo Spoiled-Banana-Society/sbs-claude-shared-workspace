@@ -42,6 +42,8 @@ export type StreamEventType =
   | 'promo-buy-10'
   | 'promo-daily-drafts'
   | 'promo-new-user'
+  | 'promo-first-purchase'
+  | 'first-purchase-unlocked'
   | 'referral-milestone';
 
 export interface StreamEventPayload {

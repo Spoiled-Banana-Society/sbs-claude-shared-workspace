@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
     }
 
     const code = generateCode(username || userId);
-    const link = `https://bananabestball.com/ref/${code}`;
+    const link = `https://sbsfantasy.com/ref/${code}`;
 
     referralStore[userId] = {
       code,

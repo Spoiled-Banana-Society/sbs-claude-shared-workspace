@@ -8,7 +8,8 @@ const admin = require("firebase-admin");
  * 2026-02-06 snapshot). Everything here is Firestore — same as prod:
  *
  *   1. List doc ids in `drafts` (skip the `draftTracker` doc).
- *   2. A draft counts only if its league doc has `IsLocked === true` (done).
+ *   2. A draft counts only if it ran to completion — detected as a full 150
+ *      made picks in its playerState (staging never sets the IsLocked flag).
  *   3. Read `drafts/{id}/state/playerState` — a map playerId -> { PickNum }.
  *      Skip PickNum === 0 (player wasn't drafted).
  *   4. Average each `${team}-${position}` pick number, round it, and write into
@@ -24,6 +25,12 @@ const admin = require("firebase-admin");
 
 const SEASON_COLLECTION = "playerStats2024";
 const PLAYER_MAP_DOC = "playerMap";
+
+// A standard draft is 10 players x 15 rounds = 150 picks. We treat a draft as
+// "completed" when it has a full set of made picks. On staging the league
+// doc's IsLocked flag is never set even after the final pick, so we detect
+// completion from the pick data itself (the real signal) instead of the flag.
+const DRAFT_PICK_COUNT = 150;
 
 // Same team / position keys prod uses (stat.js).
 const TEAMS = [
@@ -43,19 +50,15 @@ async function updateADP({ db } = {}) {
       .map((d) => d.id)
       .filter((id) => id !== "draftTracker");
 
-  // 2 + 3. Collect pick numbers per player from each completed (IsLocked) draft.
+  // 2 + 3. Collect pick numbers per player from each COMPLETED draft. A draft
+  // is completed when it has the full 150 made picks (see DRAFT_PICK_COUNT) —
+  // detected from the pick data, NOT the league doc's IsLocked flag, which
+  // staging never sets. Skip PickNum === 0 (player wasn't drafted).
   const pickMap = {}; // playerId -> number[]
   let draftsCounted = 0;
   let draftsSkipped = 0;
 
   for (const leagueId of leagueIds) {
-    const leagueSnap = await db.collection("drafts").doc(leagueId).get();
-    const league = leagueSnap.exists ? leagueSnap.data() : null;
-    if (!league || !league.IsLocked) {
-      draftsSkipped += 1;
-      continue;
-    }
-
     const stateSnap = await db
         .collection(`drafts/${leagueId}/state`)
         .doc("playerState")
@@ -64,13 +67,24 @@ async function updateADP({ db } = {}) {
       draftsSkipped += 1;
       continue;
     }
-    draftsCounted += 1;
 
+    // Gather this league's made picks, then only fold them in if the draft
+    // actually ran to completion (full set of picks).
     const draftPlayers = stateSnap.data() || {};
+    const made = []; // [playerId, pickNum]
     for (const playerId of Object.keys(draftPlayers)) {
       const entry = draftPlayers[playerId];
       const pickNum = entry && typeof entry.PickNum === "number" ? entry.PickNum : 0;
-      if (pickNum === 0) continue; // not drafted in this league
+      if (pickNum > 0) made.push([playerId, pickNum]);
+    }
+
+    if (made.length < DRAFT_PICK_COUNT) {
+      draftsSkipped += 1; // unfinished / partial draft — don't pollute ADP
+      continue;
+    }
+    draftsCounted += 1;
+
+    for (const [playerId, pickNum] of made) {
       if (!pickMap[playerId]) pickMap[playerId] = [];
       pickMap[playerId].push(pickNum);
     }
