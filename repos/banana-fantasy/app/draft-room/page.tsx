@@ -960,7 +960,13 @@ function DraftRoomContent() {
           && newSort === 'adp'
         ) {
           newSort = 'rank';
-          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch(() => {});
+          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch((err) => reportClientError({
+            source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'draft-room',
+            actor: walletParam,
+            context: { draftId, target: 'RANK', reset: true },
+          }));
           try { localStorage.setItem(appliedKey, '1'); } catch {}
         }
 
@@ -1157,6 +1163,13 @@ function DraftRoomContent() {
       .catch((e) => {
         if (cancelled) return;
         console.warn('[Preferences] post-pick sync failed:', e);
+        reportClientError({
+          source: LOG_SOURCES.draft.PREFERENCES_LOAD_FAILED,
+          message: e instanceof Error ? e.message : String(e),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, stage: 'post-pick-sync' },
+        });
       });
 
     return () => { cancelled = true; };

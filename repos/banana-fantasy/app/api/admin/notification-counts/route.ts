@@ -81,6 +81,14 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Draft money + blocking gaps (Phase 1 coverage). Note: `^ws\.` does NOT
+  // match `draft.ws.*`, and `autopick_failed` does NOT match
+  // `autopick_submit_failed` — so these are listed explicitly.
+  /^draft\.leave/i,
+  /^draft\.join_refund/i,
+  /^draft\.autopick_submit_failed/i,
+  /^draft\.ws\.message_parse_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise
