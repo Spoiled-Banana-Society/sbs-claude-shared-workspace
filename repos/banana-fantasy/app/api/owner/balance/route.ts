@@ -30,7 +30,12 @@ export async function GET(req: Request) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
+    // Lowercase the wallet so we always read the canonical doc. A handful of
+    // legacy users have a checksummed-cased v2_users doc shadowing their
+    // lowercase one; the SSE stream already lowercases, so without this the
+    // initial GET could read a stale checksummed doc and disagree with the
+    // live stream. validDraftTokens / recount are all lowercase too.
+    const userId = (searchParams.get('userId') ?? '').trim().toLowerCase();
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
