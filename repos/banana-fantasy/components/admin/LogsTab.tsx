@@ -766,18 +766,6 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
         >
           {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Fix'}
         </button>
-<<<<<<< Updated upstream
-        {rep.sessionId && (
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            title="Export this error + full session trace as JSON (for the dev)"
-            className="px-2 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
-          >
-            {exporting ? '…' : '⬇ Export'}
-          </button>
-        )}
-=======
         <button
           onClick={handleExport}
           disabled={exporting}
@@ -788,7 +776,6 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
         >
           {exporting ? '…' : '⬇ Export'}
         </button>
->>>>>>> Stashed changes
         <button onClick={onToggle} title={isOpen ? 'Collapse' : 'Expand'} className="text-gray-500 hover:text-white text-xs px-1 py-1">
           {isOpen ? '▾' : '▸'}
         </button>
