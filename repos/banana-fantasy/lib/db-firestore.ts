@@ -1463,7 +1463,11 @@ export async function recomputeUserExposure(
   // overall pick per team-position. Best-effort: any draft whose state can't
   // be fetched is skipped, so avgPick simply stays unset for those rows.
   const POS_GROUPS = ['QB', 'RB', 'WR', 'TE', 'DST'];
-  const pickAgg = new Map<string, { sum: number; n: number }>();
+  // Per team-position: running totals for actual pick number AND real ADP.
+  // ADP comes from each player's stats.adp — the SAME real value the draft
+  // room shows (the /league/rankings/global endpoint 404s on staging, so we
+  // must NOT use it; this per-draft stats.adp is the legit working source).
+  const pickAgg = new Map<string, { pickSum: number; pickN: number; adpSum: number; adpN: number }>();
   const leagueIds = Array.from(
     new Set(active.map(t => t._leagueId).filter((id): id is string => !!id)),
   );
@@ -1474,6 +1478,7 @@ export async function recomputeUserExposure(
       if (!res.ok) return;
       const players = (await res.json()) as Array<{
         playerStateInfo?: { team?: string; position?: string; playerId?: string; ownerAddress?: string; pickNum?: number };
+        stats?: { adp?: number };
       }>;
       if (!Array.isArray(players)) return;
       for (const pl of players) {
@@ -1489,8 +1494,15 @@ export async function recomputeUserExposure(
           : POS_GROUPS.find(g => (info.playerId || '').toUpperCase().includes(`-${g}`));
         if (!positionGroup) continue;
         const key = exposureSlotKey(info.team, positionGroup, info.playerId, info.position);
-        const prev = pickAgg.get(key) || { sum: 0, n: 0 };
-        pickAgg.set(key, { sum: prev.sum + pickNum, n: prev.n + 1 });
+        const prev = pickAgg.get(key) || { pickSum: 0, pickN: 0, adpSum: 0, adpN: 0 };
+        prev.pickSum += pickNum;
+        prev.pickN += 1;
+        const adp = Number(pl?.stats?.adp);
+        if (Number.isFinite(adp) && adp > 0) {
+          prev.adpSum += adp;
+          prev.adpN += 1;
+        }
+        pickAgg.set(key, prev);
       }
     } catch {
       // best-effort; skip this draft's pick data
@@ -1510,7 +1522,10 @@ export async function recomputeUserExposure(
   for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
     const prev = existingMap.get(teamPosition);
     const pa = pickAgg.get(teamPosition);
-    const avgPick = pa && pa.n > 0 ? Math.round((pa.sum / pa.n) * 10) / 10 : prev?.avgPick;
+    const avgPick = pa && pa.pickN > 0 ? Math.round((pa.pickSum / pa.pickN) * 10) / 10 : prev?.avgPick;
+    // Real ADP from the drafts' stats.adp; preserve prior value if this run
+    // couldn't fetch any (rather than blanking a previously-good number).
+    const adp = pa && pa.adpN > 0 ? Math.round((pa.adpSum / pa.adpN) * 10) / 10 : prev?.adp;
     exposures.push({
       team,
       position,
@@ -1520,7 +1535,7 @@ export async function recomputeUserExposure(
       exposure: Math.round((drafts / totalDrafts) * 100),
       displayName: displayName ?? prev?.displayName,
       bye: prev?.bye,
-      adp: prev?.adp,
+      adp,
       projectedPoints: prev?.projectedPoints,
       avgPick,
     });

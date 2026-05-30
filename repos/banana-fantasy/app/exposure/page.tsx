@@ -13,12 +13,11 @@ import {
 import { getTeamPosition, getTeamPositionDepthChart } from '@/lib/teamPositions';
 import { useExposure } from '@/hooks/useExposure';
 import { useLeagues } from '@/hooks/useLeagues';
-import { useRankings } from '@/hooks/useRankings';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
-import type { League, TeamPosition } from '@/types';
+import type { League } from '@/types';
 import { COLORS } from '@/utils/helpers';
 
 // ─── Position colors ─────────────────────────────────────────────────────
@@ -61,26 +60,12 @@ export default function ExposurePage() {
   const leaguesQuery = useLeagues({ userId: user?.id, status: 'completed' });
   const leagues = leaguesQuery.data ?? [];
 
-  // Real, daily-updated ADP/projections from the same backend the Rankings
-  // page uses (/league/rankings/global). Replaces the old hardcoded mock —
-  // mock stays only as a per-row fallback so a missing team-position never
-  // blanks the column. NOTE: on STAGING these values are frozen at a Feb
-  // snapshot (prod's daily ADP updater was never ported to staging); on prod
-  // they're live. Shape is identical either way.
-  const rankingsData = useRankings().data;
-  const realTPMap = useMemo(() => {
-    const m = new Map<string, TeamPosition>();
-    for (const tp of rankingsData ?? []) m.set(`${tp.team}|${tp.position}`, tp);
-    return m;
-  }, [rankingsData]);
-  // Merge: start from the mock (guarantees depthChart/season fields), overlay
-  // real adp/projected/season when the live entry exists.
-  const resolveTP = (team: string, position: string): TeamPosition | null => {
-    const mock = getTeamPosition(team, position);
-    const real = realTPMap.get(`${team}|${position}`);
-    if (!real) return mock ?? null;
-    return { ...(mock ?? ({} as TeamPosition)), ...real };
-  };
+  // ADP is REAL and comes from the exposure doc (e.adp), aggregated
+  // server-side from each draft's stats.adp — the same value the draft room
+  // shows. We deliberately do NOT use /api/rankings here: its backend
+  // (/league/rankings/global) 404s on staging and silently serves mock ADP,
+  // which is what made PHI QB show a bogus ADP of 5. getTeamPosition (mock)
+  // is kept ONLY for the Proj column, which has no real per-team source yet.
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState<string[]>([]);
@@ -180,21 +165,21 @@ export default function ExposurePage() {
     //   positive → we drafted LATER than ADP (value).
     return data
       .map(e => {
-        const tp = resolveTP(e.team, e.position);
-        const adp = tp?.adp ?? 999;
+        // Real ADP straight from the exposure doc (999 = none, render as —).
+        const adp = typeof e.adp === 'number' && e.adp > 0 ? e.adp : 999;
+        const projected = getTeamPosition(e.team, e.position)?.projectedPoints ?? 0;
         // undefined (not null) so the enriched row stays assignable to
         // ExposureEntry (avgPick?: number) when we open the detail modal.
         const avgPick = typeof e.avgPick === 'number' && e.avgPick > 0 ? e.avgPick : undefined;
         const vsAdp = avgPick !== undefined && adp < 999 ? Math.round((avgPick - adp) * 10) / 10 : undefined;
-        return { ...e, adp, projected: tp?.projectedPoints ?? 0, avgPick, vsAdp };
+        return { ...e, adp, projected, avgPick, vsAdp };
       })
       .sort((a, b) => {
         if (sortBy === 'adp') return a.adp - b.adp;
         if (sortBy === 'projected') return b.projected - a.projected;
         return b.exposure - a.exposure;
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exposures, posFilter, search, sortBy, realTPMap]);
+  }, [exposures, posFilter, search, sortBy]);
 
   // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
   // permutations don't count because in best ball, "stacking" only has
@@ -259,18 +244,24 @@ export default function ExposurePage() {
   const selectedDepthChart = selectedExposure
     ? getTeamPositionDepthChart(selectedExposure.team, selectedExposure.position)
     : [];
+  // Mock — used ONLY for the modal's Projected / season / depth-chart fields.
   const selectedTP = selectedExposure
-    ? resolveTP(selectedExposure.team, selectedExposure.position)
+    ? getTeamPosition(selectedExposure.team, selectedExposure.position)
     : null;
-  // Actual-vs-ADP for the open detail tile: avgPick − adp (null if either is
-  // missing). Positive = value (drafted later than ADP), negative = reach.
+  // Real ADP for the open detail tile (from the exposure doc), and the
+  // actual-vs-ADP delta. Positive = value (drafted later than ADP), negative
+  // = reach. null when either piece is missing → render as —.
+  const selectedAdp =
+    selectedExposure && typeof selectedExposure.adp === 'number' && selectedExposure.adp > 0
+      ? selectedExposure.adp
+      : null;
   const selectedAvgPick =
     selectedExposure && typeof selectedExposure.avgPick === 'number' && selectedExposure.avgPick > 0
       ? selectedExposure.avgPick
       : null;
   const selectedVsAdp =
-    selectedAvgPick !== null && selectedTP && typeof selectedTP.adp === 'number' && selectedTP.adp > 0
-      ? Math.round((selectedAvgPick - selectedTP.adp) * 10) / 10
+    selectedAvgPick !== null && selectedAdp !== null
+      ? Math.round((selectedAvgPick - selectedAdp) * 10) / 10
       : null;
 
   // ── Render ────────────────────────────────────────────────────────────
@@ -737,7 +728,7 @@ export default function ExposurePage() {
               </div>
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">ADP</p>
-                <p className="text-white font-bold">{selectedTP?.adp ?? '—'}</p>
+                <p className="text-white font-bold">{selectedAdp ?? '—'}</p>
               </div>
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">Your Pick</p>
