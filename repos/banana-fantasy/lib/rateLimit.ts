@@ -126,8 +126,11 @@ export const RATE_LIMITS = {
   purchases: { limit: 10, windowMs: 60_000 },
   /** Admin: 300 req/min — admin auth already gates access; this is just scanner protection */
   admin: { limit: 300, windowMs: 60_000 },
-  /** Wheel spins: 5 req/min */
-  wheel: { limit: 5, windowMs: 60_000 },
+  /** Wheel spin action: 20 req/min. ONLY the spin POST uses this now — the
+   *  page's read/polling routes + confirm-reveal were moved to `general`.
+   *  A spin can't happen without a server-checked spin credit, so this is
+   *  just bot-flood protection; 5/min was blocking users with banked spins. */
+  wheel: { limit: 20, windowMs: 60_000 },
   /** RNG: 5 req/min */
   rng: { limit: 5, windowMs: 60_000 },
   /** General reads: 60 req/min */
