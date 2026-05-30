@@ -46,6 +46,11 @@ export const LOG_SOURCES = {
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
+    // The "Joining lobby" overlay → draft-room hand-off took abnormally long
+    // (blank/flash between leaving /drafting and the lobby painting). Warning
+    // severity (not critical) — cosmetic, recoverable — but visible in admin so
+    // we can actually SEE the join glitch when it happens instead of guessing.
+    JOIN_HANDOFF_SLOW: 'draft.join_handoff_slow',
     PICK_SUBMIT_UNHANDLED: 'draft.pick_submit_unhandled_error',
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',

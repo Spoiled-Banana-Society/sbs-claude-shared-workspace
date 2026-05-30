@@ -150,6 +150,33 @@ node scripts/logs.mjs session s-1716100000000-ab12cd     # full trace for one se
 node scripts/logs.mjs trace --tag=draft# --minutes=30    # raw breadcrumbs
 ```
 
+## Active diagnostic tags (current)
+
+Breadcrumb tags (`clientLog(tag, …)` → `v2_debug_events`, CLI-only via
+`logs.mjs trace --tag=<tag>`). These trace draft entry / auth / lobby
+timing. The ones marked **(temp)** are diagnostics to remove once the
+related issue is confirmed fixed.
+
+| Tag | Signals | Pull |
+|-----|---------|------|
+| `joinoverlay` **(temp)** | "Joining lobby" overlay lifecycle: `overlay-shown`, `navigating` (join speed + held duration), `room-first-paint` (hand-off gap into the lobby). | `trace --tag=joinoverlay` |
+| `authblink` **(temp)** | Privy auth state transitions: `privy-state`, `wipe-scheduled`, `user-wiped`. A `user-wiped` while logged in = a real logout; transient blinks now show `wipe-scheduled` with no following wipe (the debounce absorbed it). | `trace --tag=authblink` |
+| `liveload` **(temp)** | `waiting-for-draft-start` — the room patiently waiting for a still-filling draft to start (the fix for premature local fallback). | `trace --tag=liveload` |
+| `pcdiag` | Lobby player-count + mount timing (`mount`, `playerCount.change`, `set.poll/rtdb`). | `trace --tag=pcdiag` |
+| `league#` | Slot-id ↔ display-number ("BBB #N") resolution + cache. | `trace --tag=league#` |
+
+Notable error sources (admin Error feed):
+- `draft.live_load_exhausted_retries` (**critical**) — room couldn't load
+  in-draft data. Context now carries `phase`, `fillingWaits`,
+  `stuckWhileFilling`: `stuckWhileFilling:true` = a draft genuinely stuck
+  filling ~10min (real problem); otherwise the backend returned bad data
+  while the draft *should* have been ready.
+- `draft.join_handoff_slow` (**warning**) — the "Joining lobby" → lobby
+  hand-off took >1.8s (the visible blank/flash). Cosmetic but now visible.
+- `draft.airplane.trace` (**warning**) — NOT a bug: an intentional
+  auto-draft/airplane-mode sync breadcrumb routed through the error store.
+  Safe to ignore / a candidate to downgrade.
+
 ## Exporting for a developer
 
 In the Logs tab, expand an error row → **Export trace**. Downloads

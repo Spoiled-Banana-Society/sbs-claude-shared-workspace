@@ -226,6 +226,32 @@ function DraftRoomContent() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Join hand-off gap: time from leaving /drafting (overlay) to this room
+  // painting. A large gap is the blank/flash users perceive as the "Joining
+  // lobby" screen glitching/skipping. Breadcrumb always; admin warning if slow,
+  // so the join glitch is VISIBLE in the admin Error feed, not just CLI traces.
+  useEffect(() => {
+    let navTs: number | null = null;
+    try {
+      const raw = sessionStorage.getItem('sbs-join-nav-ts');
+      if (raw) { navTs = Number(raw); sessionStorage.removeItem('sbs-join-nav-ts'); }
+    } catch { /* ignore */ }
+    if (!navTs || !Number.isFinite(navTs)) return;
+    const gapMs = Date.now() - navTs;
+    if (gapMs < 0 || gapMs > 60000) return; // stale / unrelated navigation
+    clientLog('joinoverlay', 'room-first-paint', { gapMs, draftId: urlDraftId });
+    const SLOW_HANDOFF_MS = 1800; // overlay holds ~700ms; >1.8s ⇒ visible blank/flash
+    if (gapMs > SLOW_HANDOFF_MS) {
+      reportClientError({
+        source: LOG_SOURCES.draft.JOIN_HANDOFF_SLOW,
+        message: `Join hand-off took ${gapMs}ms (overlay → lobby paint)`,
+        route: 'draft-room',
+        actor: walletParam,
+        context: { gapMs, draftId: urlDraftId },
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // DIAGNOSTIC (player-count timing) — remove after diagnosis.
   useEffect(() => {
     clientLog('pcdiag', 'playerCount.change', { playerCount, phase, draftId });

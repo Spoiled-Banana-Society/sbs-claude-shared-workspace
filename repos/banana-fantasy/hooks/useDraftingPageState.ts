@@ -500,6 +500,10 @@ export function useDraftingPageState() {
       visibleMs: Math.max(elapsed, MIN_OVERLAY_MS),
       draftId: newId,
     });
+    // Stamp the moment we leave /drafting so the draft room can measure the
+    // hand-off gap (the blank/flash before the lobby paints) and surface a
+    // slow hand-off to the admin error feed. Best-effort; cleared on the room side.
+    try { sessionStorage.setItem('sbs-join-nav-ts', String(Date.now())); } catch { /* ignore */ }
     router.push(`/draft-room?${params.toString()}`);
   };
 
