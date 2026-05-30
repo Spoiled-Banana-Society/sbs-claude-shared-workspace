@@ -11,14 +11,14 @@ import {
   computeStacksFromLeagues,
 } from '@/lib/exposureUtils';
 import { getTeamPosition, getTeamPositionDepthChart } from '@/lib/teamPositions';
-import { mockTeamPositions } from '@/lib/mock/teamPositions';
 import { useExposure } from '@/hooks/useExposure';
 import { useLeagues } from '@/hooks/useLeagues';
+import { useRankings } from '@/hooks/useRankings';
 import { useAuth } from '@/hooks/useAuth';
 import { Modal } from '@/components/ui/Modal';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
-import type { League } from '@/types';
+import type { League, TeamPosition } from '@/types';
 import { COLORS } from '@/utils/helpers';
 
 // ─── Position colors ─────────────────────────────────────────────────────
@@ -60,6 +60,27 @@ export default function ExposurePage() {
   const { user } = useAuth();
   const leaguesQuery = useLeagues({ userId: user?.id, status: 'completed' });
   const leagues = leaguesQuery.data ?? [];
+
+  // Real, daily-updated ADP/projections from the same backend the Rankings
+  // page uses (/league/rankings/global). Replaces the old hardcoded mock —
+  // mock stays only as a per-row fallback so a missing team-position never
+  // blanks the column. NOTE: on STAGING these values are frozen at a Feb
+  // snapshot (prod's daily ADP updater was never ported to staging); on prod
+  // they're live. Shape is identical either way.
+  const rankingsData = useRankings().data;
+  const realTPMap = useMemo(() => {
+    const m = new Map<string, TeamPosition>();
+    for (const tp of rankingsData ?? []) m.set(`${tp.team}|${tp.position}`, tp);
+    return m;
+  }, [rankingsData]);
+  // Merge: start from the mock (guarantees depthChart/season fields), overlay
+  // real adp/projected/season when the live entry exists.
+  const resolveTP = (team: string, position: string): TeamPosition | null => {
+    const mock = getTeamPosition(team, position);
+    const real = realTPMap.get(`${team}|${position}`);
+    if (!real) return mock ?? null;
+    return { ...(mock ?? ({} as TeamPosition)), ...real };
+  };
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState<string[]>([]);
@@ -152,18 +173,28 @@ export default function ExposurePage() {
       );
     }
 
-    // Enrich with ADP/projected for sorting
+    // Enrich with real ADP/projected for sorting + display. avgPick is the
+    // actual average pick number we drafted this team-position at (computed
+    // server-side in recomputeUserExposure). vsAdp = avgPick − adp:
+    //   negative → we drafted EARLIER than ADP (a reach),
+    //   positive → we drafted LATER than ADP (value).
     return data
       .map(e => {
-        const tp = mockTeamPositions.find(t => t.team === e.team && t.position === e.position);
-        return { ...e, adp: tp?.adp ?? 999, projected: tp?.projectedPoints ?? 0 };
+        const tp = resolveTP(e.team, e.position);
+        const adp = tp?.adp ?? 999;
+        // undefined (not null) so the enriched row stays assignable to
+        // ExposureEntry (avgPick?: number) when we open the detail modal.
+        const avgPick = typeof e.avgPick === 'number' && e.avgPick > 0 ? e.avgPick : undefined;
+        const vsAdp = avgPick !== undefined && adp < 999 ? Math.round((avgPick - adp) * 10) / 10 : undefined;
+        return { ...e, adp, projected: tp?.projectedPoints ?? 0, avgPick, vsAdp };
       })
       .sort((a, b) => {
         if (sortBy === 'adp') return a.adp - b.adp;
         if (sortBy === 'projected') return b.projected - a.projected;
         return b.exposure - a.exposure;
       });
-  }, [exposures, posFilter, search, sortBy]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exposures, posFilter, search, sortBy, realTPMap]);
 
   // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
   // permutations don't count because in best ball, "stacking" only has
@@ -229,8 +260,18 @@ export default function ExposurePage() {
     ? getTeamPositionDepthChart(selectedExposure.team, selectedExposure.position)
     : [];
   const selectedTP = selectedExposure
-    ? getTeamPosition(selectedExposure.team, selectedExposure.position)
+    ? resolveTP(selectedExposure.team, selectedExposure.position)
     : null;
+  // Actual-vs-ADP for the open detail tile: avgPick − adp (null if either is
+  // missing). Positive = value (drafted later than ADP), negative = reach.
+  const selectedAvgPick =
+    selectedExposure && typeof selectedExposure.avgPick === 'number' && selectedExposure.avgPick > 0
+      ? selectedExposure.avgPick
+      : null;
+  const selectedVsAdp =
+    selectedAvgPick !== null && selectedTP && typeof selectedTP.adp === 'number' && selectedTP.adp > 0
+      ? Math.round((selectedAvgPick - selectedTP.adp) * 10) / 10
+      : null;
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -389,13 +430,14 @@ export default function ExposurePage() {
         {filteredExposures.length > 0 ? (
           <div className="rounded-xl border border-white/[0.06] overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
+            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
               <div className="hidden sm:block">#</div>
               <div>Position</div>
               <div>Exposure</div>
               <div className="hidden sm:block text-right">Drafts</div>
               <div className="text-right">%</div>
               <div className="hidden sm:block text-right">ADP</div>
+              <div className="hidden sm:block text-right" title="Your average actual pick vs ADP">Actual</div>
               <div className="hidden sm:block text-right">Proj</div>
               <div className="hidden sm:block text-right">Bye</div>
             </div>
@@ -407,7 +449,7 @@ export default function ExposurePage() {
                 <div
                   key={e.teamPosition}
                   onClick={() => setSelectedExposure(e)}
-                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
+                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_72px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
                 >
                   <span className="hidden sm:block text-white/30 text-xs">{idx + 1}</span>
                   <div className="flex items-center">
@@ -433,6 +475,25 @@ export default function ExposurePage() {
                     {e.exposure}%
                   </span>
                   <span className="hidden sm:block text-white/50 text-xs text-right">{e.adp < 999 ? e.adp : '—'}</span>
+                  {/* Actual avg pick + how it compares to ADP (green = value, red = reach) */}
+                  <span className="hidden sm:block text-xs text-right tabular-nums whitespace-nowrap">
+                    {e.avgPick !== undefined ? (
+                      <>
+                        <span className="text-white/70">{e.avgPick.toFixed(1)}</span>
+                        {e.vsAdp !== undefined && e.vsAdp !== 0 && (
+                          <span
+                            className="ml-1 font-semibold"
+                            style={{ color: e.vsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
+                            title={e.vsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
+                          >
+                            {e.vsAdp > 0 ? '+' : ''}{e.vsAdp}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-white/30">—</span>
+                    )}
+                  </span>
                   <span className="hidden sm:block text-white/50 text-xs text-right">{e.projected > 0 ? e.projected.toFixed(1) : '—'}</span>
                   <span className="hidden sm:block text-white/30 text-xs text-right">{bye}</span>
                 </div>
@@ -665,7 +726,7 @@ export default function ExposurePage() {
             </div>
 
             {/* Stats grid */}
-            <div className="grid grid-cols-4 gap-3 mb-5">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-5">
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">Exposure</p>
                 <p className="text-white font-bold" style={{ color: exposureColor(selectedExposure.exposure) }}>{selectedExposure.exposure}%</p>
@@ -677,6 +738,25 @@ export default function ExposurePage() {
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">ADP</p>
                 <p className="text-white font-bold">{selectedTP?.adp ?? '—'}</p>
+              </div>
+              <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
+                <p className="text-white/40 text-[10px] uppercase tracking-wider">Your Pick</p>
+                {selectedAvgPick !== null ? (
+                  <p className="text-white font-bold">
+                    {selectedAvgPick.toFixed(1)}
+                    {selectedVsAdp !== null && selectedVsAdp !== 0 && (
+                      <span
+                        className="ml-1 text-xs font-semibold"
+                        style={{ color: selectedVsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
+                        title={selectedVsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
+                      >
+                        {selectedVsAdp > 0 ? '+' : ''}{selectedVsAdp}
+                      </span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-white/30 font-bold">—</p>
+                )}
               </div>
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">Bye</p>

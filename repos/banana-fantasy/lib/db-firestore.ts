@@ -1345,6 +1345,28 @@ export interface ExposureRecomputeDiag {
   reason?: string;
 }
 
+// Derive the "TEAM SLOT" exposure key (e.g. "SF RB2", "KC QB") from a pick.
+// Used by BOTH the draft-count aggregation and the actual-pick aggregation so
+// their keys line up exactly. RB/WR slots live in the playerId as "TEAM-SLOT".
+function exposureSlotKey(
+  team: string,
+  positionGroup: string,
+  playerId?: string,
+  position?: string,
+): string {
+  const slotFromId = (() => {
+    if (!playerId) return null;
+    const dash = playerId.indexOf('-');
+    if (dash < 0) return null;
+    const suffix = playerId.slice(dash + 1).toUpperCase();
+    return suffix.startsWith(positionGroup) ? suffix : null;
+  })();
+  const slot = slotFromId
+    ?? (position && position.toUpperCase().startsWith(positionGroup) ? position.toUpperCase() : null)
+    ?? positionGroup;
+  return `${team} ${slot}`;
+}
+
 export async function recomputeUserExposure(
   userId: string,
   diagOut?: ExposureRecomputeDiag,
@@ -1359,7 +1381,7 @@ export async function recomputeUserExposure(
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
 
-  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
+  let active: Array<{ _leagueId?: string; roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
     const url = `${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`;
     if (diagOut) diagOut.url = url;
@@ -1399,17 +1421,9 @@ export async function recomputeUserExposure(
       // "KC-QB"). Parse the slot from there. Fall back to `position` if
       // playerId is missing for any reason, then to just the position
       // group (so the row still aggregates somewhere on legacy data).
-      const slotFromId = (() => {
-        if (!p.playerId) return null;
-        const dash = p.playerId.indexOf('-');
-        if (dash < 0) return null;
-        const suffix = p.playerId.slice(dash + 1).toUpperCase();
-        return suffix.startsWith(positionGroup) ? suffix : null;
-      })();
-      const slot = slotFromId
-        ?? (p.position && p.position.toUpperCase().startsWith(positionGroup) ? p.position.toUpperCase() : null)
-        ?? positionGroup;
-      const teamPosition = `${p.team} ${slot}`;
+      const teamPosition = exposureSlotKey(p.team, positionGroup, p.playerId, p.position);
+      // slot is the key minus the "TEAM " prefix (team has no spaces).
+      const slot = teamPosition.slice(p.team.length + 1);
       const prev = counts.get(teamPosition);
       counts.set(teamPosition, {
         team: p.team,
@@ -1442,6 +1456,47 @@ export async function recomputeUserExposure(
     return null;
   }
 
+  // ── Actual pick numbers ("where did I actually draft this") ─────────────
+  // draftToken/all doesn't carry the pick number, so pull each draft's
+  // per-player state — the same `/draft/{id}/playerState/{wallet}` endpoint
+  // the draft-room roster uses (playerStateInfo.pickNum) — and average the
+  // overall pick per team-position. Best-effort: any draft whose state can't
+  // be fetched is skipped, so avgPick simply stays unset for those rows.
+  const POS_GROUPS = ['QB', 'RB', 'WR', 'TE', 'DST'];
+  const pickAgg = new Map<string, { sum: number; n: number }>();
+  const leagueIds = Array.from(
+    new Set(active.map(t => t._leagueId).filter((id): id is string => !!id)),
+  );
+  await Promise.all(leagueIds.map(async (leagueId) => {
+    try {
+      const url = `${baseUrl}/draft/${encodeURIComponent(leagueId)}/playerState/${encodeURIComponent(lower)}`;
+      const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+      if (!res.ok) return;
+      const players = (await res.json()) as Array<{
+        playerStateInfo?: { team?: string; position?: string; playerId?: string; ownerAddress?: string; pickNum?: number };
+      }>;
+      if (!Array.isArray(players)) return;
+      for (const pl of players) {
+        const info = pl?.playerStateInfo;
+        if (!info?.team) continue;
+        // Only the user's own picks (others' ownerAddress / unowned "" are skipped).
+        if ((info.ownerAddress || '').toLowerCase() !== lower) continue;
+        const pickNum = Number(info.pickNum);
+        if (!Number.isFinite(pickNum) || pickNum <= 0) continue;
+        const group = (info.position || '').toUpperCase().replace(/[0-9]/g, '');
+        const positionGroup = POS_GROUPS.includes(group)
+          ? group
+          : POS_GROUPS.find(g => (info.playerId || '').toUpperCase().includes(`-${g}`));
+        if (!positionGroup) continue;
+        const key = exposureSlotKey(info.team, positionGroup, info.playerId, info.position);
+        const prev = pickAgg.get(key) || { sum: 0, n: 0 };
+        pickAgg.set(key, { sum: prev.sum + pickNum, n: prev.n + 1 });
+      }
+    } catch {
+      // best-effort; skip this draft's pick data
+    }
+  }));
+
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(lower);
   const exposureRef = userRef.collection('metadata').doc(EXPOSURE_DOC);
@@ -1454,6 +1509,8 @@ export async function recomputeUserExposure(
   const exposures: UserExposure['exposures'] = [];
   for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
     const prev = existingMap.get(teamPosition);
+    const pa = pickAgg.get(teamPosition);
+    const avgPick = pa && pa.n > 0 ? Math.round((pa.sum / pa.n) * 10) / 10 : prev?.avgPick;
     exposures.push({
       team,
       position,
@@ -1465,6 +1522,7 @@ export async function recomputeUserExposure(
       bye: prev?.bye,
       adp: prev?.adp,
       projectedPoints: prev?.projectedPoints,
+      avgPick,
     });
   }
   exposures.sort((a, b) => b.drafts - a.drafts);

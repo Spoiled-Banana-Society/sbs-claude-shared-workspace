@@ -486,6 +486,10 @@ export interface ExposureEntry {
   bye?: number;
   adp?: number;
   projectedPoints?: number;
+  /** Avg overall pick number we actually drafted this team-position at,
+   *  averaged across all our drafts (from each draft's playerState pickNum).
+   *  Undefined when pick data wasn't available. Pairs with `adp`. */
+  avgPick?: number;
 }
 
 export interface UserExposure {
