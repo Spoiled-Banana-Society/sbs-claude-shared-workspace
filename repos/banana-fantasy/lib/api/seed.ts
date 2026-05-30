@@ -289,6 +289,22 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    id: '11',
+    type: 'first-purchase',
+    title: 'First Purchase → BONUS SPINS',
+    description: 'Every 4 passes on your first buy = 1 spin',
+    ctaText: 'Buy Drafts',
+    ctaLink: '/buy-drafts',
+    backgroundColor: '#2a2a35',
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'First Purchase → BONUS SPINS',
+      explanation:
+        'Your very first draft-pass purchase earns bonus Banana Wheel spins — every 4 passes = 1 spin (buy 8 for 2, buy 12 for 3, and so on, no limit). One-time offer: it applies only to your first purchase, so buy them all in one transaction to lock in the most spins. After you buy, claim your spins right here. 🍌',
+    },
+  },
+  {
     id: '1',
     type: 'daily-drafts',
     title: '4 Drafts Daily → FREE SPIN',

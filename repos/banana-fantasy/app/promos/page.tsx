@@ -34,6 +34,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'add-to-home-screen': { accent: '#64748b', label: 'Install' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
+  'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked';
@@ -102,10 +103,11 @@ export default function PromosPage() {
     return filterAndSortVisiblePromos(promos, {
       isBB3Holder,
       newUserPromoClaimed,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       hasVisibleClaim,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper

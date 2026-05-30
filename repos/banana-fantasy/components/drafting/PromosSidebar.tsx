@@ -48,8 +48,13 @@ export function PromosSidebar({
           return (
             <div
               onClick={() => onSelectPromo(promo)}
-              className="rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
+              className="relative rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] hover:border-banana hover:shadow-[0_0_15px_rgba(251,191,36,0.3)] cursor-pointer transition-all flex flex-col"
             >
+              {promo.isNew && (
+                <span className="absolute top-2 right-2 px-2 py-0.5 bg-banana text-[#1d1d1f] text-[10px] font-bold rounded-full tracking-wide">
+                  NEW
+                </span>
+              )}
               <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight text-center">
                 {promo.title.includes('→') ? (
                   <>

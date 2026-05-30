@@ -137,13 +137,14 @@ export function useDraftingPageState() {
     return filterAndSortVisiblePromos(rawPromos, {
       isBB3Holder,
       newUserPromoClaimed,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
         return true;
       },
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [promoIndex, setPromoIndex] = useState(0);

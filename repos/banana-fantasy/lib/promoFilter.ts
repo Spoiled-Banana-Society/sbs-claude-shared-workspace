@@ -22,6 +22,7 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
+  'first-purchase', // "First Purchase → BONUS SPINS" — first box for everyone
   'new-user',
   'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
   'daily-drafts',  // "4 drafts daily"
@@ -49,6 +50,12 @@ interface FilterOpts {
   isBB3Holder?: boolean;
   newUserPromoClaimed?: boolean;
   /**
+   * True once the user has made their first paid purchase. The first-purchase
+   * promo is one-time: hide it once it's been used up (granted with nothing
+   * left to claim). Still shown while there are spins waiting to be claimed.
+   */
+  firstPurchaseBonusGranted?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -70,10 +77,15 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       if (opts.isBB3Holder) return false;
       if (opts.newUserPromoClaimed) return false;
     }
+    // First-purchase promo is one-time. Once the user has purchased AND has
+    // no spins left to claim, it's spent — hide it.
+    if (p.type === 'first-purchase') {
+      if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
+    }
     return true;
   });
 
-  return filtered.sort((a, b) => {
+  const sorted = filtered.sort((a, b) => {
     // 1. Claimable / actionable promos first — user can hit the button now.
     if (opts.hasVisibleClaim) {
       const aClaim = opts.hasVisibleClaim(a) ? 1 : 0;
@@ -91,4 +103,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     const bIdx = VISIBLE_PROMO_TYPES_ORDER.indexOf(b.type);
     return aIdx - bIdx;
   });
+
+  // The first-purchase promo shows a NEW badge only for new users; returning
+  // (BB3) players get the same box without the badge. Derived here so every
+  // surface (home carousel, drafting sidebar, /promos) stays in sync.
+  return sorted.map((p) =>
+    p.type === 'first-purchase' ? { ...p, isNew: !opts.isBB3Holder } : p,
+  );
 }

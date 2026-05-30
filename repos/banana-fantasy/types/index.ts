@@ -14,6 +14,15 @@ export interface User {
   jackpotEntries: number;
   hofEntries: number;
   cardPurchaseCount: number;
+  // First-purchase bonus (every 4 passes on the first PAID purchase = 1 spin).
+  // `firstPurchaseBonusGranted` is the durable "has made a first paid purchase"
+  // flag — set once and never reset (cardPurchaseCount resets after 6, so it
+  // can't be used for this). `pendingWheelWinnings` counts welcome-wheel free
+  // drafts won but not yet completed; when it hits 0 the new-user popup unlocks
+  // via `firstPurchasePromoUnlocked`. See lib/promoMath.ts.
+  firstPurchaseBonusGranted?: boolean;
+  pendingWheelWinnings?: number;
+  firstPurchasePromoUnlocked?: boolean;
   isVerified: boolean;
   referredBy?: string;
   createdAt: string;
@@ -279,7 +288,7 @@ export interface EligibilityStatus {
 }
 
 // Promo types
-export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share' | 'founder-draft';
+export type PromoType = 'daily-drafts' | 'pick-10' | 'referral' | 'jackpot' | 'hof' | 'mint' | 'new-user' | 'buy-bonus' | 'tweet-engagement' | 'add-to-home-screen' | 'spin-share' | 'founder-draft' | 'first-purchase';
 
 // Spin share (X share credit) types — currently wheel-only
 export type SpinShareType = 'wheel';

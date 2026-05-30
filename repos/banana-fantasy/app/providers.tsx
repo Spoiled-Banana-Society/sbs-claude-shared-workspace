@@ -22,6 +22,7 @@ import { setClientLogWallet } from '@/lib/clientLog';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
+import { FirstPurchasePromoModal } from '@/components/modals/FirstPurchasePromoModal';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -76,6 +77,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
+        {/* One-time first-purchase bonus popup for new (non-BB3) users,
+            after they finish their welcome-wheel winnings. */}
+        <FirstPurchasePromoModal />
         {!isDraftRoom && <SupportChatButton />}
       </div>
   );

@@ -155,6 +155,37 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       );
       return;
     }
+    case 'promo-first-purchase': {
+      const count = event.awardedCount ?? 1;
+      surfaces.showToast(
+        count === 1 ? 'First purchase bonus — free spin earned!' : `First purchase bonus — ${count} free spins earned!`,
+        '/promos',
+      );
+      surfaces.pushNotif(
+        'First purchase bonus!',
+        count === 1
+          ? 'Your first purchase earned a free spin — claim it now.'
+          : `Your first purchase earned ${count} free spins — claim them now.`,
+        '/promos',
+        `promo-first-purchase-${event.eventId}`,
+      );
+      return;
+    }
+    case 'first-purchase-unlocked': {
+      // The new-user finished their welcome-wheel winnings. Surface the
+      // first-purchase promo: a bell notification, and a CustomEvent the
+      // app-wide FirstPurchasePromoModal listens for to pop the modal.
+      surfaces.pushNotif(
+        'First Purchase Bonus 🍌',
+        'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
+        '/buy-drafts',
+        `first-purchase-unlocked-${event.eventId}`,
+      );
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sbs-first-purchase-unlocked'));
+      }
+      return;
+    }
     case 'referral-milestone': {
       // Friend identity is NOT in the event payload — it lives in
       // authenticated /api/promos. The toast/bell copy is intentionally

@@ -334,6 +334,14 @@ export async function POST(req: Request) {
       };
       if (draftPassCount > 0) {
         balanceUpdate.freeDrafts = currentFree + draftPassCount;
+        // First-purchase popup gate: track wheel-won free drafts the user must
+        // still FINISH before we surface the first-purchase promo. Only matters
+        // pre-purchase — skip once they've bought or already unlocked it. The
+        // counter is decremented on each free-draft completion (recordDraftCompletion).
+        if (!userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
+          const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
+          balanceUpdate.pendingWheelWinnings = currentPending + draftPassCount;
+        }
       }
       if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         balanceUpdate.jackpotEntries = currentJp + 1;
