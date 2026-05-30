@@ -289,10 +289,10 @@ export default function DraftingPage() {
           ) : null}
 
           {/* Mobile-only: the proof banner lives in the desktop sidebar
-              (hidden < lg), so surface it at the bottom of the main column
-              on small screens. */}
-          <div className="lg:hidden mt-8">
-            <BatchProofBanner />
+              (hidden < lg). On small screens surface it as a quiet footer
+              trust seal at the bottom of the main column — not a big card. */}
+          <div className="lg:hidden mt-10 mb-2">
+            <BatchProofBanner display="seal" />
           </div>
         </div>
 

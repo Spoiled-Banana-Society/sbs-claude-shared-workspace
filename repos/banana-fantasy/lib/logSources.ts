@@ -46,6 +46,18 @@ export const LOG_SOURCES = {
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
+    // Money paths: a draft pass was spent but the refund (on join-fail or leave)
+    // didn't land → user is down a pass with no trace. Critical.
+    LEAVE_REFUND_FAILED: 'draft.leave_refund_failed',
+    JOIN_REFUND_FAILED: 'draft.join_refund_failed',
+    // Leaving a draft failed server-side (Go still has the user in the league).
+    LEAVE_FAILED: 'draft.leave_failed',
+    // Queue / special-draft (jackpot/HOF) creation + fill pipeline.
+    QUEUE_CREATE_FAILED: 'draft.queue.create_draft_failed',
+    QUEUE_FILL_BOTS_FAILED: 'draft.queue.fill_bots_failed',
+    QUEUE_MINT_FAILED: 'draft.queue.mint_failed',
+    QUEUE_STATE_NOT_READY: 'draft.queue.state_not_ready',
+    QUEUE_POLL_FAILED: 'draft.queue_poll_failed',
     // The "Joining lobby" overlay → draft-room hand-off took abnormally long
     // (blank/flash between leaving /drafting and the lobby painting). Warning
     // severity (not critical) — cosmetic, recoverable — but visible in admin so
@@ -210,6 +222,9 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.pick_submit/i,
   /^draft\.autopick_submit/i,
   /^draft\.phase_check_failed/i,
+  /^draft\.leave_refund_failed/i,
+  /^draft\.join_refund_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
   // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
