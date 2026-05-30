@@ -1,4 +1,5 @@
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
     return json(data, 200);
   } catch (err) {
     console.error(`[draft-lookup] Error fetching ${type} for ${draftId}:`, err);
+    logger.error('draft.draft_lookup.unhandled', { err, context: { draftId, type } });
     return jsonError('Failed to fetch draft data', 500);
   }
 }

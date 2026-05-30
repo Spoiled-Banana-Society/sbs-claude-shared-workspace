@@ -23,8 +23,9 @@ import {
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
-import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
+import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -250,16 +251,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3b. Register the minted tokens into the Go API immediately, typed
-    //     `paid`, so they're usable for draft entry without depending on the
-    //     Alchemy webhook/reconcile. Best-effort — never roll back a paid mint.
-    void registerMintedTokens(userId, mintResult.tokenIds, 'paid').catch((e) =>
-      logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message }),
-    );
+    // 3b. Register the minted tokens into the Go engine as REAL spendable
+    //     tokens, typed `paid`. AWAITED — the draftPasses counter below is
+    //     recomputed from the resulting inventory, so it can only reflect
+    //     tokens that actually landed. Collision-proof on the engine side, so
+    //     reused ids no longer drop the token.
+    try {
+      await registerMintedTokens(userId, mintResult.tokenIds, 'paid');
+    } catch (e) {
+      logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message });
+    }
 
-    // 4. Atomic Firestore commit: counter + cardPurchaseCount + activity
-    //    event all written in ONE transaction. Activity feed and counter
-    //    can never disagree.
+    // 4. draftPasses is recounted from real inventory; cardPurchaseCount (a
+    //    purchase tally, not token-backed) still increments by 1 on a card
+    //    payment. Activity event written in the same recount transaction.
     let newDraftPasses: number | null = null;
     const activityInput = {
       type: 'pass_purchased' as const,
@@ -289,43 +294,23 @@ export async function POST(req: Request) {
     };
 
     if (isFirestoreConfigured()) {
-      const db = getAdminFirestore();
-      const userRef = db.collection(USERS_COLLECTION).doc(userId);
-      const activityDoc = await buildActivityEventDoc(activityInput);
-
       try {
-        newDraftPasses = await db.runTransaction(async (tx) => {
-          const snap = await tx.get(userRef);
-          const data = snap.exists ? (snap.data() ?? {}) : {};
-          const currentPasses = (data.draftPasses as number | undefined) ?? 0;
-          const currentCardCount = (data.cardPurchaseCount as number | undefined) ?? 0;
-          const nextPasses = Math.max(0, currentPasses) + quantity;
-          const nextCardCount =
-            paymentMethod === 'card' ? Math.max(0, currentCardCount) + 1 : currentCardCount;
-          tx.set(userRef, { draftPasses: nextPasses, cardPurchaseCount: nextCardCount }, { merge: true });
-          addActivityEventToTx(tx, activityDoc);
-          return nextPasses;
-        });
-      } catch (txErr) {
-        console.error('[card-mint] firestore transaction failed, falling back:', txErr);
-        try {
-          await userRef.set(
-            {
-              draftPasses: FieldValue.increment(quantity),
-              ...(paymentMethod === 'card' ? { cardPurchaseCount: FieldValue.increment(1) } : {}),
-            },
-            { merge: true },
-          );
-          const after = await userRef.get();
-          newDraftPasses = (after.data()?.draftPasses as number | undefined) ?? null;
-          await logActivityEvent({ ...activityInput, metadata: { ...activityInput.metadata, fallbackPath: true } });
-        } catch (incErr) {
-          console.error('[card-mint] atomic increment fallback also failed:', incErr);
-          logger.warn('card-mint.firestore_increment_failed', {
-            userId,
-            err: (incErr as Error).message,
-          });
+        // cardPurchaseCount is a purchase tally (not token-backed) — bump it
+        // by 1 on a card payment before the recount writes the counters.
+        if (paymentMethod === 'card') {
+          const db = getAdminFirestore();
+          await db
+            .collection(USERS_COLLECTION)
+            .doc(userId)
+            .set({ cardPurchaseCount: FieldValue.increment(1) }, { merge: true });
         }
+        const activityDoc = await buildActivityEventDoc(activityInput);
+        const counts = await recountFromInventory(userId, activityDoc);
+        newDraftPasses = counts.draftPasses;
+      } catch (recErr) {
+        console.error('[card-mint] recount failed, falling back to activity log:', recErr);
+        logger.warn('card-mint.recount_failed', { userId, err: (recErr as Error).message });
+        await logActivityEvent({ ...activityInput, metadata: { ...activityInput.metadata, fallbackPath: true } }).catch(() => {});
       }
     } else {
       await logActivityEvent(activityInput);

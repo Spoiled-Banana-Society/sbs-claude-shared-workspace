@@ -377,23 +377,13 @@ export async function getOwnerLeaguesFromDraftTokens(walletAddress: string): Pro
     return true;
   });
 
-  // Check draft completion status for each league via draft info API
-  const leagues = await Promise.all(
-    leagueTokens.map(async (token) => {
-      const league = mapDraftTokenToLeague(token);
-      // Check if the draft is actually complete (all 150 picks made)
-      try {
-        const { getDraftInfo } = await import('@/lib/draftApi');
-        const info = await getDraftInfo(token.leagueId);
-        league.status = info.pickNumber >= 150 ? 'completed' : 'active';
-      } catch {
-        // If draft info unavailable, fall back to roster-based detection
-      }
-      return league;
-    })
-  );
-
-  return leagues;
+  // Status (completed vs active) is derived from the roster already present
+  // on each token (mapDraftTokenToLeague: a full 15-pick roster = completed).
+  // We intentionally do NOT call getDraftInfo per league here — that was an
+  // N+1 (one extra API call per league, ~10 per page load) that Sentry flagged
+  // on /exposure, and it only re-derived the same completed/active answer the
+  // roster already gives us. One token fetch above is now the whole cost.
+  return leagueTokens.map(mapDraftTokenToLeague);
 }
 
 /**

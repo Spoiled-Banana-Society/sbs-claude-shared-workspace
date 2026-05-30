@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -31,9 +32,9 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'new-user':           { accent: '#ec4899', label: 'New User' },
   'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
-  'add-to-home-screen': { accent: '#64748b', label: 'Install' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
+  'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
 };
 
 type FilterKey = 'all' | 'claimable' | 'active' | 'locked';
@@ -102,10 +103,11 @@ export default function PromosPage() {
     return filterAndSortVisiblePromos(promos, {
       isBB3Holder,
       newUserPromoClaimed,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       hasVisibleClaim,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper
@@ -424,6 +426,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.title}
         </h3>
+        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}
         </p>

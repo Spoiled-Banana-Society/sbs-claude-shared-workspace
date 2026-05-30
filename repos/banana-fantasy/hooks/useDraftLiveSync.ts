@@ -82,6 +82,16 @@ export function useDraftLiveSync({
   const liveInitializedRef = useRef(false);
   const joinCalledRef = useRef(false);
   const liveRetryCountRef = useRef(0);
+  // How many times loadLiveData has waited because the draft simply hasn't
+  // STARTED yet (still filling/randomizing). These waits are NOT failures —
+  // a slow bot-filled draft can sit in filling for minutes — so they must not
+  // count toward liveRetryCountRef (the fall-to-local budget). Bounded only by
+  // a generous ceiling so a genuinely stuck draft still eventually surfaces.
+  const fillingWaitCountRef = useRef(0);
+  // Mirror of `phase` so the loadLiveData retry closure (which doesn't list
+  // phase in its deps) can read the CURRENT phase when deciding wait-vs-fail.
+  const phaseRef = useRef(phase);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   const loadLiveDataRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadLiveDataReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingWsMessagesRef = useRef<PendingWsMessage[]>([]);
@@ -290,7 +300,17 @@ export function useDraftLiveSync({
                   displayName: retryPayload.displayName,
                   team: retryPayload.team,
                   position: retryPayload.position,
-                }).catch(e => console.error('[Airplane] Retry failed:', e));
+                }).catch(e => {
+                  console.error('[Airplane] Retry failed:', e);
+                  // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
+                  reportClientError({
+                    source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+                    message: e instanceof Error ? e.message : String(e),
+                    route: 'draft-room',
+                    actor: walletParam,
+                    context: { draftId, playerId: retryPayload.playerId, retry: true },
+                  });
+                });
               }
             }
           }, 0);
@@ -582,10 +602,44 @@ export function useDraftLiveSync({
           }
         }
       } catch (err) {
+        setLiveLoading(false);
+
+        // ── Patient wait: the draft simply hasn't STARTED yet ──────────────
+        // "Required draft data not available yet" while the room is still
+        // filling/randomizing is NOT a failure — the backend has no draftOrder
+        // until the draft starts, and a slow bot-filled draft can sit filling
+        // for minutes. Keep polling patiently WITHOUT touching the
+        // fall-to-local budget (liveRetryCountRef). This is the fix for
+        // draft.live_load_exhausted_retries firing on slow-filling drafts: the
+        // old code burned its ~100s budget and dropped the user into local
+        // mode minutes before the (perfectly healthy) draft actually started.
+        const notStartedYet = err instanceof Error && err.message === 'Required draft data not available yet';
+        const stillFilling = phaseRef.current === 'filling' || phaseRef.current === 'pre-spin'
+          || phaseRef.current === 'countdown' || phaseRef.current === 'spinning' || phaseRef.current === 'result';
+        const MAX_FILLING_WAITS = 150; // ~150 × 4s ≈ 10 min — far beyond any real fill
+        if (notStartedYet && stillFilling && fillingWaitCountRef.current < MAX_FILLING_WAITS) {
+          fillingWaitCountRef.current += 1;
+          clientLog('liveload', 'waiting-for-draft-start', {
+            draftId, phase: phaseRef.current, waits: fillingWaitCountRef.current,
+          });
+          if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
+          if (loadLiveDataReadyTimeoutRef.current) clearTimeout(loadLiveDataReadyTimeoutRef.current);
+          loadLiveDataRetryTimeoutRef.current = setTimeout(() => {
+            liveInitializedRef.current = false;
+            setLiveDataReady(false);
+            loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
+              setLiveDataReady(true);
+              loadLiveDataReadyTimeoutRef.current = null;
+            }, 100);
+            loadLiveDataRetryTimeoutRef.current = null;
+          }, 4000);
+          return;
+        }
+        // ───────────────────────────────────────────────────────────────────
+
         const MAX_OUTER_RETRIES = 8;
         liveRetryCountRef.current += 1;
         console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
-        setLiveLoading(false);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
           logger.debug('[Draft Room] All retries exhausted — falling back to local mode');
@@ -594,7 +648,16 @@ export function useDraftLiveSync({
             message: err instanceof Error ? err.message : String(err),
             route: 'draft-room',
             actor: walletParam,
-            context: { draftId, attempts: liveRetryCountRef.current, maxRetries: MAX_OUTER_RETRIES },
+            context: {
+              draftId,
+              attempts: liveRetryCountRef.current,
+              maxRetries: MAX_OUTER_RETRIES,
+              phase: phaseRef.current,
+              fillingWaits: fillingWaitCountRef.current,
+              // If fillingWaits hit the ceiling, this draft was stuck FILLING for
+              // ~10min (real problem) rather than just genuinely-broken data.
+              stuckWhileFilling: fillingWaitCountRef.current >= 150,
+            },
             stack: err instanceof Error ? err.stack : undefined,
           });
           setFallbackLocal(true);
@@ -717,6 +780,7 @@ export function useDraftLiveSync({
       loadLiveDataReadyTimeoutRef.current = null;
     }
     liveRetryCountRef.current = 0;
+    fillingWaitCountRef.current = 0;
     liveInitializedRef.current = false;
     setLiveError(null);
     setLiveDataReady(false);

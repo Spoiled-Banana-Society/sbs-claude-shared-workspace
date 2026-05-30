@@ -596,6 +596,13 @@ export default function NftDetailPage() {
       refetchOffers();
     } catch (err) {
       console.error('[NFT Detail] Cancel offer failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.CANCEL_OFFER_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace-detail',
+        actor: walletAddress,
+        context: { tokenId, orderHash: offer.orderHash },
+      });
       setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offer');
     } finally {
       setCancellingOfferHash(null);

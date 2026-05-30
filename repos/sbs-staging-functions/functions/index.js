@@ -6,6 +6,8 @@ admin.initializeApp();
 
 const DRAFTS_API_URL = "https://sbs-drafts-api-staging-652484219017.us-central1.run.app";
 
+const { updateADP } = require("./updateADP");
+
 /**
  * Firestore trigger: watches v2_queues/{type} for changes.
  *
@@ -221,5 +223,24 @@ exports.onPickAdvance = functions
       console.error('[onPickAdvance] fetch failed', err);
     }
 
+    return null;
+  });
+
+/**
+ * scheduledUpdateADP — hourly Average Draft Position recompute.
+ *
+ * Staging port of prod's updateADPForPlayers. Reads completed (IsLocked) drafts
+ * from Firestore, averages each team-position's pick number, and writes the
+ * result into playerStats2024/playerMap. See updateADP.js.
+ *
+ * Prod config: { timeoutSeconds: 500, memory: "512MB" }, 'every 1 hours'.
+ */
+exports.scheduledUpdateADP = functions
+  .runWith({ timeoutSeconds: 500, memory: "512MB" })
+  .pubsub.schedule("every 60 minutes")
+  .timeZone("America/New_York")
+  .onRun(async () => {
+    const res = await updateADP({ db: admin.firestore() });
+    console.log("[scheduledUpdateADP] complete", JSON.stringify(res));
     return null;
   });

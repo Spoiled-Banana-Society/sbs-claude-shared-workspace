@@ -1,16 +1,15 @@
 export const dynamic = "force-dynamic";
-import { FieldValue } from 'firebase-admin/firestore';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
-import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
+import { recountFromInventory } from '@/lib/passLedger';
+import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
-const USERS_COLLECTION = 'v2_users';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
 /**
@@ -56,74 +55,40 @@ export async function POST(req: Request) {
     // 1. Real on-chain mint.
     const { txHash, tokenIds } = await reserveTokensToWallet({ to: userId, count: quantity });
 
-    // 1b. Register the freshly-minted tokens into the Go API immediately,
-    //     typed `paid`, so they're usable for draft entry without waiting on
-    //     the (staging-flaky) Alchemy webhook/reconcile. Best-effort — a
-    //     failure here must not roll back the on-chain mint.
-    void registerMintedTokens(userId, tokenIds, 'paid').catch((e) =>
-      logger.warn('staging-mint.register_go_api_failed', { userId, err: (e as Error).message }),
-    );
+    // 1b. Register the freshly-minted tokens into the Go engine as REAL
+    //     spendable tokens, typed `paid`. This is what makes the pass usable
+    //     for draft entry — with the engine's collision-proof registration it
+    //     no longer fails on reused ids. AWAITED (not fire-and-forget): the
+    //     counter below is recomputed from the resulting inventory, so the
+    //     header can only tick up by tokens that actually landed.
+    try {
+      await registerMintedTokens(userId, tokenIds, 'paid');
+    } catch (e) {
+      logger.warn('staging-mint.register_go_api_failed', { userId, err: (e as Error).message });
+    }
 
-    // 2. Atomic Firestore commit: the counter increment AND the activity
-    //    event are written in ONE Firestore transaction. Either both land
-    //    or neither does — the activity feed and the header counter can
-    //    never disagree about whether a mint happened.
-    //
-    //    Two-stage strategy:
-    //      (a) try the transactional path (counter floor + activity event).
-    //      (b) on transaction failure, fall back to atomic increment +
-    //          best-effort activity log so we never lose a successful mint.
+    // 2. Recount the counter from the engine's real spendable inventory and
+    //    write the activity event in the same transaction. draftPasses becomes
+    //    the actual count of paid tokens — never a blind +quantity that could
+    //    outrun what registered. Self-healing: if registration partially
+    //    failed, the number reflects reality instead of inventing passes.
     let newDraftPasses: number | null = null;
     if (isFirestoreConfigured()) {
-      const db = getAdminFirestore();
-      const userRef = db.collection(USERS_COLLECTION).doc(userId);
-
-      // Pre-build the activity event doc OUTSIDE the transaction (Firestore
-      // doesn't allow new reads after a write inside a transaction).
-      const activityDoc = await buildActivityEventDoc({
-        type: 'pass_purchased',
-        userId,
-        walletAddress: userId,
-        paymentMethod: 'free',
-        quantity,
-        tokenIds,
-        txHash,
-        metadata: { source: 'staging_mint_button', mintedOnChain: true },
-      });
-
       try {
-        newDraftPasses = await db.runTransaction(async (tx) => {
-          const snap = await tx.get(userRef);
-          const current = (snap.exists ? (snap.data()?.draftPasses as number | undefined) : undefined) ?? 0;
-          const next = Math.max(0, current) + quantity;
-          tx.set(userRef, { draftPasses: next }, { merge: true });
-          addActivityEventToTx(tx, activityDoc);
-          return next;
+        const activityDoc = await buildActivityEventDoc({
+          type: 'pass_purchased',
+          userId,
+          walletAddress: userId,
+          paymentMethod: 'free',
+          quantity,
+          tokenIds,
+          txHash,
+          metadata: { source: 'staging_mint_button', mintedOnChain: true },
         });
-      } catch (txErr) {
-        console.error('[staging-mint] firestore transaction failed, falling back:', txErr);
-        try {
-          await userRef.set({ draftPasses: FieldValue.increment(quantity) }, { merge: true });
-          const after = await userRef.get();
-          newDraftPasses = (after.data()?.draftPasses as number | undefined) ?? null;
-          // Best-effort activity log on the fallback path.
-          await logActivityEvent({
-            type: 'pass_purchased',
-            userId,
-            walletAddress: userId,
-            paymentMethod: 'free',
-            quantity,
-            tokenIds,
-            txHash,
-            metadata: { source: 'staging_mint_button', mintedOnChain: true, fallbackPath: true },
-          });
-        } catch (incErr) {
-          console.error('[staging-mint] atomic increment fallback also failed:', incErr);
-          logger.warn('staging-mint.firestore_increment_failed', {
-            userId,
-            err: (incErr as Error).message,
-          });
-        }
+        const counts = await recountFromInventory(userId, activityDoc);
+        newDraftPasses = counts.draftPasses;
+      } catch (recErr) {
+        logger.warn('staging-mint.recount_failed', { userId, err: (recErr as Error).message });
       }
     } else {
       // Firestore unavailable — log activity best-effort.

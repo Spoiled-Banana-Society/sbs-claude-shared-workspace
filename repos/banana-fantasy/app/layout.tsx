@@ -6,7 +6,6 @@ import GoogleAnalytics from './components/GoogleAnalytics';
 import { StagingBanner } from '@/components/StagingBanner';
 import { Footer } from '@/components/layout/Footer';
 // import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
-// import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 const SITE_URL = 'https://bananafantasy.com';
 const SITE_NAME = 'Banana Fantasy';
@@ -122,7 +121,6 @@ export default function RootLayout({
               <div className="flex-1">{children}</div>
               <Footer />
             </div>
-            {/* <PWAInstallPrompt /> */}
           </Providers>
         </StyledComponentsRegistry>
       </body>
