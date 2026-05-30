@@ -48,25 +48,6 @@ function exposureColor(pct: number): string {
   return '#64748b';
 }
 
-// Draft value vs ADP. Positive = you drafted them LATER than their current
-// ADP (a value/steal → green). Negative = you reached, taking them earlier
-// than ADP (→ red). Returns null when we lack a pick average or a real ADP.
-function adpValue(avgPick: number | undefined, adp: number | undefined): number | null {
-  if (avgPick == null || adp == null || adp >= 999) return null;
-  return avgPick - adp;
-}
-
-function adpValueColor(val: number): string {
-  if (val > 0) return '#4ade80'; // steal — green
-  if (val < 0) return '#f87171'; // reach — red
-  return '#94a3b8'; // exactly at ADP — neutral
-}
-
-function formatAdpValue(val: number): string {
-  // Leading + for positives; negatives carry their own minus sign.
-  return `${val > 0 ? '+' : ''}${val.toFixed(1)}`;
-}
-
 type SortField = 'exposure' | 'adp' | 'projected';
 
 // ─── Page ────────────────────────────────────────────────────────────────
@@ -250,7 +231,6 @@ export default function ExposurePage() {
   const selectedTP = selectedExposure
     ? getTeamPosition(selectedExposure.team, selectedExposure.position)
     : null;
-  const selectedAdpValue = adpValue(selectedExposure?.avgPick, selectedTP?.adp);
 
   // ── Render ────────────────────────────────────────────────────────────
 
@@ -409,16 +389,13 @@ export default function ExposurePage() {
         {filteredExposures.length > 0 ? (
           <div className="rounded-xl border border-white/[0.06] overflow-hidden">
             {/* Header */}
-            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_60px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
+            <div className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 bg-white/[0.03] border-b border-white/[0.06] text-[10px] uppercase tracking-wider text-white/30 font-medium">
               <div className="hidden sm:block">#</div>
               <div>Position</div>
               <div>Exposure</div>
               <div className="hidden sm:block text-right">Drafts</div>
               <div className="text-right">%</div>
               <div className="hidden sm:block text-right">ADP</div>
-              {/* Draft value: your average pick vs the position's current ADP.
-                  Green = drafted later than ADP (value), red = reached. */}
-              <div className="hidden sm:block text-right">vs ADP</div>
               <div className="hidden sm:block text-right">Proj</div>
               <div className="hidden sm:block text-right">Bye</div>
             </div>
@@ -426,12 +403,11 @@ export default function ExposurePage() {
             {/* Rows */}
             {filteredExposures.map((e, idx) => {
               const bye = teamByeWeeks[e.team] || '—';
-              const val = adpValue(e.avgPick, e.adp);
               return (
                 <div
                   key={e.teamPosition}
                   onClick={() => setSelectedExposure(e)}
-                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_60px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
+                  className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
                 >
                   <span className="hidden sm:block text-white/30 text-xs">{idx + 1}</span>
                   <div className="flex items-center">
@@ -457,11 +433,6 @@ export default function ExposurePage() {
                     {e.exposure}%
                   </span>
                   <span className="hidden sm:block text-white/50 text-xs text-right">{e.adp < 999 ? e.adp : '—'}</span>
-                  <span className="hidden sm:block text-xs text-right font-semibold">
-                    {val == null
-                      ? <span className="text-white/25">—</span>
-                      : <span style={{ color: adpValueColor(val) }}>{formatAdpValue(val)}</span>}
-                  </span>
                   <span className="hidden sm:block text-white/50 text-xs text-right">{e.projected > 0 ? e.projected.toFixed(1) : '—'}</span>
                   <span className="hidden sm:block text-white/30 text-xs text-right">{bye}</span>
                 </div>
@@ -706,12 +677,6 @@ export default function ExposurePage() {
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">ADP</p>
                 <p className="text-white font-bold">{selectedTP?.adp ?? '—'}</p>
-                {/* Your avg pick vs this ADP — green if you got value, red if you reached. */}
-                {selectedAdpValue != null && (
-                  <p className="text-[10px] font-semibold mt-0.5" style={{ color: adpValueColor(selectedAdpValue) }}>
-                    {formatAdpValue(selectedAdpValue)} vs ADP
-                  </p>
-                )}
               </div>
               <div className="bg-white/[0.04] rounded-lg px-3 py-2 text-center">
                 <p className="text-white/40 text-[10px] uppercase tracking-wider">Bye</p>

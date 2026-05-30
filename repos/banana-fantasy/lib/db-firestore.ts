@@ -1359,7 +1359,7 @@ export async function recomputeUserExposure(
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
 
-  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string; pickNum?: number }> | undefined> }> = [];
+  let active: Array<{ roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
     const url = `${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`;
     if (diagOut) diagOut.url = url;
@@ -1385,14 +1385,10 @@ export async function recomputeUserExposure(
     return null;
   }
 
-  // `pickSum`/`pickCount` accumulate the user's draft pick numbers per slot so
-  // we can report an average pick (→ value vs ADP on the Exposure page). They
-  // only count picks that actually carry a pickNum; a slot drafted before the
-  // backend started emitting pickNum simply gets no avgPick.
-  const counts = new Map<string, { team: string; position: string; drafts: number; displayName?: string; pickSum: number; pickCount: number }>();
+  const counts = new Map<string, { team: string; position: string; drafts: number; displayName?: string }>();
   let totalDrafts = 0;
 
-  const recordSlot = (positionGroup: 'QB' | 'RB' | 'WR' | 'TE' | 'DST', players: Array<{ team?: string; playerId?: string; position?: string; displayName?: string; pickNum?: number }> | undefined): boolean => {
+  const recordSlot = (positionGroup: 'QB' | 'RB' | 'WR' | 'TE' | 'DST', players: Array<{ team?: string; playerId?: string; position?: string; displayName?: string }> | undefined): boolean => {
     if (!players?.length) return false;
     let any = false;
     players.forEach((p) => {
@@ -1415,14 +1411,11 @@ export async function recomputeUserExposure(
         ?? positionGroup;
       const teamPosition = `${p.team} ${slot}`;
       const prev = counts.get(teamPosition);
-      const hasPick = typeof p.pickNum === 'number' && p.pickNum > 0;
       counts.set(teamPosition, {
         team: p.team,
         position: slot,
         drafts: (prev?.drafts ?? 0) + 1,
         displayName: prev?.displayName ?? p.displayName,
-        pickSum: (prev?.pickSum ?? 0) + (hasPick ? p.pickNum! : 0),
-        pickCount: (prev?.pickCount ?? 0) + (hasPick ? 1 : 0),
       });
       any = true;
     });
@@ -1459,7 +1452,7 @@ export async function recomputeUserExposure(
   const username = userSnap.exists ? ((userSnap.data() as User).username || '') : (existing?.username || '');
 
   const exposures: UserExposure['exposures'] = [];
-  for (const [teamPosition, { team, position, drafts, displayName, pickSum, pickCount }] of counts.entries()) {
+  for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
     const prev = existingMap.get(teamPosition);
     exposures.push({
       team,
@@ -1472,10 +1465,6 @@ export async function recomputeUserExposure(
       bye: prev?.bye,
       adp: prev?.adp,
       projectedPoints: prev?.projectedPoints,
-      // Average pick across drafts where we have a pickNum; fall back to the
-      // prior value so a recompute over older (pickless) rosters doesn't wipe
-      // an avg we computed earlier. stripUndefined drops it when never set.
-      avgPick: pickCount > 0 ? Math.round((pickSum / pickCount) * 10) / 10 : prev?.avgPick,
     });
   }
   exposures.sort((a, b) => b.drafts - a.drafts);

@@ -9,12 +9,6 @@ export interface ExposureEntry {
   bye?: number;
   adp?: number;
   projectedPoints?: number;
-  /** Average overall pick the user spent on this team-slot across their
-   *  drafts (1-based). Computed server-side in recomputeUserExposure from
-   *  the Go API's per-player pickNum, keyed by the same slot the exposure
-   *  row uses. The Exposure page diffs this against the slot's current ADP
-   *  to show draft value (+/− vs ADP). Undefined when no pick data exists. */
-  avgPick?: number;
 }
 
 export interface UserExposure {
