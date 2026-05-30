@@ -463,19 +463,25 @@ export default function ExposurePage() {
                     {e.exposure}%
                   </span>
                   <span className="hidden sm:block text-white/50 text-xs text-right">{e.adp < 999 ? e.adp : '—'}</span>
-                  {/* Actual avg pick + how it compares to ADP (green = value, red = reach) */}
+                  {/* Actual avg pick + how it compares to ADP. green = value
+                      (drafted later than ADP), red = reach (earlier), muted
+                      "even" = right on ADP. Plain "—" = no pick data at all. */}
                   <span className="hidden sm:block text-xs text-right tabular-nums whitespace-nowrap">
                     {e.avgPick !== undefined ? (
                       <>
                         <span className="text-white/70">{e.avgPick.toFixed(1)}</span>
-                        {e.vsAdp !== undefined && e.vsAdp !== 0 && (
-                          <span
-                            className="ml-1 font-semibold"
-                            style={{ color: e.vsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
-                            title={e.vsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
-                          >
-                            {e.vsAdp > 0 ? '+' : ''}{e.vsAdp}
-                          </span>
+                        {e.vsAdp !== undefined && (
+                          e.vsAdp === 0 ? (
+                            <span className="ml-1 text-[10px] text-white/30" title="Drafted right at ADP">even</span>
+                          ) : (
+                            <span
+                              className="ml-1 font-semibold"
+                              style={{ color: e.vsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
+                              title={e.vsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
+                            >
+                              {e.vsAdp > 0 ? '+' : ''}{e.vsAdp}
+                            </span>
+                          )
                         )}
                       </>
                     ) : (
@@ -731,14 +737,18 @@ export default function ExposurePage() {
                 {selectedAvgPick !== null ? (
                   <p className="text-white font-bold">
                     {selectedAvgPick.toFixed(1)}
-                    {selectedVsAdp !== null && selectedVsAdp !== 0 && (
-                      <span
-                        className="ml-1 text-xs font-semibold"
-                        style={{ color: selectedVsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
-                        title={selectedVsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
-                      >
-                        {selectedVsAdp > 0 ? '+' : ''}{selectedVsAdp}
-                      </span>
+                    {selectedVsAdp !== null && (
+                      selectedVsAdp === 0 ? (
+                        <span className="ml-1 text-xs text-white/30" title="Drafted right at ADP">even</span>
+                      ) : (
+                        <span
+                          className="ml-1 text-xs font-semibold"
+                          style={{ color: selectedVsAdp > 0 ? '#4ade80' : '#ff6b6b' }}
+                          title={selectedVsAdp > 0 ? 'Drafted later than ADP (value)' : 'Drafted earlier than ADP (reach)'}
+                        >
+                          {selectedVsAdp > 0 ? '+' : ''}{selectedVsAdp}
+                        </span>
+                      )
                     )}
                   </p>
                 ) : (
