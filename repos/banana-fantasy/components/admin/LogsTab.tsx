@@ -657,15 +657,50 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const handleExport = async () => {
-    if (!rep.sessionId || exporting) return;
-    setExporting(true);
-    setExportError(null);
+    if (exporting) return;
+    // With a client session → export the full session trace (breadcrumbs).
+    if (rep.sessionId) {
+      setExporting(true);
+      setExportError(null);
+      try {
+        await exportSession(rep.sessionId);
+      } catch (err) {
+        setExportError((err as Error).message || 'Export failed');
+      } finally {
+        setExporting(false);
+      }
+      return;
+    }
+    // No session (e.g. a backend error) → export the error record itself so
+    // the dev still gets everything we know: message, stack, route, context,
+    // counts. Client-side blob download, no API needed.
     try {
-      await exportSession(rep.sessionId);
+      const record = {
+        source: rep.source, area, severity,
+        message: rep.message,
+        route: rep.route ?? null,
+        actor: rep.actor ?? null,
+        requestId: rep.requestId ?? null,
+        stack: rep.stack ?? null,
+        context: rep.context ?? null,
+        occurrences: count,
+        countLast24h: group.countLast24h,
+        countLast7d: group.countLast7d,
+        firstSeen: new Date(group.firstTs).toISOString(),
+        lastSeen: rep.timestamp,
+        note: 'No client session attached (backend/server-side error) — no breadcrumb trace available.',
+      };
+      const blob = new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sbs-error-${rep.source.replace(/[^a-z0-9._-]/gi, '_')}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (err) {
       setExportError((err as Error).message || 'Export failed');
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -731,6 +766,7 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
         >
           {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Fix'}
         </button>
+<<<<<<< Updated upstream
         {rep.sessionId && (
           <button
             onClick={handleExport}
@@ -741,6 +777,18 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
             {exporting ? '…' : '⬇ Export'}
           </button>
         )}
+=======
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          title={rep.sessionId
+            ? 'Export this error + full session trace as JSON (for the dev)'
+            : 'Export this error record as JSON (backend error — no session trace available)'}
+          className="px-2 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+        >
+          {exporting ? '…' : '⬇ Export'}
+        </button>
+>>>>>>> Stashed changes
         <button onClick={onToggle} title={isOpen ? 'Collapse' : 'Expand'} className="text-gray-500 hover:text-white text-xs px-1 py-1">
           {isOpen ? '▾' : '▸'}
         </button>
@@ -795,16 +843,16 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
             >
               {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Mark fixed'}
             </button>
-            {rep.sessionId && (
-              <button
-                onClick={handleExport}
-                disabled={exporting}
-                className="px-2.5 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50"
-                title="Download this error + the user's full session trace as a JSON file to hand to a developer"
-              >
-                {exporting ? 'Exporting…' : '⬇ Export trace for dev'}
-              </button>
-            )}
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="px-2.5 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50"
+              title={rep.sessionId
+                ? "Download this error + the user's full session trace as a JSON file to hand to a developer"
+                : 'Download this error record as JSON (backend error — no session trace available)'}
+            >
+              {exporting ? 'Exporting…' : rep.sessionId ? '⬇ Export trace for dev' : '⬇ Export for dev'}
+            </button>
             {exportError && <span className="text-[11px] text-red-300">{exportError}</span>}
           </div>
         </div>
