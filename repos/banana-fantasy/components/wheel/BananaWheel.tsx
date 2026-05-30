@@ -242,8 +242,8 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       localStorage.setItem(PENDING_SPIN_KEY, JSON.stringify(pending));
     } catch { /* ignore */ }
 
-    // Start spinning tick sounds
-    const stopSpinSound = startSpinSound();
+    // Start the spin build — pass the real spin length so it climaxes on the stop
+    const stopSpinSound = startSpinSound(SPIN_DURATION_MS);
 
     // Verify the Merkle proof now (before the result modal shows) so the
     // "Verified ✓" badge can render alongside the prize. Pure crypto in
