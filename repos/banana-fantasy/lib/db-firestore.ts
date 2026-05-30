@@ -1777,13 +1777,16 @@ const FIRST_PURCHASE_PROMO_ID = '11';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
- * New-user first-purchase popup gate. A wheel-won FREE draft just completed —
- * count it down. When the user finishes the LAST of their wheel winnings the
- * first-purchase promo unlocks (popup + notification). Idempotent per draftId
- * (deduped on the first-purchase promo's completedDraftIds) and a no-op once
- * the user has purchased, already unlocked, or never had winnings to finish.
+ * New-user first-purchase popup gate. A wheel-won draft just completed — count
+ * it down. Runs for EVERY completion regardless of pass type: pre-purchase, a
+ * user's only drafts are their wheel winnings (free drafts, plus jackpot/HOF
+ * entries), so all of them must finish before the popup appears. When the LAST
+ * one finishes the first-purchase promo unlocks (popup + notification).
+ * Idempotent per draftId (deduped on the first-purchase promo's
+ * completedDraftIds) and a no-op once the user has purchased, already unlocked,
+ * or never had winnings to finish — so it never fires for existing buyers.
  */
-async function _recordFreeDraftForFirstPurchaseGate(userId: string, draftId: string): Promise<void> {
+async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId: string): Promise<void> {
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(FIRST_PURCHASE_PROMO_ID);
@@ -1825,15 +1828,19 @@ async function _recordFreeDraftForFirstPurchaseGate(userId: string, draftId: str
 }
 
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
-  // Only PAID drafts count toward promos. A draft entered with a FREE pass
-  // earns zero promo credit (free passes are join-only). Server-enforced so it
-  // holds even if the client mis-gates (the URL passType is deleted post-join).
+  // First-purchase popup gate runs for EVERY completion (free, jackpot, HOF or
+  // paid). Pre-purchase, a user's drafts are all wheel winnings to count down;
+  // post-purchase it's a guarded no-op. Kept separate from — and ahead of — the
+  // paid-only daily-drafts credit below, so existing promo wiring is untouched.
+  await _recordWinningsDraftForFirstPurchaseGate(userId, draftId).catch((err) =>
+    logger.warn('promo.first_purchase_gate_failed', { userId, draftId, err: (err as Error).message }),
+  );
+
+  // Only PAID drafts count toward daily-drafts. A draft entered with a FREE
+  // pass earns zero daily-drafts credit (free passes are join-only).
+  // Server-enforced so it holds even if the client mis-gates (the URL passType
+  // is deleted post-join).
   if (passType === 'free') {
-    // Free drafts ARE the welcome-wheel winnings, though — count them toward
-    // the new-user first-purchase popup gate before bailing on promo credit.
-    await _recordFreeDraftForFirstPurchaseGate(userId, draftId).catch((err) =>
-      logger.warn('promo.first_purchase_gate_failed', { userId, draftId, err: (err as Error).message }),
-    );
     return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
   }
   const db = getAdminFirestore();

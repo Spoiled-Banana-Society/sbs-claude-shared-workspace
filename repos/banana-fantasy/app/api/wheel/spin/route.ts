@@ -332,21 +332,26 @@ export async function POST(req: Request) {
       const balanceUpdate: Record<string, number> = {
         wheelSpins: Math.max(0, currentSpins - 1),
       };
+      // Tally every wheel winning (free drafts + jackpot/HOF entries) the user
+      // must still FINISH before we surface the first-purchase promo popup.
+      let winningsWon = 0;
       if (draftPassCount > 0) {
         balanceUpdate.freeDrafts = currentFree + draftPassCount;
-        // First-purchase popup gate: track wheel-won free drafts the user must
-        // still FINISH before we surface the first-purchase promo. Only matters
-        // pre-purchase — skip once they've bought or already unlocked it. The
-        // counter is decremented on each free-draft completion (recordDraftCompletion).
-        if (!userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
-          const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
-          balanceUpdate.pendingWheelWinnings = currentPending + draftPassCount;
-        }
+        winningsWon += draftPassCount;
       }
       if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         balanceUpdate.jackpotEntries = currentJp + 1;
+        winningsWon += 1;
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         balanceUpdate.hofEntries = currentHof + 1;
+        winningsWon += 1;
+      }
+      // First-purchase popup gate counter. Only matters pre-purchase — skip
+      // once they've bought or already unlocked it. Decremented as each won
+      // draft completes (recordDraftCompletion → the winnings gate).
+      if (winningsWon > 0 && !userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
+        const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
+        balanceUpdate.pendingWheelWinnings = currentPending + winningsWon;
       }
       tx.set(userRef, balanceUpdate, { merge: true });
 

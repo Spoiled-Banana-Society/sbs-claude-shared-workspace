@@ -6,6 +6,7 @@ import { formatUnits, type Address } from 'viem';
 import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
+import { firstPurchaseUpsell } from '@/lib/promoMath';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
@@ -94,6 +95,10 @@ export function BuyPassesModal({
 
   const { pricePerPass } = draftPassPricing;
   const totalPrice = quantity * pricePerPass;
+  // First-purchase bonus nudge — only on a user's first paid purchase (new OR
+  // returning). Disappears once firstPurchaseBonusGranted flips true.
+  const firstPurchaseEligible = !!user && !user.firstPurchaseBonusGranted;
+  const upsell = firstPurchaseUpsell(quantity);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
   const quantityOptions = [1, 5, 10, 20, 30, 40];
   const isProcessing =
@@ -564,6 +569,33 @@ export function BuyPassesModal({
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
+
+              {/* First-purchase bonus nudge — first paid purchase only. Updates
+                  live with the selected quantity (4 passes = 1 free spin). */}
+              {firstPurchaseEligible && quantity > 0 && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-banana/30 bg-banana/10 px-3 py-2">
+                  <span className="text-base leading-none mt-0.5">🍌</span>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {upsell.spinsThisPurchase > 0 ? (
+                      <>
+                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        you&apos;ll earn{' '}
+                        <span className="font-semibold text-banana">
+                          {upsell.spinsThisPurchase} free spin{upsell.spinsThisPurchase !== 1 ? 's' : ''}
+                        </span>
+                        ! Add {upsell.passesToNextSpin} more (total {upsell.nextSpinTotal}) for {upsell.spinsThisPurchase + 1}.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        add{' '}
+                        <span className="font-semibold text-banana">{upsell.passesToNextSpin} more</span>{' '}
+                        (total {upsell.nextSpinTotal}) to earn a free spin 🎡
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Payment Method */}

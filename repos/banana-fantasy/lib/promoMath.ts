@@ -37,6 +37,29 @@ export function computeFirstPurchaseGrant(
   return { consume: true, spins: firstPurchaseSpins(quantity) };
 }
 
+export interface FirstPurchaseUpsell {
+  /** Spins this quantity earns right now (floor(qty / 4)). */
+  spinsThisPurchase: number;
+  /** How many MORE passes to reach the next spin (1..4). */
+  passesToNextSpin: number;
+  /** Total quantity at which the next spin lands (qty + passesToNextSpin). */
+  nextSpinTotal: number;
+}
+
+/**
+ * Drives the first-purchase mint-time nudge ("buy X more for a total of N to
+ * earn a spin"). Pure so the message math is unit-tested. At a multiple of 4
+ * the user just earned a spin and the next is a full 4 away.
+ */
+export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
+  const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;
+  const spinsThisPurchase = Math.floor(q / FIRST_PURCHASE_PASSES_PER_SPIN);
+  const remainder = q % FIRST_PURCHASE_PASSES_PER_SPIN;
+  const passesToNextSpin =
+    remainder === 0 ? FIRST_PURCHASE_PASSES_PER_SPIN : FIRST_PURCHASE_PASSES_PER_SPIN - remainder;
+  return { spinsThisPurchase, passesToNextSpin, nextSpinTotal: q + passesToNextSpin };
+}
+
 export interface MintProgress {
   progressCurrent: number;
   milestonesEarned: number;

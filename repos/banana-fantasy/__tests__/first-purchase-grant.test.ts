@@ -4,6 +4,7 @@ import {
   firstPurchaseSpins,
   computeFirstPurchaseGrant,
   computeMintProgress,
+  firstPurchaseUpsell,
 } from '@/lib/promoMath';
 
 describe('First-purchase bonus math', () => {
@@ -65,6 +66,48 @@ describe('First-purchase bonus math', () => {
       const mint = computeMintProgress(0, 10, qty);
       expect(firstPurchase.spins).toBe(1); // 6 → 1 first-purchase spin
       expect(mint.progressCurrent).toBe(6); // AND Buy-10 shows 6/10
+    });
+  });
+
+  describe('firstPurchaseUpsell (mint-time nudge)', () => {
+    it('buying 1 → need 3 more for the first spin (total 4)', () => {
+      expect(firstPurchaseUpsell(1)).toEqual({
+        spinsThisPurchase: 0,
+        passesToNextSpin: 3,
+        nextSpinTotal: 4,
+      });
+    });
+
+    it('buying 5 → 1 spin now, 3 more for the next (total 8)', () => {
+      expect(firstPurchaseUpsell(5)).toEqual({
+        spinsThisPurchase: 1,
+        passesToNextSpin: 3,
+        nextSpinTotal: 8,
+      });
+    });
+
+    it('buying 10 → 2 spins now, 2 more for the next (total 12)', () => {
+      expect(firstPurchaseUpsell(10)).toEqual({
+        spinsThisPurchase: 2,
+        passesToNextSpin: 2,
+        nextSpinTotal: 12,
+      });
+    });
+
+    it('on a multiple of 4 the next spin is a full 4 away', () => {
+      expect(firstPurchaseUpsell(8)).toEqual({
+        spinsThisPurchase: 2,
+        passesToNextSpin: 4,
+        nextSpinTotal: 12,
+      });
+    });
+
+    it('quantity 0 → buy 4 for the first spin', () => {
+      expect(firstPurchaseUpsell(0)).toEqual({
+        spinsThisPurchase: 0,
+        passesToNextSpin: 4,
+        nextSpinTotal: 4,
+      });
     });
   });
 });

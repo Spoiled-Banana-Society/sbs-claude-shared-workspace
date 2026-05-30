@@ -951,7 +951,12 @@ export function useDraftingPageState() {
           const draftOwnedByUser = draft.liveWalletAddress
             && draft.liveWalletAddress.toLowerCase() === currentWallet;
 
-          if (isFull && user?.id && isPaid && draftOwnedByUser) {
+          // Fire draft-complete for EVERY pass type (not just paid). The
+          // server credits paid drafts to daily-drafts as before, and routes
+          // free/jackpot/HOF drafts to the first-purchase popup gate only —
+          // existing promo logic is unchanged (the free branch earns no
+          // daily-drafts credit). pick10 stays paid-only below.
+          if (isFull && user?.id && draftOwnedByUser) {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
               localStorage.setItem(trackedKey, '1');
@@ -962,7 +967,7 @@ export function useDraftingPageState() {
               }).catch(() => {});
             }
 
-            if (info.draftOrder && draft.liveWalletAddress) {
+            if (isPaid && info.draftOrder && draft.liveWalletAddress) {
               const userIdx = info.draftOrder.findIndex(
                 (e: { ownerId: string }) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
               );

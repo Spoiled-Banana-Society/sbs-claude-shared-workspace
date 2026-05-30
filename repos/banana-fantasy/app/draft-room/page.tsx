@@ -1655,7 +1655,12 @@ function DraftRoomContent() {
 
     const id = draftId || urlDraftId;
     const promoUserId = user?.id || walletParam?.toLowerCase();
-    if (id && promoUserId && isPaidDraft) {
+    // Fire draft-complete for EVERY pass type (not just paid). The server
+    // credits paid drafts to daily-drafts as before, and routes free/jackpot/
+    // HOF drafts to the first-purchase popup gate only — existing promo logic
+    // is unchanged (the free branch earns no daily-drafts credit). The pick10
+    // call below stays paid-only.
+    if (id && promoUserId) {
       const trackedKey = `promo-tracked:${id}`;
       if (!localStorage.getItem(trackedKey)) {
         localStorage.setItem(trackedKey, '1');
