@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { requireAdmin } from '@/lib/adminAuth';
 import { ApiError } from '@/lib/api/errors';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,7 +71,9 @@ export async function POST(req: Request) {
         const result = await res.json();
         pushRecipients = result.recipients ?? 0;
       } else {
-        console.error('[pwa-raffle-notify] OneSignal error:', res.status, await res.text());
+        const body = await res.text().catch(() => '');
+        console.error('[pwa-raffle-notify] OneSignal error:', res.status, body);
+        logger.error(LOG_SOURCES.promo.RAFFLE_NOTIFY_FAILED, { context: { status: res.status, body: body.slice(0, 300) } });
       }
     }
 
@@ -80,6 +84,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     console.error('[pwa-raffle-notify]', err);
+    logger.error(LOG_SOURCES.promo.RAFFLE_NOTIFY_FAILED, { err });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }

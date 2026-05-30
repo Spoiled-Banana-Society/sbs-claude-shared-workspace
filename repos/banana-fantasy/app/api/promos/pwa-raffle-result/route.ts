@@ -2,6 +2,8 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateSeed, seededRandomFloat } from '@/lib/rng';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,6 +120,7 @@ export async function GET(req: Request) {
     }, 200);
   } catch (err) {
     console.error('[pwa-raffle-result GET]', err);
+    logger.error(LOG_SOURCES.promo.RAFFLE_RESULT_FAILED, { err });
     return jsonError('Internal Server Error', 500);
   }
 }

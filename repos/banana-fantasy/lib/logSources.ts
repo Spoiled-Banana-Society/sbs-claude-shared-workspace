@@ -94,6 +94,14 @@ export const LOG_SOURCES = {
     CLAIM_FAILED: 'promo.claim.failed',
     JP_REVEAL_FAILED: 'promo.jp_reveal_failed',
     TWEET_VERIFY_FAILED: 'promo.tweet_verify_failed',
+    // Promo credit at risk — founder-draft join not recorded. Critical.
+    FOUNDER_DRAFT_FAILED: 'promo.founder_draft.failed',
+    // PWA raffle: a draw/award lost (critical) or a notify send failed (warn).
+    RAFFLE_RESULT_FAILED: 'promo.raffle.result_failed',
+    RAFFLE_NOTIFY_FAILED: 'promo.raffle.notify_failed',
+    // Draft-complete promo crediting + the exposure recompute it triggers.
+    DRAFT_COMPLETE_FAILED: 'promo.draft_complete.failed',
+    EXPOSURE_RECOMPUTE_FAILED: 'promo.exposure_recompute_failed',
   },
   marketplace: {
     BUY_EXECUTION_FAILED: 'marketplace.buy_execution_failed',
@@ -225,6 +233,8 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.leave_refund_failed/i,
   /^draft\.join_refund_failed/i,
   /^draft\.queue\.create_draft_failed/i,
+  /^promo\.founder_draft\.failed/i,
+  /^promo\.raffle\.result_failed/i,
   // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
