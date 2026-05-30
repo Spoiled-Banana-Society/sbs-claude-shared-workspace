@@ -16,6 +16,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
@@ -384,13 +385,15 @@ export async function POST(req: Request) {
             txHash: mintTxHash,
             reason: `wheel_spin:${spinId}`,
           });
-          // Register into the Go API immediately, typed `free`, so the won
-          // pass is usable for draft entry without waiting on the Alchemy
-          // webhook. recordPassOrigins above is what makes reconcile (and this)
-          // treat it as free; here we register the exact token ids directly.
-          await registerMintedTokens(userId, mintedTokenIds, 'free').catch((e) =>
-            logger.warn('wheel.spin.register_go_api_failed', { spinId, userId, err: (e as Error).message }),
-          );
+          // Register into the Go engine as REAL spendable free tokens, typed
+          // `free`. Collision-proof on the engine side. The freeDrafts counter
+          // is recounted from inventory below, so it ends up reflecting what
+          // actually registered rather than the optimistic spin-tx credit.
+          try {
+            await registerMintedTokens(userId, mintedTokenIds, 'free');
+          } catch (e) {
+            logger.warn('wheel.spin.register_go_api_failed', { spinId, userId, err: (e as Error).message });
+          }
           logger.info('wheel.spin.mint_ok', { spinId, userId, count: draftPassCount, txHash: mintTxHash, tokenIds: mintedTokenIds });
         } catch (mintErr) {
           logger.error('wheel.spin.mint_failed', { spinId, userId, count: draftPassCount, err: mintErr });
@@ -407,6 +410,18 @@ export async function POST(req: Request) {
           } catch (logErr) {
             logger.error('wheel.spin.failed_mint_record_error', { spinId, err: logErr });
           }
+        }
+      }
+
+      // Reconcile freeDrafts to the wallet's REAL spendable inventory now the
+      // mint + registration have settled. The spin tx credited freeDrafts
+      // optimistically for instant feedback; this corrects it to the truth — a
+      // failed mint has its phantom credit removed, a successful one confirmed.
+      if (draftPassCount > 0) {
+        try {
+          await recountFromInventory(userId);
+        } catch (e) {
+          logger.warn('wheel.spin.recount_failed', { spinId, userId, err: (e as Error).message });
         }
       }
 
