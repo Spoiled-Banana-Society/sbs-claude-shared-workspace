@@ -1,8 +1,8 @@
 // Web Audio API sound for the Banana Wheel — fully procedural (no audio files).
-// Vibe: electronic hip-hop / trap. A head-nod beat with 808 sub-bass, rolling
-// hi-hats, snare on the 3, and dark sparse bells. Starts the instant the wheel
-// moves; the big four (jackpot / HOF / 10 / 20) explode into a longer, crazier
-// triumphant-trap outro built straight off the same beat.
+// Vibe: fast, hype festival EDM. Constant building risers + a sidechain "pump"
+// + big supersaw so every spin feels like you're about to drop. Starts the
+// instant the wheel moves; the big four (jackpot / HOF / 10 / 20) explode into
+// a longer, crazier festival DROP built off the same track.
 
 let audioCtx: AudioContext | null = null;
 
@@ -18,16 +18,16 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
-// Mastering chain — compressor glues the layers + tames the 808/clipping.
+// Mastering chain — compressor glues the layers + stops clipping.
 function masterChain(ctx: AudioContext): GainNode {
   const out = ctx.createGain();
   out.gain.value = 0.95;
   const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -12;
+  comp.threshold.value = -11;
   comp.knee.value = 26;
   comp.ratio.value = 14;
   comp.attack.value = 0.003;
-  comp.release.value = 0.16;
+  comp.release.value = 0.14;
   out.connect(comp);
   comp.connect(ctx.destination);
   return out;
@@ -55,39 +55,22 @@ function playTone(frequency: number, duration: number, volume = 0.15, type: Osci
   osc.stop(ctx.currentTime + duration);
 }
 
-// Tight punchy transient — layered on top of the 808 for attack.
-function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.9) {
+// Punchy four-on-the-floor kick.
+function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 1.0) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(190, at);
-  osc.frequency.exponentialRampToValueAtTime(55, at + 0.05);
+  osc.frequency.setValueAtTime(180, at);
+  osc.frequency.exponentialRampToValueAtTime(48, at + 0.09);
   gain.gain.setValueAtTime(vol, at);
-  gain.gain.exponentialRampToValueAtTime(0.001, at + 0.09);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + 0.15);
   osc.connect(gain);
   gain.connect(dest);
   osc.start(at);
-  osc.stop(at + 0.1);
+  osc.stop(at + 0.16);
 }
 
-// 808 — the boomy sub-bass that defines trap. Click → drops to a ringing
-// sustained sub note. `freq` is the note (Hz); it rings for `dur`.
-function eight08(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.8) {
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = 'sine';
-  o.frequency.setValueAtTime(freq * 3, at);          // attack click
-  o.frequency.exponentialRampToValueAtTime(freq, at + 0.045); // glide down to the sub
-  g.gain.setValueAtTime(vol, at);
-  g.gain.exponentialRampToValueAtTime(vol * 0.72, at + 0.08); // punch → sustain
-  g.gain.exponentialRampToValueAtTime(0.001, at + dur);       // ring out
-  o.connect(g);
-  g.connect(dest);
-  o.start(at);
-  o.stop(at + dur + 0.02);
-}
-
-// Noise burst — hi-hats / crashes.
+// Noise burst — hi-hats / open hats / crashes / build snares.
 function noiseHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.4, dur = 0.5, hp = 1200) {
   const src = ctx.createBufferSource();
   src.buffer = noiseBuffer(ctx, dur + 0.05);
@@ -104,51 +87,16 @@ function noiseHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.4, dur
   src.stop(at + dur + 0.05);
 }
 
-// Trap snare/clap: noise crack + a short tonal body.
-function snareHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.22) {
-  noiseHit(ctx, dest, at, vol, 0.18, 1400);
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(190, at);
-  o.frequency.exponentialRampToValueAtTime(140, at + 0.1);
-  g.gain.setValueAtTime(vol * 0.6, at);
-  g.gain.exponentialRampToValueAtTime(0.001, at + 0.12);
-  o.connect(g);
-  g.connect(dest);
-  o.start(at);
-  o.stop(at + 0.13);
+// Clap/snare crack for the backbeat.
+function clap(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.22) {
+  noiseHit(ctx, dest, at, vol, 0.16, 1600);
 }
 
-// Dark bell / pluck — the sparse melodic element (triangle + a soft harmonic).
-function bellHit(ctx: AudioContext, dest: AudioNode, at: number, freq: number, vol = 0.09, dur = 0.45) {
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = 'triangle';
-  o.frequency.value = freq;
-  g.gain.setValueAtTime(vol, at);
-  g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
-  o.connect(g);
-  g.connect(dest);
-  o.start(at);
-  o.stop(at + dur + 0.02);
-  const o2 = ctx.createOscillator();
-  const g2 = ctx.createGain();
-  o2.type = 'sine';
-  o2.frequency.value = freq * 2;
-  g2.gain.setValueAtTime(vol * 0.35, at);
-  g2.gain.exponentialRampToValueAtTime(0.0008, at + dur * 0.7);
-  o2.connect(g2);
-  g2.connect(dest);
-  o2.start(at);
-  o2.stop(at + dur * 0.7 + 0.02);
-}
-
-// Detuned-saw chord stab — used sparingly as a bright accent in the big outro.
-function stab(ctx: AudioContext, dest: AudioNode, freqs: number[], at: number, dur: number, vol: number, cutoffEnd = 6500) {
+// Detuned-saw chord stab (supersaw) through an opening lowpass = festival lead.
+function stab(ctx: AudioContext, dest: AudioNode, freqs: number[], at: number, dur: number, vol: number, cutoffEnd = 7000) {
   const lp = ctx.createBiquadFilter();
   lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(600, at);
+  lp.frequency.setValueAtTime(700, at);
   lp.frequency.exponentialRampToValueAtTime(cutoffEnd, at + 0.1);
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, at);
@@ -156,7 +104,7 @@ function stab(ctx: AudioContext, dest: AudioNode, freqs: number[], at: number, d
   lp.connect(g);
   g.connect(dest);
   for (const f of freqs) {
-    for (const det of [-7, 0, 7]) {
+    for (const det of [-8, 0, 8]) {
       const o = ctx.createOscillator();
       o.type = 'sawtooth';
       o.frequency.value = f * Math.pow(2, det / 1200);
@@ -167,22 +115,48 @@ function stab(ctx: AudioContext, dest: AudioNode, freqs: number[], at: number, d
   }
 }
 
-// Quick noise whoosh into an impact — front of every win sting.
-function riser(ctx: AudioContext, dest: AudioNode, at: number, dur: number, vol: number) {
+// Rolling EDM offbeat bass through a lowpass.
+function bassNote(ctx: AudioContext, dest: AudioNode, at: number, freq: number, vol = 0.5) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  const lp = ctx.createBiquadFilter();
+  o.type = 'sawtooth';
+  o.frequency.value = freq;
+  lp.type = 'lowpass';
+  lp.frequency.value = 500;
+  g.gain.setValueAtTime(vol, at);
+  g.gain.exponentialRampToValueAtTime(0.001, at + 0.16);
+  o.connect(lp); lp.connect(g); g.connect(dest);
+  o.start(at); o.stop(at + 0.18);
+}
+
+// THE RISER — white-noise sweep + pitch-rising saw that build tension. Routed
+// to the pump bus so it breathes with the beat. This is the "so pumped" energy.
+function riserSweep(ctx: AudioContext, dest: AudioNode, at: number, dur: number, vol = 0.16) {
   const src = ctx.createBufferSource();
-  src.buffer = noiseBuffer(ctx, dur + 0.05);
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.setValueAtTime(400, at);
-  hp.frequency.exponentialRampToValueAtTime(8000, at + dur);
+  src.buffer = noiseBuffer(ctx, dur + 0.1);
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 1.1;
+  bp.frequency.setValueAtTime(500, at);
+  bp.frequency.exponentialRampToValueAtTime(7000, at + dur);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(vol, at + dur);
-  src.connect(hp);
-  hp.connect(g);
-  g.connect(dest);
-  src.start(at);
-  src.stop(at + dur + 0.05);
+  g.gain.linearRampToValueAtTime(0.0001, at + dur + 0.06);
+  src.connect(bp); bp.connect(g); g.connect(dest);
+  src.start(at); src.stop(at + dur + 0.12);
+
+  const o = ctx.createOscillator();
+  const og = ctx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(220, at);
+  o.frequency.exponentialRampToValueAtTime(1760, at + dur);
+  og.gain.setValueAtTime(0.0001, at);
+  og.gain.exponentialRampToValueAtTime(vol * 0.5, at + dur);
+  og.gain.linearRampToValueAtTime(0.0001, at + dur + 0.06);
+  o.connect(og); og.connect(dest);
+  o.start(at); o.stop(at + dur + 0.12);
 }
 
 // Sub-bass boom drop.
@@ -191,7 +165,7 @@ function boom(ctx: AudioContext, dest: AudioNode, at: number, vol: number, start
   const gain = ctx.createGain();
   osc.type = 'sine';
   osc.frequency.setValueAtTime(startFreq, at);
-  osc.frequency.exponentialRampToValueAtTime(38, at + 0.45);
+  osc.frequency.exponentialRampToValueAtTime(40, at + 0.45);
   gain.gain.setValueAtTime(vol, at);
   gain.gain.exponentialRampToValueAtTime(0.001, at + 0.6);
   osc.connect(gain);
@@ -204,90 +178,116 @@ export function playTick(pitch = 800) {
   playTone(pitch, 0.05, 0.08, 'square');
 }
 
-// Dark trap loop: A1 i-i-VI-VII (Am) 808 roots, A-minor-pentatonic bells.
-const TRAP_ROOTS = [55.00, 55.00, 43.65, 49.00]; // A1 A1 F1 G1 (per bar)
-const BELL_MOTIF = [440.0, 523.3, 659.3, 523.3, 587.3, 440.0, 392.0, 523.3]; // A-min pent
-// Ascending climb for the triumphant big-win outro.
-const OUTRO_CLIMB = [440.0, 523.3, 587.3, 659.3, 784.0, 880.0, 1046.5, 1174.7, 1318.5];
+// Anthemic progression (C–G–Am–F) — bright and hype.
+const EDM_CHORDS = [
+  { bass: 65.41, notes: [261.6, 329.6, 392.0] }, // C
+  { bass: 49.00, notes: [196.0, 246.9, 293.7] }, // G
+  { bass: 55.00, notes: [220.0, 261.6, 329.6] }, // Am
+  { bass: 43.65, notes: [174.6, 220.0, 261.6] }, // F
+];
+// Ascending lead for the big-win festival drop.
+const DROP_LEAD = [523.3, 587.3, 659.3, 784.0, 880.0, 1046.5, 880.0, 784.0, 1046.5, 1174.7, 1318.5];
 
-const TRAP_16TH = 0.135; // seconds per 16th note (~111 BPM feel, brisk trap hats)
+const EDM_BPM = 156;
+const EDM_BEAT = 60 / EDM_BPM;
+const EDM_16TH = EDM_BEAT / 4;
 
-// The big-four celebration: triumphant trap built off the same beat — driving
-// 808s, accelerating hat rolls, climbing bells, snare rolls and bright accents.
-// Runs ON TOP of the still-playing groove so it "goes crazy and stays longer".
+// A sidechain "pump": duck the bus to 0.3 on the kick, recover over the beat.
+function pumpDuck(node: AudioParam, at: number, beat: number) {
+  node.cancelScheduledValues(at);
+  node.setValueAtTime(0.32, at);
+  node.linearRampToValueAtTime(1.0, at + beat * 0.9);
+}
+
+// The big-four FESTIVAL DROP — a quick riser into a pumping supersaw anthem
+// climbing over big kicks + crashes. Built off the same EDM track so it lands
+// as a "drop". Runs ON TOP of the still-playing groove and stays long.
 function launchBigOutro(ctx: AudioContext, dest: AudioNode, tier: WinTier, startAt: number) {
   const huge = tier === 'legendary';
+  const pump = ctx.createGain();
+  pump.gain.value = 1;
+  pump.connect(dest);
+
+  // riser builds INTO the drop (startAt is scheduled ~0.5s ahead by finish()).
+  riserSweep(ctx, pump, startAt - 0.45, 0.45, 0.24);
+  noiseHit(ctx, dest, startAt, 0.34, 0.6, 1800); // crash on the drop
+
   const bars = huge ? 3 : 2;
-  const barLen = TRAP_16TH * 16;
-  const roots = [55.0, 49.0, 43.65]; // A1 G1 F1 climb-down 808s
-  let climbIdx = 0;
+  const barLen = EDM_16TH * 16;
+  const roots = [65.41, 49.0, 55.0]; // C G Am
+  let leadIdx = 0;
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
     const root = roots[bar % roots.length];
-    // driving 808s
-    eight08(ctx, dest, t, root * 2, TRAP_16TH * 6, 0.9);
-    eight08(ctx, dest, t + TRAP_16TH * 6, root * 2, TRAP_16TH * 3, 0.6);
-    eight08(ctx, dest, t + TRAP_16TH * 10, root * 3, TRAP_16TH * 5, 0.65);
-    kick(ctx, dest, t, 0.95);
-    kick(ctx, dest, t + TRAP_16TH * 8, 0.75);
-    snareHit(ctx, dest, t + TRAP_16TH * 8, 0.26);
-    noiseHit(ctx, dest, t, 0.18, 0.5, 2400); // crash on the bar
-    // accelerating hat roll across the bar (more rolls each bar = building)
-    const rolls = 16 + bar * 8;
-    for (let i = 0; i < rolls; i++) {
-      noiseHit(ctx, dest, t + (i / rolls) * barLen, 0.04 + 0.06 * (i / rolls), 0.022, 9000);
+    for (let beatN = 0; beatN < 4; beatN++) {
+      const bt = t + beatN * EDM_BEAT;
+      kick(ctx, dest, bt, 1.0);
+      pumpDuck(pump.gain, bt, EDM_BEAT);
+      bassNote(ctx, pump, bt + EDM_BEAT / 2, root * 2, 0.5); // offbeat bass
+      noiseHit(ctx, dest, bt + EDM_BEAT / 2, 0.12, 0.06, 6500); // open hat
     }
-    // climbing bells (the triumphant melody)
-    for (let k = 0; k < 4; k++) {
-      const f = OUTRO_CLIMB[Math.min(climbIdx++, OUTRO_CLIMB.length - 1)];
-      bellHit(ctx, dest, t + k * TRAP_16TH * 4, f, 0.12, 0.5);
+    clap(ctx, dest, t + EDM_BEAT, 0.26);
+    clap(ctx, dest, t + EDM_BEAT * 3, 0.26);
+    // climbing supersaw lead — two notes per beat
+    for (let k = 0; k < 8; k++) {
+      const f = DROP_LEAD[Math.min(leadIdx++, DROP_LEAD.length - 1)];
+      stab(ctx, pump, [f, f * 1.5], t + k * (barLen / 8), barLen / 8 * 1.6, 0.13, 8000);
     }
-    // one bright stab accent per bar
-    stab(ctx, dest, [OUTRO_CLIMB[(bar * 2) % OUTRO_CLIMB.length]], t, TRAP_16TH * 6, 0.08, 6500);
   }
-  // huge final hit
   const fin = startAt + bars * barLen;
-  eight08(ctx, dest, fin, 110, 1.3, 0.95);
+  kick(ctx, dest, fin, 1.0);
   boom(ctx, dest, fin, huge ? 0.6 : 0.45, 220);
-  noiseHit(ctx, dest, fin, 0.3, 0.9, 1100);
-  bellHit(ctx, dest, fin, 1568.0, 0.14, 1.0);
-  bellHit(ctx, dest, fin, 2093.0, 0.1, 1.0);
+  noiseHit(ctx, dest, fin, 0.34, 0.9, 1100);
+  stab(ctx, pump, [523.3, 659.3, 784.0, 1046.5], fin, 1.4, 0.2, 9000);
 }
 
-// The spin groove: a head-nod trap beat that starts AUDIBLE the instant the
-// wheel moves, loops for any spin length, and on finish(tier) plays a tier-aware
-// outro — short fade for small wins, the long crazy celebration for the big four.
+// The spin groove: fast, pumping festival EDM with constant building risers.
+// Starts AUDIBLE the instant the wheel moves; loops for any spin length; on
+// finish(tier) plays the tier-aware outro (quick fade vs. the long festival drop).
 function startGroove(): (tier?: WinTier) => void {
   const ctx = getAudioContext();
   const master = masterChain(ctx);
   const t0 = ctx.currentTime;
   master.gain.setValueAtTime(0.0001, t0);
-  master.gain.exponentialRampToValueAtTime(0.95, t0 + 0.06); // ~instant on
+  master.gain.exponentialRampToValueAtTime(0.95, t0 + 0.05);
 
-  const sx = TRAP_16TH;
+  // Sidechain pump bus — melodic layers route here and breathe with the kick.
+  const pump = ctx.createGain();
+  pump.gain.value = 1;
+  pump.connect(master);
+
+  const sx = EDM_16TH;
 
   const scheduleStep = (s: number, t: number) => {
-    const bar = Math.floor(s / 16) % 4;
-    const root = TRAP_ROOTS[bar];
+    const chord = EDM_CHORDS[Math.floor(s / 16) % EDM_CHORDS.length];
     const b = s % 16;
 
-    // 808 + punch transient on syncopated positions
-    if (b === 0) { kick(ctx, master, t, 0.95); eight08(ctx, master, t, root * 2, sx * 7, 0.85); }
-    if (b === 6) { kick(ctx, master, t, 0.6); eight08(ctx, master, t, root * 2, sx * 3, 0.55); }
-    if (b === 10) { eight08(ctx, master, t, root * 3, sx * 4, 0.55); }
+    if (b % 4 === 0) { kick(ctx, master, t, 1.0); pumpDuck(pump.gain, t, EDM_BEAT); } // four-on-floor + pump
+    if (b === 4 || b === 12) clap(ctx, master, t, 0.22);                              // backbeat
+    // hats: open hat on the offbeat (the "tss" energy), closed on the 16ths
+    if (b % 4 === 2) noiseHit(ctx, master, t, 0.13, 0.07, 6500);
+    else noiseHit(ctx, master, t, b % 2 === 0 ? 0.06 : 0.04, 0.025, 9000);
+    // offbeat rolling bass
+    if (b % 4 === 2) bassNote(ctx, pump, t, chord.bass * 2);
+    if (b === 0) bassNote(ctx, pump, t, chord.bass * 2, 0.4);
+    // big supersaw chord stab on the downbeat (pumped)
+    if (b === 0) stab(ctx, pump, chord.notes, t, EDM_BEAT * 1.7, 0.13, 6000);
+    if (b === 8) stab(ctx, pump, chord.notes, t, EDM_BEAT * 0.9, 0.1, 5400);
+    // fast bright arp every 16th (pumped)
+    const note = chord.notes[s % chord.notes.length] * 2;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sawtooth';
+    o.frequency.value = note;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + sx * 0.9);
+    o.connect(g); g.connect(pump);
+    o.start(t); o.stop(t + sx);
 
-    // snare on beat 3 (the trap backbeat)
-    if (b === 8) snareHit(ctx, master, t, 0.2);
-
-    // rolling hi-hats every 16th, accented; rolls into the bar + a mid triplet
-    noiseHit(ctx, master, t, b % 4 === 0 ? 0.11 : b % 2 === 0 ? 0.08 : 0.045, 0.028, 8500);
-    if (b === 7) { noiseHit(ctx, master, t + sx / 3, 0.05, 0.022, 9000); noiseHit(ctx, master, t + (2 * sx) / 3, 0.05, 0.022, 9000); }
-    if (b === 14 || b === 15) noiseHit(ctx, master, t + sx / 2, 0.06, 0.022, 9000);
-
-    // sparse dark bell melody
-    if (b === 0) bellHit(ctx, master, t, BELL_MOTIF[(bar * 2) % BELL_MOTIF.length]);
-    if (b === 6) bellHit(ctx, master, t, BELL_MOTIF[(bar * 2 + 1) % BELL_MOTIF.length]);
-    if (b === 11) bellHit(ctx, master, t, BELL_MOTIF[(bar + 4) % BELL_MOTIF.length], 0.06, 0.3);
+    // a building riser sweeps up every 2 bars (continuous "about to drop" feel)
+    if (s % 32 === 0) riserSweep(ctx, pump, t, EDM_BEAT * 7.5, 0.14);
+    // crash accent every 4 bars
+    if (s % 64 === 0) noiseHit(ctx, master, t, 0.2, 0.5, 2200);
   };
 
   let step = 0;
@@ -301,7 +301,7 @@ function startGroove(): (tier?: WinTier) => void {
       step += 1;
       nextTime += sx;
     }
-  }, 35);
+  }, 30);
 
   let outroStarted = false;
   return (tier?: WinTier) => {
@@ -309,8 +309,8 @@ function startGroove(): (tier?: WinTier) => void {
     outroStarted = true;
     const now = ctx.currentTime;
     const big = tier === 'great' || tier === 'legendary';
-    const tail = tier === 'legendary' ? 6.6 : tier === 'great' ? 4.5 : tier === 'good' ? 2.4 : 1.7;
-    if (big) launchBigOutro(ctx, master, tier, now + 0.15);
+    const tail = tier === 'legendary' ? 6.9 : tier === 'great' ? 4.9 : tier === 'good' ? 2.3 : 1.6;
+    if (big) launchBigOutro(ctx, master, tier, now + 0.5); // 0.5s riser lead-in
     try {
       master.gain.cancelScheduledValues(now);
       master.gain.setValueAtTime(master.gain.value, now);
@@ -322,7 +322,6 @@ function startGroove(): (tier?: WinTier) => void {
 }
 
 // Public: start the spin soundbed the moment the wheel starts moving.
-// Returns finish(tier) — call it when the wheel lands so the outro matches.
 export function startSpinSound(): (tier?: WinTier) => void {
   try {
     return startGroove();
@@ -331,7 +330,7 @@ export function startSpinSound(): (tier?: WinTier) => void {
   }
 }
 
-// Win stings — the payoff. Punchy across the board; even a basic 1-draft pops.
+// Win stings — a riser into a drop, scaled by tier. Even a basic 1-draft pops.
 export function playWinSound(tier: WinTier) {
   try {
     const ctx = getAudioContext();
@@ -339,38 +338,41 @@ export function playWinSound(tier: WinTier) {
     const now = ctx.currentTime;
 
     const sparkleRun = (freqs: number[], stepMs: number, vol: number) => {
-      freqs.forEach((f, i) => setTimeout(() => bellHit(ctx, master, getAudioContext().currentTime, f, vol, 0.4), i * stepMs));
+      freqs.forEach((f, i) => setTimeout(() => {
+        playTone(f, 0.35, vol, 'triangle', master);
+        playTone(f * 1.5, 0.35, vol * 0.4, 'sine', master);
+      }, i * stepMs));
     };
 
     switch (tier) {
       case 'standard': {
-        riser(ctx, master, now, 0.16, 0.1);
-        boom(ctx, master, now + 0.14, 0.32, 130);
-        bellHit(ctx, master, now + 0.14, 880, 0.12, 0.4);
-        setTimeout(() => bellHit(ctx, master, getAudioContext().currentTime, 1318.5, 0.1, 0.4), 150);
+        riserSweep(ctx, master, now, 0.18, 0.14);
+        boom(ctx, master, now + 0.18, 0.32, 140);
+        stab(ctx, master, [392.0, 523.3, 659.3], now + 0.18, 0.4, 0.16, 7000);
         break;
       }
       case 'good': {
-        riser(ctx, master, now, 0.2, 0.14);
-        boom(ctx, master, now + 0.18, 0.45, 160);
-        noiseHit(ctx, master, now + 0.18, 0.2, 0.35, 3500);
-        sparkleRun([659.3, 880.0, 1046.5], 110, 0.13);
+        riserSweep(ctx, master, now, 0.24, 0.18);
+        boom(ctx, master, now + 0.24, 0.45, 170);
+        noiseHit(ctx, master, now + 0.24, 0.24, 0.4, 2000);
+        stab(ctx, master, [392.0, 523.3, 659.3], now + 0.24, 0.5, 0.18, 7500);
+        sparkleRun([659.3, 880.0, 1046.5], 100, 0.12);
         break;
       }
       case 'great': {
-        riser(ctx, master, now, 0.24, 0.18);
-        boom(ctx, master, now + 0.22, 0.55, 190);
-        noiseHit(ctx, master, now + 0.22, 0.3, 0.5, 1400);
-        stab(ctx, master, [523.3, 659.3, 784.0], now + 0.24, 0.5, 0.16, 7000);
-        sparkleRun([523.3, 659.3, 784.0, 1046.5, 1318.5], 90, 0.14);
+        riserSweep(ctx, master, now, 0.3, 0.2);
+        boom(ctx, master, now + 0.3, 0.55, 200);
+        noiseHit(ctx, master, now + 0.3, 0.34, 0.6, 1300);
+        stab(ctx, master, [523.3, 659.3, 784.0], now + 0.32, 0.6, 0.2, 8000);
+        sparkleRun([523.3, 659.3, 784.0, 1046.5, 1318.5], 85, 0.14);
         break;
       }
       case 'legendary': {
-        riser(ctx, master, now, 0.28, 0.22);
-        boom(ctx, master, now + 0.26, 0.7, 220);
-        noiseHit(ctx, master, now + 0.26, 0.4, 0.7, 1000);
-        stab(ctx, master, [523.3, 659.3, 784.0, 1046.5], now + 0.28, 0.7, 0.18, 8500);
-        sparkleRun([523.3, 659.3, 784.0, 1046.5, 1318.5, 1568.0, 2093.0], 80, 0.14);
+        riserSweep(ctx, master, now, 0.36, 0.24);
+        boom(ctx, master, now + 0.36, 0.7, 230);
+        noiseHit(ctx, master, now + 0.36, 0.42, 0.8, 1000);
+        stab(ctx, master, [523.3, 659.3, 784.0, 1046.5], now + 0.38, 0.8, 0.22, 9000);
+        sparkleRun([523.3, 659.3, 784.0, 1046.5, 1318.5, 1568.0, 2093.0], 78, 0.15);
         break;
       }
     }
