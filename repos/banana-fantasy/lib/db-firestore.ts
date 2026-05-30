@@ -33,6 +33,7 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { pushStreamEvent } from '@/lib/userEventStream';
+import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -852,8 +853,14 @@ async function _incrementMintPromosInTx(
   tx: FirebaseFirestore.Transaction,
   userRef: FirebaseFirestore.DocumentReference,
   quantity: number,
-): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number }> {
+  opts: { handleFirstPurchase?: boolean } = {},
+): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number }> {
+  // READS FIRST — Firestore requires every read before any write in a tx.
   const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
+  // Only the wrapper-driven paid paths (card-mint / staging-mint) handle the
+  // first-purchase bonus; the legacy verifyPurchase path writes userRef itself
+  // and opts out to avoid a double-write to the user doc.
+  const userSnap = opts.handleFirstPurchase ? await tx.get(userRef) : null;
 
   let mintMilestonesEarned = 0;
   const mintPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'mint');
@@ -861,17 +868,37 @@ async function _incrementMintPromosInTx(
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
     mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
     const max = mintPromo.progressMax || 10;
-    const current = mintPromo.progressCurrent || 0;
-    const newTotal = current + quantity;
-    const newlyEarned = Math.floor(newTotal / max);
-    const remainder = newTotal % max;
-    mintPromo.progressCurrent = (newlyEarned > 0 && remainder === 0) ? max : remainder;
-    if (newlyEarned > 0) {
-      mintPromo.claimCount = (mintPromo.claimCount || 0) + newlyEarned;
+    const { progressCurrent, milestonesEarned } = computeMintProgress(mintPromo.progressCurrent || 0, max, quantity);
+    mintPromo.progressCurrent = progressCurrent;
+    if (milestonesEarned > 0) {
+      mintPromo.claimCount = (mintPromo.claimCount || 0) + milestonesEarned;
       recalcPromoClaimable(mintPromo);
-      mintMilestonesEarned = newlyEarned;
+      mintMilestonesEarned = milestonesEarned;
     }
     tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
+  }
+
+  // First-purchase bonus: every 4 passes on the user's FIRST paid purchase = 1
+  // spin. One-time — the durable `firstPurchaseBonusGranted` flag gates it (so
+  // retries can't double-grant). Runs in the SAME tx as the mint promo above,
+  // so a single purchase advances both atomically (interconnection).
+  let firstPurchaseSpinsEarned = 0;
+  if (opts.handleFirstPurchase && userSnap) {
+    const userData = userSnap.data() as User | undefined;
+    const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity);
+    if (grant.consume) {
+      tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });
+      if (grant.spins > 0) {
+        const fpDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'first-purchase');
+        if (fpDoc) {
+          const fpPromo = deepClone(fpDoc.data() as Promo);
+          fpPromo.claimCount = (fpPromo.claimCount || 0) + grant.spins;
+          recalcPromoClaimable(fpPromo);
+          tx.set(fpDoc.ref, stripUndefined(fpPromo), { merge: true });
+          firstPurchaseSpinsEarned = grant.spins;
+        }
+      }
+    }
   }
 
   let buyBonusMilestonesEarned = 0;
@@ -892,7 +919,7 @@ async function _incrementMintPromosInTx(
     tx.set(buyBonusDoc.ref, stripUndefined(buyBonusPromo), { merge: true });
   }
 
-  return { mintMilestonesEarned, buyBonusMilestonesEarned };
+  return { mintMilestonesEarned, buyBonusMilestonesEarned, firstPurchaseSpinsEarned };
 }
 
 /**
@@ -904,12 +931,19 @@ async function _incrementMintPromosInTx(
 export async function incrementMintPromos(
   userId: string,
   quantity: number,
-): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number }> {
-  if (quantity <= 0) return { mintMilestonesEarned: 0, buyBonusMilestonesEarned: 0 };
+): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number }> {
+  if (quantity <= 0) return { mintMilestonesEarned: 0, buyBonusMilestonesEarned: 0, firstPurchaseSpinsEarned: 0 };
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
-  const result = await db.runTransaction((tx) => _incrementMintPromosInTx(tx, userRef, quantity));
+  const result = await db.runTransaction((tx) => _incrementMintPromosInTx(tx, userRef, quantity, { handleFirstPurchase: true }));
+  // Post-commit push: first-purchase bonus spins earned (one-time). Lets the
+  // client toast "earned N free spins — claim now" and refresh the promo.
+  if (result.firstPurchaseSpinsEarned > 0) {
+    void pushStreamEvent(userId, 'promo-first-purchase', {
+      awardedCount: result.firstPurchaseSpinsEarned,
+    });
+  }
   // Post-commit push. Fires once per actual milestone earned (Buy 10
   // can fire multiple times in a single bulk mint — e.g. quantity=20
   // earns 2 spins). awardedCount lets the toast read "earned 2 free spins".
@@ -1739,12 +1773,73 @@ export async function resetQueue(type: 'jackpot' | 'hof'): Promise<void> {
 // ==================== DAILY-DRAFTS PROMO: DRAFT COMPLETION TRACKING ====================
 
 const DAILY_DRAFTS_PROMO_ID = '1';
+const FIRST_PURCHASE_PROMO_ID = '11';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * New-user first-purchase popup gate. A wheel-won draft just completed — count
+ * it down. Runs for EVERY completion regardless of pass type: pre-purchase, a
+ * user's only drafts are their wheel winnings (free drafts, plus jackpot/HOF
+ * entries), so all of them must finish before the popup appears. When the LAST
+ * one finishes the first-purchase promo unlocks (popup + notification).
+ * Idempotent per draftId (deduped on the first-purchase promo's
+ * completedDraftIds) and a no-op once the user has purchased, already unlocked,
+ * or never had winnings to finish — so it never fires for existing buyers.
+ */
+async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId: string): Promise<void> {
+  const db = getAdminFirestore();
+  const userRef = db.collection(USERS_COLLECTION).doc(userId);
+  const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(FIRST_PURCHASE_PROMO_ID);
+
+  const unlocked = await db.runTransaction(async (tx) => {
+    const [userSnap, promoSnap] = await Promise.all([tx.get(userRef), tx.get(promoRef)]);
+    if (!userSnap.exists) return false;
+    const user = userSnap.data() as User;
+    // Past the gate already, or no winnings outstanding — nothing to do.
+    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return false;
+    if ((user.pendingWheelWinnings || 0) <= 0) return false;
+
+    // Idempotency: dedup completions on the first-purchase promo doc.
+    const promo = promoSnap.exists ? deepClone(promoSnap.data() as Promo) : null;
+    const seen = promo?.completedDraftIds || [];
+    if (seen.includes(draftId)) return false;
+
+    const gate = applyCompletionGate({
+      usedFreePass: true,
+      pendingWheelWinnings: user.pendingWheelWinnings || 0,
+      firstPurchaseBonusGranted: !!user.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!user.firstPurchasePromoUnlocked,
+    });
+
+    const userUpdate: Record<string, unknown> = { pendingWheelWinnings: gate.pendingWheelWinnings };
+    if (gate.unlock) userUpdate.firstPurchasePromoUnlocked = true;
+    tx.set(userRef, userUpdate, { merge: true });
+
+    if (promo) {
+      promo.completedDraftIds = [...seen, draftId];
+      tx.set(promoRef, stripUndefined(promo), { merge: true });
+    }
+    return gate.unlock;
+  });
+
+  if (unlocked) {
+    void pushStreamEvent(userId, 'first-purchase-unlocked', {});
+  }
+}
+
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
-  // Only PAID drafts count toward promos. A draft entered with a FREE pass
-  // earns zero promo credit (free passes are join-only). Server-enforced so it
-  // holds even if the client mis-gates (the URL passType is deleted post-join).
+  // First-purchase popup gate runs for EVERY completion (free, jackpot, HOF or
+  // paid). Pre-purchase, a user's drafts are all wheel winnings to count down;
+  // post-purchase it's a guarded no-op. Kept separate from — and ahead of — the
+  // paid-only daily-drafts credit below, so existing promo wiring is untouched.
+  await _recordWinningsDraftForFirstPurchaseGate(userId, draftId).catch((err) =>
+    logger.warn('promo.first_purchase_gate_failed', { userId, draftId, err: (err as Error).message }),
+  );
+
+  // Only PAID drafts count toward daily-drafts. A draft entered with a FREE
+  // pass earns zero daily-drafts credit (free passes are join-only).
+  // Server-enforced so it holds even if the client mis-gates (the URL passType
+  // is deleted post-join).
   if (passType === 'free') {
     return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
   }

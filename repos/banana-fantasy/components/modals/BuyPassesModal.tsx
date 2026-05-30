@@ -6,6 +6,7 @@ import { formatUnits, type Address } from 'viem';
 import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
+import { firstPurchaseUpsell } from '@/lib/promoMath';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
@@ -39,7 +40,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
   const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -94,6 +95,10 @@ export function BuyPassesModal({
 
   const { pricePerPass } = draftPassPricing;
   const totalPrice = quantity * pricePerPass;
+  // First-purchase bonus nudge — only on a user's first paid purchase (new OR
+  // returning). Disappears once firstPurchaseBonusGranted flips true.
+  const firstPurchaseEligible = !!user && !user.firstPurchaseBonusGranted;
+  const upsell = firstPurchaseUpsell(quantity);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
   const quantityOptions = [1, 5, 10, 20, 30, 40];
   const isProcessing =
@@ -286,7 +291,16 @@ export function BuyPassesModal({
               amount: Number(fundingAmount),
             }),
           });
-        } catch { /* logging is best-effort */ }
+        } catch (err) {
+          // Best-effort analytics beacon — log so a gap in onramp tracking is visible.
+          reportClientError({
+            source: LOG_SOURCES.payment.MOONPAY_SESSION_BEACON_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'buy-passes',
+            actor: walletAddress,
+            context: { provider: 'moonpay', amount: Number(fundingAmount) },
+          });
+        }
       })();
 
       // MoonPay-only path: Privy handles the popup, opens straight into
@@ -324,8 +338,20 @@ export function BuyPassesModal({
       const waitForUsdc = async () => {
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitMs) {
-          const balance = await getUsdcBalance(walletAddress as Address);
-          if (balance >= totalCostUsdc) return true;
+          try {
+            const balance = await getUsdcBalance(walletAddress as Address);
+            if (balance >= totalCostUsdc) return true;
+          } catch (err) {
+            // A transient RPC blip shouldn't abort the whole payment — log it
+            // (throttled per-source) and keep polling.
+            reportClientError({
+              source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'buy-passes',
+              actor: walletAddress,
+              context: { totalCostUsdc: String(totalCostUsdc) },
+            });
+          }
           await new Promise((r) => setTimeout(r, pollIntervalMs));
         }
         return false;
@@ -543,6 +569,42 @@ export function BuyPassesModal({
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
+
+              {/* First-purchase bonus nudge — first paid purchase only. Updates
+                  live with the selected quantity (4 passes = 1 free spin). */}
+              {firstPurchaseEligible && quantity > 0 && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-banana/30 bg-banana/10 px-3 py-2">
+                  <span className="text-base leading-none mt-0.5">🍌</span>
+                  <p className="text-xs text-text-secondary leading-relaxed">
+                    {upsell.spinsThisPurchase > 0 ? (
+                      <>
+                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        you&apos;ll earn{' '}
+                        <span className="font-semibold text-banana">
+                          {upsell.spinsThisPurchase} free spin{upsell.spinsThisPurchase !== 1 ? 's' : ''}
+                        </span>
+                        ! Add {upsell.passesToNextSpin} more (total {upsell.nextSpinTotal}) for {upsell.spinsThisPurchase + 1}.
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        add{' '}
+                        <span className="font-semibold text-banana">{upsell.passesToNextSpin} more</span>{' '}
+                        (total {upsell.nextSpinTotal}) to earn a free spin 🎡
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* Stacked-value note — new users only (non-BB3). Reminds them the
+                  spins stack with the "4 drafts a day → free spin" promo. */}
+              {firstPurchaseEligible && !isBB3Holder && quantity > 0 && (
+                <p className="mt-2 px-1 text-[11px] leading-relaxed text-text-muted">
+                  And it stacks — complete 4 drafts in a day and earn{' '}
+                  <span className="font-semibold text-text-secondary">another free spin</span>. Lots of value to start! 🍌
+                </p>
+              )}
             </div>
 
             {/* Payment Method */}

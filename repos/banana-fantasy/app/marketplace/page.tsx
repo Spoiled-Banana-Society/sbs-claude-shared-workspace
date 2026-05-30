@@ -560,6 +560,14 @@ export default function MarketplacePage() {
         if (cancelledRef.current) return;
       } catch (error) {
         console.error('[Sweep] Fund failed:', error);
+        // Money in flight (card funding for a multi-buy). Critical.
+        reportClientError({
+          source: LOG_SOURCES.marketplace.SWEEP_FUND_FAILED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'marketplace',
+          actor: walletAddress,
+          context: { sweepTotal, sweepPaymentMethod },
+        });
         setSweepStep('confirm');
         return;
       }
@@ -572,7 +580,14 @@ export default function MarketplacePage() {
           setSweepStep('confirm');
           return;
         }
-      } catch {
+      } catch (error) {
+        reportClientError({
+          source: LOG_SOURCES.marketplace.SWEEP_BALANCE_CHECK_FAILED,
+          message: error instanceof Error ? error.message : String(error),
+          route: 'marketplace',
+          actor: walletAddress,
+          context: { sweepTotal },
+        });
         setSweepStep('confirm');
         return;
       }
@@ -618,6 +633,7 @@ export default function MarketplacePage() {
         source: LOG_SOURCES.marketplace.SWEEP_TEAM_BUY_FAILED,
         message: `Sweep completed with ${failedTokenIds.length}/${sweepTeams.length} team buys failed`,
         route: 'marketplace',
+        actor: walletAddress,
         context: { failedTokenIds, totalTeams: sweepTeams.length, sweepPaymentMethod, sweepTotal },
       });
     }

@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import { getActiveMute, listMessages, postMessage } from '@/lib/globalChat';
+import { logger } from '@/lib/logger';
 
 const TEXT_MAX = 500;
 
@@ -23,6 +24,7 @@ export async function GET() {
     return NextResponse.json({ messages });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'read failed';
+    logger.error('social.global_chat.unhandled', { err, context: { op: 'read' } });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -76,6 +78,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'write failed';
+    if (!(err instanceof ApiError)) logger.error('social.global_chat.unhandled', { err, context: { op: 'write' } });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

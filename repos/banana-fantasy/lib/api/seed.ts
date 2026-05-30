@@ -289,6 +289,22 @@ const seedPromos: Promo[] = [
     },
   },
   {
+    id: '11',
+    type: 'first-purchase',
+    title: 'First Purchase → BONUS SPINS',
+    description: 'Every 4 passes on your first buy = 1 spin',
+    ctaText: 'Buy Drafts',
+    ctaLink: '/buy-drafts',
+    backgroundColor: '#2a2a35',
+    claimable: false,
+    claimCount: 0,
+    modalContent: {
+      title: 'First Purchase → BONUS SPINS',
+      explanation:
+        'Your very first draft-pass purchase earns bonus Banana Wheel spins — every 4 passes = 1 spin (buy 8 for 2, buy 12 for 3, and so on, no limit). One-time offer: it applies only to your first purchase, so buy them all in one transaction to lock in the most spins. After you buy, claim your spins right here. 🍌',
+    },
+  },
+  {
     id: '1',
     type: 'daily-drafts',
     title: '4 Drafts Daily → FREE SPIN',
@@ -398,23 +414,6 @@ const seedPromos: Promo[] = [
       explanation:
         '• Founder Draft happens every week at the same time\n\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 free spin to claim\n\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
       founderHistory: [],
-    },
-  },
-  {
-    id: 'pwa-install-promo',
-    type: 'add-to-home-screen',
-    title: 'Install SBS — Win 5 Free Spins',
-    description: 'Add to your home screen within 48hrs. 1 random winner gets 5 free spins!',
-    ctaText: 'Install',
-    ctaLink: '#',
-    backgroundColor: '#1a1a2e',
-    claimable: false,
-    isNew: true,
-    timerEndTime: '',
-    modalContent: {
-      title: 'Install SBS — Win Free Spins',
-      explanation:
-        'Add Banana Fantasy to your home screen for a chance to win 5 free spins. 1 random winner chosen after the timer ends.',
     },
   },
 ];

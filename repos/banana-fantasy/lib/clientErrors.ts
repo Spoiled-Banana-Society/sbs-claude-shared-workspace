@@ -12,6 +12,7 @@
 //   });
 
 import { getClientLogSessionId, getClientLogWallet } from './clientLog';
+import { throttleMsForSource } from './logSources';
 
 interface ClientErrorPayload {
   source: string;            // dot-separated id, e.g. 'ws.auth_failed'
@@ -24,10 +25,11 @@ interface ClientErrorPayload {
 }
 
 // Per-source throttle. Don't spam the admin error log if the same
-// failure repeats (e.g. WS retries every 30s). Re-fire at most once
-// per minute per source.
+// failure repeats (e.g. WS retries every 30s). The window is now
+// SEVERITY-AWARE (see SEVERITY_POLICY in logSources): critical = 0 (never
+// throttled), warning = 2min, low = 10min — so noisy low-tier sources can't
+// flood the feed while a real fire is never suppressed.
 const lastFiredAt = new Map<string, number>();
-const THROTTLE_MS = 60_000;
 
 interface ReportOptions {
   /**
@@ -42,8 +44,9 @@ export function reportClientEvent(payload: ClientErrorPayload, options: ReportOp
   if (typeof window === 'undefined') return;
   if (!options.skipThrottle) {
     const now = Date.now();
+    const throttleMs = throttleMsForSource(payload.source);
     const last = lastFiredAt.get(payload.source) ?? 0;
-    if (now - last < THROTTLE_MS) return;
+    if (throttleMs > 0 && now - last < throttleMs) return;
     lastFiredAt.set(payload.source, now);
   }
 
@@ -53,8 +56,10 @@ export function reportClientEvent(payload: ClientErrorPayload, options: ReportOp
 export function reportClientError(payload: ClientErrorPayload): void {
   if (typeof window === 'undefined') return;
   const now = Date.now();
+  const throttleMs = throttleMsForSource(payload.source);
   const last = lastFiredAt.get(payload.source) ?? 0;
-  if (now - last < THROTTLE_MS) return;
+  // throttleMs === 0 (critical) → never throttled.
+  if (throttleMs > 0 && now - last < throttleMs) return;
   lastFiredAt.set(payload.source, now);
 
   postEvent(payload);
