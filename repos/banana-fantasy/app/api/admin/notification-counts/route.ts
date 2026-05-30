@@ -89,13 +89,10 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^draft\.autopick_submit_failed/i,
   /^draft\.ws\.message_parse_failed/i,
   /^draft\.queue\.create_draft_failed/i,
-<<<<<<< Updated upstream
-=======
   // Promo gaps (Phase 2). `^promo\.claim\.` doesn't cover these.
   /^promo\.founder_draft\./i,
   /^promo\.raffle\./i,
   /^promo\.draft_complete\./i,
->>>>>>> Stashed changes
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise
