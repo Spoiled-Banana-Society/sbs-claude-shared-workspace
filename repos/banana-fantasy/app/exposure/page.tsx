@@ -410,14 +410,14 @@ export default function ExposurePage() {
                   className="grid grid-cols-[100px_1fr_48px] sm:grid-cols-[36px_120px_1fr_56px_48px_56px_56px_40px] gap-1 px-3 sm:px-4 py-2.5 items-center hover:bg-white/[0.04] cursor-pointer transition-colors border-b border-white/[0.03] last:border-0"
                 >
                   <span className="hidden sm:block text-white/30 text-xs">{idx + 1}</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center">
                     <span
-                      className="text-[11px] font-bold px-1.5 py-0.5 rounded"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold px-2 py-0.5 rounded"
                       style={{ backgroundColor: posColor(e.position) + '25', color: posColor(e.position) }}
                     >
                       {e.position}
+                      <span>{e.team}</span>
                     </span>
-                    <span className="text-white text-sm font-medium">{e.team}</span>
                   </div>
                   {/* Exposure bar */}
                   <div className="flex items-center gap-2">
