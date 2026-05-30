@@ -98,7 +98,7 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^prizes\.(withdrawal|cumulative_increment|offramp_audit)/i,
   /^marketplace\.(sweep_fund|sweep_team|cancel)/i,
   // Auth/profile gaps (Phase 4). privy.fetch_user.error already matched above.
-  /^auth\.(twitter|username|login)/i,
+  /^auth\.(twitter|username|login|spurious_login)/i,
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise

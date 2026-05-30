@@ -7,7 +7,6 @@ import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDispl
 import { ApiError as ClientApiError } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
-import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -415,22 +414,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }).catch(() => { /* silent — Sentry is optional */ });
   }, [walletAddress]);
 
-  // DIAGNOSTIC (temp): log every Privy auth-state transition so we can catch
-  // a transient `ready && !authenticated` blink that wipes `user` and pops a
-  // spurious login modal / disrupts the join overlay. Deps are auth scalars,
-  // so this fires only on real transitions — not per render. Pull with:
-  //   node scripts/logs.mjs trace --tag=authblink --wallet=<wallet>
-  useEffect(() => {
-    if (MOCK_AUTH) return;
-    clientLog('authblink', 'privy-state', {
-      ready: privy.ready,
-      authenticated: privy.authenticated,
-      hasPrivyUser: !!privy.user,
-      walletAddress: walletAddress || null,
-      hasLocalUser: !!user,
-    });
-  }, [privy.ready, privy.authenticated, privy.user, walletAddress, user]);
-
   // Sync Privy auth state → local user (with real backend profile fetch)
   useEffect(() => {
     if (MOCK_AUTH) return; // Skip Privy sync in mock mode
@@ -598,19 +581,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // clear the user if we're STILL unauthenticated after the debounce window.
       // If auth recovers in time, the sync branch above cancels this timer and
       // the blink becomes a no-op. Guard so we schedule at most one timer.
-      clientLog('authblink', 'wipe-scheduled', {
-        hadLocalUser: !!user,
-        wallet: walletAddress || null,
-        debounceMs: AUTH_WIPE_DEBOUNCE_MS,
-      });
+      // (A spurious login modal that slips through is caught signal-only by
+      // auth.spurious_login_modal in providers.tsx.)
       if (!wipeTimerRef.current) {
         wipeTimerRef.current = setTimeout(() => {
           wipeTimerRef.current = null;
-          // DIAGNOSTIC (temp): a wipe that actually fired = a sustained
-          // unauthenticated state (real logout), not a blink.
-          clientLog('authblink', 'user-wiped', {
-            reason: 'privy.ready && !privy.authenticated (debounced)',
-          });
           setUser(null);
           fetchingRef.current = null;
           setIsNewUser(false);

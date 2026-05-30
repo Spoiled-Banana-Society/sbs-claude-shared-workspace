@@ -429,10 +429,6 @@ export function useDraftingPageState() {
     // no pulse, no async draftId race (the old flow navigated with no id and
     // joined inside the room, which caused the "0 then 1 then 2" flash).
     setJoiningLobby(true);
-    // DIAGNOSTIC (temp): overlay shown. If the overlay "barely shows", compare
-    // this ts against the navigate ts below and any authblink/user-wiped in
-    // between (an auth blink mid-join can yank the page out from under it).
-    clientLog('joinoverlay', 'overlay-shown', { passType, speed, wallet: user.walletAddress });
     // Hold the overlay for a minimum beat so the branded "Joining lobby…"
     // transition is always clearly visible, even when joinDraft resolves
     // near-instantly. Perceptible but snappy — never pads beyond this.
@@ -452,8 +448,6 @@ export function useDraftingPageState() {
     }
 
     if (!draftRoom?.id) {
-      // DIAGNOSTIC (temp): join failed after all retries → overlay hidden + alert.
-      clientLog('joinoverlay', 'join-failed', { wallet: user.walletAddress, passType });
       // Join failed after retries. Refund the pass we just spent (use-pass
       // decremented Firestore; no league was actually joined) and bail.
       setJoiningLobby(false);
@@ -524,12 +518,6 @@ export function useDraftingPageState() {
     // Let the branded overlay breathe for its minimum beat before we swap routes.
     const elapsed = Date.now() - overlayStart;
     if (elapsed < MIN_OVERLAY_MS) await new Promise(r => setTimeout(r, MIN_OVERLAY_MS - elapsed));
-    // DIAGNOSTIC (temp): how long the overlay was actually visible before nav.
-    clientLog('joinoverlay', 'navigating', {
-      joinMs: elapsed,
-      visibleMs: Math.max(elapsed, MIN_OVERLAY_MS),
-      draftId: newId,
-    });
     // Stamp the moment we leave /drafting so the draft room can measure the
     // hand-off gap (the blank/flash before the lobby paints) and surface a
     // slow hand-off to the admin error feed. Best-effort; cleared on the room side.
@@ -543,13 +531,8 @@ export function useDraftingPageState() {
       return;
     }
     if (!isLoggedIn) {
-      // DIAGNOSTIC (temp): if this fires while Boris believes he's logged in,
-      // an auth blink wiped `user` (isLoggedIn = !!user). Cross-ref the
-      // `authblink/user-wiped` event timestamp.
-      clientLog('authblink', 'enter-blocked-not-logged-in', {
-        hasUser: !!user,
-        wallet: user?.walletAddress || null,
-      });
+      // If this fires while you're actually logged in, the auth-blink alarm
+      // (auth.spurious_login_modal in providers.tsx) catches it signal-only.
       setShowLoginModal(true);
       return;
     }

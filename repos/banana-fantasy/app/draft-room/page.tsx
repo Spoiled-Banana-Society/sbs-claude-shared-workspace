@@ -239,7 +239,6 @@ function DraftRoomContent() {
     if (!navTs || !Number.isFinite(navTs)) return;
     const gapMs = Date.now() - navTs;
     if (gapMs < 0 || gapMs > 60000) return; // stale / unrelated navigation
-    clientLog('joinoverlay', 'room-first-paint', { gapMs, draftId: urlDraftId });
     const SLOW_HANDOFF_MS = 1800; // overlay holds ~700ms; >1.8s ⇒ visible blank/flash
     if (gapMs > SLOW_HANDOFF_MS) {
       reportClientError({

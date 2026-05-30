@@ -144,6 +144,11 @@ export const LOG_SOURCES = {
     USERNAME_CLAIM_FAILED: 'auth.username.claim_failed',
     LOGIN_FAILED: 'auth.login_failed',
     LINK_TWITTER_FAILED: 'auth.link_twitter_failed',
+    // Quiet, signal-only alarm for the "login modal pops while you're actually
+    // logged in" blink. Fires ONLY when the login prompt triggers while Privy
+    // still reports authenticated (the contradiction = the bug) — replaces the
+    // chatty `authblink` diagnostic. Badges so a recurrence is visible.
+    SPURIOUS_LOGIN_MODAL: 'auth.spurious_login_modal',
   },
   kyc: {
     DIDIT_API_FAILED: 'kyc.didit_api_failed',
