@@ -302,6 +302,24 @@ export function logSeverity(source: string | undefined | null): LogSeverity {
   return 'warning';
 }
 
+/* ── Cost-smart policy (never drops a real fire) ───────────────────
+ * Tunes how aggressively each tier is throttled (client) and sampled
+ * (ingest), so a noisy LOW source can't become a Firestore/Sentry
+ * write-storm — while CRITICAL is never throttled or sampled.
+ *   - throttleMs: client per-source dedupe window in reportClientError
+ *   - ingestSampleRate: fraction of events the ingest route keeps (1 = all)
+ */
+export const SEVERITY_POLICY: Record<LogSeverity, { throttleMs: number; ingestSampleRate: number }> = {
+  critical: { throttleMs: 0,        ingestSampleRate: 1 },    // every distinct critical, always
+  warning:  { throttleMs: 120_000,  ingestSampleRate: 1 },    // 2-min dedupe, keep all
+  low:      { throttleMs: 600_000,  ingestSampleRate: 0.1 },  // 10-min dedupe, keep 1 in 10
+};
+
+/** Cost-smart throttle window for a source's tier (client-side dedupe). */
+export function throttleMsForSource(source: string | undefined | null): number {
+  return SEVERITY_POLICY[logSeverity(source)].throttleMs;
+}
+
 /* ── Test-traffic detection ────────────────────────────────────── */
 
 // Staging is hammered by the Playwright e2e suite, which hits the

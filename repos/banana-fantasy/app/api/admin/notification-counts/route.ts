@@ -98,6 +98,11 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^prizes\.(withdrawal|cumulative_increment|offramp_audit)/i,
   /^marketplace\.(sweep_fund|sweep_team|cancel)/i,
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+  // Auth/profile gaps (Phase 4). privy.fetch_user.error already matched above.
+  /^auth\.(twitter|username|login)/i,
+>>>>>>> Stashed changes
 =======
   // Auth/profile gaps (Phase 4). privy.fetch_user.error already matched above.
   /^auth\.(twitter|username|login)/i,

@@ -82,6 +82,22 @@ Sources matching `IMPORTANT_ERROR_PATTERNS` in
 `app/api/admin/notification-counts/route.ts` also raise the admin badge.
 User-money / draft-blocking failures should match a pattern there.
 
+## Coverage, tiers & cost (2026-05 overhaul)
+
+**Tiers** (`logSeverity()` in `lib/logSources.ts`): **critical** = draft-blocking or money/security · **warning** ("needs a look") = degraded-but-recoverable (default) · **low** = cosmetic/fallback the user never sees. The admin LogsTab sections + the notify badge key off this.
+
+**Every logged error must carry the affected user** (`actor`). Client `reportClientError` auto-attaches the wallet, but pass `actor: walletAddress` explicitly when in scope. **Server `logger.error`/`logErrorEvent` have NO auto-attach — always pass `actor: <wallet|userId>`.** This powers the admin "Affected Users" view.
+
+**Universal route 500s — `withRouteLogging` (`lib/api/routeUtils.ts`):** wrap any API route so unexpected 500s log to the feed automatically:
+```ts
+export const POST = withRouteLogging('payment.card_mint', async (req) => { … });
+```
+Expected `ApiError` (4xx) passes through unlogged; real throws log as `<routeName>.unhandled` (already badge-matched by `/\.unhandled$/i`) with an awaited Vercel-safe write. Don't double-log: if you wrap a route, delete its inner `catch → logger.error`.
+
+**Cost-smart (`SEVERITY_POLICY` in `lib/logSources.ts`):** client throttle + ingest sampling are severity-aware — **critical: never throttled, never sampled**; warning: 2-min dedupe; low: 10-min dedupe + only 1-in-10 kept at ingest. Set `ERROR_SAMPLING_ENABLED=false` to disable sampling if a fire ever looks under-reported. This is what keeps a noisy low-tier source (or a render loop) from becoming a Firestore/Sentry write-storm.
+
+**Notify list** = `IMPORTANT_ERROR_PATTERNS` in `app/api/admin/notification-counts/route.ts`. A source only badges the admin if it matches there. When adding a critical/money/draft-blocking source: add it to `CRITICAL_PATTERNS` (`logSources.ts`) **and** the notify list.
+
 ## Adding logging to a new page
 
 In every `catch` / `.catch()` at an async boundary that can fail:
