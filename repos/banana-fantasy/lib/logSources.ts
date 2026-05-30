@@ -27,6 +27,7 @@ export const LOG_AREAS = [
   'prizes',
   'notifications',
   'admin',
+  'audit',
   'backend',
   'global',
   'other',
@@ -284,6 +285,10 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^notifications\.config\.secret_missing/i,
   // ── A page genuinely crashed to the error screen for the user ──
   /^global\.react\.boundary/i,
+  // ── State-integrity audits (proactive): a money/fairness invariant is
+  //    violated in the data BEFORE a user trips on it. See lib/audits/. ──
+  /^audit\.passes\.over/i,      // counter > real spendable tokens → user blocked at join
+  /^audit\.balance\.negative/i, // negative money/pass counter → corruption
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a
