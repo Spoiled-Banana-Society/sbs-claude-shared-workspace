@@ -259,10 +259,9 @@ export function AddToHomeScreenCard() {
   }, [isStandalone]);
 
   const handleInstall = useCallback(async () => {
-    localStorage.setItem(ENGAGED_KEY, '1');
-
-    // Desktop can't install the phone app and we don't know their phone OS —
-    // show iPhone + Android steps together so they can finish on their device.
+    // Clicking the card just opens the steps — it does NOT dismiss the banner.
+    // Only the X (dismiss) hides it. Desktop can't install the phone app and we
+    // don't know their phone OS — show iPhone + Android steps together.
     if (isDesktop) {
       setModalBrowser('both');
       return;
@@ -274,6 +273,12 @@ export function AddToHomeScreenCard() {
       if (installed) setShow(false);
     }
   }, [triggerInstall, isDesktop]);
+
+  // Only the X dismisses the banner — permanently, so it doesn't nag again.
+  const dismiss = useCallback(() => {
+    localStorage.setItem(ENGAGED_KEY, '1');
+    setShow(false);
+  }, []);
 
   if (!show) return null;
 
@@ -300,6 +305,13 @@ export function AddToHomeScreenCard() {
           <span className="px-4 py-1.5 bg-banana text-black text-xs font-bold rounded-full flex-shrink-0 pointer-events-none">
             {isDesktop ? 'How' : 'Install'}
           </span>
+          <button
+            onClick={(e) => { e.stopPropagation(); dismiss(); }}
+            aria-label="Dismiss"
+            className="flex-shrink-0 -mr-1 w-6 h-6 flex items-center justify-center rounded-full text-white/40 hover:text-white/80 hover:bg-white/10 transition-colors text-lg leading-none"
+          >
+            ×
+          </button>
         </div>
       </aside>
 
@@ -312,7 +324,7 @@ export function AddToHomeScreenCard() {
               <p className="text-white/40 text-[11px] mt-0.5">Pull up this site on your phone, then follow your device&apos;s steps:</p>
             </div>
           ) : undefined}
-          onClose={() => { setModalBrowser(null); setShow(false); localStorage.setItem(ENGAGED_KEY, '1'); }}
+          onClose={() => setModalBrowser(null)}
         />
       )}
     </>
