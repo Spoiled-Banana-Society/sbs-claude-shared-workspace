@@ -286,7 +286,16 @@ export function BuyPassesModal({
               amount: Number(fundingAmount),
             }),
           });
-        } catch { /* logging is best-effort */ }
+        } catch (err) {
+          // Best-effort analytics beacon — log so a gap in onramp tracking is visible.
+          reportClientError({
+            source: LOG_SOURCES.payment.MOONPAY_SESSION_BEACON_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'buy-passes',
+            actor: walletAddress,
+            context: { provider: 'moonpay', amount: Number(fundingAmount) },
+          });
+        }
       })();
 
       // MoonPay-only path: Privy handles the popup, opens straight into
@@ -324,8 +333,20 @@ export function BuyPassesModal({
       const waitForUsdc = async () => {
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitMs) {
-          const balance = await getUsdcBalance(walletAddress as Address);
-          if (balance >= totalCostUsdc) return true;
+          try {
+            const balance = await getUsdcBalance(walletAddress as Address);
+            if (balance >= totalCostUsdc) return true;
+          } catch (err) {
+            // A transient RPC blip shouldn't abort the whole payment — log it
+            // (throttled per-source) and keep polling.
+            reportClientError({
+              source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'buy-passes',
+              actor: walletAddress,
+              context: { totalCostUsdc: String(totalCostUsdc) },
+            });
+          }
           await new Promise((r) => setTimeout(r, pollIntervalMs));
         }
         return false;

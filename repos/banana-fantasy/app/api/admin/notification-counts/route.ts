@@ -93,6 +93,10 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^promo\.founder_draft\./i,
   /^promo\.raffle\./i,
   /^promo\.draft_complete\./i,
+  // Money/prizes/marketplace gaps (Phase 3). `prizes.withdrawal` was already
+  // critical-tier but had no notify pattern.
+  /^prizes\.(withdrawal|cumulative_increment|offramp_audit)/i,
+  /^marketplace\.(sweep_fund|sweep_team|cancel)/i,
   // Notification system failures — user-facing impact (they miss a
   // "your draft is starting" or "it's your pick" alert). Every channel
   // failure + the silent-success-but-zero-recipients case should raise

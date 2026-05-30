@@ -88,6 +88,10 @@ export const LOG_SOURCES = {
     ADMIN_WALLET_UNAVAILABLE: 'payment.admin_wallet_unavailable',
     MINT_FAILED: 'card-mint.mint_failed',
     WRONG_NETWORK: 'payment.wrong_network',
+    // Best-effort analytics beacon (MoonPay popup) + the post-purchase USDC
+    // balance poll. Warning, not notify — recoverable / informational.
+    MOONPAY_SESSION_BEACON_FAILED: 'payment.moonpay.session_beacon_failed',
+    USDC_BALANCE_POLL_FAILED: 'payment.usdc.balance_poll_failed',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',
@@ -112,6 +116,11 @@ export const LOG_SOURCES = {
     SWEEP_TEAM_BUY_FAILED: 'marketplace.sweep_team_buy_failed',
     OFFER_ACCEPT_FAILED: 'marketplace.offer_accept_failed',
     OFFER_CREATE_FAILED: 'marketplace.offer_create_failed',
+    // Sweep (multi-buy): card-funding failure = money in flight (critical);
+    // balance-check failure is recoverable (warn). Cancel-offer on detail page.
+    SWEEP_FUND_FAILED: 'marketplace.sweep_fund_failed',
+    SWEEP_BALANCE_CHECK_FAILED: 'marketplace.sweep_balance_check_failed',
+    CANCEL_OFFER_FAILED: 'marketplace.cancel_offer_failed',
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',
@@ -138,6 +147,11 @@ export const LOG_SOURCES = {
   prizes: {
     WITHDRAWAL_API_FAILED: 'prizes.withdrawal_api_failed',
     ELIGIBILITY_FETCH_FAILED: 'prizes.eligibility_fetch_failed',
+    // Withdraw-all side effects: KYC cumulative total + offramp audit trail.
+    // Warn (the withdrawal itself succeeded; these are bookkeeping) but notify.
+    CUMULATIVE_INCREMENT_FAILED: 'prizes.cumulative_increment_failed',
+    OFFRAMP_AUDIT_FAILED: 'prizes.offramp_audit_failed',
+    FETCH_FAILED: 'prizes.fetch_failed',
   },
   profile: {
     ACTIVITY_FETCH_FAILED: 'profile.activity_fetch_failed',
@@ -235,6 +249,7 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.queue\.create_draft_failed/i,
   /^promo\.founder_draft\.failed/i,
   /^promo\.raffle\.result_failed/i,
+  /^marketplace\.sweep_fund_failed/i,
   // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
