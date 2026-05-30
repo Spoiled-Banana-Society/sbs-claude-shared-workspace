@@ -300,7 +300,17 @@ export function useDraftLiveSync({
                   displayName: retryPayload.displayName,
                   team: retryPayload.team,
                   position: retryPayload.position,
-                }).catch(e => console.error('[Airplane] Retry failed:', e));
+                }).catch(e => {
+                  console.error('[Airplane] Retry failed:', e);
+                  // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
+                  reportClientError({
+                    source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+                    message: e instanceof Error ? e.message : String(e),
+                    route: 'draft-room',
+                    actor: walletParam,
+                    context: { draftId, playerId: retryPayload.playerId, retry: true },
+                  });
+                });
               }
             }
           }, 0);

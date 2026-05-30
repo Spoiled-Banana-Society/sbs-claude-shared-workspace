@@ -20,6 +20,8 @@ import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -271,6 +273,13 @@ export function useDraftingPageState() {
         })
         .catch((e) => {
           console.error('[Queue] Poll failed:', e);
+          // 5s poll — reportClientError's per-source throttle dedupes the spam.
+          reportClientError({
+            source: LOG_SOURCES.draft.QUEUE_POLL_FAILED,
+            message: e instanceof Error ? e.message : String(e),
+            route: 'drafting',
+            actor: user?.walletAddress,
+          });
         });
     };
 
@@ -451,7 +460,27 @@ export function useDraftingPageState() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      }).catch(() => {});
+      })
+        .then((res) => {
+          if (!res.ok) {
+            reportClientError({
+              source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
+              message: `Join-fail refund returned ${res.status}`,
+              route: 'drafting',
+              actor: user.walletAddress,
+              context: { passType, userId: user.id || user.walletAddress, status: res.status },
+            });
+          }
+        })
+        .catch((err) => {
+          reportClientError({
+            source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'drafting',
+            actor: user.walletAddress,
+            context: { passType, userId: user.id || user.walletAddress, network: true },
+          });
+        });
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
       alert('Could not join a draft right now. Your pass was not used — please try again.');
@@ -1507,17 +1536,41 @@ export function useDraftingPageState() {
       const userId = user.id || user.walletAddress;
       const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
       try {
-        await fetch('/api/owner/refund-pass', {
+        const refundRes = await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId }),
         });
+        if (!refundRes.ok) {
+          // Money path: user left but the pass refund didn't land. Critical.
+          reportClientError({
+            source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+            message: `Leave refund returned ${refundRes.status}`,
+            route: 'drafting',
+            actor: user.walletAddress,
+            context: { leagueId: exitingDraft.id, passType, tokenId: storedDraft?.cardId || exitingDraft.cardId, status: refundRes.status },
+          });
+        }
         await refreshBalance();
       } catch (err) {
         console.warn('[Leave] Refund pass failed:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'drafting',
+          actor: user.walletAddress,
+          context: { leagueId: exitingDraft.id, passType, network: true },
+        });
       }
     } catch (err) {
       console.error('Failed to leave draft:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.LEAVE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'drafting',
+        actor: user.walletAddress,
+        context: { leagueId: exitingDraft.id },
+      });
     } finally {
       setExitingDraft(null);
     }

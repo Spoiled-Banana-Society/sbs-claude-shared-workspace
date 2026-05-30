@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString, requireNumber } from '@/lib/api/routeUtils';
 import { updateQueueRoundDraftId, fillQueueRoundWithBots } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 const STAGING_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
@@ -14,11 +15,16 @@ const STAGING_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1
  * Then fills with bots and updates the queue.
  */
 export async function POST(req: Request) {
+  // Hoisted so the catch can attribute the failure to the affected user.
+  let actorId: string | undefined;
+  let queueCtx: { queueType?: string; roundId?: number } = {};
   try {
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
     const queueType = requireString(body.queueType, 'queueType') as 'jackpot' | 'hof';
     const roundId = requireNumber(body.roundId, 'roundId');
+    actorId = userId;
+    queueCtx = { queueType, roundId };
 
     if (queueType !== 'jackpot' && queueType !== 'hof') {
       return jsonError('Invalid queue type', 400);
@@ -49,7 +55,7 @@ export async function POST(req: Request) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minId: mintId, maxId: mintId }),
-    }).catch(() => {});
+    }).catch((err) => logger.warn(LOG_SOURCES.draft.QUEUE_MINT_FAILED, { err, actor: userId, context: { mintId, queueType, roundId } }));
 
     // 2. Join a slow league via JoinLeagues — this properly creates token + adds to league
     const joinRes = await fetch(`${STAGING_API_URL}/league/slow/owner/${userId}`, {
@@ -85,7 +91,7 @@ export async function POST(req: Request) {
     // 4. Fill with 9 bots on Go API (use the actual stored draftId)
     const fillRes = await fetch(`${STAGING_API_URL}/staging/fill-bots/slow?count=9&leagueId=${actualDraftId}`, {
       method: 'POST',
-    }).catch(() => null);
+    }).catch((err) => { logger.error(LOG_SOURCES.draft.QUEUE_FILL_BOTS_FAILED, { err, actor: userId, context: { leagueId: actualDraftId, queueType, roundId } }); return null; });
     logger.debug('[create-draft] fill-bots result:', fillRes?.status, fillRes?.ok);
 
     // 5. Wait for draft state to be created (fill-bots triggers CreateLeagueDraftStateUponFilling)
@@ -109,14 +115,23 @@ export async function POST(req: Request) {
     }
     if (!stateReady) {
       console.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);
+      logger.warn(LOG_SOURCES.draft.QUEUE_STATE_NOT_READY, { actor: userId, context: { leagueId: actualDraftId, queueType, roundId, attempts: 10 } });
     }
 
     // 6. Sync Firestore queue: add bot members + set status to 'drafting'
-    await fillQueueRoundWithBots(queueType, roundId, 9).catch(() => {});
+    await fillQueueRoundWithBots(queueType, roundId, 9).catch((err) => logger.warn(LOG_SOURCES.draft.QUEUE_FILL_BOTS_FAILED, { err, actor: userId, context: { queueType, roundId, stage: 'firestore_sync' } }));
 
     // 7. Return the actual draftId to the client
     return json({ draftId: String(actualDraftId) }, 200);
   } catch (err) {
+    // Expected 4xx (bad input) pass through unlogged; real 500s (join/create
+    // failed, no draftId) are logged critical with the affected user.
+    if (err instanceof ApiError && err.status < 500) return jsonError(err.message, err.status);
+    logger.error(LOG_SOURCES.draft.QUEUE_CREATE_FAILED, {
+      err,
+      actor: actorId,
+      context: queueCtx,
+    });
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     const msg = err instanceof Error ? err.message : String(err);
     return jsonError(msg, 500);
