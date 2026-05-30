@@ -287,6 +287,13 @@ export default function DraftingPage() {
               )}
             </>
           ) : null}
+
+          {/* Mobile-only: the proof banner lives in the desktop sidebar
+              (hidden < lg), so surface it at the bottom of the main column
+              on small screens. */}
+          <div className="lg:hidden mt-8">
+            <BatchProofBanner />
+          </div>
         </div>
 
         <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4">
