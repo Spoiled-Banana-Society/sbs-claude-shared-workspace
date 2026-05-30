@@ -174,22 +174,6 @@ export const mockPromos: Promo[] = [
     },
   },
   {
-    id: 'pwa-install-promo',
-    type: 'add-to-home-screen',
-    title: 'Install SBS — Win 5 Free Spins',
-    description: 'Add to your home screen within 48hrs. 1 random winner gets 5 free spins!',
-    ctaText: 'Install',
-    ctaLink: '#',
-    backgroundColor: '#1a1a2e',
-    claimable: false,
-    isNew: true,
-    timerEndTime: '', // Set dynamically at launch
-    modalContent: {
-      title: 'Install SBS — Win Free Spins',
-      explanation: 'Add Banana Fantasy to your home screen for a chance to win 5 free spins. 1 random winner chosen after the timer ends.',
-    },
-  },
-  {
     id: '10',
     type: 'spin-share',
     title: 'Share Wins → FREE SPIN',

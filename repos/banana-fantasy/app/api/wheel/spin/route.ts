@@ -16,6 +16,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
@@ -329,16 +330,32 @@ export async function POST(req: Request) {
       const currentJp = Math.max(0, (userData?.jackpotEntries as number | undefined) ?? 0);
       const currentHof = Math.max(0, (userData?.hofEntries as number | undefined) ?? 0);
 
-      const balanceUpdate: Record<string, number> = {
+      const balanceUpdate: Record<string, number | boolean> = {
         wheelSpins: Math.max(0, currentSpins - 1),
+        // Mark that the user has now spun at least once — hides the first-time
+        // "what's a spin?" explainer on promo cards going forward.
+        hasSpunWheel: true,
       };
+      // Tally every wheel winning (free drafts + jackpot/HOF entries) the user
+      // must still FINISH before we surface the first-purchase promo popup.
+      let winningsWon = 0;
       if (draftPassCount > 0) {
         balanceUpdate.freeDrafts = currentFree + draftPassCount;
+        winningsWon += draftPassCount;
       }
       if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         balanceUpdate.jackpotEntries = currentJp + 1;
+        winningsWon += 1;
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         balanceUpdate.hofEntries = currentHof + 1;
+        winningsWon += 1;
+      }
+      // First-purchase popup gate counter. Only matters pre-purchase — skip
+      // once they've bought or already unlocked it. Decremented as each won
+      // draft completes (recordDraftCompletion → the winnings gate).
+      if (winningsWon > 0 && !userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
+        const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
+        balanceUpdate.pendingWheelWinnings = currentPending + winningsWon;
       }
       tx.set(userRef, balanceUpdate, { merge: true });
 
@@ -368,13 +385,15 @@ export async function POST(req: Request) {
             txHash: mintTxHash,
             reason: `wheel_spin:${spinId}`,
           });
-          // Register into the Go API immediately, typed `free`, so the won
-          // pass is usable for draft entry without waiting on the Alchemy
-          // webhook. recordPassOrigins above is what makes reconcile (and this)
-          // treat it as free; here we register the exact token ids directly.
-          await registerMintedTokens(userId, mintedTokenIds, 'free').catch((e) =>
-            logger.warn('wheel.spin.register_go_api_failed', { spinId, userId, err: (e as Error).message }),
-          );
+          // Register into the Go engine as REAL spendable free tokens, typed
+          // `free`. Collision-proof on the engine side. The freeDrafts counter
+          // is recounted from inventory below, so it ends up reflecting what
+          // actually registered rather than the optimistic spin-tx credit.
+          try {
+            await registerMintedTokens(userId, mintedTokenIds, 'free');
+          } catch (e) {
+            logger.warn('wheel.spin.register_go_api_failed', { spinId, userId, err: (e as Error).message });
+          }
           logger.info('wheel.spin.mint_ok', { spinId, userId, count: draftPassCount, txHash: mintTxHash, tokenIds: mintedTokenIds });
         } catch (mintErr) {
           logger.error('wheel.spin.mint_failed', { spinId, userId, count: draftPassCount, err: mintErr });
@@ -391,6 +410,18 @@ export async function POST(req: Request) {
           } catch (logErr) {
             logger.error('wheel.spin.failed_mint_record_error', { spinId, err: logErr });
           }
+        }
+      }
+
+      // Reconcile freeDrafts to the wallet's REAL spendable inventory now the
+      // mint + registration have settled. The spin tx credited freeDrafts
+      // optimistically for instant feedback; this corrects it to the truth — a
+      // failed mint has its phantom credit removed, a successful one confirmed.
+      if (draftPassCount > 0) {
+        try {
+          await recountFromInventory(userId);
+        } catch (e) {
+          logger.warn('wheel.spin.recount_failed', { spinId, userId, err: (e as Error).message });
         }
       }
 

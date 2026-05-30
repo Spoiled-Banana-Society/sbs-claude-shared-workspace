@@ -6,9 +6,6 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Promo } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
-import { InstallModal } from '@/components/home/AddToHomeScreenCard';
-import { useInstallPrompt } from '@/hooks/useInstallPrompt';
-import { useNotificationOptIn } from '@/hooks/useNotificationOptIn';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -34,9 +31,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [tweetVerifying, setTweetVerifying] = useState(false);
   const [tweetVerifyResult, setTweetVerifyResult] = useState<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>(null);
   const [generatingReferral, setGeneratingReferral] = useState(false);
-  const [installModalBrowser, setInstallModalBrowser] = useState<'safari' | 'chrome' | null>(null);
-  const { triggerInstall, isStandalone } = useInstallPrompt();
-  const { isSubscribed, isLoading: notifLoading, acceptOptIn } = useNotificationOptIn();
   // Jackpot reveal flow: existing rules/progress modal stays as-is until
   // user clicks CLAIM, then we swap to the winner-picker animation. After
   // the cycle settles the user can confirm to actually claim.
@@ -794,97 +788,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     );
   };
 
-  const renderAddToHomeScreenContent = () => {
-    const handleInstallClick = async () => {
-      if (typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
-        const ua = navigator.userAgent.toLowerCase();
-        const isSafari = /iphone|ipad|ipod/.test(ua) && /safari/.test(ua) && !/chrome|crios|fxios/.test(ua);
-        setInstallModalBrowser(isSafari ? 'safari' : 'chrome');
-      } else {
-        await triggerInstall();
-      }
-    };
-
-    const timerEnded = promo.timerEndTime && new Date(promo.timerEndTime).getTime() <= Date.now();
-
-    return (
-      <>
-        {/* Timer */}
-        {promo.timerEndTime && !timerEnded && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-text-secondary">Raffle ends in</span>
-              <div className="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-banana">
-                  <circle cx="12" cy="12" r="10"/>
-                  <polyline points="12 6 12 12 16 14"/>
-                </svg>
-                <span className="text-xl font-bold text-banana tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Install + entry explanation */}
-        <div className="bg-bg-tertiary rounded-xl p-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${isStandalone ? 'bg-success/20' : 'bg-bg-elevated'}`}>
-              {isStandalone ? (
-                <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              )}
-            </div>
-            <div className="flex-1">
-              <p className="font-medium text-text-primary">Add SBS to your home screen</p>
-              {isStandalone ? (
-                <p className="text-sm text-success">Installed — you&apos;re entered!</p>
-              ) : (
-                <p className="text-sm text-text-muted">Once you open the app from your home screen, you&apos;re automatically entered</p>
-              )}
-            </div>
-            {!isStandalone && (
-              <Button size="sm" onClick={handleInstallClick}>
-                Install
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Notifications — optional, not a requirement */}
-        {!isSubscribed && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-bg-elevated">
-                <span className="text-lg">🔔</span>
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-text-primary">Want draft reminders?</p>
-                <p className="text-sm text-text-muted">Get notified before your drafts start</p>
-              </div>
-              <Button size="sm" onClick={acceptOptIn} disabled={notifLoading}>
-                {notifLoading ? '...' : 'Allow'}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Post-promo state */}
-        {timerEnded && (
-          <div className="pt-2">
-            <Button className="w-full" onClick={() => { onClose(); router.push('/banana-wheel/raffle'); }}>
-              Watch the Draw
-            </Button>
-          </div>
-        )}
-      </>
-    );
-  };
-
   const renderPromoContent = () => {
     switch (promo.type) {
       case 'daily-drafts':
@@ -905,8 +808,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         return renderBuyBonusContent();
       case 'tweet-engagement':
         return renderTweetEngagementContent();
-      case 'add-to-home-screen':
-        return renderAddToHomeScreenContent();
       default:
         return null;
     }
@@ -993,23 +894,21 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {/* Dynamic Content Based on Promo Type */}
         {renderPromoContent()}
 
-        {/* Claim Button (not for add-to-home-screen — it has its own CTA) */}
-        {promo.type !== 'add-to-home-screen' && (
-          <div className="pt-4 border-t border-bg-tertiary">
-            <Button
-              className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
-              disabled={!canClaim}
-              onClick={handleClaim}
-            >
-              {claimButtonText}
-            </Button>
-            {!canClaim && (
-              <p className="text-text-muted text-xs text-center mt-2">
-                Complete the requirements above to claim your reward
-              </p>
-            )}
-          </div>
-        )}
+        {/* Claim Button */}
+        <div className="pt-4 border-t border-bg-tertiary">
+          <Button
+            className={`w-full transition-all ${canClaim ? 'hover:scale-105  hover:!bg-banana' : ''}`}
+            disabled={!canClaim}
+            onClick={handleClaim}
+          >
+            {claimButtonText}
+          </Button>
+          {!canClaim && (
+            <p className="text-text-muted text-xs text-center mt-2">
+              Complete the requirements above to claim your reward
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Claim Success Popup */}
@@ -1056,14 +955,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         </div>
       )}
     </Modal>
-
-    {/* PWA Install Modal (opened from add-to-home-screen promo) */}
-    {installModalBrowser && (
-      <InstallModal
-        browser={installModalBrowser}
-        onClose={() => setInstallModalBrowser(null)}
-      />
-    )}
     </>
   );
 }

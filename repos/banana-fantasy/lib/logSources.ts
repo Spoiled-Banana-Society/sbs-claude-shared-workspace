@@ -46,6 +46,23 @@ export const LOG_SOURCES = {
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
+    // Money paths: a draft pass was spent but the refund (on join-fail or leave)
+    // didn't land → user is down a pass with no trace. Critical.
+    LEAVE_REFUND_FAILED: 'draft.leave_refund_failed',
+    JOIN_REFUND_FAILED: 'draft.join_refund_failed',
+    // Leaving a draft failed server-side (Go still has the user in the league).
+    LEAVE_FAILED: 'draft.leave_failed',
+    // Queue / special-draft (jackpot/HOF) creation + fill pipeline.
+    QUEUE_CREATE_FAILED: 'draft.queue.create_draft_failed',
+    QUEUE_FILL_BOTS_FAILED: 'draft.queue.fill_bots_failed',
+    QUEUE_MINT_FAILED: 'draft.queue.mint_failed',
+    QUEUE_STATE_NOT_READY: 'draft.queue.state_not_ready',
+    QUEUE_POLL_FAILED: 'draft.queue_poll_failed',
+    // The "Joining lobby" overlay → draft-room hand-off took abnormally long
+    // (blank/flash between leaving /drafting and the lobby painting). Warning
+    // severity (not critical) — cosmetic, recoverable — but visible in admin so
+    // we can actually SEE the join glitch when it happens instead of guessing.
+    JOIN_HANDOFF_SLOW: 'draft.join_handoff_slow',
     PICK_SUBMIT_UNHANDLED: 'draft.pick_submit_unhandled_error',
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',
@@ -71,12 +88,24 @@ export const LOG_SOURCES = {
     ADMIN_WALLET_UNAVAILABLE: 'payment.admin_wallet_unavailable',
     MINT_FAILED: 'card-mint.mint_failed',
     WRONG_NETWORK: 'payment.wrong_network',
+    // Best-effort analytics beacon (MoonPay popup) + the post-purchase USDC
+    // balance poll. Warning, not notify — recoverable / informational.
+    MOONPAY_SESSION_BEACON_FAILED: 'payment.moonpay.session_beacon_failed',
+    USDC_BALANCE_POLL_FAILED: 'payment.usdc.balance_poll_failed',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',
     CLAIM_FAILED: 'promo.claim.failed',
     JP_REVEAL_FAILED: 'promo.jp_reveal_failed',
     TWEET_VERIFY_FAILED: 'promo.tweet_verify_failed',
+    // Promo credit at risk — founder-draft join not recorded. Critical.
+    FOUNDER_DRAFT_FAILED: 'promo.founder_draft.failed',
+    // PWA raffle: a draw/award lost (critical) or a notify send failed (warn).
+    RAFFLE_RESULT_FAILED: 'promo.raffle.result_failed',
+    RAFFLE_NOTIFY_FAILED: 'promo.raffle.notify_failed',
+    // Draft-complete promo crediting + the exposure recompute it triggers.
+    DRAFT_COMPLETE_FAILED: 'promo.draft_complete.failed',
+    EXPOSURE_RECOMPUTE_FAILED: 'promo.exposure_recompute_failed',
   },
   marketplace: {
     BUY_EXECUTION_FAILED: 'marketplace.buy_execution_failed',
@@ -87,6 +116,11 @@ export const LOG_SOURCES = {
     SWEEP_TEAM_BUY_FAILED: 'marketplace.sweep_team_buy_failed',
     OFFER_ACCEPT_FAILED: 'marketplace.offer_accept_failed',
     OFFER_CREATE_FAILED: 'marketplace.offer_create_failed',
+    // Sweep (multi-buy): card-funding failure = money in flight (critical);
+    // balance-check failure is recoverable (warn). Cancel-offer on detail page.
+    SWEEP_FUND_FAILED: 'marketplace.sweep_fund_failed',
+    SWEEP_BALANCE_CHECK_FAILED: 'marketplace.sweep_balance_check_failed',
+    CANCEL_OFFER_FAILED: 'marketplace.cancel_offer_failed',
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',
@@ -101,6 +135,20 @@ export const LOG_SOURCES = {
     WALLET_CONNECT_TIMEOUT: 'auth.wallet_connect_timeout',
     WALLET_CONNECT_FAILED: 'auth.wallet_connect_failed',
     WALLET_CONNECT_ABANDONED: 'auth.wallet_connect_abandoned',
+    // Social-login wallet resolution via the Privy User API. When this fails,
+    // social-login users lose their wallet downstream (the May incident).
+    // Already notify-matched by /privy\.fetch_user\.error/i.
+    PRIVY_USER_API_FAILED: 'auth.privy.fetch_user.error',
+    // Twitter/X verify Firestore write + username claim + client login.
+    TWITTER_VERIFY_FAILED: 'auth.twitter.verify_write_failed',
+    USERNAME_CLAIM_FAILED: 'auth.username.claim_failed',
+    LOGIN_FAILED: 'auth.login_failed',
+    LINK_TWITTER_FAILED: 'auth.link_twitter_failed',
+    // Quiet, signal-only alarm for the "login modal pops while you're actually
+    // logged in" blink. Fires ONLY when the login prompt triggers while Privy
+    // still reports authenticated (the contradiction = the bug) — replaces the
+    // chatty `authblink` diagnostic. Badges so a recurrence is visible.
+    SPURIOUS_LOGIN_MODAL: 'auth.spurious_login_modal',
   },
   kyc: {
     DIDIT_API_FAILED: 'kyc.didit_api_failed',
@@ -113,6 +161,11 @@ export const LOG_SOURCES = {
   prizes: {
     WITHDRAWAL_API_FAILED: 'prizes.withdrawal_api_failed',
     ELIGIBILITY_FETCH_FAILED: 'prizes.eligibility_fetch_failed',
+    // Withdraw-all side effects: KYC cumulative total + offramp audit trail.
+    // Warn (the withdrawal itself succeeded; these are bookkeeping) but notify.
+    CUMULATIVE_INCREMENT_FAILED: 'prizes.cumulative_increment_failed',
+    OFFRAMP_AUDIT_FAILED: 'prizes.offramp_audit_failed',
+    FETCH_FAILED: 'prizes.fetch_failed',
   },
   profile: {
     ACTIVITY_FETCH_FAILED: 'profile.activity_fetch_failed',
@@ -205,6 +258,12 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^draft\.pick_submit/i,
   /^draft\.autopick_submit/i,
   /^draft\.phase_check_failed/i,
+  /^draft\.leave_refund_failed/i,
+  /^draft\.join_refund_failed/i,
+  /^draft\.queue\.create_draft_failed/i,
+  /^promo\.founder_draft\.failed/i,
+  /^promo\.raffle\.result_failed/i,
+  /^marketplace\.sweep_fund_failed/i,
   // ── Money: payments, mints, prizes, marketplace funds ──
   /^payment\./i,
   /^card-mint\./i,
@@ -246,6 +305,24 @@ export function logSeverity(source: string | undefined | null): LogSeverity {
   if (CRITICAL_PATTERNS.some((p) => p.test(source))) return 'critical';
   if (LOW_PATTERNS.some((p) => p.test(source))) return 'low';
   return 'warning';
+}
+
+/* ── Cost-smart policy (never drops a real fire) ───────────────────
+ * Tunes how aggressively each tier is throttled (client) and sampled
+ * (ingest), so a noisy LOW source can't become a Firestore/Sentry
+ * write-storm — while CRITICAL is never throttled or sampled.
+ *   - throttleMs: client per-source dedupe window in reportClientError
+ *   - ingestSampleRate: fraction of events the ingest route keeps (1 = all)
+ */
+export const SEVERITY_POLICY: Record<LogSeverity, { throttleMs: number; ingestSampleRate: number }> = {
+  critical: { throttleMs: 0,        ingestSampleRate: 1 },    // every distinct critical, always
+  warning:  { throttleMs: 120_000,  ingestSampleRate: 1 },    // 2-min dedupe, keep all
+  low:      { throttleMs: 600_000,  ingestSampleRate: 0.1 },  // 10-min dedupe, keep 1 in 10
+};
+
+/** Cost-smart throttle window for a source's tier (client-side dedupe). */
+export function throttleMsForSource(source: string | undefined | null): number {
+  return SEVERITY_POLICY[logSeverity(source)].throttleMs;
 }
 
 /* ── Test-traffic detection ────────────────────────────────────── */

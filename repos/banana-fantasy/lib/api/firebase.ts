@@ -209,6 +209,8 @@ export interface UserStreamEvent {
     | 'promo-buy-10'
     | 'promo-daily-drafts'
     | 'promo-new-user'
+    | 'promo-first-purchase'
+    | 'first-purchase-unlocked'
     | 'referral-milestone';
   timestamp: number;
   draftId?: string;

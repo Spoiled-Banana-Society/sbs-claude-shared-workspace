@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { normalizeWalletAddress } from '@/lib/api/client';
+import { logger } from '@/lib/logger';
 
 const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
 
@@ -51,6 +52,7 @@ export async function GET(req: Request) {
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('Owner fetch failed:', err);
+    logger.error('draft.owners.unhandled', { err, actor: getWalletParam(req) ?? undefined });
     return jsonError('Owner fetch failed', 500);
   }
 }

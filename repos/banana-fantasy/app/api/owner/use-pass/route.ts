@@ -4,6 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
+import { countSpendableTokens } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -36,6 +37,18 @@ export async function POST(req: Request) {
     const field = passType === 'paid' ? 'draftPasses' : 'freeDrafts';
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
+
+    // Hard gate: never let a user spend a pass they don't really have. We check
+    // the engine's REAL spendable inventory (owners/{wallet}/validDraftTokens —
+    // the exact collection JoinLeagues consumes), not just the counter. So even
+    // if a counter ever drifts above reality, the user is stopped cleanly here
+    // instead of being waved into a draft the engine then rejects.
+    const inventory = await countSpendableTokens(userId);
+    const available = passType === 'paid' ? inventory.paid : inventory.free;
+    if (available <= 0) {
+      logger.warn('use-pass.no_real_token', { userId, passType, counterField: field });
+      return json({ success: true, field, decremented: false, before: 0, after: 0, reason: 'no_spendable_token' });
+    }
 
     // Pre-build the activity event doc OUTSIDE the transaction (Firestore
     // transactions disallow new reads after writes). The transaction will

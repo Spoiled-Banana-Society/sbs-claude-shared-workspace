@@ -37,7 +37,7 @@ interface CurrentBatchInfo {
   positionInBatch?: number;
 }
 
-export function BatchProofBanner() {
+export function BatchProofBanner({ display = 'card' }: { display?: 'card' | 'seal' } = {}) {
   const [info, setInfo] = useState<CurrentBatchInfo | null>(null);
   const [proof, setProof] = useState<BatchSummary | null>(null);
   const [explainerOpen, setExplainerOpen] = useState(false);
@@ -117,6 +117,47 @@ export function BatchProofBanner() {
   // Merkle-style card. Used whenever the merkle contract is configured —
   // signals to users that the new system is live regardless of which
   // specific batch they're currently looking at.
+  if (merkleActive && display === 'seal') {
+    // Footer-style trust seal — a quiet, centered signature instead of a
+    // full card. Used on mobile where a big rectangle reads as an ad block.
+    // Taps through to the same explainer modal as the card.
+    return (
+      <div
+        className="flex flex-col items-center gap-1.5 py-2 text-center"
+        style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+      >
+        <button
+          onClick={() => setExplainerOpen(true)}
+          className="group inline-flex items-center gap-1.5 text-white/40 hover:text-white/65 transition-colors"
+          title="How does this verification work?"
+        >
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400/80 animate-pulse" />
+          <span className="text-[11px] tracking-wide">
+            Provably fair &middot; randomized by Chainlink VRF
+          </span>
+          <span
+            aria-hidden
+            className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px] font-semibold italic leading-none opacity-70"
+          >
+            i
+          </span>
+        </button>
+        <Link
+          href="/proof-feed"
+          className="text-banana/70 hover:text-banana font-medium text-[11px]"
+        >
+          View live feed &rarr;
+        </Link>
+
+        <DraftProofExplainerModal
+          open={explainerOpen}
+          onClose={() => setExplainerOpen(false)}
+          contractAddress={merkleContractAddress}
+        />
+      </div>
+    );
+  }
+
   if (merkleActive) {
     return (
       <div

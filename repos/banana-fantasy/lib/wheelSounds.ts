@@ -1,5 +1,7 @@
-// Web Audio API sound effects for the Banana Wheel
-// No external files needed — generates tones programmatically
+// Web Audio API sound effects for the Banana Wheel.
+// Fully procedural — no external audio files. Designed around the real spin
+// length (SPIN_DURATION_MS ≈ 1300ms): a tight EDM build that climaxes the
+// instant the wheel stops, then a tiered "drop" sting for the prize.
 
 let audioCtx: AudioContext | null = null;
 
@@ -13,7 +15,33 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
-function playTone(frequency: number, duration: number, volume = 0.15, type: OscillatorType = 'sine') {
+// A shared mastering chain: compressor glues the layers and stops the stacked
+// oscillators from clipping, which is most of what makes this read as "produced"
+// rather than a pile of beeps.
+function masterChain(ctx: AudioContext): GainNode {
+  const out = ctx.createGain();
+  out.gain.value = 0.9;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14;
+  comp.knee.value = 24;
+  comp.ratio.value = 12;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.18;
+  out.connect(comp);
+  comp.connect(ctx.destination);
+  return out;
+}
+
+// One-second of white noise, reused for hats / risers / impacts.
+function noiseBuffer(ctx: AudioContext, seconds = 1): AudioBuffer {
+  const len = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function playTone(frequency: number, duration: number, volume = 0.15, type: OscillatorType = 'sine', dest?: AudioNode) {
   const ctx = getAudioContext();
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -22,192 +50,236 @@ function playTone(frequency: number, duration: number, volume = 0.15, type: Osci
   gain.gain.setValueAtTime(volume, ctx.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
   osc.connect(gain);
-  gain.connect(ctx.destination);
+  gain.connect(dest ?? ctx.destination);
   osc.start(ctx.currentTime);
   osc.stop(ctx.currentTime + duration);
 }
 
-// Tick sound — short click as wheel passes each segment
+// Punchy kick: pitch-dropping sine + click transient.
+function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.9) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(170, at);
+  osc.frequency.exponentialRampToValueAtTime(46, at + 0.11);
+  gain.gain.setValueAtTime(vol, at);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + 0.16);
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(at);
+  osc.stop(at + 0.18);
+}
+
+// Noise impact / crash — used for hats, claps and big wins.
+function noiseHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.4, dur = 0.5, hp = 1200) {
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(ctx, dur + 0.05);
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = hp;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(vol, at);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(dest);
+  src.start(at);
+  src.stop(at + dur + 0.05);
+}
+
+// Tick — kept for backwards-compat (used to be the per-segment click).
 export function playTick(pitch = 800) {
   playTone(pitch, 0.05, 0.08, 'square');
 }
 
-// Background music during spin — building tension drone + rising sweep
-function startSpinMusic(): () => void {
+// The spin groove: a driving EDM loop that starts AUDIBLE the instant the
+// wheel starts (not after the result lands), keeps looping for as long as the
+// wheel spins (variable — depends on network), and on stop() rides a beat past
+// the landing then fades, so the music clearly continues after the wheel stops.
+function startGroove(): () => void {
   const ctx = getAudioContext();
-  const now = ctx.currentTime;
-  const duration = 5;
+  const master = masterChain(ctx);
+  const t0 = ctx.currentTime;
+  // ~instant fade-in (just avoids a click), so it reads as "starts immediately".
+  master.gain.setValueAtTime(0.0001, t0);
+  master.gain.exponentialRampToValueAtTime(0.85, t0 + 0.07);
 
-  // Master gain for all music
-  const masterGain = ctx.createGain();
-  masterGain.gain.setValueAtTime(0, now);
-  masterGain.gain.linearRampToValueAtTime(0.12, now + 0.5); // fade in
-  masterGain.gain.setValueAtTime(0.12, now + duration - 0.8);
-  masterGain.gain.linearRampToValueAtTime(0, now + duration); // fade out
-  masterGain.connect(ctx.destination);
+  const tempo = 142;                       // BPM — driving house/EDM
+  const sixteenth = 60 / tempo / 4;        // seconds per 16th note
+  const bassRoot = 55;                     // A1
+  const arp = [220.0, 261.6, 329.6, 440.0, 329.6, 261.6, 392.0, 329.6]; // A-min-ish
 
-  // Low bass drone — builds anticipation
-  const bass = ctx.createOscillator();
-  const bassGain = ctx.createGain();
-  bass.type = 'sine';
-  bass.frequency.setValueAtTime(65, now); // C2
-  bass.frequency.linearRampToValueAtTime(82, now + duration); // subtle rise
-  bassGain.gain.setValueAtTime(1, now);
-  bass.connect(bassGain);
-  bassGain.connect(masterGain);
-  bass.start(now);
-  bass.stop(now + duration);
+  // Closed hat = a tiny high-passed noise tick.
+  const hat = (t: number, vol: number) => noiseHit(ctx, master, t, vol, 0.035, 7000);
 
-  // Mid pad — warm chord that swells
-  const pad1 = ctx.createOscillator();
-  const pad1Gain = ctx.createGain();
-  pad1.type = 'sine';
-  pad1.frequency.setValueAtTime(196, now); // G3
-  pad1.frequency.linearRampToValueAtTime(262, now + duration); // rise to C4
-  pad1Gain.gain.setValueAtTime(0.3, now);
-  pad1Gain.gain.linearRampToValueAtTime(0.7, now + duration);
-  pad1.connect(pad1Gain);
-  pad1Gain.connect(masterGain);
-  pad1.start(now);
-  pad1.stop(now + duration);
+  // Plucky sub-bass note through a lowpass.
+  const bass = (t: number, freq: number, vol = 0.5) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    const lp = ctx.createBiquadFilter();
+    o.type = 'sawtooth';
+    o.frequency.value = freq;
+    lp.type = 'lowpass';
+    lp.frequency.value = 420;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(lp); lp.connect(g); g.connect(master);
+    o.start(t); o.stop(t + 0.2);
+  };
 
-  // High shimmer — rising excitement
-  const shimmer = ctx.createOscillator();
-  const shimmerGain = ctx.createGain();
-  shimmer.type = 'triangle';
-  shimmer.frequency.setValueAtTime(392, now); // G4
-  shimmer.frequency.exponentialRampToValueAtTime(784, now + duration); // rise to G5
-  shimmerGain.gain.setValueAtTime(0, now);
-  shimmerGain.gain.linearRampToValueAtTime(0.4, now + 2); // fade in slowly
-  shimmerGain.gain.linearRampToValueAtTime(0.6, now + duration - 1);
-  shimmerGain.gain.linearRampToValueAtTime(0, now + duration);
-  shimmer.connect(shimmerGain);
-  shimmerGain.connect(masterGain);
-  shimmer.start(now);
-  shimmer.stop(now + duration);
+  // Schedule one 16th-note step of the bar.
+  const scheduleStep = (s: number, t: number) => {
+    const b = s % 16; // position within the 16-step bar
+    if (b % 4 === 0) kick(ctx, master, t, 0.95);                 // four-on-the-floor
+    if (b % 2 === 0) hat(t, b % 4 === 2 ? 0.13 : 0.06);          // hats, offbeat accent
+    if (b === 4 || b === 12) noiseHit(ctx, master, t, 0.16, 0.13, 1800); // clap backbeat
+    if (b === 0 || b === 6 || b === 10) bass(t, bassRoot * 2);   // bass groove
+    if (b === 8) bass(t, bassRoot * 3);
+    // bright square arp on every 16th
+    const note = arp[s % arp.length] * 2;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.frequency.value = note;
+    g.gain.setValueAtTime(0.06, t);
+    g.gain.exponentialRampToValueAtTime(0.0008, t + sixteenth * 0.9);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t + sixteenth);
+  };
 
-  // Pulsing rhythm — subtle eighth-note pulse that builds
-  const pulseOsc = ctx.createOscillator();
-  const pulseGain = ctx.createGain();
-  const pulseLfo = ctx.createOscillator();
-  const pulseLfoGain = ctx.createGain();
-  pulseOsc.type = 'sine';
-  pulseOsc.frequency.setValueAtTime(131, now); // C3
-  pulseOsc.frequency.linearRampToValueAtTime(165, now + duration);
-  pulseLfo.type = 'square';
-  pulseLfo.frequency.setValueAtTime(3, now); // 3 Hz pulse
-  pulseLfo.frequency.linearRampToValueAtTime(6, now + duration); // speeds up
-  pulseLfoGain.gain.setValueAtTime(0.3, now);
-  pulseLfo.connect(pulseLfoGain);
-  pulseLfoGain.connect(pulseGain.gain);
-  pulseGain.gain.setValueAtTime(0.3, now);
-  pulseOsc.connect(pulseGain);
-  pulseGain.connect(masterGain);
-  pulseOsc.start(now);
-  pulseLfo.start(now);
-  pulseOsc.stop(now + duration);
-  pulseLfo.stop(now + duration);
-
+  // Lookahead scheduler — keeps the loop going for any spin length.
+  let step = 0;
+  let nextTime = t0 + 0.06;
   let stopped = false;
-  return () => {
+  const timer = setInterval(() => {
     if (stopped) return;
-    stopped = true;
-    try {
-      masterGain.gain.cancelScheduledValues(ctx.currentTime);
-      masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.1);
-    } catch { /* already stopped */ }
-  };
-}
-
-// Tick sounds — only in the last 2 seconds as wheel decelerates
-function startDecelerationTicks(): () => void {
-  let cancelled = false;
-
-  // Wait 3 seconds (wheel at full speed), then start ticking for last 2s
-  setTimeout(() => {
-    if (cancelled) return;
-    let elapsed = 0;
-    const tickDuration = 2000;
-    const startInterval = 80;
-    const endInterval = 400;
-
-    function scheduleTick() {
-      if (cancelled) return;
-      const t = elapsed / tickDuration;
-      const interval = startInterval + (endInterval - startInterval) * (t * t); // quadratic slowdown
-      const pitch = 1000 - t * 400; // pitch drops as it slows
-
-      playTick(pitch);
-      elapsed += interval;
-
-      if (elapsed < tickDuration) {
-        setTimeout(scheduleTick, interval);
-      }
+    const horizon = ctx.currentTime + 0.2;
+    while (nextTime < horizon) {
+      scheduleStep(step, nextTime);
+      step += 1;
+      nextTime += sixteenth;
     }
-    scheduleTick();
-  }, 3000);
+  }, 40);
 
-  return () => { cancelled = true; };
-}
-
-// Combined spin sound: music + deceleration ticks
-export function startSpinSound(): () => void {
-  const stopMusic = startSpinMusic();
-  const stopTicks = startDecelerationTicks();
-
+  let outroStarted = false;
   return () => {
-    stopMusic();
-    stopTicks();
+    if (outroStarted) return;
+    outroStarted = true;
+    const now = ctx.currentTime;
+    try {
+      // Hold full volume for ~0.9s past the stop, THEN fade — the music keeps
+      // grooving after the wheel lands instead of cutting off.
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.setValueAtTime(0.85, now + 0.9);
+      master.gain.exponentialRampToValueAtTime(0.0008, now + 2.8);
+    } catch { /* ignore */ }
+    // Keep scheduling through the tail, then stop.
+    setTimeout(() => { stopped = true; clearInterval(timer); }, 2900);
   };
 }
 
-// Win sounds — tiered by prize quality
-export function playWinSound(tier: 'standard' | 'good' | 'great' | 'legendary') {
-  const ctx = getAudioContext();
-  const _now = ctx.currentTime;
-
-  switch (tier) {
-    case 'standard': {
-      // Simple two-note chime
-      playTone(523, 0.3, 0.12); // C5
-      setTimeout(() => playTone(659, 0.4, 0.12), 150); // E5
-      break;
-    }
-    case 'good': {
-      // Three-note ascending
-      playTone(523, 0.25, 0.15); // C5
-      setTimeout(() => playTone(659, 0.25, 0.15), 120); // E5
-      setTimeout(() => playTone(784, 0.5, 0.15), 240); // G5
-      break;
-    }
-    case 'great': {
-      // Four-note fanfare
-      playTone(523, 0.2, 0.18); // C5
-      setTimeout(() => playTone(659, 0.2, 0.18), 100); // E5
-      setTimeout(() => playTone(784, 0.2, 0.18), 200); // G5
-      setTimeout(() => playTone(1047, 0.6, 0.2), 300); // C6
-      break;
-    }
-    case 'legendary': {
-      // Epic ascending chord with harmonics
-      const play = (freq: number, delay: number, dur: number, vol: number) => {
-        setTimeout(() => {
-          playTone(freq, dur, vol, 'sine');
-          playTone(freq * 1.5, dur, vol * 0.4, 'sine'); // fifth harmonic
-        }, delay);
-      };
-      play(392, 0, 0.3, 0.15);    // G4
-      play(523, 100, 0.3, 0.17);   // C5
-      play(659, 200, 0.3, 0.19);   // E5
-      play(784, 300, 0.3, 0.21);   // G5
-      play(1047, 450, 0.8, 0.25);  // C6
-      play(1319, 550, 1.0, 0.2);   // E6
-      break;
-    }
+// Public: start the spin soundbed the moment the wheel starts moving.
+export function startSpinSound(): () => void {
+  try {
+    return startGroove();
+  } catch {
+    return () => { /* audio unavailable — no-op */ };
   }
 }
 
-// Map a wheel segment to a sound tier
+// Win sounds — the payoff "drop". Tiered by prize quality.
+export function playWinSound(tier: 'standard' | 'good' | 'great' | 'legendary') {
+  try {
+    const ctx = getAudioContext();
+    const master = masterChain(ctx);
+    const now = ctx.currentTime;
+
+    // Sub-bass drop boom — the gut-punch under every win, bigger as tier climbs.
+    const boom = (vol: number, startFreq: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(startFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(40, now + 0.4);
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+      osc.connect(gain); gain.connect(master);
+      osc.start(now); osc.stop(now + 0.6);
+    };
+
+    // Detuned-saw stab chord (supersaw) through an opening lowpass = festival stab.
+    const stab = (freqs: number[], at: number, dur: number, vol: number) => {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(500, now + at);
+      lp.frequency.exponentialRampToValueAtTime(6000, now + at + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(vol, now + at);
+      g.gain.exponentialRampToValueAtTime(0.001, now + at + dur);
+      lp.connect(g); g.connect(master);
+      for (const f of freqs) {
+        for (const det of [-6, 0, 6]) {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = f * Math.pow(2, det / 1200);
+          o.connect(lp);
+          o.start(now + at);
+          o.stop(now + at + dur + 0.02);
+        }
+      }
+    };
+
+    const sparkle = (base: number, steps: number, vol: number) => {
+      for (let i = 0; i < steps; i++) {
+        playTone(base * Math.pow(2, i / 12) * 2, 0.18, vol, 'triangle', master);
+      }
+    };
+
+    switch (tier) {
+      case 'standard': {
+        boom(0.35, 120);
+        playTone(523, 0.18, 0.16, 'square', master);          // C5
+        setTimeout(() => playTone(784, 0.3, 0.16, 'square', master), 110); // G5
+        break;
+      }
+      case 'good': {
+        boom(0.45, 160);
+        stab([392, 523, 659], 0, 0.35, 0.16);                  // G/C/E chord stab
+        setTimeout(() => playTone(1047, 0.4, 0.14, 'triangle', master), 180);
+        noiseHit(ctx, master, now, 0.18, 0.3, 4000);
+        break;
+      }
+      case 'great': {
+        boom(0.55, 180);
+        noiseHit(ctx, master, now, 0.3, 0.5, 1500);            // crash
+        stab([523, 659, 784], 0.02, 0.5, 0.18);                // bright major stab
+        // ascending sparkle arp
+        [0, 100, 200, 320, 460].forEach((d, i) =>
+          setTimeout(() => playTone([523, 659, 784, 1047, 1319][i], 0.4, 0.16, 'triangle', master), d));
+        break;
+      }
+      case 'legendary': {
+        // Full festival drop: sub boom + crash + huge detuned stab + rising
+        // sparkle run + an octave-up shimmer tail.
+        boom(0.7, 220);
+        noiseHit(ctx, master, now, 0.4, 0.7, 1000);            // big crash
+        stab([523, 659, 784, 1047], 0.0, 0.7, 0.2);            // wide stab
+        setTimeout(() => stab([587, 740, 880, 1175], 0.0, 0.7, 0.18), 240); // lift a step
+        // rising sparkle run
+        [523, 659, 784, 1047, 1319, 1568, 2093].forEach((f, i) =>
+          setTimeout(() => {
+            playTone(f, 0.5, 0.16, 'triangle', master);
+            playTone(f * 1.5, 0.5, 0.07, 'sine', master);       // fifth shimmer
+          }, 120 + i * 80));
+        sparkle(1568, 4, 0.06);
+        break;
+      }
+    }
+  } catch { /* audio unavailable — no-op */ }
+}
+
+// Map a wheel segment to a sound tier.
 export function getWinTier(segment: { prizeValue?: number | string; id: string }): 'standard' | 'good' | 'great' | 'legendary' {
   if (segment.id === 'jackpot') return 'legendary';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'legendary';
