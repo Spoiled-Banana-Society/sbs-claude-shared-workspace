@@ -17,7 +17,9 @@ import { getWheelProofContractAddress } from '@/lib/wheelProofContract';
  * spins until an admin runs /api/admin/wheel-period/open.
  */
 export async function GET(req: Request) {
-  const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
+  // Polled by the wheel proof banner — general limit (60/min), not the tight
+  // spin bucket, so polling doesn't eat the user's spin budget.
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
     const period = await getCurrentPeriod();

@@ -25,7 +25,10 @@ import { logger } from '@/lib/logger';
  * Idempotent: if already confirmed, returns 200 without re-incrementing.
  */
 export async function POST(req: Request, ctx: { params: { spinId: string } }) {
-  const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
+  // Benign idempotent follow-up fired once after each spin. Keep it OFF the
+  // tight spin bucket (general 60/min) so it doesn't double-count against the
+  // user's spin budget and block their next real spin.
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
   try {
