@@ -5,6 +5,7 @@ import {
   computeFirstPurchaseGrant,
   computeMintProgress,
   firstPurchaseUpsell,
+  promoAwardsSpin,
 } from '@/lib/promoMath';
 
 describe('First-purchase bonus math', () => {
@@ -108,6 +109,20 @@ describe('First-purchase bonus math', () => {
         passesToNextSpin: 4,
         nextSpinTotal: 4,
       });
+    });
+  });
+
+  describe('promoAwardsSpin', () => {
+    it('detects spin-awarding promo titles (case-insensitive)', () => {
+      expect(promoAwardsSpin('Buy 10 → FREE SPIN')).toBe(true);
+      expect(promoAwardsSpin('First Purchase → BONUS SPINS')).toBe(true);
+      expect(promoAwardsSpin('4 Drafts Daily → FREE SPIN')).toBe(true);
+    });
+
+    it('is false for non-spin promos and empty input', () => {
+      expect(promoAwardsSpin('Buy 2 → 1 Free')).toBe(false);
+      expect(promoAwardsSpin('Refer a friend')).toBe(false);
+      expect(promoAwardsSpin(undefined)).toBe(false);
     });
   });
 });

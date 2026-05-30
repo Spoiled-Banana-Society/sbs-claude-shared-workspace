@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -426,6 +427,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
           {promo.title}
         </h3>
+        <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}
         </p>

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { Promo } from '@/types';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
 
 interface PromosSidebarProps {
   promos: Promo[];
@@ -68,6 +69,7 @@ export function PromosSidebar({
                   <span>{promo.title}</span>
                 )}
               </h4>
+              <SpinExplainer promoTitle={promo.title} className="mt-1 block text-center text-[11px] leading-snug text-[#4a4a4a]" />
               <div className="mt-auto">
                 {hasProgress && (
                   <div className="mb-2">

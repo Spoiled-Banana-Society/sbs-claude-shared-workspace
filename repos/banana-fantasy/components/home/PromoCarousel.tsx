@@ -6,6 +6,7 @@ import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
 
 interface PromoCarouselProps {
   promos: Promo[];
@@ -282,6 +283,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="text-sm whitespace-nowrap">{promo.title}</span>
                       )}
                     </h4>
+                    <SpinExplainer promoTitle={promo.title} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}

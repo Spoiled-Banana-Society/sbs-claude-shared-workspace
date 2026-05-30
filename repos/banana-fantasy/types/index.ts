@@ -23,6 +23,10 @@ export interface User {
   firstPurchaseBonusGranted?: boolean;
   pendingWheelWinnings?: number;
   firstPurchasePromoUnlocked?: boolean;
+  // True once the user has spun the Banana Wheel at least once. Drives the
+  // first-time "what's a spin?" explainer on promo cards — shown until their
+  // first spin, then hidden everywhere.
+  hasSpunWheel?: boolean;
   isVerified: boolean;
   referredBy?: string;
   createdAt: string;

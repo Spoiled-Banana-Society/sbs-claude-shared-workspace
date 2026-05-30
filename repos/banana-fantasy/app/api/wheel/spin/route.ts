@@ -329,8 +329,11 @@ export async function POST(req: Request) {
       const currentJp = Math.max(0, (userData?.jackpotEntries as number | undefined) ?? 0);
       const currentHof = Math.max(0, (userData?.hofEntries as number | undefined) ?? 0);
 
-      const balanceUpdate: Record<string, number> = {
+      const balanceUpdate: Record<string, number | boolean> = {
         wheelSpins: Math.max(0, currentSpins - 1),
+        // Mark that the user has now spun at least once — hides the first-time
+        // "what's a spin?" explainer on promo cards going forward.
+        hasSpunWheel: true,
       };
       // Tally every wheel winning (free drafts + jackpot/HOF entries) the user
       // must still FINISH before we surface the first-purchase promo popup.

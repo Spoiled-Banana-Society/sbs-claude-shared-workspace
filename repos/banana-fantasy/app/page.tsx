@@ -270,12 +270,14 @@ export default function HomePage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 pt-16 flex flex-col min-h-[calc(100vh-64px)]">
-      {/* First-purchase bonus nudge — pinned at the very top for eligible
-          (pre-purchase) users. Self-hides once they buy or dismiss it. */}
-      <FirstPurchaseBanner />
-
-      {/* Get the App banner */}
+      {/* Get the App banner — top priority for everyone (new + returning),
+          shows how to install on mobile. Self-hides permanently once they
+          engage with the install steps. */}
       <AddToHomeScreenCard />
+
+      {/* First-purchase bonus nudge — for eligible (pre-purchase) users.
+          Self-hides once they buy or dismiss it. */}
+      <FirstPurchaseBanner />
 
       {/* Special Draft Banner removed — special drafts now show on /drafting page */}
 

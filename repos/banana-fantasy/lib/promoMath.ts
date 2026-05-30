@@ -60,6 +60,15 @@ export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
   return { spinsThisPurchase, passesToNextSpin, nextSpinTotal: q + passesToNextSpin };
 }
 
+/**
+ * Whether a promo awards a Banana Wheel spin (used to decide where to show the
+ * first-time "what's a spin?" explainer). Spin promos all say "SPIN" in their
+ * title (e.g. "Buy 10 → FREE SPIN", "First Purchase → BONUS SPINS").
+ */
+export function promoAwardsSpin(title: string | undefined): boolean {
+  return !!title && /spin/i.test(title);
+}
+
 export interface MintProgress {
   progressCurrent: number;
   milestonesEarned: number;

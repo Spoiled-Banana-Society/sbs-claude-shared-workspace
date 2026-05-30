@@ -40,7 +40,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
   const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -595,6 +595,15 @@ export function BuyPassesModal({
                     )}
                   </p>
                 </div>
+              )}
+
+              {/* Stacked-value note — new users only (non-BB3). Reminds them the
+                  spins stack with the "4 drafts a day → free spin" promo. */}
+              {firstPurchaseEligible && !isBB3Holder && quantity > 0 && (
+                <p className="mt-2 px-1 text-[11px] leading-relaxed text-text-muted">
+                  And it stacks — complete 4 drafts in a day and earn{' '}
+                  <span className="font-semibold text-text-secondary">another free spin</span>. Lots of value to start! 🍌
+                </p>
               )}
             </div>
 

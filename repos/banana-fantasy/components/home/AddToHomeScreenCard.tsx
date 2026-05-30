@@ -205,12 +205,17 @@ function CopyLinkButton() {
 export function AddToHomeScreenCard() {
   const { canInstall: _canInstall, isStandalone, triggerInstall } = useInstallPrompt();
   const [show, setShow] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
-    if (isMobile && !isStandalone && !isDismissed()) {
+    setIsDesktop(!isMobile);
+    // Show on EVERY device (desktop too) so desktop users learn the app exists
+    // and how to install it on their phone. Hidden once installed (standalone)
+    // or after they engage with the steps.
+    if (!isStandalone && !isDismissed()) {
       setShow(true);
     }
   }, [isStandalone]);
@@ -218,13 +223,19 @@ export function AddToHomeScreenCard() {
   const handleInstall = useCallback(async () => {
     localStorage.setItem(ENGAGED_KEY, '1');
 
+    // Desktop can't install the phone app — show the iPhone Safari steps so the
+    // user knows to finish on their phone.
+    if (isDesktop) {
+      setModalBrowser('safari');
+      return;
+    }
     if (isIOS()) {
       setModalBrowser(isIOSSafari() ? 'safari' : 'chrome');
     } else {
       const installed = await triggerInstall();
       if (installed) setShow(false);
     }
-  }, [triggerInstall]);
+  }, [triggerInstall, isDesktop]);
 
   if (!show) return null;
 
@@ -239,11 +250,17 @@ export function AddToHomeScreenCard() {
             <Image src="/icons/icon-192.png" alt="SBS" width={32} height={32} className="rounded-lg" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white font-semibold text-[13px]">Get the App</p>
-            <p className="text-white/40 text-[11px]">Add to home screen — works like a real app</p>
+            <p className="text-white font-semibold text-[13px]">
+              {isDesktop ? 'Get the App on Your Phone' : 'Get the App'}
+            </p>
+            <p className="text-white/40 text-[11px]">
+              {isDesktop
+                ? 'On your iPhone, open in Safari → Share → Add to Home Screen'
+                : 'Add to home screen — works like a real app'}
+            </p>
           </div>
           <span className="px-4 py-1.5 bg-banana text-black text-xs font-bold rounded-full flex-shrink-0 pointer-events-none">
-            Install
+            {isDesktop ? 'How' : 'Install'}
           </span>
         </div>
       </aside>
@@ -251,6 +268,12 @@ export function AddToHomeScreenCard() {
       {modalBrowser && (
         <InstallModal
           browser={modalBrowser}
+          promoBanner={isDesktop ? (
+            <div className="px-5 pt-4 -mb-1 text-center">
+              <p className="text-banana text-xs font-semibold">📱 Do this on your iPhone, in Safari</p>
+              <p className="text-white/40 text-[11px] mt-0.5">Open SBS in Safari on your phone, then follow these steps:</p>
+            </div>
+          ) : undefined}
           onClose={() => { setModalBrowser(null); setShow(false); localStorage.setItem(ENGAGED_KEY, '1'); }}
         />
       )}
