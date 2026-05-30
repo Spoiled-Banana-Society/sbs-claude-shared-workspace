@@ -51,6 +51,6 @@ test.describe('Terms of Service Page', () => {
   });
 
   test('contact section has email link', async ({ page }) => {
-    await expect(page.getByText('support@spoiledbananasociety.com').first()).toBeVisible();
+    await expect(page.getByText('team@sbsfantasy.com').first()).toBeVisible();
   });
 });
