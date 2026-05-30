@@ -211,6 +211,7 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     });
     if (!res.ok) {
       console.warn('[auth] Privy User API non-OK:', res.status);
+      logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { actor: userId, context: { status: res.status } });
       privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_TTL_MS });
       return null;
     }
@@ -228,6 +229,7 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     return wallet;
   } catch (err) {
     console.warn('[auth] Privy User API fetch failed:', err);
+    logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { err, actor: userId });
     return null;
   }
 }

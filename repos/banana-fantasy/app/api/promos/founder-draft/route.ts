@@ -9,6 +9,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { recordFounderDraftJoin, markFounderDraft } from '@/lib/db';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 // Hardcoded staging — same pattern as /api/spectate/draft-state.
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -71,8 +72,10 @@ export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
+  let actorWallet: string | undefined;
   try {
     const { walletAddress } = await getPrivyUser(req);
+    actorWallet = walletAddress ?? undefined;
     if (!walletAddress) throw new ApiError(401, 'Authenticated wallet address missing from token');
 
     const body = await parseBody(req);
@@ -106,7 +109,7 @@ export async function POST(req: Request) {
     return json({ promo }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    logger.error('promos.founder-draft.failed', { err });
+    logger.error(LOG_SOURCES.promo.FOUNDER_DRAFT_FAILED, { err, actor: actorWallet });
     return jsonError('Internal Server Error', 500);
   }
 }

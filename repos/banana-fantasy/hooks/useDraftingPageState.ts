@@ -20,6 +20,8 @@ import { logger } from '@/lib/logger';
 import { subscribeDraftNumPlayers, subscribeDraftDisplayName } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
@@ -135,13 +137,14 @@ export function useDraftingPageState() {
     return filterAndSortVisiblePromos(rawPromos, {
       isBB3Holder,
       newUserPromoClaimed,
+      firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
         return true;
       },
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [promoIndex, setPromoIndex] = useState(0);
@@ -271,6 +274,13 @@ export function useDraftingPageState() {
         })
         .catch((e) => {
           console.error('[Queue] Poll failed:', e);
+          // 5s poll — reportClientError's per-source throttle dedupes the spam.
+          reportClientError({
+            source: LOG_SOURCES.draft.QUEUE_POLL_FAILED,
+            message: e instanceof Error ? e.message : String(e),
+            route: 'drafting',
+            actor: user?.walletAddress,
+          });
         });
     };
 
@@ -419,10 +429,6 @@ export function useDraftingPageState() {
     // no pulse, no async draftId race (the old flow navigated with no id and
     // joined inside the room, which caused the "0 then 1 then 2" flash).
     setJoiningLobby(true);
-    // DIAGNOSTIC (temp): overlay shown. If the overlay "barely shows", compare
-    // this ts against the navigate ts below and any authblink/user-wiped in
-    // between (an auth blink mid-join can yank the page out from under it).
-    clientLog('joinoverlay', 'overlay-shown', { passType, speed, wallet: user.walletAddress });
     // Hold the overlay for a minimum beat so the branded "Joining lobby…"
     // transition is always clearly visible, even when joinDraft resolves
     // near-instantly. Perceptible but snappy — never pads beyond this.
@@ -442,8 +448,6 @@ export function useDraftingPageState() {
     }
 
     if (!draftRoom?.id) {
-      // DIAGNOSTIC (temp): join failed after all retries → overlay hidden + alert.
-      clientLog('joinoverlay', 'join-failed', { wallet: user.walletAddress, passType });
       // Join failed after retries. Refund the pass we just spent (use-pass
       // decremented Firestore; no league was actually joined) and bail.
       setJoiningLobby(false);
@@ -451,7 +455,27 @@ export function useDraftingPageState() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      }).catch(() => {});
+      })
+        .then((res) => {
+          if (!res.ok) {
+            reportClientError({
+              source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
+              message: `Join-fail refund returned ${res.status}`,
+              route: 'drafting',
+              actor: user.walletAddress,
+              context: { passType, userId: user.id || user.walletAddress, status: res.status },
+            });
+          }
+        })
+        .catch((err) => {
+          reportClientError({
+            source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'drafting',
+            actor: user.walletAddress,
+            context: { passType, userId: user.id || user.walletAddress, network: true },
+          });
+        });
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
       alert('Could not join a draft right now. Your pass was not used — please try again.');
@@ -494,12 +518,10 @@ export function useDraftingPageState() {
     // Let the branded overlay breathe for its minimum beat before we swap routes.
     const elapsed = Date.now() - overlayStart;
     if (elapsed < MIN_OVERLAY_MS) await new Promise(r => setTimeout(r, MIN_OVERLAY_MS - elapsed));
-    // DIAGNOSTIC (temp): how long the overlay was actually visible before nav.
-    clientLog('joinoverlay', 'navigating', {
-      joinMs: elapsed,
-      visibleMs: Math.max(elapsed, MIN_OVERLAY_MS),
-      draftId: newId,
-    });
+    // Stamp the moment we leave /drafting so the draft room can measure the
+    // hand-off gap (the blank/flash before the lobby paints) and surface a
+    // slow hand-off to the admin error feed. Best-effort; cleared on the room side.
+    try { sessionStorage.setItem('sbs-join-nav-ts', String(Date.now())); } catch { /* ignore */ }
     router.push(`/draft-room?${params.toString()}`);
   };
 
@@ -509,13 +531,8 @@ export function useDraftingPageState() {
       return;
     }
     if (!isLoggedIn) {
-      // DIAGNOSTIC (temp): if this fires while Boris believes he's logged in,
-      // an auth blink wiped `user` (isLoggedIn = !!user). Cross-ref the
-      // `authblink/user-wiped` event timestamp.
-      clientLog('authblink', 'enter-blocked-not-logged-in', {
-        hasUser: !!user,
-        wallet: user?.walletAddress || null,
-      });
+      // If this fires while you're actually logged in, the auth-blink alarm
+      // (auth.spurious_login_modal in providers.tsx) catches it signal-only.
       setShowLoginModal(true);
       return;
     }
@@ -934,7 +951,12 @@ export function useDraftingPageState() {
           const draftOwnedByUser = draft.liveWalletAddress
             && draft.liveWalletAddress.toLowerCase() === currentWallet;
 
-          if (isFull && user?.id && isPaid && draftOwnedByUser) {
+          // Fire draft-complete for EVERY pass type (not just paid). The
+          // server credits paid drafts to daily-drafts as before, and routes
+          // free/jackpot/HOF drafts to the first-purchase popup gate only —
+          // existing promo logic is unchanged (the free branch earns no
+          // daily-drafts credit). pick10 stays paid-only below.
+          if (isFull && user?.id && draftOwnedByUser) {
             const trackedKey = `promo-tracked:${draft.id}`;
             if (!localStorage.getItem(trackedKey)) {
               localStorage.setItem(trackedKey, '1');
@@ -945,7 +967,7 @@ export function useDraftingPageState() {
               }).catch(() => {});
             }
 
-            if (info.draftOrder && draft.liveWalletAddress) {
+            if (isPaid && info.draftOrder && draft.liveWalletAddress) {
               const userIdx = info.draftOrder.findIndex(
                 (e: { ownerId: string }) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
               );
@@ -1503,17 +1525,41 @@ export function useDraftingPageState() {
       const userId = user.id || user.walletAddress;
       const passType = storedDraft?.passType || exitingDraft.passType || 'paid';
       try {
-        await fetch('/api/owner/refund-pass', {
+        const refundRes = await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId }),
         });
+        if (!refundRes.ok) {
+          // Money path: user left but the pass refund didn't land. Critical.
+          reportClientError({
+            source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+            message: `Leave refund returned ${refundRes.status}`,
+            route: 'drafting',
+            actor: user.walletAddress,
+            context: { leagueId: exitingDraft.id, passType, tokenId: storedDraft?.cardId || exitingDraft.cardId, status: refundRes.status },
+          });
+        }
         await refreshBalance();
       } catch (err) {
         console.warn('[Leave] Refund pass failed:', err);
+        reportClientError({
+          source: LOG_SOURCES.draft.LEAVE_REFUND_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'drafting',
+          actor: user.walletAddress,
+          context: { leagueId: exitingDraft.id, passType, network: true },
+        });
       }
     } catch (err) {
       console.error('Failed to leave draft:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.LEAVE_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'drafting',
+        actor: user.walletAddress,
+        context: { leagueId: exitingDraft.id },
+      });
     } finally {
       setExitingDraft(null);
     }

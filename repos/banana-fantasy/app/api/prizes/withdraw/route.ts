@@ -6,6 +6,8 @@ import { getPrivyUser } from '@/lib/auth';
 import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import { logDirectWithdrawal } from '@/lib/offrampAudit';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { PrizeWithdrawal, WithdrawalStatus } from '@/types';
 
 const KYC_THRESHOLD = 2000; // Cumulative withdrawal threshold for full KYC
@@ -36,11 +38,13 @@ function normalizeWithdrawalStatus(value: unknown): WithdrawalStatus {
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.prizes);
   if (rateLimited) return rateLimited;
+  let actorId: string | undefined;
   try {
     // Verify user is authenticated (Privy DID !== wallet address, so we just verify the JWT is valid)
     await getPrivyUser(req);
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
+    actorId = userId;
     const draftId = requireString(body.draftId, 'draftId');
     const amount = requireNumber(body.amount, 'amount');
     const methodRaw = body.method;
@@ -84,6 +88,7 @@ export async function POST(req: Request) {
       if (!res.ok) {
         const message = await readErrorMessage(res);
         console.error(`Withdraw API error: ${res.status}`, message);
+        logger.error(LOG_SOURCES.prizes.WITHDRAWAL_API_FAILED, { actor: userId, context: { status: res.status, message, draftId, amount, method } });
         return jsonError(message || 'Withdraw service error', res.status);
       }
 
@@ -125,6 +130,7 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('Withdrawal request failed:', err);
+    logger.error(LOG_SOURCES.prizes.WITHDRAWAL_API_FAILED, { err, actor: actorId });
     return jsonError('Failed to process withdrawal', 500);
   }
 }

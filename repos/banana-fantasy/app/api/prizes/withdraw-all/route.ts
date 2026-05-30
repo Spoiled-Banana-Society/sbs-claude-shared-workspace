@@ -23,6 +23,7 @@ import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db
 import { logDirectWithdrawal } from '@/lib/offrampAudit';
 import { markPrizesProcessing } from '@/lib/prizeOverlay';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { PrizeHistoryItem, PrizeWin } from '@/types';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
@@ -204,7 +205,7 @@ export async function POST(req: Request) {
     });
 
     // Track cumulative for KYC threshold.
-    await incrementCumulativeWithdrawals(userId, totalAmount).catch(() => { /* non-fatal */ });
+    await incrementCumulativeWithdrawals(userId, totalAmount).catch((err) => logger.error(LOG_SOURCES.prizes.CUMULATIVE_INCREMENT_FAILED, { err, actor: userId, context: { totalAmount } }));
 
     // Audit log into offramp_attempts so admin sees this in Offramps.
     await logDirectWithdrawal({
@@ -215,7 +216,7 @@ export async function POST(req: Request) {
       withdrawalId: withdrawal.id,
       status: 'tx_pending',
       // No single draftId — multiple prizes consolidated.
-    }).catch(() => { /* non-fatal */ });
+    }).catch((err) => logger.error(LOG_SOURCES.prizes.OFFRAMP_AUDIT_FAILED, { err, actor: userId, context: { withdrawalId: withdrawal.id, totalAmount } }));
 
     return json({
       withdrawal: { ...withdrawal, prizeIds: targets.map((t) => t.id) },
