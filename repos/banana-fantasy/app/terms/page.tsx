@@ -24,7 +24,7 @@ function buildSections(): Section[] {
         <>
           <p>
             By accessing or using the Spoiled Banana Society platform (&quot;SBS,&quot; &quot;Platform,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;),
-            including the website at bananabestball.com and all related services, you agree to be bound by these Terms of Service
+            including the website at sbsfantasy.com and all related services, you agree to be bound by these Terms of Service
             (&quot;Terms&quot;). If you do not agree, do not access or use the Platform.
           </p>
           <p>
@@ -68,8 +68,8 @@ function buildSections(): Section[] {
             You are solely responsible for maintaining the security of your wallet and account credentials.
             SBS is not liable for any loss or damage arising from unauthorized access to your account.
             You agree to notify us immediately at{' '}
-            <a href="mailto:support@spoiledbananasociety.com" className="text-[#F3E216] hover:underline">
-              support@spoiledbananasociety.com
+            <a href="mailto:team@sbsfantasy.com" className="text-[#F3E216] hover:underline">
+              team@sbsfantasy.com
             </a>{' '}
             if you suspect unauthorized use.
           </p>
@@ -230,8 +230,8 @@ function buildSections(): Section[] {
           <ol>
             <li>
               <strong>Informal Resolution:</strong> Contact us at{' '}
-              <a href="mailto:support@spoiledbananasociety.com" className="text-[#F3E216] hover:underline">
-                support@spoiledbananasociety.com
+              <a href="mailto:team@sbsfantasy.com" className="text-[#F3E216] hover:underline">
+                team@sbsfantasy.com
               </a>{' '}
               with a detailed description. We will attempt to resolve the dispute informally within thirty (30) days.
             </li>
@@ -280,8 +280,8 @@ function buildSections(): Section[] {
             <p><strong>Spoiled Banana Society</strong></p>
             <p>
               Email:{' '}
-              <a href="mailto:support@spoiledbananasociety.com" className="text-[#F3E216] hover:underline">
-                support@spoiledbananasociety.com
+              <a href="mailto:team@sbsfantasy.com" className="text-[#F3E216] hover:underline">
+                team@sbsfantasy.com
               </a>
             </p>
             <p>
@@ -452,8 +452,8 @@ export default function TermsPage() {
             <div className="mt-12 rounded-xl border border-gray-800 bg-gray-900/40 p-6 text-center">
               <p className="text-sm text-gray-400">
                 Questions about these terms? Reach out to{' '}
-                <a href="mailto:support@spoiledbananasociety.com" className="text-[#F3E216] hover:underline">
-                  support@spoiledbananasociety.com
+                <a href="mailto:team@sbsfantasy.com" className="text-[#F3E216] hover:underline">
+                  team@sbsfantasy.com
                 </a>
               </p>
               <div className="flex items-center justify-center gap-4 mt-4">
