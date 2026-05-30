@@ -2,6 +2,7 @@ import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
+import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -184,9 +185,14 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passT
       if (res.ok) {
         registered += maxId - minId + 1;
       } else {
-        // Go returns 500 when a token already exists — that's fine here.
+        // With the engine's collision-proof registration, a 2xx is now the
+        // expected result even when the on-chain id was already taken (it gets
+        // re-homed under a synthetic id). So a non-2xx here is a REAL failure,
+        // not "already exists, fine" — surface it loudly. The caller recounts
+        // from real inventory afterwards, so a miss shows up as a lower count
+        // rather than a phantom pass.
         const text = await res.text().catch(() => '');
-        logger.info('reconcile.register_range_skip_or_fail', {
+        logger.warn('reconcile.register_range_failed', {
           wallet,
           minId,
           maxId,
@@ -277,7 +283,7 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
   const ownedSet = new Set(ownedNumericIds.map((n) => String(n)));
 
   // 2. Go API's view: which tokens are available vs active.
-  const { available: goApiAvailable, active: goApiActive } = await fetchGoApiTokenLists(w);
+  const { available: goApiAvailable } = await fetchGoApiTokenLists(w);
   const goApiSet = new Set(goApiAvailable);
 
   // 3. Diff against on-chain reality.
@@ -301,24 +307,21 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
     (await registerTokensWithGoApi(w, freeMissing, 'free'));
   const removed = await removeTransferredOutFromGoApi(w, staleInGo);
 
-  // 5. Compute the spendable count and write Firestore.
-  //    spendable = on-chain owned tokens that aren't already consumed in a
-  //    league. The Go API's `active` list is the authoritative record of
-  //    consumption.
-  const activeOnChain = goApiActive.filter((id) => ownedSet.has(id)).length;
-  const afterCounter = Math.max(0, ownedNumericIds.length - activeOnChain);
-
-  await userRef.set(
-    { draftPasses: afterCounter, onchainSyncedAt: FieldValue.serverTimestamp() },
-    { merge: true },
-  );
+  // 5. Write the counter as a MIRROR of real spendable inventory — not from
+  //    on-chain math. After the register/remove steps above, the engine's
+  //    `validDraftTokens` holds exactly the tokens this wallet can spend, split
+  //    by paid/free. Counting it (and writing draftPasses/freeDrafts to that
+  //    count) means the user-facing number can never exceed tokens that
+  //    actually exist. recountFromInventory also stamps passesSyncedAt.
+  const { draftPasses: afterCounter, freeDrafts: afterFree } = await recountFromInventory(w);
+  await userRef.set({ onchainSyncedAt: FieldValue.serverTimestamp() }, { merge: true });
 
   logger.info('reconcile.done', {
     wallet: w,
     before: beforeCounter,
     after: afterCounter,
+    freeAfter: afterFree,
     onchainOwned: ownedNumericIds.length,
-    activeInLeagues: activeOnChain,
     registered,
     removed,
   });

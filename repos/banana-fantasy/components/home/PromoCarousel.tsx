@@ -6,6 +6,7 @@ import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { SpinExplainer } from '@/components/promos/SpinExplainer';
 
 interface PromoCarouselProps {
   promos: Promo[];
@@ -68,6 +69,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   const sortedPromos = filterAndSortVisiblePromos(promos, {
     isBB3Holder,
     newUserPromoClaimed,
+    firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
   });
 
@@ -281,6 +283,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         <span className="text-sm whitespace-nowrap">{promo.title}</span>
                       )}
                     </h4>
+                    <SpinExplainer promoTitle={promo.title} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}
@@ -351,21 +354,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* PWA Install promo - show countdown + entry count */}
-                      {promo.type === 'add-to-home-screen' && (
-                        <div className="-mt-2">
-                          <div className="flex justify-center items-center gap-2 text-xs text-[#4a4a4a] mb-1.5">
-                            <span className="font-semibold tabular-nums">{formatTimeRemaining(promo.timerEndTime)}</span>
-                          </div>
-                          <p className="text-[10px] text-[#9a9a9a] text-center">{promo.description}</p>
-                          <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-                            Learn more
-                          </p>
-                        </div>
-                      )}
-
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, new-user, tweet-engagement) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && promo.type !== 'add-to-home-screen' && (showProgressBar && (!promo.claimable || isClaimed)) && (
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
                           <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
                             <span className="font-semibold">{progressCurrent}/{progressMax}</span>
@@ -382,8 +372,8 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Claimable button - for other promos (not daily-drafts, mint, pick-10, or add-to-home-screen) */}
-                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'add-to-home-screen' && promo.claimable && !isClaimed && ((promo.type !== 'new-user' && promo.type !== 'tweet-engagement') || (isLoggedIn && isTwitterVerified)) && (
+                      {/* Claimable button - for other promos (not daily-drafts, mint, pick-10) */}
+                      {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.claimable && !isClaimed && ((promo.type !== 'new-user' && promo.type !== 'tweet-engagement') || (isLoggedIn && isTwitterVerified)) && (
                         <div className="pt-6">
                           <button
                             onClick={(e) => handleClaim(promo, e)}

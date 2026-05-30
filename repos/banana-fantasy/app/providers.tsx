@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { PrivyProvider } from '@/providers/PrivyProvider';
+import { PrivyProvider, useSafePrivy as usePrivy } from '@/providers/PrivyProvider';
+import { reportClientError } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { AuthProvider } from '@/hooks/useAuth';
 import { ReduxProvider } from '@/redux/provider';
@@ -22,9 +24,11 @@ import { setClientLogWallet } from '@/lib/clientLog';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
+import { FirstPurchasePromoModal } from '@/components/modals/FirstPurchasePromoModal';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
+  const privy = usePrivy();
   // Attribute client logs to the logged-in wallet so inspect-debug-logs
   // can filter by user.
   React.useEffect(() => {
@@ -56,9 +60,22 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!showLoginModal) return;
+    // Signal-only alarm: if the login prompt fires while Privy STILL reports
+    // authenticated, the user is actually logged in and this is the auth-blink
+    // bug (spurious login modal) — not a real logged-out user. Surface it to
+    // the admin feed so a recurrence is caught. (Replaces the chatty authblink
+    // diagnostic; the debounce fix should keep this silent.)
+    if (privy?.authenticated) {
+      reportClientError({
+        source: LOG_SOURCES.auth.SPURIOUS_LOGIN_MODAL,
+        message: 'Login modal triggered while Privy authenticated (auth-blink)',
+        route: pathname ?? undefined,
+        actor: user?.walletAddress ?? undefined,
+      });
+    }
     login();
     setShowLoginModal(false);
-  }, [showLoginModal, login, setShowLoginModal]);
+  }, [showLoginModal, login, setShowLoginModal, privy, pathname, user?.walletAddress]);
 
   const handleShowTutorial = () => {
     setShowTutorial(true);
@@ -76,6 +93,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
+        {/* One-time first-purchase bonus popup for new (non-BB3) users,
+            after they finish their welcome-wheel winnings. */}
+        <FirstPurchasePromoModal />
         {!isDraftRoom && <SupportChatButton />}
       </div>
   );

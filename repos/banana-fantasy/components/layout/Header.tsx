@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Logo } from './Logo';
 import { ProfileDropdown } from './ProfileDropdown';
 import { Tooltip } from '../ui/Tooltip';
@@ -22,6 +22,7 @@ interface HeaderProps {
 export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: HeaderProps) {
   const { user, walletAddress, isLoggedIn, isLoading, isBalanceLoaded, login } = useAuth();
   const pathname = usePathname();
+  const router = useRouter();
   const isAdminWallet = isWalletAdmin(walletAddress);
 
   // Yellow badge next to the Admin link. Only polls when this wallet
@@ -71,8 +72,25 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       {item.label}
                       {showAdminBadge && (
                         <span
-                          aria-label={`${adminNotifTotal} items need attention`}
-                          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold"
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`${adminNotifTotal} items need attention — open Logs`}
+                          title="Open Logs"
+                          onClick={(e) => {
+                            // Badge jumps straight to the Logs tab; the rest of
+                            // the Admin link still goes to the dashboard.
+                            e.preventDefault();
+                            e.stopPropagation();
+                            router.push('/admin?tab=logs');
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              router.push('/admin?tab=logs');
+                            }
+                          }}
+                          className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold cursor-pointer hover:brightness-110"
                         >
                           {adminNotifTotal > 99 ? '99+' : adminNotifTotal}
                         </span>

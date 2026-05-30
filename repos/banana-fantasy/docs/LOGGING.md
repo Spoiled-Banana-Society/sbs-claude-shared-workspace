@@ -82,6 +82,22 @@ Sources matching `IMPORTANT_ERROR_PATTERNS` in
 `app/api/admin/notification-counts/route.ts` also raise the admin badge.
 User-money / draft-blocking failures should match a pattern there.
 
+## Coverage, tiers & cost (2026-05 overhaul)
+
+**Tiers** (`logSeverity()` in `lib/logSources.ts`): **critical** = draft-blocking or money/security · **warning** ("needs a look") = degraded-but-recoverable (default) · **low** = cosmetic/fallback the user never sees. The admin LogsTab sections + the notify badge key off this.
+
+**Every logged error must carry the affected user** (`actor`). Client `reportClientError` auto-attaches the wallet, but pass `actor: walletAddress` explicitly when in scope. **Server `logger.error`/`logErrorEvent` have NO auto-attach — always pass `actor: <wallet|userId>`.** This powers the admin "Affected Users" view.
+
+**Universal route 500s — `withRouteLogging` (`lib/api/routeUtils.ts`):** wrap any API route so unexpected 500s log to the feed automatically:
+```ts
+export const POST = withRouteLogging('payment.card_mint', async (req) => { … });
+```
+Expected `ApiError` (4xx) passes through unlogged; real throws log as `<routeName>.unhandled` (already badge-matched by `/\.unhandled$/i`) with an awaited Vercel-safe write. Don't double-log: if you wrap a route, delete its inner `catch → logger.error`.
+
+**Cost-smart (`SEVERITY_POLICY` in `lib/logSources.ts`):** client throttle + ingest sampling are severity-aware — **critical: never throttled, never sampled**; warning: 2-min dedupe; low: 10-min dedupe + only 1-in-10 kept at ingest. Set `ERROR_SAMPLING_ENABLED=false` to disable sampling if a fire ever looks under-reported. This is what keeps a noisy low-tier source (or a render loop) from becoming a Firestore/Sentry write-storm.
+
+**Notify list** = `IMPORTANT_ERROR_PATTERNS` in `app/api/admin/notification-counts/route.ts`. A source only badges the admin if it matches there. When adding a critical/money/draft-blocking source: add it to `CRITICAL_PATTERNS` (`logSources.ts`) **and** the notify list.
+
 ## Adding logging to a new page
 
 In every `catch` / `.catch()` at an async boundary that can fail:
@@ -149,6 +165,33 @@ node scripts/logs.mjs errors --wallet=0x438bbe...        # one user's errors
 node scripts/logs.mjs session s-1716100000000-ab12cd     # full trace for one session
 node scripts/logs.mjs trace --tag=draft# --minutes=30    # raw breadcrumbs
 ```
+
+## Active diagnostic tags (current)
+
+Breadcrumb tags (`clientLog(tag, …)` → `v2_debug_events`, CLI-only via
+`logs.mjs trace --tag=<tag>`). These trace draft entry / auth / lobby
+timing. The ones marked **(temp)** are diagnostics to remove once the
+related issue is confirmed fixed.
+
+| Tag | Signals | Pull |
+|-----|---------|------|
+| `joinoverlay` **(temp)** | "Joining lobby" overlay lifecycle: `overlay-shown`, `navigating` (join speed + held duration), `room-first-paint` (hand-off gap into the lobby). | `trace --tag=joinoverlay` |
+| `authblink` **(temp)** | Privy auth state transitions: `privy-state`, `wipe-scheduled`, `user-wiped`. A `user-wiped` while logged in = a real logout; transient blinks now show `wipe-scheduled` with no following wipe (the debounce absorbed it). | `trace --tag=authblink` |
+| `liveload` **(temp)** | `waiting-for-draft-start` — the room patiently waiting for a still-filling draft to start (the fix for premature local fallback). | `trace --tag=liveload` |
+| `pcdiag` | Lobby player-count + mount timing (`mount`, `playerCount.change`, `set.poll/rtdb`). | `trace --tag=pcdiag` |
+| `league#` | Slot-id ↔ display-number ("BBB #N") resolution + cache. | `trace --tag=league#` |
+
+Notable error sources (admin Error feed):
+- `draft.live_load_exhausted_retries` (**critical**) — room couldn't load
+  in-draft data. Context now carries `phase`, `fillingWaits`,
+  `stuckWhileFilling`: `stuckWhileFilling:true` = a draft genuinely stuck
+  filling ~10min (real problem); otherwise the backend returned bad data
+  while the draft *should* have been ready.
+- `draft.join_handoff_slow` (**warning**) — the "Joining lobby" → lobby
+  hand-off took >1.8s (the visible blank/flash). Cosmetic but now visible.
+- `draft.airplane.trace` (**warning**) — NOT a bug: an intentional
+  auto-draft/airplane-mode sync breadcrumb routed through the error store.
+  Safe to ignore / a candidate to downgrade.
 
 ## Exporting for a developer
 
