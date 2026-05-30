@@ -280,6 +280,22 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     ? groups.filter((g) => g.severity === severityFilter).sort((a, b) => b.lastTs - a.lastTs)
     : null;
 
+  // Bulk "Fix all" — marks every currently-shown unresolved group fixed at
+  // once (respects the active area + severity filter so it's predictable).
+  // They move to Resolved and stay re-openable. One confirm; fans out the
+  // per-group mutation in parallel.
+  const markResolve = useMarkErrorResolved();
+  const fixAllTargets = (filteredView ?? groups);
+  const handleFixAll = async () => {
+    if (fixAllTargets.length === 0 || markResolve.isPending) return;
+    const scope = area === 'all' ? '' : ` in ${area}`;
+    const sev = severityFilter === 'all' ? '' : ` ${severityFilter}`;
+    if (!window.confirm(`Mark all ${fixAllTargets.length}${sev} issue${fixAllTargets.length === 1 ? '' : 's'}${scope} as fixed? They move to Resolved and can be re-opened.`)) return;
+    await Promise.all(
+      fixAllTargets.map((g) => markResolve.mutateAsync({ groupKey: g.key, resolved: true }).catch(() => {})),
+    );
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -289,12 +305,24 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
             Auto-refreshes every 15s{query.isFetching ? ' · refreshing…' : ''}
           </p>
         </div>
-        <button
-          onClick={() => query.refetch()}
-          className="text-xs text-gray-400 hover:text-white underline underline-offset-2"
-        >
-          ↻ Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {fixAllTargets.length > 0 && (
+            <button
+              onClick={handleFixAll}
+              disabled={markResolve.isPending}
+              title="Mark every issue shown (current filter) as fixed at once"
+              className="px-2.5 py-1 rounded-md bg-emerald-500/90 hover:bg-emerald-500 text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+            >
+              {markResolve.isPending ? 'Fixing…' : `✓ Fix all (${fixAllTargets.length})`}
+            </button>
+          )}
+          <button
+            onClick={() => query.refetch()}
+            className="text-xs text-gray-400 hover:text-white underline underline-offset-2"
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {/* Severity summary — three color-coded chips with total counts
@@ -641,6 +669,15 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
     }
   };
 
+  // Mark fixed / re-open. Shared by the inline row action and the expanded
+  // button so both behave identically. Only prompts for a note when fixing.
+  const handleMarkFixed = () => {
+    const note = resolved
+      ? undefined
+      : window.prompt('Optional note about the fix (visible to all admins):', '') ?? undefined;
+    markResolve.mutate({ groupKey: group.key, resolved: !resolved, note: note?.trim() || undefined });
+  };
+
   const accent = muted
     ? 'border-gray-800 bg-gray-900/40'
     : severity === 'critical'
@@ -650,7 +687,8 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
 
   return (
     <div className={`rounded-lg border ${accent} overflow-hidden`}>
-      <button onClick={onToggle} className="w-full px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] text-left">
+      <div className="flex items-stretch">
+      <button onClick={onToggle} className="flex-1 min-w-0 px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] text-left">
         <span className={`${dot} mt-0.5`}>●</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2 flex-wrap">
@@ -677,8 +715,37 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
             {rep.route && <span className="font-mono truncate max-w-[260px]">{rep.route}</span>}
           </div>
         </div>
-        <span className="text-gray-500 text-xs">{isOpen ? '▾' : '▸'}</span>
       </button>
+      {/* Inline actions — no need to expand + scroll. Mark fixed (or re-open)
+          and Export trace are right on the row. */}
+      <div className="flex items-center gap-1.5 px-2 shrink-0 self-center">
+        <button
+          onClick={handleMarkFixed}
+          disabled={markResolve.isPending}
+          title={resolved ? 'Re-open this issue (use if it actually recurred)' : 'Mark fixed — drops it from the counts'}
+          className={`px-2 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap ${
+            resolved
+              ? 'border border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+              : 'bg-emerald-500/90 hover:bg-emerald-500 text-black'
+          }`}
+        >
+          {markResolve.isPending ? '…' : resolved ? '↺ Re-open' : '✓ Fix'}
+        </button>
+        {rep.sessionId && (
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            title="Export this error + full session trace as JSON (for the dev)"
+            className="px-2 py-1 rounded-md bg-banana/90 hover:bg-banana text-black text-[11px] font-semibold disabled:opacity-50 whitespace-nowrap"
+          >
+            {exporting ? '…' : '⬇ Export'}
+          </button>
+        )}
+        <button onClick={onToggle} title={isOpen ? 'Collapse' : 'Expand'} className="text-gray-500 hover:text-white text-xs px-1 py-1">
+          {isOpen ? '▾' : '▸'}
+        </button>
+      </div>
+      </div>
 
       {/* Affected users — inline so triage doesn't need to leave this row.
           Renders even when collapsed so you can scan affected wallets at
@@ -713,16 +780,7 @@ function GroupRow({ group, isOpen, onToggle, muted, resolved, actorGroupMap }: {
               export button so it can't be missed. */}
           <div className="flex items-center gap-3 pt-1 flex-wrap">
             <button
-              onClick={() => {
-                const note = resolved
-                  ? undefined
-                  : window.prompt('Optional note about the fix (visible to all admins):', '') ?? undefined;
-                markResolve.mutate({
-                  groupKey: group.key,
-                  resolved: !resolved,
-                  note: note?.trim() || undefined,
-                });
-              }}
+              onClick={handleMarkFixed}
               disabled={markResolve.isPending}
               className={`px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50 ${
                 resolved
