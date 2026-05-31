@@ -251,14 +251,21 @@ function DraftRoomContent() {
     // whether the filling lobby actually held or flashed and vanished.
     freshJoinAtRef.current = Date.now();
     handoffGapRef.current = gapMs;
-    const SLOW_HANDOFF_MS = 1800; // overlay holds ~700ms; >1.8s ⇒ visible blank/flash
+    // The branded "Joining lobby" overlay now covers the whole hand-off (no more
+    // gray-skeleton flash), so a clean entry no longer glitches. But a SLOW room
+    // load (cold/uncached page) is the exact condition that USED to glitch — so
+    // we keep logging it as a recurrence + perf safety net, at a lower threshold
+    // than the old 1800ms so the glitch-prone slow loads get caught. Fast/warm
+    // entries stay under it → no noise. Context is rich enough to diagnose from a
+    // single event if it ever fires.
+    const SLOW_HANDOFF_MS = 1200;
     if (gapMs > SLOW_HANDOFF_MS) {
       reportClientError({
         source: LOG_SOURCES.draft.JOIN_HANDOFF_SLOW,
-        message: `Join hand-off took ${gapMs}ms (overlay → lobby paint)`,
+        message: `Join hand-off took ${gapMs}ms (overlay → lobby paint) — slow/cold room load`,
         route: 'draft-room',
         actor: walletParam,
-        context: { gapMs, draftId: urlDraftId },
+        context: { gapMs, draftId: urlDraftId, phase, playerCount, isLiveMode, fallbackLocal },
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
