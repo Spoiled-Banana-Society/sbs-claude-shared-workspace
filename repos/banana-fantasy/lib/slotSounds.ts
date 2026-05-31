@@ -239,53 +239,101 @@ function pumpDuck(node: AudioParam, at: number, beat: number) {
   node.linearRampToValueAtTime(1.0, at + beat * 0.9);
 }
 
-// The "goes crazy" celebration for HOF / Jackpot reveals — a FAST (~200 BPM)
-// euphoric future-bass drop: driving four-on-floor + fast hats + rhythmic chord
-// stabs + a fast climbing arpeggio over sub/claps. `big` = jackpot (longer).
+// Dark, warm chord — LOW register detuned saws under a lowpass that stays warm
+// (opens only to ~2.2k, not bright/trance). Moody, not cheesy.
+function darkChord(ctx: AudioContext, dest: AudioNode, at: number, freqs: number[], dur: number, vol = 0.15) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(300, at);
+  lp.frequency.exponentialRampToValueAtTime(2200, at + dur * 0.5);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  lp.connect(g);
+  g.connect(dest);
+  for (const f of freqs) {
+    for (const det of [-9, -3, 3, 9]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f * Math.pow(2, det / 1200);
+      o.connect(lp);
+      o.start(at);
+      o.stop(at + dur + 0.02);
+    }
+  }
+}
+
+// Gritty mid lead — two detuned saws with a closing filter env. Sparse use +
+// mid (not high) register gives it attitude instead of cheese.
+function darkLead(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur = 0.4, vol = 0.13) {
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(freq * 5, at);
+  lp.frequency.exponentialRampToValueAtTime(freq * 1.4, at + dur * 0.7);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  lp.connect(g);
+  g.connect(dest);
+  for (const det of [-11, 11]) {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq * Math.pow(2, det / 1200);
+    o.connect(lp);
+    o.start(at);
+    o.stop(at + dur + 0.02);
+  }
+}
+
+// The "goes crazy" celebration for HOF / Jackpot reveals — fast (~200 BPM) but
+// COOL, not cheesy: heavy 808 sub, hard four-on-floor, fast hats, a dark warm
+// chord and a sparse gritty lead (no bright trance arps). `big` = jackpot.
 function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space: GainNode }, big: boolean, startAt: number) {
   const { dry, space } = buses;
   const pump = ctx.createGain();
   pump.connect(space);
-  const BEAT = 0.3;          // 200 BPM — fast + hype
+  const BEAT = 0.3;          // 200 BPM — fast
   const HALF = BEAT / 2;
   const barLen = BEAT * 4;
 
-  riserSweep(ctx, pump, startAt - 0.4, 0.4, 0.22);
-  boom(ctx, dry, startAt, big ? 0.7 : 0.55, 220);
-  noiseHit(ctx, dry, startAt, 0.34, 0.6, 1500);
+  riserSweep(ctx, pump, startAt - 0.4, 0.4, 0.24);
+  boom(ctx, dry, startAt, big ? 0.85 : 0.7, 240);
+  noiseHit(ctx, dry, startAt, 0.4, 0.7, 1200);          // big crash on the drop
 
   const bars = big ? 4 : 3;
-  const roots = [55.0, 49.0, 43.65, 55.0]; // A G F A
-  const chords = [[220, 261.6, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [220, 261.6, 329.6]];
+  const roots = [55.0, 49.0, 43.65, 41.2];              // A G F E — dark, low
+  // LOW chords (one octave down) so it's moody, not bright.
+  const chords = [[110.0, 130.8, 164.8], [98.0, 123.5, 146.8], [87.3, 110.0, 130.8], [82.4, 98.0, 123.5]];
+  // sparse, mid-register lead motif per bar (attitude, not a cheesy arp run).
+  const leadByBar = [[440.0, 329.6], [392.0, 293.7], [349.2, 261.6], [329.6, 246.9]];
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
     const chord = chords[bar % chords.length];
-    // driving four-on-floor + pump + fast offbeat hats
+    // hard four-on-floor + pump + fast hats
     for (let beatN = 0; beatN < 4; beatN++) {
       const bt = t + beatN * BEAT;
       kick(ctx, dry, bt, 1.0);
       pumpDuck(pump.gain, bt, BEAT);
-      noiseHit(ctx, dry, bt + HALF, 0.1, 0.04, 9000);   // offbeat open hat
-      noiseHit(ctx, dry, bt + HALF / 2, 0.05, 0.03, 9500); // 16th
-      noiseHit(ctx, dry, bt + HALF * 1.5, 0.05, 0.03, 9500);
+      noiseHit(ctx, dry, bt + HALF, 0.09, 0.04, 9000);
+      noiseHit(ctx, dry, bt + HALF / 2, 0.045, 0.03, 9500);
+      noiseHit(ctx, dry, bt + HALF * 1.5, 0.045, 0.03, 9500);
     }
-    subNote(ctx, pump, t, roots[bar % roots.length] * 2, barLen * 0.9, 0.55);
-    noiseHit(ctx, space, t + BEAT, 0.22, 0.13, 1700);   // clap backbeat
+    subNote(ctx, pump, t, roots[bar % roots.length] * 2, barLen * 0.95, 0.72); // heavy 808
+    noiseHit(ctx, space, t + BEAT, 0.22, 0.13, 1700);    // clap backbeat
     noiseHit(ctx, space, t + BEAT * 3, 0.22, 0.13, 1700);
-    noiseHit(ctx, space, t, 0.16, 0.4, 2400);           // crash on the bar
-    // rhythmic chord stabs (1 & 3) instead of one long swell = more exciting
-    chordSwell(ctx, pump, t, chord, BEAT * 1.7, 0.15);
-    chordSwell(ctx, pump, t + BEAT * 2, chord, BEAT * 1.5, 0.12);
-    // FAST climbing arpeggio of the chord, 2 octaves up, 8 notes/bar
-    const arp = [...chord.map((f) => f * 2), ...chord.map((f) => f * 4)];
-    for (let k = 0; k < 8; k++) {
-      pluck(ctx, pump, t + k * HALF, arp[k % arp.length], 0.14, 0.26);
-    }
+    noiseHit(ctx, space, t, 0.16, 0.45, 2200);           // crash on the bar
+    darkChord(ctx, pump, t, chord, barLen * 0.92, 0.16); // one warm dark chord
+    // sparse gritty lead — 2 notes, mid register
+    const lead = leadByBar[bar % leadByBar.length];
+    darkLead(ctx, pump, t, lead[0], BEAT * 1.5, 0.13);
+    darkLead(ctx, pump, t + BEAT * 2, lead[1], BEAT * 1.5, 0.12);
   }
   const fin = startAt + bars * barLen;
-  boom(ctx, dry, fin, big ? 0.6 : 0.45, 200);
-  noiseHit(ctx, dry, fin, 0.3, 0.9, 1100);
-  chordSwell(ctx, pump, fin, [523.3, 659.3, 784.0, 1046.5], 1.4, 0.18);
+  boom(ctx, dry, fin, big ? 0.75 : 0.55, 230);
+  noiseHit(ctx, dry, fin, 0.36, 1.0, 1000);
+  darkChord(ctx, pump, fin, chords[0], 1.6, 0.17);
 }
 
 // The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
@@ -394,10 +442,12 @@ export function playSlotReveal(type: SlotRevealType) {
       // Immediate "hit" on the reveal, then the music GOES CRAZY — a full
       // celebration drop that rides for several seconds (jackpot biggest).
       const big = type === 'jackpot';
+      // Dark impact hit on the reveal (warm chord, not a bright stab), then the
+      // build, then the drop goes crazy.
       riserSweep(ctx, space, now, big ? 0.26 : 0.22, big ? 0.2 : 0.16);
-      boom(ctx, dry, now + 0.22, big ? 0.6 : 0.5, big ? 220 : 180);
-      noiseHit(ctx, dry, now + 0.22, 0.3, 0.6, big ? 1000 : 1400);
-      chordSwell(ctx, space, now + 0.24, big ? [523.3, 659.3, 784.0, 1046.5] : [523.3, 659.3, 784.0], 1.0, big ? 0.19 : 0.16);
+      boom(ctx, dry, now + 0.2, big ? 0.7 : 0.55, big ? 230 : 190);
+      noiseHit(ctx, dry, now + 0.2, 0.32, 0.6, big ? 1100 : 1400);
+      darkChord(ctx, space, now + 0.22, big ? [110.0, 130.8, 164.8, 220.0] : [110.0, 130.8, 164.8], 1.0, 0.17);
       // the celebration drop kicks in after a short build
       launchSlotCelebration(ctx, { dry, space }, big, now + 0.55);
     } else {
