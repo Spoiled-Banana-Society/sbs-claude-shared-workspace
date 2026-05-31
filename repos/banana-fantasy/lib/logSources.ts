@@ -64,6 +64,13 @@ export const LOG_SOURCES = {
     // severity (not critical) — cosmetic, recoverable — but visible in admin so
     // we can actually SEE the join glitch when it happens instead of guessing.
     JOIN_HANDOFF_SLOW: 'draft.join_handoff_slow',
+    // The filling lobby was skipped/left right after a fresh join — the
+    // "saw 'Joining lobby' for a second then wasn't in the filling draft"
+    // glitch. Fires regardless of hand-off speed (the SLOW threshold above
+    // misses the fast-flash case). Context captures WHICH cause it was:
+    // fellToLocal (live join dropped to local), or left filling early with
+    // playerCount<10 (a real skip) vs ==10 (legit fast fill). Warning.
+    JOIN_LOBBY_GLITCH: 'draft.join_lobby_glitch',
     PICK_SUBMIT_UNHANDLED: 'draft.pick_submit_unhandled_error',
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',
