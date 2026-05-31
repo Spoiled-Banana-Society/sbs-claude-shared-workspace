@@ -202,6 +202,87 @@ function boom(ctx: AudioContext, dest: AudioNode, at: number, vol: number, start
   osc.stop(at + 0.7);
 }
 
+// Punchy kick + sustained sub note for the celebration drop.
+function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 1.0) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(170, at);
+  osc.frequency.exponentialRampToValueAtTime(48, at + 0.08);
+  gain.gain.setValueAtTime(vol, at);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + 0.14);
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(at);
+  osc.stop(at + 0.15);
+}
+
+function subNote(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.55) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq * 1.5, at);
+  o.frequency.exponentialRampToValueAtTime(freq, at + 0.05);
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+  o.connect(g);
+  g.connect(dest);
+  o.start(at);
+  o.stop(at + dur + 0.02);
+}
+
+// Sidechain pump: duck a bus to ~0.35 on the kick, recover over the beat.
+function pumpDuck(node: AudioParam, at: number, beat: number) {
+  node.cancelScheduledValues(at);
+  node.setValueAtTime(0.35, at);
+  node.linearRampToValueAtTime(1.0, at + beat * 0.9);
+}
+
+// Rising lead for the celebration.
+const CELEB_LEAD = [523.3, 659.3, 587.3, 784.0, 659.3, 880.0, 784.0, 1046.5, 880.0, 1318.5];
+
+// The "goes crazy and stays longer" celebration for HOF / Jackpot reveals — a
+// modern future-bass drop: riser -> wide chord swell + rising lead over driving
+// kicks/sub/claps. `big` = jackpot (longer + harder); else HOF.
+function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space: GainNode }, big: boolean, startAt: number) {
+  const { dry, space } = buses;
+  const pump = ctx.createGain();
+  pump.connect(space);
+  const BEAT = 0.4;
+  const barLen = BEAT * 4;
+
+  riserSweep(ctx, pump, startAt - 0.45, 0.45, 0.22);
+  boom(ctx, dry, startAt, big ? 0.7 : 0.55, 220);
+  noiseHit(ctx, dry, startAt, 0.32, 0.6, 1500);
+
+  const bars = big ? 3 : 2;
+  const roots = [55.0, 49.0, 43.65]; // A G F
+  const chords = [[220, 261.6, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6]];
+  let leadIdx = 0;
+  for (let bar = 0; bar < bars; bar++) {
+    const t = startAt + bar * barLen;
+    for (let beatN = 0; beatN < 4; beatN++) {
+      const bt = t + beatN * BEAT;
+      kick(ctx, dry, bt, 1.0);
+      pumpDuck(pump.gain, bt, BEAT);
+      noiseHit(ctx, dry, bt + BEAT / 2, 0.1, 0.05, 9000); // offbeat hat
+    }
+    subNote(ctx, pump, t, roots[bar % roots.length] * 2, barLen * 0.9, 0.55);
+    noiseHit(ctx, space, t + BEAT, 0.22, 0.14, 1700);     // clap
+    noiseHit(ctx, space, t + BEAT * 3, 0.22, 0.14, 1700);
+    chordSwell(ctx, pump, t, chords[bar % chords.length], barLen * 0.95, 0.16);
+    for (let k = 0; k < 4; k++) {
+      const f = CELEB_LEAD[Math.min(leadIdx++, CELEB_LEAD.length - 1)];
+      pluck(ctx, pump, t + k * BEAT, f, 0.16, 0.5);
+    }
+  }
+  const fin = startAt + bars * barLen;
+  boom(ctx, dry, fin, big ? 0.6 : 0.45, 200);
+  noiseHit(ctx, dry, fin, 0.3, 0.9, 1100);
+  chordSwell(ctx, pump, fin, [523.3, 659.3, 784.0, 1046.5], 1.6, 0.18);
+}
+
 // The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
 // rising sweep for tension + a soft rhythmic sub pulse for body. Deliberately
 // no low sawtooth/drone (that was the buzzy "hum"). Returns a stop() that fades.
@@ -304,18 +385,16 @@ export function playSlotReveal(type: SlotRevealType) {
     const ctx = getAudioContext();
     const { dry, space } = masterChain(ctx);
     const now = ctx.currentTime;
-    if (type === 'jackpot') {
-      riserSweep(ctx, space, now, 0.26, 0.2);
-      boom(ctx, dry, now + 0.26, 0.7, 220);
-      noiseHit(ctx, dry, now + 0.26, 0.35, 0.7, 1000);
-      chordSwell(ctx, space, now + 0.28, [523.3, 659.3, 784.0, 1046.5], 1.4, 0.2);
-      [784, 1046.5, 1318.5, 1568, 2093].forEach((f, i) => pluck(ctx, space, now + 0.3 + i * 0.08, f, 0.14, 0.6));
-    } else if (type === 'hof') {
-      riserSweep(ctx, space, now, 0.22, 0.16);
-      boom(ctx, dry, now + 0.22, 0.5, 180);
-      noiseHit(ctx, dry, now + 0.22, 0.24, 0.5, 1400);
-      chordSwell(ctx, space, now + 0.24, [523.3, 659.3, 784.0], 1.1, 0.17);
-      [659.3, 880, 1046.5, 1318.5].forEach((f, i) => pluck(ctx, space, now + 0.26 + i * 0.09, f, 0.13, 0.55));
+    if (type === 'jackpot' || type === 'hof') {
+      // Immediate "hit" on the reveal, then the music GOES CRAZY — a full
+      // celebration drop that rides for several seconds (jackpot biggest).
+      const big = type === 'jackpot';
+      riserSweep(ctx, space, now, big ? 0.26 : 0.22, big ? 0.2 : 0.16);
+      boom(ctx, dry, now + 0.22, big ? 0.6 : 0.5, big ? 220 : 180);
+      noiseHit(ctx, dry, now + 0.22, 0.3, 0.6, big ? 1000 : 1400);
+      chordSwell(ctx, space, now + 0.24, big ? [523.3, 659.3, 784.0, 1046.5] : [523.3, 659.3, 784.0], 1.0, big ? 0.19 : 0.16);
+      // the celebration drop kicks in after a short build
+      launchSlotCelebration(ctx, { dry, space }, big, now + 0.7);
     } else {
       // pro — clean, positive, not anticlimactic but not huge
       boom(ctx, dry, now, 0.34, 140);
