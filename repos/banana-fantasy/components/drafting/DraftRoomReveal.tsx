@@ -334,7 +334,10 @@ export function DraftRoomReveal({
         {controls}
       </div>
 
-      <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
+      {/* Extra height for colored (jackpot/HOF) banners so the red/gold bar
+          doesn't visually touch the content/tab menu below. See the matching
+          spacer in DraftRoomDrafting. */}
+      <div style={{ height: (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px', flexShrink: 0, backgroundColor: '#000' }} />
 
       {showSlotMachine && (
         <SlotMachineOverlay
