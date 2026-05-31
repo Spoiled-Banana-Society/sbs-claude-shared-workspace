@@ -25,6 +25,10 @@
     {
       "path": "/api/crons/backfill-username-lower",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/crons/audit-integrity",
+      "schedule": "0 8 * * *"
     }
   ]
 }

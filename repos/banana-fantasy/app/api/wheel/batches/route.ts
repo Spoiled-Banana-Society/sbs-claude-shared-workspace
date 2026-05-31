@@ -17,7 +17,9 @@ import { logger } from '@/lib/logger';
  * Used by the /wheel-batches page to display rolling public receipts.
  */
 export async function GET(req: Request) {
-  const rateLimited = rateLimit(req, RATE_LIMITS.wheel);
+  // Public read for the batches page — general limit (60/min), not the tight
+  // spin bucket.
+  const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
     const url = new URL(req.url);

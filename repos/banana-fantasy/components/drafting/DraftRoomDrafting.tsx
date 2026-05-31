@@ -393,7 +393,13 @@ export function DraftRoomDrafting({
             {controls}
           </div>
 
-          <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
+          {/* Spacer reserves the space under the position:fixed banner above.
+              The banner's content (~290px) sits flush against this. For the
+              colored draft types (jackpot/HOF) the banner has a red/gold
+              background, so a flush edge makes the colored bar visually touch
+              the tab menu below it — add a little extra height so a clean black
+              gap separates them. Black drafts need no gap (black-on-black). */}
+          <div style={{ height: (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px', flexShrink: 0, backgroundColor: '#000' }} />
         </>
       )}
 
