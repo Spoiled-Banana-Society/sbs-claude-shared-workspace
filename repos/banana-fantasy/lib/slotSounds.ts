@@ -92,19 +92,35 @@ function noiseHit(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.3, dur
   src.stop(at + dur + 0.05);
 }
 
-// Crisp reel tick — a tiny click as the reel clicks past a symbol.
-function tick(ctx: AudioContext, dest: AudioNode, at: number) {
-  noiseHit(ctx, dest, at, 0.05, 0.018, 5000);
+// Crisp reel tick — a tiny click as the reel clicks past a symbol. Triangle
+// (not square) so it's clean, not harsh/8-bit. Pitch rises as the spin builds.
+function tick(ctx: AudioContext, dest: AudioNode, at: number, pitch = 1300) {
+  noiseHit(ctx, dest, at, 0.045, 0.015, 5500);
   const o = ctx.createOscillator();
   const g = ctx.createGain();
-  o.type = 'square';
-  o.frequency.value = 1400;
-  g.gain.setValueAtTime(0.03, at);
-  g.gain.exponentialRampToValueAtTime(0.0006, at + 0.02);
+  o.type = 'triangle';
+  o.frequency.value = pitch;
+  g.gain.setValueAtTime(0.026, at);
+  g.gain.exponentialRampToValueAtTime(0.0006, at + 0.018);
   o.connect(g);
   g.connect(dest);
   o.start(at);
-  o.stop(at + 0.025);
+  o.stop(at + 0.022);
+}
+
+// Soft, clean sub pulse for body — gated (a heartbeat, NOT a droning hum).
+function subPulse(ctx: AudioContext, dest: AudioNode, at: number) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.value = 58;
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(0.16, at + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.001, at + 0.16);
+  o.connect(g);
+  g.connect(dest);
+  o.start(at);
+  o.stop(at + 0.18);
 }
 
 // Modern pluck — two detuned saws through a fast filter env.
@@ -186,76 +202,69 @@ function boom(ctx: AudioContext, dest: AudioNode, at: number, vol: number, start
   osc.stop(at + 0.7);
 }
 
-// The reels spinning: a mechanical whir + low motor rumble + fast ticks +
-// a tension tone that slowly rises. Returns a stop() that fades it out.
+// The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
+// rising sweep for tension + a soft rhythmic sub pulse for body. Deliberately
+// no low sawtooth/drone (that was the buzzy "hum"). Returns a stop() that fades.
 export function startSlotSpin(): () => void {
   try {
     const ctx = getAudioContext();
     const { master, dry, space } = masterChain(ctx);
     const t0 = ctx.currentTime;
     master.gain.setValueAtTime(0.0001, t0);
-    master.gain.exponentialRampToValueAtTime(0.85, t0 + 0.08);
+    master.gain.exponentialRampToValueAtTime(0.8, t0 + 0.08);
 
-    // whir — looping band-passed noise (reels rushing past)
-    const whir = ctx.createBufferSource();
-    whir.buffer = noiseBuffer(ctx, 1.2);
-    whir.loop = true;
-    const bp = ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.Q.value = 1.4;
-    bp.frequency.value = 1900;
-    const whirG = ctx.createGain();
-    whirG.gain.value = 0.05;
-    whir.connect(bp); bp.connect(whirG); whirG.connect(dry);
-    whir.start(t0);
+    // airy rising sweep — high-passed noise sweeping UP. Kept high + quiet so
+    // there's zero low hum, just an "ssshhh" of building tension (in reverb).
+    const air = ctx.createBufferSource();
+    air.buffer = noiseBuffer(ctx, 1.5);
+    air.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(3200, t0);
+    hp.frequency.exponentialRampToValueAtTime(9000, t0 + 6);
+    const airG = ctx.createGain();
+    airG.gain.value = 0.028;
+    air.connect(hp); hp.connect(airG); airG.connect(space);
+    air.start(t0);
 
-    // motor rumble
-    const rumble = ctx.createOscillator();
-    rumble.type = 'sawtooth';
-    rumble.frequency.value = 68;
-    const rLp = ctx.createBiquadFilter();
-    rLp.type = 'lowpass';
-    rLp.frequency.value = 200;
-    const rG = ctx.createGain();
-    rG.gain.value = 0.06;
-    rumble.connect(rLp); rLp.connect(rG); rG.connect(dry);
-    rumble.start(t0);
-
-    // tension tone rising under the spin
-    const tens = ctx.createOscillator();
-    tens.type = 'sine';
-    tens.frequency.setValueAtTime(220, t0);
-    tens.frequency.exponentialRampToValueAtTime(660, t0 + 6);
-    const tG = ctx.createGain();
-    tG.gain.setValueAtTime(0.0001, t0);
-    tG.gain.exponentialRampToValueAtTime(0.04, t0 + 5);
-    tens.connect(tG); tG.connect(space);
-    tens.start(t0);
-
-    // fast reel ticks
+    // crisp reel ticks — pitch rises as the spin builds (excitement)
     let stopped = false;
     let nextT = t0 + 0.05;
-    const tickInt = 0.045;
-    const timer = setInterval(() => {
+    let n = 0;
+    const tickInt = 0.05;
+    const tickTimer = setInterval(() => {
       if (stopped) return;
       const horizon = ctx.currentTime + 0.15;
       while (nextT < horizon) {
-        tick(ctx, dry, nextT);
+        tick(ctx, dry, nextT, 950 + Math.min(n * 7, 750));
         nextT += tickInt;
+        n += 1;
       }
     }, 25);
+
+    // soft rhythmic sub pulse for weight (heartbeat, not a drone)
+    let pulseT = t0 + 0.12;
+    const pulseTimer = setInterval(() => {
+      if (stopped) return;
+      const horizon = ctx.currentTime + 0.3;
+      while (pulseT < horizon) {
+        subPulse(ctx, dry, pulseT);
+        pulseT += 0.4;
+      }
+    }, 60);
 
     return () => {
       if (stopped) return;
       stopped = true;
-      clearInterval(timer);
+      clearInterval(tickTimer);
+      clearInterval(pulseTimer);
       const now = ctx.currentTime;
       try {
         master.gain.cancelScheduledValues(now);
         master.gain.setValueAtTime(master.gain.value, now);
-        master.gain.exponentialRampToValueAtTime(0.0008, now + 0.25);
+        master.gain.exponentialRampToValueAtTime(0.0008, now + 0.2);
       } catch { /* ignore */ }
-      try { whir.stop(now + 0.3); rumble.stop(now + 0.3); tens.stop(now + 0.3); } catch { /* ignore */ }
+      try { air.stop(now + 0.25); } catch { /* ignore */ }
     };
   } catch {
     return () => { /* audio unavailable */ };
