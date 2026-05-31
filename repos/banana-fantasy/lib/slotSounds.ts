@@ -239,48 +239,53 @@ function pumpDuck(node: AudioParam, at: number, beat: number) {
   node.linearRampToValueAtTime(1.0, at + beat * 0.9);
 }
 
-// Rising lead for the celebration.
-const CELEB_LEAD = [523.3, 659.3, 587.3, 784.0, 659.3, 880.0, 784.0, 1046.5, 880.0, 1318.5];
-
-// The "goes crazy and stays longer" celebration for HOF / Jackpot reveals — a
-// modern future-bass drop: riser -> wide chord swell + rising lead over driving
-// kicks/sub/claps. `big` = jackpot (longer + harder); else HOF.
+// The "goes crazy" celebration for HOF / Jackpot reveals — a FAST (~200 BPM)
+// euphoric future-bass drop: driving four-on-floor + fast hats + rhythmic chord
+// stabs + a fast climbing arpeggio over sub/claps. `big` = jackpot (longer).
 function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space: GainNode }, big: boolean, startAt: number) {
   const { dry, space } = buses;
   const pump = ctx.createGain();
   pump.connect(space);
-  const BEAT = 0.4;
+  const BEAT = 0.3;          // 200 BPM — fast + hype
+  const HALF = BEAT / 2;
   const barLen = BEAT * 4;
 
-  riserSweep(ctx, pump, startAt - 0.45, 0.45, 0.22);
+  riserSweep(ctx, pump, startAt - 0.4, 0.4, 0.22);
   boom(ctx, dry, startAt, big ? 0.7 : 0.55, 220);
-  noiseHit(ctx, dry, startAt, 0.32, 0.6, 1500);
+  noiseHit(ctx, dry, startAt, 0.34, 0.6, 1500);
 
-  const bars = big ? 3 : 2;
-  const roots = [55.0, 49.0, 43.65]; // A G F
-  const chords = [[220, 261.6, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6]];
-  let leadIdx = 0;
+  const bars = big ? 4 : 3;
+  const roots = [55.0, 49.0, 43.65, 55.0]; // A G F A
+  const chords = [[220, 261.6, 329.6], [196, 246.9, 293.7], [174.6, 220, 261.6], [220, 261.6, 329.6]];
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
+    const chord = chords[bar % chords.length];
+    // driving four-on-floor + pump + fast offbeat hats
     for (let beatN = 0; beatN < 4; beatN++) {
       const bt = t + beatN * BEAT;
       kick(ctx, dry, bt, 1.0);
       pumpDuck(pump.gain, bt, BEAT);
-      noiseHit(ctx, dry, bt + BEAT / 2, 0.1, 0.05, 9000); // offbeat hat
+      noiseHit(ctx, dry, bt + HALF, 0.1, 0.04, 9000);   // offbeat open hat
+      noiseHit(ctx, dry, bt + HALF / 2, 0.05, 0.03, 9500); // 16th
+      noiseHit(ctx, dry, bt + HALF * 1.5, 0.05, 0.03, 9500);
     }
     subNote(ctx, pump, t, roots[bar % roots.length] * 2, barLen * 0.9, 0.55);
-    noiseHit(ctx, space, t + BEAT, 0.22, 0.14, 1700);     // clap
-    noiseHit(ctx, space, t + BEAT * 3, 0.22, 0.14, 1700);
-    chordSwell(ctx, pump, t, chords[bar % chords.length], barLen * 0.95, 0.16);
-    for (let k = 0; k < 4; k++) {
-      const f = CELEB_LEAD[Math.min(leadIdx++, CELEB_LEAD.length - 1)];
-      pluck(ctx, pump, t + k * BEAT, f, 0.16, 0.5);
+    noiseHit(ctx, space, t + BEAT, 0.22, 0.13, 1700);   // clap backbeat
+    noiseHit(ctx, space, t + BEAT * 3, 0.22, 0.13, 1700);
+    noiseHit(ctx, space, t, 0.16, 0.4, 2400);           // crash on the bar
+    // rhythmic chord stabs (1 & 3) instead of one long swell = more exciting
+    chordSwell(ctx, pump, t, chord, BEAT * 1.7, 0.15);
+    chordSwell(ctx, pump, t + BEAT * 2, chord, BEAT * 1.5, 0.12);
+    // FAST climbing arpeggio of the chord, 2 octaves up, 8 notes/bar
+    const arp = [...chord.map((f) => f * 2), ...chord.map((f) => f * 4)];
+    for (let k = 0; k < 8; k++) {
+      pluck(ctx, pump, t + k * HALF, arp[k % arp.length], 0.14, 0.26);
     }
   }
   const fin = startAt + bars * barLen;
   boom(ctx, dry, fin, big ? 0.6 : 0.45, 200);
   noiseHit(ctx, dry, fin, 0.3, 0.9, 1100);
-  chordSwell(ctx, pump, fin, [523.3, 659.3, 784.0, 1046.5], 1.6, 0.18);
+  chordSwell(ctx, pump, fin, [523.3, 659.3, 784.0, 1046.5], 1.4, 0.18);
 }
 
 // The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
@@ -394,7 +399,7 @@ export function playSlotReveal(type: SlotRevealType) {
       noiseHit(ctx, dry, now + 0.22, 0.3, 0.6, big ? 1000 : 1400);
       chordSwell(ctx, space, now + 0.24, big ? [523.3, 659.3, 784.0, 1046.5] : [523.3, 659.3, 784.0], 1.0, big ? 0.19 : 0.16);
       // the celebration drop kicks in after a short build
-      launchSlotCelebration(ctx, { dry, space }, big, now + 0.7);
+      launchSlotCelebration(ctx, { dry, space }, big, now + 0.55);
     } else {
       // pro — clean, positive, not anticlimactic but not huge
       boom(ctx, dry, now, 0.34, 140);
