@@ -309,6 +309,14 @@ const LOW_PATTERNS: RegExp[] = [
   /^draft\.firebase_rtdb_permission_denied/i,// usually a stale ruleset hit on a since-removed field
   /^draft\.sort_preference_persist_failed/i, // user prefs; reverts on next reload
   /^draft\.preferences_load_failed/i,        // defaults apply if load fails
+  // audit "under" = wallet has MORE real tokens than the counter shows — the
+  // SAFE direction (user can't be blocked by it). Informational, not a fire.
+  // The DANGEROUS direction (audit.passes.over) stays CRITICAL above.
+  /^audit\.passes\.under/i,
+  // Background "last active" telemetry write occasionally times out
+  // (DEADLINE_EXCEEDED). Non-user-facing; the next heartbeat retries. Visible
+  // in Low if it ever becomes a pattern, but it shouldn't page anyone.
+  /^user\.activity\.touch_failed/i,
 ];
 
 /** Triage tier for an error source — drives the admin Logs sections. */
