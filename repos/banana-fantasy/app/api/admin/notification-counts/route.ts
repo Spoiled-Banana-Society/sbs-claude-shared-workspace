@@ -211,8 +211,12 @@ async function countSentryUnresolved(since: number): Promise<number> {
       cache: 'no-store',
     });
     if (!res.ok) return 0;
-    const raw = (await res.json()) as Array<{ lastSeen?: string }>;
+    const raw = (await res.json()) as Array<{ lastSeen?: string; level?: string }>;
     return raw.filter((r) => {
+      // Only count ACTUAL bugs — drop Sentry "performance issues" (info/debug
+      // level, e.g. the N+1-on-/admin noise). Matches the sentry-issues feed.
+      const lvl = (r.level ?? 'error').toLowerCase();
+      if (lvl === 'info' || lvl === 'debug') return false;
       const t = r.lastSeen ? new Date(r.lastSeen).getTime() : 0;
       return t > since;
     }).length;
