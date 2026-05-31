@@ -375,15 +375,23 @@ function startGroove(): (tier?: WinTier) => void {
     outroStarted = true;
     const now = ctx.currentTime;
     const big = tier === 'great' || tier === 'legendary';
-    const tail = tier === 'legendary' ? 6.6 : tier === 'great' ? 4.6 : tier === 'good' ? 2.4 : 1.7;
-    if (big) launchBigOutro(ctx, { dry, space }, tier, now + 0.5);
+    const tail = tier === 'legendary' ? 7.2 : tier === 'great' ? 5.4 : tier === 'good' ? 2.4 : 1.7;
+    if (big) {
+      // STOP the looping groove immediately — the big-win outro brings its own
+      // beat, and letting the groove keep running on its own grid underneath
+      // produced two out-of-phase beats ("tripping out / out of sync"). The
+      // already-queued groove notes (<0.2s) tail out under the riser lead-in.
+      stopped = true;
+      clearInterval(timer);
+      launchBigOutro(ctx, { dry, space }, tier, now + 0.6);
+    }
     try {
       master.gain.cancelScheduledValues(now);
       master.gain.setValueAtTime(master.gain.value, now);
       master.gain.setValueAtTime(0.9, now + tail - 1.3);
       master.gain.exponentialRampToValueAtTime(0.0008, now + tail);
     } catch { /* ignore */ }
-    setTimeout(() => { stopped = true; clearInterval(timer); }, tail * 1000 + 120);
+    if (!big) setTimeout(() => { stopped = true; clearInterval(timer); }, tail * 1000 + 120);
   };
 }
 
