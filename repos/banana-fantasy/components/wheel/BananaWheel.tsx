@@ -129,14 +129,24 @@ const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
 // Exported so the page-level spin handler can freeze the global balance
 // state for the same window (keeps the header's "draft passes / wheel
 // spins" count from updating mid-spin, which would spoil the reveal).
-export const SPIN_DURATION_MS = 1300;
+// Landing (deceleration) duration. The landing is tuned for VELOCITY
+// CONTINUITY: it starts at exactly the free-spin speed and eases out to a
+// stop, so the wheel spins cleanly through and slows once — never slowing
+// mid-spin and re-accelerating. See the landing math in spin().
+export const SPIN_DURATION_MS = 2000;
 
 // Free-spin (pre-result) phase: the wheel starts spinning at a constant
 // speed the instant the user taps, while the RNG request is in flight, so
 // it never sits frozen waiting on the network. Linear so we can estimate
 // its live angle when the result lands and decelerate forward onto it.
 const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
-const FREE_SPIN_TURNS = 12;  // ~0.67s per revolution — energetic, not frantic
+const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
+// Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
+const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
+// Landing easing ≈ ease-out-quad (initial slope 2, smooth stop). With the
+// landing distance set to FREE_SPEED * DURATION / 2, the wheel leaves the
+// free spin at the same speed and decelerates at a constant rate to rest.
+const LANDING_EASING = 'cubic-bezier(0.25, 0.5, 0.5, 1)';
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
@@ -263,15 +273,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     }
 
     // Decelerate from the live free-spin position onto the winning segment.
-    // CSS transitions hand off smoothly from the current computed transform,
-    // so retargeting mid-spin eases forward without a jump. Landing angle is
-    // exact (mod 360) regardless of the estimate.
+    // CSS transitions hand off from the current computed transform, so this
+    // continues forward without a jump. For a CLEAN spin (no mid-slowdown +
+    // re-accelerate), the landing distance is chosen so the ease-out leaves
+    // the free spin at the SAME speed: with ease-out-quad (initial slope 2),
+    // continuity means distance ≈ freeSpeed * duration / 2. We then snap the
+    // whole-turn count to land exactly on the target angle.
     const current = estimateCurrentRotation();
-    const targetFinalAngle = outcome.angle;
-    let deltaRotation = targetFinalAngle - (((current % 360) + 360) % 360);
-    if (deltaRotation <= 0) deltaRotation += 360;
-    const fullRotations = 2 + Math.floor(Math.random() * 2); // a couple decel turns
-    deltaRotation += 360 * fullRotations;
+    let angleToTarget = outcome.angle - (((current % 360) + 360) % 360);
+    if (angleToTarget <= 0) angleToTarget += 360; // 0..360 forward to the target
+    const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / 2;
+    const fullRotations = Math.max(2, Math.round((idealDistance - angleToTarget) / 360));
+    const deltaRotation = angleToTarget + 360 * fullRotations;
 
     const newRotation = current + deltaRotation;
     setSpinPhase('landing');
@@ -366,7 +379,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
             transition: spinPhase === 'free'
               ? `transform ${FREE_SPIN_MS}ms linear`
               : spinPhase === 'landing'
-                ? `transform ${SPIN_DURATION_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
+                ? `transform ${SPIN_DURATION_MS}ms ${LANDING_EASING}`
                 : 'none',
             background: 'linear-gradient(145deg, rgba(30,30,40,1) 0%, rgba(15,15,20,1) 100%)',
           }}
