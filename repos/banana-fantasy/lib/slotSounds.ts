@@ -245,46 +245,6 @@ function bass808(ctx: AudioContext, dest: AudioNode, at: number, freq: number, d
   o.start(at); o.stop(at + dur + 0.02);
 }
 
-// Growl bass — detuned saws through a wobbling lowpass + heavy distortion =
-// a modern hybrid-trap / dubstep bass. This is the hook (replaces saw chords).
-function growl(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.38) {
-  const ws = ctx.createWaveShaper();
-  ws.curve = distCurve(10);
-  ws.oversample = '2x';
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(300, at);
-  lp.frequency.linearRampToValueAtTime(1500, at + dur * 0.3);
-  lp.frequency.linearRampToValueAtTime(450, at + dur * 0.6);
-  lp.frequency.linearRampToValueAtTime(1100, at + dur);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, at);
-  g.gain.exponentialRampToValueAtTime(vol, at + 0.012);
-  g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
-  lp.connect(ws); ws.connect(g); g.connect(dest);
-  for (const det of [-12, 0, 12]) {
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.value = freq * Math.pow(2, det / 1200);
-    o.connect(lp);
-    o.start(at); o.stop(at + dur + 0.02);
-  }
-}
-
-// Hard snare — noise crack + short tonal body.
-function snare(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.3) {
-  noiseHit(ctx, dest, at, vol, 0.16, 1800);
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  o.type = 'triangle';
-  o.frequency.setValueAtTime(220, at);
-  o.frequency.exponentialRampToValueAtTime(150, at + 0.08);
-  g.gain.setValueAtTime(vol * 0.5, at);
-  g.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
-  o.connect(g); g.connect(dest);
-  o.start(at); o.stop(at + 0.11);
-}
-
 // Sidechain pump: duck a bus to ~0.35 on the kick, recover over the beat.
 function pumpDuck(node: AudioParam, at: number, beat: number) {
   node.cancelScheduledValues(at);
@@ -317,51 +277,167 @@ function darkChord(ctx: AudioContext, dest: AudioNode, at: number, freqs: number
   }
 }
 
-// The "goes crazy" celebration for HOF / Jackpot — MODERN + hard, not 80s: no
-// saw-chord melody at all. It's distorted 808 + a wobbling growl-bass hook,
-// hard kicks + snare backbeat + fast hat rolls, and big risers/impacts.
+// ── Celebration SFX (sirens / air horns / bells / lasers / coins) ──────────
+
+// Wailing siren — an LFO sweeps the pitch up and down for the whole duration.
+function siren(ctx: AudioContext, dest: AudioNode, at: number, dur: number, lo: number, hi: number, rate: number, vol = 0.1) {
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.value = (lo + hi) / 2;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 2600;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'triangle';
+  lfo.frequency.value = rate;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = (hi - lo) / 2;
+  lfo.connect(lfoG);
+  lfoG.connect(o.frequency);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.08);
+  g.gain.setValueAtTime(vol, at + dur - 0.15);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(lp); lp.connect(g); g.connect(dest);
+  o.start(at); lfo.start(at);
+  o.stop(at + dur + 0.02); lfo.stop(at + dur + 0.02);
+}
+
+// Reggae/hype air horn — stacked detuned saws (root+fifth+octave) through
+// distortion, with a quick up-bend. The "BWAAA".
+function airHorn(ctx: AudioContext, dest: AudioNode, at: number, dur = 0.6, vol = 0.16) {
+  const ws = ctx.createWaveShaper();
+  ws.curve = distCurve(5);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.03);
+  g.gain.setValueAtTime(vol, at + dur - 0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  ws.connect(g); g.connect(dest);
+  for (const mult of [1, 1.5, 2.0]) {
+    for (const det of [-9, 9]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      const f0 = 233 * mult; // Bb-ish horn
+      o.frequency.setValueAtTime(f0 * 0.92, at);
+      o.frequency.linearRampToValueAtTime(f0, at + 0.07);
+      o.detune.value = det;
+      o.connect(ws);
+      o.start(at); o.stop(at + dur + 0.02);
+    }
+  }
+}
+
+// Jackpot alarm bell — two close sines with a fast tremolo (ring-ring-ring).
+function alarmBell(ctx: AudioContext, dest: AudioNode, at: number, dur = 0.8, vol = 0.08) {
+  const trem = ctx.createGain();
+  trem.gain.value = 0.5;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = 13;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = 0.5;
+  lfo.connect(lfoG); lfoG.connect(trem.gain);
+  for (const f of [880, 1318.5]) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = f;
+    o.connect(trem);
+    o.start(at); o.stop(at + dur + 0.02);
+  }
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, at);
+  g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+  trem.connect(g); g.connect(dest);
+  lfo.start(at); lfo.stop(at + dur + 0.02);
+}
+
+// Laser zap — fast pitch-falling sweep.
+function laser(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.1) {
+  const o = ctx.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(2200, at);
+  o.frequency.exponentialRampToValueAtTime(220, at + 0.18);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol, at);
+  g.gain.exponentialRampToValueAtTime(0.001, at + 0.2);
+  o.connect(g); g.connect(dest);
+  o.start(at); o.stop(at + 0.22);
+}
+
+// Coin ding — two quick ascending bright tones.
+function coin(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.09) {
+  const mk = (f: number, t0: number, d: number) => {
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = f;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + d);
+    o.connect(g); g.connect(dest);
+    o.start(t0); o.stop(t0 + d + 0.01);
+  };
+  mk(1318.5, at, 0.06);
+  mk(1975.5, at + 0.05, 0.13);
+}
+
+// The "goes crazy" celebration for HOF / Jackpot — a full casino-jackpot SFX
+// blowout: wailing sirens + air horns + alarm bells + lasers + raining coins
+// over a driving beat + distorted 808 + big impacts. Pure hype, not a melody.
 function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space: GainNode }, big: boolean, startAt: number) {
   const { dry, space } = buses;
-  // bass bus — kept dry (tight, upfront) and sidechain-pumped under the kick.
   const bassBus = ctx.createGain();
   bassBus.connect(dry);
   const BEAT = 0.3;
   const HALF = BEAT / 2;
   const barLen = BEAT * 4;
+  const bars = big ? 5 : 4;
+  const total = bars * barLen;
+  const rnd = () => Math.random();
 
-  // downlifter + huge impact into the drop
-  riserSweep(ctx, space, startAt - 0.4, 0.4, 0.24);
+  // ── the drop: huge impact + air horn ──
+  riserSweep(ctx, space, startAt - 0.4, 0.4, 0.26);
   boom(ctx, dry, startAt, big ? 0.9 : 0.75, 250);
-  noiseHit(ctx, dry, startAt, 0.45, 0.85, 1000); // big crash
+  noiseHit(ctx, dry, startAt, 0.5, 0.9, 900);   // huge crash
+  airHorn(ctx, space, startAt, 0.7, 0.18);      // BWAAA
 
-  const bars = big ? 4 : 3;
-  const roots = [55.0, 49.0, 43.65, 41.2]; // A G F E — dark, low
+  // ── sirens wailing through the WHOLE celebration (the chaos) ──
+  siren(ctx, space, startAt + 0.05, total, 700, 1500, 3.5, 0.1);
+  if (big) siren(ctx, space, startAt + 0.2, total - 0.2, 480, 1050, 5.5, 0.07);
+  // alarm bell ringing through the middle
+  alarmBell(ctx, space, startAt + 0.3, total - 0.5, big ? 0.07 : 0.06);
+
+  const roots = [55.0, 49.0, 43.65, 41.2];
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
     const root = roots[bar % roots.length];
-    // hard kicks on 1 & 3, pumping the bass bus
-    kick(ctx, dry, t, 1.0); pumpDuck(bassBus.gain, t, BEAT);
-    kick(ctx, dry, t + BEAT * 2, 1.0); pumpDuck(bassBus.gain, t + BEAT * 2, BEAT);
-    // snare backbeat (2 & 4), in reverb
-    snare(ctx, space, t + BEAT, 0.3);
-    snare(ctx, space, t + BEAT * 3, 0.3);
-    // fast hats (16ths) + a 32nd roll into the next bar
-    for (let h = 0; h < 8; h++) noiseHit(ctx, dry, t + h * HALF, h % 2 ? 0.05 : 0.08, 0.03, 9000);
-    noiseHit(ctx, dry, t + barLen - HALF * 0.5, 0.06, 0.025, 9500);
-    noiseHit(ctx, dry, t + barLen - HALF * 0.25, 0.06, 0.025, 9500);
-    // crash on the bar
-    noiseHit(ctx, space, t, 0.16, 0.45, 2200);
-    // gritty 808 sub for the whole bar
-    bass808(ctx, bassBus, t, root * 2, barLen * 0.95, 0.6);
-    // GROWL bass hook — syncopated wobble (the modern centerpiece)
-    growl(ctx, bassBus, t, root * 2, BEAT * 1.2, 0.4);
-    growl(ctx, bassBus, t + BEAT * 1.5, root * 2, BEAT * 0.8, 0.36);
-    growl(ctx, bassBus, t + BEAT * 2.5, root * 3, BEAT * 1.1, 0.36);
+    // driving four-on-floor + pump + fast hats + clap backbeat
+    for (let beatN = 0; beatN < 4; beatN++) {
+      const bt = t + beatN * BEAT;
+      kick(ctx, dry, bt, 1.0);
+      pumpDuck(bassBus.gain, bt, BEAT);
+      noiseHit(ctx, dry, bt + HALF, 0.07, 0.035, 9000);
+    }
+    noiseHit(ctx, space, t + BEAT, 0.2, 0.13, 1700);     // clap
+    noiseHit(ctx, space, t + BEAT * 3, 0.2, 0.13, 1700);
+    noiseHit(ctx, space, t, 0.16, 0.45, 2200);            // crash
+    bass808(ctx, bassBus, t, root * 2, barLen * 0.95, 0.55); // body
+
+    // ── SFX layered on top: horns, lasers, coins ──
+    if (bar % 2 === 1) airHorn(ctx, space, t, 0.55, 0.15);   // horn stab every other bar
+    laser(ctx, space, t + BEAT * (1 + Math.round(rnd() * 2)), 0.1); // a laser somewhere
+    // a little flurry of coins raining
+    const coins = big ? 4 : 3;
+    for (let c = 0; c < coins; c++) coin(ctx, space, t + rnd() * barLen, 0.08);
   }
-  const fin = startAt + bars * barLen;
-  boom(ctx, dry, fin, big ? 0.8 : 0.6, 240);
-  noiseHit(ctx, dry, fin, 0.4, 1.0, 1000);
-  growl(ctx, bassBus, fin, roots[0] * 2, 1.2, 0.42);
+
+  // ── big finish ──
+  const fin = startAt + total;
+  boom(ctx, dry, fin, big ? 0.85 : 0.65, 240);
+  noiseHit(ctx, dry, fin, 0.45, 1.1, 900);
+  airHorn(ctx, space, fin, 0.9, 0.2);
+  alarmBell(ctx, space, fin, 1.0, 0.08);
 }
 
 // The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
