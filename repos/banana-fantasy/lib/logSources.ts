@@ -27,6 +27,7 @@ export const LOG_AREAS = [
   'prizes',
   'notifications',
   'admin',
+  'audit',
   'backend',
   'global',
   'other',
@@ -63,6 +64,13 @@ export const LOG_SOURCES = {
     // severity (not critical) — cosmetic, recoverable — but visible in admin so
     // we can actually SEE the join glitch when it happens instead of guessing.
     JOIN_HANDOFF_SLOW: 'draft.join_handoff_slow',
+    // The filling lobby was skipped/left right after a fresh join — the
+    // "saw 'Joining lobby' for a second then wasn't in the filling draft"
+    // glitch. Fires regardless of hand-off speed (the SLOW threshold above
+    // misses the fast-flash case). Context captures WHICH cause it was:
+    // fellToLocal (live join dropped to local), or left filling early with
+    // playerCount<10 (a real skip) vs ==10 (legit fast fill). Warning.
+    JOIN_LOBBY_GLITCH: 'draft.join_lobby_glitch',
     PICK_SUBMIT_UNHANDLED: 'draft.pick_submit_unhandled_error',
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',
@@ -284,6 +292,10 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^notifications\.config\.secret_missing/i,
   // ── A page genuinely crashed to the error screen for the user ──
   /^global\.react\.boundary/i,
+  // ── State-integrity audits (proactive): a money/fairness invariant is
+  //    violated in the data BEFORE a user trips on it. See lib/audits/. ──
+  /^audit\.passes\.over/i,      // counter > real spendable tokens → user blocked at join
+  /^audit\.balance\.negative/i, // negative money/pass counter → corruption
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a

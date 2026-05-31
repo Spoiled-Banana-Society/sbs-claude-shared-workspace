@@ -105,19 +105,20 @@ function rainPrizes(segment: WheelSegment) {
     shapes = undefined; // older confetti without emoji shapes — fall back to default
   }
   const huge = isHugeWin(segment);
-  const end = Date.now() + (huge ? 3500 : 2400);
+  // Keep raining for as long as the music celebrates (big-four outro is long).
+  const end = Date.now() + (huge ? 5200 : 3600);
   const tick = () => {
     confetti({
-      particleCount: huge ? 9 : 5,
+      particleCount: huge ? 12 : 7,
       startVelocity: 0,            // no launch — just let them fall
       gravity: huge ? 0.9 : 0.7,
-      ticks: 260,
+      ticks: 320,
       spread: 0,
       origin: { x: Math.random(), y: -0.12 }, // drop in from above the top edge
       scalar: huge ? 4 : 3,
       ...(shapes ? { shapes } : {}),
     });
-    if (Date.now() < end) setTimeout(tick, huge ? 110 : 160);
+    if (Date.now() < end) setTimeout(tick, huge ? 90 : 130);
   };
   tick();
 }
@@ -128,14 +129,24 @@ const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
 // Exported so the page-level spin handler can freeze the global balance
 // state for the same window (keeps the header's "draft passes / wheel
 // spins" count from updating mid-spin, which would spoil the reveal).
-export const SPIN_DURATION_MS = 1300;
+// Landing (deceleration) duration. The landing is tuned for VELOCITY
+// CONTINUITY: it starts at exactly the free-spin speed and eases out to a
+// stop, so the wheel spins cleanly through and slows once — never slowing
+// mid-spin and re-accelerating. See the landing math in spin().
+export const SPIN_DURATION_MS = 2000;
 
 // Free-spin (pre-result) phase: the wheel starts spinning at a constant
 // speed the instant the user taps, while the RNG request is in flight, so
 // it never sits frozen waiting on the network. Linear so we can estimate
 // its live angle when the result lands and decelerate forward onto it.
 const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
-const FREE_SPIN_TURNS = 12;  // ~0.67s per revolution — energetic, not frantic
+const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
+// Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
+const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
+// Landing easing ≈ ease-out-quad (initial slope 2, smooth stop). With the
+// landing distance set to FREE_SPEED * DURATION / 2, the wheel leaves the
+// free spin at the same speed and decelerates at a constant rate to rest.
+const LANDING_EASING = 'cubic-bezier(0.25, 0.5, 0.5, 1)';
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
@@ -262,15 +273,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     }
 
     // Decelerate from the live free-spin position onto the winning segment.
-    // CSS transitions hand off smoothly from the current computed transform,
-    // so retargeting mid-spin eases forward without a jump. Landing angle is
-    // exact (mod 360) regardless of the estimate.
+    // CSS transitions hand off from the current computed transform, so this
+    // continues forward without a jump. For a CLEAN spin (no mid-slowdown +
+    // re-accelerate), the landing distance is chosen so the ease-out leaves
+    // the free spin at the SAME speed: with ease-out-quad (initial slope 2),
+    // continuity means distance ≈ freeSpeed * duration / 2. We then snap the
+    // whole-turn count to land exactly on the target angle.
     const current = estimateCurrentRotation();
-    const targetFinalAngle = outcome.angle;
-    let deltaRotation = targetFinalAngle - (((current % 360) + 360) % 360);
-    if (deltaRotation <= 0) deltaRotation += 360;
-    const fullRotations = 2 + Math.floor(Math.random() * 2); // a couple decel turns
-    deltaRotation += 360 * fullRotations;
+    let angleToTarget = outcome.angle - (((current % 360) + 360) % 360);
+    if (angleToTarget <= 0) angleToTarget += 360; // 0..360 forward to the target
+    const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / 2;
+    const fullRotations = Math.max(2, Math.round((idealDistance - angleToTarget) / 360));
+    const deltaRotation = angleToTarget + 360 * fullRotations;
 
     const newRotation = current + deltaRotation;
     setSpinPhase('landing');
@@ -324,8 +338,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         // The screen shake is applied to the result modal on mount below.
         if (isBigWin(segment)) rainPrizes(segment);
       }
-      // Let the groove ride a beat past the landing, then fade (continues after).
-      stopSpinSound();
+      // Tier-aware outro: small wins fade quick, the big four keep the music
+      // going crazy for several seconds.
+      stopSpinSound(segment ? getWinTier(segment) : undefined);
       if (onSpinComplete) onSpinComplete(outcome, segment);
     }, SPIN_DURATION_MS);
   };
@@ -364,7 +379,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
             transition: spinPhase === 'free'
               ? `transform ${FREE_SPIN_MS}ms linear`
               : spinPhase === 'landing'
-                ? `transform ${SPIN_DURATION_MS}ms cubic-bezier(0.2, 0.8, 0.2, 1)`
+                ? `transform ${SPIN_DURATION_MS}ms ${LANDING_EASING}`
                 : 'none',
             background: 'linear-gradient(145deg, rgba(30,30,40,1) 0%, rgba(15,15,20,1) 100%)',
           }}
@@ -533,9 +548,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50"
           style={{
-            // Big wins jolt the whole screen as the prize card lands.
+            // Big wins jolt the whole screen as the prize card lands — the
+            // hardest tier shakes bigger and twice as long.
             animation: isBigWin(wonSegment)
-              ? `fadeIn 0.3s ease-out, ${isHugeWin(wonSegment) ? 'wheelShakeHard' : 'wheelShake'} 0.7s cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.05s`
+              ? `fadeIn 0.3s ease-out, ${isHugeWin(wonSegment) ? 'wheelShakeHard 1.1s' : 'wheelShake 0.7s'} cubic-bezier(0.36, 0.07, 0.19, 0.97) 0.05s`
               : 'fadeIn 0.3s ease-out',
           }}
           onClick={dismissResult}
@@ -679,13 +695,15 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         }
         @keyframes wheelShakeHard {
           0%, 100% { transform: translate(0, 0) rotate(0); }
-          10% { transform: translate(-13px, 7px) rotate(-1.4deg); }
-          20% { transform: translate(12px, -9px) rotate(1.4deg); }
-          30% { transform: translate(-14px, -6px) rotate(-1.2deg); }
-          40% { transform: translate(12px, 8px) rotate(1.1deg); }
-          55% { transform: translate(-9px, 5px) rotate(-0.8deg); }
-          70% { transform: translate(7px, -5px) rotate(0.6deg); }
-          85% { transform: translate(-4px, 3px) rotate(-0.3deg); }
+          6% { transform: translate(-18px, 10px) rotate(-1.8deg); }
+          13% { transform: translate(17px, -12px) rotate(1.8deg); }
+          20% { transform: translate(-19px, -8px) rotate(-1.6deg); }
+          28% { transform: translate(16px, 11px) rotate(1.5deg); }
+          38% { transform: translate(-14px, 7px) rotate(-1.2deg); }
+          50% { transform: translate(13px, -8px) rotate(1deg); }
+          62% { transform: translate(-10px, 6px) rotate(-0.8deg); }
+          74% { transform: translate(8px, -5px) rotate(0.6deg); }
+          86% { transform: translate(-4px, 3px) rotate(-0.3deg); }
         }
       `}</style>
     </div>
