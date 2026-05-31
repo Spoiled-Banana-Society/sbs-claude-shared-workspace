@@ -217,19 +217,72 @@ function kick(ctx: AudioContext, dest: AudioNode, at: number, vol = 1.0) {
   osc.stop(at + 0.15);
 }
 
-function subNote(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.55) {
+// Soft-clip distortion curve (waveshaper). Grit = the key to a MODERN,
+// aggressive sound vs. clean (80s-sounding) synths.
+function distCurve(amount: number) {
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / n - 1;
+    curve[i] = ((1 + amount) * x) / (1 + amount * Math.abs(x));
+  }
+  return curve;
+}
+
+// Gritty 808 sub — sine through light waveshaping for body + edge.
+function bass808(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.62) {
+  const ws = ctx.createWaveShaper();
+  ws.curve = distCurve(2);
   const o = ctx.createOscillator();
-  const g = ctx.createGain();
   o.type = 'sine';
   o.frequency.setValueAtTime(freq * 1.5, at);
   o.frequency.exponentialRampToValueAtTime(freq, at + 0.05);
+  const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, at);
   g.gain.exponentialRampToValueAtTime(vol, at + 0.02);
   g.gain.exponentialRampToValueAtTime(0.001, at + dur);
-  o.connect(g);
-  g.connect(dest);
-  o.start(at);
-  o.stop(at + dur + 0.02);
+  o.connect(ws); ws.connect(g); g.connect(dest);
+  o.start(at); o.stop(at + dur + 0.02);
+}
+
+// Growl bass — detuned saws through a wobbling lowpass + heavy distortion =
+// a modern hybrid-trap / dubstep bass. This is the hook (replaces saw chords).
+function growl(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur: number, vol = 0.38) {
+  const ws = ctx.createWaveShaper();
+  ws.curve = distCurve(10);
+  ws.oversample = '2x';
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(300, at);
+  lp.frequency.linearRampToValueAtTime(1500, at + dur * 0.3);
+  lp.frequency.linearRampToValueAtTime(450, at + dur * 0.6);
+  lp.frequency.linearRampToValueAtTime(1100, at + dur);
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, at);
+  g.gain.exponentialRampToValueAtTime(vol, at + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+  lp.connect(ws); ws.connect(g); g.connect(dest);
+  for (const det of [-12, 0, 12]) {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.value = freq * Math.pow(2, det / 1200);
+    o.connect(lp);
+    o.start(at); o.stop(at + dur + 0.02);
+  }
+}
+
+// Hard snare — noise crack + short tonal body.
+function snare(ctx: AudioContext, dest: AudioNode, at: number, vol = 0.3) {
+  noiseHit(ctx, dest, at, vol, 0.16, 1800);
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'triangle';
+  o.frequency.setValueAtTime(220, at);
+  o.frequency.exponentialRampToValueAtTime(150, at + 0.08);
+  g.gain.setValueAtTime(vol * 0.5, at);
+  g.gain.exponentialRampToValueAtTime(0.001, at + 0.1);
+  o.connect(g); g.connect(dest);
+  o.start(at); o.stop(at + 0.11);
 }
 
 // Sidechain pump: duck a bus to ~0.35 on the kick, recover over the beat.
@@ -264,76 +317,51 @@ function darkChord(ctx: AudioContext, dest: AudioNode, at: number, freqs: number
   }
 }
 
-// Gritty mid lead — two detuned saws with a closing filter env. Sparse use +
-// mid (not high) register gives it attitude instead of cheese.
-function darkLead(ctx: AudioContext, dest: AudioNode, at: number, freq: number, dur = 0.4, vol = 0.13) {
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.setValueAtTime(freq * 5, at);
-  lp.frequency.exponentialRampToValueAtTime(freq * 1.4, at + dur * 0.7);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, at);
-  g.gain.exponentialRampToValueAtTime(vol, at + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  lp.connect(g);
-  g.connect(dest);
-  for (const det of [-11, 11]) {
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.value = freq * Math.pow(2, det / 1200);
-    o.connect(lp);
-    o.start(at);
-    o.stop(at + dur + 0.02);
-  }
-}
-
-// The "goes crazy" celebration for HOF / Jackpot reveals — fast (~200 BPM) but
-// COOL, not cheesy: heavy 808 sub, hard four-on-floor, fast hats, a dark warm
-// chord and a sparse gritty lead (no bright trance arps). `big` = jackpot.
+// The "goes crazy" celebration for HOF / Jackpot — MODERN + hard, not 80s: no
+// saw-chord melody at all. It's distorted 808 + a wobbling growl-bass hook,
+// hard kicks + snare backbeat + fast hat rolls, and big risers/impacts.
 function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space: GainNode }, big: boolean, startAt: number) {
   const { dry, space } = buses;
-  const pump = ctx.createGain();
-  pump.connect(space);
-  const BEAT = 0.3;          // 200 BPM — fast
+  // bass bus — kept dry (tight, upfront) and sidechain-pumped under the kick.
+  const bassBus = ctx.createGain();
+  bassBus.connect(dry);
+  const BEAT = 0.3;
   const HALF = BEAT / 2;
   const barLen = BEAT * 4;
 
-  riserSweep(ctx, pump, startAt - 0.4, 0.4, 0.24);
-  boom(ctx, dry, startAt, big ? 0.85 : 0.7, 240);
-  noiseHit(ctx, dry, startAt, 0.4, 0.7, 1200);          // big crash on the drop
+  // downlifter + huge impact into the drop
+  riserSweep(ctx, space, startAt - 0.4, 0.4, 0.24);
+  boom(ctx, dry, startAt, big ? 0.9 : 0.75, 250);
+  noiseHit(ctx, dry, startAt, 0.45, 0.85, 1000); // big crash
 
   const bars = big ? 4 : 3;
-  const roots = [55.0, 49.0, 43.65, 41.2];              // A G F E — dark, low
-  // LOW chords (one octave down) so it's moody, not bright.
-  const chords = [[110.0, 130.8, 164.8], [98.0, 123.5, 146.8], [87.3, 110.0, 130.8], [82.4, 98.0, 123.5]];
-  // sparse, mid-register lead motif per bar (attitude, not a cheesy arp run).
-  const leadByBar = [[440.0, 329.6], [392.0, 293.7], [349.2, 261.6], [329.6, 246.9]];
+  const roots = [55.0, 49.0, 43.65, 41.2]; // A G F E — dark, low
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
-    const chord = chords[bar % chords.length];
-    // hard four-on-floor + pump + fast hats
-    for (let beatN = 0; beatN < 4; beatN++) {
-      const bt = t + beatN * BEAT;
-      kick(ctx, dry, bt, 1.0);
-      pumpDuck(pump.gain, bt, BEAT);
-      noiseHit(ctx, dry, bt + HALF, 0.09, 0.04, 9000);
-      noiseHit(ctx, dry, bt + HALF / 2, 0.045, 0.03, 9500);
-      noiseHit(ctx, dry, bt + HALF * 1.5, 0.045, 0.03, 9500);
-    }
-    subNote(ctx, pump, t, roots[bar % roots.length] * 2, barLen * 0.95, 0.72); // heavy 808
-    noiseHit(ctx, space, t + BEAT, 0.22, 0.13, 1700);    // clap backbeat
-    noiseHit(ctx, space, t + BEAT * 3, 0.22, 0.13, 1700);
-    noiseHit(ctx, space, t, 0.16, 0.45, 2200);           // crash on the bar
-    darkChord(ctx, pump, t, chord, barLen * 0.92, 0.16); // one warm dark chord
-    // sparse gritty lead — 2 notes, mid register
-    const lead = leadByBar[bar % leadByBar.length];
-    darkLead(ctx, pump, t, lead[0], BEAT * 1.5, 0.13);
-    darkLead(ctx, pump, t + BEAT * 2, lead[1], BEAT * 1.5, 0.12);
+    const root = roots[bar % roots.length];
+    // hard kicks on 1 & 3, pumping the bass bus
+    kick(ctx, dry, t, 1.0); pumpDuck(bassBus.gain, t, BEAT);
+    kick(ctx, dry, t + BEAT * 2, 1.0); pumpDuck(bassBus.gain, t + BEAT * 2, BEAT);
+    // snare backbeat (2 & 4), in reverb
+    snare(ctx, space, t + BEAT, 0.3);
+    snare(ctx, space, t + BEAT * 3, 0.3);
+    // fast hats (16ths) + a 32nd roll into the next bar
+    for (let h = 0; h < 8; h++) noiseHit(ctx, dry, t + h * HALF, h % 2 ? 0.05 : 0.08, 0.03, 9000);
+    noiseHit(ctx, dry, t + barLen - HALF * 0.5, 0.06, 0.025, 9500);
+    noiseHit(ctx, dry, t + barLen - HALF * 0.25, 0.06, 0.025, 9500);
+    // crash on the bar
+    noiseHit(ctx, space, t, 0.16, 0.45, 2200);
+    // gritty 808 sub for the whole bar
+    bass808(ctx, bassBus, t, root * 2, barLen * 0.95, 0.6);
+    // GROWL bass hook — syncopated wobble (the modern centerpiece)
+    growl(ctx, bassBus, t, root * 2, BEAT * 1.2, 0.4);
+    growl(ctx, bassBus, t + BEAT * 1.5, root * 2, BEAT * 0.8, 0.36);
+    growl(ctx, bassBus, t + BEAT * 2.5, root * 3, BEAT * 1.1, 0.36);
   }
   const fin = startAt + bars * barLen;
-  boom(ctx, dry, fin, big ? 0.75 : 0.55, 230);
-  noiseHit(ctx, dry, fin, 0.36, 1.0, 1000);
-  darkChord(ctx, pump, fin, chords[0], 1.6, 0.17);
+  boom(ctx, dry, fin, big ? 0.8 : 0.6, 240);
+  noiseHit(ctx, dry, fin, 0.4, 1.0, 1000);
+  growl(ctx, bassBus, fin, roots[0] * 2, 1.2, 0.42);
 }
 
 // The reels spinning — CLEAN and cool: crisp ticks (the star) + an airy HIGH
