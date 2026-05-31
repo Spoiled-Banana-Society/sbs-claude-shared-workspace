@@ -279,30 +279,6 @@ function darkChord(ctx: AudioContext, dest: AudioNode, at: number, freqs: number
 
 // ── Celebration SFX (sirens / air horns / bells / lasers / coins) ──────────
 
-// Wailing siren — an LFO sweeps the pitch up and down for the whole duration.
-function siren(ctx: AudioContext, dest: AudioNode, at: number, dur: number, lo: number, hi: number, rate: number, vol = 0.1) {
-  const o = ctx.createOscillator();
-  o.type = 'sawtooth';
-  o.frequency.value = (lo + hi) / 2;
-  const lp = ctx.createBiquadFilter();
-  lp.type = 'lowpass';
-  lp.frequency.value = 2600;
-  const lfo = ctx.createOscillator();
-  lfo.type = 'triangle';
-  lfo.frequency.value = rate;
-  const lfoG = ctx.createGain();
-  lfoG.gain.value = (hi - lo) / 2;
-  lfo.connect(lfoG);
-  lfoG.connect(o.frequency);
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, at);
-  g.gain.exponentialRampToValueAtTime(vol, at + 0.08);
-  g.gain.setValueAtTime(vol, at + dur - 0.15);
-  g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
-  o.connect(lp); lp.connect(g); g.connect(dest);
-  o.start(at); lfo.start(at);
-  o.stop(at + dur + 0.02); lfo.stop(at + dur + 0.02);
-}
 
 // Reggae/hype air horn — stacked detuned saws (root+fifth+octave) through
 // distortion, with a quick up-bend. The "BWAAA".
@@ -402,13 +378,13 @@ function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space:
   noiseHit(ctx, dry, startAt, 0.5, 0.9, 900);   // huge crash
   airHorn(ctx, space, startAt, 0.7, 0.18);      // BWAAA
 
-  // ── sirens wailing through the WHOLE celebration (the chaos) ──
-  siren(ctx, space, startAt + 0.05, total, 700, 1500, 3.5, 0.1);
-  if (big) siren(ctx, space, startAt + 0.2, total - 0.2, 480, 1050, 5.5, 0.07);
-  // alarm bell ringing through the middle
-  alarmBell(ctx, space, startAt + 0.3, total - 0.5, big ? 0.07 : 0.06);
-
   const roots = [55.0, 49.0, 43.65, 41.2];
+  // Catchy 2-bar topline (A-minor pentatonic, 8th notes; null = rest) — the
+  // MUSICAL hook that replaces the gimmicky siren.
+  const RIFF = [
+    880.0, null, 659.3, 784.0, 880.0, null, 1046.5, 880.0, // bar A
+    784.0, null, 659.3, 587.3, 659.3, null, 784.0, 880.0,  // bar B
+  ];
   for (let bar = 0; bar < bars; bar++) {
     const t = startAt + bar * barLen;
     const root = roots[bar % roots.length];
@@ -424,12 +400,17 @@ function launchSlotCelebration(ctx: AudioContext, buses: { dry: GainNode; space:
     noiseHit(ctx, space, t, 0.16, 0.45, 2200);            // crash
     bass808(ctx, bassBus, t, root * 2, barLen * 0.95, 0.55); // body
 
-    // ── SFX layered on top: horns, lasers, coins ──
-    if (bar % 2 === 1) airHorn(ctx, space, t, 0.55, 0.15);   // horn stab every other bar
-    laser(ctx, space, t + BEAT * (1 + Math.round(rnd() * 2)), 0.1); // a laser somewhere
-    // a little flurry of coins raining
+    // ── the musical topline riff (8th notes) ──
+    for (let s = 0; s < 8; s++) {
+      const f = RIFF[(bar * 8 + s) % RIFF.length];
+      if (f) pluck(ctx, space, t + s * HALF, f, 0.15, 0.3);
+    }
+
+    // ── celebration SFX (kept): horns, lasers, coins ──
+    if (bar % 2 === 1) airHorn(ctx, space, t, 0.55, 0.14);   // horn stab every other bar
+    laser(ctx, space, t + BEAT * (1 + Math.round(rnd() * 2)), 0.08); // a laser somewhere
     const coins = big ? 4 : 3;
-    for (let c = 0; c < coins; c++) coin(ctx, space, t + rnd() * barLen, 0.08);
+    for (let c = 0; c < coins; c++) coin(ctx, space, t + rnd() * barLen, 0.07);
   }
 
   // ── big finish ──
