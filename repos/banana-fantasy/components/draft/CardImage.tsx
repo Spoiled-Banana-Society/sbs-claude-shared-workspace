@@ -22,14 +22,20 @@ interface CardImageProps {
 export function CardImage({ src, alt = 'Banana Best Ball Card', className, maxAttempts = 10, retryMs = 3000 }: CardImageProps) {
   const [attempt, setAttempt] = useState(0);
   const [exhausted, setExhausted] = useState(false);
+  // Whether the <img> has actually decoded. Until it has, we keep it invisible
+  // and show a placeholder — so the browser's broken-image glyph never appears
+  // during the 404 retry window while the card PNG is still being uploaded.
+  const [loaded, setLoaded] = useState(false);
 
   // Reset retry state when the underlying URL changes.
   useEffect(() => {
     setAttempt(0);
     setExhausted(false);
+    setLoaded(false);
   }, [src]);
 
   const handleError = () => {
+    setLoaded(false);
     if (attempt + 1 >= maxAttempts) {
       setExhausted(true);
       return;
@@ -52,13 +58,30 @@ export function CardImage({ src, alt = 'Banana Best Ball Card', className, maxAt
   // so a normally-loading image isn't penalised with an extra param.
   const finalSrc = attempt === 0 ? src : `${src}${src.includes('?') ? '&' : '?'}r=${attempt}`;
 
+  // The caller's className (sizing / aspect / centering / rounding) goes on a
+  // self-contained wrapper so this works regardless of the caller's own
+  // positioning. The <img> fills the wrapper absolutely and stays opacity-0
+  // until it actually decodes; a shimmer + banana-bubble placeholder overlays
+  // the same box until then (and on every error). The browser's broken-image
+  // glyph is therefore never visible during the upload/404 retry window.
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={finalSrc}
-      alt={alt}
-      className={className}
-      onError={handleError}
-    />
+    <div className={`relative overflow-hidden ${className ?? ''}`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={finalSrc}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        onError={handleError}
+        className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+      {!loaded && (
+        <div className="absolute inset-0 flex items-center justify-center gap-2 bg-white/[0.03]">
+          <div className="absolute inset-0 bg-gradient-to-br from-banana/[0.06] via-transparent to-banana/[0.04] animate-shimmer" />
+          <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0s' }} />
+          <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0.2s' }} />
+          <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0.4s' }} />
+        </div>
+      )}
+    </div>
   );
 }
