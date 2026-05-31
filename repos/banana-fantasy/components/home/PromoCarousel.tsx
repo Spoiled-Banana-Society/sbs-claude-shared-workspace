@@ -243,7 +243,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   onMouseEnter={() => setHoveredIndex(index)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   className={`
-                    relative overflow-hidden rounded-[20px] p-5 w-52 h-44 flex-shrink-0 transition-all duration-200 cursor-pointer
+                    relative overflow-hidden rounded-[20px] p-5 w-52 h-56 flex-shrink-0 transition-all duration-200 cursor-pointer
                     bg-[#fbfbfd]
                     ${isHovered
                       ? 'border-2 border-banana shadow-[0_0_15px_rgba(251,191,36,0.3)]'

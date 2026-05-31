@@ -23,7 +23,9 @@ const USERS_COLLECTION = 'v2_users';
 export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
-    const userId = requireString(body.userId, 'userId');
+    // Lowercase to the canonical doc — refund must hit the same doc the spend
+    // and balance read use (all lowercase).
+    const userId = requireString(body.userId, 'userId').toLowerCase();
     const clientPassType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
     const tokenId = typeof body.tokenId === 'string' ? body.tokenId : null;

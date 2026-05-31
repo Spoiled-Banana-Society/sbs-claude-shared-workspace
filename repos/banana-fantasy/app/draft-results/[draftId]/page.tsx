@@ -261,6 +261,49 @@ export default function DraftResultsPage() {
     })();
   }, [selectedPlayer, draftId, fetchedPlayers]);
 
+  // Poll for the card while it's still missing. Covers the case where the user
+  // clicks through from the "Draft Complete" screen before card generation
+  // finished — instead of having to refresh, the card pops in on its own the
+  // moment the backend has it. Self-limiting: the effect early-returns (no
+  // interval started) as soon as a real card exists for the selected player,
+  // and is hard-capped at ~30s of attempts so it can never become a runaway
+  // fetch loop (Rule #0). Deps are stable scalars only (no Privy-derived
+  // callbacks), so it fires once per state change, not once per render.
+  useEffect(() => {
+    if (!selectedPlayer || !draftId) return;
+    if (cardImageUrl) return; // already have it — nothing to wait for
+    const key = selectedPlayer.toLowerCase();
+
+    let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 10; // ~30s at 3s spacing, matching DraftComplete
+
+    const check = async () => {
+      attempts += 1;
+      try {
+        const tokens = await getOwnerDraftTokens(selectedPlayer);
+        if (cancelled) return;
+        const match = tokens.find(
+          (t: Record<string, unknown>) => String(t.leagueId || t._leagueId || '').toLowerCase() === draftId.toLowerCase()
+        );
+        if (match) {
+          const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
+          const cId = String(match.cardId || (match as Record<string, unknown>)._cardId || '');
+          if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
+            // Found it — write to state. cardImageUrl flips truthy, this effect
+            // re-runs and early-returns, and the cleanup below clears the timer.
+            setCardImages(prev => ({ ...prev, [key]: { imageUrl: imgUrl, cardId: cId } }));
+            return;
+          }
+        }
+      } catch { /* silent — keep trying until the cap */ }
+      if (!cancelled && attempts >= MAX_ATTEMPTS) clearInterval(id);
+    };
+
+    const id = setInterval(check, 3000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [selectedPlayer, draftId, cardImageUrl]);
+
   // Get display name for a player key
   const getPlayerLabel = (key: string): string => {
     const r = allRosters[key];

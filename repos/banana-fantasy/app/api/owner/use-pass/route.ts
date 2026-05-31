@@ -26,7 +26,10 @@ const USERS_COLLECTION = 'v2_users';
 export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
-    const userId = requireString(body.userId, 'userId');
+    // Lowercase to the canonical doc — the spend must hit the same doc the
+    // balance read / SSE / recount use (all lowercase). Otherwise a legacy
+    // checksummed-cased wallet would decrement a different doc than it reads.
+    const userId = requireString(body.userId, 'userId').toLowerCase();
     const passType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
 
