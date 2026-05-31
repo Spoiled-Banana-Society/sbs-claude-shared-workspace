@@ -155,7 +155,7 @@ export async function GET(req: Request) {
       drafts,
     ] = await Promise.all([
       countSupport(),
-      countErrors(since.logs ?? 0),
+      countErrors(db, since.logs ?? 0),
       countSentryUnresolved(since.logs ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
@@ -219,9 +219,37 @@ async function countSentryUnresolved(since: number): Promise<number> {
   } catch { return 0; }
 }
 
-async function countErrors(since: number): Promise<number> {
+// Group-key logic — MUST match the Logs feed (components/admin/LogsTab.tsx
+// normalize() + groupErrors `${source}|${message.slice(0,140)}`) and the
+// resolved-marker hash (app/api/admin/error-resolved/route.ts hashGroupKey),
+// so the badge can exclude the SAME fixed groups the feed hides. Keep in sync.
+function normalizeForGroup(s: string | undefined): string {
+  return (s ?? '')
+    .replace(/0x[0-9a-fA-F]+/g, '0x*')
+    .replace(/\b[0-9a-f-]{16,}\b/gi, '*')
+    .replace(/\d+(\.\d+)?/g, '#')
+    .trim();
+}
+function hashGroupKey(groupKey: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < groupKey.length; i += 1) {
+    h ^= groupKey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+async function countErrors(db: Firestore, since: number): Promise<number> {
   try {
-    const records = await fetchRecentErrors(500);
+    // Errors the admin already marked fixed live in adminResolvedErrors (keyed
+    // by hashGroupKey). The Logs feed HIDES them — the badge must too, or it
+    // shows a count while the feed says "all clear" (it was counting fixed
+    // errors: 158 of 162 recent important errors were resolved-but-still-badged).
+    const [records, resolvedSnap] = await Promise.all([
+      fetchRecentErrors(500),
+      db.collection('adminResolvedErrors').get(),
+    ]);
+    const resolvedHashes = new Set(resolvedSnap.docs.map((d) => d.id));
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
@@ -231,7 +259,11 @@ async function countErrors(since: number): Promise<number> {
       // Only "important" errors (real bugs / user-money / ops issues)
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.
-      return isImportantError(r.source);
+      if (!isImportantError(r.source)) return false;
+      // Skip groups the admin already marked fixed (match the feed).
+      const gk = `${normalizeForGroup(r.source)}|${normalizeForGroup(r.message).slice(0, 140)}`;
+      if (resolvedHashes.has(hashGroupKey(gk))) return false;
+      return true;
     }).length;
   } catch { return 0; }
 }
