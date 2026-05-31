@@ -9,14 +9,17 @@
  * while a slow join gets the full branded beat. It never pads the wait —
  * the moment the join resolves the page navigates and this unmounts.
  */
-export function JoiningLobbyOverlay({ show }: { show: boolean }) {
+export function JoiningLobbyOverlay({ show, instant = false }: { show: boolean; instant?: boolean }) {
   if (!show) return null;
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label="Joining lobby"
-      className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md animate-joining-in"
+      // `instant` (used by /draft-room/loading.tsx) skips the fade-in so the
+      // overlay continues seamlessly across the route hand-off instead of
+      // re-fading from transparent — which would itself read as a flash.
+      className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md${instant ? '' : ' animate-joining-in'}`}
     >
       {/* Pulsing banana glow */}
       <div className="relative mb-7 flex items-center justify-center">

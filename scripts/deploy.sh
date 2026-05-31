@@ -83,18 +83,35 @@ if [ -f "$DEPLOY_MARKER" ]; then
     if git cat-file -e "$LAST_DEPLOYED^{commit}" 2>/dev/null; then
       AHEAD_COUNT=$(git rev-list --count "${LAST_DEPLOYED}..${DEPLOY_HEAD_NOW}" 2>/dev/null || echo "?")
       if [ "$AHEAD_COUNT" != "0" ] && [ "$AHEAD_COUNT" != "?" ]; then
-        echo "⛔ DEPLOY ABORTED — sbs-frontend-v2 has $AHEAD_COUNT new commit(s) since your last deploy."
-        echo ""
-        echo "   New commits Boris pushed directly to sbs-frontend-v2:"
-        git log --oneline "${LAST_DEPLOYED}..${DEPLOY_HEAD_NOW}" | sed 's/^/     /'
-        echo ""
-        echo "   Deploying now would rsync stale workspace files over those commits."
-        echo "   Sync them into shared workspace first, OR ask Boris to push them"
-        echo "   to shared workspace via 'Sync banana-fantasy to shared workspace'."
-        echo ""
-        echo "   To force deploy anyway (only if you've manually verified):"
-        echo "     rm $DEPLOY_MARKER && bash $0 \"$MSG\""
-        exit 1
+        # sbs-frontend-v2 advanced since our last deploy. That's ONLY a clobber
+        # risk if the workspace is stale for those commits' files (the rsync
+        # would revert them). If the workspace already matches sbs-frontend-v2
+        # for every file those commits touched — e.g. banana-fantasy was rebased
+        # onto the live head before syncing — deploying reverts nothing, so it's
+        # safe. Compare content per-file instead of blindly aborting on advance.
+        CHANGED=$(git diff --name-only "${LAST_DEPLOYED}" "${DEPLOY_HEAD_NOW}")
+        STALE_FILES=""
+        while IFS= read -r f; do
+          [ -z "$f" ] && continue
+          if ! diff -q "$DEPLOY_REPO/$f" "$WORKSPACE/$f" >/dev/null 2>&1; then
+            STALE_FILES="${STALE_FILES}${f}\n"
+          fi
+        done <<< "$CHANGED"
+        if [ -z "$STALE_FILES" ]; then
+          echo "✓ sbs-frontend-v2 advanced by $AHEAD_COUNT commit(s), but the workspace already"
+          echo "  matches every file those commits touched — no clobber risk, proceeding."
+        else
+          echo "⛔ DEPLOY ABORTED — sbs-frontend-v2 has $AHEAD_COUNT new commit(s) AND the workspace"
+          echo "   is stale for these files (deploying would revert them):"
+          printf "$STALE_FILES" | sed 's/^/     /'
+          echo ""
+          echo "   New commits pushed directly to sbs-frontend-v2:"
+          git log --oneline "${LAST_DEPLOYED}..${DEPLOY_HEAD_NOW}" | sed 's/^/     /'
+          echo ""
+          echo "   Reconcile banana-fantasy onto the live head and ship again, OR force"
+          echo "   (only if you've manually verified): rm $DEPLOY_MARKER && bash $0 \"$MSG\""
+          exit 1
+        fi
       fi
     fi
   fi

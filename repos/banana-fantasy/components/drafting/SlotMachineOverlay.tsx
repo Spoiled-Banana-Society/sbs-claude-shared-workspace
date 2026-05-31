@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
+import { startSlotSpin, playReelStop, playSlotReveal } from '@/lib/slotSounds';
 import { DRAFT_TYPES } from '@/lib/draftRoomConstants';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import { useRng, type RngSeedData } from '@/hooks/useRng';
@@ -53,6 +54,45 @@ export function SlotMachineOverlay({
     if (!autoVerifyRng || !rngSeedData || !slotAnimationDone) return;
     void verifySpin(rngSeedData);
   }, [autoVerifyRng, rngSeedData, slotAnimationDone, verifySpin]);
+
+  // ── Slot-machine SOUND (procedural Web Audio; no fetch → Rule #0 safe) ──
+  const spinStopRef = useRef<null | (() => void)>(null);
+  const prevStoppedRef = useRef<boolean[]>([false, false, false]);
+  const revealedRef = useRef(false);
+  // If the overlay mounts already-done (re-entry after the animation finished),
+  // suppress the reveal sound so it doesn't replay every time it's reopened.
+  const wasDoneOnMountRef = useRef(slotAnimationDone);
+
+  // Spin whir runs only during the actual 'spinning' phase.
+  useEffect(() => {
+    if (phase === 'spinning') {
+      if (!spinStopRef.current) spinStopRef.current = startSlotSpin();
+    } else if (spinStopRef.current) {
+      spinStopRef.current();
+      spinStopRef.current = null;
+    }
+  }, [phase]);
+  // Always stop the whir on unmount.
+  useEffect(() => () => { spinStopRef.current?.(); spinStopRef.current = null; }, []);
+
+  // A satisfying CHUNK as each reel locks (only while spinning).
+  useEffect(() => {
+    if (phase !== 'spinning') return;
+    const stopped = [0, 1, 2].map((i) => reelOffsets[i] >= targetOffset - 1);
+    for (let i = 0; i < 3; i++) {
+      if (stopped[i] && !prevStoppedRef.current[i]) playReelStop(i);
+    }
+    prevStoppedRef.current = stopped;
+  }, [reelOffsets, targetOffset, phase]);
+
+  // The reveal payoff — once, when the animation actually finishes (not on
+  // re-entry where it's already done).
+  useEffect(() => {
+    if (slotAnimationDone && draftType && !revealedRef.current && !wasDoneOnMountRef.current) {
+      revealedRef.current = true;
+      playSlotReveal(draftType);
+    }
+  }, [slotAnimationDone, draftType]);
 
   const handleCloseSlotMachine = () => {
     onClose();

@@ -190,7 +190,11 @@ async function buildMetrics(): Promise<MetricsResponse> {
     count(users),
     count(users.where('createdAt', '>=', todayIso)),
     count(users.where('createdAt', '>=', weekIso)),
-    count(users.where('blueCheckVerified', '==', true)),
+    // Verified users — the real field is `isVerified` (40 true). The old
+    // `blueCheckVerified`/`isBlueCheckVerified` fields don't exist on any
+    // v2_users doc, so the dashboard showed 0 verified forever. Keep the
+    // legacy field as a Math.max fallback below in case old docs use it.
+    count(users.where('isVerified', '==', true)),
     count(users.where('isBlueCheckVerified', '==', true)),
     count(xLinks),
     // Signup rail breakdown — Boris's ask: how many users came in via
@@ -351,14 +355,16 @@ async function buildMetrics(): Promise<MetricsResponse> {
   const [
     loginsLifetime,
     passesPurchasedLifetime,
-    promosClaimedLifetime,
   ] = await Promise.all([
     count(userEvents.where('eventType', '==', 'login')),
     // pass_purchased lives in v2_activity_events with field `type` (not
     // `eventType`). Reading from v2_user_events returned 0 forever.
     count(activityEvents.where('type', '==', 'pass_purchased')),
-    count(userEvents.where('eventType', '==', 'promo_claimed')),
   ]);
+  // NOTE: lifetime "promos claimed" is NOT counted from the promo_claimed event
+  // log (fire-and-forget writes drop — it undercounted 28 vs a true ~506). It's
+  // derived below from the canonical per-promo claimCount sum (same source as
+  // promoBreakdown), so the headline KPI agrees with its own breakdown.
   // Drafts completed lives in the Go API, not Firestore — there's no
   // v2_drafts collection. The queues' completed-round counts are the
   // closest local proxy (already computed below as jackpot/hof
@@ -712,7 +718,7 @@ async function buildMetrics(): Promise<MetricsResponse> {
       logins: loginsLifetime,
       wheelSpins: totalSpins,
       passesPurchased: passesPurchasedLifetime,
-      promosClaimed: promosClaimedLifetime,
+      promosClaimed: Object.values(promoBreakdown).reduce((s, v) => s + v.claimsTotal, 0),
       jackpotWins: jackpotHits,
       hofWins: hofHits,
       withdrawalsPaidVolume,
