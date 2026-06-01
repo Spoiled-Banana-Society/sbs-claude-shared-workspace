@@ -1045,10 +1045,13 @@ export function useGrantPrize() {
 
 export interface ResetUserInput {
   userId: string;
+  /** 'promos' = balance-safe (clears only promo-gating flags). Omit for full reset. */
+  scope?: 'all' | 'promos';
 }
 export interface ResetUserResponse {
   success: boolean;
   userId: string;
+  scope?: 'all' | 'promos';
   before: Record<string, number>;
   requestId?: string;
 }
@@ -1062,16 +1065,20 @@ export function useResetUser() {
         body: JSON.stringify(input),
       }),
     onSuccess: (data) => {
-      qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          users: prev.users.map((u) =>
-            u.id === data.userId ? { ...u, freeDrafts: 0, wheelSpins: 0 } : u,
-          ),
-        };
-      });
+      // Promo-scope reset leaves balances intact — don't zero them in the cache.
+      if (data.scope !== 'promos') {
+        qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            users: prev.users.map((u) =>
+              u.id === data.userId ? { ...u, freeDrafts: 0, wheelSpins: 0 } : u,
+            ),
+          };
+        });
+      }
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'user-lookup'] });
     },
   });
 }

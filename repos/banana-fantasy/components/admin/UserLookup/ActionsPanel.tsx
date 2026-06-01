@@ -43,6 +43,7 @@ export function ActionsPanel({ wallet, banned, kycApproved }: Props) {
         <SendTestPingControl wallet={wallet} />
         <div className="flex flex-wrap gap-2">
           <ReconcileBtn wallet={wallet} />
+          <ResetPromosBtn wallet={wallet} />
           <ResetBtn wallet={wallet} />
           {!kycApproved && <KycBtn wallet={wallet} />}
           <BanBtn wallet={wallet} banned={banned} />
@@ -293,6 +294,27 @@ function ResetBtn({ wallet }: { wallet: string }) {
       }
       busy={m.isPending}
       result={m.data?.success ? 'reset ✓' : undefined}
+      error={m.error?.message}
+    />
+  );
+}
+
+// Balance-SAFE reset for re-testing the promo flow. Clears only the gating
+// flags (hasSpunWheel, firstPurchaseBonusGranted, firstPurchasePromoUnlocked) —
+// passes/free drafts/spins/JP-HOF stay intact. Pair with the View-as toggle to
+// replay either the new-user or returning first-purchase flow.
+function ResetPromosBtn({ wallet }: { wallet: string }) {
+  const m = useResetUser();
+  return (
+    <SmallBtn
+      label={m.isPending ? 'Resetting…' : 'Reset promo flags'}
+      onClick={() =>
+        window.confirm(
+          `Reset promo flags for ${wallet}?\n\nClears ONLY first-purchase + wheel gating so you can replay the promo flow. Balances (passes, free drafts, spins, JP/HOF) are untouched.`,
+        ) && m.mutate({ userId: wallet, scope: 'promos' })
+      }
+      busy={m.isPending}
+      result={m.data?.success ? 'promo reset ✓' : undefined}
       error={m.error?.message}
     />
   );

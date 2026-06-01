@@ -202,6 +202,17 @@ export function IdentityCard({
         Counters above are current balances (decrement when used). Lifetime totals — spins done, promos claimed, draft entries, etc. — live in the Activity section below.
       </p>
 
+      {/* Promo flow state — so you can verify what the first-purchase/wheel flow
+          looks like for this user (and that "Reset promo flags" cleared it). */}
+      {identity.promoState && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="text-gray-500 uppercase tracking-wider text-[10px]">Promo state</span>
+          <Flag on={identity.promoState.firstPurchaseBonusGranted} label="first purchase made" off="first purchase pending" />
+          <Flag on={identity.promoState.firstPurchasePromoUnlocked} label="FP unlocked (free drafts done)" off="FP not unlocked yet" />
+          <Flag on={identity.promoState.hasSpunWheel} label="has spun wheel" off="never spun" />
+        </div>
+      )}
+
       {/* Account money — credits sitting on the Go side that haven't
           been withdrawn yet. Renders only when there's money in the
           account (avoids visual noise for the typical $0 user). */}
@@ -288,6 +299,20 @@ function ActivityPill({ lastActiveAt }: { lastActiveAt: string | null }) {
   return (
     <span className={`rounded-md px-2 py-0.5 ring-1 ${cls}`} title={fmtDate(lastActiveAt)}>
       {label}
+    </span>
+  );
+}
+
+function Flag({ on, label, off }: { on: boolean; label: string; off: string }) {
+  return (
+    <span
+      className={`rounded-md px-2 py-0.5 ring-1 ${
+        on
+          ? 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30'
+          : 'bg-gray-700/40 text-gray-400 ring-gray-600'
+      }`}
+    >
+      {on ? `✓ ${label}` : off}
     </span>
   );
 }
