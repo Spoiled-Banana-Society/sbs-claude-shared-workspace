@@ -64,7 +64,7 @@ const KYC_REVIEW_STATUSES = ['name_mismatch', 'dob_mismatch', 'blocked', 'error'
 const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /mint_failed/i,
   /transferFrom_failed/i,
-  /\.unhandled$/i,
+  /\.unhandled(\.|$)/i, // catches `global.unhandled.rejection` too, not just `*.unhandled`
   /admin_wallet_low_balance/i,
   /skim\.(transfer|withdraw)_failed/i,
   /alchemy\.webhook/i,
