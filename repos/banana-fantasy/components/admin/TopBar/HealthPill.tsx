@@ -13,7 +13,9 @@
  */
 
 import Link from 'next/link';
-import { useAdminMetrics, useRecentErrors, type ErrorEventEntry } from '@/hooks/admin/useAdminApi';
+import { useMemo } from 'react';
+import { useAdminMetrics, useRecentErrors, useResolvedErrors, type ErrorEventEntry } from '@/hooks/admin/useAdminApi';
+import { dropResolvedEvents } from '@/lib/errorGrouping';
 
 type Level = 'ok' | 'warn' | 'critical';
 
@@ -35,7 +37,13 @@ function computeLevel(errors: ErrorEventEntry[] | undefined, pendingWithdrawals:
 export function HealthPill({ enabled }: { enabled: boolean }) {
   const metricsQ = useAdminMetrics(enabled);
   const errorsQ = useRecentErrors(enabled);
-  const level = computeLevel(errorsQ.data?.errors, metricsQ.data?.withdrawals.pending);
+  const resolvedQ = useResolvedErrors(enabled);
+  // Same resolved-aware (recurrence-aware) filter as the dashboard + feed.
+  const activeErrors = useMemo(
+    () => dropResolvedEvents(errorsQ.data?.errors ?? [], resolvedQ.data?.resolved),
+    [errorsQ.data, resolvedQ.data],
+  );
+  const level = computeLevel(activeErrors, metricsQ.data?.withdrawals.pending);
 
   const palette = {
     ok: { dot: 'bg-emerald-400', text: 'text-emerald-300', border: 'border-emerald-500/30', bg: 'bg-emerald-500/[0.05]', label: 'Healthy' },

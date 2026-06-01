@@ -70,6 +70,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     isBB3Holder,
     newUserPromoClaimed,
     firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
+    firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
   });
 

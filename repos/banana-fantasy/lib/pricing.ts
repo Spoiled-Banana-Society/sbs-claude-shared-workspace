@@ -4,5 +4,47 @@ export const draftPassPricing = {
   bonuses: [] as { quantity: number; bonus: number }[],
 };
 
-// Card Purchase Rewards: every 6 card purchases = 1 free draft pass
-export const CARD_PURCHASES_FOR_FREE_DRAFT = 6;
+// ── Card-fee credit → free draft ─────────────────────────────────────────────
+// Card buyers pay a MoonPay fee on top of the $25 draft price. We credit that
+// fee forward; once a user's accumulated card fees reach the price of one draft
+// ($25) they earn 1 draft (granted as a PAID-type pass so it's usable in
+// promos), and any remainder rolls over toward the next one.
+//
+// We can't read MoonPay's live fee (Privy brokers the popup; the charged fee
+// never reaches our server), so these are MEASURED from real MoonPay debit
+// quotes — total cost above face = "You pay" − qty×$25 (MoonPay fee + network
+// + exchange spread) — captured 2026-05-31. Re-measure occasionally; updating
+// the reward is just editing this table.
+export const FREE_DRAFT_CREDIT_CENTS = draftPassPricing.pricePerPass * 100; // $25 → 2500¢
+
+// qty → measured real card cost, in cents (debit, US).
+const CARD_FEE_CENTS_BY_QTY: Record<number, number> = {
+  1: 363,
+  2: 505,
+  3: 548,
+  4: 598,
+  5: 743,
+  6: 886,
+  7: 1031,
+  8: 1175,
+  9: 1319,
+  10: 1463,
+};
+
+// Steady marginal card cost per extra draft above the measured range (the
+// curve is linear at ~$1.44/draft from qty 5 up). Used to extrapolate qty > 10.
+const CARD_FEE_MARGINAL_CENTS = 144;
+
+/**
+ * The card fee (in cents) for buying `quantity` drafts — measured table for
+ * 1–10, linear extrapolation (~$1.44/draft) beyond 10. Defined with no gaps
+ * for the full purchase range and always returns a finite, non-negative
+ * integer. This is what we credit toward the user's free-draft reward.
+ */
+export function feeForQty(quantity: number): number {
+  const q = Math.max(1, Math.floor(Number.isFinite(quantity) ? quantity : 1));
+  const measured = CARD_FEE_CENTS_BY_QTY[q];
+  if (measured != null) return measured;
+  // qty > 10 (or any gap): extrapolate from the qty-10 anchor.
+  return CARD_FEE_CENTS_BY_QTY[10] + (q - 10) * CARD_FEE_MARGINAL_CENTS;
+}

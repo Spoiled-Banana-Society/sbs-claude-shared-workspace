@@ -26,6 +26,7 @@ import Link from 'next/link';
 import {
   useAdminMetrics,
   useRecentErrors,
+  useResolvedErrors,
   useHeaviestUsers,
   usePromoProgress,
   type ErrorEventEntry,
@@ -37,6 +38,7 @@ import { WalletLink } from '@/components/admin/WalletLink';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
 import { UsersTableBox } from '@/components/admin/Dashboard/UsersTableBox';
 import { explainError } from '@/lib/logSources';
+import { dropResolvedEvents } from '@/lib/errorGrouping';
 import { VISIBLE_PROMO_TYPES_ORDER } from '@/lib/promoFilter';
 
 /* ─────────────────────────────────────────────────────────  Page  */
@@ -44,11 +46,19 @@ import { VISIBLE_PROMO_TYPES_ORDER } from '@/lib/promoFilter';
 export function DashboardPanel({ enabled }: { enabled: boolean }) {
   const metricsQ = useAdminMetrics(enabled);
   const errorsQ = useRecentErrors(enabled);
+  const resolvedQ = useResolvedErrors(enabled);
   const heaviestQ = useHeaviestUsers(enabled);
   const promoProgressQ = usePromoProgress(enabled);
   const m = metricsQ.data;
 
-  const health = computeHealth(errorsQ.data?.errors, m?.withdrawals.pending);
+  // Exclude issues an admin marked fixed (recurrence-aware) so the health box
+  // and Errors-24h card agree with the Logs feed + badge. One shared rule.
+  const activeErrors = React.useMemo(
+    () => dropResolvedEvents(errorsQ.data?.errors ?? [], resolvedQ.data?.resolved),
+    [errorsQ.data, resolvedQ.data],
+  );
+
+  const health = computeHealth(activeErrors, m?.withdrawals.pending);
   const ageSec = m?.generatedAt
     ? Math.max(0, Math.floor((Date.now() - new Date(m.generatedAt).getTime()) / 1000))
     : null;
@@ -92,7 +102,7 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
       {/* Footer: top users + errors (smaller secondary panels) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <TopUsersBox q={heaviestQ.data} loading={heaviestQ.isLoading} />
-        <ErrorsBox errors={errorsQ.data?.errors ?? []} loading={errorsQ.isLoading} />
+        <ErrorsBox errors={activeErrors} loading={errorsQ.isLoading} />
       </div>
 
       {/* Every-user database. Filterable, sortable, paginated. Boris's

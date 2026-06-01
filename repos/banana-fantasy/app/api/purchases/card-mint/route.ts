@@ -27,11 +27,16 @@ import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
+import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { pushStreamEvent } from '@/lib/userEventStream';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 const USERS_COLLECTION = 'v2_users';
 const FAILED_MINTS_COLLECTION = 'failed_mints';
+// Idempotency markers for the card-fee → free-draft accumulator, keyed by the
+// mint txHash so a retried card-mint can never double-credit / double-grant.
+const CARD_FEE_CREDIT_COLLECTION = 'card_fee_credits';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 const MAX_QUANTITY = 40;
 
@@ -262,9 +267,100 @@ export async function POST(req: Request) {
       logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message });
     }
 
-    // 4. draftPasses is recounted from real inventory; cardPurchaseCount (a
-    //    purchase tally, not token-backed) still increments by 1 on a card
-    //    payment. Activity event written in the same recount transaction.
+    // 4. Card-fee credit → free draft (card payments only). Credit the MoonPay
+    //    fee for this quantity (feeForQty) toward a free draft; once accumulated
+    //    card fees reach $25, grant paid-type draft(s) and roll over the
+    //    remainder. Atomic + idempotent per mint txHash (marker doc) so a retry
+    //    can never double-credit or double-grant. USDC purchases pay no card
+    //    fee, so they never accrue credit.
+    let rewardEarned = 0;
+    let rewardRolloverCents = 0;
+    let rewardTokenIds: string[] = [];
+    let rewardMintTxHash: string | undefined;
+
+    if (isFirestoreConfigured() && paymentMethod === 'card') {
+      const db = getAdminFirestore();
+      const userRef = db.collection(USERS_COLLECTION).doc(userId);
+      const markerRef = db
+        .collection(CARD_FEE_CREDIT_COLLECTION)
+        .doc(mintResult.txHash.toLowerCase());
+      const feeCents = feeForQty(quantity);
+      try {
+        const res = await db.runTransaction(async (tx) => {
+          const marker = await tx.get(markerRef);
+          if (marker.exists) return { duplicate: true, earned: 0, rolloverCents: 0 };
+          const userSnap = await tx.get(userRef);
+          const cur = Math.max(0, (userSnap.data()?.cardFeeCreditCents as number | undefined) ?? 0);
+          const credit = cur + feeCents;
+          const earned = Math.floor(credit / FREE_DRAFT_CREDIT_CENTS);
+          const rolloverCents = credit % FREE_DRAFT_CREDIT_CENTS;
+          tx.set(userRef, { cardFeeCreditCents: rolloverCents }, { merge: true });
+          tx.set(markerRef, {
+            txHash: mintResult.txHash.toLowerCase(),
+            userId,
+            quantity,
+            feeCents,
+            earned,
+            status: earned > 0 ? 'pending' : 'credited',
+            createdAt: FieldValue.serverTimestamp(),
+          });
+          return { duplicate: false, earned, rolloverCents };
+        });
+        if (res.duplicate) {
+          logger.info(LOG_SOURCES.payment.REWARD_DUPLICATE_SKIPPED, { userId, txHash: mintResult.txHash });
+        } else {
+          rewardEarned = res.earned;
+          rewardRolloverCents = res.rolloverCents;
+          logger.info(LOG_SOURCES.payment.FEE_CREDITED, {
+            userId, quantity, feeCents, rolloverCents: res.rolloverCents, earned: res.earned,
+          });
+        }
+      } catch (creditErr) {
+        // Non-fatal: the on-chain mint already succeeded. A missed credit is
+        // recoverable; never roll back the paid mint over a credit write.
+        logger.warn('card-mint.fee_credit_failed', { userId, err: (creditErr as Error).message });
+      }
+    }
+
+    // 4b. If the credit crossed $25, mint the earned draft(s) as PAID-type
+    //     (usable in promos) BEFORE the recount so the counter reflects them.
+    if (rewardEarned > 0) {
+      try {
+        const rewardMint = await reserveTokensToWallet({ to: userId, count: rewardEarned });
+        rewardTokenIds = rewardMint.tokenIds;
+        rewardMintTxHash = rewardMint.txHash;
+        // Register as 'paid' (NOT 'free' / no free-origin stamp) so the reward
+        // draft is a normal usable pass — enterable in promos.
+        await registerMintedTokens(userId, rewardMint.tokenIds, 'paid');
+        try {
+          await getAdminFirestore()
+            .collection(CARD_FEE_CREDIT_COLLECTION)
+            .doc(mintResult.txHash.toLowerCase())
+            .set({ status: 'granted', rewardTokenIds: rewardMint.tokenIds, rewardMintTxHash: rewardMint.txHash }, { merge: true });
+        } catch { /* marker status update is best-effort */ }
+        logger.info(LOG_SOURCES.payment.REWARD_GRANTED, {
+          userId, earned: rewardEarned, rolloverCents: rewardRolloverCents,
+          rewardTxHash: rewardMintTxHash, tokenIds: rewardTokenIds,
+        });
+      } catch (rewardErr) {
+        // Credit was already consumed but the reward mint failed → the user is
+        // owed a draft. CRITICAL (matches ^payment\.) + recorded for re-grant.
+        logger.error(LOG_SOURCES.payment.REWARD_GRANT_FAILED, {
+          userId, earned: rewardEarned, sourceTxHash: mintResult.txHash, err: (rewardErr as Error).message,
+        });
+        try {
+          await getAdminFirestore().collection(FAILED_MINTS_COLLECTION).add({
+            source: 'card_reward', userId, quantity: rewardEarned,
+            sourceTxHash: mintResult.txHash, error: (rewardErr as Error).message,
+            createdAt: FieldValue.serverTimestamp(), retryable: true,
+          });
+        } catch { /* failed-mint record is best-effort */ }
+        rewardEarned = 0; // don't fire a "you earned a draft" event we couldn't fulfill
+      }
+    }
+
+    // 5. draftPasses recounted from real inventory (purchase + any reward
+    //    tokens). pass_purchased activity event written in the same recount tx.
     let newDraftPasses: number | null = null;
     const activityInput = {
       type: 'pass_purchased' as const,
@@ -295,15 +391,6 @@ export async function POST(req: Request) {
 
     if (isFirestoreConfigured()) {
       try {
-        // cardPurchaseCount is a purchase tally (not token-backed) — bump it
-        // by 1 on a card payment before the recount writes the counters.
-        if (paymentMethod === 'card') {
-          const db = getAdminFirestore();
-          await db
-            .collection(USERS_COLLECTION)
-            .doc(userId)
-            .set({ cardPurchaseCount: FieldValue.increment(1) }, { merge: true });
-        }
         const activityDoc = await buildActivityEventDoc(activityInput);
         const counts = await recountFromInventory(userId, activityDoc);
         newDraftPasses = counts.draftPasses;
@@ -316,8 +403,28 @@ export async function POST(req: Request) {
       await logActivityEvent(activityInput);
     }
 
-    // Bump Buy 10 + Buy 2 promo progress and referrer milestones.
-    // Best-effort — must not roll back the on-chain mint (already happened).
+    // 5b. Reward activity event → shows live in the admin LiveActivity feed.
+    if (rewardEarned > 0) {
+      await logActivityEvent({
+        type: 'pass_granted',
+        userId,
+        walletAddress: userId,
+        paymentMethod: 'free',
+        quantity: rewardEarned,
+        tokenIds: rewardTokenIds,
+        txHash: rewardMintTxHash ?? null,
+        metadata: {
+          source: 'card_fee_reward',
+          creditConsumedCents: FREE_DRAFT_CREDIT_CENTS * rewardEarned,
+          rolloverCents: rewardRolloverCents,
+          sourceTxHash: mintResult.txHash,
+        },
+      }).catch((e) => logger.warn('card-mint.reward_activity_failed', { userId, err: (e as Error).message }));
+    }
+
+    // 6. Bump Buy 10 + Buy 2 promo progress and referrer milestones — for the
+    //    PAID purchase `quantity` only; the reward draft never advances promos.
+    //    Best-effort — must not roll back the on-chain mint (already happened).
     if (isFirestoreConfigured()) {
       try {
         await incrementMintPromos(userId, quantity);
@@ -357,6 +464,24 @@ export async function POST(req: Request) {
       } catch (err) {
         logger.warn('card-mint.onramp_audit_failed', { userId, err: (err as Error).message });
       }
+    }
+
+    // Happy-path observability for ALL NFT purchases (card + USDC). info-level
+    // → structured logs / dev export, NOT the critical error feed.
+    logger.info(LOG_SOURCES.payment.PURCHASE_COMPLETED, {
+      userId,
+      quantity,
+      paymentMethod,
+      cardProvider: cardProvider ?? undefined,
+      txHash: mintResult.txHash,
+      valueUsdc: Number(value) / 1_000_000,
+      rewardEarned,
+    });
+
+    // Post-commit: fire the synced bell + bottom toast when a free draft was
+    // earned from card-fee credit. Best-effort; never blocks the response.
+    if (rewardEarned > 0) {
+      void pushStreamEvent(userId, 'promo-card-free-draft', { awardedCount: rewardEarned });
     }
 
     return json({
