@@ -761,6 +761,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           cardPurchaseCount: (d.cardPurchaseCount as number) ?? prev.cardPurchaseCount,
           cardFeeCreditCents: (d.cardFeeCreditCents as number) ?? prev.cardFeeCreditCents,
           draftPasses: typeof d.draftPasses === 'number' ? (d.draftPasses as number) : prev.draftPasses,
+          // First-purchase promo gating — now delivered live so the card hides
+          // after a purchase and unlocks for new users post free-drafts.
+          firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
+          firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
         };
       });
       setIsBalanceLoaded(true);
