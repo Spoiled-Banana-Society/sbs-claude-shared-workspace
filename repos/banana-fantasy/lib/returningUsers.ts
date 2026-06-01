@@ -18,9 +18,13 @@
 // the on-chain check in hooks/useAuth.tsx uses.
 export const BBB3_CONTRACT_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7';
 
-const FALLBACK_RETURNING_WALLETS = [
-  '0x438bbe98eed1dd2df244b007dab0583cc9be72e0', // Boris (admin testing wallet — no BBB3 on mainnet)
-];
+// Empty by default. Returning status comes from real BBB3 ownership (the
+// on-chain check + snapshot). To TEST the returning flow without owning BBB3,
+// use the admin "View as → Returning" toggle (per-session, doesn't mislabel the
+// account). Only add a wallet here for a genuine returning player the snapshot
+// missed — NOT for testing (a permanent entry makes a real new user show as
+// returning everywhere, including the admin label).
+const FALLBACK_RETURNING_WALLETS: string[] = [];
 
 function normalizeWallet(value: string): string {
   return value.trim().toLowerCase();
