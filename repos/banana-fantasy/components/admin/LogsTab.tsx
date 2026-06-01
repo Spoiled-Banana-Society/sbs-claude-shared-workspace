@@ -6,10 +6,12 @@ import {
   useExportErrorSession,
   useResolvedErrors,
   useMarkErrorResolved,
+  useSentryIssues,
   AdminApiError,
   type ErrorEventEntry,
 } from '@/hooks/admin/useAdminApi';
 import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { isResolutionActive } from '@/lib/errorGrouping';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GroupSparkline } from '@/components/admin/Logs/GroupSparkline';
@@ -174,12 +176,16 @@ export function LogsTab({ enabled }: { enabled: boolean }) {
         </button>
       </div>
 
-      {mode === 'feed' ? <ErrorFeed enabled={enabled} /> : <SentryIssues enabled={enabled} />}
+      {mode === 'feed' ? <ErrorFeed enabled={enabled} onShowSentry={() => setMode('sentry')} /> : <SentryIssues enabled={enabled} />}
     </div>
   );
 }
 
-function ErrorFeed({ enabled }: { enabled: boolean }) {
+function ErrorFeed({ enabled, onShowSentry }: { enabled: boolean; onShowSentry: () => void }) {
+  // Sentry count for the chip next to Critical/Warning/Low — already filtered
+  // to real error-level bugs server-side (performance/INFO noise dropped).
+  const sentryQuery = useSentryIssues(enabled);
+  const sentryCount = sentryQuery.data?.issues.length ?? 0;
   const query = useRecentErrors(enabled);
   const resolvedQuery = useResolvedErrors(enabled);
   const allErrors = useMemo(() => query.data?.errors ?? [], [query.data]);
@@ -221,8 +227,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
     // 3. group + split out resolved (admin-marked-fixed) groups
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
     const allGroups = groupErrors(real);
-    const resolvedGroups = allGroups.filter((g) => !!resolvedMap[g.key]);
-    const groups = allGroups.filter((g) => !resolvedMap[g.key]);
+    // Recurrence-aware: a "fixed" group stays resolved only if it hasn't fired
+    // since the fix. If it recurred, it reopens into the active feed.
+    const resolvedGroups = allGroups.filter((g) => isResolutionActive(resolvedMap[g.key], g.lastTs));
+    const groups = allGroups.filter((g) => !isResolutionActive(resolvedMap[g.key], g.lastTs));
 
     // Cross-error correlation map (only unresolved — resolved groups
     // shouldn't pollute the "+N other errors" tally).
@@ -334,8 +342,10 @@ function ErrorFeed({ enabled }: { enabled: boolean }) {
         critical={totalCritical}
         warning={totalWarning}
         low={totalLow}
+        sentry={sentryCount}
         active={severityFilter}
         onChange={(next) => setSeverityFilter(next === severityFilter ? 'all' : next)}
+        onShowSentry={onShowSentry}
       />
       <p className="text-[11px] text-gray-500">
         Counts exclude fixed issues. Tap a chip to see only that severity (recent + earlier combined).
@@ -930,14 +940,18 @@ function SeveritySummaryBar({
   critical,
   warning,
   low,
+  sentry,
   active,
   onChange,
+  onShowSentry,
 }: {
   critical: number;
   warning: number;
   low: number;
+  sentry: number;
   active: LogSeverity | 'all';
   onChange: (next: LogSeverity) => void;
+  onShowSentry: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -968,6 +982,15 @@ function SeveritySummaryBar({
         isActive={active === 'low'}
         onClick={() => onChange('low')}
       />
+      <SeverityChip
+        emoji="🟣"
+        label="Sentry"
+        count={sentry}
+        tone="sentry"
+        helpText="Auto-caught frontend crashes/errors from Sentry (real bugs only — performance noise filtered out). Click to view them."
+        isActive={false}
+        onClick={onShowSentry}
+      />
       {active !== 'all' && (
         <span className="text-[11px] text-gray-400">
           Filtering by <span className="text-white">{active}</span> — click chip again to clear.
@@ -989,7 +1012,7 @@ function SeverityChip({
   emoji: string;
   label: string;
   count: number;
-  tone: 'critical' | 'warning' | 'low';
+  tone: 'critical' | 'warning' | 'low' | 'sentry';
   helpText: string;
   isActive: boolean;
   onClick: () => void;
@@ -1008,7 +1031,9 @@ function SeverityChip({
         ? 'border-red-500/50 bg-red-500/[0.10] text-red-200'
         : tone === 'warning'
           ? 'border-yellow-500/40 bg-yellow-500/[0.08] text-yellow-200'
-          : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
+          : tone === 'sentry'
+            ? 'border-purple-500/50 bg-purple-500/[0.10] text-purple-200'
+            : 'border-gray-600/60 bg-gray-700/30 text-gray-300';
   const activeRing = isActive
     ? tone === 'critical'
       ? 'ring-2 ring-red-400/60'

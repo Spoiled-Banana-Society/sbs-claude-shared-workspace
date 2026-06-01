@@ -64,7 +64,7 @@ const KYC_REVIEW_STATUSES = ['name_mismatch', 'dob_mismatch', 'blocked', 'error'
 const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /mint_failed/i,
   /transferFrom_failed/i,
-  /\.unhandled$/i,
+  /\.unhandled(\.|$)/i, // catches `global.unhandled.rejection` too, not just `*.unhandled`
   /admin_wallet_low_balance/i,
   /skim\.(transfer|withdraw)_failed/i,
   /alchemy\.webhook/i,
@@ -155,7 +155,7 @@ export async function GET(req: Request) {
       drafts,
     ] = await Promise.all([
       countSupport(),
-      countErrors(since.logs ?? 0),
+      countErrors(db, since.logs ?? 0),
       countSentryUnresolved(since.logs ?? 0),
       countKyc(db, since.kyc ?? 0),
       countOfframp(db, since.offramp ?? 0),
@@ -211,17 +211,54 @@ async function countSentryUnresolved(since: number): Promise<number> {
       cache: 'no-store',
     });
     if (!res.ok) return 0;
-    const raw = (await res.json()) as Array<{ lastSeen?: string }>;
+    const raw = (await res.json()) as Array<{ lastSeen?: string; level?: string }>;
     return raw.filter((r) => {
+      // Only count ACTUAL bugs — drop Sentry "performance issues" (info/debug
+      // level, e.g. the N+1-on-/admin noise). Matches the sentry-issues feed.
+      const lvl = (r.level ?? 'error').toLowerCase();
+      if (lvl === 'info' || lvl === 'debug') return false;
       const t = r.lastSeen ? new Date(r.lastSeen).getTime() : 0;
       return t > since;
     }).length;
   } catch { return 0; }
 }
 
-async function countErrors(since: number): Promise<number> {
+// Group-key logic — MUST match the Logs feed (components/admin/LogsTab.tsx
+// normalize() + groupErrors `${source}|${message.slice(0,140)}`) and the
+// resolved-marker hash (app/api/admin/error-resolved/route.ts hashGroupKey),
+// so the badge can exclude the SAME fixed groups the feed hides. Keep in sync.
+function normalizeForGroup(s: string | undefined): string {
+  return (s ?? '')
+    .replace(/0x[0-9a-fA-F]+/g, '0x*')
+    .replace(/\b[0-9a-f-]{16,}\b/gi, '*')
+    .replace(/\d+(\.\d+)?/g, '#')
+    .trim();
+}
+function hashGroupKey(groupKey: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < groupKey.length; i += 1) {
+    h ^= groupKey.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0');
+}
+
+async function countErrors(db: Firestore, since: number): Promise<number> {
   try {
-    const records = await fetchRecentErrors(500);
+    // Errors the admin already marked fixed live in adminResolvedErrors (keyed
+    // by hashGroupKey). The Logs feed HIDES them — the badge must too, or it
+    // shows a count while the feed says "all clear" (it was counting fixed
+    // errors: 158 of 162 recent important errors were resolved-but-still-badged).
+    const [records, resolvedSnap] = await Promise.all([
+      fetchRecentErrors(500),
+      db.collection('adminResolvedErrors').get(),
+    ]);
+    // hash → fix time (ms), or null for legacy resolutions without a timestamp.
+    const resolvedAt = new Map<string, number | null>();
+    for (const d of resolvedSnap.docs) {
+      const at = (d.data() as { at?: { toMillis?: () => number } } | undefined)?.at;
+      resolvedAt.set(d.id, at && typeof at.toMillis === 'function' ? at.toMillis() : null);
+    }
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
@@ -231,7 +268,13 @@ async function countErrors(since: number): Promise<number> {
       // Only "important" errors (real bugs / user-money / ops issues)
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.
-      return isImportantError(r.source);
+      if (!isImportantError(r.source)) return false;
+      // Skip groups the admin marked fixed — UNLESS they've recurred since the
+      // fix (recurrence-aware, matches the Logs feed + dashboard).
+      const gk = `${normalizeForGroup(r.source)}|${normalizeForGroup(r.message).slice(0, 140)}`;
+      const fixedAt = resolvedAt.get(hashGroupKey(gk));
+      if (fixedAt !== undefined && (fixedAt === null || t <= fixedAt)) return false;
+      return true;
     }).length;
   } catch { return 0; }
 }

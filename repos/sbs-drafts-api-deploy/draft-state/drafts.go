@@ -69,6 +69,16 @@ func (dr *DraftResources) getPlayersMapWithRankings(w http.ResponseWriter, r *ht
 
 	res, err := models.ReturnPlayerStateWithRankings(ownerId, draftId)
 	if err != nil {
+		// A NotFound means the draft's player-state doc doesn't exist yet — the
+		// draft is still FILLING (hasn't started drafting). That's NOT an error:
+		// return 404 so the client (which polls this during filling and already
+		// tolerates it via allSettled) treats it as "not ready" and keeps showing
+		// the filling lobby — and it stops flooding the admin error feed with 500s
+		// for every filling draft. Genuine failures still return 500.
+		if strings.Contains(err.Error(), "NotFound") {
+			http.Error(w, "draft player state not ready (still filling)", http.StatusNotFound)
+			return
+		}
 		fmt.Println("ERROR returning player state with rankings: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -201,6 +211,13 @@ func (dr *DraftResources) getRostersMapForDraft(w http.ResponseWriter, r *http.R
 
 	rs, err := models.ReturnRostersForDraft(draftId)
 	if err != nil {
+		// NotFound = rosters doc not created yet (draft still filling). Return
+		// 404 (not 500) — a clean "not ready" for the polling client, and it
+		// stops flooding the admin error feed. Genuine errors still 500.
+		if strings.Contains(err.Error(), "NotFound") {
+			http.Error(w, "draft rosters not ready (still filling)", http.StatusNotFound)
+			return
+		}
 		fmt.Printf("ERROR returning draft rosters for %s: %v\r", draftId, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
