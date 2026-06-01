@@ -70,12 +70,28 @@ const seedContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
+    exampleEntrants: 2000,
     prizeBreakdown: [
-      { place: '1st', amount: 25000 },
-      { place: '2nd', amount: 15000 },
-      { place: '3rd', amount: 10000 },
-      { place: '4th-10th', amount: 5000 },
-      { place: '11th-50th', amount: 500 },
+      // Championship finals
+      { place: '1st', amount: 25000, section: 'Finals' },
+      { place: '2nd', amount: 13000, section: 'Finals' },
+      { place: '3rd', amount: 8000, section: 'Finals' },
+      { place: '4th', amount: 5000, section: 'Finals' },
+      { place: '5th', amount: 3000, section: 'Finals' },
+      { place: '6th', amount: 2000, section: 'Finals' },
+      { place: '7th', amount: 1500, section: 'Finals' },
+      { place: '8th', amount: 1200, section: 'Finals' },
+      { place: '9th', amount: 1000, section: 'Finals' },
+      { place: '10th', amount: 800, section: 'Finals' },
+      { place: '11th–25th', amount: 300, note: 'each', section: 'Finals' },
+      { place: '26th–50th', amount: 200, note: 'each', section: 'Finals' },
+      // Per-league prizes (scale with number of leagues)
+      { place: 'Regular-Season League Winner', amount: 75, note: 'each · 200 leagues', section: 'League Prizes' },
+      { place: 'Playoff Round 1 Winner', amount: 50, note: 'each · 200 leagues', section: 'League Prizes' },
+      // Hall of Fame track
+      { place: 'HOF 1st', amount: 3000, section: 'Hall of Fame' },
+      { place: 'HOF 2nd', amount: 1200, section: 'Hall of Fame' },
+      { place: 'HOF 3rd', amount: 800, section: 'Hall of Fame' },
     ],
   },
   {

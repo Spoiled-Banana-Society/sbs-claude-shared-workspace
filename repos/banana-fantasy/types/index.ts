@@ -122,6 +122,8 @@ export interface Contest {
   rosterFormat: RosterSlot[];
   scoringRules: ScoringRule[];
   prizeBreakdown: PrizeBreakdown[];
+  /** Field size the example prize breakdown is modeled on (e.g. 2000 entrants). The real pool grows with entries. */
+  exampleEntrants?: number;
 }
 
 export interface RosterSlot {
@@ -139,6 +141,10 @@ export interface PrizeBreakdown {
   place: string;
   amount: number;
   percentage?: number;
+  /** Small qualifier shown next to the amount, e.g. "each" or "each · 200 leagues" */
+  note?: string;
+  /** Optional grouping header, e.g. "Finals", "League Prizes", "Hall of Fame" */
+  section?: string;
 }
 
 // Draft room types
