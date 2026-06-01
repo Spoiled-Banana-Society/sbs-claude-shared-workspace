@@ -1164,4 +1164,21 @@ export function useRefreshBbb3Holders() {
   });
 }
 
+/* ────────── Simulate first-purchase unlock (testing) ────────── */
+
+export function useSimulateUnlock() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<{ success: boolean; userId: string }, AdminApiError, { userId: string }>({
+    mutationFn: (input) =>
+      adminFetch<{ success: boolean; userId: string }>('/api/admin/simulate-unlock', getHeaders, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'user-lookup'] });
+    },
+  });
+}
+
 export { AdminApiError };

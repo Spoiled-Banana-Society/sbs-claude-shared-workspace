@@ -16,6 +16,7 @@ import {
   useAdminAuthHeaders,
   useGrantDrafts,
   useResetUser,
+  useSimulateUnlock,
   useReconcilePasses,
   useBanUser,
   useMarkKycVerified,
@@ -44,6 +45,7 @@ export function ActionsPanel({ wallet, banned, kycApproved }: Props) {
         <div className="flex flex-wrap gap-2">
           <ReconcileBtn wallet={wallet} />
           <ResetPromosBtn wallet={wallet} />
+          <SimulateUnlockBtn wallet={wallet} />
           <ResetBtn wallet={wallet} />
           {!kycApproved && <KycBtn wallet={wallet} />}
           <BanBtn wallet={wallet} banned={banned} />
@@ -294,6 +296,26 @@ function ResetBtn({ wallet }: { wallet: string }) {
       }
       busy={m.isPending}
       result={m.data?.success ? 'reset ✓' : undefined}
+      error={m.error?.message}
+    />
+  );
+}
+
+// Testing: simulate a new user finishing their welcome free drafts (sets
+// firstPurchasePromoUnlocked=true, no balance change) so you can see the new-
+// user first-purchase unlock moment — card + NEW badge + popup + banner.
+function SimulateUnlockBtn({ wallet }: { wallet: string }) {
+  const m = useSimulateUnlock();
+  return (
+    <SmallBtn
+      label={m.isPending ? 'Unlocking…' : 'Simulate: free drafts done'}
+      onClick={() =>
+        window.confirm(
+          `Simulate "${wallet}" finishing free drafts?\n\nSets firstPurchasePromoUnlocked=true (no balance change) so the new-user first-purchase moment appears.`,
+        ) && m.mutate({ userId: wallet })
+      }
+      busy={m.isPending}
+      result={m.data?.success ? 'unlocked ✓' : undefined}
       error={m.error?.message}
     />
   );
