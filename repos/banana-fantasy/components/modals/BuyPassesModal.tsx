@@ -664,11 +664,11 @@ export function BuyPassesModal({
             {/* Card-fee credit → free draft banner (live $ progress) */}
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
               const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
+              // Bar reflects ACTUAL accumulated credit — empty at $0, fills live
+              // as real card purchases accrue (cardFeeCreditCents streams in).
               const current = Math.min(threshold, user?.cardFeeCreditCents || 0);
-              const projected = current + feeForQty(quantity || 1);
-              const earnsNow = projected >= threshold;
+              const earnsNow = current + feeForQty(quantity || 1) >= threshold;
               const curPct = Math.min(100, (current / threshold) * 100);
-              const projPct = Math.min(100, (projected / threshold) * 100);
               const remaining = Math.max(0, threshold - current);
               const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
               return (
@@ -678,17 +678,15 @@ export function BuyPassesModal({
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
                       ? 'This purchase earns you a FREE draft!'
-                      : 'Your card fee is credited forward — at $25 it&apos;s a free draft'
+                      : "Your card fee is credited forward — at $25 it's a free draft"
                     }
                   </p>
                 </div>
                 <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                  <div className="absolute inset-y-0 left-0 bg-banana/40 rounded-full" style={{ width: `${projPct}%` }} />
-                  <div className="absolute inset-y-0 left-0 bg-banana rounded-full" style={{ width: `${curPct}%` }} />
+                  <div className="absolute inset-y-0 left-0 bg-banana rounded-full transition-all" style={{ width: `${curPct}%` }} />
                 </div>
                 <p className="text-white/30 text-[10px] mt-1.5">
-                  {usd(current)} of {usd(threshold)} toward your next free draft
-                  {!earnsNow && remaining > 0 ? ` — ${usd(remaining)} to go` : ''}
+                  {`${usd(current)} of ${usd(threshold)} toward your next free draft${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
                 </p>
               </div>
               );
@@ -817,7 +815,7 @@ export function BuyPassesModal({
             {(flowStep === 'funding' || flowStep === 'waiting-for-usdc') && (
               <button
                 onClick={handleCancelCheckout}
-                className="w-full text-sm text-text-muted hover:text-text-secondary hover:underline text-center"
+                className="w-full py-3 rounded-2xl border border-bg-elevated text-text-secondary hover:text-text-primary hover:border-text-muted text-sm font-semibold transition-all"
               >
                 ✕ Cancel / change order
               </button>
