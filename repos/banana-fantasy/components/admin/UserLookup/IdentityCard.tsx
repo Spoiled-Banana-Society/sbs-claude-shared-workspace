@@ -77,9 +77,12 @@ function timeAgo(v: string | null) {
 export function IdentityCard({
   identity,
   walletShort,
+  returning,
 }: {
   identity: UserLookupIdentity | null;
   walletShort: string;
+  /** True if this wallet is a returning (BBB3) player — snapshot ∪ allowlist. */
+  returning?: boolean;
 }) {
   if (!identity) {
     return (
@@ -154,6 +157,16 @@ export function IdentityCard({
         </div>
 
         <div className="flex flex-wrap gap-2 text-xs">
+          <span
+            className={`rounded-md px-2 py-0.5 ring-1 ${
+              returning
+                ? 'bg-[#F3E216]/10 text-[#F3E216] ring-[#F3E216]/30'
+                : 'bg-gray-700/40 text-gray-300 ring-gray-600'
+            }`}
+            title={returning ? 'Held BBB3 last year (or allowlisted) — treated as returning' : 'No BBB3 — treated as a new user'}
+          >
+            {returning ? 'Returning (BBB3)' : 'New user'}
+          </span>
           {identity.banned && (
             <span className="rounded-md bg-red-500/15 px-2 py-0.5 font-semibold text-red-300 ring-1 ring-red-500/30">
               BANNED

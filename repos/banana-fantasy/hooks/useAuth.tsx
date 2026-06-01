@@ -9,6 +9,8 @@ import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
@@ -673,12 +675,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [walletAddress, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Check BB3 (Eth mainnet) to identify returning players
+  // Identify returning (BBB3) players. Three inputs, in priority order:
+  //   1. Admin dev toggle (sessionStorage 'sbs-view-as') — lets an admin preview
+  //      the new vs returning experience from their own wallet. Admin-only.
+  //   2. Manual returning-wallet allowlist (lib/returningUsers.ts) — instant, no
+  //      fetch. Seeds the admin testing wallet, which holds no BBB3 on mainnet.
+  //   3. Live on-chain balanceOf against the BBB3 contract (Eth mainnet).
   useEffect(() => {
     if (MOCK_AUTH) return;
     if (!walletAddress) return;
 
-    const BB3_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7';
+    // 1. Admin "view as" override.
+    if (typeof window !== 'undefined' && isWalletAdmin(walletAddress)) {
+      const viewAs = window.sessionStorage.getItem('sbs-view-as');
+      if (viewAs === 'returning') { setIsBB3Holder(true); return; }
+      if (viewAs === 'new') { setIsBB3Holder(false); return; }
+    }
+
+    // 2. Manual allowlist — treat as returning without an on-chain hit.
+    if (isReturningWalletSync(walletAddress)) { setIsBB3Holder(true); return; }
+
+    // 3. Live on-chain check.
     const balanceOfSig = '0x70a08231';
     const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
 
@@ -687,7 +704,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 1, method: 'eth_call',
-        params: [{ to: BB3_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
+        params: [{ to: BBB3_CONTRACT_ADDRESS, data: balanceOfSig + paddedAddr }, 'latest'],
       }),
     })
       .then(res => res.json())

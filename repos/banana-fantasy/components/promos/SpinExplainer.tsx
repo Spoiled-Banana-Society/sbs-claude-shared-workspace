@@ -26,7 +26,7 @@ export function SpinExplainer({
 
   return (
     <span className={className}>
-      🎡 A spin wins up to <strong className="font-semibold">20 free drafts</strong> — always at least 1
+      A spin wins up to <strong className="font-semibold">20 free drafts</strong> — always at least 1
     </span>
   );
 }

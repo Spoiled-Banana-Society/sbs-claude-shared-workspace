@@ -56,6 +56,13 @@ interface FilterOpts {
    */
   firstPurchaseBonusGranted?: boolean;
   /**
+   * True once a brand-new user has finished their welcome-wheel free drafts.
+   * Returning (BB3) players see the first-purchase promo immediately; new users
+   * only see it once this unlocks — so the card appears as their first box right
+   * after they've used up their free drafts (matching the banner/popup).
+   */
+  firstPurchasePromoUnlocked?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -81,11 +88,24 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // no spins left to claim, it's spent — hide it.
     if (p.type === 'first-purchase') {
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
+      // New users (non-BB3) only see it after they've used up their welcome-
+      // wheel free drafts. Returning players see it from the start.
+      if (
+        !opts.isBB3Holder &&
+        !opts.firstPurchasePromoUnlocked &&
+        !opts.firstPurchaseBonusGranted
+      ) {
+        return false;
+      }
     }
     return true;
   });
 
   const sorted = filtered.sort((a, b) => {
+    // 0. First-purchase is always the first box when visible — it outranks the
+    //    claimable/progress tiers below (Boris: swap it ahead of 4-drafts-daily).
+    if (a.type === 'first-purchase' && b.type !== 'first-purchase') return -1;
+    if (b.type === 'first-purchase' && a.type !== 'first-purchase') return 1;
     // 1. Claimable / actionable promos first — user can hit the button now.
     if (opts.hasVisibleClaim) {
       const aClaim = opts.hasVisibleClaim(a) ? 1 : 0;

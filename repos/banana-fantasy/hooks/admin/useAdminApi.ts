@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 
@@ -1097,6 +1097,62 @@ export function useRecoverDraftCard() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+    },
+  });
+}
+
+/* ────────── BBB3 holders (returning-user cross-check) ────────── */
+
+export interface Bbb3HolderRow {
+  wallet: string;
+  hasAccount: boolean;
+  username?: string | null;
+  banned?: boolean;
+  firstPurchaseBonusGranted?: boolean;
+  source: 'snapshot' | 'allowlist';
+}
+export interface Bbb3HoldersResponse {
+  contract: string;
+  count: number;
+  snapshotCount: number;
+  allowlistCount: number;
+  loggedIn: number;
+  snapshotAt: string | null;
+  holders: Bbb3HolderRow[];
+}
+
+export function useBbb3Holders(enabled: boolean) {
+  const getHeaders = useAdminAuthHeaders();
+  return useQuery<Bbb3HoldersResponse>({
+    queryKey: ['admin', 'bbb3-holders'],
+    enabled,
+    staleTime: 5 * 60_000,
+    queryFn: () => adminFetch<Bbb3HoldersResponse>('/api/admin/bbb3-holders', getHeaders),
+  });
+}
+
+/**
+ * Lowercased Set of every wallet treated as returning (BBB3 snapshot ∪ manual
+ * allowlist). Used to label users New/Returning across the admin. Returns an
+ * empty set until the snapshot loads.
+ */
+export function useReturningWalletSet(enabled: boolean): { set: Set<string>; loading: boolean } {
+  const q = useBbb3Holders(enabled);
+  const set = useMemo(
+    () => new Set((q.data?.holders ?? []).map((h) => h.wallet.toLowerCase())),
+    [q.data],
+  );
+  return { set, loading: q.isLoading };
+}
+
+export function useRefreshBbb3Holders() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<Bbb3HoldersResponse, AdminApiError, void>({
+    mutationFn: () =>
+      adminFetch<Bbb3HoldersResponse>('/api/admin/bbb3-holders', getHeaders, { method: 'POST' }),
+    onSuccess: (data) => {
+      qc.setQueryData(['admin', 'bbb3-holders'], data);
     },
   });
 }

@@ -47,35 +47,36 @@ export async function POST(req: Request) {
       cardFeeCreditCents: data.cardFeeCreditCents ?? 0,
       jackpotEntries: data.jackpotEntries ?? 0,
       hofEntries: data.hofEntries ?? 0,
+      // Onboarding/promo gate flags — must reset too so the new-user flow
+      // (spin text → free drafts → first-purchase card/popup) can re-run.
+      hasSpunWheel: data.hasSpunWheel ?? false,
+      firstPurchaseBonusGranted: data.firstPurchaseBonusGranted ?? false,
+      firstPurchasePromoUnlocked: data.firstPurchasePromoUnlocked ?? false,
+      pendingWheelWinnings: data.pendingWheelWinnings ?? 0,
     };
 
-    await userRef.set(
-      {
-        draftPasses: 0,
-        freeDrafts: 0,
-        wheelSpins: 0,
-        cardPurchaseCount: 0,
-        cardFeeCreditCents: 0,
-        jackpotEntries: 0,
-        hofEntries: 0,
-      },
-      { merge: true },
-    );
+    const cleared = {
+      draftPasses: 0,
+      freeDrafts: 0,
+      wheelSpins: 0,
+      cardPurchaseCount: 0,
+      cardFeeCreditCents: 0,
+      jackpotEntries: 0,
+      hofEntries: 0,
+      hasSpunWheel: false,
+      firstPurchaseBonusGranted: false,
+      firstPurchasePromoUnlocked: false,
+      pendingWheelWinnings: 0,
+    };
+
+    await userRef.set(cleared, { merge: true });
 
     await logAdminAction({
       actor: actorWallet,
       action: 'reset-user',
       target: userId,
       before,
-      after: {
-        draftPasses: 0,
-        freeDrafts: 0,
-        wheelSpins: 0,
-        cardPurchaseCount: 0,
-        cardFeeCreditCents: 0,
-        jackpotEntries: 0,
-        hofEntries: 0,
-      },
+      after: cleared,
       requestId,
     });
 

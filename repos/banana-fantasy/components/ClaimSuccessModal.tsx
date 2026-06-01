@@ -130,7 +130,7 @@ export function ClaimSuccessModal({ count, promoType, onClose }: ClaimSuccessMod
                 }}
                 className="w-full py-3.5 bg-[#fbbf24] text-[#1a1a1f] font-semibold rounded-xl hover:bg-[#fcd34d] active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2"
               >
-                Spin the Wheel <span className="text-lg">🎡</span>
+                Spin the Wheel
               </button>
             )}
             <button

@@ -605,7 +605,7 @@ export function BuyPassesModal({
                         <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
                         add{' '}
                         <span className="font-semibold text-banana">{upsell.passesToNextSpin} more</span>{' '}
-                        (total {upsell.nextSpinTotal}) to earn a free spin 🎡
+                        (total {upsell.nextSpinTotal}) to earn a free spin
                       </>
                     )}
                   </p>
