@@ -13,7 +13,18 @@ export interface User {
   wheelSpins: number;
   jackpotEntries: number;
   hofEntries: number;
+  /**
+   * @deprecated Superseded by `cardFeeCreditCents`. The old "every 6 card
+   * purchases = 1 free draft" counter; no longer incremented or read.
+   */
   cardPurchaseCount: number;
+  /**
+   * Running card-fee credit toward the next free draft, in integer cents.
+   * Each card purchase adds the MoonPay fee for that quantity (see
+   * `feeForQty` in lib/pricing.ts); at `FREE_DRAFT_CREDIT_CENTS` ($25) the
+   * user earns 1 paid-type draft and the remainder rolls over.
+   */
+  cardFeeCreditCents: number;
   // First-purchase bonus (every 4 passes on the first PAID purchase = 1 spin).
   // `firstPurchaseBonusGranted` is the durable "has made a first paid purchase"
   // flag — set once and never reset (cardPurchaseCount resets after 6, so it

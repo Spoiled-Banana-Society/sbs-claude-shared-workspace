@@ -22,7 +22,8 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  'first-purchase', // "First Purchase → BONUS SPINS" — first box for everyone
+  'first-purchase', // "First Purchase → BONUS SPINS" — leads the not-yet-started
+                    // group (claimable + in-progress promos still bubble above it)
   'new-user',
   'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
   'daily-drafts',  // "4 drafts daily"
@@ -56,6 +57,13 @@ interface FilterOpts {
    */
   firstPurchaseBonusGranted?: boolean;
   /**
+   * True once a brand-new user has finished their welcome-wheel free drafts.
+   * Returning (BB3) players see the first-purchase promo immediately; new users
+   * only see it once this unlocks — so the card appears as their first box right
+   * after they've used up their free drafts (matching the banner/popup).
+   */
+  firstPurchasePromoUnlocked?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -81,6 +89,15 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // no spins left to claim, it's spent — hide it.
     if (p.type === 'first-purchase') {
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
+      // New users (non-BB3) only see it after they've used up their welcome-
+      // wheel free drafts. Returning players see it from the start.
+      if (
+        !opts.isBB3Holder &&
+        !opts.firstPurchasePromoUnlocked &&
+        !opts.firstPurchaseBonusGranted
+      ) {
+        return false;
+      }
     }
     return true;
   });

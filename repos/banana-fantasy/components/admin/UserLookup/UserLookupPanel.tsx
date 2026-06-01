@@ -14,6 +14,7 @@ import {
   isSectionFail,
   useUserLookup,
 } from '@/hooks/admin/useUserLookup';
+import { useReturningWalletSet } from '@/hooks/admin/useAdminApi';
 import { UserSearchInput } from './UserSearchInput';
 import { HealthSummary } from './HealthSummary';
 import { NotesSection } from './NotesSection';
@@ -55,6 +56,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
   );
 
   const lookup = useUserLookup(wallet || null, enabled);
+  const { set: returningSet } = useReturningWalletSet(enabled);
 
   return (
     <div className="space-y-4">
@@ -116,6 +118,7 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
                 isSectionFail(lookup.data.identity) ? null : lookup.data.identity
               }
               walletShort={lookup.data.walletShort}
+              returning={returningSet.has(wallet.toLowerCase())}
             />
             <ActivitySection
               activity={lookup.data.activity}

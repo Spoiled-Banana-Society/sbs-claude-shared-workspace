@@ -129,6 +129,7 @@ export function mapOwnerProfileToUser(walletAddress: string, owner: ApiOwnerProf
     jackpotEntries: 0,
     hofEntries: 0,
     cardPurchaseCount: 0,
+    cardFeeCreditCents: 0,
     isVerified: true,
     createdAt: new Date().toISOString(),
   };
@@ -283,6 +284,7 @@ export async function getOwnerUser(walletAddress: string): Promise<User> {
     user.jackpotEntries = balance.jackpotEntries;
     user.hofEntries = balance.hofEntries;
     user.cardPurchaseCount = balance.cardPurchaseCount;
+    user.cardFeeCreditCents = balance.cardFeeCreditCents;
     if (balance.nflTeam) user.nflTeam = balance.nflTeam;
   } else {
     // Balance endpoint unreachable — fall back to Go API token count for
@@ -301,6 +303,7 @@ interface BalanceCounters {
   hofEntries: number;
   draftPasses: number;
   cardPurchaseCount: number;
+  cardFeeCreditCents: number;
   nflTeam: string | null;
 }
 
@@ -317,6 +320,7 @@ async function fetchBalanceCounters(walletAddress: string): Promise<BalanceCount
       hofEntries: typeof data.hofEntries === 'number' ? data.hofEntries : 0,
       draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : 0,
       cardPurchaseCount: typeof data.cardPurchaseCount === 'number' ? data.cardPurchaseCount : 0,
+      cardFeeCreditCents: typeof data.cardFeeCreditCents === 'number' ? data.cardFeeCreditCents : 0,
       nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
     };
   } catch {

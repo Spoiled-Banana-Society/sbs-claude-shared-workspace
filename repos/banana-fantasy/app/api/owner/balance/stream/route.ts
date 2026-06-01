@@ -20,6 +20,7 @@ interface BalancePayload {
   hofEntries: number;
   draftPasses: number;
   cardPurchaseCount: number;
+  cardFeeCreditCents: number;
 }
 
 function buildPayload(data: Record<string, unknown> | undefined): BalancePayload {
@@ -33,6 +34,7 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
     hofEntries: nonNeg(d.hofEntries),
     draftPasses: nonNeg(d.draftPasses),
     cardPurchaseCount: nonNeg(d.cardPurchaseCount),
+    cardFeeCreditCents: nonNeg(d.cardFeeCreditCents),
   };
 }
 
@@ -61,7 +63,7 @@ export async function GET(req: Request) {
   if (!isFirestoreConfigured()) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
-      wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0,
+      wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
     };
     const stream = new ReadableStream({
       start(controller) {
