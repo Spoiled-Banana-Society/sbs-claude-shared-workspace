@@ -211,7 +211,8 @@ export interface UserStreamEvent {
     | 'promo-new-user'
     | 'promo-first-purchase'
     | 'first-purchase-unlocked'
-    | 'referral-milestone';
+    | 'referral-milestone'
+    | 'promo-card-free-draft';
   timestamp: number;
   draftId?: string;
   badgeId?: string;
