@@ -68,9 +68,9 @@ export function ContestDetailsModal({
           <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated">
             <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
             The prize pool grows as more players enter.
-            {contest.exampleEntrants && (
+            {contest.examplePaidDrafts && (
               <> This breakdown is an example based on{' '}
-                <span className="text-text-primary">{contest.exampleEntrants.toLocaleString()} entrants ({Math.round(contest.exampleEntrants / 10)} leagues)</span>{' '}
+                <span className="text-text-primary">{contest.examplePaidDrafts.toLocaleString()} paid drafts</span>{' '}
                 — final payouts scale with the total pool.</>
             )}
           </p>

@@ -122,8 +122,8 @@ export interface Contest {
   rosterFormat: RosterSlot[];
   scoringRules: ScoringRule[];
   prizeBreakdown: PrizeBreakdown[];
-  /** Field size the example prize breakdown is modeled on (e.g. 2000 entrants). The real pool grows with entries. */
-  exampleEntrants?: number;
+  /** Number of paid drafts the example prize breakdown is modeled on (e.g. 5000). The real pool grows with entries. */
+  examplePaidDrafts?: number;
 }
 
 export interface RosterSlot {

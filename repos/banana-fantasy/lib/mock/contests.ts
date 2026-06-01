@@ -36,7 +36,7 @@ export const mockContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
-    exampleEntrants: 10000,
+    examplePaidDrafts: 5000,
     prizeBreakdown: [
       // Championship finals — $55,000
       { place: '1st', amount: 25000, section: 'Finals' },
