@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0 });
+      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false });
     }
 
     const db = getAdminFirestore();
@@ -60,6 +60,11 @@ export async function GET(req: Request) {
       cardPurchaseCount: nonNeg(data.cardPurchaseCount),
       cardFeeCreditCents: nonNeg(data.cardFeeCreditCents),
       nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
+      // First-purchase promo gating flags — the promo carousel / banner / popup
+      // read these off the client user object. Without them the first-purchase
+      // card never hides after a purchase and never unlocks for new users.
+      firstPurchaseBonusGranted: !!data.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!data.firstPurchasePromoUnlocked,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
