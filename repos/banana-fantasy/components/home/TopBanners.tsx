@@ -149,10 +149,13 @@ function isStandaloneNow(): boolean {
 }
 
 function useAppInstallBanner() {
-  const { isStandalone, triggerInstall } = useInstallPrompt();
-  // Compute visibility SYNCHRONOUSLY on the first client render so the banner
-  // never flashes-then-hides: if it's dismissed/standalone we render nothing
-  // from the very first frame instead of showing then correcting in an effect.
+  const { triggerInstall } = useInstallPrompt();
+  // Decide visibility ONCE, synchronously, on the first client render — based on
+  // whether we're already in a standalone PWA and whether it was dismissed. We
+  // deliberately do NOT react to later isStandalone changes: on desktop with the
+  // PWA installed, Chrome can fire `appinstalled` mid-session, which would flip
+  // isStandalone true and blank the banner after it had shown (the exact
+  // flash-then-disappear bug). A one-time decision keeps it stable.
   const [show, setShow] = useState(() => !isStandaloneNow() && !isA2hsDismissed());
   const [isDesktop, setIsDesktop] = useState(false);
   const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | 'both' | null>(null);
@@ -160,11 +163,6 @@ function useAppInstallBanner() {
   useEffect(() => {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
   }, []);
-
-  // Keep in sync if standalone is detected later (e.g. after appinstalled).
-  useEffect(() => {
-    if (isStandalone) setShow(false);
-  }, [isStandalone]);
 
   const onClick = useCallback(async () => {
     if (isDesktop) { setModalBrowser('both'); return; }
@@ -233,21 +231,20 @@ export function TopBanners() {
   if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
   if (app.show || preview) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
 
+  const two = slots.length === 2;
   return (
     <>
       {slots.length > 0 && (
         <div className="mb-6">
-          {slots.length === 2 ? (
-            <div className="flex flex-col md:flex-row gap-3">
-              {slots.map((s, i) => (
-                <div key={i} className="md:flex-1 min-w-0">{s}</div>
-              ))}
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              <div className="w-full max-w-lg">{slots[0]}</div>
-            </div>
-          )}
+          <div className={two ? 'flex flex-col md:flex-row gap-3' : 'flex justify-center'}>
+            {slots.map((s) => (
+              // Stable key (s.key = 'fp' | 'app') so a card never remounts when
+              // the slot count changes (e.g. the other banner appears/dismisses).
+              <div key={(s as React.ReactElement).key} className={two ? 'md:flex-1 min-w-0' : 'w-full max-w-lg'}>
+                {s}
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {app.modalNode}
