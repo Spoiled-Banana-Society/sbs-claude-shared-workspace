@@ -29,7 +29,7 @@ const STEPS = [
     num: '01',
     icon: '🎟️',
     title: 'Buy Draft Passes',
-    desc: 'Grab a pass with USDC, card, or Apple Pay. One pass = one draft entry. Bulk up for better odds at Jackpots & HOF entries.',
+    desc: 'Grab a pass with USDC, debit, or credit card. One pass = one draft entry. Bulk up for better odds at Jackpots & HOF entries.',
     color: 'from-yellow-500/20 to-yellow-600/5',
     border: 'border-yellow-500/30',
   },

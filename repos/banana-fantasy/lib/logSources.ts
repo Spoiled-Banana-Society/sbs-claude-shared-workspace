@@ -100,6 +100,15 @@ export const LOG_SOURCES = {
     // balance poll. Warning, not notify — recoverable / informational.
     MOONPAY_SESSION_BEACON_FAILED: 'payment.moonpay.session_beacon_failed',
     USDC_BALANCE_POLL_FAILED: 'payment.usdc.balance_poll_failed',
+    // Card-fee credit → free draft. Successes are logger.info (console/structured
+    // only — NOT the critical feed, which is error-level). REWARD_GRANT_FAILED is
+    // logger.error → critical via the ^payment\. pattern (user is owed a draft).
+    PURCHASE_COMPLETED: 'payment.card.purchase_completed',
+    FEE_CREDITED: 'payment.card.fee_credited',
+    REWARD_GRANTED: 'payment.card.reward_granted',
+    REWARD_GRANT_FAILED: 'payment.card.reward_grant_failed',
+    REWARD_DUPLICATE_SKIPPED: 'payment.card.reward_duplicate_skipped',
+    CHECKOUT_CANCELLED: 'payment.card.checkout_cancelled',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',
@@ -309,6 +318,14 @@ const LOW_PATTERNS: RegExp[] = [
   /^draft\.firebase_rtdb_permission_denied/i,// usually a stale ruleset hit on a since-removed field
   /^draft\.sort_preference_persist_failed/i, // user prefs; reverts on next reload
   /^draft\.preferences_load_failed/i,        // defaults apply if load fails
+  // audit "under" = wallet has MORE real tokens than the counter shows — the
+  // SAFE direction (user can't be blocked by it). Informational, not a fire.
+  // The DANGEROUS direction (audit.passes.over) stays CRITICAL above.
+  /^audit\.passes\.under/i,
+  // Background "last active" telemetry write occasionally times out
+  // (DEADLINE_EXCEEDED). Non-user-facing; the next heartbeat retries. Visible
+  // in Low if it ever becomes a pattern, but it shouldn't page anyone.
+  /^user\.activity\.touch_failed/i,
 ];
 
 /** Triage tier for an error source — drives the admin Logs sections. */
@@ -404,6 +421,8 @@ const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
     text: 'The user gave up on a wallet connection that was stuck.' },
   { pattern: /wallet_connect_failed/i,
     text: 'A wallet connection failed before completing.' },
+  { pattern: /reward_grant_failed/i,
+    text: 'A card-fee reward draft failed to mint after the user crossed $25 in card fees — their credit was already consumed, so they are owed a free draft. Re-grant it via admin grant-drafts and see the failed_mints record (source: card_reward).' },
   { pattern: /mint_failed|card-mint/i,
     text: 'A pass mint failed — the user may have been charged. Worth checking.' },
   { pattern: /permit|signature|personal_sign|user rejected|user denied/i,
