@@ -60,3 +60,49 @@ export function ViewAsToggle() {
     </div>
   );
 }
+
+/**
+ * Force-show BOTH top banners (First Purchase + Get the App) on the home page
+ * for layout/QA — without touching account data or pressing Reset. Admin-only,
+ * session-scoped (sessionStorage 'sbs-preview-banners'); read by TopBanners.
+ */
+export function PreviewBannersToggle() {
+  const [on, setOn] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOn(window.sessionStorage.getItem('sbs-preview-banners') === '1');
+  }, []);
+
+  const apply = (next: boolean) => {
+    if (typeof window === 'undefined') return;
+    if (next) window.sessionStorage.setItem('sbs-preview-banners', '1');
+    else window.sessionStorage.removeItem('sbs-preview-banners');
+    setOn(next);
+    window.location.assign('/'); // jump home so you immediately see them
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="text-xs text-gray-400 leading-snug">
+        <span className="font-semibold text-gray-200">Preview top banners</span> — force First Purchase
+        + Get-the-App to show on the home page (no data change). Jumps you home on toggle.
+      </div>
+      <div className="flex gap-1 shrink-0">
+        {[{ k: false, l: 'Off' }, { k: true, l: 'On' }].map((o) => (
+          <button
+            key={o.l}
+            onClick={() => apply(o.k)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              on === o.k
+                ? 'bg-[#F3E216] text-black border-[#F3E216]'
+                : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600'
+            }`}
+          >
+            {o.l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}

@@ -22,6 +22,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { InstallModal } from '@/components/home/AddToHomeScreenCard';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 
 /* ───────────────────────── shared bits ───────────────────────── */
 
@@ -198,12 +199,21 @@ function AppInstallCard({ onClick, dismiss }: { onClick: () => void; dismiss: ()
 /* ───────────────────────── orchestrator ───────────────────────── */
 
 export function TopBanners() {
+  const { user } = useAuth();
   const fp = useFirstPurchaseBanner();
   const app = useAppInstallBanner();
 
+  // Admin-only preview: force both banners to render for layout/QA without
+  // touching account data. Toggled from admin (sessionStorage 'sbs-preview-banners').
+  const [preview, setPreview] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setPreview(isWalletAdmin(user?.walletAddress) && window.sessionStorage.getItem('sbs-preview-banners') === '1');
+  }, [user?.walletAddress]);
+
   const slots: React.ReactNode[] = [];
-  if (fp.show) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
-  if (app.show) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
+  if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
+  if (app.show || preview) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
 
   return (
     <>
