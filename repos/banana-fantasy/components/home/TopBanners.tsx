@@ -142,9 +142,18 @@ function isIOSSafari(): boolean {
   return /iphone|ipad|ipod/.test(ua) && /safari/.test(ua) && !/chrome|crios|fxios/.test(ua);
 }
 
+function isStandaloneNow(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia?.('(display-mode: standalone)').matches
+    || Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+}
+
 function useAppInstallBanner() {
   const { isStandalone, triggerInstall } = useInstallPrompt();
-  const [show, setShow] = useState(false);
+  // Compute visibility SYNCHRONOUSLY on the first client render so the banner
+  // never flashes-then-hides: if it's dismissed/standalone we render nothing
+  // from the very first frame instead of showing then correcting in an effect.
+  const [show, setShow] = useState(() => !isStandaloneNow() && !isA2hsDismissed());
   const [isDesktop, setIsDesktop] = useState(false);
   const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | 'both' | null>(null);
 
@@ -152,8 +161,9 @@ function useAppInstallBanner() {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
   }, []);
 
+  // Keep in sync if standalone is detected later (e.g. after appinstalled).
   useEffect(() => {
-    if (!isStandalone && !isA2hsDismissed()) setShow(true);
+    if (isStandalone) setShow(false);
   }, [isStandalone]);
 
   const onClick = useCallback(async () => {
@@ -203,6 +213,12 @@ export function TopBanners() {
   const fp = useFirstPurchaseBanner();
   const app = useAppInstallBanner();
 
+  // Render only after mount: visibility is computed from window/localStorage, so
+  // gating on mount keeps SSR and the first client render in agreement and kills
+  // the hydration flash (banner appearing for a frame, then settling).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Admin-only preview: force both banners to render for layout/QA without
   // touching account data. Toggled from admin (sessionStorage 'sbs-preview-banners').
   const [preview, setPreview] = useState(false);
@@ -210,6 +226,8 @@ export function TopBanners() {
     if (typeof window === 'undefined') return;
     setPreview(isWalletAdmin(user?.walletAddress) && window.sessionStorage.getItem('sbs-preview-banners') === '1');
   }, [user?.walletAddress]);
+
+  if (!mounted) return null;
 
   const slots: React.ReactNode[] = [];
   if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
