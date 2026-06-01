@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 
     await logAdminAction({
       actor: actorWallet,
-      action: scope === 'promos' ? 'reset-user-promos' : 'reset-user',
+      action: 'reset-user',
       target: userId,
       before,
       after: cleared,
