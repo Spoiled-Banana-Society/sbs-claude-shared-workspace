@@ -220,12 +220,12 @@ const seedPromos: Promo[] = [
       title: 'Get Pick 10 Get a SPIN',
       explanation:
         'When you get the 10th pick in any paid draft you earn a free Banana Wheel spin. This can happen multiple times - each Pick 10 earns you a spin! 🍌 Good to know: this reward is for paid drafts. Free passes are on us purely for the fun of drafting, so they don\'t count toward this one.',
-      totalPick10s: 8,
-      pick10History: [
-        { date: '2026-01-15', draftName: 'League #1042', status: 'claim' },
-        { date: '2026-01-14', draftName: 'League #892', status: 'claim' },
-        { date: '2026-01-12', draftName: 'League #756', status: 'claimed' },
-      ],
+      // Per-user state — starts empty. Real Pick 10s are appended by
+      // recordPick10 on actual paid drafts. (Previously this carried 3 fake
+      // demo rows incl. 2 'claim' entries, which were cloned into every real
+      // user's doc and let them claim 2 spins they never earned.)
+      totalPick10s: 0,
+      pick10History: [],
     },
   },
   {
