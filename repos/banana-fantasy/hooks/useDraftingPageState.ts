@@ -110,7 +110,7 @@ export function formatCountdown(totalSeconds: number): string {
 
 export function useDraftingPageState() {
   const router = useRouter();
-  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified } = useAuth();
+  const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified, isBalanceLoaded } = useAuth();
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
@@ -139,13 +139,14 @@ export function useDraftingPageState() {
       newUserPromoClaimed,
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+      flagsKnown: isBalanceLoaded,
       hasVisibleClaim: (p) => {
         if (!p.claimable || claimedPromos.has(p.id)) return false;
         if ((p.type === 'new-user' || p.type === 'tweet-engagement') && !isTwitterVerified) return false;
         return true;
       },
     });
-  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked]);
+  }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [promoIndex, setPromoIndex] = useState(0);

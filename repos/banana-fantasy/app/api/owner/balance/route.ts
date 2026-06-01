@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false });
+      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false });
     }
 
     const db = getAdminFirestore();
@@ -65,6 +65,9 @@ export async function GET(req: Request) {
       // card never hides after a purchase and never unlocks for new users.
       firstPurchaseBonusGranted: !!data.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!data.firstPurchasePromoUnlocked,
+      // Drives the spin-explainer text — must reach the client or the "a spin
+      // wins up to 20…" line never disappears after a new user spins.
+      hasSpunWheel: !!data.hasSpunWheel,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

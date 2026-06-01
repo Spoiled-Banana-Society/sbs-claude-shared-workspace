@@ -765,6 +765,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // after a purchase and unlocks for new users post free-drafts.
           firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
           firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
+          // Spin-explainer gating — so the "a spin wins up to 20" text hides
+          // once they've actually spun.
+          hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
         };
       });
       setIsBalanceLoaded(true);

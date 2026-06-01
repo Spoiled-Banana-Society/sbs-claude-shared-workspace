@@ -96,7 +96,11 @@ function useFirstPurchaseBanner() {
   // Returning (BB3) players see it right away; brand-new users once they've
   // finished their welcome-wheel free drafts (firstPurchasePromoUnlocked).
   const inWindow = isBB3Holder || !!user?.firstPurchasePromoUnlocked;
-  const show = isLoggedIn && !!wallet && !user?.firstPurchaseBonusGranted && inWindow && !dismissed;
+  // IMPORTANT: require firstPurchaseBonusGranted to be KNOWN-false. It loads a
+  // moment after the user object (via the balance stream), so it's `undefined`
+  // on first paint. Using `!granted` there would flash the banner for ~1s for a
+  // user who has already purchased. `=== false` keeps it hidden until we're sure.
+  const show = isLoggedIn && !!wallet && user?.firstPurchaseBonusGranted === false && inWindow && !dismissed;
 
   return { show, dismiss, goBuy };
 }
@@ -150,18 +154,18 @@ function isStandaloneNow(): boolean {
 
 function useAppInstallBanner() {
   const { triggerInstall } = useInstallPrompt();
-  // Decide visibility ONCE, synchronously, on the first client render — based on
-  // whether we're already in a standalone PWA and whether it was dismissed. We
-  // deliberately do NOT react to later isStandalone changes: on desktop with the
-  // PWA installed, Chrome can fire `appinstalled` mid-session, which would flip
-  // isStandalone true and blank the banner after it had shown (the exact
-  // flash-then-disappear bug). A one-time decision keeps it stable.
-  const [show, setShow] = useState(() => !isStandaloneNow() && !isA2hsDismissed());
+  // Decide visibility ONCE, on mount (client only). Starting false keeps SSR and
+  // hydration in agreement; the effect then computes the real value exactly once.
+  // We deliberately don't react to later isStandalone/appinstalled changes — on
+  // desktop with the PWA installed Chrome can fire `appinstalled` mid-session,
+  // which previously flipped it off after it had shown (the flash-then-blank).
+  const [show, setShow] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [modalBrowser, setModalBrowser] = useState<'safari' | 'chrome' | 'both' | null>(null);
 
   useEffect(() => {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
+    setShow(!isStandaloneNow() && !isA2hsDismissed());
   }, []);
 
   const onClick = useCallback(async () => {
