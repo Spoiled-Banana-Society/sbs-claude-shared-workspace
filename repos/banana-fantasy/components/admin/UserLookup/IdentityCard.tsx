@@ -183,7 +183,7 @@ export function IdentityCard({
         <Stat label="Spins left" value={identity.balance.wheelSpins} />
         <Stat label="JP entries left" value={identity.balance.jackpotEntries} />
         <Stat label="HOF entries left" value={identity.balance.hofEntries} />
-        <Stat label="Card purchases" value={identity.balance.cardPurchaseCount} />
+        <Stat label="Card fee credit" value={`$${((identity.balance.cardFeeCreditCents || 0) / 100).toFixed(2)}`} />
       </dl>
       <p className="mt-2 text-[10px] text-gray-500">
         Counters above are current balances (decrement when used). Lifetime totals — spins done, promos claimed, draft entries, etc. — live in the Activity section below.

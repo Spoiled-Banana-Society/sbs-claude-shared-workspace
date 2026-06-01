@@ -239,6 +239,8 @@ async function readIdentity(wallet: string) {
       hofEntries: typeof d.hofEntries === 'number' ? d.hofEntries : 0,
       cardPurchaseCount:
         typeof d.cardPurchaseCount === 'number' ? d.cardPurchaseCount : 0,
+      cardFeeCreditCents:
+        typeof d.cardFeeCreditCents === 'number' ? d.cardFeeCreditCents : 0,
     },
     // Money — pulled from the Go owner endpoint. Boris's ask: "do they
     // have money in their account or card all their txns their history."

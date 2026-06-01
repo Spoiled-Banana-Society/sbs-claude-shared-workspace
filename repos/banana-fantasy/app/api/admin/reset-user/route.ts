@@ -44,6 +44,7 @@ export async function POST(req: Request) {
       freeDrafts: data.freeDrafts ?? 0,
       wheelSpins: data.wheelSpins ?? 0,
       cardPurchaseCount: data.cardPurchaseCount ?? 0,
+      cardFeeCreditCents: data.cardFeeCreditCents ?? 0,
       jackpotEntries: data.jackpotEntries ?? 0,
       hofEntries: data.hofEntries ?? 0,
     };
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
         freeDrafts: 0,
         wheelSpins: 0,
         cardPurchaseCount: 0,
+        cardFeeCreditCents: 0,
         jackpotEntries: 0,
         hofEntries: 0,
       },
@@ -70,6 +72,7 @@ export async function POST(req: Request) {
         freeDrafts: 0,
         wheelSpins: 0,
         cardPurchaseCount: 0,
+        cardFeeCreditCents: 0,
         jackpotEntries: 0,
         hofEntries: 0,
       },

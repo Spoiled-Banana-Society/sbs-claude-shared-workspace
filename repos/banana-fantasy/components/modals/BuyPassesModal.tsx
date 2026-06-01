@@ -8,7 +8,7 @@ import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { firstPurchaseUpsell } from '@/lib/promoMath';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
-import { draftPassPricing } from '@/lib/pricing';
+import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
@@ -211,6 +211,17 @@ export function BuyPassesModal({
 
   // Transition to pick-speed after successful USDC mint
   const txTrackedRef = useRef(false);
+  // Abort flag for the card-funding wait loop, so the user can cancel /
+  // change their order during funding without a hard refresh.
+  const cancelledRef = useRef(false);
+  const handleCancelCheckout = () => {
+    cancelledRef.current = true;
+    setWaitingForUsdcStartedAt(null);
+    txTrackedRef.current = false;
+    setFlowError(null);
+    setFlowStep('idle');
+    clientLog('payment', 'checkout_cancelled', { quantity, flowStep });
+  };
   useEffect(() => {
     if (txHash && !mintError && phase === 'purchase' && !txTrackedRef.current) {
       txTrackedRef.current = true;
@@ -265,6 +276,7 @@ export function BuyPassesModal({
 
     if (isProcessing) return;
 
+    cancelledRef.current = false;
     setFlowStep('funding');
     setFlowError(null);
 
@@ -338,6 +350,7 @@ export function BuyPassesModal({
       const waitForUsdc = async () => {
         const startTime = Date.now();
         while (Date.now() - startTime < maxWaitMs) {
+          if (cancelledRef.current) return false;
           try {
             const balance = await getUsdcBalance(walletAddress as Address);
             if (balance >= totalCostUsdc) return true;
@@ -358,6 +371,8 @@ export function BuyPassesModal({
       };
 
       const funded = await waitForUsdc();
+      // User cancelled mid-wait — handleCancelCheckout already reset the flow.
+      if (cancelledRef.current) return;
       if (!funded) {
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
@@ -503,13 +518,13 @@ export function BuyPassesModal({
   const stepHelper: Partial<Record<FlowStep, string>> = isWeb2
     ? {
         funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'This usually takes 15–60 seconds.',
+        'waiting-for-usdc': 'Usually 15–60s. Closed the window or want to change your order? Tap Cancel below — any USDC you bought stays in your wallet.',
         signing: '',
         processing: 'Finalizing — just a few seconds.',
       }
     : {
         funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'Typically 15–60s. We poll the chain every few seconds.',
+        'waiting-for-usdc': 'Typically 15–60s. Closed the window or want a different amount? Tap Cancel below — any USDC you bought stays in your wallet.',
         signing: "Check your wallet — this is just a signature, it won't cost gas.",
         processing: 'Admin wallet is paying gas for you. ~5 seconds.',
       };
@@ -638,7 +653,7 @@ export function BuyPassesModal({
                     </svg>
                   </div>
                   <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card / Apple Pay</p>
+                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</p>
                     <p className="text-text-muted text-xs">Instant checkout</p>
                   </div>
                 </button>
@@ -646,36 +661,35 @@ export function BuyPassesModal({
 
             </div>
 
-            {/* Card Purchase Rewards banner */}
+            {/* Card-fee credit → free draft banner (live $ progress) */}
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
-              const current = user?.cardPurchaseCount || 0;
-              const projected = Math.min(6, current + (quantity || 0));
+              const threshold = FREE_DRAFT_CREDIT_CENTS; // $25 in cents
+              const current = Math.min(threshold, user?.cardFeeCreditCents || 0);
+              const projected = current + feeForQty(quantity || 1);
+              const earnsNow = projected >= threshold;
+              const curPct = Math.min(100, (current / threshold) * 100);
+              const projPct = Math.min(100, (projected / threshold) * 100);
+              const remaining = Math.max(0, threshold - current);
+              const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
               return (
               <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-sm">🎁</span>
                   <p className="text-white/70 text-[12px] font-medium">
-                    {projected >= 6
+                    {earnsNow
                       ? 'This purchase earns you a FREE draft!'
-                      : 'Card fee? We\'ve got you — every 6 purchases earns a free draft'
+                      : 'Your card fee is credited forward — at $25 it&apos;s a free draft'
                     }
                   </p>
                 </div>
-                <div className="flex gap-1">
-                  {Array.from({ length: 6 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className={`h-1.5 flex-1 rounded-full ${
-                        i < current
-                          ? 'bg-banana'
-                          : i < projected
-                            ? 'bg-banana/40'
-                            : 'bg-white/[0.06]'
-                      }`}
-                    />
-                  ))}
+                <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                  <div className="absolute inset-y-0 left-0 bg-banana/40 rounded-full" style={{ width: `${projPct}%` }} />
+                  <div className="absolute inset-y-0 left-0 bg-banana rounded-full" style={{ width: `${curPct}%` }} />
                 </div>
-                <p className="text-white/30 text-[10px] mt-1.5">{projected} of 6 toward your next free draft</p>
+                <p className="text-white/30 text-[10px] mt-1.5">
+                  {usd(current)} of {usd(threshold)} toward your next free draft
+                  {!earnsNow && remaining > 0 ? ` — ${usd(remaining)} to go` : ''}
+                </p>
               </div>
               );
             })()}
@@ -797,6 +811,17 @@ export function BuyPassesModal({
                 `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
               )}
             </button>
+
+            {/* Cancel / change order — only while waiting on the card flow
+                (pre-on-chain). Lets the user back out without a hard refresh. */}
+            {(flowStep === 'funding' || flowStep === 'waiting-for-usdc') && (
+              <button
+                onClick={handleCancelCheckout}
+                className="w-full text-sm text-text-muted hover:text-text-secondary hover:underline text-center"
+              >
+                ✕ Cancel / change order
+              </button>
+            )}
 
             {/* Staging: Free Entry button */}
             {isStagingMode() && (

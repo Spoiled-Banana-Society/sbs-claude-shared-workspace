@@ -158,6 +158,7 @@ function buildSeedUser(userId: string): {
     draftPasses: 0,
     usdcBalance: 0,
     cardPurchaseCount: 0,
+    cardFeeCreditCents: 0,
     isVerified: false,
   };
   const promos = deepClone(seedDb.promosByUser['1'] ?? []);
@@ -1180,17 +1181,10 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
 
     await _incrementReferralPromosInTx(tx, user, purchase.userId, purchase.quantity);
 
-    // Card Purchase Rewards: every 6 card purchases = 1 free draft
-    let freePassFromRewards = false;
-    if (purchase.paymentMethod === 'card') {
-      user.cardPurchaseCount = (user.cardPurchaseCount || 0) + 1;
-      if (user.cardPurchaseCount >= 6) {
-        user.cardPurchaseCount = 0;
-        user.freeDrafts = (user.freeDrafts || 0) + 1;
-        freeDraftsAdded += 1;
-        freePassFromRewards = true;
-      }
-    }
+    // NOTE: the legacy "every 6 card purchases = 1 free draft" payout was
+    // removed here. The card-fee → free-draft reward now lives solely in the
+    // card-mint route, keyed off accumulated card fees (cardFeeCreditCents),
+    // and grants a paid-type draft. See app/api/purchases/card-mint/route.ts.
 
     tx.set(purchaseRef, stripUndefined(purchase), { merge: true });
     tx.set(userRef, stripUndefined(user), { merge: true });
@@ -1201,7 +1195,6 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       spinsAdded,
       draftPassesAdded,
       freeDraftsAdded,
-      freePassFromRewards,
     };
   }).then(async (result) => {
     // Record activity for the paid-mint. Done outside the transaction so

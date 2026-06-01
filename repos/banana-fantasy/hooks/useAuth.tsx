@@ -176,6 +176,7 @@ const MOCK_USER: User | null = MOCK_AUTH
       jackpotEntries: 0,
       hofEntries: 0,
       cardPurchaseCount: 0,
+      cardFeeCreditCents: 0,
       isVerified: true,
       createdAt: '2025-01-01T00:00:00Z',
     }
@@ -562,6 +563,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             jackpotEntries: 0,
             hofEntries: 0,
             cardPurchaseCount: 0,
+            cardFeeCreditCents: 0,
             isVerified: false,
             createdAt: new Date().toISOString(),
           };
@@ -740,6 +742,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           jackpotEntries: (d.jackpotEntries as number) ?? prev.jackpotEntries,
           hofEntries: (d.hofEntries as number) ?? prev.hofEntries,
           cardPurchaseCount: (d.cardPurchaseCount as number) ?? prev.cardPurchaseCount,
+          cardFeeCreditCents: (d.cardFeeCreditCents as number) ?? prev.cardFeeCreditCents,
           draftPasses: typeof d.draftPasses === 'number' ? (d.draftPasses as number) : prev.draftPasses,
         };
       });
@@ -899,6 +902,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       jackpotEntries?: number;
       hofEntries?: number;
       cardPurchaseCount?: number;
+      cardFeeCreditCents?: number;
     } | null = null;
     try {
       const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
@@ -919,6 +923,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         jackpotEntries: typeof firestoreBalance!.jackpotEntries === 'number' ? firestoreBalance!.jackpotEntries : prev.jackpotEntries,
         hofEntries: typeof firestoreBalance!.hofEntries === 'number' ? firestoreBalance!.hofEntries : prev.hofEntries,
         cardPurchaseCount: typeof firestoreBalance!.cardPurchaseCount === 'number' ? firestoreBalance!.cardPurchaseCount : prev.cardPurchaseCount,
+        cardFeeCreditCents: typeof firestoreBalance!.cardFeeCreditCents === 'number' ? firestoreBalance!.cardFeeCreditCents : prev.cardFeeCreditCents,
       };
     });
   }, [user?.id]);

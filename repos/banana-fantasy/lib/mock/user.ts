@@ -15,6 +15,7 @@ export const mockUser: User = {
   jackpotEntries: 0,
   hofEntries: 0,
   cardPurchaseCount: 0,
+  cardFeeCreditCents: 0,
   isVerified: true,
   createdAt: '2025-09-01',
 };

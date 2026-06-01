@@ -39,7 +39,7 @@ export async function GET(req: Request) {
     if (!userId) return jsonError('Missing userId', 400);
 
     if (!isFirestoreConfigured()) {
-      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0 });
+      return json({ wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0 });
     }
 
     const db = getAdminFirestore();
@@ -58,6 +58,7 @@ export async function GET(req: Request) {
       hofEntries: nonNeg(data.hofEntries),
       draftPasses: nonNeg(data.draftPasses),
       cardPurchaseCount: nonNeg(data.cardPurchaseCount),
+      cardFeeCreditCents: nonNeg(data.cardFeeCreditCents),
       nflTeam: typeof data.nflTeam === 'string' ? data.nflTeam : null,
     });
   } catch (err) {

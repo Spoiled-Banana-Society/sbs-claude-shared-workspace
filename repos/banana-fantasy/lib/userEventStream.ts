@@ -44,7 +44,8 @@ export type StreamEventType =
   | 'promo-new-user'
   | 'promo-first-purchase'
   | 'first-purchase-unlocked'
-  | 'referral-milestone';
+  | 'referral-milestone'
+  | 'promo-card-free-draft';
 
 export interface StreamEventPayload {
   /** Draft id (Pick 10, Jackpot Hit). */

@@ -7,6 +7,7 @@ import { useExportWallet } from '@privy-io/react-auth';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { InstallAppButton } from '@/components/home/AddToHomeScreenCard';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 
 interface ProfileDropdownProps {
   onEditProfile: () => void;
@@ -136,26 +137,27 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             </div>
           </div>
 
-          {/* Card Purchase Rewards — only show after first card purchase */}
-          {(user.cardPurchaseCount || 0) > 0 && <div className="px-3 py-2.5 border-b border-bg-tertiary">
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-text-muted text-[10px] uppercase tracking-wider">Card Rewards</span>
-              <span className="text-text-secondary text-[11px]">{user.cardPurchaseCount || 0}/6</span>
+          {/* Card-fee credit → free draft — only show after first card purchase */}
+          {(user.cardFeeCreditCents || 0) > 0 && (() => {
+            const credit = Math.min(FREE_DRAFT_CREDIT_CENTS, user.cardFeeCreditCents || 0);
+            const pct = Math.min(100, (credit / FREE_DRAFT_CREDIT_CENTS) * 100);
+            const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
+            const remaining = Math.max(0, FREE_DRAFT_CREDIT_CENTS - credit);
+            return (
+            <div className="px-3 py-2.5 border-b border-bg-tertiary">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-text-muted text-[10px] uppercase tracking-wider">Card Fee Credit</span>
+                <span className="text-text-secondary text-[11px]">{`${usd(credit)} / ${usd(FREE_DRAFT_CREDIT_CENTS)}`}</span>
+              </div>
+              <div className="relative h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                <div className="absolute inset-y-0 left-0 bg-banana rounded-full" style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-text-muted text-[10px] mt-1">
+                {`${usd(remaining)} in card fees until a free draft`}
+              </p>
             </div>
-            <div className="flex gap-1">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`h-1.5 flex-1 rounded-full ${
-                    i < (user.cardPurchaseCount || 0) ? 'bg-banana' : 'bg-white/[0.06]'
-                  }`}
-                />
-              ))}
-            </div>
-            <p className="text-text-muted text-[10px] mt-1">
-              {`${6 - (user.cardPurchaseCount || 0)} more card purchase${6 - (user.cardPurchaseCount || 0) !== 1 ? 's' : ''} for a free draft`}
-            </p>
-          </div>}
+            );
+          })()}
 
           {/* Menu Items */}
           <div className="py-1">
