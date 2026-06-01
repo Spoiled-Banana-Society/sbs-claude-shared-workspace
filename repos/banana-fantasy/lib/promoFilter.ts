@@ -22,7 +22,8 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  'first-purchase', // "First Purchase → BONUS SPINS" — first box for everyone
+  'first-purchase', // "First Purchase → BONUS SPINS" — leads the not-yet-started
+                    // group (claimable + in-progress promos still bubble above it)
   'new-user',
   'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
   'daily-drafts',  // "4 drafts daily"
@@ -102,10 +103,6 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   });
 
   const sorted = filtered.sort((a, b) => {
-    // 0. First-purchase is always the first box when visible — it outranks the
-    //    claimable/progress tiers below (Boris: swap it ahead of 4-drafts-daily).
-    if (a.type === 'first-purchase' && b.type !== 'first-purchase') return -1;
-    if (b.type === 'first-purchase' && a.type !== 'first-purchase') return 1;
     // 1. Claimable / actionable promos first — user can hit the button now.
     if (opts.hasVisibleClaim) {
       const aClaim = opts.hasVisibleClaim(a) ? 1 : 0;
