@@ -253,7 +253,12 @@ async function countErrors(db: Firestore, since: number): Promise<number> {
       fetchRecentErrors(500),
       db.collection('adminResolvedErrors').get(),
     ]);
-    const resolvedHashes = new Set(resolvedSnap.docs.map((d) => d.id));
+    // hash → fix time (ms), or null for legacy resolutions without a timestamp.
+    const resolvedAt = new Map<string, number | null>();
+    for (const d of resolvedSnap.docs) {
+      const at = (d.data() as { at?: { toMillis?: () => number } } | undefined)?.at;
+      resolvedAt.set(d.id, at && typeof at.toMillis === 'function' ? at.toMillis() : null);
+    }
     return records.filter((r) => {
       const t = r.timestamp ? new Date(r.timestamp).getTime() : 0;
       if (t <= since) return false;
@@ -264,9 +269,11 @@ async function countErrors(db: Firestore, since: number): Promise<number> {
       // trigger the badge. Noisy admin-read and Crisp-API failures
       // still show in the Error Log tab but don't ping the admin.
       if (!isImportantError(r.source)) return false;
-      // Skip groups the admin already marked fixed (match the feed).
+      // Skip groups the admin marked fixed — UNLESS they've recurred since the
+      // fix (recurrence-aware, matches the Logs feed + dashboard).
       const gk = `${normalizeForGroup(r.source)}|${normalizeForGroup(r.message).slice(0, 140)}`;
-      if (resolvedHashes.has(hashGroupKey(gk))) return false;
+      const fixedAt = resolvedAt.get(hashGroupKey(gk));
+      if (fixedAt !== undefined && (fixedAt === null || t <= fixedAt)) return false;
       return true;
     }).length;
   } catch { return 0; }

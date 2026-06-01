@@ -11,6 +11,7 @@ import {
   type ErrorEventEntry,
 } from '@/hooks/admin/useAdminApi';
 import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { isResolutionActive } from '@/lib/errorGrouping';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GroupSparkline } from '@/components/admin/Logs/GroupSparkline';
@@ -226,8 +227,10 @@ function ErrorFeed({ enabled, onShowSentry }: { enabled: boolean; onShowSentry: 
     // 3. group + split out resolved (admin-marked-fixed) groups
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
     const allGroups = groupErrors(real);
-    const resolvedGroups = allGroups.filter((g) => !!resolvedMap[g.key]);
-    const groups = allGroups.filter((g) => !resolvedMap[g.key]);
+    // Recurrence-aware: a "fixed" group stays resolved only if it hasn't fired
+    // since the fix. If it recurred, it reopens into the active feed.
+    const resolvedGroups = allGroups.filter((g) => isResolutionActive(resolvedMap[g.key], g.lastTs));
+    const groups = allGroups.filter((g) => !isResolutionActive(resolvedMap[g.key], g.lastTs));
 
     // Cross-error correlation map (only unresolved — resolved groups
     // shouldn't pollute the "+N other errors" tally).
