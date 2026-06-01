@@ -106,3 +106,32 @@ export function PreviewBannersToggle() {
     </div>
   );
 }
+
+/**
+ * Clears the "Get the App" banner dismissal (localStorage) so it shows again
+ * naturally — until you close it once more. This is the easy undo for the
+ * sticky dismissal; unlike Preview, it restores the REAL behavior (show until
+ * dismissed), it doesn't force it.
+ */
+export function ResetAppBannerButton() {
+  const reset = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem('sbs-a2hs-engaged');
+    window.localStorage.removeItem('sbs-a2hs-dismissed');
+    window.location.assign('/');
+  };
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="text-xs text-gray-400 leading-snug">
+        <span className="font-semibold text-gray-200">Show Get-the-App banner again</span> — clears your
+        dismissal so it reappears on the home page until you close it again (this browser only).
+      </div>
+      <button
+        onClick={reset}
+        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600 transition-colors"
+      >
+        Show again
+      </button>
+    </div>
+  );
+}
