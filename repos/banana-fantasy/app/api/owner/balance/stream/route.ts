@@ -21,6 +21,11 @@ interface BalancePayload {
   draftPasses: number;
   cardPurchaseCount: number;
   cardFeeCreditCents: number;
+  // First-purchase promo gating — pushed live so the promo card hides the
+  // moment a purchase is recorded, and unlocks when a new user finishes their
+  // free drafts. Without these on the client the first-purchase flow is blind.
+  firstPurchaseBonusGranted: boolean;
+  firstPurchasePromoUnlocked: boolean;
 }
 
 function buildPayload(data: Record<string, unknown> | undefined): BalancePayload {
@@ -35,6 +40,8 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
     draftPasses: nonNeg(d.draftPasses),
     cardPurchaseCount: nonNeg(d.cardPurchaseCount),
     cardFeeCreditCents: nonNeg(d.cardFeeCreditCents),
+    firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
+    firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
   };
 }
 
@@ -64,6 +71,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
+      firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false,
     };
     const stream = new ReadableStream({
       start(controller) {
