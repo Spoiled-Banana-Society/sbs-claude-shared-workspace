@@ -70,7 +70,15 @@ export async function GET(req: Request) {
     }
 
     const raw = (await sentryRes.json()) as SentryIssueRaw[];
-    const issues: SentryIssue[] = raw.map((r) => ({
+    // Only surface ACTUAL bugs. Sentry "performance issues" (e.g. the recurring
+    // "N+1 API Call" on /admin) come through at `info`/`debug` level — they're
+    // diagnostics, not errors, and were the source of the persistent noise.
+    // Keep error/warning/fatal (and anything unknown, treated as error).
+    const isRealBug = (lvl: string | undefined) => {
+      const l = (lvl ?? 'error').toLowerCase();
+      return l !== 'info' && l !== 'debug';
+    };
+    const issues: SentryIssue[] = raw.filter((r) => isRealBug(r.level)).map((r) => ({
       id: r.id,
       shortId: r.shortId ?? r.id,
       title: r.title ?? '(untitled)',

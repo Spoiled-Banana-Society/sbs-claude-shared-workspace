@@ -104,10 +104,11 @@ export default function PromosPage() {
       isBB3Holder,
       newUserPromoClaimed,
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
       hasVisibleClaim,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper
