@@ -7,6 +7,7 @@ import { pushNotification } from '@/components/NotificationCenter';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
+import { subscribeUserEvents } from '@/lib/api/firebase';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -153,17 +154,29 @@ export function usePromos(opts?: { userId?: string }) {
 
   const refreshPromos = useCallback(() => mutateRef.current(), []);
 
-  // Refetch promos when the tab becomes visible and poll every 60s for updates.
+  // Keep all promo boxes (progress, claimable, etc.) live across devices:
+  //  - real-time refetch on any user-event stream ping (purchases fire one),
+  //    coalesced to one refetch per ~300ms burst (render-loop safe — deps are
+  //    scalar, mutate is in a ref),
+  //  - instant refetch on focus/visibility (covers "buy on desktop, look at phone"),
+  //  - 60s poll as a backstop.
   useEffect(() => {
     const refetch = () => { void mutateRef.current(); };
-    const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
-    document.addEventListener('visibilitychange', onVisibility);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => { if (timer) return; timer = setTimeout(() => { timer = null; refetch(); }, 300); };
+    const onVisible = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
     const interval = setInterval(refetch, 60_000);
+    const unsub = userId ? subscribeUserEvents(userId, coalesced) : () => {};
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       clearInterval(interval);
+      if (timer) clearTimeout(timer);
+      try { unsub(); } catch { /* ignore */ }
     };
-  }, []);
+  }, [userId]);
 
   return {
     ...swr,

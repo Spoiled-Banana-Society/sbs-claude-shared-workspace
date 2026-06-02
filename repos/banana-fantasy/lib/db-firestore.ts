@@ -970,6 +970,10 @@ export async function incrementMintPromos(
       awardedCount: result.mintMilestonesEarned,
     });
   }
+  // Always nudge the user's devices to refetch promos so the mint progress
+  // box (e.g. 9/10) syncs in real-time across devices on EVERY purchase, not
+  // just when a milestone is hit. (usePromos refetches on any stream ping.)
+  void pushStreamEvent(userId, 'notification', { source: 'purchase' });
   return result;
 }
 
@@ -1245,6 +1249,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       awardedCount: _mintMilestonesForPostCommitPush,
     });
   }
+  // Always nudge devices to refetch promos so mint progress (e.g. 9/10) syncs
+  // in real-time on every purchase, not just at a milestone.
+  void pushStreamEvent(prePurchase.userId, 'notification', { source: 'purchase' });
 
   return txResult;
 }
