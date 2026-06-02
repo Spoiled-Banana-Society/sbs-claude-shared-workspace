@@ -81,6 +81,12 @@ export function BadgeIcon({
     ? 'inline-flex items-center justify-center select-none badge-pulse'
     : 'inline-flex items-center justify-center select-none';
 
+  // Brushed-metal sweep used by the 'medal' ring style. Built from the
+  // badge's own color (highlight) + accent (shadow) so silver reads silver
+  // and bronze reads bronze; the moving background-position gives the ring a
+  // living polished-metal sheen.
+  const medalSweep = `linear-gradient(90deg, ${color}, ${accent}, ${color}, ${accent}, ${color})`;
+
   const inner = badge.ringStyle === 'rainbow' && unlocked ? (
     // Rainbow-ring tier: outer rotating gradient ring with the badge
     // disc inside.
@@ -106,6 +112,36 @@ export function BadgeIcon({
             fontSize,
             lineHeight: 1,
             boxShadow: baseGlow,
+          }}
+        >
+          {glyphContent}
+        </span>
+      </span>
+    </span>
+  ) : badge.ringStyle === 'medal' && unlocked ? (
+    // Medal tier: a brushed-metal sheen ring (same mechanism as the rainbow
+    // ring) wrapping the medallion disc. Reserved for the BBB podium — a
+    // top-3-overall finish, so it should read far richer than a flat disc.
+    <span
+      className="relative inline-flex items-center justify-center rounded-full select-none"
+      style={{ width: size, height: size }}
+    >
+      <span
+        className="absolute inset-0 rounded-full badge-medal-ring"
+        style={{ padding: ring, background: medalSweep, boxShadow: baseGlow }}
+        aria-hidden
+      >
+        <span
+          className={wrapperClass}
+          aria-label={badge.label}
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '9999px',
+            background,
+            color: '#fff',
+            fontSize,
+            lineHeight: 1,
           }}
         >
           {glyphContent}

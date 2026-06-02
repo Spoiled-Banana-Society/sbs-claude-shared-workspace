@@ -74,9 +74,10 @@ export interface Badge {
   /** When true, the background fill blends color → accentColor. */
   gradient?: boolean;
   /** Ring style. 'solid' (default) is a single border. 'double' adds an
-   *  inner ring for high-tier badges. 'rainbow' uses an animated rainbow
-   *  ring for the rarest. */
-  ringStyle?: 'solid' | 'double' | 'rainbow';
+   *  inner ring for high-tier badges. 'medal' wraps the disc in an animated
+   *  brushed-metal sheen ring (silver/bronze podium medallions). 'rainbow'
+   *  uses an animated rainbow ring for the rarest. */
+  ringStyle?: 'solid' | 'double' | 'medal' | 'rainbow';
   /** Override ring color independently from fill. Useful for HOF-tier
    *  variants of base medals. */
   ringColor?: string;

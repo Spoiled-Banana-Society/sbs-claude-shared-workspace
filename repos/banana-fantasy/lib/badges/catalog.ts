@@ -10,8 +10,10 @@ import type { Badge } from '@/types';
  *  - Every badge has a unique glyph + color combo (no two look the same).
  *  - Champion-tier badges (BBB Champion, HOF Champion, Founder's Pick)
  *    get pulse + double-ring + gradient.
- *  - HOF podium uses gold ring overlay so it reads distinct from BBB
- *    podium even though the medal glyphs match.
+ *  - BBB podium (silver/bronze) uses the 'medal' ring — an animated
+ *    brushed-metal sheen — so a top-3-overall finish reads as a real medallion.
+ *  - HOF podium fills with HOF gold (medal color only as the place accent)
+ *    so it reads as gold-tier at a glance, distinct from the BBB metal medals.
  *  - Rare/special badges (drafts-100, beat-founder) get gradient fills.
  */
 export const BADGE_CATALOG: Badge[] = [
@@ -128,19 +130,27 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'bbb-bronze',
     label: 'BBB Bronze',
-    description: '3rd place in the BBB finals.',
+    description: '3rd place in the BBB finals — top 3 in the entire contest.',
     criteria: 'Finish 3rd in the BBB finals',
     category: 'finals',
-    color: '#cd7f32', // bronze
+    color: '#f3c081',        // bright bronze highlight (metal sheen)
+    accentColor: '#7a4a1e',  // deep bronze shadow
+    gradient: true,
+    ringStyle: 'medal',      // brushed-bronze sheen ring — a real medallion
+    glow: 'soft',
     glyph: '🥉',
   },
   {
     id: 'bbb-silver',
     label: 'BBB Silver',
-    description: '2nd place in the BBB finals.',
+    description: '2nd place in the BBB finals — top 2 in the entire contest.',
     criteria: 'Finish 2nd in the BBB finals',
     category: 'finals',
-    color: '#c0c0c0', // silver
+    color: '#f4f6f8',        // bright silver highlight (metal sheen)
+    accentColor: '#7d8389',  // gunmetal shadow
+    gradient: true,
+    ringStyle: 'medal',      // brushed-silver sheen ring — a real medallion
+    glow: 'soft',
     glyph: '🥈',
   },
   {
@@ -158,28 +168,36 @@ export const BADGE_CATALOG: Badge[] = [
   },
 
   // ── HOF playoffs (weeks 15–17 cumulative) ────────────────────────────
-  // Same medal glyphs as BBB podium, but with a gold ring overlay so
-  // viewers can distinguish "HOF bronze" from "BBB bronze" at a glance.
+  // HOF podium reads as GOLD first (HOF gold fill + bright-gold ring); the
+  // silver/bronze only survives as the gradient accent + medal glyph to mark
+  // the place. This makes "HOF bronze" obviously HOF — not just a BBB bronze
+  // with a thin ring that vanishes at small sizes.
   {
     id: 'hof-bronze',
     label: 'HOF Bronze',
-    description: '3rd place in HOF playoffs.',
+    description: '3rd place in HOF playoffs — a gold-tier finish.',
     criteria: 'Finish 3rd in the HOF playoff bracket',
     category: 'finals',
-    color: '#cd7f32',
-    ringColor: '#D4AF37', // gold ring marks it HOF
+    color: '#D4AF37',        // HOF gold dominant
+    accentColor: '#cd7f32',  // bronze accent marks 3rd place
+    gradient: true,
+    ringColor: '#fde68a',    // bright gold ring
     ringStyle: 'double',
+    glow: 'soft',
     glyph: '🥉',
   },
   {
     id: 'hof-silver',
     label: 'HOF Silver',
-    description: '2nd place in HOF playoffs.',
+    description: '2nd place in HOF playoffs — a gold-tier finish.',
     criteria: 'Finish 2nd in the HOF playoff bracket',
     category: 'finals',
-    color: '#c0c0c0',
-    ringColor: '#D4AF37',
+    color: '#D4AF37',        // HOF gold dominant
+    accentColor: '#c0c0c0',  // silver accent marks 2nd place
+    gradient: true,
+    ringColor: '#fde68a',    // bright gold ring
     ringStyle: 'double',
+    glow: 'soft',
     glyph: '🥈',
   },
   {
