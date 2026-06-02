@@ -62,6 +62,16 @@ export interface StreamEventPayload {
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
+  /**
+   * For the `'notification'` ping: the bell entry's content, so receiving
+   * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
+   * (generic copy — no balances/PII), same bar as the rest of this payload.
+   */
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
 }
 
 /**

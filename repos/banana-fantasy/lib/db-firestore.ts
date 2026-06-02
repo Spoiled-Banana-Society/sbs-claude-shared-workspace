@@ -33,6 +33,7 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { pushStreamEvent } from '@/lib/userEventStream';
+import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
 const USERS_COLLECTION = 'v2_users';
@@ -533,6 +534,19 @@ export async function claimPromo(userId: string, promoId: string) {
         spinsAdded: result.spinsAdded,
       });
     } catch { /* non-fatal */ }
+
+    // Server-side "Promo Claimed!" notification — fired the instant the claim
+    // commits so it reaches every device in real-time (content-carrying ping),
+    // instead of the client firing a second round-trip after the claim returns.
+    if (result.spinsAdded > 0) {
+      const isBuyBonus = result.promo.type === 'buy-bonus';
+      void createNotification(userId, {
+        type: 'promo',
+        title: 'Promo Claimed!',
+        message: `You earned ${result.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${result.spinsAdded !== 1 ? 's' : ''}!`,
+        link: isBuyBonus ? '/drafting' : '/banana-wheel',
+      });
+    }
 
     await logActivityEvent({
       type: 'promo_claimed',

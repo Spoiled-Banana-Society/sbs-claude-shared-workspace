@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { createNotification } from '@/lib/queueNotifications';
+import { pushStreamEvent } from '@/lib/userEventStream';
 
 const COLLECTION = 'marketplace_notifications';
 
@@ -107,6 +108,11 @@ export async function PATCH(req: NextRequest) {
       }
       await batch.commit();
     }
+
+    // Real-time: tell the user's OTHER devices to refetch so read-state (e.g.
+    // "Mark all read" on desktop) clears the bell on mobile near-instantly,
+    // instead of waiting for the 30s poll / next focus.
+    void pushStreamEvent(wallet, 'notification', { source: 'mark-read' });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

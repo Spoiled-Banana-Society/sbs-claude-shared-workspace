@@ -228,7 +228,31 @@ export function useNotifications() {
       if (timer) return;
       timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
     };
-    const unsub = subscribeUserEvents(walletAddress, coalesced);
+    const onEvent = (event: { type: string; timestamp?: number; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
+      // INSTANT render: a content-carrying 'notification' ping for a FRESH
+      // event (just happened) → prepend the entry immediately, no fetch wait.
+      // The freshness gate stops replayed RTDB history (onChildAdded fires for
+      // every existing child on subscribe) from injecting stale entries.
+      const fresh = event.timestamp ? (Date.now() - event.timestamp < 30_000) : false;
+      if (fresh && event.type === 'notification' && event.notifTitle && event.notifId) {
+        const id = event.notifId;
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === id)) return prev; // dedup
+          const entry: Notification = {
+            id,
+            type: (event.notifType as NotificationType) || 'system',
+            title: event.notifTitle as string,
+            message: event.notifMessage || '',
+            read: false,
+            createdAt: new Date().toISOString(),
+            link: event.notifLink || undefined,
+          };
+          return [entry, ...prev];
+        });
+      }
+      coalesced(); // reconcile read-state/ordering shortly after
+    };
+    const unsub = subscribeUserEvents(walletAddress, onEvent);
     const onFocus = () => { if (document.visibilityState !== 'hidden') coalesced(); };
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);

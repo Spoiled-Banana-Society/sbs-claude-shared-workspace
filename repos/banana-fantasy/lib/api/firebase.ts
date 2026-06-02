@@ -221,6 +221,12 @@ export interface UserStreamEvent {
   milestone?: 'verified' | 'bought1' | 'bought10';
   source?: string;
   awardedCount?: number;
+  // For 'notification' pings — the bell entry, for instant render (no refetch).
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
 }
 
 /**

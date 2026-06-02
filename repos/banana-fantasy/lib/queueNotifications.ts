@@ -57,9 +57,11 @@ export async function createNotification(userId: string, n: CreateNotificationIn
       createdAt: FieldValue.serverTimestamp(),
     };
 
+    let docId: string;
     if (n.dedupeKey) {
+      docId = dedupeDocId(wallet, n.dedupeKey);
       try {
-        await col.doc(dedupeDocId(wallet, n.dedupeKey)).create(doc);
+        await col.doc(docId).create(doc);
       } catch (e) {
         // ALREADY_EXISTS (gRPC code 6) → idempotent no-op; do NOT re-ping.
         const code = (e as { code?: number }).code;
@@ -67,11 +69,21 @@ export async function createNotification(userId: string, n: CreateNotificationIn
         throw e;
       }
     } else {
-      await col.add(doc);
+      const ref = await col.add(doc);
+      docId = ref.id;
     }
 
-    // Real-time refetch ping (best-effort, fire-and-forget).
-    void pushStreamEvent(wallet, 'notification', { source: 'createNotification' });
+    // Real-time ping that CARRIES the notification content, so every device
+    // renders it instantly (no GET round-trip). The client still refetches to
+    // reconcile read-state/ordering. Best-effort, fire-and-forget.
+    void pushStreamEvent(wallet, 'notification', {
+      source: 'createNotification',
+      notifId: docId,
+      notifType: n.type,
+      notifTitle: n.title,
+      notifMessage: n.message,
+      notifLink: n.link || '',
+    });
   } catch (err) {
     console.error('[createNotification] failed:', err);
   }

@@ -76,19 +76,11 @@ export function usePromos(opts?: { userId?: string }) {
         // Revalidate in background (keeps everything consistent)
         void mutateRef.current();
 
-        // Notify user of claimed reward (persistent bell entry).
+        // The persistent "Promo Claimed!" bell entry is now created
+        // SERVER-SIDE in claimPromo (real-time content-carrying ping → instant
+        // on every device). Here we only fire the local celebration modal,
+        // which should stay instant on the acting device.
         if (res.spinsAdded > 0) {
-          const isBuyBonus = res.promo?.type === 'buy-bonus';
-          pushNotification({
-            type: 'promo',
-            title: 'Promo Claimed!',
-            message: `You earned ${res.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${res.spinsAdded !== 1 ? 's' : ''}!`,
-            link: isBuyBonus ? '/drafting' : '/banana-wheel',
-          });
-          // Banana-shower celebration modal — fires from any page that
-          // triggers a successful claim (homepage carousel, /promos,
-          // /drafting, /banana-wheel). Central wiring here means no
-          // per-page logic to keep in sync.
           celebrate({ count: res.spinsAdded, promoType: res.promo?.type });
         }
 
