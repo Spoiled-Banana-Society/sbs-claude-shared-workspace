@@ -228,7 +228,12 @@ export function useNotifications() {
       if (timer) return;
       timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
     };
-    const onEvent = (event: { type: string; timestamp?: number; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
+    const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
+      // DIAGNOSTIC: server-fire → client-receive latency for cross-device sync.
+      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'bell.ping.recv', {
+        type: event.type, src: event.source ?? null,
+        ageMs: event.timestamp ? Date.now() - event.timestamp : null,
+      })).catch(() => {});
       // INSTANT render: a content-carrying 'notification' ping for a FRESH
       // event (just happened) → prepend the entry immediately, no fetch wait.
       // The freshness gate stops replayed RTDB history (onChildAdded fires for
