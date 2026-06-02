@@ -27,6 +27,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const { user, walletAddress } = useAuth();
   const {
     createProfile,
+    updateProfile,
     completeOnboarding,
     setCurrentStep,
     isNewUser,
@@ -104,8 +105,15 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     }
     setNameError(null);
     try {
+      // Persist the name/avatar immediately on Continue. createProfile (new
+      // users) and updateProfile (existing users) both PUT/POST to the backend
+      // AND call updateUser, which refreshes the in-memory user + localStorage
+      // so the home page reflects the change without a manual refresh. Existing
+      // users previously fell through here saving nothing, so edits were lost.
       if (isNewUser) {
         await createProfile(trimmed, avatarPreview);
+      } else {
+        await updateProfile(trimmed, avatarPreview);
       }
       advanceSection();
     } catch {
