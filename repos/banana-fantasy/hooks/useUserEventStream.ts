@@ -31,7 +31,6 @@ import { BADGE_BY_ID } from '@/lib/badges/catalog';
  */
 
 const STREAM_SEEN_PREFIX = 'sbs-stream-seen';
-const FRESHNESS_WINDOW_MS = 5 * 60_000; // events older than this are silently absorbed (initial-load history)
 const MAX_SEEN_IDS_RETAINED = 500;       // cap localStorage growth
 
 function seenKey(userId: string) {
@@ -248,25 +247,32 @@ export function useUserEventStream() {
   useEffect(() => {
     if (!user?.id) return;
     const userId = user.id.toLowerCase();
+    // Only toast events that fire AFTER we subscribe (genuinely LIVE). On
+    // subscribe, onChildAdded replays the last N existing children (limitToLast)
+    // — those fired before now, so `event.timestamp < subscribedAt` and we skip
+    // them. This kills the "replay noise" that made toasts feel random (a toast
+    // for something that happened 20s ago, mixed with live ones). 3s grace
+    // absorbs minor client/server clock skew (observed deliveries are ~10-300ms).
+    const subscribedAt = Date.now() - 3000;
 
     const unsub = subscribeUserEvents(userId, (event) => {
       // Dedup: every event has a stable eventId; ignore if already shown.
       const seen = readSeen(userId);
       const isSeen = seen.has(event.eventId);
       const ageMs = Date.now() - (event.timestamp ?? 0);
-      const stale = Number.isFinite(ageMs) && ageMs > FRESHNESS_WINDOW_MS;
+      // "Replayed history" = fired before we subscribed. Skip (no toast) but
+      // still mark seen so we never reconsider it.
+      const replayed = (event.timestamp ?? 0) < subscribedAt;
+      const stale = replayed;
       const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
       // DIAGNOSTIC: why a toast did/didn't show for each event.
       import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.event', {
-        type: event.type, ageMs, seen: isSeen, stale, inDraftRoom,
+        type: event.type, ageMs, seen: isSeen, replayed, inDraftRoom,
       })).catch(() => {});
 
       if (isSeen) return;
 
-      // Freshness: on initial subscribe, onChildAdded fires for ALL
-      // existing children. Without this filter we'd re-celebrate every
-      // historical event every time the user opens the app. 5min keeps
-      // the window forgiving for slow network / late deliveries.
+      // Live-only: skip replayed history (fired before subscribe).
       if (stale) {
         addSeen(userId, event.eventId); // mark seen so we don't re-check next mount
         return;
