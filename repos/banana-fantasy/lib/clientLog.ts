@@ -51,6 +51,23 @@ export function setClientLogWallet(w: string | undefined | null) {
 }
 
 /**
+ * Short device label for diagnostics so logs can distinguish mobile vs desktop
+ * and installed-PWA vs browser-tab (e.g. "mob-pwa", "mob", "desk").
+ */
+export function deviceTag(): string {
+  if (typeof navigator === 'undefined') return 'ssr';
+  const ua = navigator.userAgent || '';
+  const isMobile = /iphone|ipad|ipod|android/i.test(ua);
+  let standalone = false;
+  try {
+    standalone = (typeof window !== 'undefined')
+      && (window.matchMedia?.('(display-mode: standalone)').matches
+        || (window.navigator as Navigator & { standalone?: boolean }).standalone === true);
+  } catch { /* ignore */ }
+  return `${isMobile ? 'mob' : 'desk'}${standalone ? '-pwa' : ''}`;
+}
+
+/**
  * The current debug session id — shared with reportClientError so an
  * error in v2_error_events can be tied back to this session's full
  * breadcrumb trace in v2_debug_events. Returns '' server-side.

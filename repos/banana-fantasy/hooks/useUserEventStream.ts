@@ -266,8 +266,8 @@ export function useUserEventStream() {
       const stale = replayed;
       const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
       // DIAGNOSTIC: why a toast did/didn't show for each event.
-      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.event', {
-        type: event.type, ageMs, seen: isSeen, replayed, inDraftRoom,
+      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'toast.event', {
+        type: event.type, ageMs, seen: isSeen, replayed, inDraftRoom, dev: deviceTag(),
       })).catch(() => {});
 
       if (isSeen) return;
@@ -281,7 +281,7 @@ export function useUserEventStream() {
       const surfaces: Surfaces = {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
-          import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.shown', { type: event.type })).catch(() => {});
+          import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'toast.shown', { type: event.type, dev: deviceTag() })).catch(() => {});
           showRef.current({
             level: 'success',
             message,

@@ -230,9 +230,10 @@ export function useNotifications() {
     };
     const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
       // DIAGNOSTIC: server-fire → client-receive latency for cross-device sync.
-      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'bell.ping.recv', {
+      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'bell.ping.recv', {
         type: event.type, src: event.source ?? null,
         ageMs: event.timestamp ? Date.now() - event.timestamp : null,
+        dev: deviceTag(),
       })).catch(() => {});
       // INSTANT render: a content-carrying 'notification' ping for a FRESH
       // event (just happened) → prepend the entry immediately, no fetch wait.
@@ -295,14 +296,14 @@ export function useNotifications() {
     setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
     const w = walletRef.current;
     // DIAGNOSTIC: did read-all fire, and with a wallet?
-    import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w })).catch(() => {});
+    import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w, dev: deviceTag() })).catch(() => {});
     if (!w) return;
     void fetch('/api/marketplace/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet: w, all: true }),
     })
-      .then((r) => { import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'markAllRead.patch', { ok: r.ok, status: r.status })).catch(() => {}); })
+      .then((r) => { import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead.patch', { ok: r.ok, status: r.status, dev: deviceTag() })).catch(() => {}); })
       .catch(() => refetchRef.current());
   }, []);
 
