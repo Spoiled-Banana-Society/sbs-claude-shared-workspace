@@ -102,7 +102,7 @@ export function AvatarWithBadge({
             height: badgeSize,
           }}
         >
-          <BadgeIcon badge={badge} size={badgeSize} unlocked />
+          <BadgeIcon badge={badge} size={badgeSize} unlocked plain showTooltip={false} />
         </span>
       )}
     </div>

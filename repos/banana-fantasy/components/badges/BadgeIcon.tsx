@@ -10,6 +10,15 @@ interface BadgeIconProps {
   unlocked?: boolean; // greys it out + shows criteria tooltip when false
   showTooltip?: boolean; // wrap in <Tooltip>; default true
   ringWidth?: number; // outer ring width in px; default scales with size
+  /**
+   * Compact/static rendering for tiny contexts (avatar-corner overlays in
+   * the header, profile, and draft-room cards). Skips the animated
+   * rainbow/medal/double rings and the pulse glow — at ~14px those, plus a
+   * fixed 10px glow halo nearly the badge's own size, read as a doubled /
+   * "split" badge. Renders a clean single-ring disc with a glow that scales
+   * with the badge size.
+   */
+  plain?: boolean;
 }
 
 const LOCKED_GREY = '#4b5563';
@@ -36,6 +45,7 @@ export function BadgeIcon({
   unlocked = true,
   showTooltip = true,
   ringWidth,
+  plain = false,
 }: BadgeIconProps) {
   // Multi-character glyphs (e.g. NFL team 3-letter codes) need a smaller
   // font so they fit inside the disc; single-char glyphs keep the larger
@@ -77,9 +87,14 @@ export function BadgeIcon({
         : `0 0 4px ${color}44`
     : 'none';
 
-  const wrapperClass = unlocked && badge.glow === 'pulse'
+  const wrapperClass = unlocked && badge.glow === 'pulse' && !plain
     ? 'inline-flex items-center justify-center select-none badge-pulse'
     : 'inline-flex items-center justify-center select-none';
+
+  // In plain mode the disc carries a soft glow that scales with the badge
+  // (so a 14px avatar emblem gets a ~2-3px halo, not the fixed 10px pulse
+  // halo that swamps it). Falls back to baseGlow at normal sizes.
+  const plainGlow = unlocked ? `0 0 ${Math.max(2, Math.round(size * 0.16))}px ${color}99` : 'none';
 
   // Brushed-metal sweep used by the 'medal' ring style. Built from the
   // badge's own color (highlight) + accent (shadow) so silver reads silver
@@ -87,7 +102,7 @@ export function BadgeIcon({
   // living polished-metal sheen.
   const medalSweep = `linear-gradient(90deg, ${color}, ${accent}, ${color}, ${accent}, ${color})`;
 
-  const inner = badge.ringStyle === 'rainbow' && unlocked ? (
+  const inner = badge.ringStyle === 'rainbow' && unlocked && !plain ? (
     // Rainbow-ring tier: outer rotating gradient ring with the badge
     // disc inside.
     <span
@@ -118,7 +133,7 @@ export function BadgeIcon({
         </span>
       </span>
     </span>
-  ) : badge.ringStyle === 'medal' && unlocked ? (
+  ) : badge.ringStyle === 'medal' && unlocked && !plain ? (
     // Medal tier: a brushed-metal sheen ring (same mechanism as the rainbow
     // ring) wrapping the medallion disc. Reserved for the BBB podium — a
     // top-3-overall finish, so it should read far richer than a flat disc.
@@ -148,7 +163,7 @@ export function BadgeIcon({
         </span>
       </span>
     </span>
-  ) : badge.ringStyle === 'double' && unlocked ? (
+  ) : badge.ringStyle === 'double' && unlocked && !plain ? (
     // Double-ring tier: outer ring + inset inner badge with a small gap
     // so it looks like a medallion.
     <span
@@ -193,7 +208,7 @@ export function BadgeIcon({
         color: unlocked ? '#fff' : LOCKED_GREY,
         fontSize,
         lineHeight: 1,
-        boxShadow: baseGlow,
+        boxShadow: plain ? plainGlow : baseGlow,
         opacity: unlocked ? 1 : 0.55,
         filter: unlocked ? undefined : 'grayscale(0.6)',
       }}
