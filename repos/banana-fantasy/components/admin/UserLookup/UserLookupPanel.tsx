@@ -19,6 +19,7 @@ import { UserSearchInput } from './UserSearchInput';
 import { HealthSummary } from './HealthSummary';
 import { NotesSection } from './NotesSection';
 import { IdentityCard } from './IdentityCard';
+import { FirstPurchaseFlowCard } from './FirstPurchaseFlowCard';
 import { NotificationsSection } from './NotificationsSection';
 import { PassesDraftsSection } from './PassesDraftsSection';
 import { PaymentsSection } from './PaymentsSection';
@@ -118,6 +119,10 @@ export function UserLookupPanel({ enabled }: { enabled: boolean }) {
                 isSectionFail(lookup.data.identity) ? null : lookup.data.identity
               }
               walletShort={lookup.data.walletShort}
+              returning={returningSet.has(wallet.toLowerCase())}
+            />
+            <FirstPurchaseFlowCard
+              identity={isSectionFail(lookup.data.identity) ? null : lookup.data.identity}
               returning={returningSet.has(wallet.toLowerCase())}
             />
             <ActivitySection

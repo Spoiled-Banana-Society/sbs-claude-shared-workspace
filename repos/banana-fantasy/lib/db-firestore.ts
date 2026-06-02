@@ -33,6 +33,7 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { pushStreamEvent } from '@/lib/userEventStream';
+import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
 const USERS_COLLECTION = 'v2_users';
@@ -359,6 +360,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         if (seed.modalContent.explanation !== undefined) {
           promo.modalContent.explanation = seed.modalContent.explanation;
         }
+        if (seed.modalContent.additionalRules !== undefined) {
+          promo.modalContent.additionalRules = seed.modalContent.additionalRules;
+        }
       }
     }
     // Inject real twitterConnected status for promos that depend on it
@@ -530,6 +534,19 @@ export async function claimPromo(userId: string, promoId: string) {
         spinsAdded: result.spinsAdded,
       });
     } catch { /* non-fatal */ }
+
+    // Server-side "Promo Claimed!" notification — fired the instant the claim
+    // commits so it reaches every device in real-time (content-carrying ping),
+    // instead of the client firing a second round-trip after the claim returns.
+    if (result.spinsAdded > 0) {
+      const isBuyBonus = result.promo.type === 'buy-bonus';
+      void createNotification(userId, {
+        type: 'promo',
+        title: 'Promo Claimed!',
+        message: `You earned ${result.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${result.spinsAdded !== 1 ? 's' : ''}!`,
+        link: isBuyBonus ? '/drafting' : '/banana-wheel',
+      });
+    }
 
     await logActivityEvent({
       type: 'promo_claimed',
@@ -953,6 +970,10 @@ export async function incrementMintPromos(
       awardedCount: result.mintMilestonesEarned,
     });
   }
+  // Always nudge the user's devices to refetch promos so the mint progress
+  // box (e.g. 9/10) syncs in real-time across devices on EVERY purchase, not
+  // just when a milestone is hit. (usePromos refetches on any stream ping.)
+  void pushStreamEvent(userId, 'notification', { source: 'purchase' });
   return result;
 }
 
@@ -1228,6 +1249,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       awardedCount: _mintMilestonesForPostCommitPush,
     });
   }
+  // Always nudge devices to refetch promos so mint progress (e.g. 9/10) syncs
+  // in real-time on every purchase, not just at a milestone.
+  void pushStreamEvent(prePurchase.userId, 'notification', { source: 'purchase' });
 
   return txResult;
 }

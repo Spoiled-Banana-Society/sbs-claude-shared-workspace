@@ -7,6 +7,7 @@ import { pushNotification } from '@/components/NotificationCenter';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
+import { subscribeUserEvents } from '@/lib/api/firebase';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -38,6 +39,15 @@ export function usePromos(opts?: { userId?: string }) {
   useEffect(() => {
     // keep local promos in sync with SWR source when it changes
     setLocalPromos(swr.data);
+    // DIAGNOSTIC: when fresh promo data lands, log the mint progress so we can
+    // see end-to-end latency (ping.recv → data rendered) vs delivery latency.
+    const mint = swr.data?.find((p) => p.type === 'mint');
+    if (mint) {
+      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'promos.data', {
+        mintProgress: mint.progressCurrent ?? null,
+        totalMinted: mint.modalContent?.totalMinted ?? null,
+      })).catch(() => {});
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swr.data]);
 
@@ -76,19 +86,11 @@ export function usePromos(opts?: { userId?: string }) {
         // Revalidate in background (keeps everything consistent)
         void mutateRef.current();
 
-        // Notify user of claimed reward (persistent bell entry).
+        // The persistent "Promo Claimed!" bell entry is now created
+        // SERVER-SIDE in claimPromo (real-time content-carrying ping → instant
+        // on every device). Here we only fire the local celebration modal,
+        // which should stay instant on the acting device.
         if (res.spinsAdded > 0) {
-          const isBuyBonus = res.promo?.type === 'buy-bonus';
-          pushNotification({
-            type: 'promo',
-            title: 'Promo Claimed!',
-            message: `You earned ${res.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${res.spinsAdded !== 1 ? 's' : ''}!`,
-            link: isBuyBonus ? '/drafting' : '/banana-wheel',
-          });
-          // Banana-shower celebration modal — fires from any page that
-          // triggers a successful claim (homepage carousel, /promos,
-          // /drafting, /banana-wheel). Central wiring here means no
-          // per-page logic to keep in sync.
           celebrate({ count: res.spinsAdded, promoType: res.promo?.type });
         }
 
@@ -161,17 +163,36 @@ export function usePromos(opts?: { userId?: string }) {
 
   const refreshPromos = useCallback(() => mutateRef.current(), []);
 
-  // Refetch promos when the tab becomes visible and poll every 60s for updates.
+  // Keep all promo boxes (progress, claimable, etc.) live across devices:
+  //  - real-time refetch on any user-event stream ping (purchases fire one),
+  //    coalesced to one refetch per ~300ms burst (render-loop safe — deps are
+  //    scalar, mutate is in a ref),
+  //  - instant refetch on focus/visibility (covers "buy on desktop, look at phone"),
+  //  - 60s poll as a backstop.
   useEffect(() => {
     const refetch = () => { void mutateRef.current(); };
-    const onVisibility = () => { if (document.visibilityState === 'visible') refetch(); };
-    document.addEventListener('visibilitychange', onVisibility);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => { if (timer) return; timer = setTimeout(() => { timer = null; refetch(); }, 300); };
+    const onVisible = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
     const interval = setInterval(refetch, 60_000);
+    const unsub = userId ? subscribeUserEvents(userId, (event) => {
+      // DIAGNOSTIC: measure server-fire → client-receive latency per device.
+      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'promos.ping.recv', {
+        type: event.type, src: event.source ?? null,
+        ageMs: event.timestamp ? Date.now() - event.timestamp : null,
+      })).catch(() => {});
+      coalesced();
+    }) : () => {};
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
       clearInterval(interval);
+      if (timer) clearTimeout(timer);
+      try { unsub(); } catch { /* ignore */ }
     };
-  }, []);
+  }, [userId]);
 
   return {
     ...swr,

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
 // App-wide popup introducing the first-purchase bonus to NEW users (not BB3
 // returning players). It opens once, after the user finishes their welcome-
@@ -10,12 +11,14 @@ import { useAuth } from '@/hooks/useAuth';
 // (CustomEvent 'sbs-first-purchase-unlocked' from useUserEventStream) and, as
 // a reload-safe fallback, by the persisted `user.firstPurchasePromoUnlocked`
 // flag. Returning (BB3) players and anyone who already purchased never see it.
-const seenKey = (wallet?: string) => `sbs-first-purchase-promo-seen-${wallet ?? 'anon'}`;
+// The "seen" flag is account-synced so dismissing it on one device keeps it
+// dismissed everywhere.
 
 export function FirstPurchasePromoModal() {
   const { user, isBB3Holder, isLoggedIn } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [seen, setSeen, seenLoaded] = useSyncedFlag<boolean>('firstPurchasePromoSeen', false);
 
   const wallet = user?.walletAddress;
 
@@ -23,9 +26,9 @@ export function FirstPurchasePromoModal() {
     if (!isLoggedIn || !wallet) return false;
     if (isBB3Holder) return false; // returning players: no popup
     if (user?.firstPurchaseBonusGranted) return false; // already purchased
-    if (typeof window !== 'undefined' && window.localStorage.getItem(seenKey(wallet))) return false;
+    if (!seenLoaded || seen) return false; // wait for synced flag; skip if already seen on any device
     return true;
-  }, [isLoggedIn, wallet, isBB3Holder, user?.firstPurchaseBonusGranted]);
+  }, [isLoggedIn, wallet, isBB3Holder, user?.firstPurchaseBonusGranted, seen, seenLoaded]);
 
   // Live trigger: the server fired first-purchase-unlocked while we're open.
   useEffect(() => {
@@ -43,11 +46,9 @@ export function FirstPurchasePromoModal() {
   }, [user?.firstPurchasePromoUnlocked, eligible]);
 
   const dismiss = useCallback(() => {
-    if (typeof window !== 'undefined' && wallet) {
-      window.localStorage.setItem(seenKey(wallet), '1');
-    }
+    setSeen(true);
     setOpen(false);
-  }, [wallet]);
+  }, [setSeen]);
 
   if (!open) return null;
 

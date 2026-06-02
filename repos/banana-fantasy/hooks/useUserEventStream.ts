@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
-import { pushNotification } from '@/components/NotificationCenter';
 import { subscribeUserEvents, type UserStreamEvent } from '@/lib/api/firebase';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
@@ -269,9 +268,12 @@ export function useUserEventStream() {
             ...(link ? { action: { label: 'View', onClick: () => { window.location.href = link; } } } : {}),
           });
         },
-        pushNotif: (title, message, link, dedupeKey) => {
-          pushNotification({ type: 'promo', title, message, link, dedupeKey });
-        },
+        // No-op: the persistent bell entry is now created SERVER-SIDE in
+        // pushStreamEvent (lib/userEventStream.ts → createNotification), so
+        // it's account-synced across devices. This hook only drives the
+        // ephemeral, per-device toast. (renderEvent still calls pushNotif;
+        // keeping it a no-op avoids touching every case.)
+        pushNotif: () => {},
       };
 
       renderEvent(event, surfaces);

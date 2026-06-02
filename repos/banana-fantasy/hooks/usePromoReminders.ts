@@ -62,6 +62,7 @@ export function usePromoReminders(promos: Promo[]) {
             title: 'New Promo Available!',
             message: promo.title,
             link: `/promos?promo=${encodeURIComponent(promo.id)}`,
+            dedupeKey: key,
           });
           markReminded(key);
         }
@@ -80,6 +81,7 @@ export function usePromoReminders(promos: Promo[]) {
             title: 'Ready to Claim!',
             message: `${promo.title} — your reward is waiting.`,
             link: `/promos?promo=${encodeURIComponent(promo.id)}`,
+            dedupeKey: key,
           });
           markReminded(key);
         }
@@ -111,6 +113,7 @@ export function usePromoReminders(promos: Promo[]) {
               title: 'Last Chance!',
               message: `Draft ${drafts} more before the timer resets to claim your free spin.`,
               link: promo.ctaLink || '/drafting',
+              dedupeKey: key,
             });
             markReminded(key);
           }

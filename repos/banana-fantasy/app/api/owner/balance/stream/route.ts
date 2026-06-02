@@ -26,6 +26,7 @@ interface BalancePayload {
   // free drafts. Without these on the client the first-purchase flow is blind.
   firstPurchaseBonusGranted: boolean;
   firstPurchasePromoUnlocked: boolean;
+  hasSpunWheel: boolean;
 }
 
 function buildPayload(data: Record<string, unknown> | undefined): BalancePayload {
@@ -42,6 +43,7 @@ function buildPayload(data: Record<string, unknown> | undefined): BalancePayload
     cardFeeCreditCents: nonNeg(d.cardFeeCreditCents),
     firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
+    hasSpunWheel: !!d.hasSpunWheel,
   };
 }
 
@@ -71,7 +73,7 @@ export async function GET(req: Request) {
     // Degraded mode: send one empty snapshot and close.
     const empty: BalancePayload = {
       wheelSpins: 0, freeDrafts: 0, jackpotEntries: 0, hofEntries: 0, draftPasses: 0, cardPurchaseCount: 0, cardFeeCreditCents: 0,
-      firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false,
+      firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: false, hasSpunWheel: false,
     };
     const stream = new ReadableStream({
       start(controller) {
