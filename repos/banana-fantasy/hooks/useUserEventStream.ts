@@ -245,23 +245,30 @@ export function useUserEventStream() {
     const unsub = subscribeUserEvents(userId, (event) => {
       // Dedup: every event has a stable eventId; ignore if already shown.
       const seen = readSeen(userId);
-      if (seen.has(event.eventId)) return;
+      const isSeen = seen.has(event.eventId);
+      const ageMs = Date.now() - (event.timestamp ?? 0);
+      const stale = Number.isFinite(ageMs) && ageMs > FRESHNESS_WINDOW_MS;
+      const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
+      // DIAGNOSTIC: why a toast did/didn't show for each event.
+      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.event', {
+        type: event.type, ageMs, seen: isSeen, stale, inDraftRoom,
+      })).catch(() => {});
+
+      if (isSeen) return;
 
       // Freshness: on initial subscribe, onChildAdded fires for ALL
       // existing children. Without this filter we'd re-celebrate every
       // historical event every time the user opens the app. 5min keeps
       // the window forgiving for slow network / late deliveries.
-      const ageMs = Date.now() - (event.timestamp ?? 0);
-      if (Number.isFinite(ageMs) && ageMs > FRESHNESS_WINDOW_MS) {
+      if (stale) {
         addSeen(userId, event.eventId); // mark seen so we don't re-check next mount
         return;
       }
 
-      const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
-
       const surfaces: Surfaces = {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
+          import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.shown', { type: event.type })).catch(() => {});
           show({
             level: 'success',
             message,

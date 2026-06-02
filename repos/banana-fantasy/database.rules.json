@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "drafts": {
+      "$draftId": {
+        "realTimeDraftInfo": { ".read": true, ".write": false },
+        "numPlayers": { ".read": true, ".write": false },
+        "randomizeStartAt": { ".read": true, ".write": false },
+        "displayName": { ".read": true, ".write": false }
+      }
+    },
+    "userEvents": {
+      "$userId": { ".read": true, ".write": false }
+    }
+  }
+}

@@ -294,12 +294,16 @@ export function useNotifications() {
   const markAllRead = useCallback(() => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
     const w = walletRef.current;
+    // DIAGNOSTIC: did read-all fire, and with a wallet?
+    import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w })).catch(() => {});
     if (!w) return;
     void fetch('/api/marketplace/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet: w, all: true }),
-    }).catch(() => refetchRef.current());
+    })
+      .then((r) => { import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'markAllRead.patch', { ok: r.ok, status: r.status })).catch(() => {}); })
+      .catch(() => refetchRef.current());
   }, []);
 
   // Persist server-side; the resulting 'notification' ping refetches the bell.
