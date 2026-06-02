@@ -676,23 +676,8 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
             </div>
           )}
 
-          {/* Navigation buttons */}
-          <div className="mt-6 flex items-center justify-center gap-3">
-            {sectionIndex > 0 && (
-              <button
-                onClick={goBack}
-                className="px-6 py-3 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
-              >
-                ← Back
-              </button>
-            )}
-            <button
-              onClick={advanceSection}
-              className="px-8 py-3 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
-            >
-              Next →
-            </button>
-          </div>
+          {/* Back/Next live in the fixed bottom bar (always visible, no
+              scroll) — see the footer below. */}
         </div>
       );
     }
@@ -891,8 +876,19 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         </div>
       </div>
 
-      {/* Fixed progress bar at bottom */}
-      <div className="flex-shrink-0 py-5 flex justify-center z-20">
+      {/* Fixed bottom bar — always visible regardless of scroll. On content
+          sections, Back/Next flank the progress dots (left/right of the
+          "yellow things"). Intro/profile/ready keep their own primary CTAs. */}
+      <div className="flex-shrink-0 py-5 px-6 flex items-center justify-center gap-4 sm:gap-6 z-20">
+        {currentSection?.type === 'section' && (
+          <button
+            onClick={goBack}
+            className="px-4 sm:px-6 py-2.5 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
+          >
+            ← Back
+          </button>
+        )}
+
         <div className="flex gap-2">
           {sections.map((_, i) => (
             <div
@@ -907,6 +903,15 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
             />
           ))}
         </div>
+
+        {currentSection?.type === 'section' && (
+          <button
+            onClick={advanceSection}
+            className="px-5 sm:px-8 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
+          >
+            Next →
+          </button>
+        )}
       </div>
     </div>
   );
