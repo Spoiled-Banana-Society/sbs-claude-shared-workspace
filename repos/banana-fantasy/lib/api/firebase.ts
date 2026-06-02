@@ -212,7 +212,9 @@ export interface UserStreamEvent {
     | 'promo-first-purchase'
     | 'first-purchase-unlocked'
     | 'referral-milestone'
-    | 'promo-card-free-draft';
+    | 'promo-card-free-draft'
+    // Content-less refetch ping for the server-backed notification bell.
+    | 'notification';
   timestamp: number;
   draftId?: string;
   badgeId?: string;

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { createNotification } from '@/lib/queueNotifications';
 
 const COLLECTION = 'marketplace_notifications';
 
-// GET /api/marketplace/notifications?wallet=0x...
-// Fetches unread notifications for the given wallet
+// Max notifications returned in the full (read+unread) inbox view.
+const INBOX_LIMIT = 50;
+
+// GET /api/marketplace/notifications?wallet=0x...[&all=1]
+// Default: unread only (legacy callers). all=1: read+unread inbox (the bell).
 export async function GET(req: NextRequest) {
   const wallet = req.nextUrl.searchParams.get('wallet');
   if (!wallet) {
@@ -16,14 +19,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ notifications: [] });
   }
 
+  const includeRead = req.nextUrl.searchParams.get('all') === '1'
+    || req.nextUrl.searchParams.get('includeRead') === '1';
+
   try {
     const db = getAdminFirestore();
-    const snapshot = await db
+    let query = db
       .collection(COLLECTION)
-      .where('wallet', '==', wallet.toLowerCase())
-      .where('read', '==', false)
+      .where('wallet', '==', wallet.toLowerCase());
+
+    // Unread-only is the legacy default; the bell passes all=1 for read-state sync.
+    if (!includeRead) query = query.where('read', '==', false);
+
+    const snapshot = await query
       .orderBy('createdAt', 'desc')
-      .limit(20)
+      .limit(includeRead ? INBOX_LIMIT : 20)
       .get();
 
     const notifications = snapshot.docs.map(doc => ({
@@ -40,7 +50,8 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/marketplace/notifications
-// Creates a notification for a specific wallet
+// Creates a notification for a specific wallet (delegates to the hub for
+// cross-device dedupe + real-time ping).
 export async function POST(req: NextRequest) {
   if (!isFirestoreConfigured()) {
     return NextResponse.json({ ok: true });
@@ -48,22 +59,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { wallet, type, title, message, link } = body;
+    const { wallet, type, title, message, link, dedupeKey } = body;
 
     if (!wallet || !type || !title || !message) {
       return NextResponse.json({ error: 'wallet, type, title, and message are required' }, { status: 400 });
     }
 
-    const db = getAdminFirestore();
-    await db.collection(COLLECTION).add({
-      wallet: wallet.toLowerCase(),
-      type,
-      title,
-      message,
-      link: link || null,
-      read: false,
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    await createNotification(wallet, { type, title, message, link, dedupeKey });
 
     return NextResponse.json({ ok: true });
   } catch (err) {
