@@ -881,13 +881,18 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
       </button>
 
       {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto flex items-center justify-center px-6 pt-24 pb-12">
-        <div
-          className={`relative z-10 w-full max-w-2xl transition-all duration-300 ${
-            isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
-          }`}
-        >
-          {renderSection()}
+      {/* Outer scrolls; inner min-h-full centers short slides but grows
+          (top-aligned, fully scrollable) for tall slides so the heading
+          above tall content like the slot-machine slide is never clipped. */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="min-h-full flex items-center justify-center px-6 pt-24 pb-12">
+          <div
+            className={`relative z-10 w-full max-w-2xl transition-all duration-300 ${
+              isVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+            }`}
+          >
+            {renderSection()}
+          </div>
         </div>
       </div>
 
