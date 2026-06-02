@@ -229,7 +229,7 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
 }
 
 export function useUserEventStream() {
-  const { user } = useAuth();
+  const { walletAddress } = useAuth();
   const { show } = useToast();
   const pathname = usePathname();
   // Latest pathname in a ref so the (rarely-rebuilt) subscription
@@ -245,8 +245,13 @@ export function useUserEventStream() {
   showRef.current = show;
 
   useEffect(() => {
-    if (!user?.id) return;
-    const userId = user.id.toLowerCase();
+    // Subscribe by WALLET ADDRESS (not user.id). user.id is the wallet only
+    // when the backend lookup succeeds; on fallback it's the Privy DID, which
+    // the server never writes events to → toasts silently break on that device.
+    // walletAddress is always the wallet the server keys events by (same as the
+    // bell, which is why the bell is reliable).
+    if (!walletAddress) return;
+    const userId = walletAddress.toLowerCase();
     // Only toast events that fire AFTER we subscribe (genuinely LIVE). On
     // subscribe, onChildAdded replays the last N existing children (limitToLast)
     // — those fired before now, so `event.timestamp < subscribedAt` and we skip
@@ -303,5 +308,5 @@ export function useUserEventStream() {
     return () => {
       try { unsub(); } catch { /* ignore */ }
     };
-  }, [user?.id]);
+  }, [walletAddress]);
 }

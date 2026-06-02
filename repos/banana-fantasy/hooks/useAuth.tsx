@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
-import { ApiError as ClientApiError } from '@/lib/api/client';
+import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -551,7 +551,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ? savedProfile.username
             : undefined;
           const fallbackUser: User = {
-            id: privy.user!.id,
+            // Use the WALLET as the id (matching the normal getOwnerUser path),
+            // NOT the Privy DID. Other code keys per-user data + real-time
+            // streams off user.id; a DID here points them at a channel the
+            // server never writes to, silently breaking notifications/promos.
+            id: walletAddress ? normalizeWalletAddress(walletAddress) : privy.user!.id,
             username: safeSavedName || defaultDisplayName(walletAddress),
             walletAddress,
             loginMethod,
