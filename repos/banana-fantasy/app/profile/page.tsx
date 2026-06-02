@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 import { useExportWallet } from '@privy-io/react-auth';
 import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
@@ -49,8 +50,8 @@ export default function ProfilePage() {
     }
   }, [searchParams]);
 
-  const PROMO_KEY = 'sbs-first-draft-promo-claimed';
-  const promoClaimed = typeof window !== 'undefined' && localStorage.getItem(PROMO_KEY) === 'true';
+  // Account-synced first-draft promo claim state.
+  const [promoClaimed] = useSyncedFlag<boolean>('firstDraftPromoClaimed', false);
 
   // Not logged in
   if (authLoading) {
