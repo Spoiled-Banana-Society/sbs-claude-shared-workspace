@@ -359,6 +359,9 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         if (seed.modalContent.explanation !== undefined) {
           promo.modalContent.explanation = seed.modalContent.explanation;
         }
+        if (seed.modalContent.additionalRules !== undefined) {
+          promo.modalContent.additionalRules = seed.modalContent.additionalRules;
+        }
       }
     }
     // Inject real twitterConnected status for promos that depend on it
