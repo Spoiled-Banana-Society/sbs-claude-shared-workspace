@@ -258,8 +258,16 @@ export function subscribeUserEvents(
   }
 
   const r = ref(db, `/userEvents/${userId.toLowerCase()}`);
+  // CRITICAL: constrain to the most recent events. `/userEvents/{wallet}` is
+  // an append-only log that's never trimmed, so a plain onChildAdded would
+  // replay the ENTIRE history on every load — on an active wallet that backlog
+  // (bandwidth + per-child processing) delays delivery of NEW events by
+  // seconds, which is exactly the cross-device lag we were chasing. limitToLast
+  // gives a tiny initial window + every new event instantly. The caller's
+  // freshness gate (timestamp window) drops any old ones in that small window.
+  const q = query(r, limitToLast(15));
   const unsub = onChildAdded(
-    r,
+    q,
     (snapshot) => {
       const val = snapshot.val();
       if (!val || typeof val !== 'object') return;
