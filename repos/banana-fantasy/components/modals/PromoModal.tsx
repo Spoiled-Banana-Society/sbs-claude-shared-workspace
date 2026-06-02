@@ -610,7 +610,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               <p className="text-sm text-text-muted">Connect to claim</p>
             )}
             {twitterError && (
-              <p className="text-sm text-error mt-1">{twitterError}</p>
+              <p className="text-sm font-bold text-error mt-1 leading-snug">⚠️ {twitterError}</p>
             )}
           </div>
           {!verified && (

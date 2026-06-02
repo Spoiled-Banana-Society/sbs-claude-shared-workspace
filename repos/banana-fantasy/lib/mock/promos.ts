@@ -84,6 +84,7 @@ export const mockPromos: Promo[] = [
     modalContent: {
       title: 'New User Bonus SPIN',
       explanation: 'Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.',
+      additionalRules: 'One account per person. Creating more than one account is not allowed — if you have multiple accounts you are NOT eligible to win prizes. We verify your X/Twitter to keep play fair for everyone, so each X account can only be linked to a single account.',
       twitterConnected: false,
     },
   },
