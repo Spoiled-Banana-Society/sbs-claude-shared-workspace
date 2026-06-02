@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClientState, setClientFlag, type ClientStateValue } from '@/lib/clientState';
+import { pushStreamEvent } from '@/lib/userEventStream';
 
 // GET /api/user/client-state?wallet=0x...
 // Returns the per-user client-state flag map (synced across devices).
@@ -20,6 +21,10 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'wallet and key required' }, { status: 400 });
     }
     await setClientFlag(wallet, key, (body.value ?? null) as ClientStateValue);
+    // Real-time: nudge the user's other devices to reload client-state so
+    // synced flags (e.g. the league chat unread badge) update near-instantly,
+    // not just on focus/reload. Reuses the content-less 'notification' ping.
+    void pushStreamEvent(wallet, 'notification', { source: 'client-state' });
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[client-state] PATCH error:', err);

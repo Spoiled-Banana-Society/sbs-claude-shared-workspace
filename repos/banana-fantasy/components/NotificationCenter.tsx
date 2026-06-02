@@ -216,17 +216,28 @@ export function useNotifications() {
     return () => clearInterval(poll);
   }, [walletAddress]);
 
-  // Real-time: refetch on any user-event stream ping, coalesced to one
-  // refetch per ~1s burst so a flurry of events can't fan out into a fetch
-  // storm (render-loop guard caps at 75 /api/* req / 10s).
+  // Real-time: refetch on any user-event stream ping, coalesced to one refetch
+  // per ~300ms burst (fast enough to feel instant, still storm-safe — the
+  // render-loop guard caps at 75 /api/* req / 10s). Also refetch the instant
+  // the user focuses this device/tab (covers the "read on desktop, pick up
+  // phone" case where the backgrounded tab's stream connection was throttled).
   useEffect(() => {
     if (!walletAddress) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const unsub = subscribeUserEvents(walletAddress, () => {
+    const coalesced = () => {
       if (timer) return;
-      timer = setTimeout(() => { timer = null; refetchRef.current(); }, 1000);
-    });
-    return () => { if (timer) clearTimeout(timer); try { unsub(); } catch { /* ignore */ } };
+      timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
+    };
+    const unsub = subscribeUserEvents(walletAddress, coalesced);
+    const onFocus = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+      try { unsub(); } catch { /* ignore */ }
+    };
   }, [walletAddress]);
 
   // Category mute prefs — per-device DISPLAY filter (Phase 1). Phase 2 syncs

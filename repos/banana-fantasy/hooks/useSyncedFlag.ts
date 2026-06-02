@@ -17,6 +17,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { subscribeUserEvents } from '@/lib/api/firebase';
 
 export type FlagValue = boolean | number | string | null;
 
@@ -27,13 +28,16 @@ let _wallet: string | null = null;
 let _state: Record<string, FlagValue> = {};
 let _loaded = false;
 let _inflight: Promise<void> | null = null;
+let _unsubStream: (() => void) | null = null;
+let _reloadTimer: ReturnType<typeof setTimeout> | null = null;
+let _globalListenersBound = false;
 const _subs = new Set<() => void>();
 
 function notify() { _subs.forEach((fn) => fn()); }
 
 function loadState(wallet: string): Promise<void> {
   if (_inflight) return _inflight;
-  _inflight = (async () => {
+  const p = (async () => {
     try {
       const res = await fetch(`/api/user/client-state?wallet=${encodeURIComponent(wallet)}`);
       if (res.ok) {
@@ -44,7 +48,30 @@ function loadState(wallet: string): Promise<void> {
     _loaded = true;
     notify();
   })();
-  return _inflight;
+  // Clear when done so a later reload (focus / real-time ping) actually refetches.
+  _inflight = p;
+  void p.finally(() => { if (_inflight === p) _inflight = null; });
+  return p;
+}
+
+// Debounced reload — coalesces a burst of pings/focus events into one refetch.
+function scheduleReload() {
+  if (!_wallet) return;
+  if (_reloadTimer) return;
+  _reloadTimer = setTimeout(() => {
+    _reloadTimer = null;
+    if (_wallet) loadState(_wallet);
+  }, 250);
+}
+
+function bindGlobalListeners() {
+  if (_globalListenersBound || typeof window === 'undefined') return;
+  _globalListenersBound = true;
+  // Refetch the instant the user focuses this device/tab — covers the common
+  // "read on desktop, pick up phone" case where the backgrounded tab was throttled.
+  const onFocus = () => { if (document.visibilityState !== 'hidden') scheduleReload(); };
+  window.addEventListener('focus', onFocus);
+  document.addEventListener('visibilitychange', onFocus);
 }
 
 function ensureWallet(wallet: string | null) {
@@ -53,8 +80,16 @@ function ensureWallet(wallet: string | null) {
   _state = {};
   _loaded = false;
   _inflight = null;
-  if (wallet) loadState(wallet);
-  else { _loaded = true; notify(); }
+  if (_unsubStream) { try { _unsubStream(); } catch { /* ignore */ } _unsubStream = null; }
+  if (wallet) {
+    bindGlobalListeners();
+    loadState(wallet);
+    // Real-time: reload when the server pings (a flag changed on another device).
+    _unsubStream = subscribeUserEvents(wallet, () => scheduleReload());
+  } else {
+    _loaded = true;
+    notify();
+  }
 }
 
 /**
