@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
 // Persistent top-of-homepage nudge for the first-purchase bonus. Complements
 // the one-time popup (FirstPurchasePromoModal): the popup is the reveal moment,
@@ -11,44 +12,25 @@ import { useAuth } from '@/hooks/useAuth';
 // Shown to anyone who hasn't made their first paid purchase yet and is "in the
 // window": returning BB3 players see it right away; brand-new users see it once
 // they've finished their welcome-wheel winnings (firstPurchasePromoUnlocked).
-// Dismissible per wallet. Hidden entirely once they purchase.
-const dismissKey = (wallet?: string) => `sbs-first-purchase-banner-dismissed-${wallet ?? 'anon'}`;
+// Dismissible per account (synced across devices). Hidden once they purchase.
 
 export function FirstPurchaseBanner() {
   const { user, isBB3Holder, isLoggedIn } = useAuth();
   const router = useRouter();
   const wallet = user?.walletAddress;
-  const [dismissed, setDismissed] = useState(true); // default hidden until we check storage
-
-  // Sync dismissed state from storage whenever the wallet changes.
-  useEffect(() => {
-    if (typeof window === 'undefined' || !wallet) {
-      setDismissed(true);
-      return;
-    }
-    setDismissed(!!window.localStorage.getItem(dismissKey(wallet)));
-  }, [wallet]);
-
-  // A new user just finished their winnings — make sure the banner re-shows
-  // (unless they already dismissed it).
-  useEffect(() => {
-    const onUnlock = () => {
-      if (wallet && !window.localStorage.getItem(dismissKey(wallet))) setDismissed(false);
-    };
-    window.addEventListener('sbs-first-purchase-unlocked', onUnlock);
-    return () => window.removeEventListener('sbs-first-purchase-unlocked', onUnlock);
-  }, [wallet]);
+  // Account-synced dismissal. `loaded` gates the first render so the banner
+  // doesn't flash before the synced flag resolves on a fresh device. The
+  // unlock re-show is now reactive: inWindow flips true when the user's
+  // firstPurchasePromoUnlocked field updates, so no event listener is needed.
+  const [dismissed, setDismissed, loaded] = useSyncedFlag<boolean>('firstPurchaseBannerDismissed', false);
 
   const dismiss = useCallback(() => {
-    if (typeof window !== 'undefined' && wallet) {
-      window.localStorage.setItem(dismissKey(wallet), '1');
-    }
     setDismissed(true);
-  }, [wallet]);
+  }, [setDismissed]);
 
   const inWindow = isBB3Holder || !!user?.firstPurchasePromoUnlocked;
   const eligible =
-    isLoggedIn && !!wallet && !user?.firstPurchaseBonusGranted && inWindow && !dismissed;
+    isLoggedIn && !!wallet && !user?.firstPurchaseBonusGranted && inWindow && loaded && !dismissed;
 
   if (!eligible) return null;
 

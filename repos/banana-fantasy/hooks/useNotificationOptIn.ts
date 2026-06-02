@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import OneSignal from 'react-onesignal';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
-const DISMISSED_KEY = 'sbs_notif_dismissed';
 const DISMISSED_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export type NotifOptInTrigger = 'post-draft' | 'post-purchase' | 'manual';
@@ -35,16 +35,13 @@ export function useNotificationOptIn() {
     checkSubscription();
   }, []);
 
+  // Account-synced 7-day cooldown: dismissing the opt-in prompt on one device
+  // suppresses it on the user's other devices too.
+  const [dismissedAt, setDismissedAt] = useSyncedFlag<number>('notifOptInDismissedAt', 0);
+
   const isDismissed = useCallback((): boolean => {
-    try {
-      const raw = localStorage.getItem(DISMISSED_KEY);
-      if (!raw) return false;
-      const timestamp = Number(raw);
-      return Date.now() - timestamp < DISMISSED_DURATION_MS;
-    } catch {
-      return false;
-    }
-  }, []);
+    return dismissedAt > 0 && Date.now() - dismissedAt < DISMISSED_DURATION_MS;
+  }, [dismissedAt]);
 
   /**
    * Call this after a draft completes or a purchase is made.
@@ -112,13 +109,9 @@ export function useNotificationOptIn() {
    * User dismisses — hide for 7 days.
    */
   const dismissOptIn = useCallback(() => {
-    try {
-      localStorage.setItem(DISMISSED_KEY, String(Date.now()));
-    } catch {
-      // ignore
-    }
+    setDismissedAt(Date.now());
     setShowPrompt(false);
-  }, []);
+  }, [setDismissedAt]);
 
   return {
     showPrompt,

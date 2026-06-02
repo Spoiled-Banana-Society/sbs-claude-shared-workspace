@@ -60,3 +60,78 @@ export function ViewAsToggle() {
     </div>
   );
 }
+
+/**
+ * Force-show BOTH top banners (First Purchase + Get the App) on the home page
+ * for layout/QA — without touching account data or pressing Reset. Admin-only,
+ * session-scoped (sessionStorage 'sbs-preview-banners'); read by TopBanners.
+ */
+export function PreviewBannersToggle() {
+  const [on, setOn] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setOn(window.sessionStorage.getItem('sbs-preview-banners') === '1');
+  }, []);
+
+  const apply = (next: boolean) => {
+    if (typeof window === 'undefined') return;
+    if (next) window.sessionStorage.setItem('sbs-preview-banners', '1');
+    else window.sessionStorage.removeItem('sbs-preview-banners');
+    setOn(next);
+    window.location.assign('/'); // jump home so you immediately see them
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="text-xs text-gray-400 leading-snug">
+        <span className="font-semibold text-gray-200">Preview top banners</span> — force First Purchase
+        + Get-the-App to show on the home page (no data change). Jumps you home on toggle.
+      </div>
+      <div className="flex gap-1 shrink-0">
+        {[{ k: false, l: 'Off' }, { k: true, l: 'On' }].map((o) => (
+          <button
+            key={o.l}
+            onClick={() => apply(o.k)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              on === o.k
+                ? 'bg-[#F3E216] text-black border-[#F3E216]'
+                : 'bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600'
+            }`}
+          >
+            {o.l}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Clears the "Get the App" banner dismissal (localStorage) so it shows again
+ * naturally — until you close it once more. This is the easy undo for the
+ * sticky dismissal; unlike Preview, it restores the REAL behavior (show until
+ * dismissed), it doesn't force it.
+ */
+export function ResetAppBannerButton() {
+  const reset = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.removeItem('sbs-a2hs-engaged');
+    window.localStorage.removeItem('sbs-a2hs-dismissed');
+    window.location.assign('/');
+  };
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 flex items-center justify-between gap-3">
+      <div className="text-xs text-gray-400 leading-snug">
+        <span className="font-semibold text-gray-200">Show Get-the-App banner again</span> — clears your
+        dismissal so it reappears on the home page until you close it again (this browser only).
+      </div>
+      <button
+        onClick={reset}
+        className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-gray-800 text-gray-300 border-gray-700 hover:border-gray-600 transition-colors"
+      >
+        Show again
+      </button>
+    </div>
+  );
+}

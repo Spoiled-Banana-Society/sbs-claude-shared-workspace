@@ -16,7 +16,7 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { Bbb3HoldersCard } from '@/components/admin/Bbb3HoldersCard';
-import { ViewAsToggle } from '@/components/admin/ViewAsToggle';
+import { ViewAsToggle, PreviewBannersToggle, ResetAppBannerButton } from '@/components/admin/ViewAsToggle';
 
 const LIMIT = 50;
 
@@ -53,6 +53,8 @@ export function UsersTable({ enabled }: { enabled: boolean }) {
   return (
     <div className="space-y-4">
       <ViewAsToggle />
+      <PreviewBannersToggle />
+      <ResetAppBannerButton />
       <Bbb3HoldersCard enabled={enabled} />
       <ZeroFreeDraftsBanner />
       <div className="flex items-center gap-3">

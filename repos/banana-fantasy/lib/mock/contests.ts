@@ -36,12 +36,28 @@ export const mockContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
+    examplePaidDrafts: 5000,
     prizeBreakdown: [
-      { place: '1st', amount: 25000 },
-      { place: '2nd', amount: 15000 },
-      { place: '3rd', amount: 10000 },
-      { place: '4th-10th', amount: 5000 },
-      { place: '11th-50th', amount: 500 },
+      // Championship finals — $55,000
+      { place: '1st', amount: 25000, section: 'Finals' },
+      { place: '2nd', amount: 8000, section: 'Finals' },
+      { place: '3rd', amount: 5000, section: 'Finals' },
+      { place: '4th', amount: 3200, section: 'Finals' },
+      { place: '5th', amount: 2400, section: 'Finals' },
+      { place: '6th', amount: 1800, section: 'Finals' },
+      { place: '7th', amount: 1400, section: 'Finals' },
+      { place: '8th', amount: 1100, section: 'Finals' },
+      { place: '9th', amount: 900, section: 'Finals' },
+      { place: '10th', amount: 700, section: 'Finals' },
+      { place: '11th–25th', amount: 200, note: 'each', section: 'Finals' },
+      { place: '26th–50th', amount: 100, note: 'each', section: 'Finals' },
+      // Per-league prizes — $40,000 (scale with number of leagues)
+      { place: 'Regular-Season League Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      { place: 'Playoff Round 1 Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      // Hall of Fame track — $5,000
+      { place: 'HOF 1st', amount: 3000, section: 'Hall of Fame' },
+      { place: 'HOF 2nd', amount: 1200, section: 'Hall of Fame' },
+      { place: 'HOF 3rd', amount: 800, section: 'Hall of Fame' },
     ],
   },
   {
