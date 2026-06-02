@@ -26,17 +26,13 @@ const sections = [
 ];
 
 export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
-  const { user, walletAddress } = useAuth();
+  const { user, updateUser } = useAuth();
   const privy = usePrivy();
   const {
-    createProfile,
-    updateProfile,
     completeOnboarding,
     setCurrentStep,
-    isNewUser,
-    isSubmitting,
-    error,
   } = useOnboarding();
+  const [savingProfile, setSavingProfile] = useState(false);
   const [sectionIndex, setSectionIndex] = useState(-1); // -1 = initial black
   const [isVisible, setIsVisible] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -126,6 +122,22 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     }
   };
 
+  // Persist the typed name/avatar through useAuth.updateUser — the SAME path
+  // the live EditProfileModal uses. updateUser (a) refreshes the in-memory user
+  // so the home page reflects the change with no manual refresh, (b) writes
+  // localStorage, and (c) syncs to the Go API's working endpoints
+  // (POST /owner/{id}/update/displayName + /update/pfpImage).
+  //
+  // Do NOT route this through useOnboarding.createProfile/updateProfile: those
+  // hit POST/PUT /api/owners → /owner/create and PUT /owner/{id}, routes the Go
+  // API does not implement. The PUT failed with a raw "Owner update failed"
+  // JSON shown to the user. Returns true on success, false if the name is taken.
+  const persistProfile = async (trimmed: string): Promise<boolean> => {
+    if (!(await reserveUsername(trimmed))) return false; // nameError set
+    updateUser({ username: trimmed, profilePicture: avatarPreview || undefined });
+    return true;
+  };
+
   const handleProfileSubmit = async () => {
     const trimmed = displayName.trim();
     if (!trimmed) {
@@ -133,46 +145,26 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
       return;
     }
     setNameError(null);
+    setSavingProfile(true);
     try {
-      // Enforce unique display names before claiming one (skips the call when
-      // unchanged). If it's taken, reserveUsername sets nameError and we stop.
-      if (!(await reserveUsername(trimmed))) return;
-      // Persist the name/avatar immediately on Continue. createProfile (new
-      // users) and updateProfile (existing users) both PUT/POST to the backend
-      // AND call updateUser, which refreshes the in-memory user + localStorage
-      // so the home page reflects the change without a manual refresh. Existing
-      // users previously fell through here saving nothing, so edits were lost.
-      if (isNewUser) {
-        await createProfile(trimmed, avatarPreview);
-      } else {
-        await updateProfile(trimmed, avatarPreview);
-      }
+      if (!(await persistProfile(trimmed))) return;
       advanceSection();
-    } catch {
-      // Error is surfaced via hook state
+    } finally {
+      setSavingProfile(false);
     }
   };
 
   const handleSkip = async () => {
-    if (isSubmitting) return;
+    if (savingProfile) return;
     const trimmed = displayName.trim();
+    setSavingProfile(true);
     try {
-      if (isNewUser) {
-        // Reserve the typed name if they entered one; fall back to a default
-        // handle when it's missing or already taken (Skip must never block).
-        const typedIsFree = trimmed ? await reserveUsername(trimmed) : false;
-        const fallbackName =
-          (typedIsFree && trimmed) ||
-          user?.username ||
-          (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Rookie');
-        await createProfile(fallbackName, avatarPreview);
-      } else if (trimmed && (await reserveUsername(trimmed))) {
-        // Existing user edited their profile before skipping — persist it so the
-        // edit isn't silently lost. Skipped only if the new name is taken.
-        await updateProfile(trimmed, avatarPreview);
-      }
-    } catch {
-      // Best effort; still allow skip
+      // Persist any name/avatar the user entered before skipping, so the edit
+      // isn't silently lost. Skipped only if the chosen name is taken;
+      // reserveUsername no-ops when the name is unchanged from their current one.
+      if (trimmed) await persistProfile(trimmed);
+    } finally {
+      setSavingProfile(false);
     }
     await completeOnboarding({ displayName, avatar: avatarPreview });
     onComplete?.();
@@ -764,8 +756,8 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   placeholder="BananaBaller"
                   className="w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3 text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-banana/60"
                 />
-                {(nameError || error) && (
-                  <p className="text-sm text-red-400 mt-2">{nameError || error}</p>
+                {nameError && (
+                  <p className="text-sm text-red-400 mt-2">{nameError}</p>
                 )}
               </div>
 
@@ -822,10 +814,10 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
               )}
               <button
                 onClick={handleProfileSubmit}
-                disabled={isSubmitting}
+                disabled={savingProfile}
                 className="px-8 py-3 bg-banana text-black font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
               >
-                {isSubmitting ? 'Saving…' : 'Continue'}
+                {savingProfile ? 'Saving…' : 'Continue'}
               </button>
             </div>
 
