@@ -23,7 +23,7 @@
     "@hello-pangea/dnd": "^18.0.1",
     "@metamask/sdk": "^0.31.0",
     "@opensea/seaport-js": "^4.0.7",
-    "@privy-io/react-auth": "^3.18.0",
+    "@privy-io/react-auth": "^3.28.0",
     "@reduxjs/toolkit": "^2.11.2",
     "@sentry/nextjs": "^8.55.1",
     "@solana/wallet-adapter-react": "^0.15.39",
