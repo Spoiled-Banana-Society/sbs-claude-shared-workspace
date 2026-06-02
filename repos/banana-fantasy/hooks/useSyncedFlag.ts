@@ -57,6 +57,27 @@ function ensureWallet(wallet: string | null) {
   else { _loaded = true; notify(); }
 }
 
+/**
+ * Standalone setter for code that isn't a React hook (e.g. markChatRead).
+ * Updates the shared store + localStorage cache + server. Pass `wallet` when
+ * the module wallet may not be set yet (the caller usually has it).
+ */
+export function writeSyncedFlag(key: string, value: FlagValue, wallet?: string) {
+  _state[key] = value;
+  if (typeof window !== 'undefined') {
+    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value)); } catch { /* quota */ }
+  }
+  notify();
+  const w = wallet ? wallet.toLowerCase() : _wallet;
+  if (w) {
+    void fetch('/api/user/client-state', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: w, key, value }),
+    }).catch(() => { /* best-effort */ });
+  }
+}
+
 function readCache<T extends FlagValue>(key: string): T | undefined {
   if (typeof window === 'undefined') return undefined;
   try {
@@ -90,20 +111,7 @@ export function useSyncedFlag<T extends FlagValue>(key: string, defaultValue: T)
     value = cached !== undefined ? cached : defaultValue;
   }
 
-  const setValue = useCallback((v: T) => {
-    _state[key] = v;
-    if (typeof window !== 'undefined') {
-      try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(v)); } catch { /* quota */ }
-    }
-    notify();
-    if (_wallet) {
-      void fetch('/api/user/client-state', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ wallet: _wallet, key, value: v }),
-      }).catch(() => { /* best-effort */ });
-    }
-  }, [key]);
+  const setValue = useCallback((v: T) => { writeSyncedFlag(key, v); }, [key]);
 
   return [value, setValue, _loaded];
 }
