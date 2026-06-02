@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       }
       // Different wallet — anti-sybil block
       return json(
-        { verified: false, error: 'This X account is already linked to another account' },
+        { verified: false, error: 'This X account is already linked to a different account. One account per person — if you have more than one account you are NOT eligible to win prizes.' },
         400,
       );
     }

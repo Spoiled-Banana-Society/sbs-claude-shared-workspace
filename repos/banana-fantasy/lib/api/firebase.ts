@@ -212,13 +212,21 @@ export interface UserStreamEvent {
     | 'promo-first-purchase'
     | 'first-purchase-unlocked'
     | 'referral-milestone'
-    | 'promo-card-free-draft';
+    | 'promo-card-free-draft'
+    // Content-less refetch ping for the server-backed notification bell.
+    | 'notification';
   timestamp: number;
   draftId?: string;
   badgeId?: string;
   milestone?: 'verified' | 'bought1' | 'bought10';
   source?: string;
   awardedCount?: number;
+  // For 'notification' pings — the bell entry, for instant render (no refetch).
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
 }
 
 /**
@@ -250,8 +258,16 @@ export function subscribeUserEvents(
   }
 
   const r = ref(db, `/userEvents/${userId.toLowerCase()}`);
+  // CRITICAL: constrain to the most recent events. `/userEvents/{wallet}` is
+  // an append-only log that's never trimmed, so a plain onChildAdded would
+  // replay the ENTIRE history on every load — on an active wallet that backlog
+  // (bandwidth + per-child processing) delays delivery of NEW events by
+  // seconds, which is exactly the cross-device lag we were chasing. limitToLast
+  // gives a tiny initial window + every new event instantly. The caller's
+  // freshness gate (timestamp window) drops any old ones in that small window.
+  const q = query(r, limitToLast(15));
   const unsub = onChildAdded(
-    r,
+    q,
     (snapshot) => {
       const val = snapshot.val();
       if (!val || typeof val !== 'object') return;

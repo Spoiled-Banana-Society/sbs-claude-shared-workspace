@@ -55,7 +55,7 @@ export default function PromosPage() {
   const promoQueryId = searchParams?.get('promo') ?? null;
   const autoOpenedRef = useRef<string | null>(null);
 
-  const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed } = useAuth();
+  const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed, isBalanceLoaded } = useAuth();
   const promosQuery = usePromos({ userId: user?.id });
   const promos = promosQuery.promos;
 
@@ -105,10 +105,11 @@ export default function PromosPage() {
       newUserPromoClaimed,
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+      flagsKnown: isBalanceLoaded,
       hasVisibleClaim,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper

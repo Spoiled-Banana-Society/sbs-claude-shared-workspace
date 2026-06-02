@@ -242,6 +242,13 @@ async function readIdentity(wallet: string) {
       cardFeeCreditCents:
         typeof d.cardFeeCreditCents === 'number' ? d.cardFeeCreditCents : 0,
     },
+    // First-purchase / wheel promo gating flags — so the admin can verify the
+    // flow state (and that "Reset promo flags" worked) at a glance.
+    promoState: {
+      firstPurchaseBonusGranted: !!d.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!d.firstPurchasePromoUnlocked,
+      hasSpunWheel: !!d.hasSpunWheel,
+    },
     // Money — pulled from the Go owner endpoint. Boris's ask: "do they
     // have money in their account or card all their txns their history."
     account: {

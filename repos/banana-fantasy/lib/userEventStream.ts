@@ -45,7 +45,11 @@ export type StreamEventType =
   | 'promo-first-purchase'
   | 'first-purchase-unlocked'
   | 'referral-milestone'
-  | 'promo-card-free-draft';
+  | 'promo-card-free-draft'
+  // Content-less "a new persisted notification exists — refetch the bell"
+  // ping. Fired by createNotification (lib/queueNotifications.ts) so the
+  // server-backed notification inbox updates in ~100ms across every device.
+  | 'notification';
 
 export interface StreamEventPayload {
   /** Draft id (Pick 10, Jackpot Hit). */
@@ -58,6 +62,16 @@ export interface StreamEventPayload {
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
+  /**
+   * For the `'notification'` ping: the bell entry's content, so receiving
+   * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
+   * (generic copy — no balances/PII), same bar as the rest of this payload.
+   */
+  notifId?: string;
+  notifType?: string;
+  notifTitle?: string;
+  notifMessage?: string;
+  notifLink?: string;
 }
 
 /**
@@ -96,6 +110,28 @@ export async function pushStreamEvent(
     };
     await ref.push(event);
     logger.info('stream.push.ok', { userId, type });
+
+    // Persist a server-backed bell notification for content-bearing events
+    // so the notification inbox is account-synced across every device. The
+    // content-less `'notification'` type is the refetch ping itself — skip it
+    // to avoid recursion. Dynamic imports break the circular dep
+    // (queueNotifications imports pushStreamEvent). Best-effort.
+    if (type !== 'notification') {
+      try {
+        const { eventNotificationContent } = await import('./eventNotifications');
+        const content = eventNotificationContent(userId.toLowerCase(), type, payload);
+        if (content) {
+          const { createNotification } = await import('./queueNotifications');
+          await createNotification(userId, content);
+        }
+      } catch (persistErr) {
+        logger.warn('stream.persist.failed', {
+          userId,
+          type,
+          err: persistErr instanceof Error ? persistErr.message : String(persistErr),
+        });
+      }
+    }
   } catch (err) {
     logger.warn('stream.push.failed', {
       userId,

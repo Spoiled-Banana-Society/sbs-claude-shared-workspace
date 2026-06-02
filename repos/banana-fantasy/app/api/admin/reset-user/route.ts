@@ -32,6 +32,10 @@ export async function POST(req: Request) {
     const body = await parseBody(req);
     const userId = typeof body.userId === 'string' ? body.userId.trim() : '';
     if (!userId) throw new ApiError(400, 'Missing userId');
+    // 'promos' = balance-safe: clears ONLY the promo-gating flags so the
+    // first-purchase / wheel flow can be re-tested without wiping passes,
+    // free drafts, spins, JP/HOF. 'all' (default) = full counter reset.
+    const scope = body.scope === 'promos' ? 'promos' : 'all';
 
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
@@ -55,19 +59,24 @@ export async function POST(req: Request) {
       pendingWheelWinnings: data.pendingWheelWinnings ?? 0,
     };
 
-    const cleared = {
-      draftPasses: 0,
-      freeDrafts: 0,
-      wheelSpins: 0,
-      cardPurchaseCount: 0,
-      cardFeeCreditCents: 0,
-      jackpotEntries: 0,
-      hofEntries: 0,
+    const PROMO_FLAGS = {
       hasSpunWheel: false,
       firstPurchaseBonusGranted: false,
       firstPurchasePromoUnlocked: false,
-      pendingWheelWinnings: 0,
     };
+    const cleared = scope === 'promos'
+      ? PROMO_FLAGS
+      : {
+          draftPasses: 0,
+          freeDrafts: 0,
+          wheelSpins: 0,
+          cardPurchaseCount: 0,
+          cardFeeCreditCents: 0,
+          jackpotEntries: 0,
+          hofEntries: 0,
+          pendingWheelWinnings: 0,
+          ...PROMO_FLAGS,
+        };
 
     await userRef.set(cleared, { merge: true });
 
@@ -88,7 +97,7 @@ export async function POST(req: Request) {
       durationMs: Date.now() - start,
     });
 
-    return json({ success: true, userId, before, requestId });
+    return json({ success: true, userId, scope, before, requestId });
   } catch (err) {
     logger.error('admin.reset_user.failed', {
       requestId,

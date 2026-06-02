@@ -16,6 +16,7 @@ import {
   useAdminAuthHeaders,
   useGrantDrafts,
   useResetUser,
+  useSimulateUnlock,
   useReconcilePasses,
   useBanUser,
   useMarkKycVerified,
@@ -43,6 +44,8 @@ export function ActionsPanel({ wallet, banned, kycApproved }: Props) {
         <SendTestPingControl wallet={wallet} />
         <div className="flex flex-wrap gap-2">
           <ReconcileBtn wallet={wallet} />
+          <ResetPromosBtn wallet={wallet} />
+          <SimulateUnlockBtn wallet={wallet} />
           <ResetBtn wallet={wallet} />
           {!kycApproved && <KycBtn wallet={wallet} />}
           <BanBtn wallet={wallet} banned={banned} />
@@ -293,6 +296,47 @@ function ResetBtn({ wallet }: { wallet: string }) {
       }
       busy={m.isPending}
       result={m.data?.success ? 'reset ✓' : undefined}
+      error={m.error?.message}
+    />
+  );
+}
+
+// Testing: simulate a new user finishing their welcome free drafts (sets
+// firstPurchasePromoUnlocked=true, no balance change) so you can see the new-
+// user first-purchase unlock moment — card + NEW badge + popup + banner.
+function SimulateUnlockBtn({ wallet }: { wallet: string }) {
+  const m = useSimulateUnlock();
+  return (
+    <SmallBtn
+      label={m.isPending ? 'Unlocking…' : 'Simulate: free drafts done'}
+      onClick={() =>
+        window.confirm(
+          `Simulate "${wallet}" finishing free drafts?\n\nSets firstPurchasePromoUnlocked=true (no balance change) so the new-user first-purchase moment appears.`,
+        ) && m.mutate({ userId: wallet })
+      }
+      busy={m.isPending}
+      result={m.data?.success ? 'unlocked ✓' : undefined}
+      error={m.error?.message}
+    />
+  );
+}
+
+// Balance-SAFE reset for re-testing the promo flow. Clears only the gating
+// flags (hasSpunWheel, firstPurchaseBonusGranted, firstPurchasePromoUnlocked) —
+// passes/free drafts/spins/JP-HOF stay intact. Pair with the View-as toggle to
+// replay either the new-user or returning first-purchase flow.
+function ResetPromosBtn({ wallet }: { wallet: string }) {
+  const m = useResetUser();
+  return (
+    <SmallBtn
+      label={m.isPending ? 'Resetting…' : 'Reset promo flags'}
+      onClick={() =>
+        window.confirm(
+          `Reset promo flags for ${wallet}?\n\nClears ONLY first-purchase + wheel gating so you can replay the promo flow. Balances (passes, free drafts, spins, JP/HOF) are untouched.`,
+        ) && m.mutate({ userId: wallet, scope: 'promos' })
+      }
+      busy={m.isPending}
+      result={m.data?.success ? 'promo reset ✓' : undefined}
       error={m.error?.message}
     />
   );

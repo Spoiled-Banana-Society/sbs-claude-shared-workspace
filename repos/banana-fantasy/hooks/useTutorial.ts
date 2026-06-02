@@ -1,8 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
-const STORAGE_KEY = 'sbs-draft-tutorial-completed';
+import { useCallback, useMemo, useState } from 'react';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
 export type TutorialState = {
   shouldShowTutorial: boolean;
@@ -16,25 +15,13 @@ export type TutorialState = {
 
 export function useTutorial(totalSteps: number): TutorialState {
   const [currentStep, setCurrentStep] = useState(0);
-  const [hasCompleted, setHasCompleted] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    try {
-      const completed = window.localStorage.getItem(STORAGE_KEY) === 'true';
-      setHasCompleted(completed);
-    } catch {
-      setHasCompleted(false);
-    }
-  }, []);
+  // Account-synced: completing the draft tutorial on one device suppresses it
+  // on all the user's devices.
+  const [hasCompleted, setHasCompleted, loaded] = useSyncedFlag<boolean>('draftTutorialCompleted', false);
 
   const completeTutorial = useCallback(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, 'true');
-    } catch {
-      // ignore write errors
-    }
     setHasCompleted(true);
-  }, []);
+  }, [setHasCompleted]);
 
   const nextStep = useCallback(() => {
     setCurrentStep((prev) => {
@@ -54,10 +41,9 @@ export function useTutorial(totalSteps: number): TutorialState {
     completeTutorial();
   }, [completeTutorial]);
 
-  const shouldShowTutorial = useMemo(() => {
-    if (hasCompleted == null) return false;
-    return !hasCompleted;
-  }, [hasCompleted]);
+  // Don't decide until the synced value has loaded — avoids a tutorial flash
+  // on a fresh device before the server flag resolves.
+  const shouldShowTutorial = useMemo(() => loaded && !hasCompleted, [loaded, hasCompleted]);
 
   return {
     shouldShowTutorial,

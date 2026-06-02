@@ -92,7 +92,16 @@ export function useDmInbox(enabled: boolean): {
     if (!enabled) { setLoading(false); return; }
     void refreshRef.current();
     const id = setInterval(() => { void refreshRef.current(); }, INBOX_POLL_MS);
-    return () => clearInterval(id);
+    // Refresh the instant the user focuses this device/tab so DM read-state +
+    // new threads sync near-instantly across devices (not just on the 15s poll).
+    const onFocus = () => { if (document.visibilityState !== 'hidden') void refreshRef.current(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [enabled]);
 
   const reject = useCallback(async (otherWallet: string) => {

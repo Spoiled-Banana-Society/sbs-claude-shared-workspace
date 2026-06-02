@@ -42,7 +42,7 @@ export const mockPromos: Promo[] = [
     claimCount: 0,
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
-      explanation: 'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.',
+      explanation: 'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.',
       additionalRules: 'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
       referralLink: 'https://banana-fantasy-sbs.vercel.app?ref=BANANA-CK99-2026',
@@ -83,7 +83,8 @@ export const mockPromos: Promo[] = [
     claimCount: 1,
     modalContent: {
       title: 'New User Bonus SPIN',
-      explanation: 'Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.',
+      explanation: 'Verify your account by connecting your Twitter/X to claim your welcome spin. One account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
+      additionalRules: 'One account per person. Creating more than one account is not allowed — if you have multiple accounts you are NOT eligible to win prizes. We verify your X/Twitter to keep play fair for everyone, so each X account can only be linked to a single account.',
       twitterConnected: false,
     },
   },

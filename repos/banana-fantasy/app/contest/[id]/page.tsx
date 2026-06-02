@@ -123,19 +123,42 @@ export default function ContestDetailsPage() {
               </div>
             </div>
 
+            <p className="text-text-secondary text-sm mb-6">
+              <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
+              The prize pool grows as more players enter.
+              {contest.examplePaidDrafts && (
+                <> This breakdown is an example based on{' '}
+                  <span className="text-text-primary">{contest.examplePaidDrafts.toLocaleString()} paid drafts</span>{' '}
+                  — final payouts scale with the total pool.</>
+              )}
+            </p>
+
             {/* Prize Breakdown */}
             <div className="border-t border-bg-tertiary pt-4">
               <h4 className="font-medium text-text-primary mb-3">Prize Breakdown</h4>
               <div className="space-y-2">
-                {contest.prizeBreakdown.map((prize, index) => (
-                  <div
-                    key={index}
-                    className="flex justify-between py-2 px-3 bg-bg-tertiary rounded-lg"
-                  >
-                    <span className="text-text-secondary">{prize.place}</span>
-                    <span className="font-medium text-text-primary">{formatCurrency(prize.amount)}</span>
-                  </div>
-                ))}
+                {contest.prizeBreakdown.map((prize, index) => {
+                  const prevSection = index > 0 ? contest.prizeBreakdown[index - 1].section : undefined;
+                  const showSection = prize.section && prize.section !== prevSection;
+                  return (
+                    <React.Fragment key={index}>
+                      {showSection && (
+                        <p className="text-xs font-semibold uppercase tracking-wide text-text-muted pt-3 pb-1 px-1">
+                          {prize.section}
+                        </p>
+                      )}
+                      <div className="flex justify-between py-2 px-3 bg-bg-tertiary rounded-lg">
+                        <span className="text-text-secondary">{prize.place}</span>
+                        <span className="font-medium text-text-primary">
+                          {formatCurrency(prize.amount)}
+                          {prize.note && (
+                            <span className="text-text-muted text-xs font-normal ml-1">{prize.note}</span>
+                          )}
+                        </span>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </Card>

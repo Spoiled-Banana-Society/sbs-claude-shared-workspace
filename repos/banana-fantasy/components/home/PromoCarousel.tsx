@@ -34,7 +34,7 @@ function useVisibleCount() {
 }
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode }: PromoCarouselProps) {
-  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder } = useAuth();
+  const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
   const VISIBLE_COUNT = useVisibleCount();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -71,6 +71,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     newUserPromoClaimed,
     firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
+    flagsKnown: isBalanceLoaded,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
   });
 

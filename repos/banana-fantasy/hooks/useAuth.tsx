@@ -765,6 +765,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // after a purchase and unlocks for new users post free-drafts.
           firstPurchaseBonusGranted: typeof d.firstPurchaseBonusGranted === 'boolean' ? d.firstPurchaseBonusGranted : prev.firstPurchaseBonusGranted,
           firstPurchasePromoUnlocked: typeof d.firstPurchasePromoUnlocked === 'boolean' ? d.firstPurchasePromoUnlocked : prev.firstPurchasePromoUnlocked,
+          // Spin-explainer gating — so the "a spin wins up to 20" text hides
+          // once they've actually spun.
+          hasSpunWheel: typeof d.hasSpunWheel === 'boolean' ? d.hasSpunWheel : prev.hasSpunWheel,
         };
       });
       setIsBalanceLoaded(true);
@@ -811,17 +814,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     connect();
     const onFocus = () => {
-      // On focus: if SSE was torn down, reconnect. Otherwise a no-op.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // Always pull a fresh balance snapshot immediately on focus. A
+      // backgrounded tab throttles the SSE, so it can be stale even while
+      // nominally "open" — this guarantees spins / free drafts / passes are
+      // current the instant you look at the device, not a poll cycle later.
+      void (async () => {
+        try {
+          const res = await fetch(`/api/owner/balance?userId=${encodeURIComponent(userId)}`);
+          if (res.ok) applyPayload(await res.json());
+        } catch { /* silent */ }
+      })();
+      // Reconnect the SSE if it was torn down while backgrounded.
       if (!eventSource || eventSource.readyState === 2 /* CLOSED */) {
         eventSource = null;
         connect();
       }
     };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
       if (eventSource) {
         eventSource.close();
         eventSource = null;
