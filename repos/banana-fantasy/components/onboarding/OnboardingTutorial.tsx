@@ -2,8 +2,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Image from 'next/image';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { usernameErrorText } from '@/lib/usernameMessages';
 
 interface OnboardingTutorialProps {
   onComplete?: () => void;
@@ -25,6 +27,7 @@ const sections = [
 
 export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const { user, walletAddress } = useAuth();
+  const privy = usePrivy();
   const {
     createProfile,
     updateProfile,
@@ -97,6 +100,32 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     if (user?.profilePicture) setAvatarPreview(user.profilePicture);
   }, [user]);
 
+  // Claim a unique display name before saving it. Returns true if the name is
+  // free to use (unchanged from the user's current name, or successfully
+  // reserved); false if it's taken/invalid, in which case nameError is set.
+  // Mirrors EditProfileModal's hard gate — POST /api/username, 409 = taken.
+  const reserveUsername = async (name: string): Promise<boolean> => {
+    const changed = name.toLowerCase() !== (user?.username ?? '').toLowerCase();
+    if (!changed) return true;
+    try {
+      const token = await privy.getAccessToken();
+      const res = await fetch('/api/username', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
+        setNameError(usernameErrorText(data.reason || data.error));
+        return false;
+      }
+      return true;
+    } catch {
+      setNameError('Could not check username — try again.');
+      return false;
+    }
+  };
+
   const handleProfileSubmit = async () => {
     const trimmed = displayName.trim();
     if (!trimmed) {
@@ -105,6 +134,9 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     }
     setNameError(null);
     try {
+      // Enforce unique display names before claiming one (skips the call when
+      // unchanged). If it's taken, reserveUsername sets nameError and we stop.
+      if (!(await reserveUsername(trimmed))) return;
       // Persist the name/avatar immediately on Continue. createProfile (new
       // users) and updateProfile (existing users) both PUT/POST to the backend
       // AND call updateUser, which refreshes the in-memory user + localStorage
@@ -123,13 +155,21 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
 
   const handleSkip = async () => {
     if (isSubmitting) return;
+    const trimmed = displayName.trim();
     try {
       if (isNewUser) {
+        // Reserve the typed name if they entered one; fall back to a default
+        // handle when it's missing or already taken (Skip must never block).
+        const typedIsFree = trimmed ? await reserveUsername(trimmed) : false;
         const fallbackName =
-          displayName.trim() ||
+          (typedIsFree && trimmed) ||
           user?.username ||
           (walletAddress ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}` : 'Rookie');
         await createProfile(fallbackName, avatarPreview);
+      } else if (trimmed && (await reserveUsername(trimmed))) {
+        // Existing user edited their profile before skipping — persist it so the
+        // edit isn't silently lost. Skipped only if the new name is taken.
+        await updateProfile(trimmed, avatarPreview);
       }
     } catch {
       // Best effort; still allow skip
