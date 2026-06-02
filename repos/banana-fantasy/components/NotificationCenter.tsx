@@ -183,6 +183,12 @@ export function useNotifications() {
   const walletRef = useRef<string | null>(walletAddress ?? null);
   walletRef.current = walletAddress ?? null;
 
+  // Ids we've marked read locally but the server may not have committed yet.
+  // A refetch that started before the PATCH committed would return them as
+  // UNREAD and clobber the optimistic clear (the "had to tap read-all twice"
+  // bug). We force them read until the server confirms, then drop the override.
+  const locallyReadRef = useRef<Set<string>>(new Set());
+
   const refetch = useCallback(async () => {
     const w = walletRef.current;
     if (!w) { setNotifications([]); return; }
@@ -190,15 +196,21 @@ export function useNotifications() {
       const res = await fetch(`/api/marketplace/notifications?wallet=${encodeURIComponent(w)}&all=1`);
       if (!res.ok) return;
       const json = await res.json();
-      const mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => ({
-        id: n.id as string,
-        type: (n.type as NotificationType) || 'system',
-        title: n.title as string,
-        message: n.message as string,
-        read: Boolean(n.read),
-        createdAt: (n.createdAt as string) || new Date().toISOString(),
-        link: (n.link as string) || undefined,
-      }));
+      const mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => {
+        const id = n.id as string;
+        const serverRead = Boolean(n.read);
+        // Server confirmed read → local override no longer needed.
+        if (serverRead) locallyReadRef.current.delete(id);
+        return {
+          id,
+          type: (n.type as NotificationType) || 'system',
+          title: n.title as string,
+          message: n.message as string,
+          read: serverRead || locallyReadRef.current.has(id),
+          createdAt: (n.createdAt as string) || new Date().toISOString(),
+          link: (n.link as string) || undefined,
+        };
+      });
       setNotifications(mapped);
     } catch { /* silent — degrade to last-known list */ }
   }, []);
@@ -286,6 +298,7 @@ export function useNotifications() {
   const unreadCount = visible.filter(n => !n.read).length;
 
   const markAsRead = useCallback((id: string) => {
+    locallyReadRef.current.add(id); // protect from a stale refetch un-reading it
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)); // optimistic
     const w = walletRef.current;
     if (!w) return;
@@ -297,7 +310,12 @@ export function useNotifications() {
   }, []);
 
   const markAllRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
+    // Remember every current id as locally-read so a refetch that lands before
+    // the server commits can't bring the red badge back (the double-tap bug).
+    setNotifications(prev => {
+      prev.forEach(n => locallyReadRef.current.add(n.id));
+      return prev.map(n => ({ ...n, read: true })); // optimistic
+    });
     const w = walletRef.current;
     // DIAGNOSTIC: did read-all fire, and with a wallet?
     import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w, dev: deviceTag() })).catch(() => {});
