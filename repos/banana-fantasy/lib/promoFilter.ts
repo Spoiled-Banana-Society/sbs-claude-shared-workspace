@@ -64,6 +64,13 @@ interface FilterOpts {
    */
   firstPurchasePromoUnlocked?: boolean;
   /**
+   * True once the user's balance/promo flags have loaded from the server.
+   * The gating flags above arrive a beat after first paint (via the balance
+   * stream), so until they're known we hide the first-purchase card rather than
+   * flash it for a user who has actually already purchased. Pass isBalanceLoaded.
+   */
+  flagsKnown?: boolean;
+  /**
    * Predicate returning true when the promo has a visible CLAIM action
    * for this user. Promos satisfying this bubble to the top of the
    * sorted list — in-flight / actionable stuff always wins position 1.
@@ -88,6 +95,9 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // First-purchase promo is one-time. Once the user has purchased AND has
     // no spins left to claim, it's spent — hide it.
     if (p.type === 'first-purchase') {
+      // Don't render until the gating flags are known — avoids flashing the card
+      // for a purchased user during the brief pre-balance window.
+      if (opts.flagsKnown === false) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
       // New users (non-BB3) only see it after they've used up their welcome-
       // wheel free drafts. Returning players see it from the start.

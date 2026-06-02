@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import { subscribeUserEvents } from '@/lib/api/firebase';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -41,9 +42,6 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = 
   message_received: { emoji: '💬', color: '#22c55e' },
 };
 
-const STORAGE_KEY = 'sbs-notifications';
-const MAX_NOTIFICATIONS = 50;
-const SYNC_EVENT = 'sbs-notifications-sync';
 const PREFS_KEY = 'sbs-notification-prefs';
 
 // ─── Notification Categories ────────────────────────────────────────────
@@ -102,149 +100,60 @@ function isCategoryEnabled(type: NotificationType): boolean {
   return getNotificationPrefs()[cat] !== false;
 }
 
-// ─── localStorage helpers ────────────────────────────────────────────────
+// ─── Server-backed notification source ───────────────────────────────────
+//
+// Notifications now live in Firestore per wallet and sync across every device
+// (see lib/queueNotifications.ts + app/api/marketplace/notifications/route.ts).
+// localStorage is no longer the source of truth — this file only POSTs new
+// notifications and reads them back from the server.
 
-function loadNotifications(): Notification[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return getDefaultNotifications();
-    const parsed = JSON.parse(raw) as Notification[];
-    // Backfill: legacy promo-discovery / claim notifications were created
-    // with promo.ctaLink (typically /buy-drafts) — wrong destination for
-    // "go see what this is" or "claim your reward". Rewrite them to
-    // /promos so the click lands somewhere the user can actually act.
-    const PROMO_REDIRECT_TITLES = new Set(['Ready to Claim!', 'New Promo Available!']);
-    const remapped = parsed.map((n) => {
-      if (PROMO_REDIRECT_TITLES.has(n.title) && n.link && !n.link.startsWith('/promos')) {
-        return { ...n, link: '/promos' };
-      }
-      return n;
-    });
-    // Self-heal legacy duplicates: collapse to first occurrence per
-    // canonical dedup key. For badge notifications, ALWAYS use the
-    // title (e.g. "Badge unlocked: Veteran") regardless of whether
-    // metadata.dedupeKey is set — old entries (pre-dedupeKey) and new
-    // entries (with dedupeKey "badge-veteran") would otherwise hash to
-    // different keys and both survive. Order-preserving — newest wins.
-    const seenKeys = new Set<string>();
-    return remapped.filter((n) => {
-      const isBadgeTitle = n.title.startsWith('Badge unlocked:');
-      const key = n.metadata?.dedupeKey as string | undefined;
-      const dedupeOn = isBadgeTitle ? n.title : (key ?? null);
-      if (!dedupeOn) return true;
-      if (seenKeys.has(dedupeOn)) return false;
-      seenKeys.add(dedupeOn);
-      return true;
-    });
-  } catch {
-    return getDefaultNotifications();
-  }
+// Current wallet, registered by useNotifications (header-mounted) so the
+// standalone pushNotification() helper can attribute POSTs without a hook.
+let _notificationWallet: string | null = null;
+export function _setNotificationWallet(wallet: string | null) {
+  _notificationWallet = wallet ? wallet.toLowerCase() : null;
 }
 
-function saveNotifications(notifs: Notification[]) {
-  if (typeof window === 'undefined') return;
+function resolveWallet(): string | null {
+  if (_notificationWallet) return _notificationWallet;
+  if (typeof window === 'undefined') return null;
+  // Fallback: the cached user object (written by useAuth) carries the wallet.
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notifs.slice(0, MAX_NOTIFICATIONS)));
-    // Notify other hook instances on this page to re-sync
-    window.dispatchEvent(new Event(SYNC_EVENT));
-  } catch { /* quota */ }
+    const raw = localStorage.getItem('banana-fantasy-user-balance');
+    if (raw) {
+      const u = JSON.parse(raw) as { walletAddress?: string };
+      if (u?.walletAddress) return u.walletAddress.toLowerCase();
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 /**
- * Add a notification from anywhere (no hook needed). Updates localStorage + triggers sync.
+ * Create a notification from anywhere (no hook needed). POSTs to the server
+ * so it persists per-wallet and syncs to ALL the user's devices. Pass a
+ * stable `dedupeKey` so the same logical event creates exactly one entry even
+ * if fired from multiple devices/tabs. Best-effort, fire-and-forget.
  *
- * `dedupeKey` (optional): if any existing notification carries the same
- * key in metadata.dedupeKey, the new one is dropped. Use a stable key
- * like `badge-${id}` so a badge can only ever produce one entry, even
- * if the upstream notifier fires multiple times across tabs / mounts /
- * stale localStorage state.
+ * Note: category mute is applied as a per-device DISPLAY filter (see
+ * useNotifications) — NOT here — so muting on one device can't suppress a
+ * notification server-side for the user's other devices.
  */
 export function pushNotification(notif: { type: NotificationType; title: string; message: string; link?: string; dedupeKey?: string }) {
   if (typeof window === 'undefined') return;
-  // Respect user's category preferences
-  if (!isCategoryEnabled(notif.type)) return;
-  const existing = loadNotifications();
-  if (notif.dedupeKey) {
-    const collision = existing.some(n => n.metadata?.dedupeKey === notif.dedupeKey);
-    if (collision) return;
-  }
-  // Belt-and-suspenders: for badge notifications, also drop if any
-  // existing notification has the same title (catches legacy entries
-  // that predate dedupeKey).
-  if (notif.title.startsWith('Badge unlocked:')) {
-    const titleCollision = existing.some(n => n.title === notif.title);
-    if (titleCollision) return;
-  }
-  const { dedupeKey, ...rest } = notif;
-  const newNotif: Notification = {
-    ...rest,
-    id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    read: false,
-    createdAt: new Date().toISOString(),
-    ...(dedupeKey ? { metadata: { dedupeKey } } : {}),
-  };
-  saveNotifications([newNotif, ...existing]);
-}
-
-function getDefaultNotifications(): Notification[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'n-1',
-      type: 'system',
-      title: 'Welcome to BBB4! 🍌',
-      message: 'Season 4 is here. Buy your first draft pass and get drafting!',
-      read: false,
-      createdAt: new Date(now - 60000).toISOString(),
-      link: '/buy-drafts',
-    },
-    {
-      id: 'n-2',
-      type: 'promo',
-      title: 'Welcome Gift Available',
-      message: 'Claim 50% off your first draft pass — limited time!',
-      read: false,
-      createdAt: new Date(now - 300000).toISOString(),
-      link: '/buy-drafts',
-    },
-    {
-      id: 'n-3',
-      type: 'draft_starting',
-      title: 'Draft Starting Soon',
-      message: 'Banana Blitz #142 starts in 5 minutes. Get ready!',
-      read: false,
-      createdAt: new Date(now - 600000).toISOString(),
-      link: '/draft-room?id=d-101',
-    },
-    {
-      id: 'n-4',
-      type: 'draft_results',
-      title: 'Draft Complete — Grade A!',
-      message: 'Your team in Peel Party #98 scored an A grade. View your results.',
-      read: true,
-      createdAt: new Date(now - 86400000).toISOString(),
-      link: '/draft-results/d-099',
-    },
-    {
-      id: 'n-5',
-      type: 'referral',
-      title: 'Referral Bonus Earned!',
-      message: 'CryptoKing joined using your link. You earned a free draft pass!',
-      read: true,
-      createdAt: new Date(now - 172800000).toISOString(),
-      link: '/referrals',
-    },
-    {
-      id: 'n-6',
-      type: 'jackpot',
-      title: 'Jackpot Qualification',
-      message: 'You\'ve qualified for the $50K Jackpot pool! Keep drafting for more entries.',
-      read: true,
-      createdAt: new Date(now - 345600000).toISOString(),
-      link: '/jackpot-hof',
-    },
-  ];
+  const wallet = resolveWallet();
+  if (!wallet) return;
+  void fetch('/api/marketplace/notifications', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      wallet,
+      type: notif.type,
+      title: notif.title,
+      message: notif.message,
+      link: notif.link,
+      dedupeKey: notif.dedupeKey,
+    }),
+  }).catch(() => { /* best-effort */ });
 }
 
 // ─── Time formatting ─────────────────────────────────────────────────────
@@ -264,56 +173,148 @@ function timeAgo(iso: string): string {
 // ─── Hook ────────────────────────────────────────────────────────────────
 
 export function useNotifications() {
+  const { walletAddress } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
 
-  useEffect(() => {
-    setNotifications(loadNotifications());
+  // Wallet in a ref so the (stable) refetch closure reads the current value
+  // without re-creating — render-loop safety (CLAUDE.md Rule #0): effect deps
+  // stay scalar, never Privy-derived callbacks.
+  const walletRef = useRef<string | null>(walletAddress ?? null);
+  walletRef.current = walletAddress ?? null;
 
-    // Re-sync when another hook instance on this page writes notifications
-    const onSync = () => setNotifications(loadNotifications());
-    window.addEventListener(SYNC_EVENT, onSync);
-    return () => window.removeEventListener(SYNC_EVENT, onSync);
+  const refetch = useCallback(async () => {
+    const w = walletRef.current;
+    if (!w) { setNotifications([]); return; }
+    try {
+      const res = await fetch(`/api/marketplace/notifications?wallet=${encodeURIComponent(w)}&all=1`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => ({
+        id: n.id as string,
+        type: (n.type as NotificationType) || 'system',
+        title: n.title as string,
+        message: n.message as string,
+        read: Boolean(n.read),
+        createdAt: (n.createdAt as string) || new Date().toISOString(),
+        link: (n.link as string) || undefined,
+      }));
+      setNotifications(mapped);
+    } catch { /* silent — degrade to last-known list */ }
   }, []);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+
+  // Initial load + 30s poll + register wallet for the standalone
+  // pushNotification() helper. Deps: walletAddress only (stable scalar).
+  useEffect(() => {
+    _setNotificationWallet(walletAddress ?? null);
+    if (!walletAddress) { setNotifications([]); return; }
+    refetchRef.current();
+    const poll = setInterval(() => refetchRef.current(), 30_000);
+    return () => clearInterval(poll);
+  }, [walletAddress]);
+
+  // Real-time: refetch on any user-event stream ping, coalesced to one refetch
+  // per ~300ms burst (fast enough to feel instant, still storm-safe — the
+  // render-loop guard caps at 75 /api/* req / 10s). Also refetch the instant
+  // the user focuses this device/tab (covers the "read on desktop, pick up
+  // phone" case where the backgrounded tab's stream connection was throttled).
+  useEffect(() => {
+    if (!walletAddress) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
+    };
+    const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
+      // DIAGNOSTIC: server-fire → client-receive latency for cross-device sync.
+      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'bell.ping.recv', {
+        type: event.type, src: event.source ?? null,
+        ageMs: event.timestamp ? Date.now() - event.timestamp : null,
+      })).catch(() => {});
+      // INSTANT render: a content-carrying 'notification' ping for a FRESH
+      // event (just happened) → prepend the entry immediately, no fetch wait.
+      // The freshness gate stops replayed RTDB history (onChildAdded fires for
+      // every existing child on subscribe) from injecting stale entries.
+      const fresh = event.timestamp ? (Date.now() - event.timestamp < 30_000) : false;
+      if (fresh && event.type === 'notification' && event.notifTitle && event.notifId) {
+        const id = event.notifId;
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === id)) return prev; // dedup
+          const entry: Notification = {
+            id,
+            type: (event.notifType as NotificationType) || 'system',
+            title: event.notifTitle as string,
+            message: event.notifMessage || '',
+            read: false,
+            createdAt: new Date().toISOString(),
+            link: event.notifLink || undefined,
+          };
+          return [entry, ...prev];
+        });
+      }
+      coalesced(); // reconcile read-state/ordering shortly after
+    };
+    const unsub = subscribeUserEvents(walletAddress, onEvent);
+    const onFocus = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+      try { unsub(); } catch { /* ignore */ }
+    };
+  }, [walletAddress]);
+
+  // Category mute prefs — per-device DISPLAY filter (Phase 1). Phase 2 syncs
+  // these to the account.
+  useEffect(() => { setPrefs(getNotificationPrefs()); }, []);
+
+  const visible = useMemo(
+    () => notifications.filter(n => isCategoryEnabled(n.type)),
+    // prefs in deps so the filter recomputes when a category is toggled.
+    [notifications, prefs],
+  );
+  const unreadCount = visible.filter(n => !n.read).length;
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications(prev => {
-      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
-      saveNotifications(updated);
-      return updated;
-    });
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)); // optimistic
+    const w = walletRef.current;
+    if (!w) return;
+    void fetch('/api/marketplace/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: w, ids: [id] }),
+    }).catch(() => refetchRef.current());
   }, []);
 
   const markAllRead = useCallback(() => {
-    setNotifications(prev => {
-      const updated = prev.map(n => ({ ...n, read: true }));
-      saveNotifications(updated);
-      return updated;
-    });
+    setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
+    const w = walletRef.current;
+    if (!w) return;
+    void fetch('/api/marketplace/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: w, all: true }),
+    }).catch(() => refetchRef.current());
   }, []);
 
+  // Persist server-side; the resulting 'notification' ping refetches the bell.
   const addNotification = useCallback((notif: Omit<Notification, 'id' | 'read' | 'createdAt'>) => {
-    setNotifications(prev => {
-      const newNotif: Notification = {
-        ...notif,
-        id: `n-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        read: false,
-        createdAt: new Date().toISOString(),
-      };
-      const updated = [newNotif, ...prev].slice(0, MAX_NOTIFICATIONS);
-      saveNotifications(updated);
-      return updated;
+    pushNotification({
+      type: notif.type,
+      title: notif.title,
+      message: notif.message,
+      link: notif.link,
+      dedupeKey: notif.metadata?.dedupeKey as string | undefined,
     });
   }, []);
 
-  const clearAll = useCallback(() => {
-    setNotifications([]);
-    saveNotifications([]);
-  }, []);
-
-  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
-  useEffect(() => { setPrefs(getNotificationPrefs()); }, []);
+  // "Clear" = mark everything read (keeps a synced history; no destructive delete).
+  const clearAll = useCallback(() => { markAllRead(); }, [markAllRead]);
 
   const toggleCategory = useCallback((cat: NotificationCategory) => {
     setPrefs(prev => {
@@ -323,7 +324,7 @@ export function useNotifications() {
     });
   }, []);
 
-  return { notifications, unreadCount, markAsRead, markAllRead, addNotification, clearAll, prefs, toggleCategory };
+  return { notifications: visible, unreadCount, markAsRead, markAllRead, addNotification, clearAll, prefs, toggleCategory };
 }
 
 // ─── Bell Icon Button ────────────────────────────────────────────────────
@@ -506,71 +507,23 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
 // ─── Combined Header Widget ─────────────────────────────────────────────
 
 export function NotificationWidget() {
-  const { walletAddress } = useAuth();
-
-  const { notifications: localNotifs, unreadCount: localUnread, markAsRead, markAllRead: markAllLocalRead } = useNotifications();
+  // Single server-backed source of truth (synced across devices).
+  const { notifications, unreadCount, markAsRead, markAllRead } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
-
-  // Firestore notifications (sold, offers received)
-  const [firestoreNotifs, setFirestoreNotifs] = useState<Notification[]>([]);
-
-  useEffect(() => {
-    if (!walletAddress) { setFirestoreNotifs([]); return; }
-
-    const fetchRemote = async () => {
-      try {
-        const res = await fetch(`/api/marketplace/notifications?wallet=${encodeURIComponent(walletAddress)}`);
-        if (!res.ok) return;
-        const json = await res.json();
-        const mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => ({
-          id: n.id as string,
-          type: (n.type as NotificationType) || 'system',
-          title: n.title as string,
-          message: n.message as string,
-          read: false,
-          createdAt: (n.createdAt as string) || new Date().toISOString(),
-          link: (n.link as string) || undefined,
-        }));
-        setFirestoreNotifs(mapped);
-      } catch { /* silent */ }
-    };
-
-    fetchRemote();
-    const interval = setInterval(fetchRemote, 30_000);
-    return () => clearInterval(interval);
-  }, [walletAddress]);
-
-  // Merge: Firestore (unread) on top, then local
-  const merged = [...firestoreNotifs, ...localNotifs];
-  const totalUnread = localUnread + firestoreNotifs.length;
-
-  const handleMarkAllRead = useCallback(async () => {
-    markAllLocalRead();
-    if (walletAddress && firestoreNotifs.length > 0) {
-      setFirestoreNotifs([]);
-      try {
-        await fetch('/api/marketplace/notifications', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wallet: walletAddress, all: true }),
-        });
-      } catch { /* silent */ }
-    }
-  }, [markAllLocalRead, walletAddress, firestoreNotifs.length]);
 
   return (
     <div className="relative">
       <NotificationBell
-        unreadCount={totalUnread}
+        unreadCount={unreadCount}
         onClick={() => setIsOpen(!isOpen)}
       />
       <NotificationPanel
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        notifications={merged}
-        unreadCount={totalUnread}
+        notifications={notifications}
+        unreadCount={unreadCount}
         onMarkRead={markAsRead}
-        onMarkAllRead={handleMarkAllRead}
+        onMarkAllRead={markAllRead}
       />
     </div>
   );

@@ -65,6 +65,15 @@ export function ContestDetailsModal({
               <p className="text-2xl font-bold text-success">{formatCurrency(contest.topPrize)}</p>
             </div>
           </div>
+          <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated">
+            <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
+            The prize pool grows as more players enter.
+            {contest.examplePaidDrafts && (
+              <> This breakdown is an example based on{' '}
+                <span className="text-text-primary">{contest.examplePaidDrafts.toLocaleString()} paid drafts</span>{' '}
+                — final payouts scale with the total pool.</>
+            )}
+          </p>
         </div>
 
         {/* Draft Type Odds */}
@@ -102,14 +111,30 @@ export function ContestDetailsModal({
                 </tr>
               </thead>
               <tbody>
-                {contest.prizeBreakdown.map((prize, index) => (
-                  <tr key={index} className="border-b border-bg-elevated last:border-0">
-                    <td className="py-3 px-4 text-text-primary">{prize.place}</td>
-                    <td className="py-3 px-4 text-right text-text-primary font-medium">
-                      {formatCurrency(prize.amount)}
-                    </td>
-                  </tr>
-                ))}
+                {contest.prizeBreakdown.map((prize, index) => {
+                  const prevSection = index > 0 ? contest.prizeBreakdown[index - 1].section : undefined;
+                  const showSection = prize.section && prize.section !== prevSection;
+                  return (
+                    <React.Fragment key={index}>
+                      {showSection && (
+                        <tr className="bg-bg-elevated/40">
+                          <td colSpan={2} className="py-2 px-4 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                            {prize.section}
+                          </td>
+                        </tr>
+                      )}
+                      <tr className="border-b border-bg-elevated last:border-0">
+                        <td className="py-3 px-4 text-text-primary">{prize.place}</td>
+                        <td className="py-3 px-4 text-right text-text-primary font-medium">
+                          {formatCurrency(prize.amount)}
+                          {prize.note && (
+                            <span className="text-text-muted text-xs font-normal ml-1">{prize.note}</span>
+                          )}
+                        </td>
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
