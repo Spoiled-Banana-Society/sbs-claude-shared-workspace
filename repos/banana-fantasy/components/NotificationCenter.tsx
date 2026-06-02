@@ -212,7 +212,11 @@ export function useNotifications() {
     _setNotificationWallet(walletAddress ?? null);
     if (!walletAddress) { setNotifications([]); return; }
     refetchRef.current();
-    const poll = setInterval(() => refetchRef.current(), 30_000);
+    // Mobile PWAs suspend the realtime websocket, so live pings can be minutes
+    // late there — poll tightly on mobile so the bell stays near-real-time
+    // regardless. Desktop keeps the websocket (fast) + a slow safety poll.
+    const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    const poll = setInterval(() => refetchRef.current(), isMobile ? 5_000 : 30_000);
     return () => clearInterval(poll);
   }, [walletAddress]);
 

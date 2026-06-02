@@ -21,6 +21,7 @@ import OneSignal from 'react-onesignal';
 import { useBadgeUnlockNotifier } from '@/hooks/useBadgeUnlockNotifier';
 import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
+import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
@@ -38,6 +39,21 @@ function AppContent({ children }: { children: React.ReactNode }) {
   // to the admin Logs tab. Idempotent — safe to call on every mount.
   useEffect(() => {
     installGlobalErrorHandlers();
+  }, []);
+
+  // iOS installed PWAs suspend the realtime websocket when backgrounded and
+  // don't reliably revive it on foreground — so notifications/promos stop
+  // arriving live (they dump minutes later). Force a fresh connection every
+  // time the app is foregrounded so real-time resumes immediately. The
+  // per-hook focus-refetches then pull the latest the instant you look.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') wakeRealtime(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
   }, []);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();

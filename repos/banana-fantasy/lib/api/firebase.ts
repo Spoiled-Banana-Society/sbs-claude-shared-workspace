@@ -15,6 +15,8 @@ import {
   serverTimestamp,
   query,
   limitToLast,
+  goOnline,
+  goOffline,
   type Database,
   type Unsubscribe,
   off,
@@ -105,6 +107,22 @@ export function getFirebaseDatabase(): Database | null {
   if (!app) return null;
   _db = getDatabase(app);
   return _db;
+}
+
+/**
+ * Force the Realtime Database websocket to reconnect. iOS installed PWAs
+ * suspend the websocket when backgrounded and don't always auto-revive it on
+ * foreground — so live events stop arriving (they pile up and dump ~minutes
+ * later). Calling goOffline→goOnline on foreground kicks a fresh connection so
+ * real-time resumes immediately. No-op if Firebase isn't configured.
+ */
+export function wakeRealtime(): void {
+  const db = getFirebaseDatabase();
+  if (!db) return;
+  try {
+    goOffline(db);
+    goOnline(db);
+  } catch { /* ignore */ }
 }
 
 /**

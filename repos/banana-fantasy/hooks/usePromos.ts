@@ -176,7 +176,10 @@ export function usePromos(opts?: { userId?: string }) {
     const onVisible = () => { if (document.visibilityState !== 'hidden') coalesced(); };
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
-    const interval = setInterval(refetch, 60_000);
+    // Mobile PWAs suspend the realtime websocket → poll tightly there so promo
+    // boxes stay near-real-time; desktop relies on the websocket + slow poll.
+    const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+    const interval = setInterval(refetch, isMobile ? 6_000 : 60_000);
     const unsub = userId ? subscribeUserEvents(userId, (event) => {
       // DIAGNOSTIC: measure server-fire → client-receive latency per device.
       import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'promos.ping.recv', {
