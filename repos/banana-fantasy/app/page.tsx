@@ -5,9 +5,8 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
-import { AddToHomeScreenCard } from '@/components/home/AddToHomeScreenCard';
+import { TopBanners } from '@/components/home/TopBanners';
 import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
-import { FirstPurchaseBanner } from '@/components/home/FirstPurchaseBanner';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 
@@ -236,14 +235,11 @@ export default function HomePage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 pt-16 flex flex-col min-h-[calc(100vh-64px)]">
-      {/* Get the App banner — top priority for everyone (new + returning),
-          shows how to install on mobile. Self-hides permanently once they
-          engage with the install steps. */}
-      <AddToHomeScreenCard />
-
-      {/* First-purchase bonus nudge — for eligible (pre-purchase) users.
-          Self-hides once they buy or dismiss it. */}
-      <FirstPurchaseBanner />
+      {/* Get-the-App + First-Purchase nudges, in one responsive row: side by
+          side on desktop, stacked on mobile, centered when only one shows.
+          Each ×-dismissible. The First-Purchase promo CARD in the carousel
+          below is independent — it follows the promo rules, not this banner. */}
+      <TopBanners />
 
       {/* Special Draft Banner removed — special drafts now show on /drafting page */}
 

@@ -70,12 +70,28 @@ const seedContests: Contest[] = [
       { category: 'Receiving', action: 'Receiving Yard', points: 0.1 },
       { category: 'Receiving', action: 'Reception', points: 0.5 },
     ],
+    examplePaidDrafts: 5000,
     prizeBreakdown: [
-      { place: '1st', amount: 25000 },
-      { place: '2nd', amount: 15000 },
-      { place: '3rd', amount: 10000 },
-      { place: '4th-10th', amount: 5000 },
-      { place: '11th-50th', amount: 500 },
+      // Championship finals — $55,000
+      { place: '1st', amount: 25000, section: 'Finals' },
+      { place: '2nd', amount: 8000, section: 'Finals' },
+      { place: '3rd', amount: 5000, section: 'Finals' },
+      { place: '4th', amount: 3200, section: 'Finals' },
+      { place: '5th', amount: 2400, section: 'Finals' },
+      { place: '6th', amount: 1800, section: 'Finals' },
+      { place: '7th', amount: 1400, section: 'Finals' },
+      { place: '8th', amount: 1100, section: 'Finals' },
+      { place: '9th', amount: 900, section: 'Finals' },
+      { place: '10th', amount: 700, section: 'Finals' },
+      { place: '11th–25th', amount: 200, note: 'each', section: 'Finals' },
+      { place: '26th–50th', amount: 100, note: 'each', section: 'Finals' },
+      // Per-league prizes — $40,000 (scale with number of leagues)
+      { place: 'Regular-Season League Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      { place: 'Playoff Round 1 Winner', amount: 20, note: 'each · 1,000 leagues', section: 'League Prizes' },
+      // Hall of Fame track — $5,000
+      { place: 'HOF 1st', amount: 3000, section: 'Hall of Fame' },
+      { place: 'HOF 2nd', amount: 1200, section: 'Hall of Fame' },
+      { place: 'HOF 3rd', amount: 800, section: 'Hall of Fame' },
     ],
   },
   {
@@ -241,7 +257,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.',
+        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
@@ -285,7 +301,9 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'New User Bonus SPIN',
       explanation:
-        'Verify your account by connecting your Twitter/X to claim your welcome spin. This helps us ensure fair play for everyone.',
+        'Verify your account by connecting your Twitter/X to claim your welcome spin. One account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
+      additionalRules:
+        'One account per person. Creating more than one account is not allowed — if you have multiple accounts you are NOT eligible to win prizes. We verify your X/Twitter to keep play fair for everyone, so each X account can only be linked to a single account.',
       twitterConnected: false,
     },
   },

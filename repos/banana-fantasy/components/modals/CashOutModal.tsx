@@ -1,12 +1,14 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { VerificationModal } from './VerificationModal';
 import { useAuth } from '@/hooks/useAuth';
+import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 
-const RETURNING_USER_KEY = 'banana-fantasy-cashout-returning';
+// NOTE: "returning cashout user" is now account-synced (useSyncedFlag below).
+// ACTIVE_TX_KEY stays per-device — it's transient in-flight recovery state.
 const ACTIVE_TX_KEY = 'banana-fantasy-cashout-active-tx';
 
 interface CashOutModalProps {
@@ -157,6 +159,12 @@ export function CashOutModal({
   const [selectedMethod, setSelectedMethod] = useState<SelectableMethod | null>(null);
   const [sessionUrl, setSessionUrl] = useState<string | null>(null);
   const [isReturning, setIsReturning] = useState(false);
+  // Account-synced: a user who has cashed out before skips the intro on any device.
+  const [cashoutReturning, setCashoutReturning] = useSyncedFlag<boolean>('cashoutReturning', false);
+  // Read inside the open-effect via a ref so the flag loading async doesn't
+  // re-run the effect (which would reset the modal's in-progress state).
+  const cashoutReturningRef = useRef(cashoutReturning);
+  cashoutReturningRef.current = cashoutReturning;
   const [showVerification, setShowVerification] = useState<'basic' | 'kyc' | null>(null);
   const [timeline, setTimeline] = useState<TimelineStep[] | null>(null);
   const [pollVersion, setPollVersion] = useState(0);
@@ -192,8 +200,7 @@ export function CashOutModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    const returning =
-      typeof window !== 'undefined' && localStorage.getItem(RETURNING_USER_KEY) === '1';
+    const returning = cashoutReturningRef.current;
     setIsReturning(returning);
     setErrorMessage(null);
     setQuotes(null);
@@ -433,11 +440,7 @@ export function CashOutModal({
         return;
       }
 
-      try {
-        localStorage.setItem(RETURNING_USER_KEY, '1');
-      } catch {
-        /* ignore */
-      }
+      setCashoutReturning(true);
       rememberActiveTx({
         partnerUserId: userId || walletAddress.toLowerCase(),
         amount: parsedAmount,

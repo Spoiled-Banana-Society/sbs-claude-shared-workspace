@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSyncedFlag, writeSyncedFlag } from '@/hooks/useSyncedFlag';
 
 interface RawMessage {
   walletAddress?: string;
@@ -9,68 +10,60 @@ interface RawMessage {
 
 const POLL_MS = 30_000;
 
-export function chatLastSeenKey(walletAddress: string, draftId: string): string {
-  return `chat-last-seen:${walletAddress.toLowerCase()}:${draftId}`;
-}
-
+/**
+ * Mark a league/draft chat as read. The "last seen" timestamp is now stored
+ * per-wallet on the SERVER (client-state, key `chatRead:<draftId>`), so reading
+ * the chat on one device clears the unread badge on the user's other devices.
+ * The shared useSyncedFlag store also updates in-memory immediately, so the
+ * badge clears the instant you open the chat.
+ */
 export function markChatRead(walletAddress: string, draftId: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(chatLastSeenKey(walletAddress, draftId), String(Date.now()));
-    // Fire a storage event in this tab too so other components that listen
-    // for the key can update without waiting for the next poll.
-    window.dispatchEvent(new StorageEvent('storage', {
-      key: chatLastSeenKey(walletAddress, draftId),
-    }));
-  } catch { /* quota — non-fatal */ }
+  if (!walletAddress || !draftId) return;
+  writeSyncedFlag(`chatRead:${draftId}`, Date.now(), walletAddress);
 }
 
 export function useUnreadChatCount(draftId: string | undefined, walletAddress: string | undefined): number {
-  const [count, setCount] = useState(0);
+  const [messages, setMessages] = useState<RawMessage[]>([]);
+  // Synced "last seen" timestamp. All league cards share ONE client-state
+  // fetch (the useSyncedFlag module store dedupes), so a list of cards doesn't
+  // fan out into N requests.
+  const [lastSeen] = useSyncedFlag<number>(draftId ? `chatRead:${draftId}` : 'chatRead:none', 0);
 
   useEffect(() => {
     if (!draftId || !walletAddress) {
-      setCount(0);
+      setMessages([]);
       return;
     }
-    const key = chatLastSeenKey(walletAddress, draftId);
-    const myWallet = walletAddress.toLowerCase();
     let cancelled = false;
-
     const tick = async () => {
       try {
         const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = (await res.json()) as { messages?: RawMessage[] };
         if (cancelled) return;
-        const lastSeen = Number(localStorage.getItem(key) || 0);
-        const messages = Array.isArray(data.messages) ? data.messages : [];
-        const unread = messages.filter((m) => {
-          const ts = typeof m.timestamp === 'number' ? m.timestamp : 0;
-          const wallet = (m.walletAddress || '').toLowerCase();
-          return ts > lastSeen && wallet !== myWallet;
-        }).length;
-        setCount(unread);
+        setMessages(Array.isArray(data.messages) ? data.messages : []);
       } catch {
-        // network blip — keep current count, next tick retries
+        // network blip — keep current messages, next tick retries
       }
     };
-
     void tick();
     const interval = setInterval(tick, POLL_MS);
-
-    // React to mark-as-read from this or another tab.
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === key) void tick();
-    };
-    window.addEventListener('storage', onStorage);
-
     return () => {
       cancelled = true;
       clearInterval(interval);
-      window.removeEventListener('storage', onStorage);
     };
   }, [draftId, walletAddress]);
 
-  return count;
+  const myWallet = (walletAddress || '').toLowerCase();
+  // Recomputes when new messages arrive OR when lastSeen changes (e.g. the user
+  // opened the chat → markChatRead → synced store notifies → badge clears).
+  return useMemo(
+    () =>
+      messages.filter((m) => {
+        const ts = typeof m.timestamp === 'number' ? m.timestamp : 0;
+        const wallet = (m.walletAddress || '').toLowerCase();
+        return ts > lastSeen && wallet !== myWallet;
+      }).length,
+    [messages, lastSeen, myWallet],
+  );
 }
