@@ -230,16 +230,23 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
 }
 
 export function useUserEventStream() {
-  const { user, isLoggedIn } = useAuth();
+  const { user } = useAuth();
   const { show } = useToast();
   const pathname = usePathname();
   // Latest pathname in a ref so the (rarely-rebuilt) subscription
   // closure reads the current route without re-subscribing on every nav.
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
+  // Keep `show` in a ref so the subscription effect can depend ONLY on the
+  // stable user id — NOT on `show`/`isLoggedIn`, which churn (Privy auth
+  // blinks) and would tear down + re-subscribe the stream, dropping events
+  // that land in the gap. That churn is why the toast fired only sometimes.
+  // Mirrors the stable-deps pattern the bell + promos subscriptions use.
+  const showRef = useRef(show);
+  showRef.current = show;
 
   useEffect(() => {
-    if (!isLoggedIn || !user?.id) return;
+    if (!user?.id) return;
     const userId = user.id.toLowerCase();
 
     const unsub = subscribeUserEvents(userId, (event) => {
@@ -269,7 +276,7 @@ export function useUserEventStream() {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
           import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'toast.shown', { type: event.type })).catch(() => {});
-          show({
+          showRef.current({
             level: 'success',
             message,
             ...(link ? { action: { label: 'View', onClick: () => { window.location.href = link; } } } : {}),
@@ -290,5 +297,5 @@ export function useUserEventStream() {
     return () => {
       try { unsub(); } catch { /* ignore */ }
     };
-  }, [isLoggedIn, user?.id, show]);
+  }, [user?.id]);
 }
