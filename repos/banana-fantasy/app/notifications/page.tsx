@@ -48,7 +48,7 @@ const fadeIn = {
 type FilterKey = 'all' | 'unread' | NotificationType;
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, markAsRead, markAllRead, clearAll, prefs, toggleCategory } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllRead, prefs, toggleCategory } = useNotifications();
   const [filter, setFilter] = useState<FilterKey>('all');
   const [showPrefs, setShowPrefs] = useState(false);
 
@@ -90,14 +90,6 @@ export default function NotificationsPage() {
                 className="px-3 py-1.5 bg-banana/10 text-banana text-xs font-bold rounded-lg hover:bg-banana/20 transition-colors"
               >
                 Mark all read
-              </button>
-            )}
-            {notifications.length > 0 && (
-              <button
-                onClick={clearAll}
-                className="px-3 py-1.5 bg-white/5 text-white/30 text-xs font-medium rounded-lg hover:bg-white/10 hover:text-white/50 transition-colors"
-              >
-                Clear all
               </button>
             )}
             <button

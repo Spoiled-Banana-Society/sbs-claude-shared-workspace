@@ -206,6 +206,15 @@ export function useNotifications() {
   // UNREAD and clobber the optimistic clear (the "had to tap read-all twice"
   // bug). We force them read until the server confirms, then drop the override.
   const locallyReadRef = useRef<Set<string>>(new Set());
+  // "Mark all read" high-water mark (client ms). Per-id tracking (locallyReadRef)
+  // only covers notifications already LOADED — but on mobile a refetch storm
+  // (iOS reconnect replays old pings, the mark-read PATCH fires its own ping)
+  // plus server-created-but-not-yet-fetched entries kept resurfacing as unread,
+  // so the badge bounced back and you had to tap read-all 3-4 times. This is the
+  // robust fix: anything created at/before the instant you tapped read-all is
+  // READ, full stop — no matter what a stale refetch or replayed ping claims.
+  // Notifications created AFTER this instant still show unread as normal.
+  const readAllAtRef = useRef<number>(0);
 
   const refetch = useCallback(async () => {
     const w = walletRef.current;
@@ -219,13 +228,17 @@ export function useNotifications() {
         const serverRead = Boolean(n.read);
         // Server confirmed read → local override no longer needed.
         if (serverRead) locallyReadRef.current.delete(id);
+        const createdAt = (n.createdAt as string) || new Date().toISOString();
+        // High-water mark: created at/before the last read-all tap → READ,
+        // even if the server hasn't committed yet or this is a replayed ping.
+        const beforeReadAll = new Date(createdAt).getTime() <= readAllAtRef.current;
         return {
           id,
           type: (n.type as NotificationType) || 'system',
           title: n.title as string,
           message: n.message as string,
-          read: serverRead || locallyReadRef.current.has(id),
-          createdAt: (n.createdAt as string) || new Date().toISOString(),
+          read: serverRead || locallyReadRef.current.has(id) || beforeReadAll,
+          createdAt,
           link: (n.link as string) || undefined,
         };
       });
@@ -264,6 +277,17 @@ export function useNotifications() {
           });
         }
       }
+
+      // DIAGNOSTIC: unread count each refetch + how many the read-all high-water
+      // mark suppressed. If read-all ever "bounces back", this shows the count
+      // climbing after a markAllRead and which path resurrected it.
+      const unread = mapped.filter((n) => !n.read).length;
+      const underHighWater = readAllAtRef.current > 0
+        ? mapped.filter((n) => new Date(n.createdAt).getTime() <= readAllAtRef.current).length
+        : null;
+      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'bell.refetch', {
+        total: mapped.length, unread, underHW: underHighWater, dev: deviceTag(),
+      })).catch(() => {});
 
       setNotifications(mapped);
     } catch { /* silent — degrade to last-known list */ }
@@ -319,7 +343,10 @@ export function useNotifications() {
             type: (event.notifType as NotificationType) || 'system',
             title: event.notifTitle as string,
             message: event.notifMessage || '',
-            read: false,
+            // A replayed ping for something that predates the last read-all tap
+            // arrives already-read (don't resurrect a cleared badge); genuinely
+            // new events (timestamp after read-all) inject as unread.
+            read: event.timestamp ? event.timestamp <= readAllAtRef.current : false,
             createdAt: new Date().toISOString(),
             link: event.notifLink || undefined,
           };
@@ -347,6 +374,7 @@ export function useNotifications() {
   // every mounted instance instantly.
   useEffect(() => {
     const onReadAll = () => {
+      readAllAtRef.current = Date.now();
       currentIdsRef.current.forEach((id) => locallyReadRef.current.add(id));
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     };
@@ -378,6 +406,10 @@ export function useNotifications() {
   }, []);
 
   const markAllRead = useCallback(() => {
+    // Set the read-all high-water mark FIRST (synchronously): everything created
+    // up to this instant is read, even entries not yet loaded or replayed later.
+    // This is what makes ONE tap stick on mobile (no more 3-4 taps).
+    readAllAtRef.current = Date.now();
     // Flag every current id locally-read SYNCHRONOUSLY (from the ref, not inside
     // the state updater) so an in-flight poll refetch can't bring the badge back
     // — this is what made the first tap appear to do nothing on mobile.
