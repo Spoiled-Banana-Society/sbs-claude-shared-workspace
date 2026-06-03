@@ -39,16 +39,6 @@ export function usePromos(opts?: { userId?: string }) {
   useEffect(() => {
     // keep local promos in sync with SWR source when it changes
     setLocalPromos(swr.data);
-    // DIAGNOSTIC: when fresh promo data lands, log the mint progress so we can
-    // see end-to-end latency (ping.recv → data rendered) vs delivery latency.
-    const mint = swr.data?.find((p) => p.type === 'mint');
-    if (mint) {
-      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'promos.data', {
-        mintProgress: mint.progressCurrent ?? null,
-        totalMinted: mint.modalContent?.totalMinted ?? null,
-      })).catch(() => {});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swr.data]);
 
   const promos = useMemo(() => localPromos ?? swr.data, [localPromos, swr.data]);
@@ -180,12 +170,7 @@ export function usePromos(opts?: { userId?: string }) {
     // boxes stay near-real-time; desktop relies on the websocket + slow poll.
     const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
     const interval = setInterval(refetch, isMobile ? 6_000 : 60_000);
-    const unsub = userId ? subscribeUserEvents(userId, (event) => {
-      // DIAGNOSTIC: measure server-fire → client-receive latency per device.
-      import('@/lib/clientLog').then(({ clientLog }) => clientLog('sync#', 'promos.ping.recv', {
-        type: event.type, src: event.source ?? null,
-        ageMs: event.timestamp ? Date.now() - event.timestamp : null,
-      })).catch(() => {});
+    const unsub = userId ? subscribeUserEvents(userId, () => {
       coalesced();
     }) : () => {};
     return () => {

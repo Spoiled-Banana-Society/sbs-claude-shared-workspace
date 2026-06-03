@@ -285,23 +285,11 @@ export function useNotifications() {
         }
       }
 
-      // DIAGNOSTIC: unread count each refetch + how many the read-all high-water
-      // mark suppressed. If read-all ever "bounces back", this shows the count
-      // climbing after a markAllRead and which path resurrected it.
-      const unread = mapped.filter((n) => !n.read).length;
-      const underHighWater = readAllAtRef.current > 0
-        ? mapped.filter((n) => new Date(n.createdAt).getTime() <= readAllAtRef.current).length
-        : null;
-
       // Skip the re-render when the list is unchanged (same ids + same read
       // flags, same order). This is what kills the every-~2s re-render storm
       // that was eating the first read-all tap on mobile.
       const sig = mapped.map((n) => `${n.id}:${n.read ? 1 : 0}`).join(',');
-      const changed = sig !== lastSigRef.current;
-      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'bell.refetch', {
-        total: mapped.length, unread, underHW: underHighWater, changed, dev: deviceTag(),
-      })).catch(() => {});
-      if (!changed) return; // nothing new — don't thrash the list (stable tap targets)
+      if (sig === lastSigRef.current) return; // nothing new — don't thrash the list (stable tap targets)
       lastSigRef.current = sig;
 
       setNotifications(mapped);
@@ -338,12 +326,6 @@ export function useNotifications() {
       timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
     };
     const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
-      // DIAGNOSTIC: server-fire → client-receive latency for cross-device sync.
-      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'bell.ping.recv', {
-        type: event.type, src: event.source ?? null,
-        ageMs: event.timestamp ? Date.now() - event.timestamp : null,
-        dev: deviceTag(),
-      })).catch(() => {});
       // INSTANT render: a content-carrying 'notification' ping for a FRESH
       // event (just happened) → prepend the entry immediately, no fetch wait.
       // The freshness gate stops replayed RTDB history (onChildAdded fires for
@@ -433,16 +415,12 @@ export function useNotifications() {
     // Clear every other mounted instance (header badge ↔ /notifications page) now.
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sbs-notifs-markallread'));
     const w = walletRef.current;
-    // DIAGNOSTIC: did read-all fire, and with a wallet?
-    import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w, dev: deviceTag() })).catch(() => {});
     if (!w) return;
     void fetch('/api/marketplace/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wallet: w, all: true }),
-    })
-      .then((r) => { import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead.patch', { ok: r.ok, status: r.status, dev: deviceTag() })).catch(() => {}); })
-      .catch(() => refetchRef.current());
+    }).catch(() => refetchRef.current());
   }, []);
 
   // Persist server-side; the resulting 'notification' ping refetches the bell.

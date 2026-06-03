@@ -264,16 +264,11 @@ export function useUserEventStream() {
       // Dedup: every event has a stable eventId; ignore if already shown.
       const seen = readSeen(userId);
       const isSeen = seen.has(event.eventId);
-      const ageMs = Date.now() - (event.timestamp ?? 0);
       // "Replayed history" = fired before we subscribed. Skip (no toast) but
       // still mark seen so we never reconsider it.
       const replayed = (event.timestamp ?? 0) < subscribedAt;
       const stale = replayed;
       const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
-      // DIAGNOSTIC: why a toast did/didn't show for each event.
-      import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'toast.event', {
-        type: event.type, ageMs, seen: isSeen, replayed, inDraftRoom, dev: deviceTag(),
-      })).catch(() => {});
 
       if (isSeen) return;
 
@@ -286,7 +281,6 @@ export function useUserEventStream() {
       const surfaces: Surfaces = {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
-          import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'toast.shown', { type: event.type, dev: deviceTag() })).catch(() => {});
           showRef.current({
             level: 'success',
             message,
