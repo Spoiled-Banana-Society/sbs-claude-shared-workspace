@@ -243,9 +243,14 @@ export function useNotifications() {
           _toastsSeeded = true;
         } else {
           const nowMs = Date.now();
+          // Skip notifications that already have their own pop-up/modal or
+          // reveal animation — claims (banana-shower) and wheel wins (reveal).
+          // "Pop-up → no toast." Matches "Promo Claimed!", "...Won!", "...Queued!".
+          const hasOwnPopup = (title: string) => /Promo Claimed|Won!|Queued!/i.test(title || '');
           const fresh = mapped.filter((n) =>
             !n.read
             && !_toastedIds.has(n.id)
+            && !hasOwnPopup(n.title)
             && (nowMs - new Date(n.createdAt).getTime()) < 60_000, // created within last 60s
           );
           fresh.forEach((n) => _toastedIds.add(n.id));
@@ -335,6 +340,20 @@ export function useNotifications() {
     };
   }, [walletAddress]);
 
+  // Cross-instance read-all: the bell badge (header) and the /notifications
+  // page are SEPARATE useNotifications instances. Without this, "mark all read"
+  // on one clears it but the other's badge lingers until its own poll (~5s on
+  // mobile) — which felt like "I had to tap it twice". Broadcasting clears
+  // every mounted instance instantly.
+  useEffect(() => {
+    const onReadAll = () => {
+      currentIdsRef.current.forEach((id) => locallyReadRef.current.add(id));
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    };
+    window.addEventListener('sbs-notifs-markallread', onReadAll);
+    return () => window.removeEventListener('sbs-notifs-markallread', onReadAll);
+  }, []);
+
   // Category mute prefs — per-device DISPLAY filter (Phase 1). Phase 2 syncs
   // these to the account.
   useEffect(() => { setPrefs(getNotificationPrefs()); }, []);
@@ -364,6 +383,8 @@ export function useNotifications() {
     // — this is what made the first tap appear to do nothing on mobile.
     currentIdsRef.current.forEach(id => locallyReadRef.current.add(id));
     setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
+    // Clear every other mounted instance (header badge ↔ /notifications page) now.
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('sbs-notifs-markallread'));
     const w = walletRef.current;
     // DIAGNOSTIC: did read-all fire, and with a wallet?
     import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w, dev: deviceTag() })).catch(() => {});
