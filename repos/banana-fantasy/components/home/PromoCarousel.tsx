@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
-import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 
@@ -162,9 +161,10 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     }
 
     const count = promo.claimCount || 1;
-    if (promo.type === 'jackpot' || promo.type === 'hof') {
-      reservePromoDraftType(promo.type, count);
-    }
+    // NOTE: a promo claim must NEVER pre-determine a draft's type. Draft type
+    // (Jackpot/HOF/Pro) is decided solely by the backend's provably-fair
+    // guaranteed distribution at fill time. The old reservePromoDraftType()
+    // call here forced the next draft's outcome — removed as a rigging vector.
 
     // Use real backend claim if available — celebration modal fires
     // centrally from usePromos.claimPromo via ClaimCelebrationContext.

@@ -56,7 +56,6 @@ function DraftRoomContent() {
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
-  const promoTypeParam = searchParams?.get('promoType') as 'jackpot' | 'hof' | 'pro' | null;
   const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | null;
   // Spectator mode: same URL flow as a live participant, but no actions
   // fire (no pick submit, no leave, no queue mutations) and a SPECTATOR
@@ -419,7 +418,6 @@ function DraftRoomContent() {
     walletParam,
     speedParam,
     passTypeParam,
-    promoTypeParam,
     phase,
     liveDataReady,
     setLiveDataReady,

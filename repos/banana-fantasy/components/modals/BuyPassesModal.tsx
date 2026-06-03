@@ -12,7 +12,6 @@ import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pric
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
-import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -411,12 +410,13 @@ export function BuyPassesModal({
     try {
       // Join a draft
       const apiBase = getDraftsApiUrl();
-      const forcedDraftType = peekPromoDraftType();
-      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr, forcedDraftType });
+      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr });
+      // Draft TYPE is decided solely by the backend's provably-fair logic —
+      // the client never sends a draftType (would be a rigged-outcome vector).
       const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numLeaguesToJoin: 1, ...(forcedDraftType ? { draftType: forcedDraftType } : {}) }),
+        body: JSON.stringify({ numLeaguesToJoin: 1 }),
       });
 
       if (!joinRes.ok) {
@@ -452,10 +452,6 @@ export function BuyPassesModal({
         });
         localStorage.setItem('banana-active-drafts', JSON.stringify(existing));
       } catch { /* ignore */ }
-
-      if (forcedDraftType) {
-        consumePromoDraftType(forcedDraftType);
-      }
 
       // Navigate to draft lobby with staging params
       const params = new URLSearchParams({

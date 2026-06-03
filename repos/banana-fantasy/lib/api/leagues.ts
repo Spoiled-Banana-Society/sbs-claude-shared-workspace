@@ -17,20 +17,25 @@ function draftsApi() {
 }
 
 export type DraftSpeed = 'fast' | 'slow';
-export type DraftPromoType = 'jackpot' | 'hof' | 'pro';
 
 export type LeaderboardOrderBy = string;
 
 /**
  * Join a draft (fast or slow).
  *
- * Backend endpoint: `POST /league/{draftType}/owner/{walletAddress}`
+ * Backend endpoint: `POST /league/{speed}/owner/{walletAddress}`
+ *
+ * IMPORTANT (fairness): the client MUST NOT be able to choose the draft TYPE
+ * (Jackpot/HOF/Pro). Type is decided solely by the backend's provably-fair
+ * guaranteed-distribution logic. A previous "promo draft type" feature let the
+ * client pass `draftType` in this body to force a Jackpot/HOF outcome — that
+ * was a rigged-outcome vector and has been removed everywhere. Do not add a
+ * draftType/promoType argument back to this call.
  */
 export async function joinDraft(
   walletAddress: string,
   speed: DraftSpeed,
   numLeaguesToJoin: number = 1,
-  draftType?: DraftPromoType,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
   const wallet = normalizeWalletAddress(walletAddress);
@@ -43,7 +48,6 @@ export async function joinDraft(
       `/league/${speed}/owner/${wallet}`,
       {
         numLeaguesToJoin,
-        ...(draftType ? { draftType } : {}),
         passType: passType || 'paid',
       },
       { signal: controller.signal },

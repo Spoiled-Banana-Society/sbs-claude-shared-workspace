@@ -39,7 +39,6 @@ interface UseDraftLiveSyncParams {
   walletParam: string;
   speedParam: 'fast' | 'slow' | null;
   passTypeParam: 'paid' | 'free' | null;
-  promoTypeParam: 'jackpot' | 'hof' | 'pro' | null;
   phase: RoomPhase;
   liveDataReady: boolean;
   setLiveDataReady: Dispatch<SetStateAction<boolean>>;
@@ -62,7 +61,6 @@ export function useDraftLiveSync({
   walletParam,
   speedParam,
   passTypeParam,
-  promoTypeParam,
   phase,
   liveDataReady,
   setLiveDataReady,
@@ -167,7 +165,8 @@ export function useDraftLiveSync({
       for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
         try {
           const { joinDraft } = await import('@/lib/api/leagues');
-          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, promoTypeParam ?? undefined, passTypeParam || 'paid');
+          // Draft TYPE is never client-chosen — backend provably-fair only.
+          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 
           const newId = draftRoom.id;
@@ -246,7 +245,7 @@ export function useDraftLiveSync({
         message: lastErr instanceof Error ? lastErr.message : String(lastErr),
         route: 'draft-room',
         actor: walletParam,
-        context: { speed: speedParam || 'fast', passType: passTypeParam || 'paid', promoType: promoTypeParam ?? null, attempts: MAX_JOIN_RETRIES },
+        context: { speed: speedParam || 'fast', passType: passTypeParam || 'paid', attempts: MAX_JOIN_RETRIES },
         stack: lastErr instanceof Error ? lastErr.stack : undefined,
       });
       draftStore.removeDraft(pendingId);
@@ -254,7 +253,7 @@ export function useDraftLiveSync({
     }
 
     joinAndFill();
-  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, promoTypeParam, setDraftId]);
+  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, setDraftId]);
 
   const handleLiveDraft = useCallback((playerId: string) => {
     // Manual-pick / airplane auto-off side effects are handled at the

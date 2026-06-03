@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { PromoModal } from '@/components/modals/PromoModal';
-import { reservePromoDraftType } from '@/lib/promoDraftType';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -153,9 +152,10 @@ export default function PromosPage() {
       return false;
     }
     const count = promo.claimCount || 1;
-    if (promo.type === 'jackpot' || promo.type === 'hof') {
-      reservePromoDraftType(promo.type, count);
-    }
+    // NOTE: a promo claim must NEVER pre-determine a draft's type. Draft type
+    // (Jackpot/HOF/Pro) is decided solely by the backend's provably-fair
+    // guaranteed distribution at fill time. The old reservePromoDraftType()
+    // call here forced the next draft's outcome — removed as a rigging vector.
     if (promosQuery.claimPromo) {
       const result = await promosQuery.claimPromo(promo.id);
       if (result instanceof Error) {

@@ -6,7 +6,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
 import { joinDraft } from '@/lib/api/leagues';
-import { peekPromoDraftType, consumePromoDraftType } from '@/lib/promoDraftType';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -88,11 +87,6 @@ export function useEnterDraft() {
       return;
     }
 
-    // A queued promo draft type (Jackpot/HOF earned from a promo) forces the
-    // joined draft's type. Peek before joining; only consume it once the join
-    // actually succeeds so a failed join doesn't burn the entitlement.
-    const forcedDraftType = peekPromoDraftType();
-
     // Non-staging / local mode: no backend draft to join. Spin up a local
     // draft and navigate — same shape the home page used before, kept here so
     // the single hook covers every mode.
@@ -112,7 +106,6 @@ export function useEnterDraft() {
         liveWalletAddress: user.walletAddress,
         passType,
       });
-      if (forcedDraftType) consumePromoDraftType(forcedDraftType);
       const params = new URLSearchParams({
         id: localDraftId,
         name: localContestName,
@@ -140,7 +133,7 @@ export function useEnterDraft() {
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
       try {
-        draftRoom = await joinDraft(user.walletAddress, speed, 1, forcedDraftType ?? undefined, passType);
+        draftRoom = await joinDraft(user.walletAddress, speed, 1, passType);
         if (draftRoom?.id) break;
         throw new Error('Join failed: no draft ID');
       } catch (err) {
@@ -183,9 +176,6 @@ export function useEnterDraft() {
       alert('Could not join a draft right now. Your pass was not used — please try again.');
       return;
     }
-
-    // Join succeeded — now safe to consume the queued promo entitlement.
-    if (forcedDraftType) consumePromoDraftType(forcedDraftType);
 
     const newId = draftRoom.id;
     const joinedCount = Math.min(Math.max(Number(draftRoom.players) || 1, 1), 10);
