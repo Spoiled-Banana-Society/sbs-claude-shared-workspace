@@ -1030,13 +1030,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const claimNewUserPromo = useCallback(async () => {
     if (!walletAddress) return;
+    // Optimistic: flip the flag IMMEDIATELY so the New User box disappears the
+    // instant they claim (spin not required), and so a slow/failed PATCH can't
+    // leave the box lingering. The server PATCH below is the durable backstop.
+    setNewUserPromoClaimed(true);
     try {
       await fetch('/api/auth/verify-twitter', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ walletAddress }),
       });
-      setNewUserPromoClaimed(true);
     } catch {
       // Silent — claim tracking is best-effort
     }

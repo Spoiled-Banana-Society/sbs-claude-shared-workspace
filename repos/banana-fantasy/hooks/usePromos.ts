@@ -18,7 +18,7 @@ type ClaimPromoResponse = {
 type ClaimPromoResult = ClaimPromoResponse | Error | null;
 
 export function usePromos(opts?: { userId?: string }) {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, claimNewUserPromo } = useAuth();
   const { celebrate } = useClaimCelebration();
   const userId = opts?.userId ?? user?.id;
 
@@ -46,6 +46,14 @@ export function usePromos(opts?: { userId?: string }) {
   const claimPromo = useCallback(
     async (promoId: string): Promise<ClaimPromoResult> => {
       if (!userId) return null;
+
+      // New-user promo is one-time: the moment they claim, it's done forever.
+      // Mark it claimed up front so the box disappears INSTANTLY from every
+      // surface — every claim button across the app routes through this one
+      // function, so this is the single place that guarantees it (no spin
+      // needed). claimNewUserPromo also persists it server-side on the X-link.
+      const claimingType = (swr.data ?? []).find((p) => p.id === promoId)?.type;
+      if (claimingType === 'new-user') claimNewUserPromo();
 
       try {
         const res = await fetchJson<ClaimPromoResponse>('/api/promos/claim', {
@@ -95,7 +103,7 @@ export function usePromos(opts?: { userId?: string }) {
         return error;
       }
     },
-    [userId, swr.data, updateUser, celebrate],
+    [userId, swr.data, updateUser, celebrate, claimNewUserPromo],
   );
 
   const verifyTweetEngagement = useCallback(
