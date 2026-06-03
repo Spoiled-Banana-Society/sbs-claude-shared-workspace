@@ -29,6 +29,49 @@ function isIOSSafari(): boolean {
   return /iphone|ipad|ipod/.test(ua) && /safari/.test(ua) && !/chrome|crios|fxios/.test(ua);
 }
 
+// ── Shared step blocks ──────────────────────────────────────────────────
+// One source of truth for each platform's steps so the copy is IDENTICAL
+// everywhere it appears (desktop modal, iOS Safari modal, iOS Chrome modal).
+
+const ShareGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>
+);
+const CheckGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+);
+const DotsHorizGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="19" cy="12" r="1.5" fill="#fbbf24" /></svg>
+);
+const DotsVertGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="19" r="1.5" fill="#fbbf24" /></svg>
+);
+const DownloadGlyph = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+);
+
+// iOS (Safari) — same 3 steps everywhere.
+function IOSSteps() {
+  return (
+    <div className="space-y-3.5">
+      <Step num={1} icon={DotsHorizGlyph} title={<>Tap the <span className="text-banana">three dots</span></>} desc="Bottom-right of Safari" />
+      <Step num={2} icon={ShareGlyph} title={<>Tap <span className="text-banana">Share</span></>} desc="" />
+      <Step num={3} icon={CheckGlyph} title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>} desc={'Don’t see it? Tap "More" first'} />
+    </div>
+  );
+}
+
+// Android (Chrome) — menu → Install app → confirm. Verified flow: tapping the
+// menu item opens a confirmation dialog with an Install button you must tap.
+function AndroidSteps() {
+  return (
+    <div className="space-y-3.5">
+      <Step num={1} icon={DotsVertGlyph} title={<>Tap the <span className="text-banana">menu (⋮)</span></>} desc="Top-right of Chrome" />
+      <Step num={2} icon={DownloadGlyph} title={<>Tap <span className="text-banana">Install app</span></>} desc={'Or "Add to Home screen"'} />
+      <Step num={3} icon={CheckGlyph} title={<>Tap <span className="text-banana">Install</span> to confirm</>} desc="On the popup that appears" />
+    </div>
+  );
+}
+
 // ── Install Steps Modal ─────────────────────────────────────────────────
 
 export function InstallModal({ onClose, browser, promoBanner }: { onClose: () => void; browser: 'safari' | 'chrome' | 'both'; promoBanner?: React.ReactNode }) {
@@ -60,41 +103,15 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
             <div className="space-y-4">
               <div>
                 <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5">iPhone — in Safari</p>
-                <div className="space-y-3">
-                  <Step
-                    num={1}
-                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>}
-                    title={<>Tap <span className="text-banana">Share</span></>}
-                    desc="Bottom of Safari"
-                  />
-                  <Step
-                    num={2}
-                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                    title={<>Tap <span className="text-banana">Add to Home Screen</span></>}
-                    desc=""
-                  />
-                </div>
+                <IOSSteps />
               </div>
               <div className="pt-1 border-t border-white/[0.06]">
                 <p className="text-white/25 text-[10px] uppercase tracking-wider mb-2.5 mt-3">Android — in Chrome</p>
-                <div className="space-y-3">
-                  <Step
-                    num={1}
-                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="5" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="19" r="1.5" fill="#fbbf24" /></svg>}
-                    title={<>Tap the <span className="text-banana">menu (⋮)</span></>}
-                    desc="Top-right of Chrome"
-                  />
-                  <Step
-                    num={2}
-                    icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                    title={<>Tap <span className="text-banana">Install app</span></>}
-                    desc="Or &quot;Add to Home screen&quot;"
-                  />
-                </div>
+                <AndroidSteps />
               </div>
             </div>
           ) : browser === 'chrome' ? (
-            /* Chrome on iOS — show Safari requirement + same 5 steps */
+            /* Chrome on iOS — show Safari requirement + the same iOS steps */
             <div>
               {/* Safari required banner */}
               <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
@@ -105,7 +122,7 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
                   </svg>
                   <p className="text-white font-medium text-xs">Must be done in Safari</p>
                 </div>
-                <p className="text-white/40 text-[11px] mb-2">Open this page in Safari, then follow the 5 steps below.</p>
+                <p className="text-white/40 text-[11px] mb-2">Open this page in Safari, then follow the steps below.</p>
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -120,67 +137,13 @@ export function InstallModal({ onClose, browser, promoBanner }: { onClose: () =>
                 </div>
               </div>
 
-              {/* Same 4 steps as Safari */}
+              {/* Same steps as Safari */}
               <p className="text-white/25 text-[10px] uppercase tracking-wider mb-3">Then in Safari:</p>
-              <div className="space-y-3.5">
-                <Step
-                  num={1}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="5" cy="12" r="1.5" fill="#fbbf24" /><circle cx="12" cy="12" r="1.5" fill="#fbbf24" /><circle cx="19" cy="12" r="1.5" fill="#fbbf24" /></svg>}
-                  title={<>Tap the <span className="text-banana">three dots</span> next to the URL</>}
-                  desc="Bottom-right of your browser"
-                />
-                <Step
-                  num={2}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" /></svg>}
-                  title={<>Tap <span className="text-banana">Share</span></>}
-                  desc=""
-                />
-                <Step
-                  num={3}
-                  icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                  title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>}
-                  desc="Don&apos;t see it? Tap More first"
-                />
-              </div>
+              <IOSSteps />
             </div>
           ) : (
-            /* Safari — 4 step install flow */
-            <div className="space-y-3.5">
-              <Step
-                num={1}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="5" cy="12" r="1.5" fill="#fbbf24" />
-                    <circle cx="12" cy="12" r="1.5" fill="#fbbf24" />
-                    <circle cx="19" cy="12" r="1.5" fill="#fbbf24" />
-                  </svg>
-                }
-                title={<>Tap the <span className="text-banana">three dots</span> — bottom right</>}
-                desc=""
-              />
-              <Step
-                num={2}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" y1="2" x2="12" y2="15" />
-                  </svg>
-                }
-                title={<>Tap <span className="text-banana">Share</span></>}
-                desc=""
-              />
-              <Step
-                num={3}
-                icon={
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6L9 17l-5-5" />
-                  </svg>
-                }
-                title={<>Scroll down &amp; tap <span className="text-banana">Add to Home Screen</span></>}
-                desc="Don&apos;t see it? Tap More first"
-              />
-            </div>
+            /* Safari — iOS install flow */
+            <IOSSteps />
           )}
         </div>
 
