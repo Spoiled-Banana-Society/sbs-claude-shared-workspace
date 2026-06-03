@@ -861,31 +861,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                 )}
               </div>
             </div>
-
-            <div className="flex items-center justify-center gap-3">
-              {sectionIndex > 0 && (
-                <button
-                  onClick={goBack}
-                  className="px-6 py-3 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
-                >
-                  ← Back
-                </button>
-              )}
-              <button
-                onClick={handleProfileSubmit}
-                disabled={savingProfile}
-                className="px-8 py-3 bg-banana text-black font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
-              >
-                {savingProfile ? 'Saving…' : 'Continue'}
-              </button>
-            </div>
-
-            <button
-              onClick={handleSkip}
-              className="text-white/50 hover:text-white/80 text-sm"
-            >
-              Skip for now
-            </button>
+            {/* Back/Continue live in the fixed bottom bar — see the footer below. */}
           </div>
         </div>
       );
@@ -1000,7 +976,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
           sections, Back/Next flank the progress dots (left/right of the
           "yellow things"). Intro/profile/ready keep their own primary CTAs. */}
       <div className="flex-shrink-0 py-5 px-6 flex items-center justify-center gap-4 sm:gap-6 z-20">
-        {currentSection?.type === 'section' && (
+        {(currentSection?.type === 'section' || currentSection?.type === 'profile') && sectionIndex > 0 && (
           <button
             onClick={goBack}
             className="px-4 sm:px-6 py-2.5 text-white/60 hover:text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95"
@@ -1030,6 +1006,16 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
             className="px-5 sm:px-8 py-2.5 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
           >
             Next →
+          </button>
+        )}
+
+        {currentSection?.type === 'profile' && (
+          <button
+            onClick={handleProfileSubmit}
+            disabled={savingProfile}
+            className="px-5 sm:px-8 py-2.5 bg-banana text-black font-semibold rounded-xl transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+          >
+            {savingProfile ? 'Saving…' : 'Continue'}
           </button>
         )}
       </div>
