@@ -814,6 +814,52 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
                   )}
                 </div>
               </div>
+
+              {/* Optional NFL team badge — reps on the user's profile and teams. */}
+              <div>
+                <label className="block text-sm text-white/60 mb-1">
+                  Rep Your Team <span className="text-white/40">(Optional)</span>
+                </label>
+                <p className="text-white/40 text-xs mb-3">
+                  Pick a badge for your profile. You can change it anytime.
+                </p>
+                <div className="grid grid-cols-6 gap-2.5 max-h-40 overflow-y-auto px-1 py-1">
+                  {teamBadges.map(badge => {
+                    const isSelected = equipped === badge.id;
+                    return (
+                      <button
+                        key={badge.id}
+                        type="button"
+                        onClick={() => handlePickTeam(badge.id)}
+                        disabled={equippingTeam}
+                        title={badge.label}
+                        aria-label={badge.label}
+                        aria-pressed={isSelected}
+                        className={`relative flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-95 disabled:opacity-60 ${
+                          isSelected
+                            ? 'ring-2 ring-banana ring-offset-2 ring-offset-black scale-105'
+                            : 'opacity-70 hover:opacity-100'
+                        }`}
+                      >
+                        <BadgeIcon badge={badge} size={36} showTooltip={false} />
+                      </button>
+                    );
+                  })}
+                </div>
+                {equipped && teamBadges.some(b => b.id === equipped) && (
+                  <p className="text-banana/80 text-xs mt-3">
+                    Repping the {teamBadges.find(b => b.id === equipped)?.label}.
+                    <button
+                      type="button"
+                      onClick={() => handlePickTeam(equipped)}
+                      disabled={equippingTeam}
+                      className="ml-2 underline text-white/50 hover:text-white"
+                    >
+                      Clear
+                    </button>
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-center gap-3">
@@ -890,52 +936,6 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
           <div className="text-7xl mb-6 animate-bounce">🍌</div>
           <h2 className="text-4xl md:text-5xl font-bold text-white mb-4">You&apos;re ready.</h2>
           <p className="text-white/50 text-xl mb-8">Draft smart. Win big.</p>
-
-          {/* Optional NFL team badge — reps on the user's profile and teams. */}
-          <div className="max-w-md mx-auto mb-8">
-            <p className="text-white font-semibold text-sm">
-              Rep your team <span className="text-white/40 font-normal">(optional)</span>
-            </p>
-            <p className="text-white/40 text-xs mt-1 mb-4">
-              Pick a badge for your profile. You can change it anytime.
-            </p>
-            <div className="grid grid-cols-6 sm:grid-cols-8 gap-2.5 max-h-44 overflow-y-auto px-1 py-1">
-              {teamBadges.map(badge => {
-                const isSelected = equipped === badge.id;
-                return (
-                  <button
-                    key={badge.id}
-                    type="button"
-                    onClick={() => handlePickTeam(badge.id)}
-                    disabled={equippingTeam}
-                    title={badge.label}
-                    aria-label={badge.label}
-                    aria-pressed={isSelected}
-                    className={`relative flex items-center justify-center rounded-full transition-all hover:scale-110 active:scale-95 disabled:opacity-60 ${
-                      isSelected
-                        ? 'ring-2 ring-banana ring-offset-2 ring-offset-black scale-105'
-                        : 'opacity-70 hover:opacity-100'
-                    }`}
-                  >
-                    <BadgeIcon badge={badge} size={38} showTooltip={false} />
-                  </button>
-                );
-              })}
-            </div>
-            {equipped && teamBadges.some(b => b.id === equipped) && (
-              <p className="text-banana/80 text-xs mt-3">
-                Repping the {teamBadges.find(b => b.id === equipped)?.label}.
-                <button
-                  type="button"
-                  onClick={() => handlePickTeam(equipped)}
-                  disabled={equippingTeam}
-                  className="ml-2 underline text-white/50 hover:text-white"
-                >
-                  Clear
-                </button>
-              </p>
-            )}
-          </div>
 
           <button
             onClick={handleSkip}
