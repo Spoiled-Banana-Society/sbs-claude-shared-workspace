@@ -2,13 +2,13 @@
 
 import React from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { TopBanners } from '@/components/home/TopBanners';
 import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
+import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 
 const BuyPassesModal = dynamic(
   () => import('@/components/modals/BuyPassesModal').then(m => m.BuyPassesModal),
@@ -21,8 +21,7 @@ import { usePromos } from '@/hooks/usePromos';
 import { usePromoReminders } from '@/hooks/usePromoReminders';
 import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
-import { consumePromoDraftType, peekPromoDraftType } from '@/lib/promoDraftType';
-import * as draftStore from '@/lib/draftStore';
+import { useEnterDraft } from '@/hooks/useEnterDraft';
 
 function StagingMintButton({
   userId,
@@ -83,42 +82,23 @@ function StagingMintButton({
 }
 
 export default function HomePage() {
-  const router = useRouter();
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance } = useAuth();
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
   usePromoReminders(promosQuery.promos);
 
+  // Shared entry flow — identical to the /drafting "Enter draft" path. Shows the
+  // branded "Joining lobby" overlay, joins BEFORE navigating, and seeds the room
+  // URL with id/players/joinedAt so the lobby paints fully populated (no blank,
+  // no count-pop-in). Single source of truth in useEnterDraft so the two entry
+  // points can't drift and reintroduce the old home-page glitch.
+  const { joiningLobby, enterDraftWithPassType } = useEnterDraft();
+
   const allPromos = promosQuery.promos || [];
 
   const selectedContest = contestsQuery.data?.[0];
   const modals = useModalStack();
-
-  const buildDraftRoomUrl = React.useCallback((draftId: string, contestName: string, speed: 'fast' | 'slow') => {
-    const params = new URLSearchParams({
-      id: draftId,
-      name: contestName,
-      speed,
-    });
-
-    // Add live mode params only in staging mode
-    if (user?.walletAddress && _isStagingMode()) {
-      params.set('mode', 'live');
-      params.set('wallet', user.walletAddress);
-    }
-
-    if (typeof window !== 'undefined') {
-      const current = new URLSearchParams(window.location.search);
-      if (current.get('staging') === 'true') params.set('staging', 'true');
-      const apiUrl = current.get('apiUrl');
-      const wsUrl = current.get('wsUrl');
-      if (apiUrl) params.set('apiUrl', apiUrl);
-      if (wsUrl) params.set('wsUrl', wsUrl);
-    }
-
-    return `/draft-room?${params.toString()}`;
-  }, [user?.walletAddress]);
 
 
   const handleEnter = () => {
@@ -139,90 +119,11 @@ export default function HomePage() {
     modals.push('entry-flow');
   };
 
-  const handleEntryComplete = async (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
+  const handleEntryComplete = (passType: 'paid' | 'free', speed: 'fast' | 'slow') => {
     modals.closeAll();
-
-    if (!user?.walletAddress) return;
-
-    const paidPasses = user?.draftPasses || 0;
-    const freePasses = user?.freeDrafts || 0;
-
-    if (passType === 'paid' && paidPasses <= 0) {
-      alert('No paid draft passes available.');
-      return;
-    }
-    if (passType === 'free' && freePasses <= 0) {
-      alert('No free draft passes available.');
-      return;
-    }
-
-    // Optimistic local decrement so the header ticks down on click.
-    // Rolled back below if the backend rejects.
-    if (passType === 'paid') {
-      updateUser({ draftPasses: Math.max(0, paidPasses - 1) });
-    } else {
-      updateUser({ freeDrafts: Math.max(0, freePasses - 1) });
-    }
-
-    // Backend gate: Firestore is the authoritative source. A stale UI
-    // could otherwise let a user join a draft they shouldn't. We await
-    // the decrement and abort if it fails — no navigation, balance
-    // re-syncs from Firestore truth.
-    let decremented = false;
-    try {
-      const res = await fetch('/api/owner/use-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      });
-      const body = await res.json().catch(() => ({}));
-      decremented = res.ok && !!body?.decremented;
-    } catch {
-      updateUser({ draftPasses: paidPasses, freeDrafts: freePasses });
-      alert('Network error. Please try again.');
-      return;
-    }
-
-    if (!decremented) {
-      updateUser({ draftPasses: paidPasses, freeDrafts: freePasses });
-      void refreshBalance();
-      alert('No draft passes available. Your balance has been refreshed.');
-      return;
-    }
-
-    // Consume promo draft type if queued (only after the gate succeeds —
-    // we don't want to burn a queued promo on a failed join).
-    const forcedDraftType = peekPromoDraftType();
-    if (forcedDraftType) {
-      consumePromoDraftType(forcedDraftType);
-    }
-
-    if (_isStagingMode()) {
-      const params = new URLSearchParams({
-        speed,
-        mode: 'live',
-        wallet: user.walletAddress,
-        passType,
-      });
-      if (forcedDraftType) params.set('promoType', forcedDraftType);
-      router.push(`/draft-room?${params.toString()}`);
-    } else {
-      const localDraftId = `local-${Date.now()}`;
-      const localContestName = `League #${Math.floor(Math.random() * 9000) + 1000}`;
-      draftStore.addDraft({
-        id: localDraftId,
-        contestName: localContestName,
-        status: 'filling',
-        type: null,
-        draftSpeed: speed,
-        players: 1,
-        maxPlayers: 10,
-        joinedAt: Date.now(),
-        phase: 'filling',
-        liveWalletAddress: user.walletAddress,
-      });
-      router.push(buildDraftRoomUrl(localDraftId, localContestName, speed));
-    }
+    // Hand off to the single shared entry flow — pass gate, join-before-navigate,
+    // overlay, promo-type, and URL seeding all live in useEnterDraft now.
+    void enterDraftWithPassType(passType, speed);
   };
 
   const handlePurchaseComplete = () => {
@@ -320,6 +221,10 @@ export default function HomePage() {
           onPurchaseComplete={handlePurchaseComplete}
         />
       )}
+
+      {/* Branded "Joining lobby…" transition while the join call is in flight,
+          covering the hand-off into the room (matches the /drafting flow). */}
+      <JoiningLobbyOverlay show={joiningLobby} />
 
     </div>
   );

@@ -11,7 +11,8 @@ import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
 import type { ApiDraftToken } from '@/lib/api/owner';
 import * as draftApi from '@/lib/draftApi';
-import { leaveDraft, joinDraft } from '@/lib/api/leagues';
+import { leaveDraft } from '@/lib/api/leagues';
+import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
@@ -156,7 +157,10 @@ export function useDraftingPageState() {
   // entry — drives the branded "Joining lobby…" overlay. Cleared on failure;
   // on success the page navigates away (drafting page unmounts) so it just
   // fades out with the route change.
-  const [joiningLobby, setJoiningLobby] = useState(false);
+  // Single shared entry flow (join-before-navigate + "Joining lobby" overlay).
+  // Lives in useEnterDraft so the home page and this page use the exact same
+  // implementation — no divergence, no glitch creeping back via one copy.
+  const { joiningLobby, enterDraftWithPassType } = useEnterDraft();
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -377,154 +381,6 @@ export function useDraftingPageState() {
     }
 
     router.push(buildDraftRoomUrl(draft));
-  };
-
-  const enterDraftWithPassType = async (passType: 'paid' | 'free', speed: 'fast' | 'slow' = 'fast') => {
-    if (!user?.walletAddress) return;
-
-    const beforePaid = user.draftPasses || 0;
-    const beforeFree = user.freeDrafts || 0;
-
-    // Optimistic local update so the header ticks down on click. Rolled
-    // back below if the backend rejects.
-    if (passType === 'paid') {
-      updateUser({ draftPasses: Math.max(0, beforePaid - 1) });
-    } else {
-      updateUser({ freeDrafts: Math.max(0, beforeFree - 1) });
-    }
-
-    // Backend gate: Firestore is the authoritative source. If the
-    // decrement fails (counter already at 0, even if local state showed
-    // otherwise), abort the join — user genuinely has no passes. The
-    // Go API still has its own ledger; without this gate a stale UI
-    // could let someone enter a draft they shouldn't.
-    let decremented = false;
-    try {
-      const res = await fetch('/api/owner/use-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      });
-      const body = await res.json().catch(() => ({}));
-      decremented = res.ok && !!body?.decremented;
-    } catch {
-      // Network failure — roll back and tell the user. Don't navigate
-      // because we can't confirm the backend got the decrement.
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      alert('Network error. Please try again.');
-      return;
-    }
-
-    if (!decremented) {
-      // Backend says no spendable passes. Rollback optimistic update and
-      // re-sync from Firestore so the header reflects truth.
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      void refreshBalance();
-      alert('No draft passes available. Your balance has been refreshed.');
-      return;
-    }
-
-    // Join-before-navigate: do the actual joinDraft HERE (on tap), while a
-    // branded "Joining lobby…" overlay is showing, then navigate to the room
-    // with the resolved draftId + player count already in the URL. This drops
-    // the user straight into a FULLY POPULATED lobby on first paint — no blank,
-    // no pulse, no async draftId race (the old flow navigated with no id and
-    // joined inside the room, which caused the "0 then 1 then 2" flash).
-    setJoiningLobby(true);
-    // Hold the overlay for a minimum beat so the branded "Joining lobby…"
-    // transition is always clearly visible, even when joinDraft resolves
-    // near-instantly. Perceptible but snappy — never pads beyond this.
-    const MIN_OVERLAY_MS = 700;
-    const overlayStart = Date.now();
-    let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
-    const MAX_JOIN_RETRIES = 3;
-    for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
-      try {
-        draftRoom = await joinDraft(user.walletAddress, speed, 1, undefined, passType);
-        if (draftRoom?.id) break;
-        throw new Error('Join failed: no draft ID');
-      } catch (err) {
-        logger.warn(`[Enter] join attempt ${attempt}/${MAX_JOIN_RETRIES} failed`, { err: err instanceof Error ? err.message : String(err) });
-        if (attempt < MAX_JOIN_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
-      }
-    }
-
-    if (!draftRoom?.id) {
-      // Join failed after retries. Refund the pass we just spent (use-pass
-      // decremented Firestore; no league was actually joined) and bail.
-      setJoiningLobby(false);
-      void fetch('/api/owner/refund-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      })
-        .then((res) => {
-          if (!res.ok) {
-            reportClientError({
-              source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
-              message: `Join-fail refund returned ${res.status}`,
-              route: 'drafting',
-              actor: user.walletAddress,
-              context: { passType, userId: user.id || user.walletAddress, status: res.status },
-            });
-          }
-        })
-        .catch((err) => {
-          reportClientError({
-            source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
-            message: err instanceof Error ? err.message : String(err),
-            route: 'drafting',
-            actor: user.walletAddress,
-            context: { passType, userId: user.id || user.walletAddress, network: true },
-          });
-        });
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      void refreshBalance();
-      alert('Could not join a draft right now. Your pass was not used — please try again.');
-      return;
-    }
-
-    const newId = draftRoom.id;
-    const joinedCount = Math.min(Math.max(Number(draftRoom.players) || 1, 1), 10);
-    const joinedAt = Date.now();
-
-    // Persist the draft so the room + leave flow have the exact token/passType.
-    draftStore.addDraft({
-      id: newId,
-      contestName: draftRoom.contestName || '',
-      status: 'filling',
-      type: null,
-      draftSpeed: speed,
-      players: joinedCount,
-      maxPlayers: 10,
-      joinedAt,
-      phase: 'filling',
-      liveWalletAddress: user.walletAddress,
-      passType,
-      cardId: draftRoom.cardId,
-    });
-
-    // Navigate to the room with everything seeded — same URL shape as
-    // re-entering an active draft (the proven id-in-URL path), plus joinedAt
-    // so the room's post-join grace window keeps the count from dipping.
-    const params = new URLSearchParams({
-      id: newId,
-      name: 'Draft Room',
-      speed,
-      players: String(joinedCount),
-      mode: 'live',
-      wallet: user.walletAddress,
-      passType,
-      joinedAt: String(joinedAt),
-    });
-    // Let the branded overlay breathe for its minimum beat before we swap routes.
-    const elapsed = Date.now() - overlayStart;
-    if (elapsed < MIN_OVERLAY_MS) await new Promise(r => setTimeout(r, MIN_OVERLAY_MS - elapsed));
-    // Stamp the moment we leave /drafting so the draft room can measure the
-    // hand-off gap (the blank/flash before the lobby paints) and surface a
-    // slow hand-off to the admin error feed. Best-effort; cleared on the room side.
-    try { sessionStorage.setItem('sbs-join-nav-ts', String(Date.now())); } catch { /* ignore */ }
-    router.push(`/draft-room?${params.toString()}`);
   };
 
   const handleEnterDraft = () => {
