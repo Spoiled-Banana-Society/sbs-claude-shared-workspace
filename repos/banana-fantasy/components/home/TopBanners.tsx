@@ -165,7 +165,21 @@ function useAppInstallBanner() {
 
   useEffect(() => {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
-    setShow(!isStandaloneNow() && !isA2hsDismissed());
+    // One-time bring-back: visiting with ?showbanner=1 forces the Get-the-App
+    // banner to show ONCE — even inside the installed app (bypasses the
+    // standalone gate) — for QA. It clears the sticky dismissal so NORMAL rules
+    // resume afterward: ×-ing it re-dismisses as usual and it won't come back.
+    // The param is stripped immediately so a refresh recomputes cleanly.
+    const params = new URLSearchParams(window.location.search);
+    const forceOnce = params.get('showbanner') === '1';
+    if (forceOnce) {
+      localStorage.removeItem(A2HS_ENGAGED_KEY);
+      localStorage.removeItem(A2HS_DISMISS_KEY);
+      params.delete('showbanner');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
+    setShow(forceOnce || (!isStandaloneNow() && !isA2hsDismissed()));
   }, []);
 
   const onClick = useCallback(async () => {
