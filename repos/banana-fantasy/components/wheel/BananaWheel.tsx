@@ -5,8 +5,6 @@ import confetti from 'canvas-confetti';
 import { wheelSegments, WHEEL_SEGMENT_ANGLE, type WheelSegment } from '@/lib/wheelConfig';
 import type { WheelSpinOutcome } from '@/hooks/useWheelData';
 import { startSpinSound, playWinSound, getWinTier } from '@/lib/wheelSounds';
-import { ShareWinButton } from '@/components/share/ShareWinButton';
-import { buildWheelShareCopy } from '@/lib/shareUtils';
 import { verifySpinProof } from '@/lib/wheelMerkleClient';
 
 interface BananaWheelProps {
@@ -164,7 +162,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   const freeSpinStartRotationRef = useRef(0);
   const [rotation, setRotation] = useState(0);
   const [wonSegment, setWonSegment] = useState<WheelSegment | null>(null);
-  const [wonSpinId, setWonSpinId] = useState<string | null>(null);
+  // Value binding dropped — it was only read by the removed "Share on X" button.
+  // The setter stays so the surrounding spin logic is untouched.
+  const [, setWonSpinId] = useState<string | null>(null);
   const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verified' | 'failed'>('unverified');
   const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string } | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -647,22 +647,6 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                   </a>
                 </div>
               )}
-
-              {/* Share on X — every win gets a button; big wins earn credit toward a free spin */}
-              {wonSpinId && (() => {
-                const copy = buildWheelShareCopy(wonSegment.id);
-                return (
-                  <div className="mt-6" style={{ animation: 'fadeIn 0.6s ease-out 0.7s both' }}>
-                    <ShareWinButton
-                      shareType="wheel"
-                      sourceId={wonSpinId}
-                      prize={wonSegment.id}
-                      tweetText={copy.text}
-                      earnsCredit={copy.earnsCredit}
-                    />
-                  </div>
-                );
-              })()}
 
             </div>
           </div>

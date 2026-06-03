@@ -419,7 +419,7 @@ export function DraftRoomDrafting({
                   saw the card and was never redirected. The underlying tabs stay
                   mounted (chat polling/history persists) until the redirect. */}
               {isCompleted && (
-                <div className="absolute inset-0 z-20 overflow-auto bg-black">
+                <div className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain bg-black pb-12">
                   <DraftComplete
                     draftId={draftId || urlDraftId}
                     generatedCardUrl={generatedCardUrl}

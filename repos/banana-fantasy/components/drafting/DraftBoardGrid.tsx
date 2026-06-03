@@ -59,11 +59,16 @@ export function DraftBoardGrid({
         WebkitOverflowScrolling: 'touch',
       }}
     >
-      {/* Header row: owner names */}
+      {/* Header row: owner names.
+          Fixed 110px tracks (cell is 100px wide + 10px horizontal margin) so
+          the grid keeps its intrinsic ~1100px width. On a phone the parent's
+          overflow:auto then scrolls horizontally instead of collapsing the
+          1fr columns down to ~37px and overlapping every cell. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(10, 1fr)',
+          gridTemplateColumns: 'repeat(10, 110px)',
+          width: 'max-content',
         }}
       >
         {headings.map((slot, idx) => {
@@ -74,7 +79,7 @@ export function DraftBoardGrid({
             : null;
           const displayLabel = player
             ? (player.isYou
-                ? (player.displayName || 'You')
+                ? 'You'
                 : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
 
@@ -134,7 +139,8 @@ export function DraftBoardGrid({
           key={roundIdx}
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(10, 1fr)',
+            gridTemplateColumns: 'repeat(10, 110px)',
+            width: 'max-content',
           }}
         >
           {roundSlots.map((slot) => {
