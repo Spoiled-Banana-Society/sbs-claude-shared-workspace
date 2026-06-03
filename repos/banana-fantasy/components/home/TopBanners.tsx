@@ -126,15 +126,14 @@ function FirstPurchaseCard({ goBuy, dismiss }: { goBuy: () => void; dismiss: () 
 
 /* ───────────────────────── Get-the-App banner ───────────────────────── */
 
-const A2HS_DISMISS_KEY = 'sbs-a2hs-dismissed';
 const A2HS_ENGAGED_KEY = 'sbs-a2hs-engaged';
 
+// This banner is removed ONLY when the user presses × (which sets the engaged
+// flag) — for every user (new + returning), on mobile AND desktop. There is no
+// timer or auto-hide: it persists across sessions/devices-per-browser until ×.
 function isA2hsDismissed(): boolean {
   if (typeof window === 'undefined') return true;
-  if (localStorage.getItem(A2HS_ENGAGED_KEY) === '1') return true;
-  const ts = localStorage.getItem(A2HS_DISMISS_KEY);
-  if (!ts) return false;
-  return (Date.now() - Number(ts)) / (1000 * 60 * 60 * 24) < 7;
+  return localStorage.getItem(A2HS_ENGAGED_KEY) === '1';
 }
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false;
