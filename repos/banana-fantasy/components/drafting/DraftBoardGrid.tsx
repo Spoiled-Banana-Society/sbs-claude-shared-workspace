@@ -74,7 +74,7 @@ export function DraftBoardGrid({
             : null;
           const displayLabel = player
             ? (player.isYou
-                ? (player.displayName || 'You')
+                ? 'You'
                 : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
 
