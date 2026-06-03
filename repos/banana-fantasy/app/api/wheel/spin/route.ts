@@ -350,9 +350,11 @@ export async function POST(req: Request) {
         balanceUpdate.hofEntries = currentHof + 1;
         winningsWon += 1;
       }
-      // First-purchase popup gate counter. Only matters pre-purchase — skip
-      // once they've bought or already unlocked it. Decremented as each won
-      // draft completes (recordDraftCompletion → the winnings gate).
+      // LEGACY counter — no longer read by the first-purchase gate (that gate
+      // is now a state check: shouldUnlockFirstPurchase in lib/promoMath.ts,
+      // driven by live balances + claims + in-progress drafts). Kept as a
+      // harmless write so nothing else that may reference the field breaks;
+      // safe to delete in a future cleanup.
       if (winningsWon > 0 && !userData?.firstPurchaseBonusGranted && !userData?.firstPurchasePromoUnlocked) {
         const currentPending = Math.max(0, (userData?.pendingWheelWinnings as number | undefined) ?? 0);
         balanceUpdate.pendingWheelWinnings = currentPending + winningsWon;
