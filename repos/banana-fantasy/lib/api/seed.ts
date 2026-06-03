@@ -292,18 +292,17 @@ const seedPromos: Promo[] = [
     id: '6',
     type: 'new-user',
     title: 'New User → FREE SPIN',
-    description: 'Connect Twitter to claim',
+    description: 'Win up to 20 Free Drafts — every spin wins at least 1',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'New User Bonus SPIN',
+      title: 'New User → FREE SPIN',
       explanation:
-        'Verify your account by connecting your Twitter/X to claim your welcome spin. One account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
-      additionalRules:
-        'One account per person. Creating more than one account is not allowed — if you have multiple accounts you are NOT eligible to win prizes. We verify your X/Twitter to keep play fair for everyone, so each X account can only be linked to a single account.',
+        'Verify your account by connecting your X to claim your spin.\n\nThen spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n\nOne account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
+      additionalRules: '',
       twitterConnected: false,
     },
   },
