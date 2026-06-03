@@ -4,7 +4,6 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ALL_POSITIONS,
   DRAFT_PLAYERS,
-  TOTAL_ROUNDS,
   TOTAL_PICKS,
   positionFromPlayerId,
 } from '@/lib/draftRoomConstants';
@@ -15,6 +14,7 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DEFAULT_POSITION_LIMITS, type Position, type PositionLimits } from '@/lib/positionLimits';
 import { usePositionLimits } from '@/hooks/usePositionLimits';
+import { bananaDefaultName } from '@/utils/helpers';
 
 export type DraftPlayer = typeof DRAFT_PLAYERS[number];
 export type DraftMode = 'local' | 'live';
@@ -338,8 +338,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Build draft order from server draftOrder
     const order: DraftPlayer[] = draftInfo.draftOrder.map((u, idx) => ({
       id: String(idx + 1),
-      name: u.ownerId, // In live mode, name is the wallet address
-      displayName: u.ownerId,
+      name: u.ownerId, // In live mode, name is the wallet address (kept raw — it's the usersMap lookup key)
+      displayName: bananaDefaultName(u.ownerId), // never expose the raw wallet — derive a Banana##### default; real handle is layered on later from usersMap
       isYou: u.ownerId.toLowerCase() === userWallet.toLowerCase(),
       avatar: '🍌',
     }));
