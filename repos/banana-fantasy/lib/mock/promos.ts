@@ -75,7 +75,7 @@ export const mockPromos: Promo[] = [
     id: '6',
     type: 'new-user',
     title: 'New User → FREE SPIN',
-    description: 'Win up to 20 Free Drafts — every spin wins at least 1',
+    description: 'Connect your X to claim your free spin',
     ctaText: 'Verify',
     ctaLink: '#',
     backgroundColor: '#2a2a35',
