@@ -14,6 +14,8 @@
 //      scripts/snapshot-bbb3-holders.mjs) — used by admin classification so the
 //      dashboard agrees with what the client sees on login.
 
+import existingPlayers from './data/existing-players.json';
+
 // BBB3 ERC-721 collection on Ethereum mainnet (last year's drops). Same address
 // the on-chain check in hooks/useAuth.tsx uses.
 export const BBB3_CONTRACT_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7';
@@ -47,12 +49,36 @@ export function getReturningWalletAllowlist(): string[] {
   return [...FALLBACK_RETURNING_WALLETS];
 }
 
+// All-time past-players snapshot: every wallet that ever played any SBS season
+// (genesis → 2025), compiled from prod Firestore + on-chain Season 2 (2024) /
+// Season 3 holders. The live on-chain check in useAuth only catches current
+// Season-3 (BBB3) holders, so without this list every genesis/2022/2023/2024
+// player and social-login user is wrongly treated as new and offered the
+// new-user promo. Membership here marks them returning → they skip the new-user
+// promo and get the existing-user (first-purchase) treatment. Wallets only, no
+// PII. Regenerate from ~/sbs-past-players/all_time_players.csv. Synchronous Set
+// lookup — no fetch, so it adds zero render-loop risk (Rule #0).
+const PAST_PLAYER_SET: ReadonlySet<string> = new Set(
+  (existingPlayers.wallets as string[]).map(normalizeWallet),
+);
+
+/** Count of known all-time past players (for admin/diagnostics). */
+export const PAST_PLAYER_COUNT = PAST_PLAYER_SET.size;
+
+/** True if this wallet ever played any past SBS season (the all-time snapshot). */
+export function isPastPlayer(walletAddress: string | null | undefined): boolean {
+  if (!walletAddress) return false;
+  return PAST_PLAYER_SET.has(normalizeWallet(walletAddress));
+}
+
 /**
- * Client-safe synchronous check: is this wallet in the manual returning
- * allowlist? OR'd into isBB3Holder so allowlisted wallets get the returning
- * treatment without an on-chain hit.
+ * Client-safe synchronous check: should this wallet be treated as returning?
+ * True if it's in the manual allowlist OR the all-time past-players snapshot.
+ * OR'd into isBB3Holder so returning players get the existing-user treatment
+ * (and skip the new-user promo) without an on-chain hit.
  */
 export function isReturningWalletSync(walletAddress: string | null | undefined): boolean {
   if (!walletAddress) return false;
-  return getReturningWalletAllowlist().includes(normalizeWallet(walletAddress));
+  const w = normalizeWallet(walletAddress);
+  return getReturningWalletAllowlist().includes(w) || PAST_PLAYER_SET.has(w);
 }
