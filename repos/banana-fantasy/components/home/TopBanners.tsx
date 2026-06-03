@@ -165,26 +165,23 @@ function useAppInstallBanner() {
 
   useEffect(() => {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
-    // One-time bring-back: forces the Get-the-App banner to show ONCE — even
-    // inside the installed app (bypasses the standalone gate) — for QA. Two
-    // triggers: ?showbanner=1 (works in a browser) OR the sessionStorage flag
-    // set by the profile-menu "Show install banner" button (works in the
-    // installed app, which has no address bar). Either clears the sticky
-    // dismissal so NORMAL rules resume afterward: ×-ing it re-dismisses as usual.
+    // Forced bring-back for QA: shows the Get-the-App banner even inside the
+    // installed app (bypasses the standalone gate). Two triggers: ?showbanner=1
+    // (works in a browser) OR the profile-menu "Show install banner" button
+    // (works in the installed app, which has no address bar). We promote the URL
+    // param into a SESSION flag so the forced banner SURVIVES navigation/remounts
+    // and only goes away when you ×-dismiss it — never on its own. The flag is
+    // cleared on dismiss (below) and naturally on app close (sessionStorage).
     const params = new URLSearchParams(window.location.search);
-    const forceFlag = sessionStorage.getItem('sbs-force-install-banner') === '1';
-    const forceOnce = params.get('showbanner') === '1' || forceFlag;
-    if (forceOnce) {
-      localStorage.removeItem(A2HS_ENGAGED_KEY);
-      localStorage.removeItem(A2HS_DISMISS_KEY);
-      sessionStorage.removeItem('sbs-force-install-banner'); // consume it
-      if (params.has('showbanner')) {
-        params.delete('showbanner');
-        const qs = params.toString();
-        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
-      }
+    if (params.get('showbanner') === '1') {
+      try { sessionStorage.setItem('sbs-force-install-banner', '1'); } catch {}
+      params.delete('showbanner');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
     }
-    setShow(forceOnce || (!isStandaloneNow() && !isA2hsDismissed()));
+    let forced = false;
+    try { forced = sessionStorage.getItem('sbs-force-install-banner') === '1'; } catch {}
+    setShow(forced || (!isStandaloneNow() && !isA2hsDismissed()));
   }, []);
 
   const onClick = useCallback(async () => {
@@ -195,7 +192,11 @@ function useAppInstallBanner() {
   }, [isDesktop, triggerInstall]);
 
   const dismiss = useCallback(() => {
-    if (typeof window !== 'undefined') localStorage.setItem(A2HS_ENGAGED_KEY, '1');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(A2HS_ENGAGED_KEY, '1');
+      // End any forced-QA session so it doesn't reappear on the next home visit.
+      try { sessionStorage.removeItem('sbs-force-install-banner'); } catch {}
+    }
     setShow(false);
   }, []);
 
