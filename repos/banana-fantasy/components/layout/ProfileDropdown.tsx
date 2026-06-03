@@ -284,6 +284,26 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 Admin
               </Link>
             )}
+
+            {/* Admin QA: force the Get-the-App banner to show once on home —
+                works even inside the installed app (no standalone gate). After
+                it shows, normal rules apply: ×-ing it re-dismisses for good. */}
+            {isWalletAdmin(user.walletAddress) && (
+              <button
+                onClick={() => {
+                  try { sessionStorage.setItem('sbs-force-install-banner', '1'); } catch {}
+                  setIsOpen(false);
+                  window.location.assign('/');
+                }}
+                className="w-full px-4 py-2 text-left text-banana/80 hover:bg-bg-tertiary hover:text-banana transition-colors flex items-center gap-3 text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="6" y="2" width="12" height="20" rx="3" />
+                  <line x1="12" y1="18" x2="12" y2="18" />
+                </svg>
+                Show install banner (QA)
+              </button>
+            )}
           </div>
 
           {/* Install App — mobile only, hidden when already installed */}

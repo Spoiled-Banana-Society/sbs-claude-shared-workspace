@@ -165,19 +165,24 @@ function useAppInstallBanner() {
 
   useEffect(() => {
     setIsDesktop(!/iphone|ipad|ipod|android/i.test(navigator.userAgent));
-    // One-time bring-back: visiting with ?showbanner=1 forces the Get-the-App
-    // banner to show ONCE — even inside the installed app (bypasses the
-    // standalone gate) — for QA. It clears the sticky dismissal so NORMAL rules
-    // resume afterward: ×-ing it re-dismisses as usual and it won't come back.
-    // The param is stripped immediately so a refresh recomputes cleanly.
+    // One-time bring-back: forces the Get-the-App banner to show ONCE — even
+    // inside the installed app (bypasses the standalone gate) — for QA. Two
+    // triggers: ?showbanner=1 (works in a browser) OR the sessionStorage flag
+    // set by the profile-menu "Show install banner" button (works in the
+    // installed app, which has no address bar). Either clears the sticky
+    // dismissal so NORMAL rules resume afterward: ×-ing it re-dismisses as usual.
     const params = new URLSearchParams(window.location.search);
-    const forceOnce = params.get('showbanner') === '1';
+    const forceFlag = sessionStorage.getItem('sbs-force-install-banner') === '1';
+    const forceOnce = params.get('showbanner') === '1' || forceFlag;
     if (forceOnce) {
       localStorage.removeItem(A2HS_ENGAGED_KEY);
       localStorage.removeItem(A2HS_DISMISS_KEY);
-      params.delete('showbanner');
-      const qs = params.toString();
-      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+      sessionStorage.removeItem('sbs-force-install-banner'); // consume it
+      if (params.has('showbanner')) {
+        params.delete('showbanner');
+        const qs = params.toString();
+        window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+      }
     }
     setShow(forceOnce || (!isStandaloneNow() && !isA2hsDismissed()));
   }, []);
