@@ -215,6 +215,13 @@ export function useNotifications() {
   // READ, full stop — no matter what a stale refetch or replayed ping claims.
   // Notifications created AFTER this instant still show unread as normal.
   const readAllAtRef = useRef<number>(0);
+  // Signature of the last list we rendered (id + read flag per item). The mobile
+  // poll + the iOS-reconnect ping flood fire a refetch every ~1-2s; if we call
+  // setNotifications every time — even when the data is byte-identical — the whole
+  // list re-renders with framer-motion layout animations, and a tap landing during
+  // that re-render gets eaten (the "first tap highlights but does nothing, second
+  // tap works" bug). We only setState when something actually changed.
+  const lastSigRef = useRef<string>('');
 
   const refetch = useCallback(async () => {
     const w = walletRef.current;
@@ -285,9 +292,17 @@ export function useNotifications() {
       const underHighWater = readAllAtRef.current > 0
         ? mapped.filter((n) => new Date(n.createdAt).getTime() <= readAllAtRef.current).length
         : null;
+
+      // Skip the re-render when the list is unchanged (same ids + same read
+      // flags, same order). This is what kills the every-~2s re-render storm
+      // that was eating the first read-all tap on mobile.
+      const sig = mapped.map((n) => `${n.id}:${n.read ? 1 : 0}`).join(',');
+      const changed = sig !== lastSigRef.current;
       import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'bell.refetch', {
-        total: mapped.length, unread, underHW: underHighWater, dev: deviceTag(),
+        total: mapped.length, unread, underHW: underHighWater, changed, dev: deviceTag(),
       })).catch(() => {});
+      if (!changed) return; // nothing new — don't thrash the list (stable tap targets)
+      lastSigRef.current = sig;
 
       setNotifications(mapped);
     } catch { /* silent — degrade to last-known list */ }
