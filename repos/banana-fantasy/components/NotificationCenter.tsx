@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { subscribeUserEvents } from '@/lib/api/firebase';
+import { useToast } from '@/components/ui/Toast';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -107,6 +108,12 @@ function isCategoryEnabled(type: NotificationType): boolean {
 // localStorage is no longer the source of truth — this file only POSTs new
 // notifications and reads them back from the server.
 
+// Shared across all useNotifications instances (the header widget + the
+// /notifications page can both be mounted) so a mobile poll-driven toast fires
+// exactly ONCE per notification, not once per instance.
+const _toastedIds = new Set<string>();
+let _toastsSeeded = false;
+
 // Current wallet, registered by useNotifications (header-mounted) so the
 // standalone pushNotification() helper can attribute POSTs without a hook.
 let _notificationWallet: string | null = null;
@@ -174,8 +181,19 @@ function timeAgo(iso: string): string {
 
 export function useNotifications() {
   const { walletAddress } = useAuth();
+  const { show } = useToast();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+
+  // Current notification ids (kept in a ref) so markAllRead can flag them
+  // locally-read SYNCHRONOUSLY — fixes "first read-all tap does nothing" where
+  // the optimistic update raced a poll refetch.
+  const currentIdsRef = useRef<string[]>([]);
+  // (toasted-id dedup is module-level — see _toastedIds — so multiple hook
+  // instances don't double-toast the same notification.)
+  const showRef = useRef(show);
+  showRef.current = show;
+  const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
 
   // Wallet in a ref so the (stable) refetch closure reads the current value
   // without re-creating — render-loop safety (CLAUDE.md Rule #0): effect deps
@@ -211,9 +229,40 @@ export function useNotifications() {
           link: (n.link as string) || undefined,
         };
       });
+      currentIdsRef.current = mapped.map((n) => n.id);
+
+      // Mobile poll-driven toast: iOS suspends the websocket, so the live
+      // event stream (which normally drives toasts) barely reaches mobile.
+      // Instead, surface a toast when the POLL discovers a genuinely new,
+      // recent, unread notification — the same connection (HTTP) that keeps
+      // the bell current. Desktop keeps its websocket-driven toast.
+      if (isMobile) {
+        if (!_toastsSeeded) {
+          // First load: don't toast pre-existing notifications.
+          mapped.forEach((n) => _toastedIds.add(n.id));
+          _toastsSeeded = true;
+        } else {
+          const nowMs = Date.now();
+          const fresh = mapped.filter((n) =>
+            !n.read
+            && !_toastedIds.has(n.id)
+            && (nowMs - new Date(n.createdAt).getTime()) < 60_000, // created within last 60s
+          );
+          fresh.forEach((n) => _toastedIds.add(n.id));
+          // Toast at most the 2 newest so a late batch doesn't spam.
+          fresh.slice(0, 2).forEach((n) => {
+            showRef.current({
+              level: 'success',
+              message: n.title,
+              ...(n.link ? { action: { label: 'View', onClick: () => { window.location.href = n.link as string; } } } : {}),
+            });
+          });
+        }
+      }
+
       setNotifications(mapped);
     } catch { /* silent — degrade to last-known list */ }
-  }, []);
+  }, [isMobile]);
 
   const refetchRef = useRef(refetch);
   refetchRef.current = refetch;
@@ -310,12 +359,11 @@ export function useNotifications() {
   }, []);
 
   const markAllRead = useCallback(() => {
-    // Remember every current id as locally-read so a refetch that lands before
-    // the server commits can't bring the red badge back (the double-tap bug).
-    setNotifications(prev => {
-      prev.forEach(n => locallyReadRef.current.add(n.id));
-      return prev.map(n => ({ ...n, read: true })); // optimistic
-    });
+    // Flag every current id locally-read SYNCHRONOUSLY (from the ref, not inside
+    // the state updater) so an in-flight poll refetch can't bring the badge back
+    // — this is what made the first tap appear to do nothing on mobile.
+    currentIdsRef.current.forEach(id => locallyReadRef.current.add(id));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true }))); // optimistic
     const w = walletRef.current;
     // DIAGNOSTIC: did read-all fire, and with a wallet?
     import('@/lib/clientLog').then(({ clientLog, deviceTag }) => clientLog('sync#', 'markAllRead', { hasWallet: !!w, dev: deviceTag() })).catch(() => {});
