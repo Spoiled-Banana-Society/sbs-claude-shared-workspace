@@ -6,6 +6,22 @@ import { useAuth } from '@/hooks/useAuth';
 
 const USDC_BASE_CONTRACT = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 
+// Manual "Add network" details for Base, in case it isn't in MetaMask's preset list.
+const BASE_NETWORK: { label: string; value: string; copy?: boolean }[] = [
+  { label: 'Network name', value: 'Base' },
+  { label: 'RPC URL', value: 'https://mainnet.base.org', copy: true },
+  { label: 'Chain ID', value: '8453', copy: true },
+  { label: 'Currency symbol', value: 'ETH' },
+  { label: 'Block explorer', value: 'https://basescan.org' },
+];
+
+const METAMASK_BASE_STEPS: React.ReactNode[] = [
+  <>Open MetaMask and tap the <span className="text-text-primary font-semibold">network dropdown</span> at the top-left (it usually says &ldquo;Ethereum Mainnet&rdquo;).</>,
+  <>If you see <span className="text-banana font-semibold">Base</span> in the list, just tap it — you&apos;re done.</>,
+  <>Not there? Tap <span className="text-text-primary font-semibold">Add network</span>, find <span className="text-banana font-semibold">Base</span> in the popular networks, and tap <span className="text-text-primary font-semibold">Add</span>.</>,
+  <>Still not listed? Tap <span className="text-text-primary font-semibold">Add a network manually</span> and enter the details below.</>,
+];
+
 // Inline icons keep this page dependency-free (no icon-name typos can break the build).
 function CopyIcon() {
   return (
@@ -192,6 +208,47 @@ export default function GetUsdcPage() {
               )}
             </div>
           ))}
+        </div>
+
+        {/* Switch MetaMask to Base */}
+        <div className="glass-card p-6 sm:p-7 mt-6">
+          <div className="flex items-start gap-4 mb-4">
+            <span className="text-3xl leading-none flex-shrink-0">🦊</span>
+            <div className="min-w-0">
+              <span className="text-xs font-mono text-text-muted uppercase tracking-wider">Quick setup</span>
+              <h3 className="text-xl font-bold text-text-primary mt-1">Switching MetaMask to the Base network</h3>
+              <p className="text-text-muted text-sm mt-1 leading-relaxed">
+                MetaMask opens on Ethereum Mainnet by default. Switch it to Base so you can see your USDC and use your wallet here.
+              </p>
+            </div>
+          </div>
+
+          <ol className="space-y-3">
+            {METAMASK_BASE_STEPS.map((step, idx) => (
+              <li key={idx} className="flex gap-3 text-sm text-text-secondary leading-relaxed">
+                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-banana/10 text-banana font-semibold text-xs flex items-center justify-center mt-0.5">
+                  {idx + 1}
+                </span>
+                <span className="flex-1">{step}</span>
+              </li>
+            ))}
+          </ol>
+
+          {/* Manual network details */}
+          <div className="mt-5 rounded-lg border border-bg-tertiary bg-bg-tertiary/40 p-4">
+            <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Add Base manually</p>
+            <dl className="space-y-2.5 text-sm">
+              {BASE_NETWORK.map((row) => (
+                <div key={row.label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                  <dt className="text-text-muted w-36 flex-shrink-0">{row.label}</dt>
+                  <dd className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="text-text-primary font-mono break-all">{row.value}</span>
+                    {row.copy && <CopyButton value={row.value} label={row.label} />}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         </div>
 
         {/* Safety notes */}
