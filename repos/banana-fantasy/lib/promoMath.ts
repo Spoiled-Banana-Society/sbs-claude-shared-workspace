@@ -88,52 +88,39 @@ export function computeMintProgress(current: number, max: number, quantity: numb
   return { progressCurrent, milestonesEarned };
 }
 
-export interface FirstPurchaseDrainInput {
-  /** Already made a first paid purchase — gate is closed forever. */
+export interface CompletionGateInput {
+  /** True when the just-finished draft was entered with a free (wheel-won) pass. */
+  usedFreePass: boolean;
+  pendingWheelWinnings: number;
   firstPurchaseBonusGranted: boolean;
-  /** Already pinged once — never fire twice. */
   firstPurchasePromoUnlocked: boolean;
-  /** Genuine new-user funnel: they've spun the welcome wheel at least once. */
-  hasSpunWheel: boolean;
-  /** Remaining free draft passes in their balance. */
-  freeDrafts: number;
-  /** Remaining Jackpot entries won (from the wheel). */
-  jackpotEntries: number;
-  /** Remaining HOF entries won (from the wheel). */
-  hofEntries: number;
-  /** Remaining unspun wheel spins — each can yield more free/JP/HOF drafts. */
-  wheelSpins: number;
-  /** Any claimable promo still sitting there (Pick 10, referral, etc.) — the
-   *  first-purchase promo itself is excluded by the caller. */
-  hasPendingClaim: boolean;
-  /** Any draft they entered that isn't finished yet (roster < 15). */
-  hasDraftInProgress: boolean;
+}
+
+export interface CompletionGateResult {
+  /** New pending-winnings value to persist. */
+  pendingWheelWinnings: number;
+  /** True when this completion should unlock the new-user popup + notification. */
+  unlock: boolean;
 }
 
 /**
- * New-user first-purchase ping gate — the SINGLE rule for when the popup +
- * cross-device notification fires. It fires only when the user is FULLY
- * DRAINED: every free / Jackpot / HOF draft finished, no unspun wheel spins,
- * no unclaimed promo waiting, and no draft still in progress — and only for a
- * genuine new user (spun the wheel) who hasn't purchased or been pinged yet.
- *
- * This is a STATE check (not a counter), so it automatically accounts for
- * drafts/spins granted by ANY promo added later (e.g. Pick 10) without needing
- * to special-case each grant site — the old counter only knew about the
- * welcome wheel, which let the ping fire while later-won free drafts remained.
- *
- * Callers MUST fail closed: if any signal (claims / in-progress drafts) can't
- * be read, treat the user as NOT drained and do not ping. Better a late ping
- * than an early one.
+ * New-user popup gate. Only FREE (wheel-won) draft completions count down
+ * `pendingWheelWinnings`; the popup unlocks exactly when the LAST won draft
+ * finishes (count reaches 0). Never unlocks for a user who never won, who
+ * already purchased, or who already unlocked — so it fires at most once and
+ * never prematurely (entering all drafts drops the balance, but only
+ * *completing* them decrements this counter).
  */
-export function shouldUnlockFirstPurchase(i: FirstPurchaseDrainInput): boolean {
-  if (i.firstPurchaseBonusGranted || i.firstPurchasePromoUnlocked) return false;
-  if (!i.hasSpunWheel) return false;
-  if ((i.freeDrafts || 0) > 0) return false;
-  if ((i.jackpotEntries || 0) > 0) return false;
-  if ((i.hofEntries || 0) > 0) return false;
-  if ((i.wheelSpins || 0) > 0) return false;
-  if (i.hasPendingClaim) return false;
-  if (i.hasDraftInProgress) return false;
-  return true;
+export function applyCompletionGate(input: CompletionGateInput): CompletionGateResult {
+  const before = Math.max(0, input.pendingWheelWinnings || 0);
+  if (!input.usedFreePass) {
+    return { pendingWheelWinnings: before, unlock: false };
+  }
+  const after = Math.max(0, before - 1);
+  const unlock =
+    before > 0 &&
+    after === 0 &&
+    !input.firstPurchaseBonusGranted &&
+    !input.firstPurchasePromoUnlocked;
+  return { pendingWheelWinnings: after, unlock };
 }

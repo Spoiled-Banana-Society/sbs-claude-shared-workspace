@@ -34,7 +34,7 @@ import type {
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { pushStreamEvent } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
-import { shouldUnlockFirstPurchase, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
+import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -1795,129 +1795,62 @@ const FIRST_PURCHASE_PROMO_ID = '11';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Does this user still have a draft IN PROGRESS — a league they entered whose
- * roster isn't yet complete (< 15 picks) — other than `excludeDraftId` (the
- * one that just finished)? Reads the Go API's owner-tokens endpoint, same
- * source recomputeUserExposure uses.
- *
- * FAILS CLOSED: any error (API down, bad shape) returns `true` so the
- * first-purchase gate treats the user as "still playing" and does NOT ping.
+ * New-user first-purchase popup gate. A wheel-won draft just completed — count
+ * it down. Runs for EVERY completion regardless of pass type: pre-purchase, a
+ * user's only drafts are their wheel winnings (free drafts, plus jackpot/HOF
+ * entries), so all of them must finish before the popup appears. When the LAST
+ * one finishes the first-purchase promo unlocks (popup + notification).
+ * Idempotent per draftId (deduped on the first-purchase promo's
+ * completedDraftIds) and a no-op once the user has purchased, already unlocked,
+ * or never had winnings to finish — so it never fires for existing buyers.
  */
-async function _userHasDraftInProgress(userId: string, excludeDraftId: string): Promise<boolean> {
-  const lower = userId.toLowerCase();
-  const baseUrl = (
-    process.env.STAGING_DRAFTS_API_URL ||
-    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-  ).replace(/\/$/, '');
-  try {
-    const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return true; // fail closed
-    const body = (await res.json()) as {
-      active?: Array<{ _leagueId?: string; leagueId?: string; roster?: Record<string, Array<unknown> | undefined> }>;
-    };
-    const active = body.active ?? [];
-    for (const t of active) {
-      const leagueId = String(t._leagueId ?? t.leagueId ?? '');
-      if (!leagueId) continue;                 // unentered pass — covered by the freeDrafts balance check
-      if (leagueId === excludeDraftId) continue; // the draft that just completed
-      const r = t.roster;
-      const rosterCount = r
-        ? (r.QB?.length || 0) + (r.RB?.length || 0) + (r.WR?.length || 0) + (r.TE?.length || 0) + (r.DST?.length || 0)
-        : 0;
-      if (rosterCount < 15) return true;        // a draft still filling or being played
-    }
-    return false;
-  } catch {
-    return true; // fail closed
-  }
-}
-
-/**
- * New-user first-purchase ping gate. A draft just completed — decide whether
- * the user is now FULLY DRAINED and we should fire the popup + cross-device
- * notification (via pushStreamEvent → live on desktop, durable+synced on
- * mobile). The "drained" rule lives in shouldUnlockFirstPurchase (one place,
- * state-based) so it auto-covers free/JP/HOF drafts AND spins/claims from ANY
- * promo — including ones added later like Pick 10.
- *
- * Cheap local checks short-circuit BEFORE the two network reads (claims via
- * getPromos, in-progress drafts via the Go API). No-op once purchased / already
- * pinged; idempotent via the in-transaction re-check on firstPurchasePromoUnlocked.
- */
-async function _maybeUnlockFirstPurchaseGate(userId: string, draftId: string): Promise<void> {
+async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId: string): Promise<void> {
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
+  const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(FIRST_PURCHASE_PROMO_ID);
 
-  const userSnap = await userRef.get();
-  if (!userSnap.exists) return;
-  const user = userSnap.data() as User;
+  const unlocked = await db.runTransaction(async (tx) => {
+    const [userSnap, promoSnap] = await Promise.all([tx.get(userRef), tx.get(promoRef)]);
+    if (!userSnap.exists) return false;
+    const user = userSnap.data() as User;
+    // Past the gate already, or no winnings outstanding — nothing to do.
+    if (user.firstPurchaseBonusGranted || user.firstPurchasePromoUnlocked) return false;
+    if ((user.pendingWheelWinnings || 0) <= 0) return false;
 
-  // Cheap balance/eligibility gate first — avoids the network reads below for
-  // the overwhelmingly common "still has stuff to play / not in funnel" case.
-  if (
-    user.firstPurchaseBonusGranted ||
-    user.firstPurchasePromoUnlocked ||
-    !user.hasSpunWheel ||
-    (user.freeDrafts || 0) > 0 ||
-    (user.jackpotEntries || 0) > 0 ||
-    (user.hofEntries || 0) > 0 ||
-    (user.wheelSpins || 0) > 0
-  ) {
-    return;
-  }
+    // Idempotency: dedup completions on the first-purchase promo doc.
+    const promo = promoSnap.exists ? deepClone(promoSnap.data() as Promo) : null;
+    const seen = promo?.completedDraftIds || [];
+    if (seen.includes(draftId)) return false;
 
-  // Any unclaimed promo still waiting (Pick 10, referral, etc.)? Exclude the
-  // first-purchase promo itself. Fail CLOSED — don't ping if we can't confirm.
-  let hasPendingClaim: boolean;
-  try {
-    const promos = await getPromos(userId);
-    hasPendingClaim = promos.some((p) => p.id !== FIRST_PURCHASE_PROMO_ID && !!p.claimable);
-  } catch (err) {
-    logger.warn('promo.first_purchase_gate_claims_check_failed', { userId, draftId, err: (err as Error).message });
-    return;
-  }
+    const gate = applyCompletionGate({
+      usedFreePass: true,
+      pendingWheelWinnings: user.pendingWheelWinnings || 0,
+      firstPurchaseBonusGranted: !!user.firstPurchaseBonusGranted,
+      firstPurchasePromoUnlocked: !!user.firstPurchasePromoUnlocked,
+    });
 
-  const hasDraftInProgress = await _userHasDraftInProgress(userId, draftId);
+    const userUpdate: Record<string, unknown> = { pendingWheelWinnings: gate.pendingWheelWinnings };
+    if (gate.unlock) userUpdate.firstPurchasePromoUnlocked = true;
+    tx.set(userRef, userUpdate, { merge: true });
 
-  const unlock = shouldUnlockFirstPurchase({
-    firstPurchaseBonusGranted: !!user.firstPurchaseBonusGranted,
-    firstPurchasePromoUnlocked: !!user.firstPurchasePromoUnlocked,
-    hasSpunWheel: !!user.hasSpunWheel,
-    freeDrafts: user.freeDrafts || 0,
-    jackpotEntries: user.jackpotEntries || 0,
-    hofEntries: user.hofEntries || 0,
-    wheelSpins: user.wheelSpins || 0,
-    hasPendingClaim,
-    hasDraftInProgress,
-  });
-  if (!unlock) return;
-
-  // Fire exactly once. Re-check the guards inside the tx so two near-simultaneous
-  // completions can't both unlock.
-  const fired = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(userRef);
-    if (!snap.exists) return false;
-    const u = snap.data() as User;
-    if (u.firstPurchaseBonusGranted || u.firstPurchasePromoUnlocked) return false;
-    tx.set(userRef, { firstPurchasePromoUnlocked: true }, { merge: true });
-    return true;
+    if (promo) {
+      promo.completedDraftIds = [...seen, draftId];
+      tx.set(promoRef, stripUndefined(promo), { merge: true });
+    }
+    return gate.unlock;
   });
 
-  if (fired) {
+  if (unlocked) {
     void pushStreamEvent(userId, 'first-purchase-unlocked', {});
   }
 }
 
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
-  // First-purchase ping gate runs after EVERY completion. It only fires once
-  // the new user is FULLY DRAINED (no free/JP/HOF drafts, no spins, no
-  // unclaimed promo, no draft still in progress) — guarded no-op once they've
-  // purchased or been pinged. Kept ahead of the paid-only daily-drafts credit
-  // below so existing promo wiring is untouched.
-  await _maybeUnlockFirstPurchaseGate(userId, draftId).catch((err) =>
+  // First-purchase popup gate runs for EVERY completion (free, jackpot, HOF or
+  // paid). Pre-purchase, a user's drafts are all wheel winnings to count down;
+  // post-purchase it's a guarded no-op. Kept separate from — and ahead of — the
+  // paid-only daily-drafts credit below, so existing promo wiring is untouched.
+  await _recordWinningsDraftForFirstPurchaseGate(userId, draftId).catch((err) =>
     logger.warn('promo.first_purchase_gate_failed', { userId, draftId, err: (err as Error).message }),
   );
 
