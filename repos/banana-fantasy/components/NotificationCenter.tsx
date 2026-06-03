@@ -148,7 +148,7 @@ function resolveWallet(): string | null {
  * useNotifications) — NOT here — so muting on one device can't suppress a
  * notification server-side for the user's other devices.
  */
-export function pushNotification(notif: { type: NotificationType; title: string; message: string; link?: string; dedupeKey?: string }) {
+export function pushNotification(notif: { type: NotificationType; title: string; message: string; link?: string; dedupeKey?: string; icon?: string }) {
   if (typeof window === 'undefined') return;
   const wallet = resolveWallet();
   if (!wallet) return;
@@ -162,6 +162,7 @@ export function pushNotification(notif: { type: NotificationType; title: string;
       message: notif.message,
       link: notif.link,
       dedupeKey: notif.dedupeKey,
+      icon: notif.icon,
     }),
   }).catch(() => { /* best-effort */ });
 }

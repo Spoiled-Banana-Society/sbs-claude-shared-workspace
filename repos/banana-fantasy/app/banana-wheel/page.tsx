@@ -148,6 +148,7 @@ export default function BananaWheelPage() {
           title: segment.prizeValue === 1 ? 'Free Draft Won!' : 'Free Drafts Won!',
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
+          icon: 'ticket',
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });

@@ -545,6 +545,7 @@ export async function claimPromo(userId: string, promoId: string) {
         title: 'Promo Claimed!',
         message: `You earned ${result.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${result.spinsAdded !== 1 ? 's' : ''}!`,
         link: isBuyBonus ? '/drafting' : '/banana-wheel',
+        icon: isBuyBonus ? 'ticket' : 'spin',
       });
     }
 
