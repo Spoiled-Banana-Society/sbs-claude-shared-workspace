@@ -3,7 +3,6 @@ import './globals.css';
 import { Providers } from './providers';
 import StyledComponentsRegistry from '@/lib/registry';
 import GoogleAnalytics from './components/GoogleAnalytics';
-import { StagingBanner } from '@/components/StagingBanner';
 import { Footer } from '@/components/layout/Footer';
 // import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
@@ -114,7 +113,6 @@ export default function RootLayout({
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(r){r.forEach(function(reg){reg.unregister()})});caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})})}`
           }}
         />
-        <StagingBanner />
         <StyledComponentsRegistry>
           <Providers>
             <div className="flex flex-col min-h-screen">
