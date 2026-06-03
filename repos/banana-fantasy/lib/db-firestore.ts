@@ -1845,6 +1845,48 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
   }
 }
 
+/**
+ * Authoritative pass type ('free' | 'paid') for the token bound to `draftId`,
+ * read from the Go API — every draft token is stamped with the pass type the
+ * user actually chose at entry (DraftToken.PassType, the source of truth).
+ *
+ * Promos must NEVER be earned with a free draft. The client tells us the pass
+ * type, but a free draft that lost its `passType` URL hint defaults to 'paid'
+ * client-side and would slip past the free gate — that's the Pick-10-on-a-free-
+ * draft bug. So we read the real stamp here instead of trusting the client.
+ *
+ * Returns `null` when it can't be determined (token not found / no stamp / API
+ * error); callers then fall back to the client value (today's behavior — no
+ * regression for legacy tokens), so this only ever makes the gate STRICTER.
+ */
+async function resolveDraftPassType(userId: string, draftId: string): Promise<'free' | 'paid' | null> {
+  if (!draftId) return null;
+  const lower = userId.toLowerCase();
+  const baseUrl = (
+    process.env.STAGING_DRAFTS_API_URL ||
+    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
+  ).replace(/\/$/, '');
+  try {
+    const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      active?: Array<Record<string, unknown>>;
+      available?: Array<Record<string, unknown>>;
+    };
+    const all = [...(body.active ?? []), ...(body.available ?? [])];
+    const tok = all.find((t) => String(t._leagueId ?? t.leagueId ?? '') === draftId);
+    const pt = tok ? String(tok.passType ?? '') : '';
+    if (pt === 'free') return 'free';
+    if (pt === 'paid') return 'paid';
+    return null; // unknown — caller falls back to the client-supplied value
+  } catch {
+    return null;
+  }
+}
+
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
   // First-purchase popup gate runs for EVERY completion (free, jackpot, HOF or
   // paid). Pre-purchase, a user's drafts are all wheel winnings to count down;
@@ -1855,10 +1897,11 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
   );
 
   // Only PAID drafts count toward daily-drafts. A draft entered with a FREE
-  // pass earns zero daily-drafts credit (free passes are join-only).
-  // Server-enforced so it holds even if the client mis-gates (the URL passType
-  // is deleted post-join).
-  if (passType === 'free') {
+  // pass earns zero daily-drafts credit. The token is stamped with the chosen
+  // pass type (source of truth) — use it, falling back to the client value only
+  // when the stamp can't be read, so a free draft can never sneak past as paid.
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') {
     return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
   }
   const db = getAdminFirestore();
@@ -1939,8 +1982,11 @@ const PICK10_PROMO_ID = '2';
 
 export async function recordPick10(userId: string, draftId: string, _draftName: string, passType?: string): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
-  // Pick 10. Server-enforced so it holds even if the client mis-gates.
-  if (passType === 'free') return null;
+  // Pick 10. The draft token is stamped with the chosen pass type (source of
+  // truth) — use it, falling back to the client value only when the stamp can't
+  // be read, so a free draft can never sneak past as paid (the slot-10 bug).
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -2073,8 +2119,11 @@ async function getCurrentBatchPosition(): Promise<number> {
 
 export async function recordJackpotHit(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward the
-  // jackpot-hit promo. Server-enforced so it holds even if the client mis-gates.
-  if (passType === 'free') return null;
+  // jackpot-hit promo. The draft token is stamped with the chosen pass type
+  // (source of truth) — use it, falling back to the client value only when the
+  // stamp can't be read, so a free draft can never sneak past as paid.
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
