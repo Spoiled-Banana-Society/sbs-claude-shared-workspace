@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { subscribeUserEvents } from '@/lib/api/firebase';
 import { useToast } from '@/components/ui/Toast';
+import { NotificationIcon } from '@/components/NotificationIcons';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -579,7 +580,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
                       style={{ backgroundColor: `${config.color}15` }}
                     >
-                      {notif.icon || config.emoji}
+                      <NotificationIcon icon={notif.icon} type={notif.type} color={config.color} size={20} />
                     </div>
 
                     {/* Content */}

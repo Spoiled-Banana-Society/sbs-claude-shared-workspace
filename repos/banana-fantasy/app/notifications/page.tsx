@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNotifications, type NotificationType, type NotificationCategory, CATEGORY_LABELS } from '@/components/NotificationCenter';
+import { NotificationIcon } from '@/components/NotificationIcons';
 
 const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; label: string }> = {
   draft_starting: { emoji: '🏈', color: '#22c55e', label: 'Draft' },
@@ -199,7 +200,7 @@ export default function NotificationsPage() {
                       className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
                       style={{ backgroundColor: `${config.color}15` }}
                     >
-                      {notif.icon || config.emoji}
+                      <NotificationIcon icon={notif.icon} type={notif.type} color={config.color} size={20} />
                     </div>
 
                     {/* Content */}
