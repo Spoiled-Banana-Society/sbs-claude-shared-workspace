@@ -319,7 +319,7 @@ function ResetButton({ userId }: { userId: string }) {
   const reset = useResetUser();
   const { show } = useToast();
   const handle = async () => {
-    if (!window.confirm(`Reset ${formatWallet(userId)}? Clears draftPasses, freeDrafts, wheelSpins, cardPurchaseCount, JP/HOF entries, and onboarding flags (hasSpunWheel, firstPurchaseBonusGranted, firstPurchasePromoUnlocked) so the new-user flow can re-run.`)) {
+    if (!window.confirm(`Reset ${formatWallet(userId)}? Clears draftPasses, freeDrafts, wheelSpins, cardPurchaseCount, JP/HOF entries, onboarding flags (hasSpunWheel, firstPurchaseBonusGranted, firstPurchasePromoUnlocked), AND re-enables the New User promo (clears the X-link claim) so the full new-user flow can re-run.`)) {
       return;
     }
     try {

@@ -80,6 +80,27 @@ export async function POST(req: Request) {
 
     await userRef.set(cleared, { merge: true });
 
+    // Re-enable the New User promo for re-testing: clear newUserPromoClaimed on
+    // the linked X account. Without this the promo stays claimed-forever (the
+    // box never reappears) even after the user-doc flags are reset, because the
+    // X-link doc is the source of truth for the new-user claim.
+    let twitterPromoReset = false;
+    try {
+      const linkSnap = await db
+        .collection('v2_twitter_links')
+        .where('walletAddress', '==', userId.toLowerCase())
+        .limit(1)
+        .get();
+      if (!linkSnap.empty) {
+        await linkSnap.docs[0].ref.update({ newUserPromoClaimed: false });
+        twitterPromoReset = true;
+      }
+    } catch (e) {
+      logger.warn('admin.reset_user.twitter_clear_failed', {
+        requestId, target: userId, err: e instanceof Error ? e.message : String(e),
+      });
+    }
+
     await logAdminAction({
       actor: actorWallet,
       action: 'reset-user',
@@ -97,7 +118,7 @@ export async function POST(req: Request) {
       durationMs: Date.now() - start,
     });
 
-    return json({ success: true, userId, scope, before, requestId });
+    return json({ success: true, userId, scope, before, twitterPromoReset, requestId });
   } catch (err) {
     logger.error('admin.reset_user.failed', {
       requestId,

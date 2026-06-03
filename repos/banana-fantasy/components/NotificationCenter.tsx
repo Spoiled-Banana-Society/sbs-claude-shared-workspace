@@ -19,6 +19,8 @@ export interface Notification {
   read: boolean;
   createdAt: string;
   link?: string;
+  /** Per-notification icon (emoji/glyph). Falls back to the type emoji when absent. */
+  icon?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -247,6 +249,7 @@ export function useNotifications() {
           read: serverRead || locallyReadRef.current.has(id) || beforeReadAll,
           createdAt,
           link: (n.link as string) || undefined,
+          icon: (n.icon as string) || undefined,
         };
       });
       currentIdsRef.current = mapped.map((n) => n.id);
@@ -325,7 +328,7 @@ export function useNotifications() {
       if (timer) return;
       timer = setTimeout(() => { timer = null; refetchRef.current(); }, 300);
     };
-    const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string }) => {
+    const onEvent = (event: { type: string; timestamp?: number; source?: string; notifId?: string; notifType?: string; notifTitle?: string; notifMessage?: string; notifLink?: string; notifIcon?: string }) => {
       // INSTANT render: a content-carrying 'notification' ping for a FRESH
       // event (just happened) → prepend the entry immediately, no fetch wait.
       // The freshness gate stops replayed RTDB history (onChildAdded fires for
@@ -346,6 +349,7 @@ export function useNotifications() {
             read: event.timestamp ? event.timestamp <= readAllAtRef.current : false,
             createdAt: new Date().toISOString(),
             link: event.notifLink || undefined,
+            icon: event.notifIcon || undefined,
           };
           return [entry, ...prev];
         });
@@ -575,7 +579,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
                       style={{ backgroundColor: `${config.color}15` }}
                     >
-                      {config.emoji}
+                      {notif.icon || config.emoji}
                     </div>
 
                     {/* Content */}

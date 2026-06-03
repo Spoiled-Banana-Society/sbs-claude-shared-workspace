@@ -72,6 +72,7 @@ export interface StreamEventPayload {
   notifTitle?: string;
   notifMessage?: string;
   notifLink?: string;
+  notifIcon?: string;
 }
 
 /**

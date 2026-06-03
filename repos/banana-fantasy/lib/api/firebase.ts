@@ -245,6 +245,7 @@ export interface UserStreamEvent {
   notifTitle?: string;
   notifMessage?: string;
   notifLink?: string;
+  notifIcon?: string;
 }
 
 /**

@@ -199,7 +199,7 @@ export default function NotificationsPage() {
                       className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
                       style={{ backgroundColor: `${config.color}15` }}
                     >
-                      {config.emoji}
+                      {notif.icon || config.emoji}
                     </div>
 
                     {/* Content */}

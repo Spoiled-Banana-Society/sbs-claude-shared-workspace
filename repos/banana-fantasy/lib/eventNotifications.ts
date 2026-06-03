@@ -32,6 +32,7 @@ export function eventNotificationContent(
         message: badge.description,
         link: '/profile?tab=badges',
         dedupeKey: `badge-${payload.badgeId}`,
+        icon: badge.glyph,
       };
     }
     case 'promo-new-user':
@@ -41,6 +42,7 @@ export function eventNotificationContent(
         message: 'Your new-user free spin is waiting on the promos page.',
         link: '/promos',
         dedupeKey: `promo-new-user-${userId}`,
+        icon: '🎉',
       };
     case 'promo-pick-10':
       return {
@@ -49,6 +51,7 @@ export function eventNotificationContent(
         message: 'You drew slot 10 in a draft — your free spin is ready to claim.',
         link: '/promos',
         dedupeKey: `promo-pick-10-${draftId}`,
+        icon: '🎯',
       };
     case 'promo-jackpot-hit': {
       const count = payload.awardedCount ?? 1;
@@ -60,6 +63,7 @@ export function eventNotificationContent(
           : `You hit a Jackpot draft — claim your ${count} free spins.`,
         link: '/promos',
         dedupeKey: `promo-jackpot-${draftId}`,
+        icon: '🎰',
       };
     }
     case 'promo-buy-10': {
@@ -71,6 +75,7 @@ export function eventNotificationContent(
           ? 'You completed Buy 10 — claim your free spin.'
           : `You completed Buy 10 — claim your ${count} free spins.`,
         link: '/promos',
+        icon: '🎡',
         // No stable id in payload — server fires once per buy; auto-id.
       };
     }
@@ -83,6 +88,7 @@ export function eventNotificationContent(
           ? 'Your card fees added up to $25 — a free draft is on us. Tap to play.'
           : `Your card fees earned you ${count} free drafts — on us. Tap to play.`,
         link: '/drafting',
+        icon: '🏈',
       };
     }
     case 'promo-daily-drafts':
@@ -92,6 +98,7 @@ export function eventNotificationContent(
         message: 'You finished 4 drafts today — claim your free spin.',
         link: '/promos',
         dedupeKey: `promo-daily-${draftId}`,
+        icon: '📅',
       };
     case 'promo-first-purchase': {
       const count = payload.awardedCount ?? 1;
@@ -103,6 +110,7 @@ export function eventNotificationContent(
           : `Your first purchase earned ${count} free spins — claim them now.`,
         link: '/promos',
         dedupeKey: `promo-first-purchase-${userId}`,
+        icon: '⭐',
       };
     }
     case 'first-purchase-unlocked':
@@ -112,6 +120,7 @@ export function eventNotificationContent(
         message: 'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
+        icon: '🍌',
       };
     case 'referral-milestone': {
       const m =
@@ -125,6 +134,7 @@ export function eventNotificationContent(
         message: `A friend you referred ${m}. Claim your free spin.`,
         link: '/promos',
         dedupeKey: `referral-${payload.milestone ?? 'x'}-${userId}`,
+        icon: '🤝',
       };
     }
     case 'notification':

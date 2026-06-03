@@ -60,13 +60,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { wallet, type, title, message, link, dedupeKey } = body;
+    const { wallet, type, title, message, link, dedupeKey, icon } = body;
 
     if (!wallet || !type || !title || !message) {
       return NextResponse.json({ error: 'wallet, type, title, and message are required' }, { status: 400 });
     }
 
-    await createNotification(wallet, { type, title, message, link, dedupeKey });
+    await createNotification(wallet, { type, title, message, link, dedupeKey, icon });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

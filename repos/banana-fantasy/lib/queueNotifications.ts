@@ -28,6 +28,10 @@ export interface CreateNotificationInput {
   link?: string;
   /** Content-stable key for cross-device idempotency. Omit for always-distinct events. */
   dedupeKey?: string;
+  /** Emoji/glyph shown as this notification's icon in the bell + /notifications.
+   *  Lets each event carry a meaningful icon (e.g. a badge's own glyph) instead
+   *  of every promo-type notification falling back to the same generic emoji. */
+  icon?: string;
 }
 
 /** Firestore doc ids can't contain '/' and have a 1500-byte cap; make a safe stable id. */
@@ -54,6 +58,7 @@ export async function createNotification(userId: string, n: CreateNotificationIn
       link: n.link || null,
       read: false,
       dedupeKey: n.dedupeKey ?? null,
+      icon: n.icon ?? null,
       createdAt: FieldValue.serverTimestamp(),
     };
 
@@ -83,6 +88,7 @@ export async function createNotification(userId: string, n: CreateNotificationIn
       notifTitle: n.title,
       notifMessage: n.message,
       notifLink: n.link || '',
+      notifIcon: n.icon || '',
     });
   } catch (err) {
     console.error('[createNotification] failed:', err);
