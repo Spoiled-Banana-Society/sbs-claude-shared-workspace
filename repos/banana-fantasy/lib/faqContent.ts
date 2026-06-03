@@ -170,6 +170,14 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Debit card or Apple Pay (powered by Coinbase), or pay directly with USDC on Base.',
       },
       {
+        question: 'How do I get USDC on Base to pay with crypto?',
+        answer: 'If you already hold ETH or other crypto, you have a few easy options: swap it to USDC on Base in one step with Relay, move it through Coinbase and withdraw USDC on the Base network, or simply buy USDC directly on Coinbase or in MetaMask. Our step-by-step guide walks through each method - including your exact wallet address to send to.',
+        link: {
+          label: 'How to get USDC on Base',
+          href: '/get-usdc',
+        },
+      },
+      {
         question: 'How do withdrawals work?',
         answer: 'Cash out to your bank account via Coinbase Offramp (ACH, 1-3 days) or withdraw USDC directly to your wallet on Base.',
       },
