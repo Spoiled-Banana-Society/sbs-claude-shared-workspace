@@ -51,6 +51,14 @@ interface FilterOpts {
   isBB3Holder?: boolean;
   newUserPromoClaimed?: boolean;
   /**
+   * True once the user has taken their welcome Banana Wheel spin. The new-user
+   * promo is one-time and done the moment they win a prize from that spin — so
+   * hide it FOR GOOD here. This is the reliable in-session signal (it flips via
+   * the balance stream the instant they spin); `newUserPromoClaimed` only
+   * refreshes on login, so it can't hide the box mid-session on its own.
+   */
+  hasSpunWheel?: boolean;
+  /**
    * True once the user has made their first paid purchase. The first-purchase
    * promo is one-time: hide it once it's been used up (granted with nothing
    * left to claim). Still shown while there are spins waiting to be claimed.
@@ -91,6 +99,7 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     if (p.type === 'new-user') {
       if (opts.isBB3Holder) return false;
       if (opts.newUserPromoClaimed) return false;
+      if (opts.hasSpunWheel) return false; // welcome spin used → promo done forever
     }
     // First-purchase promo is one-time. Once the user has purchased AND has
     // no spins left to claim, it's spent — hide it.

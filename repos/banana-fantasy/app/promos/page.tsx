@@ -103,13 +103,14 @@ export default function PromosPage() {
     return filterAndSortVisiblePromos(promos, {
       isBB3Holder,
       newUserPromoClaimed,
+      hasSpunWheel: !!user?.hasSpunWheel,
       firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
       flagsKnown: isBalanceLoaded,
       hasVisibleClaim,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, user?.hasSpunWheel, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper

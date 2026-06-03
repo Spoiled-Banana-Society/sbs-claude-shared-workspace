@@ -69,6 +69,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   const sortedPromos = filterAndSortVisiblePromos(promos, {
     isBB3Holder,
     newUserPromoClaimed,
+    hasSpunWheel: !!user?.hasSpunWheel,
     firstPurchaseBonusGranted: !!user?.firstPurchaseBonusGranted,
     firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
     flagsKnown: isBalanceLoaded,
