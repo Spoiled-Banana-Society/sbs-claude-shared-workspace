@@ -4,6 +4,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
+import { withAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { recountFromInventory } from '@/lib/passLedger';
 
@@ -84,7 +85,10 @@ export async function GET(req: Request) {
 
     processed++;
     try {
-      const mintResult = await reserveTokensToWallet({ to: userId, count: quantity });
+      // Hold the admin-wallet lock so this re-mint can't race a live purchase.
+      const mintResult = await withAdminWalletLock('fulfill-failed-mints', () =>
+        reserveTokensToWallet({ to: userId, count: quantity }),
+      );
       try {
         await registerMintedTokens(userId, mintResult.tokenIds, 'paid');
       } catch (e) {
