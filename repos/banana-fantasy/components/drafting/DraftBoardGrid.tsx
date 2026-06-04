@@ -17,6 +17,9 @@ interface DraftBoardGridProps {
   usersMap?: DraftRoomUsersMap;
   userProfilePicture?: string;
   userEquippedBadge?: string | null;
+  /** The current user's own board label — their custom name or default
+   *  "Banana####". Shown on their column instead of the word "You". */
+  userDisplayName?: string;
 }
 
 export function DraftBoardGrid({
@@ -28,6 +31,7 @@ export function DraftBoardGrid({
   usersMap,
   userProfilePicture,
   userEquippedBadge,
+  userDisplayName,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -79,7 +83,7 @@ export function DraftBoardGrid({
             : null;
           const displayLabel = player
             ? (player.isYou
-                ? 'You'
+                ? (userDisplayName || 'You')
                 : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
 
