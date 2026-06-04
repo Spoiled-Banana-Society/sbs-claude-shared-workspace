@@ -804,7 +804,7 @@ export function BuyPassesModal({
                 </span>
               ) : flowStep === 'success' ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span>✓ Purchase complete — Pick draft speed</span>
+                  <span>✓ Purchase complete — Join a Draft</span>
                   <span aria-hidden>→</span>
                 </span>
               ) : (
