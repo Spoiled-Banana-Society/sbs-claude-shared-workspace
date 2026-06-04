@@ -981,19 +981,17 @@ function DraftRoomContent() {
     }
   }, [engine.draftStatus, draftId]);
 
-  // New-user first-purchase gate — fire it the moment the "generating your card"
-  // wait STARTS, so the subtle toast lands DURING that ~10s loading beat (both
-  // desktop + mobile) rather than later on the roster page. The right signal is
-  // `firebaseRtdb.data.isDraftClosed` (the same flag that kicks off card
-  // generation, line ~1421) — it flips at the START of the wait, whereas
-  // `engine.draftStatus === 'completed'` flips ~10s later near roster
-  // navigation, which is why the toast was arriving on the roster page. We keep
-  // draftStatus as a secondary trigger for any path where isDraftClosed isn't
-  // set. When this was the user's LAST free draft, the server unlocks the promo
-  // + pushes the event (toast + bell + live banner; box from state). Idempotent
-  // per draftId (localStorage flag set only on HTTP 200 + server dedup); the
-  // roster page (/draft-results) fires the same call as a final fallback. Deps
-  // are stable scalars only — can't render-loop (shared-workspace CLAUDE.md #0).
+  // New-user first-purchase gate — fire it promptly when the draft closes (the
+  // `firebaseRtdb.data.isDraftClosed` flag that also kicks off card generation,
+  // line ~1421), so the bell notification + home banner + promo box are unlocked
+  // and ready by the time the user lands on the home page. We keep
+  // `engine.draftStatus === 'completed'` as a secondary trigger for any path
+  // where isDraftClosed isn't set. When this was the user's LAST free draft, the
+  // server unlocks the promo + pushes the event (bell + live banner; box from
+  // state — no toast/modal). Idempotent per draftId (localStorage flag set only
+  // on HTTP 200 + server dedup); the roster page (/draft-results) fires the same
+  // call as a final fallback. Deps are stable scalars only — can't render-loop
+  // (shared-workspace CLAUDE.md Rule #0).
   useEffect(() => {
     const draftClosed = !!firebaseRtdb.data?.isDraftClosed || engine.draftStatus === 'completed';
     if (!draftClosed) return;

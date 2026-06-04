@@ -6,6 +6,9 @@ import existingPlayers from '@/lib/data/existing-players.json';
 
 const SAMPLE_PAST_WALLET = (existingPlayers.wallets as string[])[0];
 const RANDOM_NEW_WALLET = '0xffffffffffffffffffffffffffffffffffffffff';
+// Genesis-only NFT holder (never entered a Best Ball season) — must be treated
+// as a NEW user, not returning, since the genesis-only cohort was dropped.
+const GENESIS_ONLY_WALLET = '0x0000007370af0000ad00be0efd2f1eb6e6e9d700';
 
 const promos = [
   { id: 'n', type: 'new-user' },
@@ -13,8 +16,13 @@ const promos = [
 ] as unknown as Promo[];
 
 describe('all-time past-players → returning treatment', () => {
-  it('snapshot has the full 2,624-wallet list', () => {
-    expect(PAST_PLAYER_COUNT).toBe(2624);
+  it('snapshot has the Best-Ball-players list (genesis-only excluded)', () => {
+    expect(PAST_PLAYER_COUNT).toBe(1745);
+  });
+
+  it('genesis-only NFT holder is treated as NEW, not returning', () => {
+    expect(isPastPlayer(GENESIS_ONLY_WALLET)).toBe(false);
+    expect(isReturningWalletSync(GENESIS_ONLY_WALLET)).toBe(false);
   });
 
   it('flags a known past player as returning (case-insensitive)', () => {

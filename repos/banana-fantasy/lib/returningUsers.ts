@@ -49,23 +49,27 @@ export function getReturningWalletAllowlist(): string[] {
   return [...FALLBACK_RETURNING_WALLETS];
 }
 
-// All-time past-players snapshot: every wallet that ever played any SBS season
-// (genesis → 2025), compiled from prod Firestore + on-chain Season 2 (2024) /
-// Season 3 holders. The live on-chain check in useAuth only catches current
-// Season-3 (BBB3) holders, so without this list every genesis/2022/2023/2024
-// player and social-login user is wrongly treated as new and offered the
-// new-user promo. Membership here marks them returning → they skip the new-user
-// promo and get the existing-user (first-purchase) treatment. Wallets only, no
-// PII. Regenerate from ~/sbs-past-players/all_time_players.csv. Synchronous Set
-// lookup — no fetch, so it adds zero render-loop risk (Rule #0).
+// Best Ball past-players snapshot: every wallet that entered a Banana Best Ball
+// season (BBB, 2022 → 2025), compiled from prod Firestore + on-chain Season 2
+// (2024) / Season 3 holders. Genesis-only NFT holders are intentionally
+// EXCLUDED — holding the genesis NFT without ever playing a Best Ball season
+// counts as a new user (per product decision 2026-06-04). The live on-chain
+// check in useAuth only catches current Season-3 (BBB3) holders, so without
+// this list every 2022/2023/2024 Best Ball player and social-login user is
+// wrongly treated as new and offered the new-user promo. Membership here marks
+// them returning → they skip the new-user promo and get the existing-user
+// (first-purchase) treatment. Wallets only, no PII. Regenerate from
+// ~/sbs-past-players/all_time_players.csv (keep rows whose `seasons` include a
+// non-genesis year). Synchronous Set lookup — no fetch, zero render-loop risk
+// (Rule #0).
 const PAST_PLAYER_SET: ReadonlySet<string> = new Set(
   (existingPlayers.wallets as string[]).map(normalizeWallet),
 );
 
-/** Count of known all-time past players (for admin/diagnostics). */
+/** Count of known Best Ball past players (for admin/diagnostics). */
 export const PAST_PLAYER_COUNT = PAST_PLAYER_SET.size;
 
-/** True if this wallet ever played any past SBS season (the all-time snapshot). */
+/** True if this wallet ever entered a Banana Best Ball season (genesis-only excluded). */
 export function isPastPlayer(walletAddress: string | null | undefined): boolean {
   if (!walletAddress) return false;
   return PAST_PLAYER_SET.has(normalizeWallet(walletAddress));
