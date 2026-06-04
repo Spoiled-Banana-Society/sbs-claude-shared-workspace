@@ -1448,6 +1448,29 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firebaseActive, firebaseRtdb.data?.isDraftClosed, draftId, walletParam, generatedCardUrl]);
 
+  // Push an OpenSea metadata refresh for ALL 10 freshly-drafted teams the moment
+  // the draft closes, so the revealed roster + card art shows on OpenSea (and the
+  // marketplace, which reads owned NFTs from OpenSea). One client firing this
+  // covers every team in the draft — the route refreshes them all regardless of
+  // who triggered it. localStorage-guarded so it fires once per draft per client;
+  // the refresh itself is idempotent. Deps are stable scalars only (booleans /
+  // strings) — never a Privy-derived callback — so this cannot render-loop
+  // (shared-workspace CLAUDE.md Rule #0).
+  useEffect(() => {
+    const closed = !!firebaseRtdb.data?.isDraftClosed || engine.draftStatus === 'completed';
+    const id = draftId || urlDraftId;
+    if (!closed || !id) return;
+    const firedKey = `os-refresh:${id}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    // Set the guard optimistically so a flaky network can't hammer OpenSea with
+    // duplicate refreshes; the team is sellable regardless and OpenSea self-heals.
+    try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ }
+    void fetch(`/api/marketplace/refresh-draft/${id}`, { method: 'POST' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) console.log('[OpenSea] draft metadata refresh queued', data); })
+      .catch(() => { /* best-effort — non-critical */ });
+  }, [firebaseRtdb.data?.isDraftClosed, engine.draftStatus, draftId, urlDraftId]);
+
   // Refresh draft pass count after joining a draft
   useEffect(() => {
     if (!draftId || !isLiveMode) return;

@@ -1,267 +1,248 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as draftStore from '@/lib/draftStore';
 import { logger } from '@/lib/logger';
-import { CardImage } from '@/components/draft/CardImage';
+import type { DraftType } from '@/lib/draftRoomConstants';
+
+interface RosterEntry {
+  playerId: string;
+  position: string;
+}
 
 interface DraftCompleteProps {
   draftId?: string;
-  /** URL of the generated card image — fetched when isDraftClosed transitions to true */
+  /** URL of the generated card image — fetched when isDraftClosed transitions to true.
+   *  Used here ONLY as the "generation finished" signal that drives the bar to 100%;
+   *  the actual card art is shown on the roster page we route to. */
   generatedCardUrl?: string | null;
-  /** Wallet address of the user (needed for card fetch) */
+  /** Wallet address of the user (needed for the card-ready fetch). */
   walletAddress?: string;
+  /** The user's drafted 15 picks, in pick order — rendered inside the card. */
+  roster?: RosterEntry[];
+  /** Draft type → drives the card border colour (pro=purple, hof=gold, jackpot=red). */
+  draftType?: DraftType | null;
 }
 
-const REDIRECT_SECONDS = 10;
+// How long the bar eases up on its own before the real "card ready" signal
+// snaps it to 100%. Tuned to the optimised ~4s generation target.
+const EASE_TARGET_MS = 4000;
+// Soft ceiling the self-ease can reach; only the real card-ready signal closes
+// the last gap to 100% — so the bar never lies about being done.
+const EASE_CEILING = 92;
+// Brief beat at 100% so the user registers "done" before we route.
+const DONE_HOLD_MS = 1100;
 
-export function DraftComplete({ draftId, generatedCardUrl: initialCardUrl, walletAddress }: DraftCompleteProps) {
+const TYPE_COLOR: Record<DraftType, string> = {
+  pro: '#a855f7',
+  hof: '#D4AF37',
+  jackpot: '#ef4444',
+};
+const TYPE_FOIL: Record<DraftType, string> = {
+  pro: 'linear-gradient(135deg,#5b1d9e 0%,#e9d5ff 22%,#a855f7 46%,#f3e8ff 62%,#7e22ce 82%,#c084fc 100%)',
+  hof: 'linear-gradient(135deg,#9c7619 0%,#ffe9a0 22%,#d4af37 42%,#fff6cf 58%,#c0941d 78%,#e8c869 100%)',
+  jackpot: 'linear-gradient(135deg,#7f1d1d 0%,#fecaca 22%,#ef4444 46%,#fee2e2 60%,#b91c1c 82%,#f87171 100%)',
+};
+const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT' };
+const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444' };
+
+export function DraftComplete({
+  draftId,
+  generatedCardUrl: initialCardUrl,
+  walletAddress,
+  roster = [],
+  draftType,
+}: DraftCompleteProps) {
   const router = useRouter();
-  const [cardUrl, setCardUrl] = useState<string | null>(initialCardUrl || null);
-  const [cardLoading, setCardLoading] = useState(!initialCardUrl);
-  const [cardError, setCardError] = useState(false);
-  const [secondsLeft, setSecondsLeft] = useState(REDIRECT_SECONDS);
+  const type: DraftType = draftType ?? 'pro';
+  const accent = TYPE_COLOR[type];
 
-  // Sync prop changes
+  const [cardReady, setCardReady] = useState<boolean>(!!initialCardUrl);
+  const [progress, setProgress] = useState(0);
+  const cardReadyRef = useRef(cardReady);
+  cardReadyRef.current = cardReady;
+
+  const destination = draftId ? `/draft-results/${draftId}` : '/drafting';
+
+  // ── Card-ready signal ──────────────────────────────────────────────
+  // The parent sets `initialCardUrl` once the backend finishes the card
+  // (isDraftClosed → fetch). We also poll as a fallback. Either way, the
+  // FIRST time the card URL is known is our authoritative "generation done"
+  // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) {
-      setCardUrl(initialCardUrl);
-      setCardLoading(false);
-    }
+    if (initialCardUrl) setCardReady(true);
   }, [initialCardUrl]);
 
-  // Attempt to fetch the generated card if we don't have it yet
   useEffect(() => {
-    if (cardUrl || !draftId || !walletAddress) return;
+    if (cardReady || !draftId || !walletAddress) return;
     let cancelled = false;
 
-    async function fetchCard() {
+    logger.info('[DraftComplete] Generating digital team — polling for card-ready', { draftId, type });
+
+    async function pollCardReady() {
       const { getDraftsApiUrl } = await import('@/lib/staging');
       const FALLBACK_URL = process.env.NEXT_PUBLIC_DRAFTS_API_URL || 'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
       const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
 
-      // Retry up to 10 times over ~30 seconds (card generation takes a few seconds)
+      // Retry up to 10 times over ~30s — matches prior behaviour. The card
+      // usually lands in a few seconds; the cap only guards a stuck backend.
       for (let attempt = 0; attempt < 10; attempt++) {
         try {
           const res = await fetch(`${baseUrl}/owner/${walletAddress}/drafts/${draftId}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           if (cancelled) return;
-
-          // Check for the card image URL in the response
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
           if (imageUrl) {
-            logger.debug('[DraftComplete] Generated card fetched:', imageUrl);
-            setCardUrl(imageUrl);
-            setCardLoading(false);
+            logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
+            setCardReady(true);
             return;
           }
         } catch (err) {
-          console.warn(`[DraftComplete] Card fetch attempt ${attempt + 1} failed:`, err);
+          console.warn(`[DraftComplete] card-ready poll ${attempt + 1} failed:`, err);
         }
-
         if (cancelled) return;
-        // Wait 3 seconds between retries
         await new Promise(r => setTimeout(r, 3000));
       }
-
-      // Exhausted retries
+      // Exhausted: don't trap the user — treat as ready so we still route to
+      // the roster (which keeps retrying for the image on its own).
       if (!cancelled) {
-        setCardLoading(false);
-        setCardError(true);
+        logger.info('[DraftComplete] Card-ready poll exhausted — routing to roster anyway', { draftId });
+        setCardReady(true);
       }
     }
 
-    fetchCard();
+    pollCardReady();
     return () => { cancelled = true; };
-  }, [draftId, walletAddress, cardUrl]);
+  }, [draftId, walletAddress, cardReady, type]);
 
-  // Once we have the card (or hit the error fallback), start a visible
-  // countdown to the roster page. User can also click the button to skip
-  // the wait. Countdown does NOT start until the card lands so the reveal
-  // moment is never cut short by a background timer.
-  const destination = draftId ? `/draft-results/${draftId}` : '/drafting';
-  const readyToRedirect = !cardLoading; // covers both success + error paths
+  // ── Real-time bar ──────────────────────────────────────────────────
+  // Eases up on its own toward EASE_CEILING; the card-ready signal below
+  // closes the final gap to 100%. So 100% always means "actually done".
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      if (cardReadyRef.current) return; // ready-effect owns the final climb
+      const t = Math.min(1, (Date.now() - start) / EASE_TARGET_MS);
+      const eased = Math.round(EASE_CEILING * (1 - Math.pow(1 - t, 2)));
+      setProgress(prev => (prev >= eased ? prev : eased));
+    }, 80);
+    return () => clearInterval(id);
+  }, []);
 
+  // ── On ready → fill to 100%, hold a beat, route ────────────────────
   useEffect(() => {
     if (draftId) draftStore.removeDraft(draftId);
   }, [draftId]);
 
   useEffect(() => {
-    if (!readyToRedirect) return;
-    setSecondsLeft(REDIRECT_SECONDS);
-    const interval = setInterval(() => {
-      setSecondsLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          router.push(destination);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [readyToRedirect, router, destination]);
+    if (!cardReady) return;
+    setProgress(100);
+    logger.info('[DraftComplete] Team secured — routing to roster', { draftId, destination });
+    const t = setTimeout(() => router.push(destination), DONE_HOLD_MS);
+    return () => clearTimeout(t);
+  }, [cardReady, router, destination, draftId]);
 
-  // Step indicator: which step is the active one right now?
-  // - Compiling roster: instant, always done by the time we render here
-  // - Generating art: active while cardLoading
-  // - Ready: active once cardUrl is set
-  const stepState: 'generating' | 'ready' | 'error' = cardError
-    ? 'error'
-    : cardUrl
-      ? 'ready'
-      : 'generating';
+  // Reveal players in sync with the bar.
+  const revealCount = Math.round((progress / 100) * roster.length);
 
   return (
-    <div className="mt-20 sm:mt-28 px-4 flex flex-col items-center text-center">
-      {/* Headline shifts based on state. Both use banana yellow + bold so the
-          transition feels like the same celebration, just resolved. */}
-      <h1 className="font-primary uppercase italic font-black tracking-wide text-4xl sm:text-5xl bg-gradient-to-b from-banana to-banana/60 bg-clip-text text-transparent animate-fade-in-up">
-        {stepState === 'ready' ? 'Your Team Is Ready' : 'Draft Complete'}
-      </h1>
-      <p className="mt-3 text-white/70 text-sm sm:text-base max-w-sm animate-fade-in-up" style={{ animationDelay: '120ms' }}>
-        {stepState === 'ready'
-          ? 'Card generated. Tap below to see your roster.'
-          : stepState === 'error'
-            ? 'Your card is still being generated — it will appear on your profile shortly.'
-            : 'Hang tight — we’re generating your draft card right now.'}
-      </p>
+    <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>
+      <div className="dc-eyebrow" style={{ color: accent }}>Draft Complete</div>
+      <h1 className="dc-h1">Finalizing your<br />Digital Team</h1>
 
-      {/* Three-step indicator. Step 1 is always complete by the time the user
-          sees this screen. Step 2 reflects card generation. Step 3 lights up
-          when the image URL lands. */}
-      <ol className="mt-8 flex items-center gap-3 sm:gap-5 text-[11px] sm:text-xs uppercase tracking-wider font-semibold">
-        <Step label="Roster" state="done" />
-        <Connector active={stepState !== 'generating'} />
-        <Step
-          label="Card Art"
-          state={stepState === 'generating' ? 'active' : stepState === 'error' ? 'error' : 'done'}
-        />
-        <Connector active={stepState === 'ready'} />
-        <Step label="Ready" state={stepState === 'ready' ? 'done' : 'pending'} />
-      </ol>
-
-      {/* Card slot — reserves space so the layout doesn't jump when the image
-          finally lands. While loading, render a subtle pulsing placeholder.
-          When the image arrives, fade + scale in with a soft banana glow. */}
-      <div className="mt-10 relative w-[220px] sm:w-[260px] aspect-[5/7]">
-        {cardUrl ? (
-          <>
-            <div className="absolute inset-0 rounded-xl blur-2xl opacity-50 bg-banana/40 animate-card-glow" />
-            <CardImage
-              src={cardUrl}
-              alt="Generated Card"
-              className="relative w-full h-full object-contain rounded-xl shadow-2xl border border-white/10 animate-card-in"
-            />
-          </>
-        ) : (
-          <div className="absolute inset-0 rounded-xl border border-white/10 bg-white/[0.03] flex items-center justify-center overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-br from-banana/[0.06] via-transparent to-banana/[0.04] animate-shimmer" />
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0s' }} />
-              <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0.2s' }} />
-              <div className="w-3 h-3 rounded-full bg-banana animate-bubble" style={{ animationDelay: '0.4s' }} />
+      {/* ── the card ── */}
+      <div className={`dc-forge${cardReady ? ' done' : ''}`}>
+        <div className="dc-card" style={{ background: TYPE_FOIL[type] }}>
+          <div className="dc-ticket">
+            <div className="dc-tinner" />
+            <div className="dc-thead">
+              BANANA BEST BALL IV
+              <span
+                className={`dc-stamp${type === 'jackpot' ? ' jp' : ''}`}
+                style={{ color: STAMP_COLOR[type] }}
+              >
+                {STAMP_LABEL[type]}
+              </span>
+            </div>
+            <div className="dc-rows">
+              {roster.slice(0, 15).map((p, i) => (
+                <div key={`${p.playerId}-${i}`} className={`dc-row${i < revealCount ? ' on' : ''}`}>
+                  <span className="dc-name">{p.playerId}</span>
+                </div>
+              ))}
+            </div>
+            <div className="dc-tfoot">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/sbs-logo-black.png" alt="SBS" />
+              <span>SPOILED BANANA SOCIETY</span>
             </div>
           </div>
-        )}
+          <div className="dc-holo" />
+          {!cardReady && <div className="dc-scan" />}
+        </div>
       </div>
 
-      {/* Continue button + visible countdown. Button is active the moment the
-          card lands (or the error fallback resolves). User clicks to leave
-          immediately; otherwise the auto-redirect fires when seconds hit 0. */}
-      <button
-        type="button"
-        disabled={!readyToRedirect}
-        onClick={() => router.push(destination)}
-        className={`mt-10 px-6 py-3 rounded-full text-sm sm:text-base font-bold transition-all ${
-          readyToRedirect
-            ? 'bg-banana text-black hover:bg-banana-light hover:scale-105 shadow-lg shadow-banana/30'
-            : 'bg-white/[0.06] text-white/30 cursor-not-allowed'
-        }`}
-      >
-        {readyToRedirect ? (
-          <span className="flex items-center gap-2">
-            View Team
-            <span className="text-black/60 font-medium tabular-nums">({secondsLeft}s)</span>
-            <span aria-hidden>→</span>
-          </span>
-        ) : (
-          'Preparing your team…'
-        )}
-      </button>
+      {/* ── real-time bar ── */}
+      <div className="dc-pwrap">
+        <div className="dc-barrow">
+          <div className="dc-ptrack">
+            <div
+              className="dc-pfill"
+              style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${accent}, #fff)` }}
+            />
+          </div>
+          <div className="dc-ppct" style={{ color: accent }}>{progress}%</div>
+        </div>
+        <div className="dc-ptext">
+          <b>Compete for weekly and season-long prizes.</b><br />
+          <b>Sell your team. Buy other teams.</b><br />
+          <span className="dc-mut">All season on our Marketplace.</span>
+        </div>
+      </div>
 
       <style jsx>{`
-        @keyframes bubble {
-          0%, 80%, 100% { transform: scale(0); opacity: 0.3; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes fadeInUp {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes cardIn {
-          0% { opacity: 0; transform: scale(0.92); }
-          60% { opacity: 1; transform: scale(1.02); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes cardGlow {
-          0%, 100% { opacity: 0.35; }
-          50% { opacity: 0.6; }
-        }
-        @keyframes shimmer {
-          0% { transform: translateX(-100%); }
-          100% { transform: translateX(100%); }
-        }
-        .animate-bubble { animation: bubble 1.4s infinite ease-in-out both; }
-        .animate-fade-in-up { animation: fadeInUp 0.5s ease-out both; }
-        .animate-card-in { animation: cardIn 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
-        .animate-card-glow { animation: cardGlow 2.4s ease-in-out infinite; }
-        .animate-shimmer { animation: shimmer 2.2s ease-in-out infinite; }
+        .dc-wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:26px 18px 40px}
+        .dc-eyebrow{font-size:12px;letter-spacing:3px;text-transform:uppercase;font-weight:800;margin-top:6px}
+        .dc-h1{font-size:30px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:8px;line-height:1.05;
+          background:linear-gradient(180deg,#fff,rgba(255,255,255,.65));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+        .dc-forge{margin:20px auto 0;position:relative;width:236px;max-width:74vw}
+        .dc-card{position:relative;border-radius:18px;aspect-ratio:5/7;overflow:hidden;padding:7px}
+        .dc-ticket{height:100%;border-radius:11px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column}
+        .dc-tinner{position:absolute;inset:5px;border:1.2px solid rgba(35,32,92,.5);border-radius:8px;pointer-events:none}
+        .dc-thead{position:relative;text-align:center;color:#23205c;font-weight:900;font-size:9px;letter-spacing:.2px;padding:3px 8px 4px;border-bottom:1.2px solid rgba(35,32,92,.5);font-style:italic;white-space:nowrap}
+        .dc-stamp{position:absolute;top:3px;right:9px;font-size:9px;font-weight:900;letter-spacing:.4px;line-height:1;white-space:nowrap;-webkit-text-stroke:.3px currentColor;text-shadow:0 1px 1px rgba(0,0,0,.2)}
+        .dc-stamp.jp{font-size:6.5px;top:4px;right:6px;letter-spacing:0;-webkit-text-stroke:.45px currentColor}
+        .dc-rows{flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:4px 1px}
+        .dc-row{display:flex;align-items:center;height:14px}
+        .dc-name{flex:1;text-align:center;color:#23205c;font-weight:800;font-style:italic;font-size:9px;letter-spacing:.2px;white-space:nowrap;opacity:0;transform:translateY(3px)}
+        .dc-row.on .dc-name{animation:dcLock .5s cubic-bezier(.16,1,.3,1) forwards}
+        @keyframes dcLock{0%{opacity:0;transform:translateY(3px);filter:brightness(2.4)}100%{opacity:1;transform:translateY(0);filter:brightness(1)}}
+        .dc-tfoot{display:flex;align-items:center;justify-content:center;gap:6px;padding-top:5px;border-top:1.2px solid rgba(35,32,92,.5)}
+        .dc-tfoot img{width:14px;height:14px;object-fit:contain}
+        .dc-tfoot span{color:#23205c;font-weight:900;font-size:8px;letter-spacing:.3px;font-style:italic}
+
+        .dc-holo{position:absolute;inset:0;border-radius:18px;z-index:5;pointer-events:none;mix-blend-mode:screen;
+          background:linear-gradient(115deg,transparent 38%,var(--c) 49%,#fff 50%,var(--c) 51%,transparent 62%);background-size:300% 300%;animation:dcHolo 2.8s linear infinite;opacity:.4}
+        @keyframes dcHolo{0%{background-position:130% 0}100%{background-position:-130% 0}}
+        .dc-scan{position:absolute;left:5%;right:5%;height:2px;border-radius:2px;top:0;z-index:6;pointer-events:none;
+          background:linear-gradient(90deg,transparent,var(--c),transparent);animation:dcScan 1.9s cubic-bezier(.45,0,.55,1) infinite}
+        @keyframes dcScan{0%{top:5%;opacity:0}10%{opacity:.9}90%{opacity:.9}100%{top:95%;opacity:0}}
+        .dc-forge.done .dc-holo{opacity:0;transition:opacity .4s}
+
+        .dc-pwrap{width:300px;max-width:88vw;margin:22px auto 0}
+        .dc-barrow{display:flex;align-items:center;gap:10px}
+        .dc-ptrack{flex:1;height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative}
+        .dc-pfill{height:100%;border-radius:999px;transition:width .2s linear;position:relative}
+        .dc-pfill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent);background-size:50% 100%;animation:dcGloss 1.3s linear infinite}
+        @keyframes dcGloss{0%{background-position:-50% 0}100%{background-position:150% 0}}
+        .dc-ppct{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+        .dc-ptext{margin-top:11px;font-size:12px;line-height:1.5;text-align:center;color:rgba(255,255,255,.6)}
+        .dc-ptext :global(b){color:#fff;font-weight:800}
+        .dc-mut{color:rgba(255,255,255,.5);font-weight:600}
       `}</style>
     </div>
-  );
-}
-
-// ─── Step indicator pieces ─────────────────────────────────────────────────
-
-type StepStatus = 'pending' | 'active' | 'done' | 'error';
-
-function Step({ label, state }: { label: string; state: StepStatus }) {
-  const dotClass =
-    state === 'done'
-      ? 'bg-banana border-banana text-black'
-      : state === 'active'
-        ? 'border-banana text-banana animate-pulse'
-        : state === 'error'
-          ? 'border-red-500 text-red-400'
-          : 'border-white/15 text-white/30';
-  const labelClass =
-    state === 'pending'
-      ? 'text-white/30'
-      : state === 'error'
-        ? 'text-red-400'
-        : 'text-white/80';
-
-  return (
-    <li className="flex items-center gap-2">
-      <span
-        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-black ${dotClass}`}
-        aria-hidden
-      >
-        {state === 'done' ? '✓' : state === 'error' ? '!' : ''}
-      </span>
-      <span className={labelClass}>{label}</span>
-    </li>
-  );
-}
-
-function Connector({ active }: { active: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`h-px w-6 sm:w-10 transition-colors duration-500 ${active ? 'bg-banana' : 'bg-white/10'}`}
-    />
   );
 }

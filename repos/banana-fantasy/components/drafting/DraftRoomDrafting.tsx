@@ -424,6 +424,10 @@ export function DraftRoomDrafting({
                     draftId={draftId || urlDraftId}
                     generatedCardUrl={generatedCardUrl}
                     walletAddress={walletParam}
+                    draftType={visibleDraftType}
+                    roster={engine.picks
+                      .filter(p => (p.ownerName || '').toLowerCase() === (walletParam || '').toLowerCase())
+                      .map(p => ({ playerId: p.playerId, position: p.position }))}
                   />
                 </div>
               )}
