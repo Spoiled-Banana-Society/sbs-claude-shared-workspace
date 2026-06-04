@@ -506,9 +506,12 @@ export default function MarketplacePage() {
       }
 
       const tx = await response.json();
+      // Wait for the on-chain receipt before claiming success — a non-owner's
+      // cancel (or a stale order) reverts, and without waiting the UI would
+      // falsely log/show "cancelled" and refetch a still-active listing.
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Cancel your listing' },
+        { description: 'Cancel your listing', waitForReceipt: true },
       );
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
@@ -558,6 +561,22 @@ export default function MarketplacePage() {
           await new Promise(resolve => setTimeout(resolve, 3000));
         }
         if (cancelledRef.current) return;
+        // Funding poll ended — confirm the USDC actually arrived before buying.
+        // Otherwise every buy below would fail on-chain and the user would just
+        // see "N/N failed" with no hint that card funding timed out.
+        const fundedBalance = await getUsdcBalance(walletAddress as Address);
+        if (fundedBalance < requiredUsdc) {
+          setTxError("Your card payment hasn't arrived yet. The USDC may still be on the way — check your balance in a minute and run the sweep again.");
+          reportClientError({
+            source: LOG_SOURCES.marketplace.SWEEP_FUND_FAILED,
+            message: 'Sweep card funding poll timed out before USDC arrived',
+            route: 'marketplace',
+            actor: walletAddress,
+            context: { sweepTotal, requiredUsdc: requiredUsdc.toString(), fundedBalance: fundedBalance.toString() },
+          });
+          setSweepStep('confirm');
+          return;
+        }
       } catch (error) {
         console.error('[Sweep] Fund failed:', error);
         // Money in flight (card funding for a multi-buy). Critical.

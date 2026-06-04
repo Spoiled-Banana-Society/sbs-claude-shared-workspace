@@ -10,6 +10,22 @@ import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 
 type SuccessType = 'buy' | 'sell' | 'list';
 
+// Sort order for "Sell Your Teams", per product:
+//   0. Drafted teams you CAN sell        (has roster, not a free pass mid-season)
+//   1. Drafted teams you CAN'T sell yet  (free team, drafting still open)
+//   2. Draft passes you CAN sell         (unused paid pass)
+//   3. Draft passes you CAN'T sell yet   (free pass, drafting still open)
+// A "team" = has a backend roster record; otherwise it's an unused draft pass.
+// "Can't sell" = a free pass/team while drafting is still open.
+function sellTierRank(team: MarketplaceTeam): number {
+  const isTeam = team.hasBackendRecord === true;
+  const blocked = team.passType === 'free' && isDraftingOpen();
+  if (isTeam && !blocked) return 0;
+  if (isTeam && blocked) return 1;
+  if (!isTeam && !blocked) return 2;
+  return 3;
+}
+
 interface SellTabProps {
   myNfts: MarketplaceTeam[];
   myNftsLoading: boolean;
@@ -88,15 +104,8 @@ export function SellTab({
           ) : (
             <div className="grid gap-4">
               {myNfts
-                // Hide orphan stage-mint NFTs (no SBS backend record, not a free pass).
-                // Production can't produce this state — it's leftover from staging test mints.
-                .filter(team => !(team.hasBackendRecord === false && team.passType !== 'free'))
-                .sort((a, b) => {
-                  // Free draft passes go last; everything else keeps existing order.
-                  const aFree = a.passType === 'free' ? 1 : 0;
-                  const bFree = b.passType === 'free' ? 1 : 0;
-                  return aFree - bFree;
-                })
+                .slice()
+                .sort((a, b) => sellTierRank(a) - sellTierRank(b))
                 .map(team => (
                 <Link
                   key={team.id}

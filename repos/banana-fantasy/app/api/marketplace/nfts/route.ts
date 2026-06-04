@@ -34,37 +34,52 @@ export async function GET(req: Request) {
     const owner = getSearchParam(req, 'owner');
     if (!owner) return jsonError('Missing owner address', 400);
 
-    const nftParams = new URLSearchParams({
-      collection: COLLECTION_SLUG,
-      limit: '200',
-    });
+    // Kick off the active-listings fetch in parallel (used to merge orderHash/
+    // price onto owned NFTs so listed teams show "Delist").
+    const listingsPromise = fetch(
+      `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=100`,
+      {
+        headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
+        cache: 'no-store',
+      },
+    );
 
-    // Fetch owned NFTs and active collection listings in parallel
-    const [nftRes, listingsRes] = await Promise.all([
-      fetch(
+    // Paginate owned NFTs via the `next` cursor — a heavy holder (e.g. someone
+    // with many unused draft passes) owns more than one page, and the old
+    // single 200-item fetch silently truncated the Sell list. Capped at
+    // MAX_PAGES to bound work.
+    const rawNfts: OpenSeaNft[] = [];
+    let nftFetchFailed: { status: number; text: string } | null = null;
+    let cursor = '';
+    const MAX_PAGES = 10;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const nftParams = new URLSearchParams({ collection: COLLECTION_SLUG, limit: '200' });
+      if (cursor) nftParams.set('next', cursor);
+      const pageRes = await fetch(
         `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/account/${owner}/nfts?${nftParams}`,
         {
           headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
           cache: 'no-store',
         },
-      ),
-      fetch(
-        `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-        {
-          headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
-          cache: 'no-store',
-        },
-      ),
-    ]);
-
-    if (!nftRes.ok) {
-      const text = await nftRes.text();
-      console.error('[marketplace/nfts] OpenSea error:', nftRes.status, text);
-      return jsonError('Failed to fetch owned NFTs', nftRes.status >= 500 ? 502 : nftRes.status);
+      );
+      if (!pageRes.ok) {
+        nftFetchFailed = { status: pageRes.status, text: await pageRes.text() };
+        break;
+      }
+      const pageData = await pageRes.json();
+      rawNfts.push(...((pageData.nfts ?? []) as OpenSeaNft[]));
+      if (!pageData.next) break;
+      cursor = pageData.next;
     }
 
-    const data = await nftRes.json();
-    const rawNfts: OpenSeaNft[] = data.nfts ?? [];
+    const listingsRes = await listingsPromise;
+
+    // Only hard-fail if we got nothing at all; a mid-pagination failure keeps
+    // the pages we did fetch rather than showing an empty Sell list.
+    if (nftFetchFailed && rawNfts.length === 0) {
+      console.error('[marketplace/nfts] OpenSea error:', nftFetchFailed.status, nftFetchFailed.text);
+      return jsonError('Failed to fetch owned NFTs', nftFetchFailed.status >= 500 ? 502 : nftFetchFailed.status);
+    }
 
     // Build a map of tokenId → listing info from active listings by this owner
     const listingMap = new Map<string, { orderHash: string; price: number; protocolAddress: string }>();

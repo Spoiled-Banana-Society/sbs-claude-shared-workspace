@@ -2,6 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, COLLECTION_SLUG, type OpenSeaListing } from '@/lib/opensea';
+import { getEthUsd, isEthSymbol } from '@/lib/marketplace/ethPrice';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,15 +83,35 @@ export async function GET(req: Request) {
     // Find the weekly interval for change stats
     const weekInterval = intervals.find((i: { interval: string }) => i.interval === 'one_week');
 
+    // Floor/volume/avg come back in the floor listing's currency. Our listings
+    // are USDC (≈$1), but if the cheapest listing is ETH-priced, convert to USD
+    // so the UI can always render a real dollar figure. If the rate lookup
+    // fails (ethUsd = 0) we leave the native ETH values + symbol untouched.
+    let floorPrice = total.floor_price ?? 0;
+    let totalVolume = total.volume ?? 0;
+    let averagePrice = total.average_price ?? 0;
+    let marketCap = total.market_cap ?? 0;
+    let displaySymbol = total.floor_price_symbol ?? 'USDC';
+    if (isEthSymbol(displaySymbol)) {
+      const ethUsd = await getEthUsd();
+      if (ethUsd > 0) {
+        floorPrice *= ethUsd;
+        totalVolume *= ethUsd;
+        averagePrice *= ethUsd;
+        marketCap *= ethUsd;
+        displaySymbol = 'USD';
+      }
+    }
+
     return json({
-      floorPrice: total.floor_price ?? 0,
-      floorPriceSymbol: total.floor_price_symbol ?? 'ETH',
-      totalVolume: total.volume ?? 0,
+      floorPrice,
+      floorPriceSymbol: displaySymbol,
+      totalVolume,
       numOwners: total.num_owners ?? 0,
       totalSales: total.sales ?? 0,
       totalListed,
-      averagePrice: total.average_price ?? 0,
-      marketCap: total.market_cap ?? 0,
+      averagePrice,
+      marketCap,
       weeklyVolumeChange: weekInterval?.volume_change ?? null,
     });
   } catch (err) {
