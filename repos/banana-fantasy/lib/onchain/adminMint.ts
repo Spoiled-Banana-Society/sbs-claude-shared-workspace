@@ -22,19 +22,42 @@ import { logger } from '@/lib/logger';
 
 const RECEIPT_TIMEOUT_MS = 60_000;
 
-// Base mainnet runs at ~0.005 gwei base fee + ~0.001 gwei priority.
-// Without pinned values, viem falls back to Ethereum-mainnet-like defaults
-// (~1.5 gwei priority) and demands the wallet pre-fund a worst case of
-// `gasLimit × maxFeePerGas` ≈ 0.0024 ETH per tx — 250–6000× the real
-// cost. Pin explicit Base-realistic values so a $5 admin wallet can
-// actually submit txs whose true cost is fractions of a cent.
+// Gas fees for admin txs (reserveTokens mint + USDC permit/transferFrom).
 //
-// Headroom: 0.1 gwei is ~20× the current base fee, plenty for Base spikes.
-// If Base ever sustains >0.05 gwei base fee for a stretch, bump these.
-const BASE_GAS_PARAMS = {
-  maxFeePerGas: parseGwei('0.1'),
-  maxPriorityFeePerGas: parseGwei('0.001'),
-} as const;
+// We do NOT let viem auto-estimate: on Base it falls back to Ethereum-mainnet
+// defaults (~1.5 gwei priority) and demands the wallet pre-fund a worst case of
+// `gasLimit × maxFeePerGas` — 250–6000× the real cost. Instead we set explicit,
+// Base-realistic fees with a SMALL priority tip.
+//
+// CRITICAL: maxFeePerGas must be ADAPTIVE to the live base fee. It used to be a
+// fixed 0.1 gwei, which silently worked while Base base fee stayed below that —
+// then on a congestion spike the base fee crossed 0.1 gwei and EVERY admin tx
+// failed with "max fee per gas less than block base fee" (lost a user's spin
+// reward). We now read the current base fee and set maxFee = 3× base fee +
+// priority, floored at 0.1 gwei (keeps the cheap-network behavior) and capped so
+// the wallet pre-fund demand stays bounded even at extreme base fees.
+const PRIORITY_FEE = parseGwei('0.001');
+const MAX_FEE_FLOOR = parseGwei('0.1'); // cheap-network behavior, unchanged
+const MAX_FEE_CEIL = parseGwei('10');   // bounds gasLimit×maxFee pre-fund demand
+
+async function resolveGasParams(publicClient: {
+  getBlock: (args: { blockTag: 'latest' }) => Promise<{ baseFeePerGas: bigint | null }>;
+}): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+  let baseFee = MAX_FEE_FLOOR; // safe fallback if the RPC read fails
+  try {
+    const block = await publicClient.getBlock({ blockTag: 'latest' });
+    if (typeof block.baseFeePerGas === 'bigint' && block.baseFeePerGas > 0n) {
+      baseFee = block.baseFeePerGas;
+    }
+  } catch (e) {
+    logger.warn('adminMint.basefee_read_failed', { err: (e as Error).message });
+  }
+  // 3× headroom covers the base fee rising between this read and inclusion.
+  let maxFeePerGas = baseFee * 3n + PRIORITY_FEE;
+  if (maxFeePerGas < MAX_FEE_FLOOR) maxFeePerGas = MAX_FEE_FLOOR;
+  if (maxFeePerGas > MAX_FEE_CEIL) maxFeePerGas = MAX_FEE_CEIL;
+  return { maxFeePerGas, maxPriorityFeePerGas: PRIORITY_FEE };
+}
 
 function loadPrivateKey(): Hex | null {
   const raw = process.env.BBB4_OWNER_PRIVATE_KEY?.trim();
@@ -96,7 +119,7 @@ export async function reserveTokensToWallet(opts: {
     abi: BBB4_ABI,
     functionName: 'reserveTokens',
     args: [recipient, BigInt(count)],
-    ...BASE_GAS_PARAMS,
+    ...(await resolveGasParams(publicClient)),
   });
 
   logger.info('adminMint.tx.sent', { to: recipient, count, txHash });
@@ -182,7 +205,7 @@ export async function submitUsdcPermit(opts: {
       abi: USDC_PERMIT_ABI,
       functionName: 'permit',
       args: [opts.owner, opts.spender, opts.value, opts.deadline, opts.v, opts.r, opts.s],
-      ...BASE_GAS_PARAMS,
+      ...(await resolveGasParams(publicClient)),
     });
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
@@ -217,7 +240,7 @@ export async function pullUsdcFromUser(opts: {
     abi: USDC_ABI,
     functionName: 'transferFrom',
     args: [opts.owner, opts.to, opts.amount],
-    ...BASE_GAS_PARAMS,
+    ...(await resolveGasParams(publicClient)),
   });
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,

@@ -981,6 +981,37 @@ function DraftRoomContent() {
     }
   }, [engine.draftStatus, draftId]);
 
+  // New-user first-purchase gate — fire it the moment the "generating your card"
+  // wait STARTS, so the subtle toast lands DURING that ~10s loading beat (both
+  // desktop + mobile) rather than later on the roster page. The right signal is
+  // `firebaseRtdb.data.isDraftClosed` (the same flag that kicks off card
+  // generation, line ~1421) — it flips at the START of the wait, whereas
+  // `engine.draftStatus === 'completed'` flips ~10s later near roster
+  // navigation, which is why the toast was arriving on the roster page. We keep
+  // draftStatus as a secondary trigger for any path where isDraftClosed isn't
+  // set. When this was the user's LAST free draft, the server unlocks the promo
+  // + pushes the event (toast + bell + live banner; box from state). Idempotent
+  // per draftId (localStorage flag set only on HTTP 200 + server dedup); the
+  // roster page (/draft-results) fires the same call as a final fallback. Deps
+  // are stable scalars only — can't render-loop (shared-workspace CLAUDE.md #0).
+  useEffect(() => {
+    const draftClosed = !!firebaseRtdb.data?.isDraftClosed || engine.draftStatus === 'completed';
+    if (!draftClosed) return;
+    const id = draftId || urlDraftId;
+    if (!id) return;
+    const promoUserId = user?.id || walletParam?.toLowerCase();
+    if (!promoUserId) return;
+    const firedKey = `fp-finished:${id}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    void fetch('/api/promos/first-purchase-finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+    })
+      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .catch(() => { /* best-effort — roster page retries */ });
+  }, [firebaseRtdb.data?.isDraftClosed, engine.draftStatus, draftId, urlDraftId, user?.id, walletParam]);
+
   useEffect(() => {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
@@ -2214,8 +2245,8 @@ function DraftRoomContent() {
       )}
       <div>
         <button
-          onClick={() => router.push('/')}
-          title="Back to home — the draft keeps going without you here"
+          onClick={() => router.push('/drafting')}
+          title="Back to your drafts — the draft keeps going without you here"
           className="text-[12px] cursor-pointer flex items-center justify-center border border-gray-500 px-1 font-primary"
         >
           ← EXIT

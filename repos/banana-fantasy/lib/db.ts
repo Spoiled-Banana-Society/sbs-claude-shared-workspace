@@ -30,6 +30,7 @@ export const updateQueueRoundStatus = db.updateQueueRoundStatus;
 export const fillQueueRoundWithBots = db.fillQueueRoundWithBots;
 export const resetQueue = db.resetQueue;
 export const recordDraftCompletion = db.recordDraftCompletion;
+export const recordFirstPurchaseDraftFinished = db.recordFirstPurchaseDraftFinished;
 export const recordPick10 = db.recordPick10;
 export const recordJackpotHit = db.recordJackpotHit;
 export const recordFounderDraftJoin = db.recordFounderDraftJoin;

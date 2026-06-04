@@ -11,7 +11,7 @@ import { DraftQueue } from '@/components/drafting/DraftQueue';
 import { DraftBoardGrid } from '@/components/drafting/DraftBoardGrid';
 import { DraftRoster } from '@/components/drafting/DraftRoster';
 import { DraftComplete } from '@/components/drafting/DraftComplete';
-import { getTruncatedAccountName } from '@/utils/helpers';
+import { getTruncatedAccountName, bananaDefaultName } from '@/utils/helpers';
 import {
   getPositionColorHex,
   POSITION_COLORS,
@@ -483,6 +483,11 @@ export function DraftRoomDrafting({
                   usersMap={usersMap}
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
+                  userDisplayName={
+                    (user?.username && !user.username.startsWith('0x'))
+                      ? user.username
+                      : bananaDefaultName(walletParam || '')
+                  }
                 />
               )}
               {activeTab === 'roster' && (

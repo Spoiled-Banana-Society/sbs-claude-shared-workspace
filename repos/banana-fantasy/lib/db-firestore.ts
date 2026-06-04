@@ -1846,6 +1846,21 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
 }
 
 /**
+ * Public entry for the new-user first-purchase gate, called when a wheel-won
+ * draft is FINISHED — i.e. the user has reached their post-draft roster page
+ * (/draft-results), so the draft is actually done and they're OUTSIDE the draft
+ * room. This is the fix for the gate firing too early: it used to run when a
+ * draft merely FILLED (via recordDraftCompletion). It decrements the
+ * remaining-winnings counter; when that counter hits 0 (their LAST free draft
+ * just finished) the promo unlocks and the popup/notification/banner fire.
+ * Idempotent per draftId and a no-op once purchased / already pinged, so
+ * re-visiting the roster page can't double-fire.
+ */
+export async function recordFirstPurchaseDraftFinished(userId: string, draftId: string): Promise<void> {
+  await _recordWinningsDraftForFirstPurchaseGate(userId, draftId);
+}
+
+/**
  * Authoritative pass type ('free' | 'paid') for the token bound to `draftId`,
  * read from the Go API — every draft token is stamped with the pass type the
  * user actually chose at entry (DraftToken.PassType, the source of truth).
@@ -1888,13 +1903,12 @@ async function resolveDraftPassType(userId: string, draftId: string): Promise<'f
 }
 
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
-  // First-purchase popup gate runs for EVERY completion (free, jackpot, HOF or
-  // paid). Pre-purchase, a user's drafts are all wheel winnings to count down;
-  // post-purchase it's a guarded no-op. Kept separate from — and ahead of — the
-  // paid-only daily-drafts credit below, so existing promo wiring is untouched.
-  await _recordWinningsDraftForFirstPurchaseGate(userId, draftId).catch((err) =>
-    logger.warn('promo.first_purchase_gate_failed', { userId, draftId, err: (err as Error).message }),
-  );
+  // NOTE: the new-user first-purchase gate USED to run here — but this function
+  // fires when a draft FILLS, not when it finishes, which pinged the popup too
+  // early (the moment the draft filled). The gate now runs in
+  // recordFirstPurchaseDraftFinished, triggered when the user reaches their
+  // post-draft roster page (the draft is actually done, outside the draft room).
+  // This function stays focused on the daily-drafts credit below.
 
   // Only PAID drafts count toward daily-drafts. A draft entered with a FREE
   // pass earns zero daily-drafts credit. The token is stamped with the chosen

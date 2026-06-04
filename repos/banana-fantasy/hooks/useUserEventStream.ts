@@ -189,8 +189,13 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
     }
     case 'first-purchase-unlocked': {
       // The new-user finished their welcome-wheel winnings. Surface the
-      // first-purchase promo: a bell notification, and a CustomEvent the
-      // app-wide FirstPurchasePromoModal listens for to pop the modal.
+      // first-purchase promo as a SUBTLE bottom-right toast (consistent with
+      // the welcome-bonus and slot-10 rewards) plus the persistent bell
+      // notification. The CustomEvent below drives the live home banner
+      // (TopBanners listens for it). The full-screen modal that also listened
+      // has been removed (unmounted from providers) — too abrupt on the
+      // post-draft card/roster reveal. The toast carries the moment now.
+      surfaces.showToast('First purchase bonus unlocked 🍌 — every 4 passes = 1 free spin', '/buy-drafts');
       surfaces.pushNotif(
         'First Purchase Bonus 🍌',
         'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
