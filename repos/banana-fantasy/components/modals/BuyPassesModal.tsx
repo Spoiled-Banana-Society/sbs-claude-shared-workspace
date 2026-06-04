@@ -40,7 +40,7 @@ export function BuyPassesModal({
 }: BuyPassesModalProps) {
   const _router = useRouter();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
-  const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
+  const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
@@ -529,7 +529,7 @@ export function BuyPassesModal({
   const usdcStepOrder: FlowStep[] = ['signing', 'processing', 'success'];
   const visibleStepOrder = paymentMethod === 'card' ? cardStepOrder : usdcStepOrder;
 
-  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Pick Your Draft Speed' : 'Joining Draft...';
+  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Join a Draft' : 'Joining Draft...';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
@@ -747,11 +747,17 @@ export function BuyPassesModal({
                   </div>
                 )}
 
-                {flowStep === 'error' && (flowError || mintError) && (
+                {flowStep === 'error' && mintPaymentPending && mintError ? (
+                  // Payment succeeded, delivery pending — reassure, don't alarm.
+                  <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3 mt-1">
+                    <p className="text-banana font-semibold text-sm text-center">✓ Payment received — pass on its way</p>
+                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">{mintError}</p>
+                  </div>
+                ) : flowStep === 'error' && (flowError || mintError) ? (
                   <div className="text-sm text-red-400 text-center pt-1">
                     {flowError || mintError}
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -798,7 +804,7 @@ export function BuyPassesModal({
                 </span>
               ) : flowStep === 'success' ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span>✓ Purchase complete — Pick draft speed</span>
+                  <span>✓ Purchase complete — Join a Draft</span>
                   <span aria-hidden>→</span>
                 </span>
               ) : (
@@ -875,7 +881,7 @@ export function BuyPassesModal({
               <h3 className="text-2xl font-bold text-text-primary">
                 {mintedCount} Pass{mintedCount !== 1 ? 'es' : ''} Minted!
               </h3>
-              <p className="text-text-muted mt-1">Pick your draft speed to enter immediately</p>
+              <p className="text-text-muted mt-1">Join a draft to enter immediately</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

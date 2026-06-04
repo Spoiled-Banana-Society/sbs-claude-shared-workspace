@@ -43,6 +43,12 @@ interface UseMintDraftPassResult {
   /** Current step of the mint flow, used by the modal to render a stepper. */
   mintStep: MintStep;
   error: string | null;
+  /**
+   * True when the user's payment SUCCEEDED but pass delivery is still pending
+   * (e.g. a transient mint retry exhausted). Their money is safe and the pass
+   * is queued — the UI should reassure, not show a hard failure.
+   */
+  paymentPending: boolean;
   txHash: Hex | null;
   tokenPrice: bigint | null;
   mintActive: boolean;
@@ -85,6 +91,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const [isMinting, setIsMinting] = useState(false);
   const [mintStep, setMintStep] = useState<MintStep>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [paymentPending, setPaymentPending] = useState(false);
   const [txHash, setTxHash] = useState<Hex | null>(null);
   const [tokenPrice, setTokenPrice] = useState<bigint | null>(null);
   const [mintActive, setMintActive] = useState(false);
@@ -163,6 +170,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const mint = useCallback<MintFn>(
     async (quantity, opts) => {
       setError(null);
+      setPaymentPending(false);
       setTxHash(null);
       setMintStep('idle');
 
@@ -268,9 +276,19 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const data = (await res.json().catch(() => ({}))) as {
           success?: boolean;
           error?: string;
+          paymentSucceeded?: boolean;
           txHashes?: { mint?: Hex };
         };
         if (!res.ok || !data.success) {
+          // Payment went through but delivery is pending — NOT a hard failure.
+          // Surface a reassuring pending state instead of an error so the user
+          // knows their money is safe and the pass is on its way.
+          if (data.paymentSucceeded) {
+            setPaymentPending(true);
+            setError(data.error || 'Payment received — your pass is on its way.');
+            setMintStep('error');
+            return '0x' as Hex;
+          }
           throw new Error(data.error || `Mint failed (${res.status})`);
         }
         const hash = (data.txHashes?.mint ?? '0x') as Hex;
@@ -348,6 +366,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
     isMinting,
     mintStep,
     error,
+    paymentPending,
     txHash,
     tokenPrice,
     mintActive,

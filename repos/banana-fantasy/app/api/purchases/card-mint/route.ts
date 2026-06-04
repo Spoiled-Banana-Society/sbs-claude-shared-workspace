@@ -23,6 +23,7 @@ import {
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { acquireAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
@@ -173,87 +174,133 @@ export async function POST(req: Request) {
 
     const value = (tokenPriceUsdc as bigint) * BigInt(quantity);
 
-    // 1. Consume the user's permit. Admin wallet now has allowance.
-    let permitTxHash: Hex;
+    // Serialize the entire approve → pull → mint sequence on the shared admin
+    // wallet so two concurrent purchases (or the fulfillment cron) can't
+    // interleave and race on the tx nonce or the USDC allowance — the exact
+    // cause of the "replacement underpriced" / "transfer exceeds allowance"
+    // failures. Released in finally on every path.
+    const releaseAdminLock = await acquireAdminWalletLock('card-mint');
+    let mintResult: { txHash: Hex; tokenIds: string[] } | undefined;
+    let permitTxHash: Hex | 'skipped' = 'skipped';
+    let transferTxHash: Hex | undefined;
     try {
-      permitTxHash = await submitUsdcPermit({
-        owner,
-        spender: adminWallet,
-        value,
-        deadline,
-        v: parsedSig.v,
-        r: parsedSig.r,
-        s: parsedSig.s,
-      });
-    } catch (err) {
-      logger.warn('card-mint.permit_failed', {
-        userId,
-        quantity,
-        nonce: (onchainNonce as bigint).toString(),
-        err: (err as Error).message,
-      });
-      if (err instanceof ApiError) return jsonError(err.message, err.status);
-      return jsonError(`Permit failed: ${(err as Error).message}`, 400);
-    }
+      const ALLOWANCE_ABI = [{
+        type: 'function',
+        name: 'allowance',
+        stateMutability: 'view',
+        inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+        outputs: [{ type: 'uint256' }],
+      }] as const;
+      const readAllowance = () =>
+        publicClient.readContract({
+          address: BASE_SEPOLIA_USDC_ADDRESS,
+          abi: ALLOWANCE_ABI,
+          functionName: 'allowance',
+          args: [owner, adminWallet],
+        }) as Promise<bigint>;
 
-    // 2. Pull USDC into the BBB4 contract. Existing skim-bbb4-usdc cron will
-    //    sweep it to COLD_TREASURY_ADDRESS on its hourly schedule.
-    let transferTxHash: Hex;
-    try {
-      transferTxHash = await pullUsdcFromUser({
-        owner,
-        to: BBB4_CONTRACT_ADDRESS,
-        amount: value,
-      });
-    } catch (err) {
-      logger.error('card-mint.transferFrom_failed', {
-        userId,
-        quantity,
-        value: value.toString(),
-        permitTxHash,
-        err: (err as Error).message,
-      });
-      if (err instanceof ApiError) return jsonError(err.message, err.status);
-      return jsonError(`USDC transfer failed: ${(err as Error).message}`, 402);
-    }
-
-    // 3. Admin-mint the NFTs to the user. If this fails after transferFrom
-    //    succeeded, we owe the user a pass — record for retry.
-    let mintResult: { txHash: Hex; tokenIds: string[] };
-    try {
-      mintResult = await reserveTokensToWallet({ to: userId, count: quantity });
-    } catch (err) {
-      logger.error('card-mint.mint_failed_after_payment', {
-        userId,
-        quantity,
-        value: value.toString(),
-        permitTxHash,
-        transferTxHash,
-        err: (err as Error).message,
-      });
-      if (isFirestoreConfigured()) {
+      // 1. Ensure the admin wallet can pull `value`. Skip the permit if a prior
+      //    (unconsumed) allowance already covers it.
+      if ((await readAllowance()) < value) {
         try {
-          const db = getAdminFirestore();
-          await db.collection(FAILED_MINTS_COLLECTION).add({
-            source: 'card-mint',
+          permitTxHash = await submitUsdcPermit({
+            owner,
+            spender: adminWallet,
+            value,
+            deadline,
+            v: parsedSig.v,
+            r: parsedSig.r,
+            s: parsedSig.s,
+          });
+        } catch (err) {
+          logger.warn('card-mint.permit_failed', {
             userId,
             quantity,
-            value: value.toString(),
-            paymentMethod,
-            permitTxHash,
-            transferTxHash,
-            error: (err as Error).message,
-            createdAt: FieldValue.serverTimestamp(),
-            retryable: true,
+            nonce: (onchainNonce as bigint).toString(),
+            err: (err as Error).message,
           });
-        } catch (logErr) {
-          logger.error('card-mint.failed_mint_record_error', { userId, err: logErr });
+          if (err instanceof ApiError) return jsonError(err.message, err.status);
+          return jsonError(`Permit failed: ${(err as Error).message}`, 400);
         }
       }
-      return jsonError(
-        'Payment succeeded but mint failed. This has been recorded and will be retried — please contact support if your passes do not appear shortly.',
-        500,
-      );
+
+      // 1b. VERIFY the allowance is in place BEFORE pulling any money. If a race
+      //     left it short, stop cleanly — the user is NOT charged — instead of
+      //     letting transferFrom revert with a scary error.
+      if ((await readAllowance()) < value) {
+        logger.warn('card-mint.allowance_not_set', { userId, quantity, permitTxHash });
+        return jsonError('Approval didn’t go through — please tap Buy again. You were NOT charged.', 409);
+      }
+
+      // 2. Pull USDC into the BBB4 contract. Existing skim-bbb4-usdc cron will
+      //    sweep it to COLD_TREASURY_ADDRESS on its hourly schedule.
+      try {
+        transferTxHash = await pullUsdcFromUser({
+          owner,
+          to: BBB4_CONTRACT_ADDRESS,
+          amount: value,
+        });
+      } catch (err) {
+        logger.error('card-mint.transferFrom_failed', {
+          userId,
+          quantity,
+          value: value.toString(),
+          permitTxHash,
+          err: (err as Error).message,
+        });
+        if (err instanceof ApiError) return jsonError(err.message, err.status);
+        return jsonError(`USDC transfer failed: ${(err as Error).message}`, 402);
+      }
+
+      // 3. Admin-mint the NFTs to the user. If this fails after transferFrom
+      //    succeeded, we owe the user a pass — record it; the
+      //    fulfill-failed-mints cron delivers it automatically within minutes.
+      try {
+        mintResult = await reserveTokensToWallet({ to: userId, count: quantity });
+      } catch (err) {
+        logger.error('card-mint.mint_failed_after_payment', {
+          userId,
+          quantity,
+          value: value.toString(),
+          permitTxHash,
+          transferTxHash,
+          err: (err as Error).message,
+        });
+        if (isFirestoreConfigured()) {
+          try {
+            const db = getAdminFirestore();
+            await db.collection(FAILED_MINTS_COLLECTION).add({
+              source: 'card-mint',
+              userId,
+              quantity,
+              value: value.toString(),
+              paymentMethod,
+              permitTxHash,
+              transferTxHash,
+              error: (err as Error).message,
+              createdAt: FieldValue.serverTimestamp(),
+              retryable: true,
+              resolved: false,
+              attempts: 0,
+            });
+          } catch (logErr) {
+            logger.error('card-mint.failed_mint_record_error', { userId, err: logErr });
+          }
+        }
+        return jsonError(
+          'Your payment went through and your draft pass is on its way — it has been queued and will be delivered automatically, usually within a few minutes. You will NOT be charged again. If it hasn’t shown up shortly, contact support and we’ll sort it out right away.',
+          500,
+          { paymentSucceeded: true },
+        );
+      }
+    } finally {
+      await releaseAdminLock();
+    }
+
+    if (!mintResult) {
+      // Unreachable: a successful mint exits the try with mintResult set, and
+      // every failure path returned above. Guards the type checker.
+      return jsonError('Mint did not complete', 500);
     }
 
     // 3b. Register the minted tokens into the Go engine as REAL spendable

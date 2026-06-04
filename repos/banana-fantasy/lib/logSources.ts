@@ -138,6 +138,9 @@ export const LOG_SOURCES = {
     SWEEP_FUND_FAILED: 'marketplace.sweep_fund_failed',
     SWEEP_BALANCE_CHECK_FAILED: 'marketplace.sweep_balance_check_failed',
     CANCEL_OFFER_FAILED: 'marketplace.cancel_offer_failed',
+    // Post-draft: push an OpenSea metadata refresh for all 10 freshly-drafted
+    // teams so the revealed roster/card art shows on OpenSea + the marketplace.
+    REFRESH_DRAFT_FAILED: 'marketplace.refresh_draft_failed',
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',

@@ -31,6 +31,14 @@ function canSellTeam(team: MarketplaceTeam): boolean {
   return !(team.passType === 'free' && isDraftingOpen());
 }
 
+// A drafted team's roster only fills in once its draft COMPLETES (15 picks).
+// A team mid-draft has an empty/partial roster — you can't sell an unfinished
+// team, so it shows a "Drafting" status instead of a List button until done.
+const FULL_ROSTER = 15;
+function draftInProgress(team: MarketplaceTeam): boolean {
+  return team.hasBackendRecord === true && (team.roster?.length ?? 0) < FULL_ROSTER;
+}
+
 interface SellTabProps {
   myNfts: MarketplaceTeam[];
   myNftsLoading: boolean;
@@ -86,10 +94,15 @@ export function SellTab({
 }: SellTabProps) {
   const [showUnsellable, setShowUnsellable] = useState(false);
 
+  // Hide "stage mint" tokens entirely — NFTs the backend has no draft record
+  // for (orphan staging mints / undrafted passes). They clutter the list and
+  // aren't real teams.
+  const listableNfts = myNfts.filter(t => t.hasBackendRecord !== false);
+
   // Only show sellable teams/passes by default; the ones you can't list yet
   // (free passes locked until the season starts) hide behind a toggle.
-  const sellable = myNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
-  const unsellable = myNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const sellable = listableNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const unsellable = listableNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
   const visibleNfts = showUnsellable ? [...sellable, ...unsellable] : sellable;
 
   return (
@@ -183,6 +196,13 @@ export function SellTab({
                       >
                         Listable Once Season Starts
                       </button>
+                    ) : draftInProgress(team) ? (
+                      <span
+                        className="px-5 py-2 rounded-xl text-sm font-semibold bg-white/5 text-white/40 cursor-default"
+                        title="This team is still drafting. You can list it once the draft finishes and your roster is set."
+                      >
+                        Drafting… listable when done
+                      </span>
                     ) : (
                       <button
                         onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
