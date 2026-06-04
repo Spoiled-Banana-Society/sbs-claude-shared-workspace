@@ -981,6 +981,31 @@ function DraftRoomContent() {
     }
   }, [engine.draftStatus, draftId]);
 
+  // New-user first-purchase gate — fire the moment the draft FINISHES (the
+  // "generating your card" wait), so the subtle toast + bell + banner + box land
+  // during that idle beat rather than over the roster reveal. When this was the
+  // user's LAST free draft, the server unlocks the promo + pushes the event.
+  // Idempotent per draftId (localStorage flag set only on HTTP 200 + server
+  // dedup); the roster page (/draft-results) fires the same call as a fallback
+  // for users who aren't in the room at completion (e.g. slow drafts). Deps are
+  // stable scalars only — can't render-loop (shared-workspace CLAUDE.md Rule #0).
+  useEffect(() => {
+    if (engine.draftStatus !== 'completed') return;
+    const id = draftId || urlDraftId;
+    if (!id) return;
+    const promoUserId = user?.id || walletParam?.toLowerCase();
+    if (!promoUserId) return;
+    const firedKey = `fp-finished:${id}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    void fetch('/api/promos/first-purchase-finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: promoUserId, draftId: id }),
+    })
+      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .catch(() => { /* best-effort — roster page retries */ });
+  }, [engine.draftStatus, draftId, urlDraftId, user?.id, walletParam]);
+
   useEffect(() => {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;

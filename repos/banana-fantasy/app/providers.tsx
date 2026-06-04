@@ -25,7 +25,6 @@ import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
-import { FirstPurchasePromoModal } from '@/components/modals/FirstPurchasePromoModal';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -109,9 +108,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
-        {/* One-time first-purchase bonus popup for new (non-BB3) users,
-            after they finish their welcome-wheel winnings. */}
-        <FirstPurchasePromoModal />
+        {/* First-purchase bonus is now announced via a subtle toast (see
+            useUserEventStream 'first-purchase-unlocked') + the persistent home
+            banner + promo box. The old full-screen modal was removed — too
+            abrupt on the post-draft card/roster reveal. */}
         {!isDraftRoom && <SupportChatButton />}
       </div>
   );
