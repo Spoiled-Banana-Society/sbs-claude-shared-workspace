@@ -2214,8 +2214,8 @@ function DraftRoomContent() {
       )}
       <div>
         <button
-          onClick={() => router.push('/')}
-          title="Back to home — the draft keeps going without you here"
+          onClick={() => router.push('/drafting')}
+          title="Back to your drafts — the draft keeps going without you here"
           className="text-[12px] cursor-pointer flex items-center justify-center border border-gray-500 px-1 font-primary"
         >
           ← EXIT
