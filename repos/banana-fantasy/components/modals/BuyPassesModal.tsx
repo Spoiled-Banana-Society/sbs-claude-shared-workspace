@@ -529,7 +529,7 @@ export function BuyPassesModal({
   const usdcStepOrder: FlowStep[] = ['signing', 'processing', 'success'];
   const visibleStepOrder = paymentMethod === 'card' ? cardStepOrder : usdcStepOrder;
 
-  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Pick Your Draft Speed' : 'Joining Draft...';
+  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Join a Draft' : 'Joining Draft...';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
@@ -881,7 +881,7 @@ export function BuyPassesModal({
               <h3 className="text-2xl font-bold text-text-primary">
                 {mintedCount} Pass{mintedCount !== 1 ? 'es' : ''} Minted!
               </h3>
-              <p className="text-text-muted mt-1">Pick your draft speed to enter immediately</p>
+              <p className="text-text-muted mt-1">Join a draft to enter immediately</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
