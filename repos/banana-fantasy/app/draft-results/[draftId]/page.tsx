@@ -98,6 +98,31 @@ export default function DraftResultsPage() {
   const { user } = useAuth();
   const walletAddress = user?.walletAddress ?? '';
 
+  // New-user first-purchase gate. Landing on this roster page means the draft is
+  // FINISHED and the user is OUTSIDE the draft room — the correct moment for the
+  // gate (it used to fire when a draft merely FILLED, which pinged too early).
+  // We tell the server this draft finished; when it was the user's LAST free
+  // draft, the server unlocks the promo and the popup/notification/banner fire
+  // (globally, so they follow the user if they navigate away from here).
+  // Fires once per draft (flag set only on success so a failure retries next
+  // visit); the server also dedups per draftId, so a re-visit is harmless.
+  // Deps are stable scalars only — no Privy-derived callback — so this can't
+  // render-loop (see shared-workspace CLAUDE.md Rule #0).
+  useEffect(() => {
+    if (!draftId) return;
+    const userId = user?.id || walletAddress?.toLowerCase();
+    if (!userId) return;
+    const firedKey = `fp-finished:${draftId}`;
+    try { if (localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+    void fetch('/api/promos/first-purchase-finished', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, draftId }),
+    })
+      .then((res) => { if (res.ok) { try { localStorage.setItem(firedKey, '1'); } catch { /* ignore */ } } })
+      .catch(() => { /* best-effort — retries on next visit */ });
+  }, [draftId, user?.id, walletAddress]);
+
   const [allRosters, setAllRosters] = useState<Record<string, PlayerRoster>>({});
   const [playerKeys, setPlayerKeys] = useState<string[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
