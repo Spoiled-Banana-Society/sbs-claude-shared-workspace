@@ -86,10 +86,15 @@ export function SellTab({
 }: SellTabProps) {
   const [showUnsellable, setShowUnsellable] = useState(false);
 
+  // Hide "stage mint" tokens entirely — NFTs the backend has no draft record
+  // for (orphan staging mints / undrafted passes). They clutter the list and
+  // aren't real teams.
+  const listableNfts = myNfts.filter(t => t.hasBackendRecord !== false);
+
   // Only show sellable teams/passes by default; the ones you can't list yet
   // (free passes locked until the season starts) hide behind a toggle.
-  const sellable = myNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
-  const unsellable = myNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const sellable = listableNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const unsellable = listableNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
   const visibleNfts = showUnsellable ? [...sellable, ...unsellable] : sellable;
 
   return (
