@@ -10,6 +10,8 @@ import {
   type OpenSeaListing,
   type OpenSeaNft,
 } from '@/lib/opensea';
+import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
+import { isDraftingOpen } from '@/lib/draftTypes';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -226,6 +228,29 @@ export async function POST(req: Request) {
     const body = await req.json();
     if (!body?.parameters || !body?.signature || !body?.protocol_address) {
       return jsonError('Missing signed order fields', 400);
+    }
+
+    // Server-side enforcement of the "free passes can't be listed mid-season"
+    // rule. The UI already blocks it, but the API is the real gate (someone
+    // could POST a signed order directly). We use the same authoritative source
+    // as the client — pass_origin free-mint records — and only block a token
+    // that is definitively a free pass while drafting is open. Fail-OPEN on any
+    // lookup error so a flaky check never blocks a legitimate paid-pass listing.
+    if (isDraftingOpen()) {
+      try {
+        const offerItems = (body.parameters.offer ?? []) as Array<{ itemType: number; identifierOrCriteria?: string }>;
+        const nftItem = offerItems.find((o) => o.itemType === 2 || o.itemType === 3);
+        const tokenId = nftItem?.identifierOrCriteria;
+        const offerer = String(body.parameters.offerer ?? '').toLowerCase();
+        if (tokenId && offerer) {
+          const freeIds = new Set((await listFreeOriginTokenIds(offerer)).map(String));
+          if (freeIds.has(String(tokenId))) {
+            return jsonError('Free draft passes can only be listed once the season starts.', 403);
+          }
+        }
+      } catch (guardErr) {
+        console.error('[marketplace/listings] free-pass guard check failed (allowing listing):', guardErr);
+      }
     }
 
     const postRes = await fetch(
