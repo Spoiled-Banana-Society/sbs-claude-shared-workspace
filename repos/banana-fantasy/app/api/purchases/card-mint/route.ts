@@ -245,6 +245,8 @@ export async function POST(req: Request) {
             error: (err as Error).message,
             createdAt: FieldValue.serverTimestamp(),
             retryable: true,
+            resolved: false,
+            attempts: 0,
           });
         } catch (logErr) {
           logger.error('card-mint.failed_mint_record_error', { userId, err: logErr });
