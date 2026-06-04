@@ -14,7 +14,6 @@ import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { EditProfileModal } from '@/components/modals/EditProfileModal';
 import { OnboardingTutorial } from '@/components/onboarding/OnboardingTutorial';
 import { CrispChat } from '@/components/CrispChat';
-import { SupportChatButton } from '@/components/SupportChatButton';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
@@ -112,7 +111,8 @@ function AppContent({ children }: { children: React.ReactNode }) {
             useUserEventStream 'first-purchase-unlocked') + the persistent home
             banner + promo box. The old full-screen modal was removed — too
             abrupt on the post-draft card/roster reveal. */}
-        {!isDraftRoom && <SupportChatButton />}
+        {/* The floating "Chat with us" launcher was removed — the only entry
+            point is now "Chat with us" in the profile dropdown. */}
       </div>
   );
 }
