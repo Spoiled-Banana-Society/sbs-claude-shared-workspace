@@ -251,8 +251,9 @@ export async function POST(req: Request) {
         }
       }
       return jsonError(
-        'Payment succeeded but mint failed. This has been recorded and will be retried — please contact support if your passes do not appear shortly.',
+        'Your payment went through and your draft pass is on its way — it has been queued and will be delivered automatically, usually within a few minutes. You will NOT be charged again. If it hasn’t shown up shortly, contact support and we’ll sort it out right away.',
         500,
+        { paymentSucceeded: true },
       );
     }
 

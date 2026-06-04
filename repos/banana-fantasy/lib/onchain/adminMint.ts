@@ -59,6 +59,63 @@ async function resolveGasParams(publicClient: {
   return { maxFeePerGas, maxPriorityFeePerGas: PRIORITY_FEE };
 }
 
+// The admin wallet is SHARED across all purchases, grants, and wheel spins, so
+// concurrent operations can grab the same nonce. The loser gets rejected with
+// "replacement transaction underpriced" / "nonce too low" — which, before this,
+// failed the whole mint AFTER the user's payment already went through (they paid
+// and got nothing). These errors are transient and safe to retry.
+const RETRIABLE_TX_ERRORS = [
+  'replacement transaction underpriced',
+  'replacement fee too low',
+  'nonce too low',
+  'already known',
+  'transaction underpriced',
+];
+function isRetriableTxError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return RETRIABLE_TX_ERRORS.some((s) => msg.includes(s));
+}
+
+type AdminPublicClient = {
+  getBlock: (args: { blockTag: 'latest' }) => Promise<{ baseFeePerGas: bigint | null }>;
+  getTransactionCount: (args: { address: Address; blockTag: 'pending' }) => Promise<number>;
+};
+
+/**
+ * Send an admin-wallet contract write with nonce-collision retry. On a
+ * retriable nonce/underpriced error we wait for the in-flight tx to mine,
+ * re-fetch the live pending nonce, BUMP the gas (so the retry can also replace a
+ * stuck pending tx), and resend. Up to 4 attempts. `send` receives the explicit
+ * nonce + gas overrides to spread into its writeContract call.
+ */
+async function sendAdminWriteWithRetry(
+  publicClient: AdminPublicClient,
+  account: { address: Address },
+  label: string,
+  send: (overrides: { nonce: number; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }) => Promise<Hex>,
+): Promise<Hex> {
+  const MAX_ATTEMPTS = 4;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      const gas = await resolveGasParams(publicClient);
+      const factor = 100n + BigInt(attempt) * 30n; // +0%, +30%, +60%, +90%
+      const nonce = await publicClient.getTransactionCount({ address: account.address, blockTag: 'pending' });
+      return await send({
+        nonce,
+        maxFeePerGas: (gas.maxFeePerGas * factor) / 100n,
+        maxPriorityFeePerGas: (gas.maxPriorityFeePerGas * factor) / 100n,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (!isRetriableTxError(err) || attempt === MAX_ATTEMPTS - 1) throw err;
+      logger.warn('adminMint.tx.retry', { label, attempt: attempt + 1, err: (err as Error).message.slice(0, 140) });
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 function loadPrivateKey(): Hex | null {
   const raw = process.env.BBB4_OWNER_PRIVATE_KEY?.trim();
   if (!raw) return null;
@@ -114,13 +171,15 @@ export async function reserveTokensToWallet(opts: {
 
   const recipient = to.toLowerCase() as Address;
 
-  const txHash = await walletClient.writeContract({
-    address: BBB4_CONTRACT_ADDRESS,
-    abi: BBB4_ABI,
-    functionName: 'reserveTokens',
-    args: [recipient, BigInt(count)],
-    ...(await resolveGasParams(publicClient)),
-  });
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'reserveTokens', (ov) =>
+    walletClient.writeContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BBB4_ABI,
+      functionName: 'reserveTokens',
+      args: [recipient, BigInt(count)],
+      ...ov,
+    }),
+  );
 
   logger.info('adminMint.tx.sent', { to: recipient, count, txHash });
 
@@ -197,16 +256,18 @@ export async function submitUsdcPermit(opts: {
   r: Hex;
   s: Hex;
 }): Promise<Hex> {
-  const { walletClient, publicClient } = buildWalletClients();
+  const { account, walletClient, publicClient } = buildWalletClients();
 
   try {
-    const txHash = await walletClient.writeContract({
-      address: BASE_SEPOLIA_USDC_ADDRESS,
-      abi: USDC_PERMIT_ABI,
-      functionName: 'permit',
-      args: [opts.owner, opts.spender, opts.value, opts.deadline, opts.v, opts.r, opts.s],
-      ...(await resolveGasParams(publicClient)),
-    });
+    const txHash = await sendAdminWriteWithRetry(publicClient, account, 'permit', (ov) =>
+      walletClient.writeContract({
+        address: BASE_SEPOLIA_USDC_ADDRESS,
+        abi: USDC_PERMIT_ABI,
+        functionName: 'permit',
+        args: [opts.owner, opts.spender, opts.value, opts.deadline, opts.v, opts.r, opts.s],
+        ...ov,
+      }),
+    );
     const receipt = await publicClient.waitForTransactionReceipt({
       hash: txHash,
       timeout: RECEIPT_TIMEOUT_MS,
@@ -233,15 +294,17 @@ export async function pullUsdcFromUser(opts: {
   to: Address;
   amount: bigint;
 }): Promise<Hex> {
-  const { walletClient, publicClient } = buildWalletClients();
+  const { account, walletClient, publicClient } = buildWalletClients();
 
-  const txHash = await walletClient.writeContract({
-    address: BASE_SEPOLIA_USDC_ADDRESS,
-    abi: USDC_ABI,
-    functionName: 'transferFrom',
-    args: [opts.owner, opts.to, opts.amount],
-    ...(await resolveGasParams(publicClient)),
-  });
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'transferFrom', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'transferFrom',
+      args: [opts.owner, opts.to, opts.amount],
+      ...ov,
+    }),
+  );
   const receipt = await publicClient.waitForTransactionReceipt({
     hash: txHash,
     timeout: RECEIPT_TIMEOUT_MS,

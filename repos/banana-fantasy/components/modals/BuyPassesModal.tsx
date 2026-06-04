@@ -40,7 +40,7 @@ export function BuyPassesModal({
 }: BuyPassesModalProps) {
   const _router = useRouter();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
-  const { mint, mintStep, error: mintError, txHash, tokenPrice, mintActive } = useMintDraftPass();
+  const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
       logger.debug('[BuyModal] Fund wallet exited:', { balance: balance?.toString(), fundingMethod });
@@ -747,11 +747,17 @@ export function BuyPassesModal({
                   </div>
                 )}
 
-                {flowStep === 'error' && (flowError || mintError) && (
+                {flowStep === 'error' && mintPaymentPending && mintError ? (
+                  // Payment succeeded, delivery pending — reassure, don't alarm.
+                  <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3 mt-1">
+                    <p className="text-banana font-semibold text-sm text-center">✓ Payment received — pass on its way</p>
+                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">{mintError}</p>
+                  </div>
+                ) : flowStep === 'error' && (flowError || mintError) ? (
                   <div className="text-sm text-red-400 text-center pt-1">
                     {flowError || mintError}
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 
