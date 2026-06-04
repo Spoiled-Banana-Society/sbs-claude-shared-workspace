@@ -62,6 +62,9 @@ interface RosterPlayer {
 
 interface BackendDraftToken {
   _cardId?: string | number;
+  // The authoritative on-chain NFT tokenId for this draft record. Newer Go API
+  // records carry this directly — match on it instead of decoding _cardId.
+  realTokenId?: string | number;
   _leagueId?: string;
   _leagueDisplayName?: string;
   _level?: string;
@@ -70,6 +73,21 @@ interface BackendDraftToken {
   _weekScore?: string | number;
   _imageUrl?: string;
   roster?: Record<string, RosterPlayer[] | null | undefined>;
+}
+
+/**
+ * Resolve the backend draft record for an on-chain NFT tokenId.
+ * Prefer the authoritative `realTokenId` field (exact NFT match). Only when a
+ * record lacks it (older mints) fall back to the legacy cardId decoding. Doing
+ * realTokenId FIRST across all tokens avoids the legacy heuristic's false
+ * positives — an unused pass whose cardId merely *ends* in the tokenId used to
+ * match the wrong drafted team.
+ */
+function matchTokenForNft(tokens: BackendDraftToken[], tokenId: string): BackendDraftToken | null {
+  if (!tokenId) return null;
+  const byRealTokenId = tokens.find(t => String(t.realTokenId ?? '') === tokenId);
+  if (byRealTokenId) return byRealTokenId;
+  return tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId)) ?? null;
 }
 
 export interface TeamData {
@@ -122,7 +140,7 @@ async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<B
       ...(Array.isArray(data?.active) ? data.active : []),
       ...(Array.isArray(data?.available) ? data.available : []),
     ];
-    return tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId)) ?? null;
+    return matchTokenForNft(tokens, tokenId);
   } catch {
     return null;
   }
@@ -293,7 +311,7 @@ export async function getTeamsForTokens(
 
   for (const { tokenIds, tokens, nicknames } of ownerTokenLists) {
     for (const tokenId of tokenIds) {
-      const found = tokens.find(t => cardIdMatchesTokenId(String(t._cardId ?? ''), tokenId));
+      const found = matchTokenForNft(tokens, tokenId);
       if (!found) continue;
       const data = backendTokenToTeamData(found, 'cardid_match');
       if (!data) continue;
