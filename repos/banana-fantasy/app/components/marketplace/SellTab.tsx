@@ -26,6 +26,11 @@ function sellTierRank(team: MarketplaceTeam): number {
   return 3;
 }
 
+/** Can this team/pass be listed right now? (Free passes are locked until the season starts.) */
+function canSellTeam(team: MarketplaceTeam): boolean {
+  return !(team.passType === 'free' && isDraftingOpen());
+}
+
 interface SellTabProps {
   myNfts: MarketplaceTeam[];
   myNftsLoading: boolean;
@@ -79,6 +84,14 @@ export function SellTab({
   onExecuteCancel,
   onCloseSuccessModal,
 }: SellTabProps) {
+  const [showUnsellable, setShowUnsellable] = useState(false);
+
+  // Only show sellable teams/passes by default; the ones you can't list yet
+  // (free passes locked until the season starts) hide behind a toggle.
+  const sellable = myNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const unsellable = myNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  const visibleNfts = showUnsellable ? [...sellable, ...unsellable] : sellable;
+
   return (
     <>
       <div>
@@ -103,10 +116,7 @@ export function SellTab({
             </div>
           ) : (
             <div className="grid gap-4">
-              {myNfts
-                .slice()
-                .sort((a, b) => sellTierRank(a) - sellTierRank(b))
-                .map(team => (
+              {visibleNfts.map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
@@ -185,6 +195,23 @@ export function SellTab({
                 </Link>
                 ))}
             </div>
+          )}
+
+          {!myNftsLoading && sellable.length === 0 && unsellable.length > 0 && !showUnsellable && (
+            <p className="text-text-muted text-sm text-center py-6">
+              Nothing you can list right now — your teams/passes are free entries, listable once the season starts.
+            </p>
+          )}
+
+          {!myNftsLoading && unsellable.length > 0 && (
+            <button
+              onClick={() => setShowUnsellable(v => !v)}
+              className="mt-4 w-full py-2.5 rounded-xl text-sm font-medium text-text-secondary hover:text-text-primary border border-bg-tertiary hover:border-bg-elevated transition-all"
+            >
+              {showUnsellable
+                ? 'Hide unsellable teams'
+                : `Show ${unsellable.length} unsellable ${unsellable.length === 1 ? 'team' : 'teams'} (free entries — listable once the season starts)`}
+            </button>
           )}
 
           {txError && !showSellModal && (

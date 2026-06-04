@@ -19,6 +19,12 @@ import { bananaDefaultName } from '@/utils/helpers';
 export type DraftPlayer = typeof DRAFT_PLAYERS[number];
 export type DraftMode = 'local' | 'live';
 
+// How long to keep the live board on screen after the FINAL pick lands, before
+// flipping to the completion / card-generation overlay. Just long enough for
+// everyone to see the last auto/manual pick render in the board + last box
+// (mobile + desktop), then move on.
+const FINAL_PICK_REVEAL_MS = 1000;
+
 export interface DraftEngineState {
   picks: DraftPick[];
   currentPickNumber: number;
@@ -231,6 +237,9 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const isProcessingRef = useRef(false);
   // Track highest pickNum seen — rejects duplicate/stale picks (matches old useDraftRoom.ts pattern)
   const lastPickRef = useRef<number>(0);
+  // Holds the deferred "draft completed" timer so the FINAL pick paints on the
+  // board/last box (mobile + desktop) before the completion overlay covers it.
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Computed values
   const currentRound = Math.ceil(currentPickNumber / 10);
@@ -460,6 +469,26 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setDraftPhase('live'); // First timer_update = draft has started, picks are happening
   }, []);
 
+  // Flip the draft to "completed" — but on a short delay so the FINAL pick has
+  // a chance to paint on the board + last box (mobile + desktop) before the
+  // DraftComplete overlay (z-[60]) covers it. Live completion can arrive from
+  // several places that all land in the SAME Firebase snapshot as the last pick
+  // (processPick's pickNum>=TOTAL, setFirebaseState's isDraftComplete, the WS
+  // draft_complete/final_card messages) — routing them all through here means
+  // whichever fires the deferral wins and reschedules to one clean delay.
+  // Idempotent: re-calls just reset the single pending timer.
+  const scheduleCompletion = useCallback(() => {
+    if (completionTimerRef.current) return; // already scheduled — keep the one delay
+    logger.info('[Complete] Final pick in — holding board for reveal before completion', {
+      delayMs: FINAL_PICK_REVEAL_MS,
+    });
+    completionTimerRef.current = setTimeout(() => {
+      completionTimerRef.current = null;
+      logger.info('[Complete] Reveal window elapsed — flipping draft to completed');
+      setDraftStatus('completed');
+    }, FINAL_PICK_REVEAL_MS);
+  }, []);
+
   const processPick = useCallback((pickData: ProcessablePick) => {
     const basePos = positionFromPlayerId(pickData.playerId);
 
@@ -561,9 +590,9 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     }
 
     if (pickData.pickNum >= TOTAL_PICKS) {
-      setDraftStatus('completed');
+      scheduleCompletion();
     }
-  }, []);
+  }, [scheduleCompletion]);
 
   const handleNewPick = useCallback((payload: ServerNewPickPayload) => {
     // Go server sends flat PlayerInfo: { playerId, displayName, team, position, ownerAddress, pickNum, round }
@@ -600,13 +629,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   }, []);
 
   const handleDraftComplete = useCallback(() => {
-    setDraftStatus('completed');
-  }, []);
+    scheduleCompletion();
+  }, [scheduleCompletion]);
 
   const handleFinalCard = useCallback((payload: ServerFinalCardPayload) => {
     setFinalCard({ cardId: payload.cardId, imageUrl: payload.imageUrl });
-    setDraftStatus('completed');
-  }, []);
+    scheduleCompletion();
+  }, [scheduleCompletion]);
 
   // ==================== LIVE MODE: Firebase RTDB state handler ====================
   // Accepts a Firebase RTDB snapshot and updates engine state accordingly.
@@ -639,11 +668,14 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       setDraftPhase('countdown');
     }
 
-    // Check completion
+    // Check completion. The final pick (lastPick.pickNum === TOTAL) and
+    // isDraftComplete arrive in the SAME RTDB snapshot, so flipping completed
+    // here synchronously would cover the board before the last pick paints.
+    // Defer it so the final pick is visible first.
     if (rtdb.isDraftComplete) {
-      setDraftStatus('completed');
+      scheduleCompletion();
     }
-  }, []);
+  }, [scheduleCompletion]);
 
   // Process a new pick detected by the Firebase RTDB listener.
   // Called by the page when useRealTimeDraftInfo signals newPickDetected.
@@ -739,7 +771,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     const nextPick = currentPickNumber + 1;
     if (nextPick > TOTAL_PICKS) {
-      setDraftStatus('completed');
+      scheduleCompletion();
       setCurrentPickNumber(nextPick);
     } else {
       setCurrentPickNumber(nextPick);
@@ -748,7 +780,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     isProcessingRef.current = false;
     return null;
-  }, [mode, draftStatus, currentPickNumber, availablePlayers, draftOrder, currentDrafterIndex, currentRound, walletAddress, endOfTurnTimestamp]);
+  }, [mode, draftStatus, currentPickNumber, availablePlayers, draftOrder, currentDrafterIndex, currentRound, walletAddress, endOfTurnTimestamp, scheduleCompletion]);
 
   // ==================== AUTO-PICK AI ====================
   // positionLimits caps the auto-picker so a single seat can't grind out 8 QBs.
@@ -929,6 +961,13 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const isInQueue = useCallback((playerId: string) => {
     return queuedPlayers.some(p => p.playerId === playerId);
   }, [queuedPlayers]);
+
+  // Clear the deferred final-pick completion timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (completionTimerRef.current) clearTimeout(completionTimerRef.current);
+    };
+  }, []);
 
   // ==================== LOCAL MODE TIMER ====================
   useEffect(() => {
