@@ -79,7 +79,14 @@ export function BadgeIcon({
   const accent = unlocked ? (badge.accentColor || badge.color) : LOCKED_GREY;
   const ringColor = unlocked ? (badge.ringColor || color) : LOCKED_GREY;
 
-  const background = unlocked && badge.gradient
+  // In `plain` mode (the avatar-corner overlay) ALL badges use the faint disc,
+  // even gradient ones. A solid gradient disc shows its whole body at the
+  // poked-down corner position, so it reads as a big blob "dangling" low —
+  // while a faint disc (like the team-logo badges) hides the disc and shows
+  // only the centered glyph/logo, sitting tucked in the corner. Faint-for-all
+  // makes every badge look like the clean Chiefs-logo overlay. The full
+  // gradient still renders in the large badge catalog (non-plain).
+  const background = unlocked && badge.gradient && !plain
     ? `linear-gradient(135deg, ${color} 0%, ${accent} 100%)`
     : `${color}33`; // 20% alpha
 
