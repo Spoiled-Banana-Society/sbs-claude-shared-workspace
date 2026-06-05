@@ -31,12 +31,12 @@ function canSellTeam(team: MarketplaceTeam): boolean {
   return !(team.passType === 'free' && isDraftingOpen());
 }
 
-// A drafted team's roster only fills in once its draft COMPLETES (15 picks).
-// A team mid-draft has an empty/partial roster — you can't sell an unfinished
-// team, so it shows a "Drafting" status instead of a List button until done.
-const FULL_ROSTER = 15;
+// A drafted team's roster is EMPTY while its draft is in progress and only
+// populates once the draft completes. (A finished team's marketplace roster is
+// ~12 display slots, not the raw 15 best-ball picks — so check for ANY roster,
+// not a count of 15.) Empty roster + a backend record = still drafting.
 function draftInProgress(team: MarketplaceTeam): boolean {
-  return team.hasBackendRecord === true && (team.roster?.length ?? 0) < FULL_ROSTER;
+  return team.hasBackendRecord === true && (team.roster?.length ?? 0) === 0;
 }
 
 interface SellTabProps {
