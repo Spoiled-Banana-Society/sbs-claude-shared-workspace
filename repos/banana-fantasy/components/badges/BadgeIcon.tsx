@@ -52,8 +52,11 @@ export function BadgeIcon({
   // emoji-friendly sizing.
   const glyphLen = [...badge.glyph].length;
   const fontScale = glyphLen >= 3 ? 0.32 : glyphLen === 2 ? 0.42 : 0.55;
-  const fontSize = Math.max(7, Math.round(size * fontScale));
-  const iconSize = Math.round(size * 0.78);
+  // In `plain` mode (the avatar-corner overlay) make the content the focal
+  // point: the glyph/logo nearly fills the disc so you can read which team or
+  // emoji it is at a glance, instead of a tiny mark inside a thick ring.
+  const fontSize = Math.max(7, Math.round(size * fontScale * (plain ? 1.18 : 1)));
+  const iconSize = Math.round(size * (plain ? 0.92 : 0.78));
 
   // When badge.iconUrl is set, render the image inside the disc;
   // otherwise fall back to the text/emoji glyph.
@@ -70,7 +73,8 @@ export function BadgeIcon({
   ) : (
     badge.glyph
   );
-  const ring = ringWidth ?? Math.max(1, Math.round(size * 0.1));
+  // Thinner ring in plain mode so the logo/emoji owns the circle (content-first).
+  const ring = ringWidth ?? Math.max(1, Math.round(size * (plain ? 0.06 : 0.1)));
   const color = unlocked ? badge.color : LOCKED_GREY;
   const accent = unlocked ? (badge.accentColor || badge.color) : LOCKED_GREY;
   const ringColor = unlocked ? (badge.ringColor || color) : LOCKED_GREY;
