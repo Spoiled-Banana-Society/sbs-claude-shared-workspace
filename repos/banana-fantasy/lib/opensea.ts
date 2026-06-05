@@ -116,6 +116,9 @@ export interface MarketplaceTeam {
    *  (deterministic cardId match). Lets the Sell tab hide ghost NFTs
    *  that exist on-chain but have no backend purpose. */
   hasBackendRecord?: boolean;
+  /** USD price the current owner paid for this team on the marketplace, if we
+   *  have a purchase record. Shown as "You paid $X" on the owner's own teams. */
+  pricePaid?: number | null;
 }
 
 export interface CollectionStats {

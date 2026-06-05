@@ -10,8 +10,10 @@ import {
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
-import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
+import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 
 export const dynamic = 'force-dynamic';
 
@@ -142,19 +144,62 @@ export async function GET(req: Request) {
       }
     }
 
+    // Recent trades for this wallet, so we can reflect a just-bought/just-sold
+    // team before OpenSea's account index catches up, and surface what was paid.
+    const trades = await getWalletTrades(owner);
+
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);
       const hasBackendRecord = teamsByToken.has(nft.identifier);
       const leagueId = teamsByToken.get(nft.identifier)?.leagueId ?? null;
+      const pricePaid = trades.paidByToken.get(nft.identifier) ?? null;
       // Merge listing data if this token is actively listed
       const listing = listingMap.get(nft.identifier);
       if (listing) {
-        return { ...rest, hasBackendRecord, leagueId, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime };
+        return { ...rest, hasBackendRecord, leagueId, pricePaid, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime };
       }
-      return { ...rest, hasBackendRecord, leagueId };
+      return { ...rest, hasBackendRecord, leagueId, pricePaid };
     });
 
-    return json({ nfts });
+    // Drop teams the wallet just sold that OpenSea still lists under it (confirm
+    // on-chain the wallet truly no longer owns them before hiding).
+    let finalNfts = nfts;
+    if (trades.recentSells.size > 0) {
+      const soldIds = [...trades.recentSells];
+      const confirmedSold = new Set<string>();
+      await Promise.all(soldIds.map(async (tid) => {
+        const onchain = await getOnchainOwner(tid);
+        if (onchain && onchain !== owner.toLowerCase()) confirmedSold.add(tid);
+      }));
+      finalNfts = finalNfts.filter(n => !confirmedSold.has(n.tokenId));
+    }
+
+    // Add teams the wallet just bought that OpenSea hasn't indexed yet (confirm
+    // on-chain the wallet really owns them now before adding).
+    const presentIds = new Set(finalNfts.map(n => n.tokenId));
+    const buyCandidates = trades.recentBuys.filter(b => !presentIds.has(b.tokenId));
+    if (buyCandidates.length > 0) {
+      const added = await Promise.all(buyCandidates.map(async (b) => {
+        const onchain = await getOnchainOwner(b.tokenId);
+        if (!onchain || onchain !== owner.toLowerCase()) return null;
+        const team = await getTeamForToken(b.tokenId, owner);
+        const synthetic = team
+          ? { identifier: b.tokenId, contract: BBB4_CONTRACT, name: team.leagueDisplayName || null, image_url: team.imageUrl || null, display_image_url: team.imageUrl || null, traits: teamDataToTraits(team) }
+          : { identifier: b.tokenId, contract: BBB4_CONTRACT, name: b.teamName, image_url: null, display_image_url: null, traits: [] };
+        const { ownerAddress: _o, ...rest } = mapOpenSeaNftToTeam(synthetic as OpenSeaNft, owner);
+        const listing = listingMap.get(b.tokenId);
+        return {
+          ...rest,
+          hasBackendRecord: !!team,
+          leagueId: team?.leagueId ?? null,
+          pricePaid: trades.paidByToken.get(b.tokenId) ?? null,
+          ...(listing ? { orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime } : {}),
+        };
+      }));
+      finalNfts = [...added.filter((n): n is NonNullable<typeof n> => n !== null), ...finalNfts];
+    }
+
+    return json({ nfts: finalNfts });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/nfts] GET failed:', err);

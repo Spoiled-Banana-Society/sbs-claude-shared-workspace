@@ -351,6 +351,14 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             ))}
           </div>
 
+          {/* What you paid for this team, if we have a purchase record */}
+          {typeof mt?.pricePaid === 'number' && mt.pricePaid > 0 && (
+            <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
+              <span className="text-white/40">Bought for</span>
+              <span className="font-mono font-semibold text-banana">${mt.pricePaid.toFixed(2)}</span>
+            </div>
+          )}
+
           {/* Marketplace: list / cancel for the team's owner */}
           {mt && (isListed || canList) && (
             <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]" onClick={e => e.stopPropagation()}>

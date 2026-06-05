@@ -34,6 +34,7 @@ interface NftDetail {
   owner: string | null;
   ownerName: string | null;
   ownerPfp: string | null;
+  pricePaid?: number | null;
   listing: {
     order_hash: string;
     protocol_address: string;
@@ -899,6 +900,12 @@ export default function NftDetailPage() {
 
           {/* Price & Buy / Make Offer — primary action, kept at the top */}
           <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
+            {isOwner && typeof nft.pricePaid === 'number' && nft.pricePaid > 0 && (
+              <div className="flex items-center gap-1.5 mb-3 text-xs text-text-secondary">
+                <span className="text-text-muted">You paid</span>
+                <span className="font-mono font-semibold text-banana">${nft.pricePaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
             {price !== null ? (
               <>
                 <div className="flex items-center justify-between">
