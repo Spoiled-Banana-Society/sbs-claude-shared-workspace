@@ -12,6 +12,7 @@ import {
 } from '@/lib/opensea';
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { isDraftingOpen } from '@/lib/draftTypes';
+import { recordListed } from '@/lib/marketplace/listingCache';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -278,7 +279,37 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    return json({ orderHash: result.order?.order_hash || '' });
+    const orderHash = result.order?.order_hash || '';
+
+    // Record in our own listing cache so the UI reflects it instantly (don't
+    // wait on OpenSea's indexing lag). Best-effort.
+    try {
+      const params = body.parameters as {
+        offerer?: string;
+        endTime?: string;
+        offer: Array<{ itemType: number; identifierOrCriteria?: string }>;
+        consideration: Array<{ itemType: number; startAmount?: string }>;
+      };
+      const nftItem = params.offer?.find((o) => o.itemType === 2 || o.itemType === 3);
+      const tokenId = nftItem?.identifierOrCriteria;
+      // Sum the USDC (ERC-20) consideration legs = total sale price.
+      const totalWei = (params.consideration ?? []).reduce(
+        (s, c) => s + (c.itemType === 1 ? BigInt(c.startAmount || '0') : 0n),
+        0n,
+      );
+      if (tokenId && orderHash) {
+        await recordListed({
+          tokenId,
+          orderHash,
+          priceUsd: Number(totalWei) / 1e6,
+          endTimeSec: params.endTime ?? null,
+          offerer: String(params.offerer ?? ''),
+          protocolAddress: String(body.protocol_address ?? ''),
+        });
+      }
+    } catch { /* cache is best-effort */ }
+
+    return json({ orderHash });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/listings] POST failed:', err);

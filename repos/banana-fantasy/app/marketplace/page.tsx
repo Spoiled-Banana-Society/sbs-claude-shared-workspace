@@ -521,6 +521,11 @@ export default function MarketplacePage() {
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
       logActivity({ type: 'cancel', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, orderHash: team.orderHash || null });
+      // Tell the listing cache it's delisted so every page reflects it instantly.
+      void fetch('/api/marketplace/listings/cancelled', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenId: team.tokenId, wallet: walletAddress }),
+      }).catch(() => {});
       // Reflect the delist immediately, and delay the reconciling refetch so a
       // stale OpenSea read (still showing it listed) can't overwrite the patch.
       patchMyNftListing(team.tokenId, null);

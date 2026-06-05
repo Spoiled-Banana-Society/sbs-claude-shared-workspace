@@ -134,13 +134,21 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         { description: 'Cancel your listing', waitForReceipt: true },
       );
       logger.debug('[useListTeam] Cancelled listing for token:', tokenId);
+      // Tell the listing cache it's delisted so every page reflects it instantly.
+      if (walletAddress) {
+        void fetch('/api/marketplace/listings/cancelled', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokenId, wallet: walletAddress }),
+        }).catch(() => {});
+      }
     } catch (e) {
       setError(friendlyTxError(e, 'Couldn’t cancel the listing. Please try again.'));
       throw e;
     } finally {
       setBusy(false);
     }
-  }, [sendTx]);
+  }, [sendTx, walletAddress]);
 
   return { listTeam, cancelTeam, busy, error, clearError: () => setError(null) };
 }

@@ -11,6 +11,7 @@ import {
   type OpenSeaListing,
 } from '@/lib/opensea';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +109,18 @@ export async function GET(req: Request) {
     const bbb4Nfts = rawNfts.filter(
       nft => nft.contract?.toLowerCase() === BBB4_CONTRACT.toLowerCase(),
     );
+
+    // Overlay our own listing cache to bridge OpenSea's indexing lag: surface a
+    // freshly-created listing OpenSea hasn't indexed yet, and hide one it hasn't
+    // dropped yet. Outside the freshness window OpenSea is authoritative.
+    const cached = await getRecentCachedListings(bbb4Nfts.map(n => n.identifier));
+    for (const [tokenId, rec] of cached) {
+      if (rec.status === 'active' && !listingMap.has(tokenId)) {
+        listingMap.set(tokenId, { orderHash: rec.orderHash, price: rec.priceUsd, protocolAddress: rec.protocolAddress, endTime: rec.endTimeSec });
+      } else if (rec.status === 'cancelled') {
+        listingMap.delete(tokenId);
+      }
+    }
 
     // SBS-first enrichment: pull team data from our backend for each owned
     // NFT and inject as synthetic traits + image override before mapping.
