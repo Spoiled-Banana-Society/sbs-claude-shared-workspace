@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as draftStore from '@/lib/draftStore';
 import { logger } from '@/lib/logger';
+import { reportClientEvent } from '@/lib/clientErrors';
+import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 
 interface RosterEntry {
@@ -25,14 +27,15 @@ interface DraftCompleteProps {
   draftType?: DraftType | null;
 }
 
-// How long the bar eases up on its own before the real "card ready" signal
-// snaps it to 100%. Tuned to the optimised ~4s generation target.
-const EASE_TARGET_MS = 4000;
-// Soft ceiling the self-ease can reach; only the real card-ready signal closes
-// the last gap to 100% — so the bar never lies about being done.
+// ALWAYS play the full animation for at least this long, even if the card is
+// already generated the instant we mount — otherwise the bar snaps to 100% and
+// routes in a flash (the bug that made it feel "horrible / too fast").
+const MIN_SHOW_MS = 4000;
+// Soft ceiling the self-ease can reach; only the real "done" signal closes the
+// last gap to 100% — so the bar never lies about being done.
 const EASE_CEILING = 92;
 // Brief beat at 100% so the user registers "done" before we route.
-const DONE_HOLD_MS = 1100;
+const DONE_HOLD_MS = 800;
 
 const TYPE_COLOR: Record<DraftType, string> = {
   pro: '#a855f7',
@@ -60,8 +63,9 @@ export function DraftComplete({
 
   const [cardReady, setCardReady] = useState<boolean>(!!initialCardUrl);
   const [progress, setProgress] = useState(0);
-  const cardReadyRef = useRef(cardReady);
-  cardReadyRef.current = cardReady;
+  // Minimum-animation gate — flips true after MIN_SHOW_MS so we never flash.
+  const [minElapsed, setMinElapsed] = useState(false);
+  const mountedAtRef = useRef(Date.now());
 
   const destination = draftId ? `/draft-results/${draftId}` : '/drafting';
 
@@ -117,32 +121,77 @@ export function DraftComplete({
     return () => { cancelled = true; };
   }, [draftId, walletAddress, cardReady, type]);
 
+  // Start the minimum-animation timer once on mount.
+  useEffect(() => {
+    const t = setTimeout(() => setMinElapsed(true), MIN_SHOW_MS);
+    return () => clearTimeout(t);
+  }, []);
+
+  // ── Server-shipped timing traces (admin Logs tab) ──────────────────
+  // So we can SEE, remotely: was the card ready instantly, how fast did it
+  // generate, and how long was the screen actually shown before routing.
+  useEffect(() => {
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[DraftComplete] generating screen mounted',
+      route: 'DraftComplete',
+      actor: walletAddress,
+      context: { event: 'mount', draftId, type, rosterLen: roster.length, cardReadyOnMount: !!initialCardUrl },
+    }, { skipThrottle: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!cardReady) return;
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[DraftComplete] card ready',
+      route: 'DraftComplete',
+      actor: walletAddress,
+      context: { event: 'card_ready', draftId, msSinceMount: Date.now() - mountedAtRef.current },
+    }, { skipThrottle: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardReady]);
+
+  // "Done" = the card has actually generated AND the full animation has played.
+  // This is what guarantees the screen never flashes past in under MIN_SHOW_MS.
+  const done = cardReady && minElapsed;
+  const doneRef = useRef(done);
+  doneRef.current = done;
+
   // ── Real-time bar ──────────────────────────────────────────────────
-  // Eases up on its own toward EASE_CEILING; the card-ready signal below
-  // closes the final gap to 100%. So 100% always means "actually done".
+  // Eases toward EASE_CEILING over MIN_SHOW_MS; only `done` closes the final
+  // gap to 100%. So 100% always means "actually done" AND the animation played.
   useEffect(() => {
     const start = Date.now();
     const id = setInterval(() => {
-      if (cardReadyRef.current) return; // ready-effect owns the final climb
-      const t = Math.min(1, (Date.now() - start) / EASE_TARGET_MS);
+      if (doneRef.current) return; // done-effect owns the final climb to 100
+      const t = Math.min(1, (Date.now() - start) / MIN_SHOW_MS);
       const eased = Math.round(EASE_CEILING * (1 - Math.pow(1 - t, 2)));
       setProgress(prev => (prev >= eased ? prev : eased));
     }, 80);
     return () => clearInterval(id);
   }, []);
 
-  // ── On ready → fill to 100%, hold a beat, route ────────────────────
   useEffect(() => {
     if (draftId) draftStore.removeDraft(draftId);
   }, [draftId]);
 
+  // ── On done → fill to 100%, hold a beat, route to the roster ───────
   useEffect(() => {
-    if (!cardReady) return;
+    if (!done) return;
     setProgress(100);
     logger.info('[DraftComplete] Team secured — routing to roster', { draftId, destination });
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[DraftComplete] routing to roster',
+      route: 'DraftComplete',
+      actor: walletAddress,
+      context: { event: 'route', draftId, destination, totalMsShown: Date.now() - mountedAtRef.current },
+    }, { skipThrottle: true });
     const t = setTimeout(() => router.push(destination), DONE_HOLD_MS);
     return () => clearTimeout(t);
-  }, [cardReady, router, destination, draftId]);
+  }, [done, router, destination, draftId, walletAddress]);
 
   // Reveal players in sync with the bar.
   const revealCount = Math.round((progress / 100) * roster.length);
@@ -203,7 +252,7 @@ export function DraftComplete({
       </div>
 
       <style jsx>{`
-        .dc-wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;text-align:center;padding:26px 18px 40px}
+        .dc-wrap{min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 18px}
         .dc-eyebrow{font-size:12px;letter-spacing:3px;text-transform:uppercase;font-weight:800;margin-top:6px}
         .dc-h1{font-size:30px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:8px;line-height:1.05;
           background:linear-gradient(180deg,#fff,rgba(255,255,255,.65));-webkit-background-clip:text;background-clip:text;color:transparent}

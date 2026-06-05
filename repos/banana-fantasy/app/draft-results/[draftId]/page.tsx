@@ -642,6 +642,21 @@ export default function DraftResultsPage() {
           </div>
         )}
 
+        {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
+        <Link
+          href="/marketplace"
+          className="block mb-6 rounded-2xl px-4 py-3.5 relative overflow-hidden border border-[#F3E216]/25 bg-gradient-to-br from-[#F3E216]/10 to-purple-500/10 hover:border-[#F3E216]/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#F3E216]/15 flex items-center justify-center text-lg flex-shrink-0">🛒</div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-bold text-sm">Sell your team. Buy other teams.</p>
+              <p className="text-white/55 text-xs mt-0.5">All season on our Marketplace</p>
+            </div>
+            <span className="text-[#F3E216] text-xl font-bold leading-none">›</span>
+          </div>
+        </Link>
+
         {/* Player Selector Dropdown */}
         {playerKeys.length > 1 && (
           <div className="mb-6">

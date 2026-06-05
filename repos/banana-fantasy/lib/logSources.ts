@@ -75,6 +75,9 @@ export const LOG_SOURCES = {
     AUTOPICK_SUBMIT_FAILED: 'draft.autopick_submit_failed',
     AUTOPICK_TOGGLE_FAILED: 'draft.autopick_toggle_failed',
     AIRPLANE_TRACE: 'draft.airplane.trace',
+    // Post-draft generating screen — timing trace (was the card ready instantly?
+    // how long was the animation shown before routing to the roster?).
+    COMPLETE_TRACE: 'draft.complete.trace',
     PREFERENCES_LOAD_FAILED: 'draft.preferences_load_failed',
     SORT_PERSIST_FAILED: 'draft.sort_preference_persist_failed',
     RANKINGS_REFRESH_FAILED: 'draft.rankings_refresh_failed',
