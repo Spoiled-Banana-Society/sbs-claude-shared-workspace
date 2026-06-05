@@ -119,9 +119,18 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     setCurrentStep(currentSection.id === 'profile' ? 'profile' : 'tutorial');
   }, [currentSection, setCurrentStep]);
 
+  // Seed Display Name / Avatar from the user ONCE, when the user first loads.
+  // Re-seeding on every `user` change would wipe what the person typed/uploaded
+  // the moment anything else updates the user object (e.g. picking a team badge
+  // calls equipBadge, which optimistically updates `user`).
+  const seededProfileRef = useRef(false);
   useEffect(() => {
-    if (user?.username) setDisplayName(user.username);
-    if (user?.profilePicture) setAvatarPreview(user.profilePicture);
+    if (seededProfileRef.current) return;
+    if (user?.username || user?.profilePicture) {
+      if (user?.username) setDisplayName(user.username);
+      if (user?.profilePicture) setAvatarPreview(user.profilePicture);
+      seededProfileRef.current = true;
+    }
   }, [user]);
 
   // Claim a unique display name before saving it. Returns true if the name is
