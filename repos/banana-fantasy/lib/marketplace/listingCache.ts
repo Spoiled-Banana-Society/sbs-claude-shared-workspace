@@ -72,6 +72,19 @@ export async function recordCancelled(tokenId: string, offerer: string): Promise
   }
 }
 
+/** All cache records updated within the freshness window (for the Buy grid). */
+export async function getAllRecentCachedListings(): Promise<CachedListing[]> {
+  if (!isFirestoreConfigured()) return [];
+  try {
+    const cutoff = Date.now() - FRESHNESS_MS;
+    const snap = await getAdminFirestore().collection(COLLECTION).where('updatedAtMs', '>=', cutoff).get();
+    return snap.docs.map(d => d.data() as CachedListing);
+  } catch (e) {
+    logger.warn('listingCache.getAllRecent_failed', { err: (e as Error).message });
+    return [];
+  }
+}
+
 /** Recent (within freshness window) cache records for the given tokenIds. */
 export async function getRecentCachedListings(tokenIds: string[]): Promise<Map<string, CachedListing>> {
   const out = new Map<string, CachedListing>();
