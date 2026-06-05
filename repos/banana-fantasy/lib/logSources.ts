@@ -424,6 +424,8 @@ const EXPLANATIONS: { pattern: RegExp; text: string }[] = [
     text: 'The user gave up on a wallet connection that was stuck.' },
   { pattern: /wallet_connect_failed/i,
     text: 'A wallet connection failed before completing.' },
+  { pattern: /owed_pass_unfulfilled/i,
+    text: 'URGENT: auto-recovery for an owed pass GAVE UP after 8 retries — the user PAID but never got their pass and the cron has stopped trying. Act now: 1) check the admin wallet (BBB4 owner) has enough ETH on Base for gas — out-of-gas is the usual cause; 2) re-grant via admin grant-drafts; 3) the record is in failed_mints with needsManual=true (look up by failedMintId / userId in the log context).' },
   { pattern: /reward_grant_failed/i,
     text: 'A card-fee reward draft failed to mint after the user crossed $25 in card fees — their credit was already consumed, so they are owed a free draft. Re-grant it via admin grant-drafts and see the failed_mints record (source: card_reward).' },
   { pattern: /mint_failed|card-mint/i,
