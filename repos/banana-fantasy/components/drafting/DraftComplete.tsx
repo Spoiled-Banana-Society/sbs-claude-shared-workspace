@@ -259,22 +259,13 @@ export function DraftComplete({
   return (
     <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>
       <div className="dc-eyebrow" style={{ color: accent }}>Draft Complete</div>
-      <h1 className="dc-h1">Finalizing your<br />Digital Team</h1>
+      <h1 className="dc-h1">Generating your<br />Digital Team</h1>
 
-      {/* ── the card ── */}
+      {/* ── the card (type-colored, holo foil, roster locks in) ── */}
       <div className={`dc-forge${cardReady ? ' done' : ''}`}>
         <div className="dc-card" style={{ background: TYPE_FOIL[type] }}>
           <div className="dc-ticket">
-            <div className="dc-tinner" />
-            <div className="dc-thead">
-              BANANA BEST BALL IV
-              <span
-                className={`dc-stamp${type === 'jackpot' ? ' jp' : ''}`}
-                style={{ color: STAMP_COLOR[type] }}
-              >
-                {STAMP_LABEL[type]}
-              </span>
-            </div>
+            <div className="dc-thead">BANANA BEST BALL IV</div>
             <div className="dc-rows">
               {roster.slice(0, 15).map((p, i) => (
                 <div key={`${p.playerId}-${i}`} className={`dc-row${i < revealCount ? ' on' : ''}`}>
@@ -288,12 +279,23 @@ export function DraftComplete({
               <span>SPOILED BANANA SOCIETY</span>
             </div>
           </div>
-          <div className="dc-holo" />
-          {!cardReady && <div className="dc-scan" />}
+          <div className="dc-foil" />
+          <div className="dc-shine" />
+          <div className="dc-scan" />
+          <span className="dc-spark" style={{ top: '16%', left: '14%', boxShadow: `0 0 8px 2px ${accent}` }} />
+          <span className="dc-spark" style={{ top: '44%', right: '12%', boxShadow: `0 0 8px 2px ${accent}`, animationDelay: '.7s' }} />
+          <span className="dc-spark" style={{ bottom: '20%', left: '22%', boxShadow: `0 0 8px 2px ${accent}`, animationDelay: '1.3s' }} />
         </div>
+        <span className="dc-notch dc-notch-l" />
+        <span className="dc-notch dc-notch-r" />
       </div>
 
-      {/* ── real-time bar ── */}
+      {/* type + draft-pass # badge */}
+      <div className="dc-badge" style={{ color: STAMP_COLOR[type], borderColor: accent }}>
+        {STAMP_LABEL[type]}{passNumber ? ` · DRAFT PASS #${passNumber}` : ''}
+      </div>
+
+      {/* ── real-time bar + prize copy ── */}
       <div className="dc-pwrap">
         <div className="dc-barrow">
           <div className="dc-ptrack">
@@ -312,43 +314,51 @@ export function DraftComplete({
       </div>
 
       <style jsx>{`
-        .dc-wrap{min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 18px}
-        .dc-eyebrow{font-size:12px;letter-spacing:3px;text-transform:uppercase;font-weight:800;margin-top:6px}
-        .dc-h1{font-size:30px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:8px;line-height:1.05;
-          background:linear-gradient(180deg,#fff,rgba(255,255,255,.65));-webkit-background-clip:text;background-clip:text;color:transparent}
+        .dc-wrap{min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 18px}
+        .dc-eyebrow{font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:800;margin-top:4px}
+        .dc-h1{font-size:23px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:7px;line-height:1.05;
+          background:linear-gradient(180deg,#fff,rgba(255,255,255,.62));-webkit-background-clip:text;background-clip:text;color:transparent}
 
-        .dc-forge{margin:20px auto 0;position:relative;width:min(320px,82vw)}
-        .dc-card{position:relative;border-radius:18px;aspect-ratio:5/7;overflow:hidden;padding:7px}
-        .dc-ticket{height:100%;border-radius:11px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column}
-        .dc-tinner{position:absolute;inset:5px;border:1.2px solid rgba(35,32,92,.5);border-radius:8px;pointer-events:none}
-        .dc-thead{position:relative;text-align:center;color:#23205c;font-weight:900;font-size:9px;letter-spacing:.2px;padding:3px 8px 4px;border-bottom:1.2px solid rgba(35,32,92,.5);font-style:italic;white-space:nowrap}
-        .dc-stamp{position:absolute;top:3px;right:9px;font-size:9px;font-weight:900;letter-spacing:.4px;line-height:1;white-space:nowrap;-webkit-text-stroke:.3px currentColor;text-shadow:0 1px 1px rgba(0,0,0,.2)}
-        .dc-stamp.jp{font-size:6.5px;top:4px;right:6px;letter-spacing:0;-webkit-text-stroke:.45px currentColor}
+        .dc-forge{position:relative;margin:16px auto 0;width:min(236px,72vw)}
+        .dc-card{width:100%;aspect-ratio:5/7;border-radius:16px;position:relative;overflow:hidden;padding:8px}
+        .dc-ticket{height:100%;border-radius:10px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column;z-index:2}
+        .dc-thead{position:relative;text-align:center;color:#23205c;font-weight:900;font-size:9px;letter-spacing:.2px;padding:2px 8px 4px;border-bottom:1.2px solid rgba(35,32,92,.5);font-style:italic;white-space:nowrap}
         .dc-rows{flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:4px 1px}
-        .dc-row{display:flex;align-items:center;height:14px}
-        .dc-name{flex:1;text-align:center;color:#23205c;font-weight:800;font-style:italic;font-size:9px;letter-spacing:.2px;white-space:nowrap;opacity:0;transform:translateY(3px)}
-        .dc-row.on .dc-name{animation:dcLock .5s cubic-bezier(.16,1,.3,1) forwards}
-        @keyframes dcLock{0%{opacity:0;transform:translateY(3px);filter:brightness(2.4)}100%{opacity:1;transform:translateY(0);filter:brightness(1)}}
-        .dc-tfoot{display:flex;align-items:center;justify-content:center;gap:6px;padding-top:5px;border-top:1.2px solid rgba(35,32,92,.5)}
-        .dc-tfoot img{width:14px;height:14px;object-fit:contain}
-        .dc-tfoot span{color:#23205c;font-weight:900;font-size:8px;letter-spacing:.3px;font-style:italic}
+        .dc-row{display:flex;align-items:center;height:13px}
+        .dc-name{flex:1;text-align:center;color:#23205c;font-weight:800;font-style:italic;font-size:8.5px;letter-spacing:.2px;white-space:nowrap;opacity:0;transform:translateY(3px)}
+        .dc-row.on .dc-name{animation:dcLock .55s cubic-bezier(.16,1,.3,1) forwards}
+        @keyframes dcLock{0%{opacity:0;transform:translateY(4px) scale(.96);filter:brightness(3)}60%{filter:brightness(1.6)}100%{opacity:1;transform:translateY(0) scale(1);filter:brightness(1)}}
+        .dc-tfoot{display:flex;align-items:center;justify-content:center;gap:5px;padding-top:4px;border-top:1.2px solid rgba(35,32,92,.5)}
+        .dc-tfoot img{width:13px;height:13px;object-fit:contain}
+        .dc-tfoot span{color:#23205c;font-weight:900;font-size:7px;letter-spacing:.3px;font-style:italic}
 
-        .dc-holo{position:absolute;inset:0;border-radius:18px;z-index:5;pointer-events:none;mix-blend-mode:screen;
-          background:linear-gradient(115deg,transparent 38%,var(--c) 49%,#fff 50%,var(--c) 51%,transparent 62%);background-size:300% 300%;animation:dcHolo 2.8s linear infinite;opacity:.4}
-        @keyframes dcHolo{0%{background-position:130% 0}100%{background-position:-130% 0}}
-        .dc-scan{position:absolute;left:5%;right:5%;height:2px;border-radius:2px;top:0;z-index:6;pointer-events:none;
-          background:linear-gradient(90deg,transparent,var(--c),transparent);animation:dcScan 1.9s cubic-bezier(.45,0,.55,1) infinite}
-        @keyframes dcScan{0%{top:5%;opacity:0}10%{opacity:.9}90%{opacity:.9}100%{top:95%;opacity:0}}
-        .dc-forge.done .dc-holo{opacity:0;transition:opacity .4s}
+        .dc-foil{position:absolute;inset:0;border-radius:16px;z-index:4;pointer-events:none;mix-blend-mode:color-dodge;opacity:.35;
+          background:linear-gradient(125deg,rgba(255,0,128,.6),rgba(0,255,200,.5),rgba(120,80,255,.6),rgba(255,210,0,.5),rgba(0,200,255,.6));background-size:300% 300%;animation:dcHue 6s ease-in-out infinite}
+        @keyframes dcHue{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+        .dc-shine{position:absolute;inset:0;border-radius:16px;z-index:5;pointer-events:none;mix-blend-mode:screen;
+          background:linear-gradient(115deg,transparent 42%,rgba(255,255,255,.5) 50%,transparent 58%);background-size:250% 100%;animation:dcSweep 2.8s linear infinite}
+        @keyframes dcSweep{0%{background-position:170% 0}100%{background-position:-170% 0}}
+        .dc-scan{position:absolute;left:6%;right:6%;height:2px;border-radius:2px;top:0;z-index:6;pointer-events:none;
+          background:linear-gradient(90deg,transparent,var(--c),transparent);box-shadow:0 0 16px 3px var(--c);animation:dcScan 1.5s cubic-bezier(.45,0,.55,1) infinite}
+        @keyframes dcScan{0%{top:8%;opacity:0}12%{opacity:1}88%{opacity:1}100%{top:92%;opacity:0}}
+        .dc-spark{position:absolute;width:4px;height:4px;border-radius:50%;background:#fff;z-index:6;opacity:0;animation:dcSp 1.9s infinite}
+        @keyframes dcSp{0%,100%{opacity:0;transform:scale(.3)}45%{opacity:1;transform:scale(1.3)}}
+        .dc-forge.done .dc-scan{opacity:0;transition:opacity .4s}
+        .dc-forge.done .dc-foil{opacity:.5;transition:opacity .5s}
 
-        .dc-pwrap{width:300px;max-width:88vw;margin:22px auto 0}
+        .dc-notch{position:absolute;width:22px;height:22px;border-radius:50%;background:#000;top:50%;transform:translateY(-50%);z-index:7;box-shadow:inset 0 0 5px rgba(0,0,0,.6)}
+        .dc-notch-l{left:-11px}.dc-notch-r{right:-11px}
+
+        .dc-badge{margin-top:13px;font-size:11px;font-weight:900;letter-spacing:1.5px;padding:4px 14px;border-radius:999px;border:1.5px solid;background:rgba(0,0,0,.3)}
+
+        .dc-pwrap{width:248px;max-width:88vw;margin:15px auto 0}
         .dc-barrow{display:flex;align-items:center;gap:10px}
         .dc-ptrack{flex:1;height:7px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;position:relative}
         .dc-pfill{height:100%;border-radius:999px;transition:width .2s linear;position:relative}
-        .dc-pfill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent);background-size:50% 100%;animation:dcGloss 1.3s linear infinite}
+        .dc-pfill::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.6),transparent);background-size:50% 100%;animation:dcGloss 1.2s linear infinite}
         @keyframes dcGloss{0%{background-position:-50% 0}100%{background-position:150% 0}}
         .dc-ppct{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
-        .dc-ptext{margin-top:11px;font-size:12px;line-height:1.5;text-align:center;color:rgba(255,255,255,.6)}
+        .dc-ptext{margin-top:12px;font-size:12px;line-height:1.5;text-align:center;color:rgba(255,255,255,.6)}
         .dc-ptext :global(b){color:#fff;font-weight:800}
         .dc-mut{color:rgba(255,255,255,.5);font-weight:600}
       `}</style>
