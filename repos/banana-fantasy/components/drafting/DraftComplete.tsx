@@ -59,6 +59,14 @@ function preloadCard(url: string) {
   img.src = url;
 }
 
+// The card thumbnail URL embeds the token id: .../thumbnails/{tokenId}-{uuid}_...png
+// That token id IS the draft-pass number we show on the card.
+function extractPassNo(url?: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/\/(\d{1,8})-[0-9a-f]/i);
+  return m ? m[1] : null;
+}
+
 export function DraftComplete({
   draftId,
   generatedCardUrl: initialCardUrl,
@@ -78,6 +86,8 @@ export function DraftComplete({
   // the roster until the image will show there instantly (your timing idea:
   // do the waiting here on the generating screen, not on the roster).
   const [imageLoaded, setImageLoaded] = useState(false);
+  // Draft-pass number shown on the card (derived from the card URL once known).
+  const [passNumber, setPassNumber] = useState<string | null>(extractPassNo(initialCardUrl));
   const mountedAtRef = useRef(Date.now());
   // The actual generated card URL — handed to the roster page via sessionStorage
   // so it renders the image instantly instead of waiting on its own fetch.
@@ -91,7 +101,7 @@ export function DraftComplete({
   // FIRST time the card URL is known is our authoritative "generation done"
   // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; preloadCard(initialCardUrl); setCardReady(true); }
+    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; setPassNumber(extractPassNo(initialCardUrl)); preloadCard(initialCardUrl); setCardReady(true); }
   }, [initialCardUrl]);
 
   useEffect(() => {
@@ -117,6 +127,7 @@ export function DraftComplete({
           if (imageUrl) {
             logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
             cardUrlRef.current = imageUrl;
+            setPassNumber(extractPassNo(imageUrl));
             preloadCard(imageUrl);
             setCardReady(true);
             return;

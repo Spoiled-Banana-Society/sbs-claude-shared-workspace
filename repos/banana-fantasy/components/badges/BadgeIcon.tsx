@@ -49,12 +49,18 @@ export function BadgeIcon({
 }: BadgeIconProps) {
   // Multi-character glyphs (e.g. NFL team 3-letter codes) need a smaller
   // font so they fit inside the disc; single-char glyphs keep the larger
-  // emoji-friendly sizing.
-  const glyphLen = [...badge.glyph].length;
-  const fontScale = glyphLen >= 3 ? 0.32 : glyphLen === 2 ? 0.42 : 0.55;
-  // In `plain` mode (the avatar-corner overlay) make the content the focal
-  // point: the glyph/logo nearly fills the disc so you can read which team or
-  // emoji it is at a glance, instead of a tiny mark inside a thick ring.
+  // emoji-friendly sizing. Strip emoji variation selectors (U+FE0F) so an
+  // emoji like "⚔️" (which is 2 code points) counts as ONE visual glyph, not
+  // two — otherwise it gets the smaller 2-char scale and renders too small.
+  const visualLen = [...badge.glyph.replace(/\uFE0F/g, '')].length;
+  const baseFontScale = visualLen >= 3 ? 0.32 : visualLen === 2 ? 0.42 : 0.55;
+  // In `plain` mode (the avatar-corner overlay) a single glyph (emoji/symbol)
+  // is sized to FILL the disc like a team-logo image. A small emoji sits at the
+  // disc's center — which is the poked-down corner — so next to logo badges
+  // (which fill the disc) it reads as floating low. Filling the disc makes
+  // every badge sit consistently, tucked in the corner. Multi-char text codes
+  // keep their fit-to-width scale.
+  const fontScale = plain && visualLen === 1 ? 0.70 : baseFontScale;
   const fontSize = Math.max(7, Math.round(size * fontScale * (plain ? 1.18 : 1)));
   const iconSize = Math.round(size * (plain ? 0.92 : 0.78));
 
