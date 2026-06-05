@@ -7,10 +7,14 @@ import { logger } from '@/lib/logger';
 import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
+import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
+import { toCardPlayers } from '@/lib/teamCardData';
 
 interface RosterEntry {
   playerId: string;
   position: string;
+  /** Overall draft pick number (1..150) — shown on the card. */
+  pick?: number | string;
 }
 
 interface DraftCompleteProps {
@@ -41,11 +45,6 @@ const TYPE_COLOR: Record<DraftType, string> = {
   pro: '#a855f7',
   hof: '#D4AF37',
   jackpot: '#ef4444',
-};
-const TYPE_FOIL: Record<DraftType, string> = {
-  pro: 'linear-gradient(135deg,#5b1d9e 0%,#e9d5ff 22%,#a855f7 46%,#f3e8ff 62%,#7e22ce 82%,#c084fc 100%)',
-  hof: 'linear-gradient(135deg,#9c7619 0%,#ffe9a0 22%,#d4af37 42%,#fff6cf 58%,#c0941d 78%,#e8c869 100%)',
-  jackpot: 'linear-gradient(135deg,#7f1d1d 0%,#fecaca 22%,#ef4444 46%,#fee2e2 60%,#b91c1c 82%,#f87171 100%)',
 };
 const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT' };
 const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444' };
@@ -255,39 +254,18 @@ export function DraftComplete({
 
   // Reveal players in sync with the bar.
   const revealCount = Math.round((progress / 100) * roster.length);
+  const cardPlayers = toCardPlayers(
+    roster.map((r) => ({ playerId: r.playerId, position: r.position, pick: r.pick ?? '' })),
+  );
 
   return (
     <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>
       <div className="dc-eyebrow" style={{ color: accent }}>Draft Complete</div>
       <h1 className="dc-h1">Generating your<br />Digital Team</h1>
 
-      {/* ── the card (type-colored, holo foil, roster locks in) ── */}
-      <div className={`dc-forge${cardReady ? ' done' : ''}`}>
-        <div className="dc-card" style={{ background: TYPE_FOIL[type] }}>
-          <div className="dc-ticket">
-            <div className="dc-thead">BANANA BEST BALL IV</div>
-            <div className="dc-rows">
-              {roster.slice(0, 15).map((p, i) => (
-                <div key={`${p.playerId}-${i}`} className={`dc-row${i < revealCount ? ' on' : ''}`}>
-                  <span className="dc-name">{p.playerId}</span>
-                </div>
-              ))}
-            </div>
-            <div className="dc-tfoot">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/sbs-logo-black.png" alt="SBS" />
-              <span>SPOILED BANANA SOCIETY</span>
-            </div>
-          </div>
-          <div className="dc-foil" />
-          <div className="dc-shine" />
-          <div className="dc-scan" />
-          <span className="dc-spark" style={{ top: '16%', left: '14%', boxShadow: `0 0 8px 2px ${accent}` }} />
-          <span className="dc-spark" style={{ top: '44%', right: '12%', boxShadow: `0 0 8px 2px ${accent}`, animationDelay: '.7s' }} />
-          <span className="dc-spark" style={{ bottom: '20%', left: '22%', boxShadow: `0 0 8px 2px ${accent}`, animationDelay: '1.3s' }} />
-        </div>
-        <span className="dc-notch dc-notch-l" />
-        <span className="dc-notch dc-notch-r" />
+      {/* ── the obsidian team card — roster locks in as the bar fills ── */}
+      <div className="dc-cardwrap">
+        <TeamCardObsidian tier={type} players={cardPlayers} revealCount={revealCount} width={244} />
       </div>
 
       {/* type + draft-pass # badge */}
@@ -319,6 +297,7 @@ export function DraftComplete({
         .dc-h1{font-size:23px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:7px;line-height:1.05;
           background:linear-gradient(180deg,#fff,rgba(255,255,255,.62));-webkit-background-clip:text;background-clip:text;color:transparent}
 
+        .dc-cardwrap{margin:18px auto 0;display:flex;justify-content:center}
         .dc-forge{position:relative;margin:16px auto 0;width:min(236px,72vw)}
         .dc-card{width:100%;aspect-ratio:5/7;border-radius:16px;position:relative;overflow:hidden;padding:8px}
         .dc-ticket{height:100%;border-radius:10px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column;z-index:2}

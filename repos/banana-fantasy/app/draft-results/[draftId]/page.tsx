@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,7 +10,8 @@ import { getDraftsApiUrl } from '@/lib/staging';
 import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { CardImage } from '@/components/draft/CardImage';
+import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
+import { buildOgCardUrl } from '@/lib/nftCard';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -166,18 +167,6 @@ export default function DraftResultsPage() {
       }
     } catch { /* ignore */ }
   }, [draftId, walletAddress]);
-
-  // Instant card: the generating screen handed us the real NFT image URL (and
-  // preloaded it), so we can show the actual NFT the moment the page opens —
-  // even while the rest of the page loads — instead of a blank skeleton.
-  const [handoffCardUrl, setHandoffCardUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!draftId) return;
-    try {
-      const url = sessionStorage.getItem(`sbs-draftcard:${draftId}`);
-      if (url) setHandoffCardUrl(url);
-    } catch { /* ignore */ }
-  }, [draftId]);
 
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
@@ -562,19 +551,46 @@ export default function DraftResultsPage() {
     setTimeout(() => setRosterSaved(false), 2000);
   }, [generateRosterImage, title]);
 
-  // Save card image — direct download, no share sheet
+  // Save card image — direct download of the 1080x1350 (X-safe) obsidian card.
   const [saved, setSaved] = useState(false);
-  const handleSave = useCallback(async () => {
-    if (!cardImageUrl) return;
-
-    const proxyUrl = `/api/save-card?url=${encodeURIComponent(cardImageUrl)}`;
+  const handleSave = useCallback(async (url: string) => {
+    if (!url) return;
+    const proxyUrl = `/api/save-card?url=${encodeURIComponent(url)}`;
     const a = document.createElement('a');
     a.href = proxyUrl;
     a.download = `${title}.png`;
     a.click();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [title, cardImageUrl]);
+  }, [title]);
+
+  // Point this token's NFT image (OpenSea / marketplace / X) at the obsidian team
+  // card, once per token, for the OWNER's own team. Fire-and-forget; deps are
+  // stable scalars + a synchronous ref guard so it can't render-loop (Rule #0).
+  const nftImgFiredRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!walletAddress || selectedPlayer.toLowerCase() !== walletAddress.toLowerCase()) return;
+    const tokenId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
+    if (!/^\d+$/.test(tokenId)) return;
+    if (nftImgFiredRef.current.has(tokenId)) return;
+    const r = allRosters[selectedPlayer];
+    if (!r) return;
+    const players = POSITION_ORDER
+      .flatMap((pos) => r[pos] || [])
+      .sort((a, b) => a.pickNum - b.pickNum)
+      .map((p) => {
+        const [tm, ps] = p.playerId.split('-');
+        return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
+      });
+    if (players.length === 0) return;
+    const tier: CardTier = /jackpot/i.test(draftLevel) ? 'jackpot' : /hof|hall of fame/i.test(draftLevel) ? 'hof' : 'pro';
+    nftImgFiredRef.current.add(tokenId);
+    void fetch('/api/nft/card-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenId, tier, passNo: tokenId, players }),
+    }).catch(() => { nftImgFiredRef.current.delete(tokenId); });
+  }, [walletAddress, selectedPlayer, draftLevel, cardImages, allRosters]);
 
   // ─── Loading ───
   if (isLoading) {
@@ -582,12 +598,7 @@ export default function DraftResultsPage() {
       <div className="min-h-screen bg-[#0a0a0f] px-4 py-10">
         <div className="w-full lg:w-[900px] mx-auto space-y-6 text-center">
           <Skeleton width={160} height={24} className="mx-auto" />
-          {handoffCardUrl ? (
-            // Instant real-NFT image from the generating-screen handoff.
-            <CardImage src={handoffCardUrl} className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl" />
-          ) : (
-            <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
-          )}
+          <Skeleton width={300} height={420} className="mx-auto rounded-2xl" />
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} width="100%" height={32} className="rounded-lg" />
@@ -618,6 +629,25 @@ export default function DraftResultsPage() {
     );
   }
 
+  // Build the obsidian team card from the selected roster (instant, no image wait).
+  const cardTier: CardTier = /jackpot/i.test(draftLevel)
+    ? 'jackpot'
+    : /hof|hall of fame/i.test(draftLevel)
+      ? 'hof'
+      : 'pro';
+  const cardPlayers = POSITION_ORDER
+    .flatMap((pos) => roster[pos] || [])
+    .sort((a, b) => a.pickNum - b.pickNum)
+    .map((p) => {
+      const [tm, ps] = p.playerId.split('-');
+      return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
+    });
+  // The 1080x1350 (X-safe) NFT image for download/share.
+  const cardTokenId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
+  const ogImageUrl = /^\d+$/.test(cardTokenId)
+    ? buildOgCardUrl({ tier: cardTier, passNo: cardTokenId, players: cardPlayers })
+    : '';
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] px-4 py-8">
       <div className="w-full lg:w-[900px] mx-auto">
@@ -647,15 +677,14 @@ export default function DraftResultsPage() {
           </div>
         </div>
 
-        {/* The actual generated NFT card image + download. */}
-        {cardImageUrl && (
-          <div className="text-center mb-6">
-            <CardImage
-              src={cardImageUrl}
-              className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl"
-            />
+        {/* The obsidian team NFT card — rendered from roster data (instant) + download. */}
+        <div className="text-center mb-6">
+          <div className="flex justify-center">
+            <TeamCardObsidian tier={cardTier} players={cardPlayers} width={300} />
+          </div>
+          {ogImageUrl && (
             <button
-              onClick={handleSave}
+              onClick={() => handleSave(ogImageUrl)}
               className="mt-3 p-2 text-white/30 hover:text-white/70 transition-colors"
               aria-label="Download card"
             >
@@ -671,8 +700,8 @@ export default function DraftResultsPage() {
                 </svg>
               )}
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
         <Link
