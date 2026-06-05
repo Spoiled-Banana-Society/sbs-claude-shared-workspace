@@ -99,11 +99,13 @@ function ensureWallet(wallet: string | null) {
  */
 export function writeSyncedFlag(key: string, value: FlagValue, wallet?: string) {
   _state[key] = value;
-  if (typeof window !== 'undefined') {
-    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify(value)); } catch { /* quota */ }
+  const w = (wallet ?? _wallet)?.toLowerCase() ?? null;
+  if (typeof window !== 'undefined' && w) {
+    // Cache key is scoped to the wallet so flags never leak across wallets on
+    // the same browser (instant-paint must reflect THIS account only).
+    try { localStorage.setItem(`${CACHE_PREFIX}${w}:${key}`, JSON.stringify(value)); } catch { /* quota */ }
   }
   notify();
-  const w = wallet ? wallet.toLowerCase() : _wallet;
   if (w) {
     void fetch('/api/user/client-state', {
       method: 'PATCH',
@@ -113,10 +115,10 @@ export function writeSyncedFlag(key: string, value: FlagValue, wallet?: string) 
   }
 }
 
-function readCache<T extends FlagValue>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
+function readCache<T extends FlagValue>(wallet: string | null, key: string): T | undefined {
+  if (typeof window === 'undefined' || !wallet) return undefined;
   try {
-    const raw = localStorage.getItem(CACHE_PREFIX + key);
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${wallet}:${key}`);
     if (raw != null) return JSON.parse(raw) as T;
   } catch { /* ignore */ }
   return undefined;
@@ -138,11 +140,18 @@ export function useSyncedFlag<T extends FlagValue>(key: string, defaultValue: T)
     return () => { _subs.delete(sub); };
   }, [walletAddress]);
 
+  const cacheWallet = walletAddress ? walletAddress.toLowerCase() : null;
   let value: T;
-  if (_loaded && key in _state) {
-    value = _state[key] as T;
+  if (_loaded) {
+    // Server map has resolved → it is authoritative for THIS wallet. A missing
+    // key means the flag was never set for this account, so the answer is the
+    // default. The per-wallet cache is only for instant-paint BEFORE the server
+    // load resolves (below); never read it post-load.
+    value = (key in _state) ? (_state[key] as T) : defaultValue;
   } else {
-    const cached = readCache<T>(key);
+    // Pre-load instant paint — wallet-scoped cache, so a previous wallet's
+    // flags on this same browser can't bleed into this account.
+    const cached = readCache<T>(cacheWallet, key);
     value = cached !== undefined ? cached : defaultValue;
   }
 
