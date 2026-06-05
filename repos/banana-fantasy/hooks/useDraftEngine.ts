@@ -603,6 +603,17 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     }
 
     if (pickData.pickNum >= TOTAL_PICKS) {
+      // Confirms the FINAL pick was processed onto the board (setPicks /
+      // setDraftSummary above) before completion — the thing that was silently
+      // skipped when detection keyed on pickNumber. If this trace is present,
+      // the last pick rendered on the board.
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] final pick processed onto board',
+        route: 'useDraftEngine.processPick',
+        actor: walletAddressRef.current,
+        context: { event: 'final_pick_processed', pickNum: pickData.pickNum, playerId: pickData.playerId },
+      }, { skipThrottle: true });
       scheduleCompletion();
     }
   }, [scheduleCompletion]);

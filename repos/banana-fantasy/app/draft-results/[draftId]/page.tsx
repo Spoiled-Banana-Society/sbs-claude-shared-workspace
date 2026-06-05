@@ -152,6 +152,21 @@ export default function DraftResultsPage() {
     };
   }, []);
 
+  // Instant card: the generating screen handed us the card URL via
+  // sessionStorage (and preloaded the image), so seed it immediately instead of
+  // waiting on the token fetch. The full fetch below still runs and fills in the
+  // real cardId; this just makes the image appear the moment the page opens.
+  useEffect(() => {
+    if (!draftId || !walletAddress) return;
+    try {
+      const handoff = sessionStorage.getItem(`sbs-draftcard:${draftId}`);
+      if (handoff) {
+        const key = walletAddress.toLowerCase();
+        setCardImages((prev) => (prev[key] ? prev : { ...prev, [key]: { imageUrl: handoff, cardId: '' } }));
+      }
+    } catch { /* ignore */ }
+  }, [draftId, walletAddress]);
+
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
 
@@ -644,7 +659,7 @@ export default function DraftResultsPage() {
 
         {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
         <Link
-          href="/marketplace"
+          href="/marketplace?tab=sell"
           className="block mb-6 rounded-2xl px-4 py-3.5 relative overflow-hidden border border-[#F3E216]/25 bg-gradient-to-br from-[#F3E216]/10 to-purple-500/10 hover:border-[#F3E216]/50 transition-colors"
         >
           <div className="flex items-center gap-3">

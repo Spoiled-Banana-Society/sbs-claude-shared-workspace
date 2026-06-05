@@ -75,6 +75,9 @@ export function DraftComplete({
   // Minimum-animation gate — flips true after MIN_SHOW_MS so we never flash.
   const [minElapsed, setMinElapsed] = useState(false);
   const mountedAtRef = useRef(Date.now());
+  // The actual generated card URL — handed to the roster page via sessionStorage
+  // so it renders the image instantly instead of waiting on its own fetch.
+  const cardUrlRef = useRef<string | null>(initialCardUrl || null);
 
   const destination = draftId ? `/draft-results/${draftId}` : '/drafting';
 
@@ -84,7 +87,7 @@ export function DraftComplete({
   // FIRST time the card URL is known is our authoritative "generation done"
   // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) { preloadCard(initialCardUrl); setCardReady(true); }
+    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; preloadCard(initialCardUrl); setCardReady(true); }
   }, [initialCardUrl]);
 
   useEffect(() => {
@@ -109,6 +112,7 @@ export function DraftComplete({
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
           if (imageUrl) {
             logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
+            cardUrlRef.current = imageUrl;
             preloadCard(imageUrl);
             setCardReady(true);
             return;
@@ -191,6 +195,13 @@ export function DraftComplete({
   useEffect(() => {
     if (!done) return;
     setProgress(100);
+    // Hand the generated card URL to the roster page so it shows the image
+    // instantly (already preloaded) instead of running its own fetch/retry.
+    try {
+      if (cardUrlRef.current && draftId) {
+        sessionStorage.setItem(`sbs-draftcard:${draftId}`, cardUrlRef.current);
+      }
+    } catch { /* ignore */ }
     logger.info('[DraftComplete] Team secured — routing to roster', { draftId, destination });
     reportClientEvent({
       source: LOG_SOURCES.draft.COMPLETE_TRACE,
