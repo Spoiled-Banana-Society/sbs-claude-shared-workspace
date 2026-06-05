@@ -143,7 +143,11 @@ export default function NftDetailPage() {
   const fetchNft = useCallback(() => {
     if (!tokenId) return;
     setIsLoading(true);
-    fetch(`/api/marketplace/nft/${tokenId}`)
+    // Pass the viewer's wallet so the API can fall back to our backend when
+    // OpenSea hasn't revealed a freshly-drafted team yet (a few-minute lag) —
+    // the person viewing their own new team is its owner.
+    const q = walletAddress ? `?owner=${walletAddress}` : '';
+    fetch(`/api/marketplace/nft/${tokenId}${q}`)
       .then(res => {
         if (!res.ok) throw new Error(`Failed to fetch: ${res.status}`);
         return res.json();
@@ -151,7 +155,7 @@ export default function NftDetailPage() {
       .then(data => { setNft(data); setError(null); })
       .catch(err => setError(err.message))
       .finally(() => setIsLoading(false));
-  }, [tokenId]);
+  }, [tokenId, walletAddress]);
 
   useEffect(() => {
     fetchNft();

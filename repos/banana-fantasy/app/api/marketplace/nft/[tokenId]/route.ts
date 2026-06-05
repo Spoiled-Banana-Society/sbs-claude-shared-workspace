@@ -28,6 +28,11 @@ export async function GET(
     const { tokenId } = params;
     if (!tokenId) return jsonError('Missing tokenId', 400);
 
+    // Caller (the detail page) passes the viewing wallet so we can fall back to
+    // our own backend if OpenSea isn't ready — the person viewing a freshly
+    // drafted team is its owner.
+    const ownerHint = new URL(req.url).searchParams.get('owner');
+
     const res = await fetch(
       `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${tokenId}`,
       {
@@ -42,6 +47,31 @@ export async function GET(
     if (!res.ok) {
       const text = await res.text();
       console.error('[marketplace/nft] OpenSea error:', res.status, text);
+      // OpenSea is mid-reveal (it lags a few minutes behind a fresh draft) — so
+      // don't hard-fail. If we know the owner, serve the team straight from our
+      // backend (the source of truth that updates instantly). OpenSea becomes
+      // the default again on the next fetch once it's indexed.
+      if (ownerHint) {
+        const team = await getTeamForToken(tokenId, ownerHint);
+        if (team) {
+          return json({
+            identifier: tokenId,
+            contract: BBB4_CONTRACT,
+            token_standard: 'erc721',
+            name: team.leagueDisplayName || `#${tokenId}`,
+            image_url: team.imageUrl || null,
+            display_image_url: team.imageUrl || null,
+            traits: teamDataToTraits(team),
+            owners: [{ address: ownerHint, quantity: 1, quantity_string: '1' }],
+            owner: ownerHint,
+            ownerName: null,
+            ownerPfp: null,
+            team,
+            listing: null,
+            pendingOpenSea: true,
+          });
+        }
+      }
       return jsonError('Failed to fetch NFT', res.status >= 500 ? 502 : res.status);
     }
 
