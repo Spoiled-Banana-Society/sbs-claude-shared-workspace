@@ -23,8 +23,8 @@ interface AvatarWithBadgeProps {
 
 /**
  * Wraps an avatar image with the user's equipped badge as a circular
- * overlay at the bottom-right. The badge size scales to roughly 38% of
- * the avatar diameter (clamped at 12px min, 32px max).
+ * overlay at the bottom-right. The badge size scales to roughly 44% of
+ * the avatar diameter (clamped at 12px min, 40px max) so it stands out.
  *
  * Falls back to the banana avatar when there is no image URL *or* the
  * image fails to load — so a new user (whose backend pfp URL is often
@@ -52,7 +52,7 @@ export function AvatarWithBadge({
 
   const isFallback = !imageUrl || loadFailed;
   const src = isFallback ? fallbackSrc : imageUrl;
-  const badgeSize = Math.min(32, Math.max(12, Math.round(size * 0.38)));
+  const badgeSize = Math.min(40, Math.max(12, Math.round(size * 0.44)));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
   // The fallback banana PNG is cropped edge-to-edge so it looks visually
   // larger than custom PFPs (which typically have whitespace padding in
