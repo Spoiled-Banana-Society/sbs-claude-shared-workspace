@@ -23,7 +23,7 @@ export type DraftMode = 'local' | 'live';
 // flipping to the completion / card-generation overlay. Just long enough for
 // everyone to see the last auto/manual pick render in the board + last box
 // (mobile + desktop), then move on.
-const FINAL_PICK_REVEAL_MS = 1000;
+const FINAL_PICK_REVEAL_MS = 1500;
 
 export interface DraftEngineState {
   picks: DraftPick[];
@@ -479,12 +479,25 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   // Idempotent: re-calls just reset the single pending timer.
   const scheduleCompletion = useCallback(() => {
     if (completionTimerRef.current) return; // already scheduled — keep the one delay
-    logger.info('[Complete] Final pick in — holding board for reveal before completion', {
-      delayMs: FINAL_PICK_REVEAL_MS,
-    });
+    // Server-shipped (admin Logs) so we can SEE that the final pick is being held
+    // on the board before completion — and for how long — to debug the
+    // "last pick didn't show, jumped straight to next phase" report.
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[Complete] final pick in — holding board for reveal',
+      route: 'useDraftEngine.scheduleCompletion',
+      actor: walletAddressRef.current,
+      context: { event: 'hold_scheduled', delayMs: FINAL_PICK_REVEAL_MS },
+    }, { skipThrottle: true });
     completionTimerRef.current = setTimeout(() => {
       completionTimerRef.current = null;
-      logger.info('[Complete] Reveal window elapsed — flipping draft to completed');
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] reveal window elapsed — flipping to completed',
+        route: 'useDraftEngine.scheduleCompletion',
+        actor: walletAddressRef.current,
+        context: { event: 'hold_elapsed' },
+      }, { skipThrottle: true });
       setDraftStatus('completed');
     }, FINAL_PICK_REVEAL_MS);
   }, []);

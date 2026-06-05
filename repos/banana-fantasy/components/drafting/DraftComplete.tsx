@@ -50,6 +50,15 @@ const TYPE_FOIL: Record<DraftType, string> = {
 const STAMP_LABEL: Record<DraftType, string> = { pro: 'PRO', hof: 'HOF', jackpot: 'JACKPOT' };
 const STAMP_COLOR: Record<DraftType, string> = { pro: '#a855f7', hof: '#C99700', jackpot: '#ef4444' };
 
+// Warm the browser cache with the generated card image while the animation
+// plays, so the roster page shows it INSTANTLY on arrival instead of running
+// its own 404-retry loop (the "card takes time to update" bug).
+function preloadCard(url: string) {
+  if (typeof window === 'undefined' || !url) return;
+  const img = new window.Image();
+  img.src = url;
+}
+
 export function DraftComplete({
   draftId,
   generatedCardUrl: initialCardUrl,
@@ -75,7 +84,7 @@ export function DraftComplete({
   // FIRST time the card URL is known is our authoritative "generation done"
   // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) setCardReady(true);
+    if (initialCardUrl) { preloadCard(initialCardUrl); setCardReady(true); }
   }, [initialCardUrl]);
 
   useEffect(() => {
@@ -100,6 +109,7 @@ export function DraftComplete({
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
           if (imageUrl) {
             logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
+            preloadCard(imageUrl);
             setCardReady(true);
             return;
           }
@@ -257,7 +267,7 @@ export function DraftComplete({
         .dc-h1{font-size:30px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:8px;line-height:1.05;
           background:linear-gradient(180deg,#fff,rgba(255,255,255,.65));-webkit-background-clip:text;background-clip:text;color:transparent}
 
-        .dc-forge{margin:20px auto 0;position:relative;width:236px;max-width:74vw}
+        .dc-forge{margin:20px auto 0;position:relative;width:min(320px,82vw)}
         .dc-card{position:relative;border-radius:18px;aspect-ratio:5/7;overflow:hidden;padding:7px}
         .dc-ticket{height:100%;border-radius:11px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column}
         .dc-tinner{position:absolute;inset:5px;border:1.2px solid rgba(35,32,92,.5);border-radius:8px;pointer-events:none}
