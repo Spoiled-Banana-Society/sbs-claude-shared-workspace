@@ -23,7 +23,7 @@ export type DraftMode = 'local' | 'live';
 // flipping to the completion / card-generation overlay. Just long enough for
 // everyone to see the last auto/manual pick render in the board + last box
 // (mobile + desktop), then move on.
-const FINAL_PICK_REVEAL_MS = 1500;
+const FINAL_PICK_REVEAL_MS = 1000;
 
 export interface DraftEngineState {
   picks: DraftPick[];
