@@ -136,7 +136,13 @@ export function SellTab({
                   className={`bg-bg-primary border rounded-xl p-4 flex items-center justify-between transition-all hover:-translate-y-0.5 hover:border-bg-elevated ${team.isHof ? 'border-hof/30' : 'border-bg-tertiary'}`}
                 >
                   <div className="flex items-center gap-4">
-                    {team.imageUrl ? (
+                    {draftInProgress(team) ? (
+                      // Still drafting — no real team card yet. Show the SBS
+                      // banana logo until the draft finishes and a roster exists.
+                      <div className="w-14 h-14 rounded-xl bg-bg-tertiary/40 border border-bg-tertiary flex items-center justify-center overflow-hidden">
+                        <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={40} height={40} className="object-contain" />
+                      </div>
+                    ) : team.imageUrl ? (
                       <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
                     ) : (
                       <SbsPassThumb

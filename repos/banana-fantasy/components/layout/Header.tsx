@@ -194,17 +194,6 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     </Link>
                   </Tooltip>
 
-                  {/* Prizes */}
-                  <Tooltip content="Prizes">
-                    <Link
-                      href="/prizes"
-                      aria-label="Prizes"
-                      className="flex items-center px-3 py-2 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
-                    >
-                      <span className="text-2xl" aria-hidden="true">🏆</span>
-                    </Link>
-                  </Tooltip>
-
                   {/* Notifications */}
                   {isLoggedIn && <NotificationWidget />}
                 </div>
