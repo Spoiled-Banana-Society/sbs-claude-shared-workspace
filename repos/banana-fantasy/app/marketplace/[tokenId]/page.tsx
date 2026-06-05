@@ -897,65 +897,7 @@ export default function NftDetailPage() {
             )}
           </div>
 
-          {/* Stats Row */}
-          {(rank || seasonScore || weekScore) && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {rank && rank !== 'N/A' && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
-                </div>
-              )}
-              {seasonScore && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season Pts</p>
-                  <p className="font-mono text-xl font-bold text-text-primary">
-                    {parseFloat(seasonScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </p>
-                </div>
-              )}
-              {weekScore && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Week Score</p>
-                  <p className="font-mono text-xl font-bold text-success">
-                    {parseFloat(weekScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Full Roster */}
-          {roster.length > 0 && (
-            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
-              <h3 className="text-text-primary font-semibold text-sm mb-4">Full Roster</h3>
-              <div className="space-y-4">
-                {[
-                  { label: 'Quarterbacks', items: qbs },
-                  { label: 'Running Backs', items: rbs },
-                  { label: 'Wide Receivers', items: wrs },
-                  { label: 'Tight Ends', items: tes },
-                  { label: 'Defense', items: dsts },
-                ].filter(g => g.items.length > 0).map(group => (
-                  <div key={group.label}>
-                    <p className="text-text-muted text-[10px] uppercase tracking-wider mb-2">{group.label}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {group.items.map(r => (
-                        <div
-                          key={r.slot}
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-medium ${getPositionColor(r.slot)}`}
-                        >
-                          {r.value}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Price & Buy / Make Offer */}
+          {/* Price & Buy / Make Offer — primary action, kept at the top */}
           <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
             {price !== null ? (
               <>
@@ -1070,6 +1012,64 @@ export default function NftDetailPage() {
               </button>
             )}
           </div>
+
+          {/* Stats Row */}
+          {(rank || seasonScore || weekScore) && (
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              {rank && rank !== 'N/A' && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
+                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
+                </div>
+              )}
+              {seasonScore && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season Pts</p>
+                  <p className="font-mono text-xl font-bold text-text-primary">
+                    {parseFloat(seasonScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </p>
+                </div>
+              )}
+              {weekScore && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Week Score</p>
+                  <p className="font-mono text-xl font-bold text-success">
+                    {parseFloat(weekScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Full Roster */}
+          {roster.length > 0 && (
+            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
+              <h3 className="text-text-primary font-semibold text-sm mb-4">Full Roster</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'Quarterbacks', items: qbs },
+                  { label: 'Running Backs', items: rbs },
+                  { label: 'Wide Receivers', items: wrs },
+                  { label: 'Tight Ends', items: tes },
+                  { label: 'Defense', items: dsts },
+                ].filter(g => g.items.length > 0).map(group => (
+                  <div key={group.label}>
+                    <p className="text-text-muted text-[10px] uppercase tracking-wider mb-2">{group.label}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.items.map(r => (
+                        <div
+                          key={r.slot}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-medium ${getPositionColor(r.slot)}`}
+                        >
+                          {r.value}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Offers Section */}
           {(offers.length > 0 || offersLoading) && (
