@@ -191,6 +191,26 @@ async function readNftLeagueMap(tokenId: string): Promise<{ leagueId: string; ow
   }
 }
 
+/**
+ * Resolve the current owner wallet for a token straight from our backend
+ * (Firestore `draftTokens/{tokenId}`, written by the WS server on draft close
+ * — `.Set(struct)` with no firestore tags, so the field is the Go field name
+ * `OwnerId`). Lets us serve a freshly-drafted team for ANY viewer during the
+ * few minutes OpenSea lags behind, without OpenSea telling us the owner.
+ */
+export async function getOwnerForToken(tokenId: string): Promise<string | null> {
+  if (!isFirestoreConfigured() || !tokenId) return null;
+  try {
+    const db = getAdminFirestore();
+    const snap = await db.collection('draftTokens').doc(String(tokenId)).get();
+    if (!snap.exists) return null;
+    const owner = snap.get('OwnerId') ?? snap.get('_ownerId') ?? snap.get('ownerId');
+    return owner ? String(owner) : null;
+  } catch {
+    return null;
+  }
+}
+
 function backendTokenToTeamData(t: BackendDraftToken, source: TeamData['source']): TeamData | null {
   const leagueId = String(t._leagueId ?? '');
   // Server returns "BBB #N"; in-app label is plain "League #N".

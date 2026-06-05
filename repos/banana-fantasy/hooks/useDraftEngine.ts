@@ -479,12 +479,25 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   // Idempotent: re-calls just reset the single pending timer.
   const scheduleCompletion = useCallback(() => {
     if (completionTimerRef.current) return; // already scheduled — keep the one delay
-    logger.info('[Complete] Final pick in — holding board for reveal before completion', {
-      delayMs: FINAL_PICK_REVEAL_MS,
-    });
+    // Server-shipped (admin Logs) so we can SEE that the final pick is being held
+    // on the board before completion — and for how long — to debug the
+    // "last pick didn't show, jumped straight to next phase" report.
+    reportClientEvent({
+      source: LOG_SOURCES.draft.COMPLETE_TRACE,
+      message: '[Complete] final pick in — holding board for reveal',
+      route: 'useDraftEngine.scheduleCompletion',
+      actor: walletAddressRef.current,
+      context: { event: 'hold_scheduled', delayMs: FINAL_PICK_REVEAL_MS },
+    }, { skipThrottle: true });
     completionTimerRef.current = setTimeout(() => {
       completionTimerRef.current = null;
-      logger.info('[Complete] Reveal window elapsed — flipping draft to completed');
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] reveal window elapsed — flipping to completed',
+        route: 'useDraftEngine.scheduleCompletion',
+        actor: walletAddressRef.current,
+        context: { event: 'hold_elapsed' },
+      }, { skipThrottle: true });
       setDraftStatus('completed');
     }, FINAL_PICK_REVEAL_MS);
   }, []);
@@ -590,6 +603,17 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     }
 
     if (pickData.pickNum >= TOTAL_PICKS) {
+      // Confirms the FINAL pick was processed onto the board (setPicks /
+      // setDraftSummary above) before completion — the thing that was silently
+      // skipped when detection keyed on pickNumber. If this trace is present,
+      // the last pick rendered on the board.
+      reportClientEvent({
+        source: LOG_SOURCES.draft.COMPLETE_TRACE,
+        message: '[Complete] final pick processed onto board',
+        route: 'useDraftEngine.processPick',
+        actor: walletAddressRef.current,
+        context: { event: 'final_pick_processed', pickNum: pickData.pickNum, playerId: pickData.playerId },
+      }, { skipThrottle: true });
       scheduleCompletion();
     }
   }, [scheduleCompletion]);

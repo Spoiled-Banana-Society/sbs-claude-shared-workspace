@@ -124,6 +124,20 @@ export async function GET(req: Request) {
         { merge: true },
       );
       logger.error('fulfill-failed-mints.retry_failed', { userId, attempts: attempts + 1, exhausted, err: (err as Error).message });
+      // When auto-recovery has GIVEN UP (8 attempts → needsManual), emit a
+      // `payment.*` source so it lands in the CRITICAL feed (admin Logs tab +
+      // logs.mjs), not buried in warnings. This is the "user paid, never got
+      // their pass, the cron quit — a human must re-grant NOW" alarm. See the
+      // owed_pass_unfulfilled runbook in lib/logSources.ts.
+      if (exhausted) {
+        logger.error('payment.card.owed_pass_unfulfilled', {
+          userId,
+          quantity,
+          attempts: attempts + 1,
+          failedMintId: doc.id,
+          err: (err as Error).message,
+        });
+      }
       results.push({ id: doc.id, userId, status: exhausted ? 'exhausted_needs_manual' : 'retry_failed' });
     }
   }

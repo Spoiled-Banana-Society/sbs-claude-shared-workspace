@@ -27,12 +27,31 @@ async function callOwnerApi(method: 'POST' | 'PUT', payload: OwnerProfilePayload
 }
 
 export function useOnboarding() {
-  const { user, updateUser, isNewUser, showOnboarding, setShowOnboarding, setIsNewUser } = useAuth();
+  const { user, updateUser, isNewUser, setShowOnboarding, setIsNewUser, isBB3Holder, isLoggedIn } = useAuth();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('tutorial');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Account-synced onboarding completion (was per-device localStorage).
-  const [onboardingDone, setOnboardingDone] = useSyncedFlag<boolean>('onboardingComplete', false);
+  const [onboardingDone, setOnboardingDone, onboardingLoaded] = useSyncedFlag<boolean>('onboardingComplete', false);
+
+  // Decide whether to show the first-login tutorial from DURABLE, account-synced
+  // state — NOT the backend 404. The Go API auto-seeds a new wallet's owner
+  // record, so getOwnerUser returns 200 for genuine new users and useAuth's
+  // 404-based trigger never fired (the tutorial was effectively dead). Instead,
+  // show it once to real new users only:
+  //   - logged in,
+  //   - the account-synced `onboardingComplete` flag has LOADED (so we never
+  //     flash it at someone who already finished it on another device), and is
+  //     still false,
+  //   - and they are NOT a returning BBB4/BBB3 holder (those are veterans, not
+  //     new users — isBB3Holder is set synchronously from the returning-user
+  //     snapshot for known holders, and via on-chain balance otherwise).
+  // Every exit path in OnboardingTutorial (Skip, "Let's Go", final slide) calls
+  // completeOnboarding → sets onboardingComplete=true, so this can never re-trap
+  // a user, and they never see it again across devices.
+  const showOnboarding = Boolean(
+    isLoggedIn && onboardingLoaded && !onboardingDone && !isBB3Holder,
+  );
 
   useEffect(() => {
     if (showOnboarding) {

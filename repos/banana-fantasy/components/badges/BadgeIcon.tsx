@@ -49,11 +49,20 @@ export function BadgeIcon({
 }: BadgeIconProps) {
   // Multi-character glyphs (e.g. NFL team 3-letter codes) need a smaller
   // font so they fit inside the disc; single-char glyphs keep the larger
-  // emoji-friendly sizing.
-  const glyphLen = [...badge.glyph].length;
-  const fontScale = glyphLen >= 3 ? 0.32 : glyphLen === 2 ? 0.42 : 0.55;
-  const fontSize = Math.max(7, Math.round(size * fontScale));
-  const iconSize = Math.round(size * 0.78);
+  // emoji-friendly sizing. Strip emoji variation selectors (U+FE0F) so an
+  // emoji like "⚔️" (which is 2 code points) counts as ONE visual glyph, not
+  // two — otherwise it gets the smaller 2-char scale and renders too small.
+  const visualLen = [...badge.glyph.replace(/\uFE0F/g, '')].length;
+  const baseFontScale = visualLen >= 3 ? 0.32 : visualLen === 2 ? 0.42 : 0.55;
+  // In `plain` mode (the avatar-corner overlay) a single glyph (emoji/symbol)
+  // is sized to FILL the disc like a team-logo image. A small emoji sits at the
+  // disc's center — which is the poked-down corner — so next to logo badges
+  // (which fill the disc) it reads as floating low. Filling the disc makes
+  // every badge sit consistently, tucked in the corner. Multi-char text codes
+  // keep their fit-to-width scale.
+  const fontScale = plain && visualLen === 1 ? 0.70 : baseFontScale;
+  const fontSize = Math.max(7, Math.round(size * fontScale * (plain ? 1.18 : 1)));
+  const iconSize = Math.round(size * (plain ? 0.92 : 0.78));
 
   // When badge.iconUrl is set, render the image inside the disc;
   // otherwise fall back to the text/emoji glyph.
@@ -70,12 +79,20 @@ export function BadgeIcon({
   ) : (
     badge.glyph
   );
-  const ring = ringWidth ?? Math.max(1, Math.round(size * 0.1));
+  // Thinner ring in plain mode so the logo/emoji owns the circle (content-first).
+  const ring = ringWidth ?? Math.max(1, Math.round(size * (plain ? 0.06 : 0.1)));
   const color = unlocked ? badge.color : LOCKED_GREY;
   const accent = unlocked ? (badge.accentColor || badge.color) : LOCKED_GREY;
   const ringColor = unlocked ? (badge.ringColor || color) : LOCKED_GREY;
 
-  const background = unlocked && badge.gradient
+  // In `plain` mode (the avatar-corner overlay) ALL badges use the faint disc,
+  // even gradient ones. A solid gradient disc shows its whole body at the
+  // poked-down corner position, so it reads as a big blob "dangling" low —
+  // while a faint disc (like the team-logo badges) hides the disc and shows
+  // only the centered glyph/logo, sitting tucked in the corner. Faint-for-all
+  // makes every badge look like the clean Chiefs-logo overlay. The full
+  // gradient still renders in the large badge catalog (non-plain).
+  const background = unlocked && badge.gradient && !plain
     ? `linear-gradient(135deg, ${color} 0%, ${accent} 100%)`
     : `${color}33`; // 20% alpha
 

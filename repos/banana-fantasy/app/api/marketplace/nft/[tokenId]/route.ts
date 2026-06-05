@@ -2,7 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
-import { getTeamForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
+import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +28,11 @@ export async function GET(
     const { tokenId } = params;
     if (!tokenId) return jsonError('Missing tokenId', 400);
 
+    // Caller (the detail page) passes the viewing wallet so we can fall back to
+    // our own backend if OpenSea isn't ready — the person viewing a freshly
+    // drafted team is its owner.
+    const ownerHint = new URL(req.url).searchParams.get('owner');
+
     const res = await fetch(
       `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${tokenId}`,
       {
@@ -42,6 +47,34 @@ export async function GET(
     if (!res.ok) {
       const text = await res.text();
       console.error('[marketplace/nft] OpenSea error:', res.status, text);
+      // OpenSea is mid-reveal (it lags a few minutes behind a fresh draft) — so
+      // don't hard-fail. Resolve the owner from OUR backend (works for ANY team,
+      // not just the viewer's own — falls back to the viewing wallet hint), then
+      // serve the team straight from our backend (the source of truth that
+      // updates instantly). OpenSea becomes the default again on the next fetch
+      // once it's indexed.
+      const owner = ownerHint || (await getOwnerForToken(tokenId));
+      if (owner) {
+        const team = await getTeamForToken(tokenId, owner);
+        if (team) {
+          return json({
+            identifier: tokenId,
+            contract: BBB4_CONTRACT,
+            token_standard: 'erc721',
+            name: team.leagueDisplayName || `#${tokenId}`,
+            image_url: team.imageUrl || null,
+            display_image_url: team.imageUrl || null,
+            traits: teamDataToTraits(team),
+            owners: [{ address: owner, quantity: 1, quantity_string: '1' }],
+            owner,
+            ownerName: null,
+            ownerPfp: null,
+            team,
+            listing: null,
+            pendingOpenSea: true,
+          });
+        }
+      }
       return jsonError('Failed to fetch NFT', res.status >= 500 ? 502 : res.status);
     }
 

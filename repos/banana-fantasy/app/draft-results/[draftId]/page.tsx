@@ -152,6 +152,33 @@ export default function DraftResultsPage() {
     };
   }, []);
 
+  // Instant card: the generating screen handed us the card URL via
+  // sessionStorage (and preloaded the image), so seed it immediately instead of
+  // waiting on the token fetch. The full fetch below still runs and fills in the
+  // real cardId; this just makes the image appear the moment the page opens.
+  useEffect(() => {
+    if (!draftId || !walletAddress) return;
+    try {
+      const handoff = sessionStorage.getItem(`sbs-draftcard:${draftId}`);
+      if (handoff) {
+        const key = walletAddress.toLowerCase();
+        setCardImages((prev) => (prev[key] ? prev : { ...prev, [key]: { imageUrl: handoff, cardId: '' } }));
+      }
+    } catch { /* ignore */ }
+  }, [draftId, walletAddress]);
+
+  // Instant card: the generating screen handed us the real NFT image URL (and
+  // preloaded it), so we can show the actual NFT the moment the page opens —
+  // even while the rest of the page loads — instead of a blank skeleton.
+  const [handoffCardUrl, setHandoffCardUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!draftId) return;
+    try {
+      const url = sessionStorage.getItem(`sbs-draftcard:${draftId}`);
+      if (url) setHandoffCardUrl(url);
+    } catch { /* ignore */ }
+  }, [draftId]);
+
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
 
@@ -555,7 +582,12 @@ export default function DraftResultsPage() {
       <div className="min-h-screen bg-[#0a0a0f] px-4 py-10">
         <div className="w-full lg:w-[900px] mx-auto space-y-6 text-center">
           <Skeleton width={160} height={24} className="mx-auto" />
-          <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
+          {handoffCardUrl ? (
+            // Instant real-NFT image from the generating-screen handoff.
+            <CardImage src={handoffCardUrl} className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl" />
+          ) : (
+            <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
+          )}
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} width="100%" height={32} className="rounded-lg" />
@@ -615,7 +647,7 @@ export default function DraftResultsPage() {
           </div>
         </div>
 
-        {/* NFT Card Image + Save */}
+        {/* The actual generated NFT card image + download. */}
         {cardImageUrl && (
           <div className="text-center mb-6">
             <CardImage
@@ -641,6 +673,21 @@ export default function DraftResultsPage() {
             </button>
           </div>
         )}
+
+        {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
+        <Link
+          href="/marketplace?tab=sell"
+          className="block mb-6 rounded-2xl px-4 py-3.5 relative overflow-hidden border border-[#F3E216]/25 bg-gradient-to-br from-[#F3E216]/10 to-purple-500/10 hover:border-[#F3E216]/50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#F3E216]/15 flex items-center justify-center text-lg flex-shrink-0">🛒</div>
+            <div className="flex-1 text-left">
+              <p className="text-white font-bold text-sm">Sell your team. Buy other teams.</p>
+              <p className="text-white/55 text-xs mt-0.5">All season on our Marketplace</p>
+            </div>
+            <span className="text-[#F3E216] text-xl font-bold leading-none">›</span>
+          </div>
+        </Link>
 
         {/* Player Selector Dropdown */}
         {playerKeys.length > 1 && (

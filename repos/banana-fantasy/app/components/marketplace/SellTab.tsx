@@ -101,8 +101,12 @@ export function SellTab({
 
   // Only show sellable teams/passes by default; the ones you can't list yet
   // (free passes locked until the season starts) hide behind a toggle.
-  const sellable = listableNfts.filter(canSellTeam).sort((a, b) => sellTierRank(a) - sellTierRank(b));
-  const unsellable = listableNfts.filter(t => !canSellTeam(t)).sort((a, b) => sellTierRank(a) - sellTierRank(b));
+  // Tier first, then NEWEST team first (highest token id) within a tier, so the
+  // team you just drafted sits at the very top.
+  const byTierThenNewest = (a: typeof listableNfts[number], b: typeof listableNfts[number]) =>
+    (sellTierRank(a) - sellTierRank(b)) || ((Number(b.tokenId) || 0) - (Number(a.tokenId) || 0));
+  const sellable = listableNfts.filter(canSellTeam).sort(byTierThenNewest);
+  const unsellable = listableNfts.filter(t => !canSellTeam(t)).sort(byTierThenNewest);
   const visibleNfts = showUnsellable ? [...sellable, ...unsellable] : sellable;
 
   return (
