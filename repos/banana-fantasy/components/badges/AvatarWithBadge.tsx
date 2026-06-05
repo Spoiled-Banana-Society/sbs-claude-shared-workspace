@@ -58,13 +58,7 @@ export function AvatarWithBadge({
   }, [imageUrl]);
 
   const isMobile = useIsMobile();
-  // Treat the DEFAULT banana as a fallback even when it's passed explicitly as
-  // an image URL (callers default missing pfps to '/banana-profile.png' rather
-  // than null). Otherwise the shrink below is skipped and the edge-to-edge
-  // banana fills the whole circle — looking bigger/tighter than padded uploads
-  // (e.g. a real ape pfp), which also made its badge read as crowding the name.
-  const isDefaultBanana = !!imageUrl && imageUrl.endsWith('/banana-profile.png');
-  const isFallback = !imageUrl || loadFailed || isDefaultBanana;
+  const isFallback = !imageUrl || loadFailed;
   const src = isFallback ? fallbackSrc : imageUrl;
   // Mobile tiles pack the name close under the avatar, so the badge is a touch
   // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
@@ -77,12 +71,13 @@ export function AvatarWithBadge({
   const edgeOffsetX = Math.round(size * 0.146);
   const edgeOffsetY = Math.round(size * (isMobile ? 0.083 : 0.146));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
-  // The fallback/default banana PNG is cropped edge-to-edge so it looks visually
-  // larger than custom PFPs (which typically have whitespace padding in
-  // the source). Shrink it so it sits at the same visual weight as a normal
-  // user-uploaded avatar.
-  const innerSize = isFallback ? Math.round(size * 0.85) : size;
-  const innerOffset = Math.round((size - innerSize) / 2);
+  // Every avatar renders full-frame (object-cover fills the circle), so the
+  // badge sits at the identical size + position on ALL of them — banana,
+  // upload, anything. The default banana is itself a full-frame image now (a
+  // banana on a filled background, like a photo), so it no longer needs a
+  // code-side shrink — which is what used to make the badge float off it.
+  const innerSize = size;
+  const innerOffset = 0;
 
   // Badge sits on the bottom-right rim, poking slightly past the circle. The
   // avatars it appears in are centered inside much larger slots (e.g. the 48px
