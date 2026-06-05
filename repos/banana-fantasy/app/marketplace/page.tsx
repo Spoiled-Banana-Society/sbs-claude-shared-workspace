@@ -144,7 +144,7 @@ export default function MarketplacePage() {
 
   const { data: listings, isLoading: listingsLoading, hasMore, loadMore, refetch: refetchListings } = useListings(currentSort.sort, currentSort.direction);
   const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts();
-  const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts } = useMyNfts(isLoggedIn ? walletAddress : null);
+  const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
   const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
   const { watchlist, watchlistSet, toggle: toggleWatchlist } = useWatchlist(isLoggedIn ? walletAddress : null);
@@ -474,6 +474,8 @@ export default function MarketplacePage() {
       setShowSellModal(false);
       setSuccessType('list');
       setShowSuccessModal(true);
+      // Reflect the listing immediately (OpenSea indexing lags a few seconds).
+      if (result.orderHash) patchMyNftListing(selectedTeam.tokenId, { orderHash: result.orderHash, price: parseFloat(listPrice) });
       refetchListings();
       refetchMyNfts();
       refetchActivity();
@@ -488,7 +490,7 @@ export default function MarketplacePage() {
       });
       setTxError(friendlyTxError(error, 'Couldn’t create the listing. Please try again.'));
     }
-  }, [addNotification, listPrice, listDurationSeconds, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
+  }, [addNotification, listPrice, listDurationSeconds, patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, selectedWallet, sendTx, walletAddress]);
 
   const executeCancel = useCallback(async (team: MarketplaceTeam) => {
     if (!team.orderHash || !walletAddress) return;
@@ -517,6 +519,8 @@ export default function MarketplacePage() {
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
       logActivity({ type: 'cancel', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, orderHash: team.orderHash || null });
+      // Reflect the delist immediately (OpenSea takes a few seconds to drop it).
+      patchMyNftListing(team.tokenId, null);
       refetchListings();
       refetchMyNfts();
       refetchActivity();
@@ -534,7 +538,7 @@ export default function MarketplacePage() {
       setCancellingTokenId(null);
       setCancelConfirmTeam(null);
     }
-  }, [refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress]);
+  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress]);
 
   const executeSweep = useCallback(async () => {
     if (sweepTeams.length === 0 || !walletAddress) return;

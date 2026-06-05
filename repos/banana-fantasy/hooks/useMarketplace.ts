@@ -167,6 +167,14 @@ interface UseMyNftsResult {
   isLoading: boolean;
   error: unknown;
   refetch: () => void;
+  /**
+   * Optimistically reflect a just-created/cancelled listing in local state.
+   * OpenSea takes a few seconds to index a new order, so a plain refetch right
+   * after listing still returns the NFT without its orderHash — leaving the UI
+   * showing "List for Sale" until a manual refresh. Patch it locally so the
+   * button flips immediately; the next natural refetch confirms it.
+   */
+  patchListing: (tokenId: string, listing: { orderHash: string; price: number } | null) => void;
 }
 
 /**
@@ -277,7 +285,15 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
     fetchMyNfts();
   }, [fetchMyNfts]);
 
-  return { data, isLoading, error, refetch: fetchMyNfts };
+  const patchListing = useCallback((tokenId: string, listing: { orderHash: string; price: number } | null) => {
+    setData(prev => prev.map(t =>
+      String(t.tokenId) === String(tokenId)
+        ? { ...t, orderHash: listing?.orderHash ?? null, price: listing ? listing.price : null }
+        : t,
+    ));
+  }, []);
+
+  return { data, isLoading, error, refetch: fetchMyNfts, patchListing };
 }
 
 // ── Single NFT Detail ───────────────────────────────────────────────
