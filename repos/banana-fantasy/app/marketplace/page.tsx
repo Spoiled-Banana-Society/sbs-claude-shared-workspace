@@ -653,6 +653,39 @@ export default function MarketplacePage() {
       }
     }
 
+    // One-time USDC approval for the Seaport conduit, covering the whole sweep.
+    // On a fresh wallet the conduit has zero USDC allowance, so every buy below
+    // would revert. Approve max once up front (gas-sponsored + invisible for
+    // embedded web2 wallets); after this it never re-prompts.
+    try {
+      const { ethers } = await import('ethers');
+      const { USDC_BASE } = await import('@/lib/opensea');
+      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+      const requiredUsdcWei = BigInt(Math.ceil(sweepTotal * 1e6));
+      const erc20 = new ethers.Interface([
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)',
+      ]);
+      const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+      const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
+      });
+      const allowanceJson = await allowanceRes.json();
+      const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
+      if (currentAllowance < requiredUsdcWei) {
+        const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
+        await sendTx(
+          { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
+          { description: 'Approve USDC for your purchases', waitForReceipt: true },
+        );
+      }
+    } catch (approveError) {
+      setTxError(friendlyTxError(approveError, 'Could not approve USDC for the purchase. Please try again.'));
+      setSweepStep('confirm');
+      return;
+    }
+
     const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
     for (const team of sweepTeams) {
       progress[team.tokenId] = 'processing';
