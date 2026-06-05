@@ -182,20 +182,31 @@ export default function NftDetailPage() {
     const p = parseFloat(ownerListPrice);
     if (!Number.isFinite(p) || p <= 0) return;
     try {
-      await listTeam(tokenId, p, 30 * 24 * 3600); // default 30-day listing
+      const res = await listTeam(tokenId, p, 30 * 24 * 3600); // default 30-day listing
       setOwnerListPrice('');
-      fetchNft();
-      setTimeout(() => fetchNft(), 2500); // OpenSea indexing lag
+      // Optimistically show it as listed; delay the reconciling refetch so a
+      // stale OpenSea read can't overwrite this before it has indexed.
+      setNft(prev => prev ? {
+        ...prev,
+        listing: {
+          order_hash: res.orderHash,
+          protocol_address: '',
+          price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600) } },
+        },
+      } : prev);
+      setTimeout(() => fetchNft(), 12000);
     } catch { /* listError surfaces the message */ }
-  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft]);
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft, walletAddress]);
 
   const handleOwnerCancel = useCallback(async () => {
     const orderHash = nft?.listing?.order_hash;
     if (!orderHash) return;
     try {
       await cancelTeam(tokenId, orderHash);
-      fetchNft();
-      setTimeout(() => fetchNft(), 2500);
+      // Optimistically clear the listing; reconcile once OpenSea drops it.
+      setNft(prev => prev ? { ...prev, listing: null } : prev);
+      setTimeout(() => fetchNft(), 12000);
     } catch { /* listError surfaces the message */ }
   }, [nft, cancelTeam, tokenId, fetchNft]);
 

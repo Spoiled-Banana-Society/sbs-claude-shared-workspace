@@ -397,8 +397,8 @@ export default function StandingsPage() {
                       onRename={setNickname}
                       walletAddress={user?.walletAddress}
                       marketplaceTeam={nftByLeague.get(league.id) ?? null}
-                      onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); refetchMyNfts(); }}
-                      onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); refetchMyNfts(); }}
+                      onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); setTimeout(() => refetchMyNfts(), 12000); }}
+                      onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); setTimeout(() => refetchMyNfts(), 12000); }}
                     />
                   ))}
                   {/* Pagination */}

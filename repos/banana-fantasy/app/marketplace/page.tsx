@@ -475,9 +475,11 @@ export default function MarketplacePage() {
       setSuccessType('list');
       setShowSuccessModal(true);
       // Reflect the listing immediately (OpenSea indexing lags a few seconds).
+      // Delay the reconciling refetch so a stale OpenSea read can't overwrite
+      // the optimistic patch back to the old state before it has indexed.
       if (result.orderHash) patchMyNftListing(selectedTeam.tokenId, { orderHash: result.orderHash, price: parseFloat(listPrice) });
       refetchListings();
-      refetchMyNfts();
+      setTimeout(() => refetchMyNfts(), 12000);
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] List failed:', error);
@@ -519,10 +521,11 @@ export default function MarketplacePage() {
 
       logger.debug('[Marketplace] Cancelled listing for token:', team.tokenId);
       logActivity({ type: 'cancel', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, orderHash: team.orderHash || null });
-      // Reflect the delist immediately (OpenSea takes a few seconds to drop it).
+      // Reflect the delist immediately, and delay the reconciling refetch so a
+      // stale OpenSea read (still showing it listed) can't overwrite the patch.
       patchMyNftListing(team.tokenId, null);
       refetchListings();
-      refetchMyNfts();
+      setTimeout(() => refetchMyNfts(), 12000);
       refetchActivity();
     } catch (error) {
       console.error('[Marketplace] Cancel failed:', error);
