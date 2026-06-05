@@ -23,6 +23,7 @@ import {
   submitUsdcPermit,
 } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { acquireAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
@@ -313,6 +314,8 @@ export async function POST(req: Request) {
     } catch (e) {
       logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message });
     }
+    // Grey pre-reveal draft-pass image for each fresh token (real token id → #).
+    void writeDraftPassMetadata(mintResult.tokenIds);
 
     // 4. Card-fee credit → free draft (card payments only). Credit the MoonPay
     //    fee for this quantity (feeForQty) toward a free draft; once accumulated
@@ -379,6 +382,7 @@ export async function POST(req: Request) {
         // Register as 'paid' (NOT 'free' / no free-origin stamp) so the reward
         // draft is a normal usable pass — enterable in promos.
         await registerMintedTokens(userId, rewardMint.tokenIds, 'paid');
+        void writeDraftPassMetadata(rewardMint.tokenIds);
         try {
           await getAdminFirestore()
             .collection(CARD_FEE_CREDIT_COLLECTION)

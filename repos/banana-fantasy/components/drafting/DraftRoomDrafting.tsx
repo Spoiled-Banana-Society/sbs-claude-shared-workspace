@@ -427,7 +427,7 @@ export function DraftRoomDrafting({
                     draftType={visibleDraftType}
                     roster={engine.picks
                       .filter(p => (p.ownerName || '').toLowerCase() === (walletParam || '').toLowerCase())
-                      .map(p => ({ playerId: p.playerId, position: p.position }))}
+                      .map(p => ({ playerId: p.playerId, position: p.position, pick: p.pickNumber }))}
                   />
                 </div>
               )}

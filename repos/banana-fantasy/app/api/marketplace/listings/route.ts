@@ -12,6 +12,7 @@ import {
 } from '@/lib/opensea';
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { isDraftingOpen } from '@/lib/draftTypes';
+import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -135,11 +136,63 @@ export async function GET(req: Request) {
       }
     }
 
-    const allListings = orders.map(order => {
+    const openSeaListings = orders.map(order => {
       const tokenId = tokenIds[orders.indexOf(order)];
       const nft = nftMap.get(tokenId) ?? null;
       return mapOpenSeaListingToTeam(order, nft);
     });
+
+    // Overlay our listing cache to bridge OpenSea's indexing lag on the public
+    // Buy grid: HIDE a just-cancelled team OpenSea hasn't dropped yet, and ADD a
+    // just-listed one it hasn't indexed yet. Outside the freshness window
+    // OpenSea is authoritative. Best-effort — failures fall back to OpenSea.
+    let allListings = openSeaListings;
+    try {
+      const recentCache = await getAllRecentCachedListings();
+      if (recentCache.length > 0) {
+        const cancelledTokens = new Set(recentCache.filter(r => r.status === 'cancelled').map(r => String(r.tokenId)));
+        const presentTokens = new Set(openSeaListings.map(l => String(l.tokenId)));
+        const cacheOnlyActive = recentCache.filter(
+          r => r.status === 'active' && !presentTokens.has(String(r.tokenId)) && !cancelledTokens.has(String(r.tokenId)),
+        );
+
+        // Build cards for cache-active listings OpenSea hasn't indexed yet.
+        const cacheCards: typeof openSeaListings = [];
+        if (cacheOnlyActive.length > 0) {
+          const extraNftMap = new Map<string, OpenSeaNft>();
+          await Promise.all(cacheOnlyActive.map(async (rec) => {
+            try {
+              const r = await fetch(
+                `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${rec.tokenId}`,
+                { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, next: { revalidate: 300 } },
+              );
+              if (r.ok) { const d = await r.json(); if (d.nft) extraNftMap.set(String(rec.tokenId), d.nft); }
+            } catch { /* skip metadata */ }
+          }));
+          const extraTeams = await getTeamsForTokens(cacheOnlyActive.map(rec => ({ tokenId: String(rec.tokenId), owner: rec.offerer })));
+          for (const [tid, nft] of extraNftMap.entries()) {
+            const team = extraTeams.get(tid);
+            if (!team) continue;
+            const existing = Array.isArray(nft.traits) ? nft.traits : [];
+            (nft as { traits: typeof existing }).traits = mergeTraits(existing, teamDataToTraits(team));
+            if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) (nft as { name: string }).name = team.leagueDisplayName;
+            if (team.imageUrl) { (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl; (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl; }
+          }
+          for (const rec of cacheOnlyActive) {
+            const nft = extraNftMap.get(String(rec.tokenId)) ?? null;
+            const syntheticOrder = {
+              order_hash: rec.orderHash,
+              protocol_address: rec.protocolAddress,
+              price: { current: { value: String(Math.round(rec.priceUsd * 1e6)), decimals: 6, currency: 'USDC' } },
+              protocol_data: { parameters: { offerer: rec.offerer, offer: [{ itemType: 2, identifierOrCriteria: String(rec.tokenId) }], endTime: rec.endTimeSec ?? undefined } },
+            } as unknown as OpenSeaListing;
+            cacheCards.push(mapOpenSeaListingToTeam(syntheticOrder, nft));
+          }
+        }
+
+        allListings = [...openSeaListings.filter(l => !cancelledTokens.has(String(l.tokenId))), ...cacheCards];
+      }
+    } catch { /* cache overlay is best-effort */ }
 
     // Fire-and-forget OpenSea metadata refresh for tokens that still have
     // sparse traits after our backend enrichment. Helps OpenSea catch up
@@ -278,7 +331,37 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    return json({ orderHash: result.order?.order_hash || '' });
+    const orderHash = result.order?.order_hash || '';
+
+    // Record in our own listing cache so the UI reflects it instantly (don't
+    // wait on OpenSea's indexing lag). Best-effort.
+    try {
+      const params = body.parameters as {
+        offerer?: string;
+        endTime?: string;
+        offer: Array<{ itemType: number; identifierOrCriteria?: string }>;
+        consideration: Array<{ itemType: number; startAmount?: string }>;
+      };
+      const nftItem = params.offer?.find((o) => o.itemType === 2 || o.itemType === 3);
+      const tokenId = nftItem?.identifierOrCriteria;
+      // Sum the USDC (ERC-20) consideration legs = total sale price.
+      const totalWei = (params.consideration ?? []).reduce(
+        (s, c) => s + (c.itemType === 1 ? BigInt(c.startAmount || '0') : 0n),
+        0n,
+      );
+      if (tokenId && orderHash) {
+        await recordListed({
+          tokenId,
+          orderHash,
+          priceUsd: Number(totalWei) / 1e6,
+          endTimeSec: params.endTime ?? null,
+          offerer: String(params.offerer ?? ''),
+          protocolAddress: String(body.protocol_address ?? ''),
+        });
+      }
+    } catch { /* cache is best-effort */ }
+
+    return json({ orderHash });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/listings] POST failed:', err);

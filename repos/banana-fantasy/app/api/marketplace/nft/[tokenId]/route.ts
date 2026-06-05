@@ -2,6 +2,7 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
+import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -107,6 +108,26 @@ export async function GET(
     } catch {
       // Silent — listing data is optional
     }
+
+    // Overlay our listing cache to bridge OpenSea's indexing lag: show a
+    // just-created listing OpenSea hasn't indexed, hide a just-cancelled one it
+    // hasn't dropped. Outside the freshness window OpenSea is authoritative.
+    try {
+      const cached = await getRecentCachedListings([tokenId]);
+      const rec = cached.get(tokenId);
+      if (rec) {
+        if (rec.status === 'cancelled') {
+          listing = null;
+        } else if (rec.status === 'active' && !listing) {
+          listing = {
+            order_hash: rec.orderHash,
+            protocol_address: rec.protocolAddress,
+            price: { current: { value: String(Math.round(rec.priceUsd * 1e6)), decimals: 6 } },
+            protocol_data: { parameters: { offerer: rec.offerer, endTime: rec.endTimeSec ?? undefined } },
+          };
+        }
+      }
+    } catch { /* cache is best-effort */ }
 
     // Get owner from the NFT data already fetched above
     const owner = nft.owners?.[0]?.address ?? null;

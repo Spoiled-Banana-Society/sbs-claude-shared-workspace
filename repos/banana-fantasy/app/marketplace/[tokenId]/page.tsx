@@ -8,6 +8,7 @@ import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-a
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
+import { useListTeam } from '@/hooks/useListTeam';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
@@ -37,7 +38,7 @@ interface NftDetail {
     order_hash: string;
     protocol_address: string;
     price: { current: { value: string; decimals: number } };
-    protocol_data: { parameters: { offerer: string } };
+    protocol_data: { parameters: { offerer: string; endTime?: string; startTime?: string } };
   } | null;
   team?: {
     leagueId: string;
@@ -84,6 +85,21 @@ function timeUntil(iso: string): string {
   return `${days}d`;
 }
 
+/** Human "time left" for a Seaport order's endTime (Unix seconds string). */
+function formatExpiresIn(endTimeSec?: string): string | null {
+  if (!endTimeSec) return null;
+  const end = Number(endTimeSec) * 1000;
+  if (!Number.isFinite(end) || end <= 0) return null;
+  const diff = end - Date.now();
+  if (diff <= 0) return 'Expired';
+  const days = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  const mins = Math.floor((diff % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 export default function NftDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -120,6 +136,10 @@ export default function NftDetailPage() {
   const [showCustomExpiry, setShowCustomExpiry] = useState(false);
   const [customExpiryAmount, setCustomExpiryAmount] = useState('');
   const [customExpiryUnit, setCustomExpiryUnit] = useState<'hours' | 'days'>('hours');
+
+  // Owner-side listing controls (list / cancel for the team's owner).
+  const { listTeam, cancelTeam, busy: listBusy, error: listError } = useListTeam(walletAddress);
+  const [ownerListPrice, setOwnerListPrice] = useState('');
   const [offerStep, setOfferStep] = useState<'input' | 'processing' | 'complete'>('input');
   const [offerError, setOfferError] = useState<string | null>(null);
 
@@ -157,9 +177,53 @@ export default function NftDetailPage() {
       .finally(() => setIsLoading(false));
   }, [tokenId, walletAddress]);
 
+  const handleOwnerList = useCallback(async () => {
+    if (!isLoggedIn) { setShowLoginModal(true); return; }
+    const p = parseFloat(ownerListPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    try {
+      const res = await listTeam(tokenId, p, 30 * 24 * 3600); // default 30-day listing
+      setOwnerListPrice('');
+      // Optimistically show it as listed; delay the reconciling refetch so a
+      // stale OpenSea read can't overwrite this before it has indexed.
+      setNft(prev => prev ? {
+        ...prev,
+        listing: {
+          order_hash: res.orderHash,
+          protocol_address: '',
+          price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600) } },
+        },
+      } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch { /* listError surfaces the message */ }
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft, walletAddress]);
+
+  const handleOwnerCancel = useCallback(async () => {
+    const orderHash = nft?.listing?.order_hash;
+    if (!orderHash) return;
+    try {
+      await cancelTeam(tokenId, orderHash);
+      // Optimistically clear the listing; reconcile once OpenSea drops it.
+      setNft(prev => prev ? { ...prev, listing: null } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch { /* listError surfaces the message */ }
+  }, [nft, cancelTeam, tokenId, fetchNft]);
+
   useEffect(() => {
     fetchNft();
   }, [fetchNft]);
+
+  // OpenSea lags a few seconds indexing a just-created/cancelled listing, so a
+  // fresh page load can show the wrong listing state (e.g. "List for Sale" on a
+  // team you just listed). Re-check a couple times shortly after landing so it
+  // self-corrects without a manual refresh.
+  useEffect(() => {
+    if (!tokenId) return;
+    const t1 = setTimeout(() => fetchNft(), 7000);
+    const t2 = setTimeout(() => fetchNft(), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [tokenId, fetchNft]);
 
   // Auto-refresh OpenSea metadata once per tokenId when traits look stale
   // (no LEAGUE-NAME and no roster slots). OpenSea sometimes serves a cached
@@ -910,6 +974,10 @@ export default function NftDetailPage() {
                     <p className="text-text-primary font-mono text-3xl font-bold">
                       ${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
+                    {(() => {
+                      const exp = formatExpiresIn(nft?.listing?.protocol_data?.parameters?.endTime);
+                      return exp ? <p className="text-text-muted text-xs mt-1">Listing expires in {exp}</p> : null;
+                    })()}
                   </div>
 
                   {buyStep === 'complete' && showBuyModal ? null : buyStep === 'complete' ? (
@@ -936,13 +1004,54 @@ export default function NftDetailPage() {
                     >
                       Buy Now
                     </button>
+                  ) : isOwner ? (
+                    <button
+                      onClick={handleOwnerCancel}
+                      disabled={listBusy}
+                      className="px-6 py-3 border border-red-500/40 text-red-400 font-semibold rounded-xl hover:bg-red-500/10 transition-all disabled:opacity-50"
+                    >
+                      {listBusy ? 'Cancelling…' : 'Cancel Listing'}
+                    </button>
                   ) : null}
                 </div>
 
-                {txError && (
-                  <p className="text-error text-xs mt-3">{txError}</p>
+                {(txError || listError) && (
+                  <p className="text-error text-xs mt-3">{txError || listError}</p>
                 )}
               </>
+            ) : isOwner ? (
+              // Owner viewing their own unlisted team — let them list it here.
+              <div>
+                <p className="text-text-muted text-xs mb-2">List this team for sale</p>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 flex-1 bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5">
+                    <span className="text-text-muted">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={ownerListPrice}
+                      onChange={e => setOwnerListPrice(e.target.value)}
+                      placeholder="Price in USDC"
+                      className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={handleOwnerList}
+                    disabled={listBusy || !ownerListPrice || parseFloat(ownerListPrice) <= 0}
+                    className="px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all disabled:opacity-50"
+                  >
+                    {listBusy ? 'Listing…' : 'List for Sale'}
+                  </button>
+                </div>
+                <p className="text-text-muted text-[11px] mt-2">Lists for 30 days · only a 1% OpenSea fee · you keep the rest.</p>
+                {listError && <p className="text-error text-xs mt-2">{listError}</p>}
+                {bestOffer && (
+                  <p className="text-text-secondary text-xs mt-2">
+                    Best offer: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="text-center">
                 <p className="text-text-muted text-sm">This team is not currently listed for sale.</p>

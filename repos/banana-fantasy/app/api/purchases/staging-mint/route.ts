@@ -5,6 +5,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
@@ -66,6 +67,10 @@ export async function POST(req: Request) {
     } catch (e) {
       logger.warn('staging-mint.register_go_api_failed', { userId, err: (e as Error).message });
     }
+
+    // 1c. Give each fresh token the grey pre-reveal draft-pass image (keyed on
+    //     the real token id) so it shows the pass on OpenSea/wallet before draft.
+    void writeDraftPassMetadata(tokenIds);
 
     // 2. Recount the counter from the engine's real spendable inventory and
     //    write the activity event in the same transaction. draftPasses becomes
