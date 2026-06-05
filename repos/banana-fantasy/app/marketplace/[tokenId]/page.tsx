@@ -214,6 +214,17 @@ export default function NftDetailPage() {
     fetchNft();
   }, [fetchNft]);
 
+  // OpenSea lags a few seconds indexing a just-created/cancelled listing, so a
+  // fresh page load can show the wrong listing state (e.g. "List for Sale" on a
+  // team you just listed). Re-check a couple times shortly after landing so it
+  // self-corrects without a manual refresh.
+  useEffect(() => {
+    if (!tokenId) return;
+    const t1 = setTimeout(() => fetchNft(), 7000);
+    const t2 = setTimeout(() => fetchNft(), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [tokenId, fetchNft]);
+
   // Auto-refresh OpenSea metadata once per tokenId when traits look stale
   // (no LEAGUE-NAME and no roster slots). OpenSea sometimes serves a cached
   // response from before the draft completed; nudging it to re-pull from
