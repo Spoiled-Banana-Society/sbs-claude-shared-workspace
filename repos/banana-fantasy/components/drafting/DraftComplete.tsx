@@ -74,6 +74,10 @@ export function DraftComplete({
   const [progress, setProgress] = useState(0);
   // Minimum-animation gate — flips true after MIN_SHOW_MS so we never flash.
   const [minElapsed, setMinElapsed] = useState(false);
+  // True once the REAL NFT image is actually loadable — so we don't route to
+  // the roster until the image will show there instantly (your timing idea:
+  // do the waiting here on the generating screen, not on the roster).
+  const [imageLoaded, setImageLoaded] = useState(false);
   const mountedAtRef = useRef(Date.now());
   // The actual generated card URL — handed to the roster page via sessionStorage
   // so it renders the image instantly instead of waiting on its own fetch.
@@ -167,9 +171,35 @@ export function DraftComplete({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardReady]);
 
-  // "Done" = the card has actually generated AND the full animation has played.
-  // This is what guarantees the screen never flashes past in under MIN_SHOW_MS.
-  const done = cardReady && minElapsed;
+  // Once we know the card URL, actually LOAD the image here (retrying while GCS
+  // finishes the upload), so the roster page shows it instantly instead of
+  // running its own retry loop. Capped so a stuck image never traps the user.
+  useEffect(() => {
+    if (!cardReady) return;
+    const url = cardUrlRef.current;
+    if (!url) { setImageLoaded(true); return; } // error path — nothing to wait on
+    let cancelled = false;
+    let attempt = 0;
+    const tryLoad = () => {
+      if (cancelled) return;
+      const img = new window.Image();
+      img.onload = () => { if (!cancelled) setImageLoaded(true); };
+      img.onerror = () => {
+        attempt += 1;
+        if (attempt >= 8) { if (!cancelled) setImageLoaded(true); return; } // give up waiting, route anyway
+        setTimeout(tryLoad, 700); // GCS still propagating — retry
+      };
+      img.src = attempt === 0 ? url : `${url}${url.includes('?') ? '&' : '?'}r=${attempt}`;
+    };
+    tryLoad();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardReady]);
+
+  // "Done" = the card generated, its IMAGE is loadable, AND the full animation
+  // has played. Guarantees the roster shows the real NFT instantly and we never
+  // flash past in under MIN_SHOW_MS.
+  const done = cardReady && minElapsed && imageLoaded;
   const doneRef = useRef(done);
   doneRef.current = done;
 
@@ -195,17 +225,10 @@ export function DraftComplete({
   useEffect(() => {
     if (!done) return;
     setProgress(100);
-    // Hand the finished team to the roster page so it renders the card
-    // INSTANTLY (from this data + the preloaded image) instead of waiting on
-    // its own fetch — the generating screen already has everything ready.
+    // Hand the loaded NFT image URL to the roster so it shows the real card
+    // INSTANTLY (already loaded here) instead of running its own fetch/retry.
     try {
-      if (draftId) {
-        if (cardUrlRef.current) sessionStorage.setItem(`sbs-draftcard:${draftId}`, cardUrlRef.current);
-        sessionStorage.setItem(`sbs-draftteam:${draftId}`, JSON.stringify({
-          players: roster.map((r) => r.playerId),
-          type,
-        }));
-      }
+      if (draftId && cardUrlRef.current) sessionStorage.setItem(`sbs-draftcard:${draftId}`, cardUrlRef.current);
     } catch { /* ignore */ }
     logger.info('[DraftComplete] Team secured — routing to roster', { draftId, destination });
     reportClientEvent({
