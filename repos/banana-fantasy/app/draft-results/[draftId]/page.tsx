@@ -10,7 +10,8 @@ import { getDraftsApiUrl } from '@/lib/staging';
 import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { CardImage } from '@/components/draft/CardImage';
+import { TeamTicketCard } from '@/components/draft/TeamTicketCard';
+import type { DraftType } from '@/lib/draftRoomConstants';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -166,6 +167,23 @@ export default function DraftResultsPage() {
       }
     } catch { /* ignore */ }
   }, [draftId, walletAddress]);
+
+  // Instant team card: the generating screen also handed us the roster + type,
+  // so we render the BBB IV card right away (even while the rest of the page
+  // loads) instead of showing a blank skeleton for 1-2s.
+  const [handoffTeam, setHandoffTeam] = useState<{ players: string[]; type: DraftType } | null>(null);
+  useEffect(() => {
+    if (!draftId) return;
+    try {
+      const raw = sessionStorage.getItem(`sbs-draftteam:${draftId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { players?: unknown; type?: DraftType };
+        if (Array.isArray(parsed?.players)) {
+          setHandoffTeam({ players: parsed.players.map(String), type: parsed.type ?? 'pro' });
+        }
+      }
+    } catch { /* ignore */ }
+  }, [draftId]);
 
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
@@ -570,7 +588,16 @@ export default function DraftResultsPage() {
       <div className="min-h-screen bg-[#0a0a0f] px-4 py-10">
         <div className="w-full lg:w-[900px] mx-auto space-y-6 text-center">
           <Skeleton width={160} height={24} className="mx-auto" />
-          <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
+          {handoffTeam ? (
+            // Instant card from the generating-screen handoff — no blank wait.
+            <TeamTicketCard
+              draftType={handoffTeam.type}
+              players={handoffTeam.players}
+              className="mx-auto w-[260px] md:w-[300px]"
+            />
+          ) : (
+            <Skeleton width={280} height={390} className="mx-auto rounded-2xl" />
+          )}
           <div className="space-y-2">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} width="100%" height={32} className="rounded-lg" />
@@ -630,13 +657,18 @@ export default function DraftResultsPage() {
           </div>
         </div>
 
-        {/* NFT Card Image + Save */}
-        {cardImageUrl && (
-          <div className="text-center mb-6">
-            <CardImage
-              src={cardImageUrl}
-              className="block mx-auto w-[280px] md:w-[350px] aspect-[5/7] rounded-xl"
-            />
+        {/* On-site team card — rendered from team data in the Banana Best Ball IV
+            design (new logo, type-coloured border, Team #), instead of the old
+            backend PNG template. Download still grabs the actual NFT image. */}
+        <div className="text-center mb-6">
+          <TeamTicketCard
+            draftType={draftLevel.toLowerCase() === 'jackpot' ? 'jackpot' : (draftLevel.toLowerCase().includes('hof') || draftLevel.toLowerCase().includes('hall')) ? 'hof' : 'pro'}
+            players={POSITION_ORDER.flatMap((pos) => (roster[pos] || []).map((p) => p.playerId))}
+            teamNumber={teamNumber || undefined}
+            leagueLabel={`League #${title.replace(/\D/g, '') || title}`}
+            className="mx-auto w-[260px] md:w-[300px]"
+          />
+          {cardImageUrl && (
             <button
               onClick={handleSave}
               className="mt-3 p-2 text-white/30 hover:text-white/70 transition-colors"
@@ -654,8 +686,8 @@ export default function DraftResultsPage() {
                 </svg>
               )}
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Marketplace CTA — the team is a tradeable NFT; invite them in. */}
         <Link

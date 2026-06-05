@@ -195,11 +195,16 @@ export function DraftComplete({
   useEffect(() => {
     if (!done) return;
     setProgress(100);
-    // Hand the generated card URL to the roster page so it shows the image
-    // instantly (already preloaded) instead of running its own fetch/retry.
+    // Hand the finished team to the roster page so it renders the card
+    // INSTANTLY (from this data + the preloaded image) instead of waiting on
+    // its own fetch — the generating screen already has everything ready.
     try {
-      if (cardUrlRef.current && draftId) {
-        sessionStorage.setItem(`sbs-draftcard:${draftId}`, cardUrlRef.current);
+      if (draftId) {
+        if (cardUrlRef.current) sessionStorage.setItem(`sbs-draftcard:${draftId}`, cardUrlRef.current);
+        sessionStorage.setItem(`sbs-draftteam:${draftId}`, JSON.stringify({
+          players: roster.map((r) => r.playerId),
+          type,
+        }));
       }
     } catch { /* ignore */ }
     logger.info('[DraftComplete] Team secured — routing to roster', { draftId, destination });
