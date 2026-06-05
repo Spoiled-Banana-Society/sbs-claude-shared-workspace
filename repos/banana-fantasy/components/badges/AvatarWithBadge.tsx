@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { BadgeIcon } from './BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface AvatarWithBadgeProps {
   imageUrl?: string | null;
@@ -56,19 +57,30 @@ export function AvatarWithBadge({
     setLoadFailed(false);
   }, [imageUrl]);
 
-  const isFallback = !imageUrl || loadFailed;
+  const isMobile = useIsMobile();
+  // Treat the DEFAULT banana as a fallback even when it's passed explicitly as
+  // an image URL (callers default missing pfps to '/banana-profile.png' rather
+  // than null). Otherwise the shrink below is skipped and the edge-to-edge
+  // banana fills the whole circle — looking bigger/tighter than padded uploads
+  // (e.g. a real ape pfp), which also made its badge read as crowding the name.
+  const isDefaultBanana = !!imageUrl && imageUrl.endsWith('/banana-profile.png');
+  const isFallback = !imageUrl || loadFailed || isDefaultBanana;
   const src = isFallback ? fallbackSrc : imageUrl;
-  const badgeSize = Math.min(44, Math.max(12, Math.round(size * 0.54)));
+  // Mobile tiles pack the name close under the avatar, so the badge is a touch
+  // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
+  // while staying in the same bottom-right spot as desktop.
+  const badgeSize = Math.min(44, Math.max(12, Math.round(size * (isMobile ? 0.52 : 0.54))));
   // Nudge the badge onto the avatar's bottom-right rim (it pokes slightly past
   // the circle into the empty box corner, like Underdog/Discord status dots) so
   // it stands out without sitting on the face. Scales with the avatar so the
   // look is consistent everywhere (~7px out on a 48px draft-card avatar).
-  const edgeOffset = Math.round(size * 0.146);
+  const edgeOffsetX = Math.round(size * 0.146);
+  const edgeOffsetY = Math.round(size * (isMobile ? 0.083 : 0.146));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
-  // The fallback banana PNG is cropped edge-to-edge so it looks visually
+  // The fallback/default banana PNG is cropped edge-to-edge so it looks visually
   // larger than custom PFPs (which typically have whitespace padding in
-  // the source). Shrink the fallback so it sits at the same visual weight
-  // as a normal user-uploaded avatar.
+  // the source). Shrink it so it sits at the same visual weight as a normal
+  // user-uploaded avatar.
   const innerSize = isFallback ? Math.round(size * 0.85) : size;
   const innerOffset = Math.round((size - innerSize) / 2);
 
@@ -108,8 +120,8 @@ export function AvatarWithBadge({
         <span
           className="absolute pointer-events-auto"
           style={{
-            right: -edgeOffset,
-            bottom: -edgeOffset,
+            right: -edgeOffsetX,
+            bottom: -edgeOffsetY,
             width: badgeSize,
             height: badgeSize,
           }}
