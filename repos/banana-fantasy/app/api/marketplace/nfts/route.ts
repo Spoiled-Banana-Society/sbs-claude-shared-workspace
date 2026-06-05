@@ -82,16 +82,15 @@ export async function GET(req: Request) {
     }
 
     // Build a map of tokenId → listing info from active listings by this owner
-    const listingMap = new Map<string, { orderHash: string; price: number; protocolAddress: string }>();
+    const listingMap = new Map<string, { orderHash: string; price: number; protocolAddress: string; endTime: string | null }>();
     if (listingsRes.ok) {
       const listingsData = await listingsRes.json();
       const allListings: OpenSeaListing[] = listingsData.listings ?? [];
       for (const listing of allListings) {
-        const offerer = listing.protocol_data.parameters.offerer?.toLowerCase();
+        const params = listing.protocol_data.parameters as { offerer?: string; endTime?: string; offer: Array<{ itemType: number; identifierOrCriteria?: string }> };
+        const offerer = params.offerer?.toLowerCase();
         if (offerer !== owner.toLowerCase()) continue;
-        const nftOffer = listing.protocol_data.parameters.offer.find(
-          (o: { itemType: number }) => o.itemType === 2 || o.itemType === 3,
-        );
+        const nftOffer = params.offer.find((o) => o.itemType === 2 || o.itemType === 3);
         const tokenId = nftOffer?.identifierOrCriteria ?? '0';
         const value = listing.price?.current?.value;
         const decimals = listing.price?.current?.decimals ?? 18;
@@ -100,6 +99,7 @@ export async function GET(req: Request) {
           orderHash: listing.order_hash,
           price,
           protocolAddress: listing.protocol_address,
+          endTime: params.endTime ?? null,
         });
       }
     }
@@ -132,12 +132,13 @@ export async function GET(req: Request) {
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);
       const hasBackendRecord = teamsByToken.has(nft.identifier);
+      const leagueId = teamsByToken.get(nft.identifier)?.leagueId ?? null;
       // Merge listing data if this token is actively listed
       const listing = listingMap.get(nft.identifier);
       if (listing) {
-        return { ...rest, hasBackendRecord, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress };
+        return { ...rest, hasBackendRecord, leagueId, orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime };
       }
-      return { ...rest, hasBackendRecord };
+      return { ...rest, hasBackendRecord, leagueId };
     });
 
     return json({ nfts });

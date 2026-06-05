@@ -9,13 +9,25 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
+import { useMyNfts } from '@/hooks/useMarketplace';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
+import type { MarketplaceTeam } from '@/lib/opensea';
 
 type ViewMode = 'myteams' | 'leaderboard';
 
 export default function StandingsPage() {
   const { isLoggedIn, user } = useAuth();
+
+  // Marketplace NFTs/listings for the logged-in user, mapped by leagueId so each
+  // team card can offer inline List / Cancel with price + time-left.
+  const { data: myNfts, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(user?.walletAddress ?? null);
+  const nftByLeague = useMemo(() => {
+    const m = new Map<string, MarketplaceTeam>();
+    for (const n of myNfts) if (n.leagueId) m.set(n.leagueId, n);
+    return m;
+  }, [myNfts]);
+
   const leaguesQueryRaw = useLeagues({ userId: user?.id, status: 'completed' });
   // Hide teams with no roster data (incomplete/corrupted drafts)
   const leaguesQuery = useMemo(() => ({
@@ -384,6 +396,9 @@ export default function StandingsPage() {
                       nickname={nicknames[league.id]}
                       onRename={setNickname}
                       walletAddress={user?.walletAddress}
+                      marketplaceTeam={nftByLeague.get(league.id) ?? null}
+                      onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); refetchMyNfts(); }}
+                      onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); refetchMyNfts(); }}
                     />
                   ))}
                   {/* Pagination */}

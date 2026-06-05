@@ -107,6 +107,10 @@ export interface MarketplaceTeam {
   imageUrl: string | null;
   orderHash: string | null;
   protocolAddress: string | null;
+  /** Seaport order endTime (Unix seconds string) for an active listing — used to show "expires in X". */
+  listingEndTime?: string | null;
+  /** Backend leagueId for this team's NFT — lets non-marketplace pages (My Teams) map a league to its token/listing. */
+  leagueId?: string | null;
   passType?: 'paid' | 'free';
   /** True iff our SBS Go API has a draft-token record for this NFT
    *  (deterministic cardId match). Lets the Sell tab hide ghost NFTs
