@@ -8,7 +8,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getUserBadges, unlockBadge, computeAndStoreRipeness } from '@/lib/db';
 import { BADGE_CATALOG } from '@/lib/badges/catalog';
 import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
-import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
+import { mapDraftTokenToLeague, fetchOwnerPaidPassCount, type ApiDraftToken } from '@/lib/api/owner';
 import type { User } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -31,6 +31,12 @@ interface RawApiToken {
   prizes?: { USDC?: number };
   cardId?: string;
   leagueId?: string;
+  passType?: string; // 'paid' | 'free' — drives banana ripeness
+}
+
+/** Count PAID passes (passType === 'paid') across a token list. */
+function countPaid(tokens: RawApiToken[]): number {
+  return tokens.filter(t => String(t.passType ?? '').toLowerCase() === 'paid').length;
 }
 
 function normalizeToken(t: RawApiToken): ApiDraftToken {
@@ -75,11 +81,9 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
 
   await userRef.set({ lastBadgeSweepAt: new Date().toISOString() }, { merge: true });
 
-  // Ripeness + OG + champions don't depend on the Go API, so compute them
-  // first — they still update even if the Go API is unreachable. Ripeness
-  // is a recolor, not an unlock (no notification).
+  // OG + champions don't depend on the Go API, so compute them first — they
+  // still update even if the Go API is unreachable.
   const awards: string[] = [];
-  await computeAndStoreRipeness(userId);
   if (await awardOgIfReturning(userId)) awards.push('og');
   awards.push(...await awardChampionBadges(userId));
 
@@ -89,11 +93,16 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     if (!res.ok) return { ran: true, reason: 'go-api-not-ok', goApiStatus: res.status, awards };
     const body = await res.json() as { active?: RawApiToken[]; available?: RawApiToken[] };
     const active = body.active ?? [];
+    const available = body.available ?? [];
     const joined = active.filter(t => (t._leagueId || t.leagueId)).length;
     const leagues = active
       .filter(t => (t._leagueId || t.leagueId))
       .map(t => mapDraftTokenToLeague(normalizeToken(t)));
     const completedCount = leagues.filter(l => l.status === 'completed').length;
+
+    // Banana ripeness — total PAID passes in the wallet (active + available).
+    // Silently unlocks the earned tier badges + stores the current tier.
+    await computeAndStoreRipeness(userId, countPaid(active) + countPaid(available));
 
     // Clubs — entering a Jackpot/HOF draft (resolved league type) earns the
     // matching club badge.
@@ -163,9 +172,10 @@ export async function GET(req: Request) {
     const user = userSnap.exists ? (userSnap.data() as User) : null;
 
     // Ripeness is normally written by the sweep above. If it's missing (sweep
-    // was throttled and the user has never swept), compute it now so the
-    // banana always has a tier.
-    const ripeness = user?.ripeness ?? await computeAndStoreRipeness(lower);
+    // was throttled and the user has never swept), compute it now from the
+    // wallet's paid-pass count so the banana always has a tier.
+    const ripeness = user?.ripeness
+      ?? await computeAndStoreRipeness(lower, await fetchOwnerPaidPassCount(lower).catch(() => 0));
 
     return json({
       catalog: BADGE_CATALOG,

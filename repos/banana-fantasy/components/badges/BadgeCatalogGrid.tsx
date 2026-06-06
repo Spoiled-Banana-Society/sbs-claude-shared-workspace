@@ -5,11 +5,12 @@ import { Tooltip } from '@/components/ui/Tooltip';
 import { BadgeIcon } from './BadgeIcon';
 import { useBadges } from '@/hooks/useBadges';
 import { useToast } from '@/components/ui/Toast';
-import { ripenessFromCount, ripenessTooltip, RIPENESS_LADDER } from '@/lib/badges/ripeness';
-import type { Badge } from '@/types';
+import { ripenessFromCount } from '@/lib/badges/ripeness';
+import type { Badge, BadgeCategory } from '@/types';
 
-// Equippable categories, in display order, with plain-English copy.
-const SECTIONS: Array<{ key: 'championship' | 'club' | 'status' | 'team'; title: string; blurb: string }> = [
+// Sections in display order, each with plain-English copy.
+const SECTIONS: Array<{ key: BadgeCategory; title: string; blurb: string }> = [
+  { key: 'ripeness', title: 'Your Banana', blurb: 'Everyone starts with a banana. It ripens as you buy more PAID BBB4 drafts — each tier unlocks at 1 / 10 / 20 / 50 / 100 / 200. Equip whichever unlocked banana you want to show off.' },
   { key: 'championship', title: 'Championships', blurb: 'Win a season — a BBB final or the HOF bracket.' },
   { key: 'club', title: 'Clubs', blurb: 'Earned the moment you enter a Jackpot or HOF draft.' },
   { key: 'status', title: 'Status', blurb: 'Special standing across SBS — top drafter, founders, and OGs.' },
@@ -25,8 +26,8 @@ interface BadgeCatalogGridProps {
  * The profile badge area. Organized into Your Banana → Championships →
  * Clubs → Status → Team Flair, each with a one-line explainer. Unlocked
  * badges are colored + click-to-equip; locked ones are dimmed with the
- * unlock criteria on hover. The banana (ripeness) is shown read-only as the
- * user's current tier — it's the default badge, not an achievement to equip.
+ * unlock criteria on hover. The banana tiers work the same way — locked
+ * until you've bought enough paid drafts, then equippable like any badge.
  */
 export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
   const { catalog, unlockedIds, equipped, ripeness, equipBadge, isLoading } = useBadges(
@@ -42,18 +43,19 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
   }, [equipBadge, show]);
 
   const grouped = useMemo(() => {
-    const out: Record<string, Badge[]> = { championship: [], club: [], status: [], team: [] };
+    const out: Record<string, Badge[]> = {
+      ripeness: [], championship: [], club: [], status: [], team: [],
+    };
     for (const b of catalog) {
-      if (b.category === 'ripeness') continue; // shown read-only above
       if (out[b.category]) out[b.category].push(b);
     }
     return out;
   }, [catalog]);
 
   const tier = ripeness ?? ripenessFromCount(0);
-  // The user's banana is "active" (shown next to their avatar) whenever they
-  // haven't equipped a different earned badge.
-  const bananaActive = !equipped;
+  // The id of the banana the user is currently showing by default (their
+  // highest unlocked tier) — highlighted so they can see "this is my banana".
+  const defaultBananaId = `ripeness-${tier.label.toLowerCase()}`;
 
   if (isLoading && catalog.length === 0) {
     return <div className="text-sm text-text-secondary">Loading badges…</div>;
@@ -66,54 +68,6 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
         avatar across the site — or keep your banana.
       </p>
 
-      {/* ── Your Banana (ripeness — read-only, the default badge) ───────── */}
-      <section>
-        <h4 className="text-xs font-bold uppercase tracking-wider text-text-secondary mb-1">
-          Your Banana
-        </h4>
-        <p className="text-xs text-text-muted mb-3">
-          Everyone has a banana. It ripens as you buy more BBB4 passes — the more you
-          buy, the riper it gets. This is your default badge unless you equip another.
-        </p>
-        <div className="flex items-center gap-4 p-3 rounded-xl border-2 border-white/10 bg-white/[0.03]">
-          <BadgeIcon
-            badge={catalog.find(b => b.category === 'ripeness') ?? catalog[0]}
-            size={56}
-            ripeness={tier}
-            showTooltip={false}
-          />
-          <div className="min-w-0">
-            <div className="text-sm font-bold">
-              You&apos;re <span style={{ color: tier.color }}>{tier.label}</span>
-            </div>
-            <div className="text-xs text-text-secondary">
-              {ripenessTooltip(tier)}
-              {bananaActive ? ' · shown on your avatar' : ' · equip it below by clearing your equipped badge'}
-            </div>
-          </div>
-        </div>
-        {/* The 6-tier ladder, current tier highlighted. */}
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">
-          {RIPENESS_LADDER.map(rung => {
-            const isCurrent = rung.tier === tier.tier;
-            const ladderBadge = catalog.find(b => b.category === 'ripeness') ?? catalog[0];
-            return (
-              <div
-                key={rung.tier}
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg border ${
-                  isCurrent ? 'border-banana bg-banana/10' : 'border-white/5'
-                }`}
-              >
-                <BadgeIcon badge={ladderBadge} size={32} ripeness={rung} showTooltip={false} />
-                <div className="text-[10px] font-bold text-center leading-tight">{rung.label}</div>
-                <div className="text-[9px] text-text-muted">{rung.range}</div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ── Equippable categories ───────────────────────────────────────── */}
       {SECTIONS.map(section => {
         const badges = grouped[section.key] ?? [];
         if (badges.length === 0) return null;
@@ -126,14 +80,17 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
               {badges.map(badge => {
                 const isUnlocked = unlockedIds.has(badge.id);
-                const isEquipped = equipped === badge.id;
+                const isEquipped = equipped
+                  ? equipped === badge.id
+                  // Nothing explicitly equipped → the default banana is "active".
+                  : badge.id === defaultBananaId;
                 const clickable = !readOnlyForUserId && isUnlocked;
 
                 const inner = (
                   <button
                     type="button"
                     onClick={clickable
-                      ? () => handleEquip(isEquipped ? null : badge.id)
+                      ? () => handleEquip(isEquipped && equipped ? null : badge.id)
                       : undefined
                     }
                     disabled={!clickable}
@@ -178,7 +135,7 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
                         </div>
                         {clickable && (
                           <div className="text-[10px] text-banana mt-1">
-                            {isEquipped ? 'Click to unequip' : 'Click to equip'}
+                            {isEquipped && equipped ? 'Click to unequip' : 'Click to equip'}
                           </div>
                         )}
                       </div>

@@ -35,6 +35,11 @@ interface AvatarWithBadgeProps {
    *  where the image url is dynamic / unconfigured in next.config images.
    */
   useNextImage?: boolean;
+  /** Corner badge size as a fraction of the avatar diameter. Default 0.44.
+   *  Exposed so the size-comparison preview can render bigger options. */
+  badgeScale?: number;
+  /** Max corner badge size in px. Default 40. */
+  badgeMax?: number;
 }
 
 /**
@@ -67,6 +72,8 @@ export function AvatarWithBadge({
   ringClassName = '',
   fallbackSrc = '/banana-profile.png',
   useNextImage = true,
+  badgeScale = 0.44,
+  badgeMax = 40,
 }: AvatarWithBadgeProps) {
   // Track image load failure so a broken/glitched pfp URL falls back to
   // the banana instead of rendering a broken image.
@@ -82,19 +89,23 @@ export function AvatarWithBadge({
   // Mobile tiles pack the name close under the avatar, so the badge is a touch
   // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
   // while staying in the same bottom-right spot as desktop.
-  const badgeSize = Math.min(40, Math.max(12, Math.round(size * 0.44)));
+  const badgeSize = Math.min(badgeMax, Math.max(12, Math.round(size * badgeScale)));
   // Badge sits at the bottom-right, poking just slightly past the circle. Kept
   // small so it stays in the corner (not creeping toward the face). Mobile pokes
   // DOWN a touch less so it clears the name on the tight tiles.
   const edgeOffsetX = Math.round(size * 0.076);
   const edgeOffsetY = Math.round(size * (isMobile ? 0.05 : 0.076));
   // Effective badge: the equipped one (if it's still a real catalog badge),
-  // else the dynamic "ripeness" banana that everyone carries by default. A
-  // stale equipped id from the old catalog falls back to the banana rather
-  // than rendering nothing. So every avatar always shows a badge.
+  // else the user's default banana = their highest unlocked ripeness tier
+  // (derived from `ripeness`; Unripe for everyone else). A stale equipped id
+  // from the old catalog falls back to the banana rather than rendering
+  // nothing. So every avatar always shows a badge.
+  const defaultBananaId = ripeness?.label
+    ? `ripeness-${ripeness.label.toLowerCase()}`
+    : 'ripeness-unripe';
   const equippedValid = equippedBadge && BADGE_BY_ID[equippedBadge] ? equippedBadge : null;
-  const effectiveBadgeId = equippedValid || 'ripeness';
-  const badge = showBadge ? BADGE_BY_ID[effectiveBadgeId] : undefined;
+  const effectiveBadgeId = equippedValid || defaultBananaId;
+  const badge = showBadge ? (BADGE_BY_ID[effectiveBadgeId] || BADGE_BY_ID['ripeness-unripe']) : undefined;
   // Every avatar renders full-frame (object-cover fills the circle), so the
   // badge sits at the identical size + position on ALL of them — banana,
   // upload, anything. The default banana is itself a full-frame image now (a
@@ -150,7 +161,6 @@ export function AvatarWithBadge({
             size={badgeSize}
             unlocked
             plain
-            ripeness={ripeness}
             showTooltip={showBadgeTooltip}
           />
         </span>

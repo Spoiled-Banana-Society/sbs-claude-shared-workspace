@@ -33,7 +33,7 @@ import type {
   WheelSpin,
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
-import { ripenessFromCount } from '@/lib/badges/ripeness';
+import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEvent } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
@@ -2359,6 +2359,7 @@ export async function unlockBadge(
   userId: string,
   badgeId: string,
   source?: Record<string, unknown>,
+  opts?: { silent?: boolean },
 ): Promise<boolean> {
   if (!BADGE_BY_ID[badgeId]) return false; // unknown badge id
   const db = getAdminFirestore();
@@ -2383,9 +2384,10 @@ export async function unlockBadge(
     return true;
   });
 
-  // Real-time push to the user's event stream. Fire-and-forget; failure
-  // is logged inside pushStreamEvent and never blocks the unlock.
-  if (wasNewlyUnlocked) {
+  // Real-time push to the user's event stream → bell + toast. Fire-and-forget.
+  // `silent` skips it (ripeness tiers unlock quietly — no notification spam for
+  // your banana ripening).
+  if (wasNewlyUnlocked && !opts?.silent) {
     void pushStreamEvent(userId, 'badge-unlock', {
       badgeId,
       source: typeof source?.source === 'string' ? source.source : undefined,
@@ -2450,31 +2452,30 @@ export async function revokeBadge(userId: string, badgeId: string): Promise<bool
 }
 
 /**
- * Sum the PAID BBB4 passes a user has BOUGHT. Free passes aren't in
- * v2_purchases (they're grants), so every completed purchase counts. Drives
- * the dynamic "ripeness" banana — no draft entry required, buying is enough.
+ * Sync a user's banana ripeness from their PAID-pass count (caller supplies
+ * the count — the total paid draft passes in the wallet from the Go API; see
+ * fetchOwnerPaidPassCount / countPaidPasses in lib/api/owner.ts).
+ *
+ * Two effects, both idempotent:
+ *  1. Denormalizes the current tier onto the user doc (`ripeness`) so every
+ *     render site can show the right default banana without re-querying.
+ *  2. Silently unlocks each ripeness tier badge the count has earned (so they
+ *     become equippable). SILENT — ripening never fires a bell/toast.
+ *
+ * Returns the current (highest reached) tier.
  */
-export async function getPaidPassesBoughtBBB4(userId: string): Promise<number> {
-  const purchases = await getPurchaseHistory(userId.toLowerCase());
-  return purchases
-    .filter(p => p.status === 'completed' && (p.paymentMethod === 'usdc' || p.paymentMethod === 'card'))
-    .reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
-}
-
-/**
- * Compute the user's ripeness tier from their paid-pass count and denormalize
- * it onto the user doc so every render site (display-batch, profile, draft
- * room) can color the banana without re-querying purchases. Returns the tier.
- * This is NOT a badge unlock — no notification fires; the banana just recolors.
- */
-export async function computeAndStoreRipeness(userId: string): Promise<Ripeness> {
+export async function computeAndStoreRipeness(userId: string, paidCount: number): Promise<Ripeness> {
   const lower = userId.toLowerCase();
-  const count = await getPaidPassesBoughtBBB4(lower);
-  const ripeness = ripenessFromCount(count);
+  const ripeness = ripenessFromCount(paidCount);
   await getAdminFirestore()
     .collection(USERS_COLLECTION)
     .doc(lower)
     .set({ ripeness }, { merge: true });
+  // Unlock the earned tier badges quietly (Unripe is always-unlocked → skip).
+  for (const id of unlockedRipenessIds(paidCount)) {
+    if (id === 'ripeness-unripe') continue;
+    await unlockBadge(lower, id, { source: 'ripeness', paidCount }, { silent: true });
+  }
   return ripeness;
 }
 

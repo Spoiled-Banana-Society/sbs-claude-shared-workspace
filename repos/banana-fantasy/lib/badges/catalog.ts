@@ -1,4 +1,5 @@
 import type { Badge } from '@/types';
+import { RIPENESS_TIERS, ripenessBadgeId } from './ripeness';
 
 /**
  * Single source of truth for all badges — the "obsidian disc" set.
@@ -33,19 +34,26 @@ const HOF_SEASONS: Array<[num: number, roman: string]> = [
 ];
 
 export const BADGE_CATALOG: Badge[] = [
-  // ── Your Banana (ripeness — dynamic, everyone has it) ────────────────
-  {
-    id: 'ripeness',
-    label: 'Your Banana',
-    description: 'Your banana ripens as you buy more BBB4 passes.',
-    criteria: 'Buy BBB4 passes to ripen your banana',
+  // ── Your Banana (6 ripeness tiers — unlock by buying PAID BBB4 drafts) ─
+  // Each tier is a real, equippable badge: grey/locked until you cross its
+  // paid-pass threshold, then it turns its tier color and you can equip it.
+  // Unripe is everyone's starting banana (always unlocked).
+  ...RIPENESS_TIERS.map((t): Badge => ({
+    id: ripenessBadgeId(t.key),
+    label: t.label,
+    description: `Your banana is ${t.label} — ${t.range} paid drafts bought in BBB4.`,
+    criteria: t.min <= 0
+      ? 'Your starting banana — everyone has one'
+      : `Buy ${t.min}+ paid BBB4 drafts`,
     category: 'ripeness',
     contentKind: 'banana',
-    dynamic: 'ripeness',
+    contentColor: t.color, // the banana fills with this when unlocked
     rimColor: RIM_GREY,
-    color: RIM_GREY,
+    color: t.color,
     glyph: '🍌',
-  },
+    // Unripe is the floor everyone carries; the rest unlock by buying.
+    ...(t.min <= 0 ? { alwaysUnlocked: true } : {}),
+  })),
 
   // ── Championships ────────────────────────────────────────────────────
   ...BBB_SEASONS.map(([num, roman]): Badge => ({

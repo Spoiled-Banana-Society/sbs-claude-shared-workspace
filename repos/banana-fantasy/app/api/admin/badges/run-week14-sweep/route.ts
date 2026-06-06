@@ -7,7 +7,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { requireAdmin } from '@/lib/adminAuth';
 import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
 import { computeAndStoreRipeness } from '@/lib/db';
-import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
+import { mapDraftTokenToLeague, fetchOwnerPaidPassCount, type ApiDraftToken } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     const leagues = await fetchOwnerLeagues(userId);
     const completed = leagues.filter(l => l.status === 'completed');
 
-    const ripeness = await computeAndStoreRipeness(userId);
+    const ripeness = await computeAndStoreRipeness(userId, await fetchOwnerPaidPassCount(userId).catch(() => 0));
     const awards: string[] = [];
     awards.push(...await awardClubBadges(userId, leagues));
     if (await awardOgIfReturning(userId)) awards.push('og');

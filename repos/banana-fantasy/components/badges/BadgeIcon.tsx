@@ -3,18 +3,13 @@
 import React from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { BananaGlyph } from './BananaGlyph';
-import { ripenessTooltip, ripenessFromCount } from '@/lib/badges/ripeness';
-import type { Badge, Ripeness } from '@/types';
+import type { Badge } from '@/types';
 
 interface BadgeIconProps {
   badge: Badge;
   size?: number; // pixel diameter — default 20
   unlocked?: boolean; // greys it out when false
   showTooltip?: boolean; // wrap in <Tooltip>; default true
-  /** For the dynamic ripeness badge: the user's current tier (drives the
-   *  banana fill color + tooltip). Ignored by all other badges. Defaults to
-   *  Unripe when omitted so a banana always renders. */
-  ripeness?: Ripeness | null;
   /** Corner-overlay mode (avatar badge). Same disc recipe; just a flag kept
    *  for call-site clarity — the renderer scales everything by `size`. */
   plain?: boolean;
@@ -105,7 +100,6 @@ export function BadgeIcon({
   size = 20,
   unlocked = true,
   showTooltip = true,
-  ripeness,
   // `plain` is accepted (call sites pass it for the avatar-corner overlay) but
   // the obsidian-disc renderer scales everything by `size`, so it's a no-op.
 }: BadgeIconProps) {
@@ -117,16 +111,14 @@ export function BadgeIcon({
   const rim = unlocked ? badge.rimColor : LOCKED_RIM;
   const content = unlocked ? (badge.contentColor || '#f3f5f8') : LOCKED_CONTENT;
 
-  // Ripeness: fill the banana with the user's tier color (defaults to Unripe).
-  const tier = ripeness ?? ripenessFromCount(0);
-
   // ── Center content per kind ──────────────────────────────────────────
   let inner: React.ReactNode = null;
   if (badge.contentKind === 'banana') {
+    // Each ripeness tier badge carries its own fill color in contentColor.
     const box = Math.round(s * 0.62);
     inner = (
       <span style={{ width: box, height: box, display: 'inline-flex' }}>
-        <BananaGlyph color={unlocked ? tier.color : LOCKED_CONTENT} />
+        <BananaGlyph color={unlocked ? (badge.contentColor || '#7cb342') : LOCKED_CONTENT} />
       </span>
     );
   } else if (badge.contentKind === 'logo' && badge.iconUrl) {
@@ -293,21 +285,15 @@ export function BadgeIcon({
 
   if (!showTooltip) return disc;
 
-  // Tooltip: ripeness shows its tier label + range; everything else shows the
-  // description (unlocked) or the unlock criteria (locked).
-  const isRipeness = badge.dynamic === 'ripeness';
-  const title = isRipeness ? tier.label : badge.label;
-  const body = isRipeness
-    ? ripenessTooltip(tier)
-    : (unlocked ? badge.description : badge.criteria);
-
   return (
     <Tooltip
       position="top"
       content={
         <div className="text-xs leading-tight max-w-[220px]">
-          <div className="font-bold">{title}</div>
-          <div className="text-text-secondary">{body}</div>
+          <div className="font-bold">{badge.label}</div>
+          <div className="text-text-secondary">
+            {unlocked ? badge.description : badge.criteria}
+          </div>
         </div>
       }
     >
