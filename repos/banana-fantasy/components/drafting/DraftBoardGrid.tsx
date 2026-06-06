@@ -120,7 +120,7 @@ export function DraftBoardGrid({
                 size={32}
                 equippedBadge={badge}
                 useNextImage={false}
-                className="border border-gray-500"
+                className=""
               />
               <div
                 style={{
