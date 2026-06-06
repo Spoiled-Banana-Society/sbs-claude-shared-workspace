@@ -114,9 +114,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
 
   const mt = marketplaceTeam;
   const isListed = !!mt?.orderHash;
-  const rosterReady = (mt?.roster?.length ?? 0) > 0; // draft complete → roster populated
+  // Any team the wallet owns can be listed, except a free pass during an open
+  // draft window. (We don't gate on roster here: a team bought on the
+  // marketplace doesn't resolve its roster for the new owner, but they still
+  // own the NFT and must be able to list it.)
   const listBlocked = mt?.passType === 'free' && isDraftingOpen();
-  const canList = !!mt && rosterReady && !listBlocked;
+  const canList = !!mt && !listBlocked;
   const expiresIn = isListed ? listingTimeLeft(mt?.listingEndTime) : null;
 
   const doList = async () => {

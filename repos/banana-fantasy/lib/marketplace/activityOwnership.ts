@@ -25,15 +25,16 @@ export async function getWalletTrades(wallet: string): Promise<WalletTrades> {
   const empty: WalletTrades = { paidByToken: new Map(), recentBuys: [], recentSells: new Set() };
   if (!isFirestoreConfigured() || !wallet) return empty;
   try {
+    // Single-field equality only — no composite (walletAddress + timestamp)
+    // index needed. Sort newest-first in memory; a wallet's trade count is small.
     const snap = await getAdminFirestore()
       .collection(COLLECTION)
       .where('walletAddress', '==', wallet.toLowerCase())
-      .orderBy('timestamp', 'desc')
-      .limit(300)
       .get();
 
     const cutoff = Date.now() - OWNERSHIP_WINDOW_MS;
     const paidByToken = new Map<string, number>();
+    const paidAtByToken = new Map<string, number>();
     const recentBuys: Array<{ tokenId: string; teamName: string | null }> = [];
     const recentSells = new Set<string>();
 
@@ -42,7 +43,11 @@ export async function getWalletTrades(wallet: string): Promise<WalletTrades> {
       const tokenId = String(d.tokenId);
       const tsMs = d.timestamp?.toDate?.()?.getTime?.() ?? 0;
       if (d.type === 'buy') {
-        if (!paidByToken.has(tokenId) && d.price != null) paidByToken.set(tokenId, Number(d.price));
+        // Keep the most recent buy price per token.
+        if (d.price != null && tsMs >= (paidAtByToken.get(tokenId) ?? -1)) {
+          paidByToken.set(tokenId, Number(d.price));
+          paidAtByToken.set(tokenId, tsMs);
+        }
         if (tsMs >= cutoff) recentBuys.push({ tokenId, teamName: d.teamName ?? null });
       } else if (d.type === 'sell' && tsMs >= cutoff) {
         recentSells.add(tokenId);
