@@ -34,18 +34,23 @@ export async function GET(req: NextRequest) {
       }
 
       for (const chunk of chunks) {
+        // Single-field equality only (no composite index needed); filter type
+        // and pick the most-recent sale per token in memory. Per-token sale
+        // counts are tiny, so this is cheap and avoids an index dependency.
         const snapshot = await db
           .collection(COLLECTION)
           .where('tokenId', 'in', chunk)
-          .where('type', 'in', ['buy', 'sell'])
-          .orderBy('timestamp', 'desc')
           .get();
 
+        const newestByToken: Record<string, number> = {};
         for (const doc of snapshot.docs) {
           const data = doc.data();
           const tid = data.tokenId;
-          // Only keep the most recent sale per token
-          if (!lastSales[tid] && data.price != null) {
+          if (data.type !== 'buy' && data.type !== 'sell') continue;
+          if (data.price == null) continue;
+          const tsMs = data.timestamp?.toDate?.()?.getTime?.() ?? 0;
+          if (newestByToken[tid] == null || tsMs > newestByToken[tid]) {
+            newestByToken[tid] = tsMs;
             lastSales[tid] = {
               price: data.price,
               timestamp: data.timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
@@ -69,19 +74,25 @@ export async function GET(req: NextRequest) {
 
     try {
       const db = getAdminFirestore();
+      // Single-field equality only (no composite index needed). Filter by type,
+      // sort by timestamp, and limit in memory — a single token has few events.
       const snapshot = await db
         .collection(COLLECTION)
         .where('tokenId', '==', tokenId)
-        .where('type', 'in', types)
-        .orderBy('timestamp', 'desc')
-        .limit(limit)
         .get();
 
-      const activities = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-      }));
+      const typeSet = new Set(types);
+      const activities = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+          _ts: doc.data().timestamp?.toDate?.()?.getTime?.() ?? 0,
+        }))
+        .filter((a) => { const t = (a as { type?: string }).type; return t != null && typeSet.has(t); })
+        .sort((a, b) => b._ts - a._ts)
+        .slice(0, limit)
+        .map(({ _ts, ...rest }) => rest);
 
       return NextResponse.json({ activities, hasMore: false });
     } catch (err) {

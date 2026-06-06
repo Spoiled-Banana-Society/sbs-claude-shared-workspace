@@ -34,6 +34,7 @@ interface NftDetail {
   owner: string | null;
   ownerName: string | null;
   ownerPfp: string | null;
+  pricePaid?: number | null;
   listing: {
     order_hash: string;
     protocol_address: string;
@@ -154,11 +155,47 @@ export default function NftDetailPage() {
   const [shareCopied, setShareCopied] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
+  // Activity feed (sales + listings) filter + truncation.
+  const [activityFilter, setActivityFilter] = useState<'all' | 'sales' | 'listings'>('all');
+  const [activityExpanded, setActivityExpanded] = useState(false);
+
   // Offers data
   const { offers, isLoading: offersLoading, refetch: refetchOffers, bestOffer } = useNftOffers(tokenId);
 
-  // Sale history
+  // Activity feed: sales + listings, newest first.
   const { activities: saleHistory, isLoading: saleHistoryLoading } = useTokenSaleHistory(tokenId);
+
+  // Normalize raw activity rows into display items. A sale is logged twice (a
+  // 'buy' by the buyer + a 'sell' by the seller, same txHash) — collapse those
+  // into a single "Sold" row so the feed reads cleanly.
+  const activityItems = useMemo(() => {
+    const buyTxs = new Set(
+      saleHistory.filter(a => a.type === 'buy' && a.txHash).map(a => a.txHash as string),
+    );
+    type Item = { id: string; kind: 'sale' | 'listing' | 'delisting'; label: string; price: number | null; who: string | null; timestamp: string };
+    const items: Item[] = [];
+    for (const a of saleHistory) {
+      if (a.type === 'sell' && a.txHash && buyTxs.has(a.txHash)) continue; // dup of a buy
+      if (a.type === 'buy' || a.type === 'sell') {
+        const buyer = a.type === 'buy' ? a.walletAddress : a.counterparty;
+        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: buyer, timestamp: a.timestamp });
+      } else if (a.type === 'list') {
+        items.push({ id: a.id, kind: 'listing', label: 'Listed', price: a.price, who: a.walletAddress, timestamp: a.timestamp });
+      } else if (a.type === 'cancel') {
+        items.push({ id: a.id, kind: 'delisting', label: 'Listing removed', price: null, who: a.walletAddress, timestamp: a.timestamp });
+      }
+    }
+    return items;
+  }, [saleHistory]);
+
+  const filteredActivity = useMemo(() => {
+    if (activityFilter === 'sales') return activityItems.filter(i => i.kind === 'sale');
+    if (activityFilter === 'listings') return activityItems.filter(i => i.kind === 'listing' || i.kind === 'delisting');
+    return activityItems;
+  }, [activityItems, activityFilter]);
+
+  const ACTIVITY_PREVIEW = 5;
+  const visibleActivity = activityExpanded ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PREVIEW);
 
   const fetchNft = useCallback(() => {
     if (!tokenId) return;
@@ -858,114 +895,53 @@ export default function NftDetailPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2 text-text-muted text-sm mb-6">
-            <span>Token #{tokenId}</span>
-            <span>&middot;</span>
+          <div className="flex flex-wrap items-center gap-2 mb-6">
+            <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary text-xs font-mono">
+              Token #{tokenId}
+            </span>
             <a
               href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${tokenId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-text-muted hover:text-text-primary text-xs underline-offset-4 hover:underline"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:border-white/20 transition-colors text-xs font-medium"
               title="View on OpenSea"
             >
-              OpenSea ↗
+              OpenSea
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 17 17 7M17 7H8M17 7v9" />
+              </svg>
             </a>
-            {nft.team && (
-              <>
-                <span>&middot;</span>
-                <span className="text-banana/80 text-xs" title="Team data sourced from the SBS backend, not OpenSea metadata">
-                  Stats from SBS
+            {nftOwner && (
+              <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
+                  {nft.ownerPfp ? (
+                    <Image src={nft.ownerPfp} alt="" width={16} height={16} className="rounded-full" />
+                  ) : null}
+                  <span className="text-text-muted">Owner</span>
+                  <span className="text-text-secondary font-mono">
+                    {nft.ownerName || `${nftOwner.slice(0, 6)}…${nftOwner.slice(-4)}`}
+                  </span>
                 </span>
-              </>
+              </UserPopover>
             )}
             {!nft.team && (
-              <>
-                <span>&middot;</span>
-                <span
-                  className="px-2 py-0.5 bg-white/5 text-white/40 text-[10px] font-bold rounded uppercase tracking-wide"
-                  title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
-                >
-                  Stage Mint
-                </span>
-              </>
-            )}
-            {nftOwner && (
-              <>
-                <span>&middot;</span>
-                <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
-                  <span className="inline-flex items-center gap-1.5 hover:underline cursor-pointer">
-                    {nft.ownerPfp ? (
-                      <Image src={nft.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
-                    ) : null}
-                    <span>
-                      Owner: {nft.ownerName || `${nftOwner.slice(0, 6)}...${nftOwner.slice(-4)}`}
-                    </span>
-                  </span>
-                </UserPopover>
-              </>
+              <span
+                className="px-2 py-0.5 bg-white/5 text-white/40 text-[10px] font-bold rounded uppercase tracking-wide"
+                title="Stage-minted NFT with no SBS backend record."
+              >
+                Stage Mint
+              </span>
             )}
           </div>
 
-          {/* Stats Row */}
-          {(rank || seasonScore || weekScore) && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {rank && rank !== 'N/A' && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
-                </div>
-              )}
-              {seasonScore && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season Pts</p>
-                  <p className="font-mono text-xl font-bold text-text-primary">
-                    {parseFloat(seasonScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </p>
-                </div>
-              )}
-              {weekScore && (
-                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
-                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Week Score</p>
-                  <p className="font-mono text-xl font-bold text-success">
-                    {parseFloat(weekScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Full Roster */}
-          {roster.length > 0 && (
-            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
-              <h3 className="text-text-primary font-semibold text-sm mb-4">Full Roster</h3>
-              <div className="space-y-4">
-                {[
-                  { label: 'Quarterbacks', items: qbs },
-                  { label: 'Running Backs', items: rbs },
-                  { label: 'Wide Receivers', items: wrs },
-                  { label: 'Tight Ends', items: tes },
-                  { label: 'Defense', items: dsts },
-                ].filter(g => g.items.length > 0).map(group => (
-                  <div key={group.label}>
-                    <p className="text-text-muted text-[10px] uppercase tracking-wider mb-2">{group.label}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {group.items.map(r => (
-                        <div
-                          key={r.slot}
-                          className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-medium ${getPositionColor(r.slot)}`}
-                        >
-                          {r.value}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Price & Buy / Make Offer */}
+          {/* Price & Buy / Make Offer — primary action, kept at the top */}
           <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
+            {isOwner && typeof nft.pricePaid === 'number' && nft.pricePaid > 0 && (
+              <div className="flex items-center gap-1.5 mb-3 text-xs text-text-secondary">
+                <span className="text-text-muted">You paid</span>
+                <span className="font-mono font-semibold text-banana">${nft.pricePaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            )}
             {price !== null ? (
               <>
                 <div className="flex items-center justify-between">
@@ -1080,6 +1056,64 @@ export default function NftDetailPage() {
             )}
           </div>
 
+          {/* Stats Row */}
+          {(rank || seasonScore || weekScore) && (
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              {rank && rank !== 'N/A' && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
+                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
+                </div>
+              )}
+              {seasonScore && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season Pts</p>
+                  <p className="font-mono text-xl font-bold text-text-primary">
+                    {parseFloat(seasonScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </p>
+                </div>
+              )}
+              {weekScore && (
+                <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
+                  <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Week Score</p>
+                  <p className="font-mono text-xl font-bold text-success">
+                    {parseFloat(weekScore).toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Full Roster */}
+          {roster.length > 0 && (
+            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
+              <h3 className="text-text-primary font-semibold text-sm mb-4">Full Roster</h3>
+              <div className="space-y-4">
+                {[
+                  { label: 'Quarterbacks', items: qbs },
+                  { label: 'Running Backs', items: rbs },
+                  { label: 'Wide Receivers', items: wrs },
+                  { label: 'Tight Ends', items: tes },
+                  { label: 'Defense', items: dsts },
+                ].filter(g => g.items.length > 0).map(group => (
+                  <div key={group.label}>
+                    <p className="text-text-muted text-[10px] uppercase tracking-wider mb-2">{group.label}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {group.items.map(r => (
+                        <div
+                          key={r.slot}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-medium ${getPositionColor(r.slot)}`}
+                        >
+                          {r.value}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Offers Section */}
           {(offers.length > 0 || offersLoading) && (
             <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
@@ -1165,59 +1199,99 @@ export default function NftDetailPage() {
             </div>
           )}
 
-          {/* Sale History */}
-          {(saleHistory.length > 0 || saleHistoryLoading) && (
+          {/* Activity — sales + listings, filterable, truncated */}
+          {(activityItems.length > 0 || saleHistoryLoading) && (
             <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mt-6">
-              <h3 className="text-text-primary font-semibold text-sm mb-4">
-                Sale History {saleHistory.length > 0 && <span className="text-text-muted font-normal">({saleHistory.length})</span>}
-              </h3>
-              {saleHistoryLoading && saleHistory.length === 0 ? (
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-text-primary font-semibold text-sm">
+                  Activity {activityItems.length > 0 && <span className="text-text-muted font-normal">({activityItems.length})</span>}
+                </h3>
+                {activityItems.length > 0 && (
+                  <div className="flex items-center gap-1 bg-bg-primary rounded-lg p-0.5">
+                    {([
+                      { key: 'all', label: 'All' },
+                      { key: 'sales', label: 'Sales' },
+                      { key: 'listings', label: 'Listings' },
+                    ] as const).map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => { setActivityFilter(key); setActivityExpanded(false); }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                          activityFilter === key ? 'bg-bg-tertiary text-text-primary' : 'text-text-muted hover:text-text-secondary'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {saleHistoryLoading && activityItems.length === 0 ? (
                 <div className="space-y-3">
                   {[...Array(2)].map((_, i) => (
                     <div key={i} className="h-10 bg-bg-tertiary rounded-xl animate-pulse" />
                   ))}
                 </div>
+              ) : visibleActivity.length === 0 ? (
+                <p className="text-text-muted text-xs">No {activityFilter === 'all' ? '' : activityFilter} activity yet.</p>
               ) : (
-                <div className="space-y-2">
-                  {saleHistory.map(sale => {
-                    const saleDate = new Date(sale.timestamp);
-                    const timeAgo = (() => {
-                      const diff = Date.now() - saleDate.getTime();
-                      const mins = Math.floor(diff / 60000);
-                      if (mins < 60) return `${mins}m ago`;
-                      const hrs = Math.floor(mins / 60);
-                      if (hrs < 24) return `${hrs}h ago`;
-                      const days = Math.floor(hrs / 24);
-                      if (days < 30) return `${days}d ago`;
-                      return saleDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-                    })();
-                    return (
-                      <div
-                        key={sale.id}
-                        className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-lg bg-banana/10 flex items-center justify-center">
-                            <svg className="w-4 h-4 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                            </svg>
-                          </div>
-                          <div>
-                            <p className="text-text-primary text-sm font-mono font-medium">
-                              ${sale.price?.toFixed(2) ?? '—'}
-                            </p>
-                            {sale.counterparty && (
-                              <p className="text-text-muted text-[11px]">
-                                {sale.type === 'buy' ? 'Bought by' : 'Sold to'} {sale.counterparty.slice(0, 6)}...{sale.counterparty.slice(-4)}
+                <>
+                  <div className="space-y-2">
+                    {visibleActivity.map(item => {
+                      const date = new Date(item.timestamp);
+                      const timeAgo = (() => {
+                        const diff = Date.now() - date.getTime();
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 1) return 'just now';
+                        if (mins < 60) return `${mins}m ago`;
+                        const hrs = Math.floor(mins / 60);
+                        if (hrs < 24) return `${hrs}h ago`;
+                        const days = Math.floor(hrs / 24);
+                        if (days < 30) return `${days}d ago`;
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                      })();
+                      const tone = item.kind === 'sale'
+                        ? { bg: 'bg-green-500/10', text: 'text-green-400' }
+                        : item.kind === 'listing'
+                          ? { bg: 'bg-banana/10', text: 'text-banana' }
+                          : { bg: 'bg-white/5', text: 'text-text-muted' };
+                      const whoLabel = item.who
+                        ? `${item.kind === 'sale' ? 'to' : 'by'} ${item.who.slice(0, 6)}…${item.who.slice(-4)}`
+                        : null;
+                      return (
+                        <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${tone.bg}`}>
+                              {item.kind === 'sale' ? (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                              ) : item.kind === 'listing' ? (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-5 5a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>
+                              ) : (
+                                <svg className={`w-4 h-4 ${tone.text}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-text-primary text-sm font-medium">
+                                {item.label}{item.price != null && <span className="font-mono"> · ${item.price.toFixed(2)}</span>}
                               </p>
-                            )}
+                              {whoLabel && <p className="text-text-muted text-[11px]">{whoLabel}</p>}
+                            </div>
                           </div>
+                          <span className="text-text-muted text-xs">{timeAgo}</span>
                         </div>
-                        <span className="text-text-muted text-xs">{timeAgo}</span>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                  {filteredActivity.length > ACTIVITY_PREVIEW && (
+                    <button
+                      onClick={() => setActivityExpanded(v => !v)}
+                      className="w-full mt-3 py-2 text-xs font-medium text-banana hover:bg-banana/5 rounded-lg transition-colors"
+                    >
+                      {activityExpanded ? 'Show less' : `Show all ${filteredActivity.length}`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           )}

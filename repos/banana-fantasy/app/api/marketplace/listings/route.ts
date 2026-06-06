@@ -13,6 +13,7 @@ import {
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { isDraftingOpen } from '@/lib/draftTypes';
 import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { logger } from '@/lib/logger';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -331,7 +332,21 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    const orderHash = result.order?.order_hash || '';
+    // OpenSea's create-listing response shape has varied; try the known paths so
+    // we reliably capture the order hash (the client's optimistic update AND the
+    // listing cache both depend on it).
+    const orderHash =
+      result?.order?.order_hash
+      || result?.order_hash
+      || result?.order?.orderHash
+      || result?.orders?.[0]?.order_hash
+      || '';
+    if (!orderHash) {
+      logger.warn('marketplace.listings.no_order_hash', {
+        topKeys: Object.keys(result ?? {}),
+        orderKeys: result?.order ? Object.keys(result.order) : null,
+      });
+    }
 
     // Record in our own listing cache so the UI reflects it instantly (don't
     // wait on OpenSea's indexing lag). Best-effort.
@@ -349,7 +364,7 @@ export async function POST(req: Request) {
         (s, c) => s + (c.itemType === 1 ? BigInt(c.startAmount || '0') : 0n),
         0n,
       );
-      if (tokenId && orderHash) {
+      if (tokenId) {
         await recordListed({
           tokenId,
           orderHash,

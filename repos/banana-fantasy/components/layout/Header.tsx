@@ -137,7 +137,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       aria-label={`Draft passes: ${isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0} available`}
                       className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
-                      <svg width="44" height="28" viewBox="0 0 88 56" className="transition-transform group-hover:scale-110 w-[44px] h-[28px]">
+                      <svg width="41" height="26" viewBox="0 0 88 56" className="transition-transform group-hover:scale-110 w-[41px] h-[26px]">
                         <defs>
                           <linearGradient id="goldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
                             <stop offset="0%" stopColor="#FBBF24"/>

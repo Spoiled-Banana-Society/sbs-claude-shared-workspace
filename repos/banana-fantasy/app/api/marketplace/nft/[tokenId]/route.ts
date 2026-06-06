@@ -3,6 +3,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { getOnchainOwner } from '@/lib/onchain/ownerOf';
+import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
 
 export const dynamic = 'force-dynamic';
@@ -129,8 +131,12 @@ export async function GET(
       }
     } catch { /* cache is best-effort */ }
 
-    // Get owner from the NFT data already fetched above
-    const owner = nft.owners?.[0]?.address ?? null;
+    // Owner: read it on-chain (authoritative), since OpenSea's index lags minutes
+    // behind a sale and would otherwise report the previous owner — making the
+    // buyer's just-bought team show "Make Offer" instead of the list controls.
+    // Fall back to OpenSea's reported owner only if the RPC call fails.
+    const onchainOwner = await getOnchainOwner(tokenId);
+    const owner = onchainOwner ?? nft.owners?.[0]?.address ?? null;
 
     // Enrich owner with SBS profile + inject team data from our backend
     let ownerName: string | null = null;
@@ -158,18 +164,32 @@ export async function GET(
       traits = mergeTraits(traits, teamDataToTraits(team));
     }
 
+    // What the current owner paid for this team (so they can see "You paid $X").
+    let pricePaid: number | null = null;
+    if (owner) {
+      try {
+        const trades = await getWalletTrades(owner);
+        pricePaid = trades.paidByToken.get(String(tokenId)) ?? null;
+      } catch { /* best-effort */ }
+    }
+
     // SBS team card image (when available) wins over OpenSea's default
     // banana placeholder. OpenSea image is kept as ultimate fallback.
     const teamImage = team?.imageUrl ?? '';
     return json({
       ...nft,
       traits,
-      name: nft.name || team?.leagueDisplayName || null,
+      // Prefer the real league name; only fall back to OpenSea's name when it
+      // isn't a generic "#N" / "Draft Pass #N" placeholder.
+      name: (nft.name && !/^(draft\s*pass\s*)?#?\s*\d+$/i.test(String(nft.name).trim()))
+        ? nft.name
+        : (team?.leagueDisplayName || nft.name || null),
       image_url: teamImage || nft.image_url,
       display_image_url: teamImage || nft.display_image_url,
       owner,
       ownerName,
       ownerPfp,
+      pricePaid,
       team,
       listing,
     });

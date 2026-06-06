@@ -11,10 +11,38 @@ import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { useMyNfts } from '@/hooks/useMarketplace';
 import { formatScore, formatRank } from '@/lib/formatters';
-import type { League } from '@/types';
+import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 
 type ViewMode = 'myteams' | 'leaderboard';
+
+/**
+ * Build a League-shaped object from a marketplace NFT the user owns but did NOT
+ * draft (e.g. bought on the marketplace). useLeagues only returns teams the user
+ * drafted, so without this a bought team never appears in My Teams even though
+ * the wallet owns the NFT. The card renders from this; clicking opens the real
+ * league (when leagueId is known) via the same modal.
+ */
+function nftToSyntheticLeague(n: MarketplaceTeam): League {
+  return {
+    id: n.leagueId || `nft-${n.tokenId}`,
+    name: n.name || `Team #${n.tokenId}`,
+    contestId: '',
+    type: (n.isJackpot ? 'jackpot' : n.isHof ? 'hof' : 'pro') as ContestType,
+    leagueRank: n.rank || 0,
+    weeklyRank: 0,
+    weeklyScore: n.weeklyAvg || 0,
+    seasonScore: n.points || 0,
+    status: 'completed',
+    roster: (n.roster || []).map((tp, i) => ({
+      slot: `${i + 1}`,
+      teamPosition: tp,
+      weeklyPoints: 0,
+      seasonPoints: 0,
+    })),
+    draftDate: '',
+  };
+}
 
 export default function StandingsPage() {
   const { isLoggedIn, user } = useAuth();
@@ -24,7 +52,12 @@ export default function StandingsPage() {
   const { data: myNfts, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(user?.walletAddress ?? null);
   const nftByLeague = useMemo(() => {
     const m = new Map<string, MarketplaceTeam>();
-    for (const n of myNfts) if (n.leagueId) m.set(n.leagueId, n);
+    for (const n of myNfts) {
+      if (n.leagueId) m.set(n.leagueId, n);
+      // Also key by the synthetic id so bought-not-drafted cards get their
+      // List/Cancel controls + "bought for" price too.
+      m.set(`nft-${n.tokenId}`, n);
+    }
     return m;
   }, [myNfts]);
 
@@ -37,6 +70,21 @@ export default function StandingsPage() {
   const { data: currentGameweek } = useGameweek();
 
   const leagues = leaguesQuery.data;
+
+  // Teams to show = teams the user drafted + teams they own but didn't draft
+  // (bought on the marketplace). Without the second set, a bought team never
+  // appears here even though the wallet holds the NFT.
+  const mergedLeagues = useMemo(() => {
+    const draftedIds = new Set(leagues.map(l => l.id));
+    const extra: League[] = [];
+    for (const n of myNfts) {
+      const synthId = n.leagueId || `nft-${n.tokenId}`;
+      if (draftedIds.has(synthId)) continue; // already shown as a drafted team
+      extra.push(nftToSyntheticLeague(n));
+    }
+    return extra.length ? [...leagues, ...extra] : leagues;
+  }, [leagues, myNfts]);
+
   const { nicknames, setNickname } = useTeamNicknames();
 
   const [viewMode, setViewMode] = useState<ViewMode>('myteams');
@@ -107,7 +155,7 @@ export default function StandingsPage() {
 
   // Filter by search query, type filter, and sort by league number
   const filteredLeagues = useMemo(() => {
-    let result = [...leagues];
+    let result = [...mergedLeagues];
 
     // Type filter buttons
     if (typeFilter !== 'all') {
@@ -158,7 +206,7 @@ export default function StandingsPage() {
       return sortOrder === 'oldest' ? idNumA - idNumB : idNumB - idNumA;
     });
     return result;
-  }, [leagues, teamSearch, sortOrder, typeFilter]);
+  }, [mergedLeagues, teamSearch, sortOrder, typeFilter]);
 
   // Paginate
   const totalTeamPages = Math.ceil(filteredLeagues.length / TEAMS_PER_PAGE);
@@ -264,7 +312,7 @@ export default function StandingsPage() {
       {isLoggedIn && viewMode === 'myteams' && (
         <>
           {/* Portfolio Summary Card */}
-          {leagues.length > 0 && (
+          {mergedLeagues.length > 0 && (
             <div className="glass-card px-5 py-5 sm:px-6 sm:py-6 mb-6">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
                 {/* Total teams with type breakdown */}
@@ -321,7 +369,7 @@ export default function StandingsPage() {
           )}
 
           {/* Search bar */}
-          {leagues.length > 0 && (
+          {mergedLeagues.length > 0 && (
             <div className="mb-5">
               <MultiChipSearch
                 chips={teamSearch}
@@ -337,7 +385,7 @@ export default function StandingsPage() {
           )}
 
           {/* Type filter buttons */}
-          {leagues.length > 0 && (
+          {mergedLeagues.length > 0 && (
             <div className="flex gap-2 mb-5">
               {([
                 { key: 'all', label: 'All', color: 'white' },
@@ -371,7 +419,7 @@ export default function StandingsPage() {
           )}
 
           {/* Team cards */}
-          {leagues.length > 0 && (
+          {mergedLeagues.length > 0 && (
             <div className="space-y-3 mb-6">
               {filteredLeagues.length > 0 ? (
                 <>
@@ -434,7 +482,7 @@ export default function StandingsPage() {
           )}
 
           {/* Empty state */}
-          {!leaguesQuery.isValidating && leagues.length === 0 && (
+          {!leaguesQuery.isValidating && mergedLeagues.length === 0 && (
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center mb-8">
               <div className="text-4xl mb-4">🏈</div>
               <p className="text-white/50 font-medium mb-2">No teams yet</p>
