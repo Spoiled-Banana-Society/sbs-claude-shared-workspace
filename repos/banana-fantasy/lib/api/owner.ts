@@ -57,6 +57,8 @@ export interface ApiRosterPlayer {
 /** Backend shape from `GET /owner/{walletAddress}/draftToken/all`. */
 export interface ApiDraftToken {
   cardId: string;
+  /** Authoritative on-chain BBB4 token id (what OpenSea/metadata key on). */
+  realTokenId?: string;
   leagueId: string;
   leagueDisplayName?: string;
   roster?: {
@@ -353,6 +355,7 @@ export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDra
   // Normalize underscore-prefixed fields → ApiDraftToken shape
   return rawTokens.map((t): ApiDraftToken => ({
     cardId: String(t._cardId ?? t.cardId ?? ''),
+    realTokenId: t.realTokenId != null ? String(t.realTokenId) : undefined,
     leagueId: String(t._leagueId ?? t.leagueId ?? ''),
     leagueDisplayName: String(t._leagueDisplayName ?? t.leagueDisplayName ?? ''),
     level: (t._level ?? t.level ?? 'Pro') as ApiDraftTokenLevel,
