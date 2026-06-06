@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
-import { useMyNfts } from '@/hooks/useMarketplace';
+import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
@@ -71,9 +71,23 @@ export default function StandingsPage() {
 
   const leagues = leaguesQuery.data;
 
+  // Leagues we can already confirm the wallet still owns (it holds the NFT).
+  const ownedLeagueIds = useMemo(
+    () => new Set(myNfts.filter(n => n.leagueId).map(n => n.leagueId as string)),
+    [myNfts],
+  );
+  // Drafted leagues we can't confirm as owned → may have been sold. Verify these
+  // on-chain (sold teams must NOT show in My Teams). We only check the ones not
+  // already confirmed owned, so freshly-drafted teams OpenSea hasn't indexed yet
+  // are checked too — and kept, because on-chain still says the wallet owns them.
+  const candidateLeagueIds = useMemo(
+    () => leagues.filter(l => !ownedLeagueIds.has(l.id)).map(l => l.id),
+    [leagues, ownedLeagueIds],
+  );
+  const notOwnedLeagueIds = useNotOwnedLeagues(user?.walletAddress ?? null, candidateLeagueIds);
+
   // Teams to show = teams the user drafted + teams they own but didn't draft
-  // (bought on the marketplace). Without the second set, a bought team never
-  // appears here even though the wallet holds the NFT.
+  // (bought on the marketplace), minus any drafted team they've since sold.
   const mergedLeagues = useMemo(() => {
     const draftedIds = new Set(leagues.map(l => l.id));
     const extra: League[] = [];
@@ -82,8 +96,9 @@ export default function StandingsPage() {
       if (draftedIds.has(synthId)) continue; // already shown as a drafted team
       extra.push(nftToSyntheticLeague(n));
     }
-    return extra.length ? [...leagues, ...extra] : leagues;
-  }, [leagues, myNfts]);
+    const base = extra.length ? [...leagues, ...extra] : leagues;
+    return notOwnedLeagueIds.size ? base.filter(l => !notOwnedLeagueIds.has(l.id)) : base;
+  }, [leagues, myNfts, notOwnedLeagueIds]);
 
   const { nicknames, setNickname } = useTeamNicknames();
 

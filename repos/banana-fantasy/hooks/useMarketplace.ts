@@ -525,6 +525,35 @@ export async function logActivity(data: {
   }
 }
 
+// ── Sold-team detection (drafted leagues no longer owned) ────────
+
+/**
+ * Given the wallet's drafted leagues it can't already confirm as owned, returns
+ * the subset it has SOLD (no longer owns on-chain). My Teams uses this to hide
+ * teams the user drafted but later sold — the draft backend keeps them forever.
+ * Deps are scalars only (wallet + sorted id key), per the render-loop rule.
+ */
+export function useNotOwnedLeagues(wallet: string | null, candidateLeagueIds: string[]): Set<string> {
+  const [notOwned, setNotOwned] = useState<Set<string>>(new Set());
+  const key = candidateLeagueIds.slice().sort().join(',');
+
+  const fetchIt = useCallback(async () => {
+    if (!wallet || !key) { setNotOwned(new Set()); return; }
+    try {
+      const res = await fetch(`/api/marketplace/league-ownership?wallet=${wallet}&leagues=${encodeURIComponent(key)}`);
+      if (!res.ok) { setNotOwned(new Set()); return; }
+      const j = await res.json();
+      setNotOwned(new Set((j.notOwned ?? []) as string[]));
+    } catch {
+      setNotOwned(new Set());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wallet, key]);
+
+  useEffect(() => { void fetchIt(); }, [fetchIt]);
+  return notOwned;
+}
+
 // ── Last Sale Prices (batch) ─────────────────────────────────────
 
 interface LastSaleData {
