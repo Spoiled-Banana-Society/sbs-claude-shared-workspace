@@ -91,6 +91,16 @@ export function DraftComplete({
   // The actual generated card URL — handed to the roster page via sessionStorage
   // so it renders the image instantly instead of waiting on its own fetch.
   const cardUrlRef = useRef<string | null>(initialCardUrl || null);
+  // Make the card the hero of the page — size it to the viewport (the grouped
+  // team card has aspect ~1.575 tall, so cap by height too to avoid overflow).
+  const [vp, setVp] = useState({ w: 420, h: 800 });
+  useEffect(() => {
+    const update = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+  const cardW = Math.max(280, Math.min(460, Math.round(vp.w * 0.92), Math.round((vp.h * 0.62) / 1.575)));
 
   const destination = draftId ? `/draft-results/${draftId}` : '/drafting';
 
@@ -263,9 +273,9 @@ export function DraftComplete({
       <div className="dc-eyebrow" style={{ color: accent }}>Draft Complete</div>
       <h1 className="dc-h1">Generating your<br />Digital Team</h1>
 
-      {/* ── the obsidian team card — roster locks in as the bar fills ── */}
+      {/* ── the obsidian team card (hero) — roster locks in as the bar fills ── */}
       <div className="dc-cardwrap">
-        <TeamCardObsidian tier={type} players={cardPlayers} revealCount={revealCount} width={244} />
+        <TeamCardObsidian tier={type} players={cardPlayers} revealCount={revealCount} width={cardW} />
       </div>
 
       {/* type + draft-pass # badge */}
@@ -292,12 +302,12 @@ export function DraftComplete({
       </div>
 
       <style jsx>{`
-        .dc-wrap{min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 18px}
+        .dc-wrap{min-height:100vh;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:16px 14px}
         .dc-eyebrow{font-size:11px;letter-spacing:3px;text-transform:uppercase;font-weight:800;margin-top:4px}
         .dc-h1{font-size:23px;font-weight:900;font-style:italic;text-transform:uppercase;letter-spacing:.4px;margin-top:7px;line-height:1.05;
           background:linear-gradient(180deg,#fff,rgba(255,255,255,.62));-webkit-background-clip:text;background-clip:text;color:transparent}
 
-        .dc-cardwrap{margin:18px auto 0;display:flex;justify-content:center}
+        .dc-cardwrap{margin:12px auto 0;display:flex;justify-content:center}
         .dc-forge{position:relative;margin:16px auto 0;width:min(236px,72vw)}
         .dc-card{width:100%;aspect-ratio:5/7;border-radius:16px;position:relative;overflow:hidden;padding:8px}
         .dc-ticket{height:100%;border-radius:10px;background:linear-gradient(165deg,#f0dc57,#e2c93f);position:relative;border:1.5px solid #23205c;padding:8px;display:flex;flex-direction:column;z-index:2}

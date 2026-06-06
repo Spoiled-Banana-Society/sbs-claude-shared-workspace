@@ -118,7 +118,7 @@ export function DraftRoomFilling({
                         size={48}
                         equippedBadge={user?.equippedBadge}
                         useNextImage={false}
-                        className="border border-gray-500"
+                        className=""
                       />
                     </div>
                   ) : isFilled ? (
@@ -129,7 +129,7 @@ export function DraftRoomFilling({
                         size={48}
                         equippedBadge={otherBadge}
                         useNextImage={false}
-                        className="border border-gray-500"
+                        className=""
                       />
                     </div>
                   ) : showSkeleton ? (

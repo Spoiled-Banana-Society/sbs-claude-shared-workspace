@@ -228,7 +228,7 @@ export function DraftRoomDrafting({
                             size={48}
                             equippedBadge={user?.equippedBadge}
                             useNextImage={false}
-                            className="border-2 border-[#F3E216]"
+                            ringClassName="border-2 border-[#F3E216]"
                           />
                         </div>
                       ) : friendWallet ? (
@@ -243,7 +243,7 @@ export function DraftRoomDrafting({
                               size={48}
                               equippedBadge={otherBadge}
                               useNextImage={false}
-                              className="border border-gray-500 cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
+                              className="cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
                             />
                           </UserPopover>
                         </div>
@@ -255,7 +255,7 @@ export function DraftRoomDrafting({
                             size={48}
                             equippedBadge={otherBadge}
                             useNextImage={false}
-                            className="border border-gray-500"
+                            className=""
                           />
                         </div>
                       )}

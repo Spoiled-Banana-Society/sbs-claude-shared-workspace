@@ -14,6 +14,10 @@ interface AvatarWithBadgeProps {
   equippedBadge?: string | null;
   /** Optional CSS class overrides for the wrapper. */
   className?: string;
+  /** Border-ring classes (e.g. "border-2 border-[#F3E216]"). Rendered as an
+   *  overlay ON TOP of the badge so the ring is always a complete circle —
+   *  pass the ring here instead of in `className` so the badge can't erase it. */
+  ringClassName?: string;
   /** Default fallback avatar. */
   fallbackSrc?: string;
   /** Whether to use Next.js <Image>; default true. Pass false for surfaces
@@ -46,6 +50,7 @@ export function AvatarWithBadge({
   size,
   equippedBadge,
   className = '',
+  ringClassName = '',
   fallbackSrc = '/banana-profile.png',
   useNextImage = true,
 }: AvatarWithBadgeProps) {
@@ -63,13 +68,12 @@ export function AvatarWithBadge({
   // Mobile tiles pack the name close under the avatar, so the badge is a touch
   // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
   // while staying in the same bottom-right spot as desktop.
-  const badgeSize = Math.min(44, Math.max(12, Math.round(size * (isMobile ? 0.52 : 0.54))));
-  // Nudge the badge onto the avatar's bottom-right rim (it pokes slightly past
-  // the circle into the empty box corner, like Underdog/Discord status dots) so
-  // it stands out without sitting on the face. Scales with the avatar so the
-  // look is consistent everywhere (~7px out on a 48px draft-card avatar).
-  const edgeOffsetX = Math.round(size * 0.146);
-  const edgeOffsetY = Math.round(size * (isMobile ? 0.083 : 0.146));
+  const badgeSize = Math.min(40, Math.max(12, Math.round(size * 0.44)));
+  // Badge sits at the bottom-right, poking just slightly past the circle. Kept
+  // small so it stays in the corner (not creeping toward the face). Mobile pokes
+  // DOWN a touch less so it clears the name on the tight tiles.
+  const edgeOffsetX = Math.round(size * 0.076);
+  const edgeOffsetY = Math.round(size * (isMobile ? 0.05 : 0.076));
   const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
   // Every avatar renders full-frame (object-cover fills the circle), so the
   // badge sits at the identical size + position on ALL of them — banana,
@@ -123,6 +127,14 @@ export function AvatarWithBadge({
         >
           <BadgeIcon badge={badge} size={badgeSize} unlocked plain showTooltip={false} />
         </span>
+      )}
+      {/* Border ring drawn LAST (on top of the badge) so it's always a complete
+          circle — the badge pokes slightly past it but can't erase it. */}
+      {ringClassName && (
+        <span
+          aria-hidden
+          className={`absolute inset-0 rounded-full pointer-events-none ${ringClassName}`}
+        />
       )}
     </div>
   );

@@ -2,9 +2,47 @@
 // lib/nftCard.ts so the client (roster page) can import the URL builders without
 // pulling in firebase-admin.
 
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { buildDraftPassUrl } from '@/lib/nftCard';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { buildDraftPassUrl, buildOgCardUrl } from '@/lib/nftCard';
 import { logger } from '@/lib/logger';
+import type { CardTier } from '@/components/draft/TeamCardObsidian';
+import type { TeamData } from '@/lib/marketplace/teamData';
+
+function tierFromLevel(level?: string): CardTier {
+  const l = (level || '').toLowerCase();
+  if (l.includes('jackpot')) return 'jackpot';
+  if (l.includes('hof') || l.includes('hall of fame')) return 'hof';
+  return 'pro';
+}
+
+/**
+ * The obsidian card image URL for a token, used by our marketplace + metadata.
+ * Prefers the stored `draftTokenMetadata/{tokenId}.Image` (full bye/ADP/pick,
+ * written by mint / draft-close / the roster page); else builds it live from
+ * the Go-API team (drafted → obsidian team, un-drafted → grey draft pass).
+ */
+export function isOgImage(url: string | undefined): boolean {
+  return !!url && url.includes('/api/og/team-card');
+}
+
+export async function resolveTokenImage(tokenId: string, team?: TeamData | null): Promise<string> {
+  const id = String(tokenId).trim();
+  // Only a stored og URL (our own write, with full bye/ADP/pick) is trusted.
+  // The Go server also writes draftTokenMetadata with the OLD GCS image — never
+  // serve that; always (re)build the obsidian card instead.
+  if (isFirestoreConfigured() && /^\d+$/.test(id)) {
+    try {
+      const snap = await getAdminFirestore().collection('draftTokenMetadata').doc(id).get();
+      const img = snap.exists ? String((snap.data() as Record<string, unknown>).Image ?? '') : '';
+      if (isOgImage(img)) return img;
+    } catch { /* fall through to live build */ }
+  }
+  if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
+    const players = team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
+    return buildOgCardUrl({ tier: tierFromLevel(team.level), players });
+  }
+  return buildDraftPassUrl(id);
+}
 
 /**
  * On mint, give each freshly-minted token the grey pre-reveal "draft pass"

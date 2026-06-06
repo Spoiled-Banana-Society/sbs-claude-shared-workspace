@@ -6,6 +6,7 @@ import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
+import { resolveTokenImage } from '@/lib/nftCardServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,13 +61,14 @@ export async function GET(
       if (owner) {
         const team = await getTeamForToken(tokenId, owner);
         if (team) {
+          const ogImg = await resolveTokenImage(tokenId, team);
           return json({
             identifier: tokenId,
             contract: BBB4_CONTRACT,
             token_standard: 'erc721',
             name: team.leagueDisplayName || `#${tokenId}`,
-            image_url: team.imageUrl || null,
-            display_image_url: team.imageUrl || null,
+            image_url: ogImg,
+            display_image_url: ogImg,
             traits: teamDataToTraits(team),
             owners: [{ address: owner, quantity: 1, quantity_string: '1' }],
             owner,
@@ -173,9 +175,9 @@ export async function GET(
       } catch { /* best-effort */ }
     }
 
-    // SBS team card image (when available) wins over OpenSea's default
-    // banana placeholder. OpenSea image is kept as ultimate fallback.
-    const teamImage = team?.imageUrl ?? '';
+    // The obsidian SBS card (grey pass / tier team) is the source of truth —
+    // it always wins over OpenSea's image. Keyed on realTokenId via our metadata.
+    const ogImage = await resolveTokenImage(tokenId, team);
     return json({
       ...nft,
       traits,
@@ -184,8 +186,8 @@ export async function GET(
       name: (nft.name && !/^(draft\s*pass\s*)?#?\s*\d+$/i.test(String(nft.name).trim()))
         ? nft.name
         : (team?.leagueDisplayName || nft.name || null),
-      image_url: teamImage || nft.image_url,
-      display_image_url: teamImage || nft.display_image_url,
+      image_url: ogImage || nft.image_url,
+      display_image_url: ogImage || nft.display_image_url,
       owner,
       ownerName,
       ownerPfp,

@@ -95,7 +95,7 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
               size={40}
               equippedBadge={userEquippedBadge}
               useNextImage={false}
-              className="border border-[#777]"
+              className=""
             />
           </div>
         ) : (

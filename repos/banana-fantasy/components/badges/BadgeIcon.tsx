@@ -108,10 +108,8 @@ export function BadgeIcon({
     ? 'inline-flex items-center justify-center select-none badge-pulse'
     : 'inline-flex items-center justify-center select-none';
 
-  // In plain mode the disc carries a soft glow that scales with the badge
-  // (so a 14px avatar emblem gets a ~2-3px halo, not the fixed 10px pulse
-  // halo that swamps it). Falls back to baseGlow at normal sizes.
-  const plainGlow = unlocked ? `0 0 ${Math.max(2, Math.round(size * 0.16))}px ${color}99` : 'none';
+  // Plain mode (the avatar-corner overlay) has NO glow — the colored halo
+  // smudged the avatar's border ring around it. Just the clean disc.
 
   // Brushed-metal sweep used by the 'medal' ring style. Built from the
   // badge's own color (highlight) + accent (shadow) so silver reads silver
@@ -225,7 +223,7 @@ export function BadgeIcon({
         color: unlocked ? '#fff' : LOCKED_GREY,
         fontSize,
         lineHeight: 1,
-        boxShadow: plain ? plainGlow : baseGlow,
+        boxShadow: plain ? 'none' : baseGlow,
         opacity: unlocked ? 1 : 0.55,
         filter: unlocked ? undefined : 'grayscale(0.6)',
       }}

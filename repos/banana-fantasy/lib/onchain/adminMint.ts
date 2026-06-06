@@ -242,6 +242,40 @@ function buildWalletClients() {
   return { account, walletClient, publicClient };
 }
 
+const BASEURI_ABI = [
+  { name: 'setBaseURI', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'uri', type: 'string' }], outputs: [] },
+  { name: 'tokenURI', type: 'function', stateMutability: 'view', inputs: [{ name: 'id', type: 'uint256' }], outputs: [{ type: 'string' }] },
+] as const;
+
+/**
+ * Set the BBB4 collection's mutable baseURI (onlyOwner) → tokenURI(N) resolves
+ * to `${uri}${N}`, our /api/nft/metadata endpoint. Returns the tx hash and a
+ * sample tokenURI for verification.
+ */
+export async function setBbb4BaseURI(uri: string): Promise<{ txHash: string; tokenURISample: string }> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'setBaseURI', (ov) =>
+    walletClient.writeContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BASEURI_ABI,
+      functionName: 'setBaseURI',
+      args: [uri],
+      ...ov,
+    }),
+  );
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  let tokenURISample = '';
+  try {
+    tokenURISample = (await publicClient.readContract({
+      address: BBB4_CONTRACT_ADDRESS,
+      abi: BASEURI_ABI,
+      functionName: 'tokenURI',
+      args: [811n],
+    })) as string;
+  } catch { /* best-effort verification */ }
+  return { txHash, tokenURISample };
+}
+
 /**
  * Submit an EIP-2612 USDC permit signed by the user. Admin wallet pays gas.
  * Returns the tx hash. Throws ApiError(400) if the permit is rejected (bad

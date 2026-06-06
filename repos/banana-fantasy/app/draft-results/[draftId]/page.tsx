@@ -130,6 +130,9 @@ export default function DraftResultsPage() {
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [displayName, setDisplayName] = useState('');
   const [cardImages, setCardImages] = useState<Record<string, { imageUrl: string; cardId: string }>>({});
+  // wallet → authoritative on-chain BBB4 token id (realTokenId). Captured
+  // independently of the backend image so the NFT-image write can fire promptly.
+  const [realTokenIds, setRealTokenIds] = useState<Record<string, string>>({});
   // ownerId → 1-indexed pick position in the draft order. Renders as the
   // "Pick #N" badge in the header + share image. Falls back to nothing when
   // we couldn't resolve the draft order (e.g., very old draft missing info).
@@ -215,8 +218,11 @@ export default function DraftResultsPage() {
             if (match) {
               const imgUrl = String(match._imageUrl ?? match.imageUrl ?? '');
               const cId = String(match.cardId || match._cardId || '');
+              const rtid = String(match.realTokenId ?? '');
+              const owk = walletAddress.toLowerCase();
+              if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[owk] === rtid ? prev : { ...prev, [owk]: rtid }));
               if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
-                setCardImages(prev => ({ ...prev, [walletAddress.toLowerCase()]: { imageUrl: imgUrl, cardId: cId } }));
+                setCardImages(prev => ({ ...prev, [owk]: { imageUrl: imgUrl, cardId: cId } }));
               }
               const tokenName = String(match.leagueDisplayName || match._leagueDisplayName || '');
               if (tokenName) setDisplayName(prev => prev || tokenName);
@@ -294,6 +300,8 @@ export default function DraftResultsPage() {
         if (match) {
           const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
           const cId = String(match.cardId || (match as Record<string, unknown>)._cardId || '');
+          const rtid = String((match as Record<string, unknown>).realTokenId ?? '');
+          if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[key] === rtid ? prev : { ...prev, [key]: rtid }));
           if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
             setCardImages(prev => ({ ...prev, [key]: { imageUrl: imgUrl, cardId: cId } }));
           }
@@ -330,6 +338,8 @@ export default function DraftResultsPage() {
         if (match) {
           const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
           const cId = String(match.cardId || (match as Record<string, unknown>)._cardId || '');
+          const rtid = String((match as Record<string, unknown>).realTokenId ?? '');
+          if (/^\d+$/.test(rtid)) setRealTokenIds(prev => (prev[key] === rtid ? prev : { ...prev, [key]: rtid }));
           if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
             // Found it — write to state. cardImageUrl flips truthy, this effect
             // re-runs and early-returns, and the cleanup below clears the timer.
@@ -570,7 +580,8 @@ export default function DraftResultsPage() {
   const nftImgFiredRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!walletAddress || selectedPlayer.toLowerCase() !== walletAddress.toLowerCase()) return;
-    const tokenId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
+    // Key on the on-chain realTokenId — the id OpenSea / our metadata endpoint use.
+    const tokenId = realTokenIds[selectedPlayer.toLowerCase()] || '';
     if (!/^\d+$/.test(tokenId)) return;
     if (nftImgFiredRef.current.has(tokenId)) return;
     const r = allRosters[selectedPlayer];
@@ -590,7 +601,7 @@ export default function DraftResultsPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tokenId, tier, passNo: tokenId, players }),
     }).catch(() => { nftImgFiredRef.current.delete(tokenId); });
-  }, [walletAddress, selectedPlayer, draftLevel, cardImages, allRosters]);
+  }, [walletAddress, selectedPlayer, draftLevel, realTokenIds, allRosters]);
 
   // ─── Loading ───
   if (isLoading) {
@@ -642,11 +653,8 @@ export default function DraftResultsPage() {
       const [tm, ps] = p.playerId.split('-');
       return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
     });
-  // The 1080x1350 (X-safe) NFT image for download/share.
-  const cardTokenId = cardImages[selectedPlayer.toLowerCase()]?.cardId || '';
-  const ogImageUrl = /^\d+$/.test(cardTokenId)
-    ? buildOgCardUrl({ tier: cardTier, passNo: cardTokenId, players: cardPlayers })
-    : '';
+  // The 1080x1350 (X-safe) NFT image for download/share (team card has no pass #).
+  const ogImageUrl = cardPlayers.length > 0 ? buildOgCardUrl({ tier: cardTier, players: cardPlayers }) : '';
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] px-4 py-8">
