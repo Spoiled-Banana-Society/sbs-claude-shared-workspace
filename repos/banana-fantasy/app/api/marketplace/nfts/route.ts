@@ -135,7 +135,9 @@ export async function GET(req: Request) {
       const synthetic = teamDataToTraits(team);
       const existing = Array.isArray(nft.traits) ? nft.traits : [];
       (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
-      if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
+      // Override OpenSea's generic name ("#1448" / "Draft Pass #1448") with the
+      // real league name once we've resolved the team.
+      if (team.leagueDisplayName && (!nft.name || /^(draft\s*pass\s*)?#?\s*\d+$/i.test(nft.name.trim()))) {
         (nft as { name: string }).name = team.leagueDisplayName;
       }
       if (team.imageUrl) {

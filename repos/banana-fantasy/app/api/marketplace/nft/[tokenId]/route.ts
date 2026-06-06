@@ -179,7 +179,11 @@ export async function GET(
     return json({
       ...nft,
       traits,
-      name: nft.name || team?.leagueDisplayName || null,
+      // Prefer the real league name; only fall back to OpenSea's name when it
+      // isn't a generic "#N" / "Draft Pass #N" placeholder.
+      name: (nft.name && !/^(draft\s*pass\s*)?#?\s*\d+$/i.test(String(nft.name).trim()))
+        ? nft.name
+        : (team?.leagueDisplayName || nft.name || null),
       image_url: teamImage || nft.image_url,
       display_image_url: teamImage || nft.display_image_url,
       owner,
