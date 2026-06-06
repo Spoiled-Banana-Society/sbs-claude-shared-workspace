@@ -144,6 +144,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
               alt={user.username}
               size={80}
               equippedBadge={user.equippedBadge}
+              ripeness={user.ripeness}
             />
             <input
               type="file"

@@ -426,12 +426,13 @@ export async function POST(req: Request) {
       }
 
       try {
+        // Winning JP/HOF on the wheel is an alternate path into the matching
+        // club badge — same membership as entering that draft type.
         const { unlockBadge } = await import('@/lib/db');
-        await unlockBadge(userId.toLowerCase(), 'first-spin', { spinId }).catch(() => {});
         if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-          await unlockBadge(userId.toLowerCase(), 'spin-jackpot', { spinId }).catch(() => {});
+          await unlockBadge(userId.toLowerCase(), 'jackpot-club', { source: 'wheel', spinId }).catch(() => {});
         } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-          await unlockBadge(userId.toLowerCase(), 'spin-hof', { spinId }).catch(() => {});
+          await unlockBadge(userId.toLowerCase(), 'hof-club', { source: 'wheel', spinId }).catch(() => {});
         }
       } catch (badgeErr) {
         logger.warn('wheel.spin.badge_unlock_failed', { spinId, err: (badgeErr as Error).message });

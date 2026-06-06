@@ -5,9 +5,9 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { getUserBadges, unlockBadge } from '@/lib/db';
+import { getUserBadges, unlockBadge, computeAndStoreRipeness } from '@/lib/db';
 import { BADGE_CATALOG } from '@/lib/badges/catalog';
-import { awardDraftCountBadges, awardLeagueOutcomeBadges } from '@/lib/badges/awards';
+import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
 import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
 import type { User } from '@/types';
 import { logger } from '@/lib/logger';
@@ -75,51 +75,47 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
 
   await userRef.set({ lastBadgeSweepAt: new Date().toISOString() }, { merge: true });
 
+  // Ripeness + OG + champions don't depend on the Go API, so compute them
+  // first — they still update even if the Go API is unreachable. Ripeness
+  // is a recolor, not an unlock (no notification).
+  const awards: string[] = [];
+  await computeAndStoreRipeness(userId);
+  if (await awardOgIfReturning(userId)) awards.push('og');
+  awards.push(...await awardChampionBadges(userId));
+
   try {
     const url = `${getServerDraftsApiUrl()}/owner/${encodeURIComponent(userId)}/draftToken/all`;
     const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return { ran: true, reason: 'go-api-not-ok', goApiStatus: res.status };
+    if (!res.ok) return { ran: true, reason: 'go-api-not-ok', goApiStatus: res.status, awards };
     const body = await res.json() as { active?: RawApiToken[]; available?: RawApiToken[] };
     const active = body.active ?? [];
-    const available = body.available ?? [];
     const joined = active.filter(t => (t._leagueId || t.leagueId)).length;
     const leagues = active
       .filter(t => (t._leagueId || t.leagueId))
       .map(t => mapDraftTokenToLeague(normalizeToken(t)));
     const completedCount = leagues.filter(l => l.status === 'completed').length;
-    await awardDraftCountBadges(userId, completedCount);
-    const { awards } = await awardLeagueOutcomeBadges(userId, leagues);
 
-    // BBB4 participant — any active or available draft token implies the
-    // user holds at least one BBB4 pass (current season is the only thing
-    // the Go API tracks token-side). Cheap idempotent unlock.
-    if (active.length > 0 || available.length > 0) {
-      if (await unlockBadge(userId, 'bbb4-participant', { source: 'sweep' })) {
-        awards.push('bbb4-participant');
-      }
-    }
+    // Clubs — entering a Jackpot/HOF draft (resolved league type) earns the
+    // matching club badge.
+    awards.push(...await awardClubBadges(userId, leagues));
 
-    // Wheel-spin badges — query the top-level wheelSpins collection for
-    // any spins owned by this user. The wheel-spin endpoint also fires
-    // these unlocks inline; this is the catch-up path for users who
-    // spun before the badge system shipped.
+    // Club catch-up for jackpot/HOF wheel winners — the wheel route also
+    // fires these inline; this re-checks for spins from before the badge
+    // system shipped. Query the top-level wheelSpins collection.
     try {
       const spinsSnap = await db
         .collection('wheelSpins')
         .where('userId', '==', userId)
         .limit(50)
         .get();
-      if (spinsSnap.size > 0) {
-        await unlockBadge(userId, 'first-spin', { source: 'sweep' });
-        for (const doc of spinsSnap.docs) {
-          const spin = doc.data();
-          const prizeType = spin?.prize?.type;
-          const prizeValue = spin?.prize?.value;
-          if (prizeType === 'custom' && prizeValue === 'jackpot') {
-            await unlockBadge(userId, 'spin-jackpot', { spinId: doc.id });
-          } else if (prizeType === 'custom' && prizeValue === 'hof') {
-            await unlockBadge(userId, 'spin-hof', { spinId: doc.id });
-          }
+      for (const doc of spinsSnap.docs) {
+        const spin = doc.data();
+        const prizeType = spin?.prize?.type;
+        const prizeValue = spin?.prize?.value;
+        if (prizeType === 'custom' && prizeValue === 'jackpot') {
+          if (await unlockBadge(userId, 'jackpot-club', { source: 'wheel', spinId: doc.id })) awards.push('jackpot-club');
+        } else if (prizeType === 'custom' && prizeValue === 'hof') {
+          if (await unlockBadge(userId, 'hof-club', { source: 'wheel', spinId: doc.id })) awards.push('hof-club');
         }
       }
     } catch (err) {
@@ -129,7 +125,7 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     return { ran: true, joined, completed: completedCount, awards };
   } catch (err) {
     logger.warn('badges.read.sweep.failed', { userId, err });
-    return { ran: true, reason: err instanceof Error ? err.message : String(err) };
+    return { ran: true, reason: err instanceof Error ? err.message : String(err), awards };
   }
 }
 
@@ -148,7 +144,7 @@ export async function GET(req: Request) {
   try {
     const userId = getSearchParam(req, 'userId');
     if (!userId) {
-      return json({ catalog: BADGE_CATALOG, unlocked: [], equipped: null }, 200);
+      return json({ catalog: BADGE_CATALOG, unlocked: [], equipped: null, ripeness: null }, 200);
     }
 
     const lower = userId.toLowerCase();
@@ -166,6 +162,11 @@ export async function GET(req: Request) {
     ]);
     const user = userSnap.exists ? (userSnap.data() as User) : null;
 
+    // Ripeness is normally written by the sweep above. If it's missing (sweep
+    // was throttled and the user has never swept), compute it now so the
+    // banana always has a tier.
+    const ripeness = user?.ripeness ?? await computeAndStoreRipeness(lower);
+
     return json({
       catalog: BADGE_CATALOG,
       unlocked: badges.filter(b => b.unlocked).map(b => ({
@@ -173,6 +174,7 @@ export async function GET(req: Request) {
         unlockedAt: b.unlockedAt ?? null,
       })),
       equipped: user?.equippedBadge ?? null,
+      ripeness,
       ...(debug ? { sweep } : {}),
     }, 200);
   } catch (err) {

@@ -25,6 +25,7 @@ import type {
   ReferralEntry,
   ReferralEntryRewards,
   ReferralStats,
+  Ripeness,
   User,
   UserBadge,
   UserExposure,
@@ -32,6 +33,7 @@ import type {
   WheelSpin,
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
+import { ripenessFromCount } from '@/lib/badges/ripeness';
 import { pushStreamEvent } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
@@ -780,14 +782,14 @@ export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user
     return { spin: deepClone(spin), user: deepClone(user) };
   });
 
-  // Badge unlocks on every spin — fire-and-forget so a Firestore hiccup
-  // on the badge write doesn't roll back the spin reward. The unlock
-  // function is idempotent so retries are safe.
-  void unlockBadge(userId, 'first-spin', { spinId: result.spin.id }).catch(() => {});
+  // Club badges on a jackpot/HOF wheel win — fire-and-forget so a Firestore
+  // hiccup on the badge write doesn't roll back the spin reward. Idempotent,
+  // so retries (and the badge sweep) are safe. Winning JP/HOF on the wheel is
+  // an alternate path into the same club as entering that draft type.
   if (result.spin.prize.type === 'jackpot') {
-    void unlockBadge(userId, 'spin-jackpot', { spinId: result.spin.id }).catch(() => {});
+    void unlockBadge(userId, 'jackpot-club', { source: 'wheel', spinId: result.spin.id }).catch(() => {});
   } else if (result.spin.prize.type === 'hof') {
-    void unlockBadge(userId, 'spin-hof', { spinId: result.spin.id }).catch(() => {});
+    void unlockBadge(userId, 'hof-club', { source: 'wheel', spinId: result.spin.id }).catch(() => {});
   }
 
   return result;
@@ -2317,8 +2319,11 @@ export async function getUserBadges(userId: string): Promise<Array<UserBadge & {
   snap.docs.forEach(d => existing.set(d.id, d.data() as UserBadge));
 
   // Lazy-backfill: any catalog badge missing from the user's subcollection
-  // gets seeded as locked.
-  const missing = BADGE_CATALOG.filter(b => !existing.has(b.id));
+  // gets seeded as locked. Skip dynamic badges (ripeness — always present,
+  // not a per-user unlock) and always-unlocked cosmetics (no doc needed).
+  const missing = BADGE_CATALOG.filter(
+    b => !b.dynamic && !b.alwaysUnlocked && !existing.has(b.id),
+  );
   if (missing.length > 0) {
     const batch = db.batch();
     for (const b of missing) {
@@ -2423,6 +2428,57 @@ export async function equipBadge(
 }
 
 /**
+ * Revoke a badge — used for the transient King of Drafts, which moves to a
+ * new holder each week. Marks the badge locked again and clears it from the
+ * user's equipped slot (so their avatar falls back to the banana). Returns
+ * true if the user actually held it.
+ */
+export async function revokeBadge(userId: string, badgeId: string): Promise<boolean> {
+  const db = getAdminFirestore();
+  const lower = userId.toLowerCase();
+  const userRef = db.collection(USERS_COLLECTION).doc(lower);
+  const badgeRef = userRef.collection(BADGES_SUBCOLLECTION).doc(badgeId);
+
+  const [badgeSnap, userSnap] = await Promise.all([badgeRef.get(), userRef.get()]);
+  const held = badgeSnap.exists && (badgeSnap.data() as UserBadge).unlocked === true;
+
+  await badgeRef.set({ id: badgeId, unlocked: false }, { merge: true });
+  if (userSnap.exists && (userSnap.data() as User).equippedBadge === badgeId) {
+    await userRef.set({ equippedBadge: null }, { merge: true });
+  }
+  return held;
+}
+
+/**
+ * Sum the PAID BBB4 passes a user has BOUGHT. Free passes aren't in
+ * v2_purchases (they're grants), so every completed purchase counts. Drives
+ * the dynamic "ripeness" banana — no draft entry required, buying is enough.
+ */
+export async function getPaidPassesBoughtBBB4(userId: string): Promise<number> {
+  const purchases = await getPurchaseHistory(userId.toLowerCase());
+  return purchases
+    .filter(p => p.status === 'completed' && (p.paymentMethod === 'usdc' || p.paymentMethod === 'card'))
+    .reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+}
+
+/**
+ * Compute the user's ripeness tier from their paid-pass count and denormalize
+ * it onto the user doc so every render site (display-batch, profile, draft
+ * room) can color the banana without re-querying purchases. Returns the tier.
+ * This is NOT a badge unlock — no notification fires; the banana just recolors.
+ */
+export async function computeAndStoreRipeness(userId: string): Promise<Ripeness> {
+  const lower = userId.toLowerCase();
+  const count = await getPaidPassesBoughtBBB4(lower);
+  const ripeness = ripenessFromCount(count);
+  await getAdminFirestore()
+    .collection(USERS_COLLECTION)
+    .doc(lower)
+    .set({ ripeness }, { merge: true });
+  return ripeness;
+}
+
+/**
  * Read just the equipped badge ids for a list of users — used by the
  * leaderboard / batch-render path so we don't N+1-query Firestore.
  */
@@ -2478,12 +2534,13 @@ export async function getUserDisplayBatch(userIds: string[]): Promise<Record<str
   profilePicture: string | null;
   equippedBadge: string | null;
   bananaNumber: number | null;
+  ripeness: Ripeness | null;
 }>> {
   if (userIds.length === 0) return {};
   const db = getAdminFirestore();
   const refs = userIds.map(id => db.collection(USERS_COLLECTION).doc(id));
   const snaps = await db.getAll(...refs);
-  const out: Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null }> = {};
+  const out: Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }> = {};
   const needsAssignment: string[] = [];
   for (let i = 0; i < userIds.length; i++) {
     const data = snaps[i].exists ? (snaps[i].data() as User) : null;
@@ -2497,6 +2554,9 @@ export async function getUserDisplayBatch(userIds: string[]): Promise<Record<str
       profilePicture: data?.profilePicture || null,
       equippedBadge: data?.equippedBadge ?? null,
       bananaNumber: existingNumber,
+      // Denormalized ripeness tier (set by the badge sweep). Null until the
+      // user's first sweep runs — the banana then defaults to Unripe.
+      ripeness: data?.ripeness ?? null,
     };
     // Only users who actually SHOW a banana handle (no username set) and
     // don't have a number yet need one assigned.

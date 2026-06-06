@@ -5,13 +5,24 @@ import Image from 'next/image';
 import { BadgeIcon } from './BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import type { Ripeness } from '@/types';
 
 interface AvatarWithBadgeProps {
   imageUrl?: string | null;
   alt?: string;
   size: number; // avatar diameter in pixels
-  /** The user's currently equipped badge id, or null/undefined for none. */
+  /** The user's currently equipped badge id, or null/undefined for none.
+   *  When none, the user's dynamic "ripeness" banana is shown by default —
+   *  everyone always has a banana unless they equip a different earned badge. */
   equippedBadge?: string | null;
+  /** The user's current ripeness tier (color/label). Drives the default
+   *  banana's fill + tooltip. Defaults to Unripe when omitted. */
+  ripeness?: Ripeness | null;
+  /** Set false to hide the corner badge entirely (e.g. very dense contexts
+   *  where even the banana is too much). Defaults to true. */
+  showBadge?: boolean;
+  /** Set false to disable the hover tooltip on the corner badge. Default true. */
+  showBadgeTooltip?: boolean;
   /** Optional CSS class overrides for the wrapper. */
   className?: string;
   /** Border-ring classes (e.g. "border-2 border-[#F3E216]"). Rendered as an
@@ -49,6 +60,9 @@ export function AvatarWithBadge({
   alt = 'avatar',
   size,
   equippedBadge,
+  ripeness,
+  showBadge = true,
+  showBadgeTooltip = true,
   className = '',
   ringClassName = '',
   fallbackSrc = '/banana-profile.png',
@@ -74,7 +88,13 @@ export function AvatarWithBadge({
   // DOWN a touch less so it clears the name on the tight tiles.
   const edgeOffsetX = Math.round(size * 0.076);
   const edgeOffsetY = Math.round(size * (isMobile ? 0.05 : 0.076));
-  const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
+  // Effective badge: the equipped one (if it's still a real catalog badge),
+  // else the dynamic "ripeness" banana that everyone carries by default. A
+  // stale equipped id from the old catalog falls back to the banana rather
+  // than rendering nothing. So every avatar always shows a badge.
+  const equippedValid = equippedBadge && BADGE_BY_ID[equippedBadge] ? equippedBadge : null;
+  const effectiveBadgeId = equippedValid || 'ripeness';
+  const badge = showBadge ? BADGE_BY_ID[effectiveBadgeId] : undefined;
   // Every avatar renders full-frame (object-cover fills the circle), so the
   // badge sits at the identical size + position on ALL of them — banana,
   // upload, anything. The default banana is itself a full-frame image now (a
@@ -125,7 +145,14 @@ export function AvatarWithBadge({
             height: badgeSize,
           }}
         >
-          <BadgeIcon badge={badge} size={badgeSize} unlocked plain showTooltip={false} />
+          <BadgeIcon
+            badge={badge}
+            size={badgeSize}
+            unlocked
+            plain
+            ripeness={ripeness}
+            showTooltip={showBadgeTooltip}
+          />
         </span>
       )}
       {/* Border ring drawn LAST (on top of the badge) so it's always a complete

@@ -66,6 +66,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
           alt={user.username}
           size={36}
           equippedBadge={user.equippedBadge}
+          ripeness={user.ripeness}
         />
         {/* Dropdown arrow */}
         <svg

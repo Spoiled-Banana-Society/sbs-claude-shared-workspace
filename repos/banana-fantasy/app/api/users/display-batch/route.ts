@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getUserDisplayBatch } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import type { Ripeness } from '@/types';
 
 const MAX_BATCH = 30;
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -42,6 +43,8 @@ interface UserDisplay {
   displayName: string | null;
   imageUrl: string | null;
   equippedBadge: string | null;
+  /** Ripeness tier — colors the user's default banana badge. */
+  ripeness: Ripeness | null;
 }
 
 /**
@@ -108,6 +111,7 @@ export async function POST(req: Request) {
         displayName: v?.username || goApiData[w]?.displayName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
         equippedBadge: v?.equippedBadge ?? null,
+        ripeness: v?.ripeness ?? null,
       };
     }
 

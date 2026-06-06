@@ -526,14 +526,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(merged);
           setIsNewUser(false);
           setShowOnboarding(false);
-          // Lazy-load the equipped badge from our own backend (the Go
-          // API doesn't know about badges). Fire-and-forget — if it
-          // fails the avatar just renders without a badge overlay.
+          // Lazy-load the equipped badge + ripeness tier from our own backend
+          // (the Go API doesn't know about badges). Fire-and-forget — if it
+          // fails the avatar just renders the default (Unripe) banana.
           fetch(`/api/badges?userId=${encodeURIComponent(walletAddress.toLowerCase())}`)
             .then(r => r.ok ? r.json() : null)
             .then((data) => {
               if (data && typeof data.equipped !== 'undefined') {
-                setUser(prev => prev ? { ...prev, equippedBadge: data.equipped ?? null } : prev);
+                setUser(prev => prev ? {
+                  ...prev,
+                  equippedBadge: data.equipped ?? null,
+                  ripeness: data.ripeness ?? prev.ripeness ?? null,
+                } : prev);
               }
             })
             .catch(() => { /* non-fatal */ });

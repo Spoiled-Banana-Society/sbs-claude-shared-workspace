@@ -5,7 +5,8 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { requireAdmin } from '@/lib/adminAuth';
-import { awardLeagueOutcomeBadges, awardDraftCountBadges } from '@/lib/badges/awards';
+import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
+import { computeAndStoreRipeness } from '@/lib/db';
 import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
@@ -58,12 +59,11 @@ async function fetchOwnerLeagues(wallet: string) {
  * POST /api/admin/badges/run-week14-sweep
  * Body: { userId }
  *
- * Admin-only. For the given wallet, fetches their league portfolio from
- * the Go API and awards: league-winner-{type}, made-playoffs, and the
- * draft-count tier badges (1/20/100). Idempotent.
- *
- * Beat-the-founder is NOT awarded here — that needs founder-league
- * score comparisons that require a separate data path. V2.
+ * Admin-only "re-sweep this user" tool. Recomputes the wallet's ripeness
+ * tier and awards any earned badges in the new system: Clubs (entered a
+ * Jackpot/HOF draft), OG (returning player), and Champions (winner
+ * snapshot). Idempotent. Champion snapshots are empty until provided, so
+ * those stay admin-grant-only for now.
  */
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
@@ -77,14 +77,18 @@ export async function POST(req: Request) {
     const leagues = await fetchOwnerLeagues(userId);
     const completed = leagues.filter(l => l.status === 'completed');
 
-    await awardDraftCountBadges(userId, completed.length);
-    const { awards } = await awardLeagueOutcomeBadges(userId, leagues);
+    const ripeness = await computeAndStoreRipeness(userId);
+    const awards: string[] = [];
+    awards.push(...await awardClubBadges(userId, leagues));
+    if (await awardOgIfReturning(userId)) awards.push('og');
+    awards.push(...await awardChampionBadges(userId));
 
     return json({
       ok: true,
       userId,
       leagueCount: leagues.length,
       completedCount: completed.length,
+      ripeness,
       awards,
     }, 200);
   } catch (err) {

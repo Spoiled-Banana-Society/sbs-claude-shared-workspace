@@ -15,6 +15,7 @@ interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
   equippedBadge?: string | null;
+  ripeness?: import('@/types').Ripeness | null;
 }
 
 interface DraftRoomRevealProps {
@@ -208,6 +209,7 @@ export function DraftRoomReveal({
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
             const otherBadge = playerUser?.equippedBadge ?? null;
+            const otherRipeness = playerUser?.ripeness ?? null;
             // Real (non-bot, non-you) drafters are friend/message-able during the
             // reveal + pre-draft countdown (live-mode name is a wallet).
             const friendWallet = !isUser && player?.name?.toLowerCase().startsWith('0x')
@@ -251,6 +253,7 @@ export function DraftRoomReveal({
                         alt="You"
                         size={48}
                         equippedBadge={user?.equippedBadge}
+                        ripeness={user?.ripeness}
                         useNextImage={false}
                         ringClassName="border-2 border-[#F3E216]"
                       />
@@ -263,6 +266,7 @@ export function DraftRoomReveal({
                           alt={displayName}
                           size={48}
                           equippedBadge={otherBadge}
+                          ripeness={otherRipeness}
                           useNextImage={false}
                           className="cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
                         />
@@ -275,6 +279,7 @@ export function DraftRoomReveal({
                         alt={displayName}
                         size={48}
                         equippedBadge={otherBadge}
+                        ripeness={otherRipeness}
                         useNextImage={false}
                         className=""
                       />

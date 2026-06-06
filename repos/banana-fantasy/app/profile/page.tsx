@@ -122,6 +122,7 @@ export default function ProfilePage() {
                 alt="Avatar"
                 size={80}
                 equippedBadge={user.equippedBadge}
+                ripeness={user.ripeness}
               />
             </div>
 

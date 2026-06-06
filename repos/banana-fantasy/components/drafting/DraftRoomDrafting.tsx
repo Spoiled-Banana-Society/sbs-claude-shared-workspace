@@ -27,6 +27,7 @@ interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
   equippedBadge?: string | null;
+  ripeness?: import('@/types').Ripeness | null;
 }
 
 interface DraftRoomDraftingProps {
@@ -175,6 +176,7 @@ export function DraftRoomDrafting({
                   : null;
                 const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
                 const otherBadge = playerUser?.equippedBadge ?? null;
+                const otherRipeness = playerUser?.ripeness ?? null;
                 // A drafter is friend/message-able only if it's a real user
                 // (live-mode name is their wallet, starts with 0x) and not you.
                 // Bots (name `bot-…`) and empty slots are skipped.
@@ -227,6 +229,7 @@ export function DraftRoomDrafting({
                             alt="You"
                             size={48}
                             equippedBadge={user?.equippedBadge}
+                            ripeness={user?.ripeness}
                             useNextImage={false}
                             ringClassName="border-2 border-[#F3E216]"
                           />
@@ -242,6 +245,7 @@ export function DraftRoomDrafting({
                               alt={displayName}
                               size={48}
                               equippedBadge={otherBadge}
+                              ripeness={otherRipeness}
                               useNextImage={false}
                               className="cursor-pointer hover:ring-2 hover:ring-banana/50 transition-all"
                             />
@@ -254,6 +258,7 @@ export function DraftRoomDrafting({
                             alt={displayName}
                             size={48}
                             equippedBadge={otherBadge}
+                            ripeness={otherRipeness}
                             useNextImage={false}
                             className=""
                           />
@@ -487,6 +492,7 @@ export function DraftRoomDrafting({
                   usersMap={usersMap}
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
+                  userRipeness={user?.ripeness}
                   userDisplayName={
                     (user?.username && !user.username.startsWith('0x'))
                       ? user.username
@@ -504,6 +510,7 @@ export function DraftRoomDrafting({
                   userProfilePicture={user?.profilePicture ?? undefined}
                   userName={user?.username ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
+                  userRipeness={user?.ripeness}
                 />
               )}
               {/* Keep chat mounted across tab switches and through draft
