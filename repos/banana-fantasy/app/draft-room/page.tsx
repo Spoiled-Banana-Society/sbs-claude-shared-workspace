@@ -107,7 +107,7 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
   const { getAccessToken } = usePrivy();
   const {
     playSpinningSound,
@@ -2317,8 +2317,12 @@ function DraftRoomContent() {
         />
       )}
 
-      {/* Login gate — dims draft and blocks interaction when logged out */}
-      {!isLoggedIn && (
+      {/* Login gate — dims draft and blocks interaction when logged out.
+          Guard on !authLoading so it never flashes during Privy hydration:
+          on a fresh draft-room load `user` is briefly null while Privy
+          restores the session, which used to flash "Log in to Draft" over
+          the lobby/loading screen for already-signed-in users. */}
+      {!isLoggedIn && !authLoading && (
         <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center">
           <div className="text-center p-8 max-w-sm">
             <div className="text-5xl mb-4">🍌</div>
