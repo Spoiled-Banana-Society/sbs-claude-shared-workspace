@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-type IconC = ComponentType<{ size?: number; color?: string; strokeWidth?: number; fill?: string }>;
+type IconC = ComponentType<any>;
 
 interface B { id: string; label: string; color: string; Icon?: IconC; num?: string; champ?: boolean; }
 
