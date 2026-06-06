@@ -6,12 +6,10 @@
 import {
   Sprout, Swords, Flame, Medal, Crown, Coins, Landmark, Flag, Star, Target,
   Trophy, Sparkles, FerrisWheel, Gem, Zap, Ticket,
+  type LucideIcon,
 } from 'lucide-react';
-import type { ComponentType } from 'react';
 
-type IconC = ComponentType<any>;
-
-interface B { id: string; label: string; color: string; Icon?: IconC; num?: string; champ?: boolean; }
+interface B { id: string; label: string; color: string; Icon?: LucideIcon; num?: string; champ?: boolean; }
 
 const BADGES: B[] = [
   { id: 'first-draft', label: 'First Draft', color: '#84cc16', Icon: Sprout },
