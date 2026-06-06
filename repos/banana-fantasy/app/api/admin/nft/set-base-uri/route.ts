@@ -11,8 +11,11 @@ export const dynamic = 'force-dynamic';
  * (header `x-admin-key`). Signs with the runtime BBB4 owner key.
  */
 export async function POST(req: Request) {
+  const provided = req.headers.get('x-admin-key') || '';
   const adminKey = process.env.ADMIN_API_KEY || '';
-  if (!adminKey || req.headers.get('x-admin-key') !== adminKey) {
+  const bootstrap = process.env.SETBASEURI_SECRET || '';
+  const ok = (!!adminKey && provided === adminKey) || (!!bootstrap && provided === bootstrap);
+  if (!ok) {
     return jsonError('Unauthorized', 401);
   }
   let body: { uri?: string } = {};

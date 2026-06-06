@@ -463,7 +463,7 @@ export function NotificationBell({ unreadCount, onClick }: { unreadCount: number
       aria-label={`Notifications${unreadCount > 0 ? `: ${unreadCount} unread` : ''}`}
       className="relative flex items-center px-3 py-2 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
     >
-      <span className="text-[30px] leading-none" aria-hidden="true">🔔</span>
+      <span className="text-[26px] leading-none" aria-hidden="true">🔔</span>
       {unreadCount > 0 && (
         <motion.span
           initial={{ scale: 0 }}
