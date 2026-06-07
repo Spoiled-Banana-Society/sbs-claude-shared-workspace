@@ -23,18 +23,23 @@ export interface RipenessTier {
   /** Min paid passes to unlock this tier. */
   min: number;
   label: string;
+  /** Banana fill color for this tier. */
   color: string;
   range: string;
+  /** Optional disc rim color (defaults to grey). Spoiled gets a gold frame to
+   *  mark the rare top tier without lightening the (correctly darkest) banana. */
+  rim?: string;
 }
 
-// Ordered low → high.
+// Ordered low → high. Colors progress green → lime → yellow → orange → brown →
+// dark (Spoiled darkest = most spoiled, framed in gold).
 export const RIPENESS_TIERS: RipenessTier[] = [
-  { key: 'unripe', min: 0, label: 'Unripe', color: '#7cb342', range: '1–9' },
-  { key: 'fresh', min: 10, label: 'Fresh', color: '#9bc63a', range: '10–19' },
-  { key: 'ripe', min: 20, label: 'Ripe', color: '#f5c518', range: '20–49' },
-  { key: 'overripe', min: 50, label: 'Overripe', color: '#e0a008', range: '50–99' },
-  { key: 'rotten', min: 100, label: 'Rotten', color: '#a4632c', range: '100–199' },
-  { key: 'spoiled', min: 200, label: 'Spoiled', color: '#6f5733', range: '200+' },
+  { key: 'unripe', min: 0, label: 'Unripe', color: '#4e9a2f', range: '1–9' },
+  { key: 'fresh', min: 10, label: 'Fresh', color: '#aecb2b', range: '10–19' },
+  { key: 'ripe', min: 20, label: 'Ripe', color: '#f7d117', range: '20–49' },
+  { key: 'overripe', min: 50, label: 'Overripe', color: '#f0901b', range: '50–99' },
+  { key: 'rotten', min: 100, label: 'Rotten', color: '#9c5a26', range: '100–199' },
+  { key: 'spoiled', min: 200, label: 'Spoiled', color: '#7c5832', range: '200+', rim: '#cca54f' },
 ];
 
 /** The badge id for a tier key. */

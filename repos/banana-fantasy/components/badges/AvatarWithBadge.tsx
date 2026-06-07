@@ -40,6 +40,21 @@ interface AvatarWithBadgeProps {
   badgeScale?: number;
   /** Max corner badge size in px. Default 40. */
   badgeMax?: number;
+  /** Container shape for the corner badge. Default 'circle'. */
+  badgeShape?: 'circle' | 'squircle' | 'square' | 'square-soft' | 'shield' | 'hex';
+  /** Separator ring width (px) around the corner badge. Default 0 (none). */
+  badgeRingWidth?: number;
+  /** Separator ring color. */
+  badgeRingColor?: string;
+  /** Soft rim-colored glow on the corner badge. */
+  badgeGlow?: boolean;
+  /** Where the badge sits: bottom-right corner (default) or top-center topper
+   *  (crown-style, like some draft apps). */
+  badgePosition?: 'br' | 'top';
+  /** When a badge ring is present, the badge renders ON TOP of the avatar's
+   *  border ring so the ring "notches" around it. Set the ring color
+   *  (badgeRingColor) to the card/surface color for the punched-through look,
+   *  or white/grey for a visible separator. */
 }
 
 /**
@@ -72,8 +87,16 @@ export function AvatarWithBadge({
   ringClassName = '',
   fallbackSrc = '/banana-profile.png',
   useNextImage = true,
-  badgeScale = 0.44,
+  badgeScale = 0.42,
   badgeMax = 40,
+  // Locked design (2026-06-06): squircle badge box with a card-color cutout
+  // ring so the badge reads as a clean emblem that notches the avatar ring.
+  // Sites on a non-default surface pass their own badgeRingColor to match.
+  badgeShape = 'squircle',
+  badgeRingWidth = 2.5,
+  badgeRingColor = '#1c1c1f',
+  badgeGlow = false,
+  badgePosition = 'br',
 }: AvatarWithBadgeProps) {
   // Track image load failure so a broken/glitched pfp URL falls back to
   // the banana instead of rendering a broken image.
@@ -94,7 +117,9 @@ export function AvatarWithBadge({
   // small so it stays in the corner (not creeping toward the face). Mobile pokes
   // DOWN a touch less so it clears the name on the tight tiles.
   const edgeOffsetX = Math.round(size * 0.076);
-  const edgeOffsetY = Math.round(size * (isMobile ? 0.05 : 0.076));
+  // Less downward hang so the badge sits ON the bottom-right rim rather than
+  // dangling below the avatar (which crowded names in tight rows like the board).
+  const edgeOffsetY = Math.round(size * (isMobile ? 0.03 : 0.04));
   // Effective badge: the equipped one (if it's still a real catalog badge),
   // else the user's default banana = their highest unlocked ripeness tier
   // (derived from `ripeness`; Unripe for everyone else). A stale equipped id
@@ -146,33 +171,40 @@ export function AvatarWithBadge({
           onError={() => setLoadFailed(true)}
         />
       )}
-      {badge && (
-        <span
-          className="absolute pointer-events-auto"
-          style={{
-            right: -edgeOffsetX,
-            bottom: -edgeOffsetY,
-            width: badgeSize,
-            height: badgeSize,
-          }}
-        >
-          <BadgeIcon
-            badge={badge}
-            size={badgeSize}
-            unlocked
-            plain
-            showTooltip={showBadgeTooltip}
-          />
-        </span>
-      )}
-      {/* Border ring drawn LAST (on top of the badge) so it's always a complete
-          circle — the badge pokes slightly past it but can't erase it. */}
-      {ringClassName && (
-        <span
-          aria-hidden
-          className={`absolute inset-0 rounded-full pointer-events-none ${ringClassName}`}
-        />
-      )}
+      {(() => {
+        const badgeEl = badge ? (
+          <span
+            key="badge"
+            className="absolute pointer-events-auto"
+            style={badgePosition === 'top'
+              // display:flex + lineHeight:0 makes the badge a block-level flex
+              // item so its vertical position is exact, not subject to the
+              // inline-baseline gap (which drifted the badge 5–10px on small
+              // avatars and made placement look inconsistent).
+              ? { top: -Math.round(badgeSize * 0.42), left: '50%', transform: 'translateX(-50%)', width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }
+              : { right: -edgeOffsetX, bottom: -edgeOffsetY, width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }}
+          >
+            <BadgeIcon
+              badge={badge}
+              size={badgeSize}
+              unlocked
+              plain
+              shape={badgeShape}
+              ringWidth={badgeRingWidth}
+              ringColor={badgeRingColor}
+              glow={badgeGlow}
+              showTooltip={showBadgeTooltip}
+            />
+          </span>
+        ) : null;
+        const ringEl = ringClassName ? (
+          <span key="ring" aria-hidden className={`absolute inset-0 rounded-full pointer-events-none ${ringClassName}`} />
+        ) : null;
+        // With a badge ring, the badge sits ON TOP of the border ring so the
+        // ring notches around it. Without, the border ring is drawn last so
+        // it stays a complete circle (legacy).
+        return badgeRingWidth > 0 ? [ringEl, badgeEl] : [badgeEl, ringEl];
+      })()}
     </div>
   );
 }

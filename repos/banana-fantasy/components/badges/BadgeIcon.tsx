@@ -10,9 +10,50 @@ interface BadgeIconProps {
   size?: number; // pixel diameter — default 20
   unlocked?: boolean; // greys it out when false
   showTooltip?: boolean; // wrap in <Tooltip>; default true
+  /** Container shape for the badge. 'circle' is the current obsidian disc.
+   *  'squircle'/'shield'/'hex' are alternatives being evaluated. */
+  shape?: 'circle' | 'squircle' | 'square' | 'square-soft' | 'shield' | 'hex';
+  /** Separator ring around the badge (px) — makes it pop off the avatar/card.
+   *  Only follows the shape for circle/squircle (box-shadow). */
+  ringWidth?: number;
+  /** Color of the separator ring. */
+  ringColor?: string;
+  /** When true, add a soft glow in the rim color for a "lit emblem" pop. */
+  glow?: boolean;
   /** Corner-overlay mode (avatar badge). Same disc recipe; just a flag kept
    *  for call-site clarity — the renderer scales everything by `size`. */
   plain?: boolean;
+}
+
+// Glow color for a badge — prefer a vivid color: the colored rim for prestige
+// badges, else the content/tier color (ripeness banana) so grey-rim badges
+// still glow in their own hue.
+function rimGlow(badge: Badge): string {
+  const grey = '#48484f';
+  const base = badge.rimColor && badge.rimColor.toLowerCase() !== grey
+    ? badge.rimColor
+    : (badge.contentColor || '#7cb342');
+  return `${base}cc`; // ~80% alpha
+}
+
+// Container shape → CSS clip/radius. Both the rim and glass layers use the
+// same shape so the rim reads as a border.
+function shapeStyle(shape: string, s: number): React.CSSProperties {
+  switch (shape) {
+    case 'square':
+      return { borderRadius: Math.max(2, Math.round(s * 0.08)) };
+    case 'square-soft':
+      return { borderRadius: Math.round(s * 0.16) };
+    case 'squircle':
+      return { borderRadius: Math.round(s * 0.28) };
+    case 'shield':
+      return { clipPath: 'polygon(50% 0%, 100% 14%, 100% 56%, 50% 100%, 0% 56%, 0% 14%)' };
+    case 'hex':
+      return { clipPath: 'polygon(50% 0%, 95% 25%, 95% 75%, 50% 100%, 5% 75%, 5% 25%)' };
+    case 'circle':
+    default:
+      return { borderRadius: '9999px' };
+  }
 }
 
 // ── Obsidian-disc geometry (locked to ~/Desktop/badges-each.html) ────────
@@ -100,10 +141,21 @@ export function BadgeIcon({
   size = 20,
   unlocked = true,
   showTooltip = true,
+  shape = 'circle',
+  ringWidth = 0,
+  ringColor = 'rgba(255,255,255,0.92)',
+  glow = false,
   // `plain` is accepted (call sites pass it for the avatar-corner overlay) but
   // the obsidian-disc renderer scales everything by `size`, so it's a no-op.
 }: BadgeIconProps) {
   const s = size;
+  const sShape = shapeStyle(shape, s);
+  // Separator ring + optional rim-colored glow, layered as box-shadows on the
+  // outer disc so the badge pops off the avatar and the dark card.
+  const discShadow = [
+    ringWidth > 0 ? `0 0 0 ${ringWidth}px ${ringColor}` : '',
+    glow && unlocked ? `0 0 ${Math.max(3, Math.round(s * 0.16))}px ${rimGlow(badge)}` : '',
+  ].filter(Boolean).join(', ');
   const pad = Math.max(1, Math.round(s * 0.028));
   const dropY = Math.max(1, Math.round(s * 0.055));
   const dropBlur = Math.max(1, Math.round(s * 0.085));
@@ -122,7 +174,9 @@ export function BadgeIcon({
       </span>
     );
   } else if (badge.contentKind === 'logo' && badge.iconUrl) {
-    const box = Math.round(s * 0.6);
+    // NFL logos read a touch small vs text/banana content — nudge up, with
+    // clearance kept from the edges.
+    const box = Math.round(s * 0.66);
     inner = (
       // eslint-disable-next-line @next/next/no-img-element
       <img
@@ -256,12 +310,13 @@ export function BadgeIcon({
         display: 'inline-flex',
         width: s,
         height: s,
-        borderRadius: '9999px',
         background: rim,
         padding: pad,
         boxSizing: 'border-box',
         filter: `drop-shadow(0 ${dropY}px ${dropBlur}px rgba(0,0,0,.55))`,
+        boxShadow: discShadow || undefined,
         opacity: unlocked ? 1 : 0.85,
+        ...sShape,
       }}
     >
       <span
@@ -272,10 +327,10 @@ export function BadgeIcon({
           justifyContent: 'center',
           width: '100%',
           height: '100%',
-          borderRadius: '9999px',
           background: GLASS_BG,
           boxShadow: GLASS_INSET,
           overflow: 'hidden',
+          ...sShape,
         }}
       >
         {inner}

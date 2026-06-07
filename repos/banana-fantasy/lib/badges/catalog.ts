@@ -48,7 +48,7 @@ export const BADGE_CATALOG: Badge[] = [
     category: 'ripeness',
     contentKind: 'banana',
     contentColor: t.color, // the banana fills with this when unlocked
-    rimColor: RIM_GREY,
+    rimColor: t.rim ?? RIM_GREY, // Spoiled gets a gold frame; rest grey
     color: t.color,
     glyph: '🍌',
     // Unripe is the floor everyone carries; the rest unlock by buying.
