@@ -220,9 +220,6 @@ export function BuyTab({
           >
             <option value="price-low">Price: Low to High</option>
             <option value="price-high">Price: High to Low</option>
-            <option value="rank">Best Rank</option>
-            <option value="points">Most Points</option>
-            <option value="playoffs">Playoff Odds</option>
           </select>
         </div>
       </div>
@@ -449,7 +446,9 @@ export function BuyTab({
         </div>
       )}
 
-      {leaderboardTeams.length > 0 && (
+      {/* Hidden pre-season — relies on rank/points/playoff stats that don't exist yet.
+          Re-enable by removing the `false &&` once the season has real standings. */}
+      {false && leaderboardTeams.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-5">
             <h2 className="text-xl font-bold text-text-primary flex items-center gap-3">
@@ -527,29 +526,33 @@ export function BuyTab({
         </div>
       )}
 
-      <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Why Trade Teams?</h3>
-        <div className="grid md:grid-cols-3 gap-6">
-          <InfoCard
-            icon={<svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-            iconClassName="bg-banana/20"
-            title="Recoup Your Investment"
-            description="Bad draft? Sell your team and get back some of your entry fee."
-          />
-          <InfoCard
-            icon={<svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
-            iconClassName="bg-success/20"
-            title="Buy Contenders"
-            description="Skip the draft and buy a team already performing well mid-season."
-          />
-          <InfoCard
-            icon={<span className="text-error font-bold text-sm">JP</span>}
-            iconClassName="bg-error/20"
-            title="Get Jackpot Access"
-            description="Buy a Jackpot team or unused Jackpot pass. Win the league and you skip straight to finals."
-          />
+      {/* "Why Trade Teams?" hidden per Richard 2026-06-07 — restore by removing the `false &&`
+          (pending confirmation from Boris on the section). */}
+      {false && (
+        <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
+          <h3 className="text-lg font-semibold text-text-primary mb-4">Why Trade Teams?</h3>
+          <div className="grid md:grid-cols-3 gap-6">
+            <InfoCard
+              icon={<svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+              iconClassName="bg-banana/20"
+              title="Recoup Your Investment"
+              description="Bad draft? Sell your team and get back some of your entry fee."
+            />
+            <InfoCard
+              icon={<svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}
+              iconClassName="bg-success/20"
+              title="Buy Contenders"
+              description="Skip the draft and buy a team already performing well mid-season."
+            />
+            <InfoCard
+              icon={<span className="text-error font-bold text-sm">JP</span>}
+              iconClassName="bg-error/20"
+              title="Get Jackpot Access"
+              description="Buy a Jackpot team or unused Jackpot pass. Win the league and you skip straight to finals."
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {sweepMode && sweepSelected.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-bg-secondary/95 backdrop-blur-md border-t border-bg-tertiary px-4 sm:px-8 py-4">
