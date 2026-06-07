@@ -124,10 +124,13 @@ function OutlineKey({ px, color }: { px: number; color: string }) {
 }
 
 // Per-text sizing for the `text` content kind (ratio of disc size + weight).
+// Bumped up a touch (esp. HOF, which read tiny) for legibility at small sizes,
+// keeping clearance from the rim. Global — only changes the glyph inside the
+// box, never the box size/position.
 const TEXT_SPEC: Record<string, { ratio: number; weight: number }> = {
-  JP: { ratio: 0.333, weight: 700 },
-  HOF: { ratio: 0.236, weight: 700 },
-  OG: { ratio: 0.305, weight: 400 },
+  JP: { ratio: 0.36, weight: 700 },
+  HOF: { ratio: 0.275, weight: 700 },
+  OG: { ratio: 0.34, weight: 400 },
 };
 
 /**
@@ -210,7 +213,7 @@ export function BadgeIcon({
       </span>
     );
   } else if (badge.contentKind === 'icon') {
-    const px = Math.round(s * 0.42);
+    const px = Math.round(s * 0.48);
     inner = badge.iconName === 'key'
       ? <OutlineKey px={px} color={content} />
       : <OutlineCrown px={px} color={content} />;
@@ -230,21 +233,21 @@ export function BadgeIcon({
         <span
           style={{
             position: 'absolute',
-            top: Math.round(s * 0.139),
+            top: Math.round(s * 0.125),
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'inline-flex',
           }}
         >
-          <FilledCrown px={Math.round(s * 0.194)} color={content} />
+          <FilledCrown px={Math.round(s * 0.215)} color={content} />
         </span>
         <span
           style={{
             fontWeight: 300,
-            fontSize: Math.round(s * 0.333),
+            fontSize: Math.round(s * 0.37),
             color: content,
             fontFamily: '-apple-system, system-ui, sans-serif',
-            marginTop: Math.round(s * 0.097),
+            marginTop: Math.round(s * 0.1),
             lineHeight: 1,
           }}
         >
@@ -275,15 +278,15 @@ export function BadgeIcon({
             display: 'inline-flex',
           }}
         >
-          <FilledCrown px={Math.round(s * 0.167)} color={content} />
+          <FilledCrown px={Math.round(s * 0.185)} color={content} />
         </span>
         <span
           style={{
             fontWeight: 700,
-            fontSize: Math.round(s * 0.208),
+            fontSize: Math.round(s * 0.235),
             color: content,
             fontFamily: '-apple-system, system-ui, sans-serif',
-            marginTop: Math.round(s * 0.125),
+            marginTop: Math.round(s * 0.13),
           }}
         >
           HOF
@@ -291,9 +294,9 @@ export function BadgeIcon({
         <span
           style={{
             fontWeight: 600,
-            fontSize: Math.round(s * 0.153),
+            fontSize: Math.round(s * 0.175),
             color: content,
-            marginTop: Math.round(s * 0.014),
+            marginTop: Math.round(s * 0.016),
           }}
         >
           {badge.numeral}

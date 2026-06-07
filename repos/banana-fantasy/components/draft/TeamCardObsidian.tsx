@@ -170,8 +170,8 @@ export default function TeamCardObsidian({
         .tco-pad { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; padding: 14px 16px 14px; align-items: center; }
         .tco-logo { width: 26px; height: 26px; object-fit: contain; opacity: .92; filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
         .tco-title { margin-top: 5px; font-size: 12px; font-weight: 700; letter-spacing: .6px; color: rgba(255,255,255,.85); }
-        .tco-badge { margin-top: 7px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 30px; font-size: 11px; font-weight: 900; letter-spacing: 1.5px; }
-        .tco-dot { width: 5px; height: 5px; border-radius: 50%; }
+        .tco-ids { margin-top: 4px; font-size: 8.5px; font-weight: 700; letter-spacing: 1.4px; color: rgba(255,255,255,.42); }
+        .tco-badge { margin-top: 7px; display: inline-flex; align-items: center; justify-content: center; padding: 3px 11px; border-radius: 30px; font-size: 11px; font-weight: 900; letter-spacing: 1.5px; }
 
         .tco-colh { width: 100%; display: flex; align-items: flex-end; margin-top: 12px; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,.12); }
         .tco-c { width: 34px; text-align: right; font-size: 8px; font-weight: 800; letter-spacing: 1px; color: rgba(255,255,255,.3); }
