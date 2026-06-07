@@ -5,7 +5,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildDraftPassUrl, buildOgCardUrl } from '@/lib/nftCard';
 import { logger } from '@/lib/logger';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
-import { getTeamForToken, type TeamData } from '@/lib/marketplace/teamData';
+import { getTeamForToken, getOwnerForToken, type TeamData } from '@/lib/marketplace/teamData';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 
 const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
@@ -34,16 +34,22 @@ function isPreRevealOg(url: string): boolean {
 
 interface GoToken { realTokenId?: string | number; _level?: string; roster?: Record<string, Array<{ playerId?: string; team?: string }> | null> }
 
-/** The Go-API token for an EXACT on-chain realTokenId (authoritative). */
-async function getExactToken(tokenId: string, owner: string | null): Promise<GoToken | null> {
+/**
+ * Fetch the owner's full token list from the Go API.
+ * Returns `null` ONLY when the fetch genuinely fails (so callers can tell
+ * "fetch failed" apart from "token not in list"). Retries once for cold starts.
+ */
+async function getOwnerTokens(owner: string | null): Promise<GoToken[] | null> {
   if (!owner) return null;
-  try {
-    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, { signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return null;
-    const d = await res.json();
-    const toks: GoToken[] = [...(Array.isArray(d?.active) ? d.active : []), ...(Array.isArray(d?.available) ? d.available : [])];
-    return toks.find((t) => String(t.realTokenId ?? '') === String(tokenId)) || null;
-  } catch { return null; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+      const d = await res.json();
+      return [...(Array.isArray(d?.active) ? d.active : []), ...(Array.isArray(d?.available) ? d.available : [])];
+    } catch { /* retry */ }
+  }
+  return null;
 }
 
 function playersFromGoRoster(roster?: GoToken['roster']): CardPlayer[] {
@@ -79,13 +85,25 @@ export async function resolveCard(tokenId: string, owner: string | null): Promis
   let level = 'Pro';
   let players: CardPlayer[] = [];
 
-  const exact = await getExactToken(id, owner);
-  if (exact) {
+  // Always resolve the owner (the metadata route is called by OpenSea with no
+  // context) so the authoritative exact-token check can run.
+  let resolvedOwner = owner;
+  if (!resolvedOwner) {
+    try { resolvedOwner = await getOwnerForToken(id); } catch { /* ignore */ }
+  }
+
+  const toks = await getOwnerTokens(resolvedOwner);
+  const exact = toks ? toks.find((t) => String(t.realTokenId ?? '') === id) : undefined;
+
+  if (toks && exact) {
+    // Authoritative: this IS the token. Drafted iff it has a real roster;
+    // empty roster = minted-but-undrafted → grey pass (no heuristic fall-through).
     const p = playersFromGoRoster(exact.roster);
     if (p.length >= 10) { drafted = true; players = p; level = exact._level || 'Pro'; }
-    // exact found + empty roster → un-drafted pass (drafted stays false)
   } else {
-    const team = await getTeamForToken(id, owner);
+    // Token not in this owner's list (traded/legacy) OR the Go fetch failed →
+    // fall back to the heuristic resolver.
+    const team = await getTeamForToken(id, resolvedOwner);
     if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
       drafted = true; players = playersFromTeamData(team); level = team.level || 'Pro';
     }
