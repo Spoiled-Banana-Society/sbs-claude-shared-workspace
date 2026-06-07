@@ -1,12 +1,17 @@
-// Server-only NFT card metadata writes (firebase-admin). Keep separate from
-// lib/nftCard.ts so the client (roster page) can import the URL builders without
-// pulling in firebase-admin.
+// Server-only NFT card metadata/image resolution (firebase-admin + Go API).
+// Keep separate from lib/nftCard.ts so the client can import the URL builders.
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildDraftPassUrl, buildOgCardUrl } from '@/lib/nftCard';
 import { logger } from '@/lib/logger';
-import type { CardTier } from '@/components/draft/TeamCardObsidian';
-import type { TeamData } from '@/lib/marketplace/teamData';
+import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
+import { getTeamForToken, type TeamData } from '@/lib/marketplace/teamData';
+import { ALL_POSITIONS } from '@/data/nfl-players';
+
+const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const POS_KEYS = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
+const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
 
 function tierFromLevel(level?: string): CardTier {
   const l = (level || '').toLowerCase();
@@ -15,52 +20,104 @@ function tierFromLevel(level?: string): CardTier {
   return 'pro';
 }
 
-/**
- * The obsidian card image URL for a token, used by our marketplace + metadata.
- * Prefers the stored `draftTokenMetadata/{tokenId}.Image` (full bye/ADP/pick,
- * written by mint / draft-close / the roster page); else builds it live from
- * the Go-API team (drafted → obsidian team, un-drafted → grey draft pass).
- */
 export function isOgImage(url: string | undefined): boolean {
   return !!url && url.includes('/api/og/team-card');
 }
 
-/** Synchronous obsidian card image from a Go-API team (no Firestore read) —
- *  for list/grid thumbnails. Drafted → tier team, else → grey draft pass. */
+function isPreRevealOg(url: string): boolean {
+  try {
+    const d = new URL(url).searchParams.get('d');
+    if (!d) return false;
+    return !!JSON.parse(Buffer.from(d, 'base64url').toString('utf8')).preReveal;
+  } catch { return false; }
+}
+
+interface GoToken { realTokenId?: string | number; _level?: string; roster?: Record<string, Array<{ playerId?: string; team?: string }> | null> }
+
+/** The Go-API token for an EXACT on-chain realTokenId (authoritative). */
+async function getExactToken(tokenId: string, owner: string | null): Promise<GoToken | null> {
+  if (!owner) return null;
+  try {
+    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return null;
+    const d = await res.json();
+    const toks: GoToken[] = [...(Array.isArray(d?.active) ? d.active : []), ...(Array.isArray(d?.available) ? d.available : [])];
+    return toks.find((t) => String(t.realTokenId ?? '') === String(tokenId)) || null;
+  } catch { return null; }
+}
+
+function playersFromGoRoster(roster?: GoToken['roster']): CardPlayer[] {
+  const out: CardPlayer[] = [];
+  for (const pos of POS_KEYS) {
+    for (const p of (roster?.[pos] || [])) {
+      const pid = p?.playerId || '';
+      const [tm, ps] = pid.split('-');
+      const m = PLAYER_META.get(pid);
+      out.push({ team: tm || p?.team || '', pos: ps || pos, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' });
+    }
+  }
+  return out;
+}
+
+function playersFromTeamData(team: TeamData): CardPlayer[] {
+  return team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
+}
+
+export interface ResolvedCard { image: string; drafted: boolean; level: string; players: CardPlayer[] }
+
+/**
+ * Resolve a token's card. The EXACT realTokenId token is authoritative:
+ * an existing token with an EMPTY roster is minted-but-undrafted → grey pass
+ * (never a false team via the cardId heuristic). Only when no exact match
+ * exists (traded/legacy) do we fall back to getTeamForToken.
+ * Image: a stored full-data TEAM og (roster-page write, has picks) wins for
+ * drafted teams; else built deterministically; un-drafted → grey pass.
+ */
+export async function resolveCard(tokenId: string, owner: string | null): Promise<ResolvedCard> {
+  const id = String(tokenId).trim();
+  let drafted = false;
+  let level = 'Pro';
+  let players: CardPlayer[] = [];
+
+  const exact = await getExactToken(id, owner);
+  if (exact) {
+    const p = playersFromGoRoster(exact.roster);
+    if (p.length >= 10) { drafted = true; players = p; level = exact._level || 'Pro'; }
+    // exact found + empty roster → un-drafted pass (drafted stays false)
+  } else {
+    const team = await getTeamForToken(id, owner);
+    if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
+      drafted = true; players = playersFromTeamData(team); level = team.level || 'Pro';
+    }
+  }
+
+  let image = drafted ? buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, players }) : buildDraftPassUrl(id);
+  if (drafted && isFirestoreConfigured() && /^\d+$/.test(id)) {
+    try {
+      const snap = await getAdminFirestore().collection('draftTokenMetadata').doc(id).get();
+      const stored = snap.exists ? String((snap.data() as Record<string, unknown>).Image ?? '') : '';
+      if (isOgImage(stored) && !isPreRevealOg(stored)) image = stored;
+    } catch { /* keep built image */ }
+  }
+  return { image, drafted, level, players };
+}
+
+export async function resolveTokenImage(tokenId: string, owner: string | null): Promise<string> {
+  return (await resolveCard(tokenId, owner)).image;
+}
+
+/** Synchronous obsidian image from a Go-API team (list/grid thumbnails). */
 export function ogImageFromTeam(team: TeamData | null | undefined, tokenId: string | number): string {
   if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
-    const players = team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
-    return buildOgCardUrl({ tier: tierFromLevel(team.level), players });
+    return buildOgCardUrl({ tier: tierFromLevel(team.level), players: playersFromTeamData(team) });
   }
   return buildDraftPassUrl(String(tokenId));
 }
 
-export async function resolveTokenImage(tokenId: string, team?: TeamData | null): Promise<string> {
-  const id = String(tokenId).trim();
-  // Only a stored og URL (our own write, with full bye/ADP/pick) is trusted.
-  // The Go server also writes draftTokenMetadata with the OLD GCS image — never
-  // serve that; always (re)build the obsidian card instead.
-  if (isFirestoreConfigured() && /^\d+$/.test(id)) {
-    try {
-      const snap = await getAdminFirestore().collection('draftTokenMetadata').doc(id).get();
-      const img = snap.exists ? String((snap.data() as Record<string, unknown>).Image ?? '') : '';
-      if (isOgImage(img)) return img;
-    } catch { /* fall through to live build */ }
-  }
-  if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
-    const players = team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
-    return buildOgCardUrl({ tier: tierFromLevel(team.level), players });
-  }
-  return buildDraftPassUrl(id);
-}
-
 /**
  * On mint, give each freshly-minted token the grey pre-reveal "draft pass"
- * image (keyed on the real token id, so the DRAFT PASS # is always accurate).
- *
- * Uses `create()` — if a metadata doc already exists (token already minted, or
- * already drafted into a team), it is left untouched. We never overwrite a
- * revealed team card with the pre-reveal pass.
+ * image (keyed on the real token id). create() leaves any existing doc
+ * untouched — never overwrite a revealed team.
  */
 export async function writeDraftPassMetadata(tokenIds: Array<string | number>): Promise<void> {
   const db = getAdminFirestore();
@@ -76,7 +133,7 @@ export async function writeDraftPassMetadata(tokenIds: Array<string | number>): 
           Attributes: [],
         });
       } catch {
-        // Doc already exists — already a pass or already a revealed team. Skip.
+        // Doc already exists — already a pass or a revealed team. Skip.
       }
     }),
   ).catch((err) => logger.warn('nft.draft_pass_metadata_failed', { error: String(err) }));

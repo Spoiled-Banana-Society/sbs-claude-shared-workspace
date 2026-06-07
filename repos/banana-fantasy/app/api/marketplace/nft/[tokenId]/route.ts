@@ -61,7 +61,7 @@ export async function GET(
       if (owner) {
         const team = await getTeamForToken(tokenId, owner);
         if (team) {
-          const ogImg = await resolveTokenImage(tokenId, team);
+          const ogImg = await resolveTokenImage(tokenId, owner);
           return json({
             identifier: tokenId,
             contract: BBB4_CONTRACT,
@@ -177,7 +177,7 @@ export async function GET(
 
     // The obsidian SBS card (grey pass / tier team) is the source of truth —
     // it always wins over OpenSea's image. Keyed on realTokenId via our metadata.
-    const ogImage = await resolveTokenImage(tokenId, team);
+    const ogImage = await resolveTokenImage(tokenId, owner);
     return json({
       ...nft,
       traits,
