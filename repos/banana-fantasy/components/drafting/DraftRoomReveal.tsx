@@ -251,7 +251,7 @@ export function DraftRoomReveal({
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
                         alt="You"
-                        size={48} badgeScale={23 / 48} badgeMax={64}
+                        size={48} badgeScale={22 / 48} badgeMax={64}
                         equippedBadge={user?.equippedBadge}
                         ripeness={user?.ripeness}
                         useNextImage={false}
@@ -264,7 +264,7 @@ export function DraftRoomReveal({
                         <AvatarWithBadge
                           imageUrl={otherPfp}
                           alt={displayName}
-                          size={48} badgeScale={23 / 48} badgeMax={64}
+                          size={48} badgeScale={22 / 48} badgeMax={64}
                           equippedBadge={otherBadge}
                           ripeness={otherRipeness}
                           useNextImage={false}
@@ -277,7 +277,7 @@ export function DraftRoomReveal({
                       <AvatarWithBadge
                         imageUrl={otherPfp}
                         alt={displayName}
-                        size={48} badgeScale={23 / 48} badgeMax={64}
+                        size={48} badgeScale={22 / 48} badgeMax={64}
                         equippedBadge={otherBadge}
                         ripeness={otherRipeness}
                         useNextImage={false}
