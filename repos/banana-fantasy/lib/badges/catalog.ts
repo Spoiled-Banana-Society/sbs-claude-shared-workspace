@@ -27,7 +27,7 @@ const RIM_GREY = '#48484f';
 // Champion badges per season. Roman numeral is shown on the disc; the season
 // number drives the id + copy. BBB = blue, HOF = gold.
 const BBB_SEASONS: Array<[num: number, roman: string]> = [
-  [1, 'I'], [2, 'II'], [3, 'III'],
+  [1, 'I'], [2, 'II'], [3, 'III'], [4, 'IV'],
 ];
 const HOF_SEASONS: Array<[num: number, roman: string]> = [
   [1, 'I'], [2, 'II'], [3, 'III'], [4, 'IV'],

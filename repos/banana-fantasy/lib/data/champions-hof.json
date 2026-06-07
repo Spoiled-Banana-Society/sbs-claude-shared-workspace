@@ -1,7 +1,7 @@
 {
-  "_comment": "HOF bracket champions — winner wallet(s) per season. Keys are season numbers ('1','2','3','4'); values are arrays of lowercased winner wallet addresses. Awards hof-champion-{season}. EMPTY until Boris provides the winner lists; champions are admin-grant only until then.",
+  "_comment": "HOF bracket champions — winner wallet(s) per season. Keys are season numbers; values are arrays of lowercased winner wallet addresses. Awards hof-champion-{season} in the badge sweep + admin grant. Add more winners as Boris provides them.",
   "1": [],
   "2": [],
   "3": [],
-  "4": []
+  "4": ["0x26fb3d54227dc1f7e8af2da63996f53ee36669d5"]
 }
