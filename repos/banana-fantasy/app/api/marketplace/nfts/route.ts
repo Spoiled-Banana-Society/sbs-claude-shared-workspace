@@ -11,7 +11,7 @@ import {
   type OpenSeaListing,
 } from '@/lib/opensea';
 import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
-import { ogImageFromTeam } from '@/lib/nftCardServer';
+import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
@@ -130,6 +130,13 @@ export async function GET(req: Request) {
     const teamsByToken = await getTeamsForTokens(
       bbb4Nfts.map(nft => ({ tokenId: nft.identifier, owner })),
     );
+    // Resolve the authoritative obsidian image per token (grey pass for
+    // undrafted, tier team for drafted — exactly what OpenSea's metadata
+    // endpoint serves). Owner is known here, so the pass classifier is cheap.
+    const ogByToken = new Map<string, string>();
+    await Promise.all(bbb4Nfts.map(async (nft) => {
+      ogByToken.set(nft.identifier, await resolveTokenImage(nft.identifier, owner));
+    }));
     for (const nft of bbb4Nfts) {
       const team = teamsByToken.get(nft.identifier);
       if (team) {
@@ -141,8 +148,7 @@ export async function GET(req: Request) {
           (nft as { name: string }).name = team.leagueDisplayName;
         }
       }
-      // Always the obsidian card: drafted → tier team, un-drafted → grey pass.
-      const og = ogImageFromTeam(team, nft.identifier);
+      const og = ogByToken.get(nft.identifier) || ogImageFromTeam(team, nft.identifier);
       (nft as { image_url: string; display_image_url: string }).image_url = og;
       (nft as { image_url: string; display_image_url: string }).display_image_url = og;
     }
@@ -186,7 +192,7 @@ export async function GET(req: Request) {
         const onchain = await getOnchainOwner(b.tokenId);
         if (!onchain || onchain !== owner.toLowerCase()) return null;
         const team = await getTeamForToken(b.tokenId, owner);
-        const og = ogImageFromTeam(team, b.tokenId);
+        const og = await resolveTokenImage(b.tokenId, owner);
         const synthetic = team
           ? { identifier: b.tokenId, contract: BBB4_CONTRACT, name: team.leagueDisplayName || null, image_url: og, display_image_url: og, traits: teamDataToTraits(team) }
           : { identifier: b.tokenId, contract: BBB4_CONTRACT, name: b.teamName, image_url: og, display_image_url: og, traits: [] };

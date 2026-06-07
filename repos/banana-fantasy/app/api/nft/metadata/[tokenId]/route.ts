@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { resolveCard } from '@/lib/nftCardServer';
+import { passTypeLabel } from '@/lib/nftPassClassify';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -29,11 +30,16 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   }
 
   if (!card.drafted) {
+    const passType = passTypeLabel(card.passType);
     return new Response(JSON.stringify({
       name: `Banana Best Ball IV — Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
       image: card.image || `https://banana-fantasy-sbs.vercel.app/api/og/team-card?d=`,
-      attributes: [{ trait_type: 'Status', value: 'Draft Pass' }],
+      attributes: [
+        { trait_type: 'Status', value: 'Draft Pass' },
+        { trait_type: 'Pass Type', value: passType },
+        { trait_type: 'Draft Pass #', value: tokenId },
+      ],
     }), { status: 200, headers });
   }
 

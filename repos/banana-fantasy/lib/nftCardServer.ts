@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import type { TeamData } from '@/lib/marketplace/teamData';
 import { ALL_POSITIONS } from '@/data/nfl-players';
+import { classifyToken } from '@/lib/nftPassClassify';
 
 const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
 
@@ -33,7 +34,7 @@ function playersFromTeamData(team: TeamData): CardPlayer[] {
   return team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
 }
 
-export interface ResolvedCard { image: string; drafted: boolean; level: string; players: CardPlayer[] }
+export interface ResolvedCard { image: string; drafted: boolean; level: string; players: CardPlayer[]; passType?: string }
 
 const ROSTER_TRAIT = /^(QB|RB|WR|TE|DST)\d+$/i;
 
@@ -69,8 +70,21 @@ function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardP
  * Image: a stored full-data TEAM og (roster-page write, has picks) wins; else
  * built from the roster attributes; un-drafted → grey pass.
  */
-export async function resolveCard(tokenId: string, _owner?: string | null): Promise<ResolvedCard> {
+export async function resolveCard(tokenId: string, owner?: string | null): Promise<ResolvedCard> {
   const id = String(tokenId).trim();
+
+  // Authoritative pass check FIRST: if the Go API lists this token as an
+  // undrafted pass (`available`), it's a grey draft pass — even if a stale
+  // roster doc from a prior (recycled) draft still sits in Firestore. This is
+  // what makes the 600+ minted-but-undrafted passes render as draft passes on
+  // OpenSea / the marketplace instead of old recycled teams.
+  try {
+    const cls = await classifyToken(id, owner);
+    if (cls.isPass) {
+      return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [], passType: cls.passType };
+    }
+  } catch { /* Go unavailable — fall through to Firestore */ }
+
   if (isFirestoreConfigured() && /^\d+$/.test(id)) {
     try {
       const snap = await getAdminFirestore().collection('draftTokenMetadata').doc(id).get();

@@ -232,7 +232,27 @@ export async function registerMintedTokens(
     .map((id) => (typeof id === 'number' ? id : Number.parseInt(String(id), 10)))
     .filter((n) => Number.isFinite(n));
   if (numeric.length === 0) return 0;
-  return registerTokensWithGoApi(wallet.toLowerCase(), numeric, passType);
+  const registered = await registerTokensWithGoApi(wallet.toLowerCase(), numeric, passType);
+
+  // Make the fresh pass show up LIVE on OpenSea + our marketplace: seed its grey
+  // draft-pass metadata doc, then ask OpenSea to (re)pull. Covers EVERY mint
+  // path (USDC, card/MoonPay, promo grants, wheel spins) since they all funnel
+  // through here. Best-effort + fire-and-forget — never blocks/rolls back a mint.
+  void (async () => {
+    try {
+      const [{ writeDraftPassMetadata }, { refreshOpenSeaTokens }] = await Promise.all([
+        import('@/lib/nftCardServer'),
+        import('@/lib/opensea'),
+      ]);
+      await writeDraftPassMetadata(numeric);
+      const refreshed = await refreshOpenSeaTokens(numeric);
+      logger.info('nft.mint_pass_metadata_refreshed', { wallet, passType, count: numeric.length, refreshed });
+    } catch (err) {
+      logger.warn('reconcile.mint_metadata_refresh_failed', { wallet, err: (err as Error).message });
+    }
+  })();
+
+  return registered;
 }
 
 /**

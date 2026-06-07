@@ -167,7 +167,12 @@ export default function TeamCardObsidian({
           background: linear-gradient(172deg,#17171e 0%,#0d0d12 58%,#070709 100%);
         }
         .tco-card.tco-pass { width: ${PASS_W}px; height: ${PASS_H}px; }
-        .tco-pad { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; padding: 14px 16px 14px; align-items: center; }
+        /* text-align:left makes the card self-contained — parents like the
+           generating screen (.dc-wrap) and roster page (.text-center) impose
+           text-align:center, which would otherwise be INHERITED by the section
+           headers (.tco-sechd) and push QB/RB/WR/TE/DST to the middle. The
+           logo/title/badge stay centered via flex align-items, not text-align. */
+        .tco-pad { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; padding: 14px 16px 14px; align-items: center; text-align: left; }
         .tco-logo { width: 26px; height: 26px; object-fit: contain; opacity: .92; filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
         .tco-title { margin-top: 5px; font-size: 12px; font-weight: 700; letter-spacing: .6px; color: rgba(255,255,255,.85); }
         .tco-ids { margin-top: 4px; font-size: 8.5px; font-weight: 700; letter-spacing: 1.4px; color: rgba(255,255,255,.42); }
