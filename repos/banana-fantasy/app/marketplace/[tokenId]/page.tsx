@@ -14,6 +14,7 @@ import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
+import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { UserPopover } from '@/components/social/UserPopover';
@@ -761,8 +762,8 @@ export default function NftDetailPage() {
   // position, and SEASON/WEEK scores are seed values — only treat them as real once
   // the season has actually scored points.
   const rankNum = rank ? parseInt(rank, 10) : 0;
-  const hasValidRank = rankNum >= 1 && rankNum <= 10;
-  const hasSeasonStats = parseFloat(seasonScore || '0') > 0;
+  const hasValidRank = hasSeasonStarted() && rankNum >= 1 && rankNum <= 10;
+  const hasSeasonStats = hasSeasonStarted();
   const level = parseTrait(traits, 'LEVEL');
 
   const draftType: DraftType = level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
