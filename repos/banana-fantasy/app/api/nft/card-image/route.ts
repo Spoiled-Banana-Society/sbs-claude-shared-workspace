@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   const payload: OgCardPayload = body.preReveal
     ? { preReveal: true, passNo: body.passNo ?? tokenId }
-    : { tier: body.tier, passNo: body.passNo ?? tokenId, players: body.players };
+    : { tier: body.tier, passNo: body.passNo ?? tokenId, teamNo: body.teamNo ?? tokenId, leagueNo: body.leagueNo, players: body.players };
 
   const image = buildOgCardUrl(payload);
 

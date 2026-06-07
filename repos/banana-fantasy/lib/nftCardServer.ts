@@ -37,6 +37,14 @@ export interface ResolvedCard { image: string; drafted: boolean; level: string; 
 
 const ROSTER_TRAIT = /^(QB|RB|WR|TE|DST)\d+$/i;
 
+/** Pull the numeric league id out of the Go-written LEAGUE-NAME / LEAGUE attr
+ *  (value is e.g. "League 1380" or "1380"). Returns '' if none. */
+function leagueNoFromAttrs(attrs: Array<{ tt: string; val: string }>): string {
+  const raw = attrs.find((a) => /^league(-?name)?$/i.test(a.tt.trim()))?.val || '';
+  const m = raw.match(/\d+/);
+  return m ? m[0] : '';
+}
+
 /** Build card players from the Go-written metadata roster attributes
  *  (trait_type "RB1", value "MIN RB1"). bye/ADP from ALL_POSITIONS. */
 function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardPlayer[] {
@@ -73,10 +81,11 @@ export async function resolveCard(tokenId: string, _owner?: string | null): Prom
         const players = playersFromAttributes(attrs);
         if (players.length >= 10) {
           const level = attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro';
+          const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
           const image = (isOgImage(stored) && !isPreRevealOg(stored))
             ? stored
-            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, players });
+            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players });
           return { image, drafted: true, level, players };
         }
       }

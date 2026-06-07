@@ -18,6 +18,9 @@ function base64url(s: string): string {
 export interface OgCardPayload {
   tier?: CardTier;
   passNo?: string | number;
+  /** Team card identity line: on-chain token id (Team #) + league number. */
+  teamNo?: string | number;
+  leagueNo?: string | number;
   players?: CardPlayer[];
   preReveal?: boolean;
 }

@@ -595,13 +595,14 @@ export default function DraftResultsPage() {
       });
     if (players.length === 0) return;
     const tier: CardTier = /jackpot/i.test(draftLevel) ? 'jackpot' : /hof|hall of fame/i.test(draftLevel) ? 'hof' : 'pro';
+    const leagueNo = title.replace(/\D/g, '');
     nftImgFiredRef.current.add(tokenId);
     void fetch('/api/nft/card-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tokenId, tier, passNo: tokenId, players }),
+      body: JSON.stringify({ tokenId, tier, passNo: tokenId, teamNo: tokenId, leagueNo, players }),
     }).catch(() => { nftImgFiredRef.current.delete(tokenId); });
-  }, [walletAddress, selectedPlayer, draftLevel, realTokenIds, allRosters]);
+  }, [walletAddress, selectedPlayer, draftLevel, realTokenIds, allRosters, title]);
 
   // ─── Loading ───
   if (isLoading) {
@@ -653,8 +654,15 @@ export default function DraftResultsPage() {
       const [tm, ps] = p.playerId.split('-');
       return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
     });
+  // Team identity for the card: TEAM # = on-chain token id (fallback to the
+  // cardId-derived number), LEAGUE # = the numeric league id from the title.
+  const selectedRealTokenId = realTokenIds[selectedPlayer.toLowerCase()] || '';
+  const cardTeamNo = (/^\d+$/.test(selectedRealTokenId) ? selectedRealTokenId : teamNumber) || '';
+  const leagueNumber = title.replace(/\D/g, '');
   // The 1080x1350 (X-safe) NFT image for download/share (team card has no pass #).
-  const ogImageUrl = cardPlayers.length > 0 ? buildOgCardUrl({ tier: cardTier, players: cardPlayers }) : '';
+  const ogImageUrl = cardPlayers.length > 0
+    ? buildOgCardUrl({ tier: cardTier, players: cardPlayers, teamNo: cardTeamNo, leagueNo: leagueNumber })
+    : '';
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] px-4 py-8">
@@ -688,7 +696,7 @@ export default function DraftResultsPage() {
         {/* The obsidian team NFT card — rendered from roster data (instant) + download. */}
         <div className="text-center mb-6">
           <div className="flex justify-center">
-            <TeamCardObsidian tier={cardTier} players={cardPlayers} width={300} />
+            <TeamCardObsidian tier={cardTier} players={cardPlayers} teamNumber={cardTeamNo} leagueNumber={leagueNumber} width={300} />
           </div>
           {ogImageUrl && (
             <button
