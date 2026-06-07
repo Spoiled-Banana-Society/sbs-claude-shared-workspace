@@ -757,6 +757,12 @@ export default function NftDetailPage() {
   const seasonScore = parseTrait(traits, 'SEASON-SC0RE') || parseTrait(traits, 'SEASON-SCORE');
   const weekScore = parseTrait(traits, 'WEEK-SCORE');
   const leagueName = parseTrait(traits, 'LEAGUE-NAME');
+  // Pre-season the RANK trait holds a placeholder (the token id), not a 1-10 league
+  // position, and SEASON/WEEK scores are seed values — only treat them as real once
+  // the season has actually scored points.
+  const rankNum = rank ? parseInt(rank, 10) : 0;
+  const hasValidRank = rankNum >= 1 && rankNum <= 10;
+  const hasSeasonStats = parseFloat(seasonScore || '0') > 0;
   const level = parseTrait(traits, 'LEVEL');
 
   const draftType: DraftType = level === 'Jackpot' ? 'jackpot' : level === 'Hall of Fame' ? 'hof' : 'pro';
@@ -1058,12 +1064,12 @@ export default function NftDetailPage() {
           </div>
 
           {/* Stats Row */}
-          {(rank || seasonScore || weekScore) && (
-            <div className="grid grid-cols-3 gap-3 mb-6">
-              {rank && rank !== 'N/A' && (
+          {hasSeasonStats && (
+            <div className={`grid ${hasValidRank ? 'grid-cols-3' : 'grid-cols-2'} gap-3 mb-6`}>
+              {hasValidRank && (
                 <div className="bg-bg-secondary border border-bg-tertiary rounded-xl p-4 text-center">
                   <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                  <p className="font-mono text-xl font-bold text-banana">#{rank}</p>
+                  <p className="font-mono text-xl font-bold text-banana">#{rank}/10</p>
                 </div>
               )}
               {seasonScore && (
@@ -1346,8 +1352,8 @@ export default function NftDetailPage() {
                         {draftType === 'hof' && (
                           <span className="px-2 py-0.5 bg-hof/20 text-hof text-[10px] font-bold rounded">HOF</span>
                         )}
-                        {rank && rank !== 'N/A' && (
-                          <span className="text-text-muted text-xs">Rank #{rank}</span>
+                        {hasValidRank && (
+                          <span className="text-text-muted text-xs">Rank #{rank}/10</span>
                         )}
                       </div>
                     </div>

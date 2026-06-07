@@ -312,7 +312,7 @@ export function BuyTab({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold text-text-primary font-mono truncate">{team.name}</h3>
-                      {team.rank > 0 && (
+                      {team.rank >= 1 && team.rank <= 10 && (
                         <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/50'}`}>
                           #{team.rank}
                         </span>
@@ -331,9 +331,9 @@ export function BuyTab({
                   </div>
                 </div>
 
-                {(team.points > 0 || team.weeklyAvg > 0 || team.rank > 0) && (
-                  <div className={`grid ${team.rank > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 bg-bg-primary rounded-xl mb-4`}>
-                    {team.rank > 0 && (
+                {team.points > 0 && (
+                  <div className={`grid ${team.rank >= 1 && team.rank <= 10 ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 bg-bg-primary rounded-xl mb-4`}>
+                    {team.rank >= 1 && team.rank <= 10 && (
                       <div className="text-center">
                         <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
                         <p className={`font-mono text-sm font-semibold ${team.rank <= 3 ? 'text-banana' : 'text-text-primary'}`}>{team.rank}/{10}</p>
@@ -607,12 +607,12 @@ export function BuyTab({
                       <div className="flex gap-2 mt-1">
                         {selectedTeam.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[10px] font-bold rounded">JACKPOT</span>}
                         {selectedTeam.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[10px] font-bold rounded">HOF</span>}
-                        {selectedTeam.rank > 0 && <span className="text-text-muted text-xs">Rank #{selectedTeam.rank}</span>}
+                        {selectedTeam.rank >= 1 && selectedTeam.rank <= 10 && <span className="text-text-muted text-xs">Rank #{selectedTeam.rank}</span>}
                       </div>
                     </div>
                   </div>
 
-                  {(selectedTeam.points > 0 || selectedTeam.weeklyAvg > 0) && (
+                  {selectedTeam.points > 0 && (
                     <div className="grid grid-cols-3 gap-3 p-4 bg-bg-primary rounded-xl mb-4">
                       <StatSummary label="Points" value={selectedTeam.points.toLocaleString()} />
                       <StatSummary label="Wk Avg" value={String(selectedTeam.weeklyAvg)} valueClassName="text-success" />
