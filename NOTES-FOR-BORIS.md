@@ -564,3 +564,47 @@ Or wrap the JP/HOF writes in a transaction so they're all-or-nothing, but that d
 **Pre-prod blocker.** Every JP draft will freeze, which is 1% of all drafts. HOF drafts (`MakeLeagueHOF` has the same shape) likely affected too — that's another 5%. Combined 6% of paid drafts unusable until this lands.
 
 — Richard's Claude
+
+---
+
+## 2026-06-07 — "My Teams" shows a GHOST token (#8742 / "BBB #145") that doesn't exist on-chain — your call on the fix
+
+**No code changed for this, and nothing deployed.** Richard wanted it written up for you to decide, since it's squarely in your NFT-classification area. (Separately, see the "Also shipped today" list at the bottom for the small UI changes I *did* deploy.)
+
+### Symptom
+On **My Teams** (`/standings`), Richard's wallet `0x9eba7944455f4bdb2d120369827ce7f1b0bda000` shows one team card: **"BBB #145", token #8742**, Pro, with fake **Rank #8742 / 2,029.1 pts** and **no roster** ("No roster data available"). Same phantom appears on the marketplace **Sell My Teams** tab tagged **"Stage Mint"**. Richard says he never stage-minted — only acquired passes legitimately. He's right.
+
+### Verified truth (cross-checked Go backend + chain + OpenSea)
+`GET /owner/0x9eba…/draftToken/all` returns his real holdings:
+- **ACTIVE**: `realTokenId 1448`, `BBB #1372`, paid, `_rank "N/A"`, scores `0`.
+- **AVAILABLE**: `realTokenId 1449`, paid Pro pass, no league.
+
+On-chain (`0x14065412…463b`, Base mainnet, `totalSupply = 1454`):
+- `ownerOf(1448)` → **`0xbd2e09…3083f11`** (NOT Richard) — he drafted #1372 then **sold/transferred it**; Go still lists it `active` (Go doesn't move the record on resale).
+- `ownerOf(1449)` → **Richard** ✅ — his one real unused pass.
+- `ownerOf(8742)` → **reverts (nonexistent)** — never minted.
+- `balanceOf(Richard)` → **1** (consistent: he holds only 1449).
+
+**So #8742 is a pure OpenSea phantom.** Our backend has zero record of it and correctly reports clean `N/A`/`0` for the real tokens. Our system is *correct*; the only staleness is the known ownership-on-resale gap (1448).
+
+### Root cause
+`GET /api/marketplace/nfts?owner=…` enumerates owned NFTs straight from OpenSea (`account/{owner}/nfts`, filtered to `BBB4_CONTRACT`) and trusts that list. OpenSea is returning a stale/phantom #8742 for this wallet on `0x1406…` even though the chain says it doesn't exist. **`useMyNfts` (My Teams) and the Sell tab both read this one route**, so the ghost surfaces in both. The route already verifies on-chain ownership for `recentBuys`/`recentSells` but NOT for the base owned list — that's the gap.
+
+### Proposed guard (fail-open) — your area, your call
+Treat OpenSea as *candidates only*. For tokens with **no backend record** (your existing `hasBackendRecord === false` set — same set the "Stage Mint" badge keys off), ask the chain and drop only on a **definitive** "nonexistent" or "owned by someone else"; keep on "owned by you." Reuses your `classifyToken`/`getOnchainOwner` patterns + per-token owner cache; bounded to the few unbacked tokens.
+
+**The trap:** `getOnchainOwner` collapses *revert/nonexistent* and *RPC failure* both into `null`. A naive "drop if not owned" would **hide real teams on an RPC blip**. So it needs a 3-state result (`owned-by-X` / `definitely-nonexistent` / `rpc-unknown`) and must **fail OPEN** — when unsure, show it. Worst case = a ghost lingers; never a real team vanishing. (A revert comes back as a JSON-RPC `error` carrying the `ERC721NonexistentToken` selector `0x7e273289`; a network/timeout is distinguishable from that.)
+
+### Note on the "Stage Mint" badge
+For #8742 the badge is technically right (no record + nonexistent). But its trigger (`hasBackendRecord === false`) will also fire on a **legit pass bought on the secondary market** (Go keeps the record under the original owner) or any **undrafted** pass — so it can false-positive on real assets. The on-chain verify above would let you tell a true ghost from a real-but-unrecorded pass.
+
+### Secondary (FYI, not urgent)
+Token 1448 is sold but still `active` under Richard in Go (`/draftToken/all`). It doesn't surface on My Teams (OpenSea correctly attributes it to the new owner now), so it's cosmetic — but your `dedupe-passes`/forensics work may want to know the resale-staleness is observable here.
+
+### Also shipped today (small UI-only, already deployed — so the diffs don't surprise you)
+- Added `hasSeasonStarted()` to `lib/draftTypes.ts` (derived from `DRAFTING_CLOSES_AT` = NFL kickoff). Gated ALL rank/weekly/season displays on it — pre-season placeholder scores (the same NFT-trait seed junk) now hidden across `BuyTab`, marketplace detail page, `SellTab`, and `components/standings/TeamCard.tsx`; rank only shows for a real 1-10 position. Self-resolves at kickoff.
+- Marketplace: removed the Best Rank / Most Points / Playoff Odds **sort options**; hid the **"Top Performing Teams for Sale"** table and **"Why Trade Teams?"** section (both behind `false &&`, easy to restore — the Why-Trade one pending your OK).
+- Marketplace card image now fills its frame (portrait `aspect-[3/4]`, like the detail page).
+None of these touched your `nftPassClassify` / `dedupe-passes` / `refresh-wallet` / `pass-forensics` / `audits` files.
+
+— Richard's Claude
