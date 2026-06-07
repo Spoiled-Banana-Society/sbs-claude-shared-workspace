@@ -93,28 +93,55 @@ export function SellTab({
   onCloseSuccessModal,
 }: SellTabProps) {
   const [showUnsellable, setShowUnsellable] = useState(false);
+  // Inventory view toggle. DEFAULT = drafted TEAMS (the thing people actually
+  // sell). Passes live behind toggles, split paid vs free, plus an All view.
+  // A "pass" = an NFT with no backend roster record (hasBackendRecord === false);
+  // a "team" = a drafted roster record. Once a pass is drafted it gains a roster
+  // record → hasBackendRecord flips true → it shows up in the default Teams view
+  // automatically. No special wiring needed for that transition.
+  const [viewType, setViewType] = useState<'teams' | 'paid' | 'free' | 'all'>('teams');
 
-  // Hide "stage mint" tokens entirely — NFTs the backend has no draft record
-  // for (orphan staging mints / undrafted passes). They clutter the list and
-  // aren't real teams.
-  const listableNfts = myNfts.filter(t => t.hasBackendRecord !== false);
+  const teamNfts = myNfts.filter(t => t.hasBackendRecord !== false);
+  const paidPassNfts = myNfts.filter(t => t.hasBackendRecord === false && t.passType !== 'free');
+  const freePassNfts = myNfts.filter(t => t.hasBackendRecord === false && t.passType === 'free');
+  const inView = viewType === 'teams' ? teamNfts
+    : viewType === 'paid' ? paidPassNfts
+    : viewType === 'free' ? freePassNfts
+    : myNfts;
 
-  // Only show sellable teams/passes by default; the ones you can't list yet
-  // (free passes locked until the season starts) hide behind a toggle.
-  // Tier first, then NEWEST team first (highest token id) within a tier, so the
-  // team you just drafted sits at the very top.
-  const byTierThenNewest = (a: typeof listableNfts[number], b: typeof listableNfts[number]) =>
+  // Tier first, then NEWEST first (highest token id) within a tier, so the team
+  // you just drafted sits at the very top.
+  const byTierThenNewest = (a: typeof myNfts[number], b: typeof myNfts[number]) =>
     (sellTierRank(a) - sellTierRank(b)) || ((Number(b.tokenId) || 0) - (Number(a.tokenId) || 0));
-  const sellable = listableNfts.filter(canSellTeam).sort(byTierThenNewest);
-  const unsellable = listableNfts.filter(t => !canSellTeam(t)).sort(byTierThenNewest);
-  const visibleNfts = showUnsellable ? [...sellable, ...unsellable] : sellable;
+  const sellable = inView.filter(canSellTeam).sort(byTierThenNewest);
+  const unsellable = inView.filter(t => !canSellTeam(t)).sort(byTierThenNewest);
+  const fullList = showUnsellable ? [...sellable, ...unsellable] : sellable;
+  // Cap rendered rows so a whale's hundreds of identical passes don't jank the
+  // page. Teams are few so they're effectively never capped.
+  const RENDER_CAP = 60;
+  const visibleNfts = fullList.slice(0, RENDER_CAP);
+  const hiddenCount = fullList.length - visibleNfts.length;
 
   return (
     <>
       <div>
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
           <h3 className="text-lg font-semibold text-text-primary mb-2">Sell Your Teams</h3>
-          <p className="text-text-secondary text-sm mb-6">List any of your BBB teams for sale. Set your price and buyers can purchase instantly.</p>
+          <p className="text-text-secondary text-sm mb-6">List any of your BBB teams or draft passes for sale. Set your price and buyers can purchase instantly.</p>
+
+          {!myNftsLoading && myNfts.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-6 p-1 bg-bg-primary border border-bg-tertiary rounded-xl w-fit">
+              {([['teams', 'Teams', teamNfts.length], ['paid', 'Paid Passes', paidPassNfts.length], ['free', 'Free Passes', freePassNfts.length], ['all', 'All', myNfts.length]] as const).map(([key, label, count]) => (
+                <button
+                  key={key}
+                  onClick={() => { setViewType(key); setShowUnsellable(false); }}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${viewType === key ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label} <span className="opacity-60">{count}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {myNftsLoading ? (
             <div className="space-y-4">
@@ -242,6 +269,10 @@ export function SellTab({
                 ? 'Hide unsellable teams'
                 : `Show ${unsellable.length} unsellable ${unsellable.length === 1 ? 'team' : 'teams'} (free entries — listable once the season starts)`}
             </button>
+          )}
+
+          {!myNftsLoading && hiddenCount > 0 && (
+            <p className="text-text-muted text-xs text-center mt-3">Showing {visibleNfts.length} of {fullList.length}.</p>
           )}
 
           {txError && !showSellModal && (

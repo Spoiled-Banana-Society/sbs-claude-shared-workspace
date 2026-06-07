@@ -117,9 +117,51 @@ export async function auditNegativeBalances(db: Firestore): Promise<AuditFinding
   return findings;
 }
 
+/**
+ * DUPLICATE PASSES — two `validDraftTokens` records for ONE on-chain token
+ * (same wallet, same `RealTokenId`). This is the failure mode that silently
+ * inflated the pass count and that `auditPassLedger` CANNOT see: duplicates
+ * inflate the counter AND the inventory count equally, so counter==count and it
+ * looks healthy. Root cause was a non-idempotent Go registration (fixed), but
+ * this check is the standing tripwire so any recurrence (or leftover from old
+ * data) surfaces in the admin Logs feed immediately. Fix: /api/admin/nft/dedupe-passes.
+ */
+export async function auditDuplicatePasses(db: Firestore): Promise<AuditFinding[]> {
+  const findings: AuditFinding[] = [];
+  const snap = await db.collectionGroup('validDraftTokens').get();
+  const byOwner = new Map<string, Map<string, number>>(); // owner -> realTokenId -> count
+  snap.forEach((d) => {
+    const m = d.ref.path.match(/owners\/([^/]+)\/validDraftTokens/);
+    if (!m) return;
+    const w = m[1].toLowerCase();
+    const data = d.data() as Record<string, unknown>;
+    const rt = String(data.RealTokenId ?? data.realTokenId ?? '').trim();
+    if (!/^\d+$/.test(rt)) return; // only real-on-chain-id records can collide
+    const inner = byOwner.get(w) ?? new Map<string, number>();
+    inner.set(rt, (inner.get(rt) ?? 0) + 1);
+    byOwner.set(w, inner);
+  });
+  for (const [w, inner] of byOwner) {
+    const dups: Array<{ realTokenId: string; count: number }> = [];
+    for (const [rt, c] of inner) if (c > 1) dups.push({ realTokenId: rt, count: c });
+    if (dups.length) {
+      const phantom = dups.reduce((s, d) => s + (d.count - 1), 0);
+      findings.push({
+        source: 'audit.passes.duplicate',
+        severity: 'critical',
+        actor: w,
+        message: `Duplicate draft-pass records: ${dups.length} on-chain token(s) have >1 ledger record (${phantom} phantom pass(es) inflating the count). Fix via /api/admin/nft/dedupe-passes.`,
+        context: { duplicateTokens: dups.length, phantomRecords: phantom, sample: dups.slice(0, 10) },
+      });
+    }
+  }
+  return findings;
+}
+
 /** Every check that runs. Add money/fairness checks here as we build them. */
 export const AUDIT_CHECKS: Array<{ name: string; run: (db: Firestore) => Promise<AuditFinding[]> }> = [
   { name: 'passes', run: auditPassLedger },
+  { name: 'duplicate_passes', run: auditDuplicatePasses },
   { name: 'negative_balances', run: auditNegativeBalances },
 ];
 
