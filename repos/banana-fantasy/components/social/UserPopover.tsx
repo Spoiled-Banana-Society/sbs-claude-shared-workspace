@@ -327,7 +327,10 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="cursor-pointer"
+        // inline-flex (not default inline) so the wrapped avatar has no
+        // baseline gap — otherwise it added phantom height that pushed
+        // draft-card content down vs the un-wrapped "you" card.
+        className="cursor-pointer inline-flex"
       >
         {children}
       </span>

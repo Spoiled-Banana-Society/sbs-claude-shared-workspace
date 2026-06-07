@@ -286,7 +286,7 @@ export function DraftRoomReveal({
                     </div>
                   )}
 
-                  <div className="lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
+                  <div className="mt-2 font-bold text-[11px] lg:text-[14px] font-primary" style={{ color: textColor }}>
                     {truncatedName}
                   </div>
 

@@ -149,9 +149,9 @@ export function DraftRoomFilling({
                   )}
 
                   {showSkeleton ? (
-                    <div className="lg:mt-1 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
+                    <div className="mt-2 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
                   ) : (
-                    <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
+                    <div className={`mt-2 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
                       {truncatedName}
                     </div>
                   )}
