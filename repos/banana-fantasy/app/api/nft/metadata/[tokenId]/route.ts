@@ -1,5 +1,4 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { getOwnerForToken } from '@/lib/marketplace/teamData';
 import { resolveCard } from '@/lib/nftCardServer';
 import { logger } from '@/lib/logger';
 
@@ -21,12 +20,9 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     return new Response(JSON.stringify({ error: 'invalid token id' }), { status: 400, headers });
   }
 
-  let owner: string | null = null;
-  try { owner = await getOwnerForToken(tokenId); } catch { /* ignore */ }
-
   let card;
   try {
-    card = await resolveCard(tokenId, owner);
+    card = await resolveCard(tokenId);
   } catch (err) {
     logger.warn('nft.metadata_resolve_failed', { tokenId, error: String(err) });
     card = { image: '', drafted: false, level: 'Pro', players: [] };

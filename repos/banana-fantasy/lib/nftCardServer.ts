@@ -5,12 +5,9 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildDraftPassUrl, buildOgCardUrl } from '@/lib/nftCard';
 import { logger } from '@/lib/logger';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
-import { getTeamForToken, getOwnerForToken, type TeamData } from '@/lib/marketplace/teamData';
+import type { TeamData } from '@/lib/marketplace/teamData';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 
-const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-const POS_KEYS = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
 const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
 
 function tierFromLevel(level?: string): CardTier {
@@ -32,92 +29,60 @@ function isPreRevealOg(url: string): boolean {
   } catch { return false; }
 }
 
-interface GoToken { realTokenId?: string | number; _level?: string; roster?: Record<string, Array<{ playerId?: string; team?: string }> | null> }
-
-/**
- * Fetch the owner's full token list from the Go API.
- * Returns `null` ONLY when the fetch genuinely fails (so callers can tell
- * "fetch failed" apart from "token not in list"). Retries once for cold starts.
- */
-async function getOwnerTokens(owner: string | null): Promise<GoToken[] | null> {
-  if (!owner) return null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) continue;
-      const d = await res.json();
-      return [...(Array.isArray(d?.active) ? d.active : []), ...(Array.isArray(d?.available) ? d.available : [])];
-    } catch { /* retry */ }
-  }
-  return null;
-}
-
-function playersFromGoRoster(roster?: GoToken['roster']): CardPlayer[] {
-  const out: CardPlayer[] = [];
-  for (const pos of POS_KEYS) {
-    for (const p of (roster?.[pos] || [])) {
-      const pid = p?.playerId || '';
-      const [tm, ps] = pid.split('-');
-      const m = PLAYER_META.get(pid);
-      out.push({ team: tm || p?.team || '', pos: ps || pos, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' });
-    }
-  }
-  return out;
-}
-
 function playersFromTeamData(team: TeamData): CardPlayer[] {
   return team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
 }
 
 export interface ResolvedCard { image: string; drafted: boolean; level: string; players: CardPlayer[] }
 
+const ROSTER_TRAIT = /^(QB|RB|WR|TE|DST)\d+$/i;
+
+/** Build card players from the Go-written metadata roster attributes
+ *  (trait_type "RB1", value "MIN RB1"). bye/ADP from ALL_POSITIONS. */
+function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardPlayer[] {
+  return attrs
+    .filter((a) => ROSTER_TRAIT.test(a.tt))
+    .map((a) => {
+      const parts = a.val.trim().split(/\s+/);
+      const team = parts[0] || '';
+      const pos = parts.slice(1).join('') || a.tt;
+      const m = PLAYER_META.get(`${team}-${pos}`);
+      return { team, pos, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' as const };
+    });
+}
+
 /**
- * Resolve a token's card. The EXACT realTokenId token is authoritative:
- * an existing token with an EMPTY roster is minted-but-undrafted → grey pass
- * (never a false team via the cardId heuristic). Only when no exact match
- * exists (traded/legacy) do we fall back to getTeamForToken.
- * Image: a stored full-data TEAM og (roster-page write, has picks) wins for
- * drafted teams; else built deterministically; un-drafted → grey pass.
+ * Resolve a token's card from Firestore `draftTokenMetadata/{id}` — ONE fast
+ * read, scalable for a per-token metadata endpoint (no slow per-owner Go fetch).
+ *
+ * Drafted iff the doc has real roster attributes (Go writes these on draft).
+ * The mint-write seeds an empty-roster doc (→ grey pass) which the draft
+ * overwrites with a roster (→ team). No doc → un-drafted → grey pass.
+ * Image: a stored full-data TEAM og (roster-page write, has picks) wins; else
+ * built from the roster attributes; un-drafted → grey pass.
  */
-export async function resolveCard(tokenId: string, owner: string | null): Promise<ResolvedCard> {
+export async function resolveCard(tokenId: string, _owner?: string | null): Promise<ResolvedCard> {
   const id = String(tokenId).trim();
-  let drafted = false;
-  let level = 'Pro';
-  let players: CardPlayer[] = [];
-
-  // Always resolve the owner (the metadata route is called by OpenSea with no
-  // context) so the authoritative exact-token check can run.
-  let resolvedOwner = owner;
-  if (!resolvedOwner) {
-    try { resolvedOwner = await getOwnerForToken(id); } catch { /* ignore */ }
-  }
-
-  const toks = await getOwnerTokens(resolvedOwner);
-  const exact = toks ? toks.find((t) => String(t.realTokenId ?? '') === id) : undefined;
-
-  if (toks && exact) {
-    // Authoritative: this IS the token. Drafted iff it has a real roster;
-    // empty roster = minted-but-undrafted → grey pass (no heuristic fall-through).
-    const p = playersFromGoRoster(exact.roster);
-    if (p.length >= 10) { drafted = true; players = p; level = exact._level || 'Pro'; }
-  } else {
-    // Token not in this owner's list (traded/legacy) OR the Go fetch failed →
-    // fall back to the heuristic resolver.
-    const team = await getTeamForToken(id, resolvedOwner);
-    if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
-      drafted = true; players = playersFromTeamData(team); level = team.level || 'Pro';
-    }
-  }
-
-  let image = drafted ? buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, players }) : buildDraftPassUrl(id);
-  if (drafted && isFirestoreConfigured() && /^\d+$/.test(id)) {
+  if (isFirestoreConfigured() && /^\d+$/.test(id)) {
     try {
       const snap = await getAdminFirestore().collection('draftTokenMetadata').doc(id).get();
-      const stored = snap.exists ? String((snap.data() as Record<string, unknown>).Image ?? '') : '';
-      if (isOgImage(stored) && !isPreRevealOg(stored)) image = stored;
-    } catch { /* keep built image */ }
+      if (snap.exists) {
+        const d = snap.data() as Record<string, unknown>;
+        const rawAttrs = (d.Attributes ?? d.attributes ?? []) as Array<Record<string, unknown>>;
+        const attrs = rawAttrs.map((a) => ({ tt: String(a.Trait_Type ?? a.trait_type ?? ''), val: String(a.Value ?? a.value ?? '') }));
+        const players = playersFromAttributes(attrs);
+        if (players.length >= 10) {
+          const level = attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro';
+          const stored = String(d.Image ?? '');
+          const image = (isOgImage(stored) && !isPreRevealOg(stored))
+            ? stored
+            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, players });
+          return { image, drafted: true, level, players };
+        }
+      }
+    } catch { /* fall through to grey pass */ }
   }
-  return { image, drafted, level, players };
+  return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
 }
 
 export async function resolveTokenImage(tokenId: string, owner: string | null): Promise<string> {
