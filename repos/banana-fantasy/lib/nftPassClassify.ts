@@ -1,14 +1,14 @@
-// Authoritative "is this token an UNDRAFTED draft pass?" check.
+// Authoritative "is this token an UNDRAFTED draft pass (grey) vs a drafted team?"
 //
-// The Go API's `/owner/{wallet}/draftToken/all` splits a wallet's tokens into
-// `available` (minted pass, not yet drafted → grey draft pass) and `active`
-// (drafted → team). That split — NOT whatever roster attrs happen to sit in
-// Firestore — is the source of truth for pass-vs-team. (On staging, tokens get
-// recycled, so an available pass can carry a stale roster doc from a prior
-// draft; trusting that doc made undrafted passes wrongly render as teams.)
-//
-// Cached per-owner so a whale wallet (admin owns 600+) costs ONE Go fetch even
-// when OpenSea hammers the per-token metadata endpoint for every token at once.
+// Source of truth is the Go API's per-wallet split:
+//   - `available` = minted but NOT yet drafted → grey draft pass
+//   - `active`    = drafted → team
+// NOT whatever roster attrs happen to sit in Firestore (those go stale when
+// staging recycles ids). A token is a pass ONLY if it's in `available` AND NOT
+// in `active` — DRAFTED WINS, because staging leaves stale `available` rows for
+// tokens that have actually been drafted (e.g. a team also listed under its old
+// pass record). Cached per-owner so a whale wallet (admin owns 600+) costs ONE
+// Go fetch even when OpenSea hammers the per-token metadata endpoint at once.
 
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { logger } from '@/lib/logger';
@@ -18,38 +18,50 @@ const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
 
 const TTL_MS = 60_000;
 
-interface OwnerPasses { ids: Map<string, string>; ts: number } // realTokenId → passType
-const byOwner = new Map<string, OwnerPasses>();
-const inflight = new Map<string, Promise<Map<string, string>>>();
+interface OwnerTokens { passIds: Map<string, string>; activeIds: Set<string>; ts: number }
+const byOwner = new Map<string, OwnerTokens>();
+const inflight = new Map<string, Promise<OwnerTokens>>();
 const ownerOfToken = new Map<string, { owner: string; ts: number }>();
 
-/** Fetch + cache an owner's undrafted-pass token ids (→ passType). Concurrent
- *  callers for the same owner share ONE fetch (a whale's 600 tokens resolve in
- *  parallel → without this they'd all stampede the Go API). */
-async function loadOwnerPasses(owner: string): Promise<Map<string, string>> {
+/**
+ * The on-chain token id a Go draft-token record points at. Newer records carry
+ * `realTokenId`; legacy ones encode it in `_cardId` — either the bare on-chain
+ * id (≤7 digits) or the staging form `<10-digit unix-seconds><tokenId>`. The
+ * 19-digit synthetic collision ids always have realTokenId set, so they resolve
+ * via `realTokenId` and never get mis-decoded here.
+ */
+function recordTokenId(t: Record<string, unknown>): string | null {
+  const rt = String(t.realTokenId ?? '').trim();
+  if (/^\d+$/.test(rt)) return rt;
+  const cid = String(t._cardId ?? t.cardId ?? '').trim();
+  if (/^\d{1,7}$/.test(cid)) return cid;
+  if (/^\d{10}\d{1,7}$/.test(cid)) return cid.slice(10);
+  return null;
+}
+
+/** Fetch + cache an owner's pass ids (available) and drafted ids (active).
+ *  Concurrent callers for the same owner share ONE fetch. */
+async function loadOwnerTokens(owner: string): Promise<OwnerTokens> {
   const lo = owner.toLowerCase();
   const cached = byOwner.get(lo);
-  if (cached && Date.now() - cached.ts < TTL_MS) return cached.ids;
+  if (cached && Date.now() - cached.ts < TTL_MS) return cached;
   const pending = inflight.get(lo);
   if (pending) return pending;
 
-  const p = (async () => {
-    const ids = new Map<string, string>();
+  const p = (async (): Promise<OwnerTokens> => {
+    const passIds = new Map<string, string>();
+    const activeIds = new Set<string>();
     try {
       const res = await fetch(`${DRAFTS_API_BASE}/owner/${lo}/draftToken/all`, { signal: AbortSignal.timeout(4000) });
       if (res.ok) {
         const data = await res.json();
+        for (const t of (Array.isArray(data?.active) ? data.active : [])) {
+          const id = recordTokenId(t);
+          if (id) activeIds.add(id);
+        }
         for (const t of (Array.isArray(data?.available) ? data.available : [])) {
-          const passType = String(t?.passType ?? '').trim();
-          // The on-chain token id is `realTokenId` on newer records, but ~65 of
-          // the admin wallet's passes are LEGACY records with no realTokenId —
-          // their on-chain id sits in `_cardId` as a small (≤7-digit) integer
-          // (the 19-digit timestamp form always carries realTokenId separately).
-          // Index BOTH so every undrafted pass is recognized, not just newer ones.
-          const rt = String(t?.realTokenId ?? '').trim();
-          if (/^\d+$/.test(rt)) ids.set(rt, passType);
-          const cid = String(t?._cardId ?? t?.cardId ?? '').trim();
-          if (/^\d{1,7}$/.test(cid)) ids.set(cid, passType);
+          const id = recordTokenId(t);
+          if (id) passIds.set(id, String(t?.passType ?? '').trim());
         }
       }
     } catch (err) {
@@ -58,9 +70,10 @@ async function loadOwnerPasses(owner: string): Promise<Map<string, string>> {
       // wrong-looking cards is traced to its root, not guessed at.
       logger.warn('nft.pass_classify_go_failed', { owner: lo, err: (err as Error).message });
     }
-    byOwner.set(lo, { ids, ts: Date.now() });
+    const result: OwnerTokens = { passIds, activeIds, ts: Date.now() };
+    byOwner.set(lo, result);
     inflight.delete(lo);
-    return ids;
+    return result;
   })();
   inflight.set(lo, p);
   return p;
@@ -74,17 +87,19 @@ export function passTypeLabel(passType?: string): 'Paid' | 'Free' {
 }
 
 /**
- * Is `tokenId` an undrafted draft pass right now? `ownerHint` (when the caller
- * already knows the owner, e.g. the marketplace owner scope) skips the on-chain
- * owner lookup entirely.
+ * Is `tokenId` an undrafted draft pass right now? DRAFTED WINS: a token that is
+ * in the owner's `active` list is a team even if a stale `available` row exists.
+ * `ownerHint` (when the caller already knows the owner) skips the on-chain lookup.
  */
 export async function classifyToken(tokenId: string, ownerHint?: string | null): Promise<PassClassification> {
   const id = String(tokenId).trim();
   if (!/^\d+$/.test(id)) return { isPass: false };
 
-  // Fast path: a recently-cached owner whose pass-set already contains this id.
+  // Fast path: a recently-cached owner whose lists already contain this id.
   for (const c of byOwner.values()) {
-    if (Date.now() - c.ts < TTL_MS && c.ids.has(id)) return { isPass: true, passType: c.ids.get(id) };
+    if (Date.now() - c.ts >= TTL_MS) continue;
+    if (c.activeIds.has(id)) return { isPass: false };
+    if (c.passIds.has(id)) return { isPass: true, passType: c.passIds.get(id) };
   }
 
   // Resolve the owner (hint → token cache → on-chain).
@@ -99,6 +114,8 @@ export async function classifyToken(tokenId: string, ownerHint?: string | null):
   }
   if (!owner) return { isPass: false };
 
-  const ids = await loadOwnerPasses(owner);
-  return ids.has(id) ? { isPass: true, passType: ids.get(id) } : { isPass: false };
+  const t = await loadOwnerTokens(owner);
+  if (t.activeIds.has(id)) return { isPass: false };
+  if (t.passIds.has(id)) return { isPass: true, passType: t.passIds.get(id) };
+  return { isPass: false };
 }
