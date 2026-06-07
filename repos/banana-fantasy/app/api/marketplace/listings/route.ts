@@ -15,6 +15,8 @@ import { isDraftingOpen } from '@/lib/draftTypes';
 import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { logger } from '@/lib/logger';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { resolveTokenImage } from '@/lib/nftCardServer';
+import { classifyToken } from '@/lib/nftPassClassify';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,18 +124,27 @@ export async function GET(req: Request) {
     }));
     const teamsByToken = await getTeamsForTokens(teamPairs);
 
+    // Authoritative obsidian image per listed token (drafted → tier team card,
+    // undrafted → grey pass) — NOT the old GCS Python card. Owner is known.
+    const ogByToken = new Map<string, string>();
+    await Promise.all([...nftMap.keys()].map(async (tokenId) => {
+      ogByToken.set(tokenId, await resolveTokenImage(tokenId, ownerByTokenId.get(tokenId) ?? null));
+    }));
+
     for (const [tokenId, nft] of nftMap.entries()) {
       const team = teamsByToken.get(tokenId);
-      if (!team) continue;
-      const synthetic = teamDataToTraits(team);
-      const existing = Array.isArray(nft.traits) ? nft.traits : [];
-      (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
-      if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
-        (nft as { name: string }).name = team.leagueDisplayName;
+      if (team) {
+        const synthetic = teamDataToTraits(team);
+        const existing = Array.isArray(nft.traits) ? nft.traits : [];
+        (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
+        if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) {
+          (nft as { name: string }).name = team.leagueDisplayName;
+        }
       }
-      if (team.imageUrl) {
-        (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl;
-        (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl;
+      const og = ogByToken.get(tokenId);
+      if (og) {
+        (nft as { image_url: string; display_image_url: string }).image_url = og;
+        (nft as { image_url: string; display_image_url: string }).display_image_url = og;
       }
     }
 
@@ -171,14 +182,17 @@ export async function GET(req: Request) {
             } catch { /* skip metadata */ }
           }));
           const extraTeams = await getTeamsForTokens(cacheOnlyActive.map(rec => ({ tokenId: String(rec.tokenId), owner: rec.offerer })));
-          for (const [tid, nft] of extraNftMap.entries()) {
+          await Promise.all([...extraNftMap.entries()].map(async ([tid, nft]) => {
             const team = extraTeams.get(tid);
-            if (!team) continue;
-            const existing = Array.isArray(nft.traits) ? nft.traits : [];
-            (nft as { traits: typeof existing }).traits = mergeTraits(existing, teamDataToTraits(team));
-            if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) (nft as { name: string }).name = team.leagueDisplayName;
-            if (team.imageUrl) { (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl; (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl; }
-          }
+            if (team) {
+              const existing = Array.isArray(nft.traits) ? nft.traits : [];
+              (nft as { traits: typeof existing }).traits = mergeTraits(existing, teamDataToTraits(team));
+              if (team.leagueDisplayName && (!nft.name || /^#?\d+$/.test(nft.name.trim()))) (nft as { name: string }).name = team.leagueDisplayName;
+            }
+            const og = await resolveTokenImage(tid, cacheOnlyActive.find(r => String(r.tokenId) === tid)?.offerer ?? null);
+            (nft as { image_url: string; display_image_url: string }).image_url = og;
+            (nft as { image_url: string; display_image_url: string }).display_image_url = og;
+          }));
           for (const rec of cacheOnlyActive) {
             const nft = extraNftMap.get(String(rec.tokenId)) ?? null;
             const syntheticOrder = {
@@ -284,26 +298,39 @@ export async function POST(req: Request) {
       return jsonError('Missing signed order fields', 400);
     }
 
-    // Server-side enforcement of the "free passes can't be listed mid-season"
-    // rule. The UI already blocks it, but the API is the real gate (someone
-    // could POST a signed order directly). We use the same authoritative source
-    // as the client — pass_origin free-mint records — and only block a token
-    // that is definitively a free pass while drafting is open. Fail-OPEN on any
-    // lookup error so a flaky check never blocks a legitimate paid-pass listing.
-    if (isDraftingOpen()) {
-      try {
-        const offerItems = (body.parameters.offer ?? []) as Array<{ itemType: number; identifierOrCriteria?: string }>;
-        const nftItem = offerItems.find((o) => o.itemType === 2 || o.itemType === 3);
-        const tokenId = nftItem?.identifierOrCriteria;
-        const offerer = String(body.parameters.offerer ?? '').toLowerCase();
-        if (tokenId && offerer) {
+    // Server-side enforcement: a FREE draft pass can't be sold until it's been
+    // drafted into an actual team. The UI blocks it, but the API is the real
+    // gate (someone could POST a signed order directly). Two checks:
+    //   (a) authoritative — the Go API says this token is still an undrafted
+    //       pass AND its passType is free (classifyToken). Once drafted it
+    //       leaves the `available` list, so a revealed team lists fine.
+    //   (b) backstop — pass_origin free-mint records during the season-open
+    //       window (covers Go-down / classifier-miss). Fail-OPEN on errors so a
+    //       flaky check never blocks a legitimate paid-pass listing.
+    {
+      const offerItems = (body.parameters.offer ?? []) as Array<{ itemType: number; identifierOrCriteria?: string }>;
+      const nftItem = offerItems.find((o) => o.itemType === 2 || o.itemType === 3);
+      const tokenId = nftItem?.identifierOrCriteria;
+      const offerer = String(body.parameters.offerer ?? '').toLowerCase();
+      if (tokenId && offerer) {
+        try {
+          const cls = await classifyToken(String(tokenId), offerer);
+          if (cls.isPass && /free/i.test(cls.passType || '')) {
+            logger.info('marketplace.free_pass_list_blocked', { tokenId: String(tokenId), offerer, reason: 'undrafted_free_pass' });
+            return jsonError('A free draft pass can only be sold after you draft it into a team.', 403);
+          }
+        } catch { /* classifier unavailable — fall through to the backstop */ }
+      }
+      if (isDraftingOpen() && tokenId && offerer) {
+        try {
           const freeIds = new Set((await listFreeOriginTokenIds(offerer)).map(String));
           if (freeIds.has(String(tokenId))) {
+            logger.info('marketplace.free_pass_list_blocked', { tokenId: String(tokenId), offerer, reason: 'free_origin_season_open' });
             return jsonError('Free draft passes can only be listed once the season starts.', 403);
           }
+        } catch (guardErr) {
+          console.error('[marketplace/listings] free-pass guard check failed (allowing listing):', guardErr);
         }
-      } catch (guardErr) {
-        console.error('[marketplace/listings] free-pass guard check failed (allowing listing):', guardErr);
       }
     }
 

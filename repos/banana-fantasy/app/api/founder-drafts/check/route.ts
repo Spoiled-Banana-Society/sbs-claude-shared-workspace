@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { isFounderDraftMarked, markFounderDraft, recordFounderDraftJoin } from '@/lib/db';
+import { isFounderDraftMarked, markFounderDraft, recordFounderDraftJoin, unlockBadge } from '@/lib/db';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { logger } from '@/lib/logger';
 
@@ -79,6 +79,10 @@ async function creditAllDrafters(
   for (const wallet of humans) {
     try {
       const promo = await recordFounderDraftJoin(wallet, draftId);
+      // Founders League badge — playing in a founder draft earns it. Idempotent
+      // + fires the bell/toast on first unlock. Fire-and-forget so a badge
+      // hiccup never blocks the founder-promo credit.
+      void unlockBadge(wallet, 'founders-league', { draftId }).catch(() => {});
       out.results.push({
         wallet,
         ok: !!promo,

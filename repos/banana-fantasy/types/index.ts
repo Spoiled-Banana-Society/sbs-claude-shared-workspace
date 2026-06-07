@@ -50,10 +50,47 @@ export interface User {
   // from the `counters/banana_user_number` counter and never changes, so
   // no two users ever share a banana handle. See getOrAssignBananaNumbers.
   bananaNumber?: number;
+  // Current "ripeness" — the dynamic banana badge everyone has, computed
+  // server-side from how many paid BBB4 passes they've bought. Surfaced so
+  // every render site can color the default banana per user. See
+  // lib/badges/ripeness.ts. Not stored — recomputed on read.
+  ripeness?: Ripeness;
+}
+
+/**
+ * The dynamic "ripeness" of a user's banana — the default badge everyone
+ * carries when they haven't equipped an earned one. Computed from the count
+ * of paid passes they've bought in BBB4 (see lib/badges/ripeness.ts).
+ */
+export interface Ripeness {
+  /** 0–5, lowest (Unripe) to highest (Spoiled). */
+  tier: number;
+  /** Human label, e.g. "Ripe". */
+  label: string;
+  /** Banana fill color for this tier (green → spoiled-brown). */
+  color: string;
+  /** Display range, e.g. "20–40". */
+  range: string;
+  /** Paid BBB4 passes bought (the value the tier was derived from). */
+  count: number;
 }
 
 // Badges
-export type BadgeCategory = 'drafts' | 'league' | 'finals' | 'wheel' | 'founder' | 'legacy' | 'team';
+//
+// The badge system is the "obsidian disc": a dark-glass center with a solid
+// colored rim and a flat icon (no glow). Each badge declares HOW its center
+// content renders via `contentKind`, plus the rim/content colors. See
+// components/badges/BadgeIcon.tsx (renderer) and lib/badges/catalog.ts.
+export type BadgeCategory = 'ripeness' | 'championship' | 'club' | 'status' | 'team';
+
+/** How the obsidian disc's center content is drawn. */
+export type BadgeContentKind =
+  | 'banana'        // vectorized SBS banana, filled with the ripeness tier color
+  | 'text'          // short letters (JP / HOF / OG)
+  | 'numeral-crown' // small filled crown above a roman numeral (BBB champion)
+  | 'hof-champ'     // small crown above "HOF" + season numeral (HOF champion)
+  | 'icon'          // a flat line icon (King crown outline / Founders key)
+  | 'logo';         // a full-color image (NFL team logo via iconUrl)
 
 export interface Badge {
   id: string;
@@ -62,27 +99,33 @@ export interface Badge {
   /** One-line text shown in the catalog when locked, e.g. "Complete 20 drafts". */
   criteria: string;
   category: BadgeCategory;
-  /** Tailwind-friendly hex used for the badge ring + glow. */
+  // ── Obsidian-disc render fields ──────────────────────────────────────
+  /** How the center content renders. Drives BadgeIcon. */
+  contentKind: BadgeContentKind;
+  /** Solid rim color around the disc. Grey (#48484f) by default; prestige
+   *  badges get a colored rim (blue/gold/red/purple). */
+  rimColor: string;
+  /** Color of the center content (text / icon stroke / crown fill). Unused
+   *  by `banana` (tier color) and `logo` (full-color image). */
+  contentColor?: string;
+  /** Which flat line icon to draw for `contentKind: 'icon'`. */
+  iconName?: 'crown' | 'key';
+  /** Short text drawn for `contentKind: 'text'` (e.g. "JP", "HOF", "OG"). */
+  text?: string;
+  /** Roman-numeral season for champion badges (e.g. "I", "IV"). */
+  numeral?: string;
+  /** Marks a computed badge whose appearance is derived at render time
+   *  rather than from a fixed unlock. 'ripeness' = the dynamic banana whose
+   *  fill color comes from the user's purchase tier. */
+  dynamic?: 'ripeness';
+  // ── Shared / back-compat ─────────────────────────────────────────────
+  /** Representative hex (mirrors rimColor) kept for back-compat with code
+   *  that still reads `badge.color`. */
   color: string;
-  /** Single-character / emoji glyph used inside the small circle when no
-   *  custom image asset is shipped. */
+  /** Emoji used in unlock toasts + bell notifications (NOT the disc render). */
   glyph: string;
-  /** Optional asset path. If unset, BadgeIcon renders the glyph instead. */
+  /** Image asset for `contentKind: 'logo'` (NFL team logo). */
   iconUrl?: string;
-  /** Secondary color — used for gradients and dual-tone treatments. */
-  accentColor?: string;
-  /** When true, the background fill blends color → accentColor. */
-  gradient?: boolean;
-  /** Ring style. 'solid' (default) is a single border. 'double' adds an
-   *  inner ring for high-tier badges. 'medal' wraps the disc in an animated
-   *  brushed-metal sheen ring (silver/bronze podium medallions). 'rainbow'
-   *  uses an animated rainbow ring for the rarest. */
-  ringStyle?: 'solid' | 'double' | 'medal' | 'rainbow';
-  /** Override ring color independently from fill. Useful for HOF-tier
-   *  variants of base medals. */
-  ringColor?: string;
-  /** Visual flair. 'soft' = static drop-shadow. 'pulse' = animated. */
-  glow?: 'none' | 'soft' | 'pulse';
   /** Hidden badges (past-season champions, secret unlocks) don't render
    *  in the catalog when locked — they only appear once unlocked. */
   hidden?: boolean;

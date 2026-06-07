@@ -16,11 +16,12 @@ interface DraftRosterProps {
   userProfilePicture?: string;
   userName?: string;
   userEquippedBadge?: string | null;
+  userRipeness?: import('@/types').Ripeness | null;
 }
 
 const POSITION_KEYS: (keyof PositionRoster)[] = ['QB', 'RB', 'WR', 'TE', 'DST'];
 
-export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge }: DraftRosterProps) {
+export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness }: DraftRosterProps) {
   const [selectedPlayer, setSelectedPlayer] = useState(
     initialPlayer || draftOrder[userDraftPosition]?.name || draftOrder[0]?.name || ''
   );
@@ -94,6 +95,7 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
               alt="You"
               size={40}
               equippedBadge={userEquippedBadge}
+              ripeness={userRipeness}
               useNextImage={false}
               className=""
             />

@@ -368,6 +368,19 @@ export async function getOwnerDraftTokens(walletAddress: string): Promise<ApiDra
   }));
 }
 
+/** Count PAID draft passes in a token list (passType === 'paid'). Used to
+ *  compute the user's banana ripeness — paid = USDC + card purchases + the
+ *  card-fee-credit bonus draft; free/promo passes are excluded. */
+export function countPaidPasses(tokens: ApiDraftToken[]): number {
+  return tokens.filter(t => String(t.passType ?? '').toLowerCase() === 'paid').length;
+}
+
+/** Fetch a wallet's total PAID draft passes from the Go API. */
+export async function fetchOwnerPaidPassCount(walletAddress: string): Promise<number> {
+  const tokens = await getOwnerDraftTokens(walletAddress);
+  return countPaidPasses(tokens);
+}
+
 /**
  * Fetch draft tokens and map them to UI `League[]`.
  *

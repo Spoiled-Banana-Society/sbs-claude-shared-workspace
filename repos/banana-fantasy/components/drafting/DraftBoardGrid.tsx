@@ -17,6 +17,7 @@ interface DraftBoardGridProps {
   usersMap?: DraftRoomUsersMap;
   userProfilePicture?: string;
   userEquippedBadge?: string | null;
+  userRipeness?: import('@/types').Ripeness | null;
   /** The current user's own board label — their custom name or default
    *  "Banana####". Shown on their column instead of the word "You". */
   userDisplayName?: string;
@@ -31,6 +32,7 @@ export function DraftBoardGrid({
   usersMap,
   userProfilePicture,
   userEquippedBadge,
+  userRipeness,
   userDisplayName,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
@@ -93,6 +95,9 @@ export function DraftBoardGrid({
           const badge = player?.isYou
             ? userEquippedBadge
             : (resolvedUser?.equippedBadge ?? null);
+          const ripeness = player?.isYou
+            ? userRipeness
+            : (resolvedUser?.ripeness ?? null);
 
           return (
             <div
@@ -119,6 +124,7 @@ export function DraftBoardGrid({
                 alt={displayLabel}
                 size={32}
                 equippedBadge={badge}
+                ripeness={ripeness}
                 useNextImage={false}
                 className=""
               />

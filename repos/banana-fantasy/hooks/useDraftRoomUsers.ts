@@ -1,11 +1,14 @@
 'use client';
 
 import { useSWRLike } from '@/hooks/useSWRLike';
+import type { Ripeness } from '@/types';
 
 export interface DraftRoomUser {
   displayName: string | null;
   imageUrl: string | null;
   equippedBadge: string | null;
+  /** Ripeness tier — colors the default banana when no badge is equipped. */
+  ripeness?: Ripeness | null;
 }
 
 export type DraftRoomUsersMap = Record<string, DraftRoomUser>;

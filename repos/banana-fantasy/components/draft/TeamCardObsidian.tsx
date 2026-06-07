@@ -29,6 +29,9 @@ interface Props {
   tier?: CardTier;
   players?: CardPlayer[];
   passNumber?: string | number | null;
+  /** Team card identity line: on-chain token id (Team #) + league number. */
+  teamNumber?: string | number | null;
+  leagueNumber?: string | number | null;
   preReveal?: boolean;
   /** Generating-screen animation: rows with global index < revealCount are visible. */
   revealCount?: number;
@@ -67,6 +70,8 @@ export default function TeamCardObsidian({
   tier = 'pro',
   players = [],
   passNumber,
+  teamNumber,
+  leagueNumber,
   preReveal = false,
   revealCount,
   width = 320,
@@ -77,6 +82,10 @@ export default function TeamCardObsidian({
   const scale = width / dw;
   const shownThrough = revealCount == null ? players.length : revealCount;
   const passNo = passNumber != null && passNumber !== '' ? `#${passNumber}` : '';
+  const idsLine = [
+    teamNumber != null && teamNumber !== '' ? `TEAM #${teamNumber}` : '',
+    leagueNumber != null && leagueNumber !== '' ? `LEAGUE #${leagueNumber}` : '',
+  ].filter(Boolean).join(' · ');
 
   // Group players by position (QB/RB/WR/TE/DST), preserving order within group,
   // and assign each a global index for the reveal animation.
@@ -86,8 +95,8 @@ export default function TeamCardObsidian({
   let gi = 0;
 
   return (
-    <div className={className} style={{ width, height: dh * scale }}>
-      <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: dw, height: dh }}>
+    <div className={className} style={{ width, height: dh * scale, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, transform: `scale(${scale})`, transformOrigin: 'top left', width: dw, height: dh }}>
         <div className="tco-frame" style={{ background: preReveal ? GREY_FRAME : FRAME[tier] }}>
           <div className={`tco-card${preReveal ? ' tco-pass' : ''}`}>
             {preReveal ? (
@@ -111,8 +120,8 @@ export default function TeamCardObsidian({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className="tco-logo" src="/sbs-logo-white.png" alt="SBS" />
                 <div className="tco-title">BANANA BEST BALL IV</div>
+                {idsLine ? <div className="tco-ids">{idsLine}</div> : null}
                 <div className="tco-badge" style={{ color: BADGE[tier].text, background: BADGE[tier].bg, boxShadow: `0 0 0 1px ${BADGE[tier].line} inset` }}>
-                  <span className="tco-dot" style={{ background: BADGE[tier].dot }} />
                   {BADGE[tier].label}
                 </div>
                 <div className="tco-colh">
@@ -158,11 +167,16 @@ export default function TeamCardObsidian({
           background: linear-gradient(172deg,#17171e 0%,#0d0d12 58%,#070709 100%);
         }
         .tco-card.tco-pass { width: ${PASS_W}px; height: ${PASS_H}px; }
-        .tco-pad { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; padding: 14px 16px 14px; align-items: center; }
+        /* text-align:left makes the card self-contained — parents like the
+           generating screen (.dc-wrap) and roster page (.text-center) impose
+           text-align:center, which would otherwise be INHERITED by the section
+           headers (.tco-sechd) and push QB/RB/WR/TE/DST to the middle. The
+           logo/title/badge stay centered via flex align-items, not text-align. */
+        .tco-pad { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; padding: 14px 16px 14px; align-items: center; text-align: left; }
         .tco-logo { width: 26px; height: 26px; object-fit: contain; opacity: .92; filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
         .tco-title { margin-top: 5px; font-size: 12px; font-weight: 700; letter-spacing: .6px; color: rgba(255,255,255,.85); }
-        .tco-badge { margin-top: 7px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 30px; font-size: 11px; font-weight: 900; letter-spacing: 1.5px; }
-        .tco-dot { width: 5px; height: 5px; border-radius: 50%; }
+        .tco-ids { margin-top: 4px; font-size: 8.5px; font-weight: 700; letter-spacing: 1.4px; color: rgba(255,255,255,.42); }
+        .tco-badge { margin-top: 7px; display: inline-flex; align-items: center; justify-content: center; padding: 3px 11px; border-radius: 30px; font-size: 11px; font-weight: 900; letter-spacing: 1.5px; }
 
         .tco-colh { width: 100%; display: flex; align-items: flex-end; margin-top: 12px; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,.12); }
         .tco-c { width: 34px; text-align: right; font-size: 8px; font-weight: 800; letter-spacing: 1px; color: rgba(255,255,255,.3); }

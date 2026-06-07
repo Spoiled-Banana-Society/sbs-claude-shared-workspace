@@ -14,6 +14,7 @@ interface UserLike {
   username?: string | null;
   profilePicture?: string | null;
   equippedBadge?: string | null;
+  ripeness?: import('@/types').Ripeness | null;
 }
 
 interface DraftRoomFillingProps {
@@ -72,6 +73,7 @@ export function DraftRoomFilling({
             const playerUser = !isUser && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
             const otherPfp = playerUser?.imageUrl || '/banana-profile.png';
             const otherBadge = playerUser?.equippedBadge ?? null;
+            const otherRipeness = playerUser?.ripeness ?? null;
             const otherDisplayName = playerUser?.displayName || null;
 
             let displayName = '';
@@ -117,6 +119,7 @@ export function DraftRoomFilling({
                         alt="You"
                         size={48}
                         equippedBadge={user?.equippedBadge}
+                        ripeness={user?.ripeness}
                         useNextImage={false}
                         className=""
                       />
@@ -128,6 +131,7 @@ export function DraftRoomFilling({
                         alt={otherDisplayName || 'Player'}
                         size={48}
                         equippedBadge={otherBadge}
+                        ripeness={otherRipeness}
                         useNextImage={false}
                         className=""
                       />
@@ -145,9 +149,9 @@ export function DraftRoomFilling({
                   )}
 
                   {showSkeleton ? (
-                    <div className="lg:mt-1 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
+                    <div className="mt-2 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
                   ) : (
-                    <div className={`lg:mt-1 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
+                    <div className={`mt-2 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
                       {truncatedName}
                     </div>
                   )}

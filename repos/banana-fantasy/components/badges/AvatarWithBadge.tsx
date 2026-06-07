@@ -4,14 +4,24 @@ import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { BadgeIcon } from './BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
-import { useIsMobile } from '@/hooks/useIsMobile';
+import type { Ripeness } from '@/types';
 
 interface AvatarWithBadgeProps {
   imageUrl?: string | null;
   alt?: string;
   size: number; // avatar diameter in pixels
-  /** The user's currently equipped badge id, or null/undefined for none. */
+  /** The user's currently equipped badge id, or null/undefined for none.
+   *  When none, the user's dynamic "ripeness" banana is shown by default —
+   *  everyone always has a banana unless they equip a different earned badge. */
   equippedBadge?: string | null;
+  /** The user's current ripeness tier (color/label). Drives the default
+   *  banana's fill + tooltip. Defaults to Unripe when omitted. */
+  ripeness?: Ripeness | null;
+  /** Set false to hide the corner badge entirely (e.g. very dense contexts
+   *  where even the banana is too much). Defaults to true. */
+  showBadge?: boolean;
+  /** Set false to disable the hover tooltip on the corner badge. Default true. */
+  showBadgeTooltip?: boolean;
   /** Optional CSS class overrides for the wrapper. */
   className?: string;
   /** Border-ring classes (e.g. "border-2 border-[#F3E216]"). Rendered as an
@@ -24,6 +34,26 @@ interface AvatarWithBadgeProps {
    *  where the image url is dynamic / unconfigured in next.config images.
    */
   useNextImage?: boolean;
+  /** Corner badge size as a fraction of the avatar diameter. Default 0.44.
+   *  Exposed so the size-comparison preview can render bigger options. */
+  badgeScale?: number;
+  /** Max corner badge size in px. Default 40. */
+  badgeMax?: number;
+  /** Container shape for the corner badge. Default 'circle'. */
+  badgeShape?: 'circle' | 'squircle' | 'square' | 'square-soft' | 'shield' | 'hex';
+  /** Separator ring width (px) around the corner badge. Default 0 (none). */
+  badgeRingWidth?: number;
+  /** Separator ring color. */
+  badgeRingColor?: string;
+  /** Soft rim-colored glow on the corner badge. */
+  badgeGlow?: boolean;
+  /** Where the badge sits: bottom-right corner (default) or top-center topper
+   *  (crown-style, like some draft apps). */
+  badgePosition?: 'br' | 'top';
+  /** When a badge ring is present, the badge renders ON TOP of the avatar's
+   *  border ring so the ring "notches" around it. Set the ring color
+   *  (badgeRingColor) to the card/surface color for the punched-through look,
+   *  or white/grey for a visible separator. */
 }
 
 /**
@@ -49,10 +79,23 @@ export function AvatarWithBadge({
   alt = 'avatar',
   size,
   equippedBadge,
+  ripeness,
+  showBadge = true,
+  showBadgeTooltip = true,
   className = '',
   ringClassName = '',
   fallbackSrc = '/banana-profile.png',
   useNextImage = true,
+  badgeScale = 0.42,
+  badgeMax = 40,
+  // Locked design (2026-06-06): squircle badge box with a card-color cutout
+  // ring so the badge reads as a clean emblem that notches the avatar ring.
+  // Sites on a non-default surface pass their own badgeRingColor to match.
+  badgeShape = 'squircle',
+  badgeRingWidth = 2.5,
+  badgeRingColor = '#1c1c1f',
+  badgeGlow = false,
+  badgePosition = 'br',
 }: AvatarWithBadgeProps) {
   // Track image load failure so a broken/glitched pfp URL falls back to
   // the banana instead of rendering a broken image.
@@ -62,19 +105,20 @@ export function AvatarWithBadge({
     setLoadFailed(false);
   }, [imageUrl]);
 
-  const isMobile = useIsMobile();
   const isFallback = !imageUrl || loadFailed;
   const src = isFallback ? fallbackSrc : imageUrl;
-  // Mobile tiles pack the name close under the avatar, so the badge is a touch
-  // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
-  // while staying in the same bottom-right spot as desktop.
-  const badgeSize = Math.min(40, Math.max(12, Math.round(size * 0.44)));
-  // Badge sits at the bottom-right, poking just slightly past the circle. Kept
-  // small so it stays in the corner (not creeping toward the face). Mobile pokes
-  // DOWN a touch less so it clears the name on the tight tiles.
-  const edgeOffsetX = Math.round(size * 0.076);
-  const edgeOffsetY = Math.round(size * (isMobile ? 0.05 : 0.076));
-  const badge = equippedBadge ? BADGE_BY_ID[equippedBadge] : undefined;
+  const badgeSize = Math.min(badgeMax, Math.max(12, Math.round(size * badgeScale)));
+  // Effective badge: the equipped one (if it's still a real catalog badge),
+  // else the user's default banana = their highest unlocked ripeness tier
+  // (derived from `ripeness`; Unripe for everyone else). A stale equipped id
+  // from the old catalog falls back to the banana rather than rendering
+  // nothing. So every avatar always shows a badge.
+  const defaultBananaId = ripeness?.label
+    ? `ripeness-${ripeness.label.toLowerCase()}`
+    : 'ripeness-unripe';
+  const equippedValid = equippedBadge && BADGE_BY_ID[equippedBadge] ? equippedBadge : null;
+  const effectiveBadgeId = equippedValid || defaultBananaId;
+  const badge = showBadge ? (BADGE_BY_ID[effectiveBadgeId] || BADGE_BY_ID['ripeness-unripe']) : undefined;
   // Every avatar renders full-frame (object-cover fills the circle), so the
   // badge sits at the identical size + position on ALL of them — banana,
   // upload, anything. The default banana is itself a full-frame image now (a
@@ -115,27 +159,45 @@ export function AvatarWithBadge({
           onError={() => setLoadFailed(true)}
         />
       )}
-      {badge && (
-        <span
-          className="absolute pointer-events-auto"
-          style={{
-            right: -edgeOffsetX,
-            bottom: -edgeOffsetY,
-            width: badgeSize,
-            height: badgeSize,
-          }}
-        >
-          <BadgeIcon badge={badge} size={badgeSize} unlocked plain showTooltip={false} />
-        </span>
-      )}
-      {/* Border ring drawn LAST (on top of the badge) so it's always a complete
-          circle — the badge pokes slightly past it but can't erase it. */}
-      {ringClassName && (
-        <span
-          aria-hidden
-          className={`absolute inset-0 rounded-full pointer-events-none ${ringClassName}`}
-        />
-      )}
+      {(() => {
+        const badgeEl = badge ? (
+          <span
+            key="badge"
+            className="absolute pointer-events-auto"
+            style={badgePosition === 'top'
+              // display:flex + lineHeight:0 makes the badge a block-level flex
+              // item so its vertical position is exact, not subject to the
+              // inline-baseline gap (which drifted the badge 5–10px on small
+              // avatars and made placement look inconsistent).
+              ? { top: -Math.round(badgeSize * 0.42), left: '50%', transform: 'translateX(-50%)', width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }
+              // Anchor the badge's INNER (top-left) corner at a fixed point on
+              // the avatar's lower-right rim, so a BIGGER badge grows down +
+              // right (away from the face) instead of creeping up over it. At
+              // the default 0.42 scale these fractions reproduce the previous
+              // right/bottom placement exactly.
+              : { left: Math.round(size * 0.656), top: Math.round(size * 0.62), width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }}
+          >
+            <BadgeIcon
+              badge={badge}
+              size={badgeSize}
+              unlocked
+              plain
+              shape={badgeShape}
+              ringWidth={badgeRingWidth}
+              ringColor={badgeRingColor}
+              glow={badgeGlow}
+              showTooltip={showBadgeTooltip}
+            />
+          </span>
+        ) : null;
+        const ringEl = ringClassName ? (
+          <span key="ring" aria-hidden className={`absolute inset-0 rounded-full pointer-events-none ${ringClassName}`} />
+        ) : null;
+        // With a badge ring, the badge sits ON TOP of the border ring so the
+        // ring notches around it. Without, the border ring is drawn last so
+        // it stays a complete circle (legacy).
+        return badgeRingWidth > 0 ? [ringEl, badgeEl] : [badgeEl, ringEl];
+      })()}
     </div>
   );
 }

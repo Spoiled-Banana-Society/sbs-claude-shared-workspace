@@ -11,6 +11,7 @@ import {
   type OpenSeaListing,
 } from '@/lib/opensea';
 import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
@@ -129,21 +130,27 @@ export async function GET(req: Request) {
     const teamsByToken = await getTeamsForTokens(
       bbb4Nfts.map(nft => ({ tokenId: nft.identifier, owner })),
     );
+    // Resolve the authoritative obsidian image per token (grey pass for
+    // undrafted, tier team for drafted — exactly what OpenSea's metadata
+    // endpoint serves). Owner is known here, so the pass classifier is cheap.
+    const ogByToken = new Map<string, string>();
+    await Promise.all(bbb4Nfts.map(async (nft) => {
+      ogByToken.set(nft.identifier, await resolveTokenImage(nft.identifier, owner));
+    }));
     for (const nft of bbb4Nfts) {
       const team = teamsByToken.get(nft.identifier);
-      if (!team) continue;
-      const synthetic = teamDataToTraits(team);
-      const existing = Array.isArray(nft.traits) ? nft.traits : [];
-      (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
-      // Override OpenSea's generic name ("#1448" / "Draft Pass #1448") with the
-      // real league name once we've resolved the team.
-      if (team.leagueDisplayName && (!nft.name || /^(draft\s*pass\s*)?#?\s*\d+$/i.test(nft.name.trim()))) {
-        (nft as { name: string }).name = team.leagueDisplayName;
+      if (team) {
+        const synthetic = teamDataToTraits(team);
+        const existing = Array.isArray(nft.traits) ? nft.traits : [];
+        (nft as { traits: typeof existing }).traits = mergeTraits(existing, synthetic);
+        // Override OpenSea's generic name with the real league name.
+        if (team.leagueDisplayName && (!nft.name || /^(draft\s*pass\s*)?#?\s*\d+$/i.test(nft.name.trim()))) {
+          (nft as { name: string }).name = team.leagueDisplayName;
+        }
       }
-      if (team.imageUrl) {
-        (nft as { image_url: string; display_image_url: string }).image_url = team.imageUrl;
-        (nft as { image_url: string; display_image_url: string }).display_image_url = team.imageUrl;
-      }
+      const og = ogByToken.get(nft.identifier) || ogImageFromTeam(team, nft.identifier);
+      (nft as { image_url: string; display_image_url: string }).image_url = og;
+      (nft as { image_url: string; display_image_url: string }).display_image_url = og;
     }
 
     // Recent trades for this wallet, so we can reflect a just-bought/just-sold
@@ -185,9 +192,10 @@ export async function GET(req: Request) {
         const onchain = await getOnchainOwner(b.tokenId);
         if (!onchain || onchain !== owner.toLowerCase()) return null;
         const team = await getTeamForToken(b.tokenId, owner);
+        const og = await resolveTokenImage(b.tokenId, owner);
         const synthetic = team
-          ? { identifier: b.tokenId, contract: BBB4_CONTRACT, name: team.leagueDisplayName || null, image_url: team.imageUrl || null, display_image_url: team.imageUrl || null, traits: teamDataToTraits(team) }
-          : { identifier: b.tokenId, contract: BBB4_CONTRACT, name: b.teamName, image_url: null, display_image_url: null, traits: [] };
+          ? { identifier: b.tokenId, contract: BBB4_CONTRACT, name: team.leagueDisplayName || null, image_url: og, display_image_url: og, traits: teamDataToTraits(team) }
+          : { identifier: b.tokenId, contract: BBB4_CONTRACT, name: b.teamName, image_url: og, display_image_url: og, traits: [] };
         const { ownerAddress: _o, ...rest } = mapOpenSeaNftToTeam(synthetic as OpenSeaNft, owner);
         const listing = listingMap.get(b.tokenId);
         return {

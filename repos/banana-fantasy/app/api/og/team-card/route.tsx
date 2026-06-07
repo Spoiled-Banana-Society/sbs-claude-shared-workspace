@@ -12,7 +12,7 @@ const CANVAS_H = 1350;
 
 type Tier = 'pro' | 'hof' | 'jackpot';
 interface Player { team: string; pos: string; bye?: string | number; adp?: string | number; pick?: string | number; playerId?: string }
-interface Payload { tier?: Tier; passNo?: string | number; players?: Player[]; preReveal?: boolean }
+interface Payload { tier?: Tier; passNo?: string | number; teamNo?: string | number; leagueNo?: string | number; players?: Player[]; preReveal?: boolean }
 
 const FRAME: Record<Tier, string> = {
   pro: 'linear-gradient(135deg,#6b21a8,#d8b4fe 30%,#a855f7 52%,#f3e8ff 64%,#7e22ce 84%,#c084fc)',
@@ -61,6 +61,10 @@ export async function GET(req: Request) {
   const preReveal = !!p.preReveal;
   const players = (p.players || []).slice(0, 15).map(fill);
   const passNo = p.passNo != null && p.passNo !== '' ? `#${p.passNo}` : '';
+  const idsLine = [
+    p.teamNo != null && p.teamNo !== '' ? `TEAM #${p.teamNo}` : '',
+    p.leagueNo != null && p.leagueNo !== '' ? `LEAGUE #${p.leagueNo}` : '',
+  ].filter(Boolean).join(' · ');
 
   const [i400, i700, i900, i800i] = await Promise.all([
     loadFont('Inter-400.ttf'), loadFont('Inter-700.ttf'), loadFont('Inter-900.ttf'), loadFont('Inter-800i.ttf'),
@@ -79,7 +83,7 @@ export async function GET(req: Request) {
   const S = (CANVAS_H * 0.88) / (cardH + 8);
   const px = (n: number) => Math.round(n * S);
 
-  const card = preReveal ? renderPass(px, passNo, logoSrc) : renderTeam(px, tier, players, logoSrc);
+  const card = preReveal ? renderPass(px, passNo, logoSrc) : renderTeam(px, tier, players, logoSrc, idsLine);
 
   return new ImageResponse(
     (
@@ -103,7 +107,7 @@ function frameWrap(px: Px, cardW: number, cardH: number, children: React.ReactNo
   );
 }
 
-function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logoSrc?: string) {
+function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logoSrc?: string, idsLine?: string) {
   const b = BADGE[tier];
   const groups = POS_ORDER
     .map((pos) => ({ pos, players: players.filter((p) => basePos(p.pos) === pos) }))
@@ -115,8 +119,8 @@ function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logo
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', padding: `${px(14)}px ${px(16)}px ${px(14)}px` }}>
       {logoSrc ? <img src={logoSrc} width={px(26)} height={px(26)} style={{ objectFit: 'contain', opacity: 0.92 }} /> : null}
       <div style={{ marginTop: px(5), fontSize: px(12), fontWeight: 700, letterSpacing: px(0.6), color: 'rgba(255,255,255,.85)' }}>BANANA BEST BALL IV</div>
-      <div style={{ display: 'flex', alignItems: 'center', marginTop: px(7), padding: `${px(3)}px ${px(11)}px`, borderRadius: px(30), fontSize: px(11), fontWeight: 900, letterSpacing: px(1.5), color: b.text, background: b.bg, border: `1px solid ${b.line}` }}>
-        <div style={{ display: 'flex', width: px(5), height: px(5), borderRadius: px(5), background: b.dot, marginRight: px(5) }} />
+      {idsLine ? <div style={{ marginTop: px(4), fontSize: px(8.5), fontWeight: 700, letterSpacing: px(1.4), color: 'rgba(255,255,255,.42)' }}>{idsLine}</div> : null}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: px(7), padding: `${px(3)}px ${px(11)}px`, borderRadius: px(30), fontSize: px(11), fontWeight: 900, letterSpacing: px(1.5), color: b.text, background: b.bg, border: `1px solid ${b.line}` }}>
         {b.label}
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-end', width: '100%', marginTop: px(12), paddingBottom: px(5), borderBottom: '1px solid rgba(255,255,255,.12)' }}>

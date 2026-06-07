@@ -9,6 +9,34 @@ export const OPENSEA_API_BASE = 'https://api.opensea.io';
 export const COLLECTION_SLUG = 'sbs-draft-pass-bbb4';
 export const OPENSEA_CHAIN = 'base';
 
+/**
+ * Ask OpenSea to re-fetch a token's metadata (image/name/attrs) from our
+ * tokenURI. Fire after we change what the metadata endpoint will return — at
+ * mint (so a fresh pass shows the grey card live) and at draft close (so it
+ * flips to the team card). Best-effort; rate-limit-friendly small concurrency.
+ */
+export async function refreshOpenSeaTokens(tokenIds: Array<string | number>): Promise<number> {
+  const apiKey = process.env.OPENSEA_API_KEY || '';
+  if (!apiKey) return 0;
+  const ids = [...new Set(tokenIds.map((t) => String(t).trim()).filter((s) => /^\d+$/.test(s)))];
+  let ok = 0;
+  const CONCURRENCY = 4;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const batch = ids.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(batch.map(async (id) => {
+      try {
+        const res = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${id}/refresh`,
+          { method: 'POST', headers: { accept: 'application/json', 'x-api-key': apiKey } },
+        );
+        return res.ok;
+      } catch { return false; }
+    }));
+    ok += results.filter(Boolean).length;
+  }
+  return ok;
+}
+
 // ── OpenSea API Response Types ──────────────────────────────────────
 
 export interface OpenSeaNft {

@@ -267,6 +267,9 @@ export function DraftComplete({
   const cardPlayers = toCardPlayers(
     roster.map((r) => ({ playerId: r.playerId, position: r.position, pick: r.pick ?? '' })),
   );
+  // Team card identity line: TEAM # = on-chain token id (the draft-pass #),
+  // LEAGUE # = the numeric league id from the draftId.
+  const leagueNumber = (draftId || '').replace(/\D/g, '');
 
   return (
     <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>
@@ -275,7 +278,7 @@ export function DraftComplete({
 
       {/* ── the obsidian team card (hero) — roster locks in as the bar fills ── */}
       <div className="dc-cardwrap">
-        <TeamCardObsidian tier={type} players={cardPlayers} revealCount={revealCount} width={cardW} />
+        <TeamCardObsidian tier={type} players={cardPlayers} teamNumber={passNumber} leagueNumber={leagueNumber} revealCount={revealCount} width={cardW} />
       </div>
 
       {/* type + draft-pass # badge */}

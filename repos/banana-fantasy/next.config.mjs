@@ -28,6 +28,12 @@ const nextConfig = {
         hostname: 'storage.googleapis.com',
         pathname: '/sbs-draft-token-images/**',
       },
+      {
+        // Our own /api/og/team-card obsidian card images (NFT card art).
+        protocol: 'https',
+        hostname: '*.vercel.app',
+        pathname: '/api/og/**',
+      },
     ],
   },
   async headers() {
