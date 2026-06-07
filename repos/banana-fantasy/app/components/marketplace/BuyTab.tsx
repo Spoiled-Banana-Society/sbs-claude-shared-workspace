@@ -4,6 +4,7 @@ import type React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
+import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 
 type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
@@ -328,7 +329,7 @@ export function BuyTab({
                   </div>
                 </div>
 
-                {team.points > 0 && (
+                {hasSeasonStarted() && (
                   <div className={`grid ${team.rank >= 1 && team.rank <= 10 ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 bg-bg-primary rounded-xl mb-4`}>
                     {team.rank >= 1 && team.rank <= 10 && (
                       <div className="text-center">
@@ -615,7 +616,7 @@ export function BuyTab({
                     </div>
                   </div>
 
-                  {selectedTeam.points > 0 && (
+                  {hasSeasonStarted() && (
                     <div className="grid grid-cols-3 gap-3 p-4 bg-bg-primary rounded-xl mb-4">
                       <StatSummary label="Points" value={selectedTeam.points.toLocaleString()} />
                       <StatSummary label="Wk Avg" value={String(selectedTeam.weeklyAvg)} valueClassName="text-success" />

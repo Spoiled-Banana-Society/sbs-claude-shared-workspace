@@ -29,7 +29,9 @@ function nftToSyntheticLeague(n: MarketplaceTeam): League {
     name: n.name || `Team #${n.tokenId}`,
     contestId: '',
     type: (n.isJackpot ? 'jackpot' : n.isHof ? 'hof' : 'pro') as ContestType,
-    leagueRank: n.rank || 0,
+    // Only treat the NFT's RANK trait as a rank when it's a real 1-10 league
+    // position — pre-season it holds the token id (e.g. 8742), not a rank.
+    leagueRank: n.rank >= 1 && n.rank <= 10 ? n.rank : 0,
     weeklyRank: 0,
     weeklyScore: n.weeklyAvg || 0,
     seasonScore: n.points || 0,

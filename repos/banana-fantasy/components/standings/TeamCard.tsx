@@ -8,7 +8,7 @@ import type { ModalTab } from './LeagueDetailModal';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
 import { useListTeam } from '@/hooks/useListTeam';
-import { isDraftingOpen } from '@/lib/draftTypes';
+import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
 
 /** Human "time left" for a Seaport order's endTime (Unix seconds string). */
 function listingTimeLeft(endTimeSec?: string | null): string | null {
@@ -155,7 +155,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
     setEditing(false);
   };
   const config = typeConfig[league.type] || typeConfig.regular;
-  const inTheMoney = league.leagueRank > 0 && league.leagueRank <= 2;
+  // No real scoring until kickoff — pre-season rank/score values are placeholder
+  // seed data on the pass, so suppress them. A real rank is a 1-10 league position.
+  const seasonStarted = hasSeasonStarted();
+  const validRank = league.leagueRank >= 1 && league.leagueRank <= 10;
+  const showRank = seasonStarted && validRank;
+  const inTheMoney = showRank && league.leagueRank <= 2;
   const isCompleted = league.status === 'completed';
 
   const actionButtons: { tab: ModalTab; label: string; icon: React.ReactNode }[] = [
@@ -227,7 +232,7 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         <div className="flex-1 px-4 py-4 sm:px-5 min-w-0">
           {/* Top row: rank badge + league name + type pill + prize */}
           <div className="flex items-center gap-2.5 mb-3">
-            {league.leagueRank > 0 && getPlaceBadge(league.leagueRank)}
+            {showRank && getPlaceBadge(league.leagueRank)}
             {editing ? (
               <input
                 autoFocus
@@ -288,7 +293,7 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             <div>
               <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Rank</p>
               <p className="text-white font-bold text-lg">
-                {league.leagueRank > 0 ? (
+                {showRank ? (
                   <>{formatRank(league.leagueRank)}<span className="text-white/30 font-normal text-xs ml-0.5">of 10</span></>
                 ) : '-'}
               </p>
@@ -296,19 +301,19 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             <div>
               <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Weekly</p>
               <p className="text-white/80 font-semibold text-lg">
-                {formatScore(league.weeklyScore)}
+                {seasonStarted ? formatScore(league.weeklyScore) : '-'}
               </p>
             </div>
             <div>
               <p className="text-white/40 text-[10px] uppercase tracking-wider mb-0.5">Season</p>
               <p className="text-banana font-bold text-lg">
-                {formatScore(league.seasonScore)}
+                {seasonStarted ? formatScore(league.seasonScore) : '-'}
               </p>
             </div>
           </div>
 
           {/* Rank progress bar */}
-          {league.leagueRank > 0 && (
+          {showRank && (
             <div className="flex items-center gap-0.5 mb-3">
               {Array.from({ length: 10 }, (_, i) => {
                 const pos = i + 1;
