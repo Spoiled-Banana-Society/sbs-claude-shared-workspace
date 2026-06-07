@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { BadgeIcon } from './BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
-import { useIsMobile } from '@/hooks/useIsMobile';
 import type { Ripeness } from '@/types';
 
 interface AvatarWithBadgeProps {
@@ -106,20 +105,9 @@ export function AvatarWithBadge({
     setLoadFailed(false);
   }, [imageUrl]);
 
-  const isMobile = useIsMobile();
   const isFallback = !imageUrl || loadFailed;
   const src = isFallback ? fallbackSrc : imageUrl;
-  // Mobile tiles pack the name close under the avatar, so the badge is a touch
-  // smaller (52% vs 54%) and pokes DOWN less there — keeping it off the name
-  // while staying in the same bottom-right spot as desktop.
   const badgeSize = Math.min(badgeMax, Math.max(12, Math.round(size * badgeScale)));
-  // Badge sits at the bottom-right, poking just slightly past the circle. Kept
-  // small so it stays in the corner (not creeping toward the face). Mobile pokes
-  // DOWN a touch less so it clears the name on the tight tiles.
-  const edgeOffsetX = Math.round(size * 0.076);
-  // Less downward hang so the badge sits ON the bottom-right rim rather than
-  // dangling below the avatar (which crowded names in tight rows like the board).
-  const edgeOffsetY = Math.round(size * (isMobile ? 0.03 : 0.04));
   // Effective badge: the equipped one (if it's still a real catalog badge),
   // else the user's default banana = their highest unlocked ripeness tier
   // (derived from `ripeness`; Unripe for everyone else). A stale equipped id
@@ -182,7 +170,12 @@ export function AvatarWithBadge({
               // inline-baseline gap (which drifted the badge 5–10px on small
               // avatars and made placement look inconsistent).
               ? { top: -Math.round(badgeSize * 0.42), left: '50%', transform: 'translateX(-50%)', width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }
-              : { right: -edgeOffsetX, bottom: -edgeOffsetY, width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }}
+              // Anchor the badge's INNER (top-left) corner at a fixed point on
+              // the avatar's lower-right rim, so a BIGGER badge grows down +
+              // right (away from the face) instead of creeping up over it. At
+              // the default 0.42 scale these fractions reproduce the previous
+              // right/bottom placement exactly.
+              : { left: Math.round(size * 0.656), top: Math.round(size * 0.62), width: badgeSize, height: badgeSize, display: 'flex', lineHeight: 0 }}
           >
             <BadgeIcon
               badge={badge}

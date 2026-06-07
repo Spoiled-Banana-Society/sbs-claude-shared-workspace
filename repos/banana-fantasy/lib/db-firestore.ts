@@ -34,6 +34,7 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
+import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { pushStreamEvent } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
@@ -2452,15 +2453,35 @@ export async function revokeBadge(userId: string, badgeId: string): Promise<bool
 }
 
 /**
- * Sync a user's banana ripeness from their PAID-pass count (caller supplies
- * the count — the total paid draft passes in the wallet from the Go API; see
- * fetchOwnerPaidPassCount / countPaidPasses in lib/api/owner.ts).
+ * Count the PAID drafts a user has DONE — draft_entered activity events whose
+ * passType is 'paid' (i.e. drafts they actually entered using a paid pass).
+ * This is the ripeness metric: the banana ripens as you DRAFT, not as you buy.
+ * Free drafts don't count (no free-draft farming). Single-field query on userId
+ * (auto-indexed) + in-memory filter, so no composite index needed.
+ */
+export async function countPaidDraftsDone(userId: string): Promise<number> {
+  const snap = await getAdminFirestore()
+    .collection(ACTIVITY_EVENTS_COLLECTION)
+    .where('userId', '==', userId.toLowerCase())
+    .get();
+  let n = 0;
+  for (const d of snap.docs) {
+    const data = d.data() as { type?: string; metadata?: { passType?: string } };
+    if (data.type === 'draft_entered' && data.metadata?.passType === 'paid') n++;
+  }
+  return n;
+}
+
+/**
+ * Sync a user's banana ripeness from their PAID-drafts-DONE count (caller
+ * supplies it via countPaidDraftsDone).
  *
  * Two effects, both idempotent:
  *  1. Denormalizes the current tier onto the user doc (`ripeness`) so every
  *     render site can show the right default banana without re-querying.
- *  2. Silently unlocks each ripeness tier badge the count has earned (so they
- *     become equippable). SILENT — ripening never fires a bell/toast.
+ *  2. Unlocks each ripeness tier badge the count has earned (so they become
+ *     equippable). Crossing into a NEW tier fires a bell + toast (the unlock is
+ *     idempotent, so it only fires once per tier).
  *
  * Returns the current (highest reached) tier.
  */
@@ -2471,10 +2492,11 @@ export async function computeAndStoreRipeness(userId: string, paidCount: number)
     .collection(USERS_COLLECTION)
     .doc(lower)
     .set({ ripeness }, { merge: true });
-  // Unlock the earned tier badges quietly (Unripe is always-unlocked → skip).
+  // Unlock the earned tier badges (Unripe is always-unlocked → skip). Not
+  // silent: ripening into a new tier should fire a bell + toast.
   for (const id of unlockedRipenessIds(paidCount)) {
     if (id === 'ripeness-unripe') continue;
-    await unlockBadge(lower, id, { source: 'ripeness', paidCount }, { silent: true });
+    await unlockBadge(lower, id, { source: 'ripeness', paidCount });
   }
   return ripeness;
 }

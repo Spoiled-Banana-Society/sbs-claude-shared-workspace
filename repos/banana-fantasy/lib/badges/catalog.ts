@@ -41,10 +41,10 @@ export const BADGE_CATALOG: Badge[] = [
   ...RIPENESS_TIERS.map((t): Badge => ({
     id: ripenessBadgeId(t.key),
     label: t.label,
-    description: `Your banana is ${t.label} — ${t.range} paid drafts bought in BBB4.`,
+    description: `Your banana is ${t.label} — ${t.range} paid drafts done in BBB4.`,
     criteria: t.min <= 0
       ? 'Your starting banana — everyone has one'
-      : `Buy ${t.min}+ paid BBB4 drafts`,
+      : `Do ${t.min}+ paid BBB4 drafts`,
     category: 'ripeness',
     contentKind: 'banana',
     contentColor: t.color, // the banana fills with this when unlocked
@@ -141,8 +141,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'og',
     label: 'OG',
-    description: 'OG · returning player from a past season',
-    criteria: 'Played in a past SBS season',
+    description: 'OG — played a past Banana Best Ball season (BBB1, 2 or 3)',
+    criteria: 'Played a past Banana Best Ball season (BBB1–3)',
     category: 'status',
     contentKind: 'text',
     text: 'OG',

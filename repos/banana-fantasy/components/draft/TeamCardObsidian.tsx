@@ -29,6 +29,9 @@ interface Props {
   tier?: CardTier;
   players?: CardPlayer[];
   passNumber?: string | number | null;
+  /** Team card identity line: on-chain token id (Team #) + league number. */
+  teamNumber?: string | number | null;
+  leagueNumber?: string | number | null;
   preReveal?: boolean;
   /** Generating-screen animation: rows with global index < revealCount are visible. */
   revealCount?: number;
@@ -67,6 +70,8 @@ export default function TeamCardObsidian({
   tier = 'pro',
   players = [],
   passNumber,
+  teamNumber,
+  leagueNumber,
   preReveal = false,
   revealCount,
   width = 320,
@@ -77,6 +82,10 @@ export default function TeamCardObsidian({
   const scale = width / dw;
   const shownThrough = revealCount == null ? players.length : revealCount;
   const passNo = passNumber != null && passNumber !== '' ? `#${passNumber}` : '';
+  const idsLine = [
+    teamNumber != null && teamNumber !== '' ? `TEAM #${teamNumber}` : '',
+    leagueNumber != null && leagueNumber !== '' ? `LEAGUE #${leagueNumber}` : '',
+  ].filter(Boolean).join(' · ');
 
   // Group players by position (QB/RB/WR/TE/DST), preserving order within group,
   // and assign each a global index for the reveal animation.
@@ -111,8 +120,8 @@ export default function TeamCardObsidian({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className="tco-logo" src="/sbs-logo-white.png" alt="SBS" />
                 <div className="tco-title">BANANA BEST BALL IV</div>
+                {idsLine ? <div className="tco-ids">{idsLine}</div> : null}
                 <div className="tco-badge" style={{ color: BADGE[tier].text, background: BADGE[tier].bg, boxShadow: `0 0 0 1px ${BADGE[tier].line} inset` }}>
-                  <span className="tco-dot" style={{ background: BADGE[tier].dot }} />
                   {BADGE[tier].label}
                 </div>
                 <div className="tco-colh">

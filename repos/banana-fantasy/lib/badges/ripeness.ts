@@ -1,21 +1,20 @@
 import type { Ripeness } from '@/types';
 
 /**
- * "Ripeness" — six banana badges that unlock as you buy more PAID BBB4
- * drafts. Each tier is a real, equippable badge (like the champions/clubs):
- * locked + grey until you cross its threshold, then it turns its tier color
- * and you can equip whichever unlocked banana you want to show off.
+ * "Ripeness" — six banana badges that ripen as you DO more PAID BBB4 drafts.
+ * Each tier is a real, equippable badge (like the champions/clubs): locked +
+ * grey until you cross its threshold, then it turns its tier color and you can
+ * equip whichever unlocked banana you want to show off.
  *
- * The count is the number of PAID draft passes in the wallet (USDC + card
- * purchases + card-fee-credit bonus drafts). Free/promo passes don't count.
- * The Go API tags each token `passType: 'paid' | 'free'`, so we count the
- * paid ones (see lib/api/owner.ts → countPaidPasses).
+ * The count is the number of PAID drafts the user has DONE — draft_entered
+ * activity events with passType 'paid' (see db-firestore → countPaidDraftsDone).
+ * The banana ripens through play, not purchase; free/promo drafts don't count.
  *
- * Tiers (min paid passes to unlock):
+ * Tiers (min paid drafts done to unlock):
  *   Unripe 1–9 · Fresh 10–19 · Ripe 20–49
  *   Overripe 50–99 · Rotten 100–199 · Spoiled 200+
  * Unripe is the floor everyone starts with (always unlocked) so every user
- * has a banana; the rest unlock by buying.
+ * has a banana; the rest unlock by drafting.
  */
 export interface RipenessTier {
   /** Stable key; the badge id is `ripeness-${key}`. */
@@ -68,7 +67,7 @@ export function unlockedRipenessIds(count: number): string[] {
 
 /** One-line plain-English tooltip for a ripeness tier. */
 export function ripenessTooltip(r: Ripeness): string {
-  return `${r.label} · ${r.range} paid drafts bought in BBB4`;
+  return `${r.label} · ${r.range} paid drafts done in BBB4`;
 }
 
 /** The 6-tier ladder, for any read-only explainer. */

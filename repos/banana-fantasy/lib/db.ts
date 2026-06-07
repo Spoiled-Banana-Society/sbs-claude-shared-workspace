@@ -41,6 +41,7 @@ export const unlockBadge = db.unlockBadge;
 export const revokeBadge = db.revokeBadge;
 export const equipBadge = db.equipBadge;
 export const computeAndStoreRipeness = db.computeAndStoreRipeness;
+export const countPaidDraftsDone = db.countPaidDraftsDone;
 export const getEquippedBadgesBatch = db.getEquippedBadgesBatch;
 export const getUserDisplayBatch = db.getUserDisplayBatch;
 export const incrementMintPromos = db.incrementMintPromos;
