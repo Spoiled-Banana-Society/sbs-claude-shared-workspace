@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
-import { isDraftingOpen } from '@/lib/draftTypes';
+import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 
 type SuccessType = 'buy' | 'sell' | 'list';
@@ -197,9 +197,9 @@ export function SellTab({
                         )}
                       </div>
                       <p className="text-text-muted text-xs">
-                        {team.rank > 0 ? `Rank #${team.rank} • ` : ''}
-                        {team.points > 0 ? `${team.points.toLocaleString()} pts` : `Token #${team.tokenId}`}
-                        {team.playoffOdds > 0 ? ` • ${team.playoffOdds}% playoffs` : ''}
+                        {hasSeasonStarted() && team.rank >= 1 && team.rank <= 10 ? `Rank #${team.rank} • ` : ''}
+                        {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : `Token #${team.tokenId}`}
+                        {hasSeasonStarted() && team.playoffOdds > 0 ? ` • ${team.playoffOdds}% playoffs` : ''}
                       </p>
                     </div>
                   </div>
@@ -399,8 +399,8 @@ export function SellTab({
                 <div>
                   <h3 className="text-text-primary font-semibold font-mono">{selectedTeam.name}</h3>
                   <p className="text-text-muted text-xs">
-                    {selectedTeam.rank > 0 ? `Rank #${selectedTeam.rank} • ` : ''}
-                    {selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : `Token #${selectedTeam.tokenId}`}
+                    {hasSeasonStarted() && selectedTeam.rank >= 1 && selectedTeam.rank <= 10 ? `Rank #${selectedTeam.rank} • ` : ''}
+                    {hasSeasonStarted() && selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : `Token #${selectedTeam.tokenId}`}
                   </p>
                 </div>
               </div>
