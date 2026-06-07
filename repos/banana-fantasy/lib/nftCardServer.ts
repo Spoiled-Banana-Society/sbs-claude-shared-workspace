@@ -25,6 +25,16 @@ export function isOgImage(url: string | undefined): boolean {
   return !!url && url.includes('/api/og/team-card');
 }
 
+/** Synchronous obsidian card image from a Go-API team (no Firestore read) —
+ *  for list/grid thumbnails. Drafted → tier team, else → grey draft pass. */
+export function ogImageFromTeam(team: TeamData | null | undefined, tokenId: string | number): string {
+  if (team && Array.isArray(team.roster) && team.roster.length >= 10) {
+    const players = team.roster.map((p) => ({ team: p.team || '', pos: p.position || '', pick: '-' as const }));
+    return buildOgCardUrl({ tier: tierFromLevel(team.level), players });
+  }
+  return buildDraftPassUrl(String(tokenId));
+}
+
 export async function resolveTokenImage(tokenId: string, team?: TeamData | null): Promise<string> {
   const id = String(tokenId).trim();
   // Only a stored og URL (our own write, with full bye/ADP/pick) is trusted.

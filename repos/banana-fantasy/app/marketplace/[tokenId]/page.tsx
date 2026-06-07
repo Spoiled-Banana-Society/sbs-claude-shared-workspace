@@ -809,9 +809,10 @@ export default function NftDetailPage() {
                 src={imageUrl}
                 alt={teamName}
                 fill
-                className="object-cover"
+                className="object-contain"
                 sizes="(max-width: 1024px) 100vw, 50vw"
                 priority
+                unoptimized
               />
             ) : (
               <div className={`w-full h-full bg-gradient-to-br ${

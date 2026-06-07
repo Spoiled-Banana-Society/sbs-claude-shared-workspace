@@ -86,8 +86,8 @@ export default function TeamCardObsidian({
   let gi = 0;
 
   return (
-    <div className={className} style={{ width, height: dh * scale }}>
-      <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: dw, height: dh }}>
+    <div className={className} style={{ width, height: dh * scale, position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: 0, left: 0, transform: `scale(${scale})`, transformOrigin: 'top left', width: dw, height: dh }}>
         <div className="tco-frame" style={{ background: preReveal ? GREY_FRAME : FRAME[tier] }}>
           <div className={`tco-card${preReveal ? ' tco-pass' : ''}`}>
             {preReveal ? (
