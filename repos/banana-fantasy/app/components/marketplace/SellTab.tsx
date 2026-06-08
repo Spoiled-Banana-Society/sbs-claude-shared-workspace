@@ -158,14 +158,14 @@ export function SellTab({
                       <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
                     ) : (
                       <SbsPassThumb
-                        label={team.name?.startsWith('BBB') ? team.name.replace('BBB ', '') : `#${team.tokenId}`}
+                        label={`#${team.tokenId}`}
                         size={56}
                         roster={team.roster}
                       />
                     )}
                     <div>
                       <div className="flex items-center gap-2">
-                        <h4 className="text-text-primary font-semibold font-mono">{team.name}</h4>
+                        <h4 className="text-text-primary font-semibold font-mono">Team #{team.tokenId}</h4>
                         {team.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[9px] font-bold rounded">HOF</span>}
                         {team.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[9px] font-bold rounded">JP</span>}
                         {team.hasBackendRecord === false && team.passType !== 'free' && (
@@ -179,7 +179,7 @@ export function SellTab({
                       </div>
                       <p className="text-text-muted text-xs">
                         {hasSeasonStarted() && team.rank >= 1 && team.rank <= 10 ? `Rank #${team.rank} • ` : ''}
-                        {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : `Token #${team.tokenId}`}
+                        {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : (team.leagueNumber != null ? `League #${team.leagueNumber}` : `Team #${team.tokenId}`)}
                         {hasSeasonStarted() && team.playoffOdds > 0 ? ` • ${team.playoffOdds}% playoffs` : ''}
                       </p>
                     </div>
