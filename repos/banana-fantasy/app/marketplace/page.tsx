@@ -120,10 +120,29 @@ export default function MarketplacePage() {
   const [cancellingTokenId, setCancellingTokenId] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
+  // Restore the tab + view from the URL ONCE on load, so a refresh/hard-refresh
+  // keeps you on the same page instead of bouncing to the default.
+  const didInitFromUrl = useRef(false);
   useEffect(() => {
+    if (didInitFromUrl.current) return;
+    didInitFromUrl.current = true;
     const tabParam = searchParams?.get('tab');
-    if (tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
+    if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
+    const viewParam = searchParams?.get('view');
+    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'jackpot' || viewParam === 'hof') setViewFilter(viewParam);
   }, [searchParams]);
+
+  // Persist the current tab + view to the URL so a reload restores them.
+  useEffect(() => {
+    if (!didInitFromUrl.current) return;
+    const params = new URLSearchParams(Array.from(searchParams?.entries() ?? []));
+    params.set('tab', activeTab);
+    params.set('view', viewFilter);
+    router.replace(`/marketplace?${params.toString()}`, { scroll: false });
+    // searchParams intentionally omitted — only re-sync when tab/view change,
+    // else the router.replace below would re-fire this effect in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, viewFilter]);
 
   useEffect(() => {
     cancelledRef.current = false;
