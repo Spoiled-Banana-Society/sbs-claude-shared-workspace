@@ -6,6 +6,7 @@ import {
   type MarketplaceTeam,
 } from '@/lib/opensea';
 import { getCollectionListings } from '@/lib/marketplace/collectionListings';
+import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,9 +42,14 @@ export async function GET(req: Request) {
 
     const snap = await q.limit(1000).get();
 
+    // Only real on-chain tokens (<= current contract supply). Excludes prior-era
+    // "ghost" finalize-doc ids that aren't minted on this contract / on OpenSea,
+    // so the marketplace counts + filters match exactly what's on-chain.
+    const maxId = await currentMaxTokenId();
+
     const teams: MarketplaceTeam[] = snap.docs
       .map((d) => d.data())
-      .filter((x) => x.status === 'team' && (!wantLevel || x.level === wantLevel))
+      .filter((x) => x.status === 'team' && (!wantLevel || x.level === wantLevel) && isRealToken(String(x.tokenId), maxId))
       .map((x) => {
       const lvl = (x.level as DraftType) || 'pro';
       const tokenId = String(x.tokenId);

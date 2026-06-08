@@ -14,6 +14,7 @@
  */
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore, isFirestoreConfigured } from './firebaseAdmin';
+import { currentMaxTokenId, isRealToken } from './onchain/contractSupply';
 
 export type IndexLevel = 'jackpot' | 'hof' | 'pro';
 
@@ -43,6 +44,12 @@ export async function upsertMarketplaceIndex(tokenId: string, entry: Marketplace
   if (!isFirestoreConfigured()) return;
   const id = String(tokenId).trim();
   if (!/^\d+$/.test(id)) return; // index is keyed by numeric on-chain id only
+  // SOURCE OF TRUTH = live on-chain tokens only. Never index a prior-era / bot
+  // "ghost" finalize-doc whose id is above the current contract supply (those
+  // were minted on an old contract era, aren't on this contract or OpenSea).
+  // Keeps the backend — and therefore the marketplace + OpenSea — to real tokens.
+  const maxId = await currentMaxTokenId();
+  if (!isRealToken(id, maxId)) return;
   try {
     await getAdminFirestore().collection('marketplace_index').doc(id).set(
       {
