@@ -945,7 +945,6 @@ export default function NftDetailPage() {
                     useNextImage={false}
                     badgeRingColor="#13141a"
                   />
-                  <span className="text-text-muted">Owner</span>
                   <span className="text-text-secondary">
                     {nft.ownerName || `${nftOwner.slice(0, 6)}…${nftOwner.slice(-4)}`}
                   </span>
