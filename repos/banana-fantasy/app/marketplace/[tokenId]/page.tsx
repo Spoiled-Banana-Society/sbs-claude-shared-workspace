@@ -14,6 +14,7 @@ import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
+import { resolveLeagueNumber } from '@/lib/opensea';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -780,7 +781,11 @@ export default function NftDetailPage() {
   const isOwner = walletAddress && nftOwner && walletAddress.toLowerCase() === nftOwner.toLowerCase();
 
   const imageUrl = nft.display_image_url || nft.image_url;
-  const teamName = leagueName || nft.name || `Team #${tokenId}`;
+  // Users only ever see Team # (= token id) and League #. Never the raw league
+  // name ("BBB #…") or "Token #". League # comes from the same source the card
+  // image uses (backend-derived), so text === card.
+  const leagueNumber = resolveLeagueNumber(imageUrl, leagueName);
+  const teamName = `Team #${tokenId}`;
 
   // Group roster by position type
   const qbs = roster.filter(r => r.slot.startsWith('QB'));
@@ -904,9 +909,11 @@ export default function NftDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 mb-6">
-            <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary text-xs font-mono">
-              Token #{tokenId}
-            </span>
+            {leagueNumber != null && (
+              <span className="px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary text-xs font-mono">
+                League #{leagueNumber}
+              </span>
+            )}
             <a
               href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${tokenId}`}
               target="_blank"

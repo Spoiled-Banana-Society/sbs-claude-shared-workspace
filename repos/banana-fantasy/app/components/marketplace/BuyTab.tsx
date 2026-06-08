@@ -316,6 +316,9 @@ export function BuyTab({
                         </span>
                       )}
                     </div>
+                    {team.leagueNumber != null && (
+                      <p className="text-text-muted text-xs font-mono mt-0.5">League #{team.leagueNumber}</p>
+                    )}
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {team.ownerPfp ? (
                         <Image src={team.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
@@ -487,7 +490,7 @@ export function BuyTab({
                   )}
                   <div>
                     <h4 className="text-text-primary font-medium text-sm font-mono">{team.name}</h4>
-                    <span className="text-text-muted text-xs">{team.owner}</span>
+                    <span className="text-text-muted text-xs">{team.leagueNumber != null ? `League #${team.leagueNumber}` : team.owner}</span>
                   </div>
                   {(team.isHof || team.isJackpot) && (
                     <div className="flex gap-1">
