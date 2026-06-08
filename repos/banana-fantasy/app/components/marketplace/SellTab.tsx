@@ -19,15 +19,21 @@ type SuccessType = 'buy' | 'sell' | 'list';
 // "Can't sell" = a free pass/team while drafting is still open.
 function sellTierRank(team: MarketplaceTeam): number {
   const isTeam = team.hasBackendRecord === true;
-  const blocked = team.passType === 'free' && isDraftingOpen();
+  // A wheel-won JP/HOF pass that's still filling is sellable even though it's free
+  // (the slot follows the NFT, so a sale hands the draft to the buyer). It waives
+  // the normal free-pass listing block until its draft fills.
+  const fillingWheelPass = !!team.fillingWheelLevel;
+  const blocked = !fillingWheelPass && team.passType === 'free' && isDraftingOpen();
   if (isTeam && !blocked) return 0;
   if (isTeam && blocked) return 1;
   if (!isTeam && !blocked) return 2;
   return 3;
 }
 
-/** Can this team/pass be listed right now? (Free passes are locked until the season starts.) */
+/** Can this team/pass be listed right now? (Free passes are locked until the season
+ *  starts — EXCEPT a wheel-won JP/HOF pass while its draft is still filling.) */
 function canSellTeam(team: MarketplaceTeam): boolean {
+  if (team.fillingWheelLevel) return true;
   return !(team.passType === 'free' && isDraftingOpen());
 }
 
@@ -102,7 +108,9 @@ export function SellTab({
   // Only DRAFTED TEAMS are sellable/shown here — undrafted passes are never listed
   // (a pass becomes a team once drafted: it gains a backend roster record, so
   // hasBackendRecord flips true and it appears). No view toggle.
-  const inView = myNfts.filter(t => t.hasBackendRecord !== false);
+  // ...plus wheel-won JP/HOF passes that are still filling — those are sellable
+  // now (until their draft fills), so surface them even without a roster record.
+  const inView = myNfts.filter(t => t.hasBackendRecord !== false || t.fillingWheelLevel != null);
 
   // Tier first, then NEWEST first (highest token id) within a tier, so the team
   // you just drafted sits at the very top.
@@ -168,6 +176,14 @@ export function SellTab({
                         <h4 className="text-text-primary font-semibold font-mono">Team #{team.tokenId}</h4>
                         {team.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[9px] font-bold rounded">HOF</span>}
                         {team.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[9px] font-bold rounded">JP</span>}
+                        {team.fillingWheelLevel && (
+                          <span
+                            className={`px-2 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide ${team.fillingWheelLevel === 'jackpot' ? 'bg-error/20 text-error' : 'bg-hof/20 text-hof'}`}
+                            title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
+                          >
+                            {team.fillingWheelLevel === 'jackpot' ? 'JP' : 'HOF'} · Filling
+                          </span>
+                        )}
                         {team.hasBackendRecord === false && team.passType !== 'free' && (
                           <span
                             className="px-2 py-0.5 bg-white/5 text-white/40 text-[9px] font-bold rounded uppercase tracking-wide"

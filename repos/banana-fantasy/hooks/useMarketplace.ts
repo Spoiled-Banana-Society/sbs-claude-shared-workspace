@@ -279,9 +279,25 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
       // minted via admin grant / spin / promo — takes precedence over the
       // Go API `passType` field (which is absent for reserveTokens mints).
       const freeTokenIds = new Set<string>(((freeRes as { tokenIds?: string[] }).tokenIds ?? []).map(String));
-      const finalData = enriched.map((team) =>
+      const withFree = enriched.map((team) =>
         freeTokenIds.has(String(team.tokenId)) ? { ...team, passType: 'free' as const } : team,
       );
+
+      // Overlay "filling JP/HOF wheel pass" status: a wheel-won JP/HOF pass that's
+      // still in a filling queue round is sellable now (the marketplace waives the
+      // free-pass listing block for it). Best-effort — a failure just omits it.
+      let fillingLevels: Record<string, 'jackpot' | 'hof'> = {};
+      const ids = withFree.map((t) => String(t.tokenId)).filter(Boolean);
+      if (ids.length > 0) {
+        try {
+          const wpRes = await fetch(`/api/queues/wheel-pass-filling?tokenIds=${ids.join(',')}`);
+          if (wpRes.ok) fillingLevels = ((await wpRes.json()) as { levels?: Record<string, 'jackpot' | 'hof'> }).levels ?? {};
+        } catch { /* ignore — non-blocking enrichment */ }
+      }
+      const finalData = withFree.map((team) => {
+        const lvl = fillingLevels[String(team.tokenId)];
+        return lvl ? { ...team, fillingWheelLevel: lvl } : team;
+      });
       setData(finalData);
       setError(null);
     } catch (err) {

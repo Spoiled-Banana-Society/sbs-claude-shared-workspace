@@ -1735,6 +1735,34 @@ export async function joinQueueWithToken(
 }
 
 /**
+ * For each given tokenId, returns its JP/HOF level IF that token is currently in a
+ * still-FILLING queue round (status 'filling', no draftId yet) — i.e. a wheel-won
+ * JP/HOF pass that hasn't drafted and is therefore sellable while filling. Tokens
+ * that aren't in a filling round (drafted, or never queued) are simply omitted.
+ */
+export async function getFillingWheelPassLevels(
+  tokenIds: string[],
+): Promise<Record<string, 'jackpot' | 'hof'>> {
+  const result: Record<string, 'jackpot' | 'hof'> = {};
+  if (tokenIds.length === 0) return result;
+  const want = new Set(tokenIds.map(String));
+  const db = getAdminFirestore();
+
+  for (const type of ['jackpot', 'hof'] as const) {
+    const snap = await db.collection(QUEUES_COLLECTION).doc(type).get();
+    if (!snap.exists) continue;
+    const queue = snap.data() as DraftQueue;
+    for (const round of queue.rounds || []) {
+      if (round.status !== 'filling' || round.draftId) continue; // drafted → not sellable
+      for (const m of round.members) {
+        if (m.tokenId && want.has(String(m.tokenId))) result[String(m.tokenId)] = type;
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * Update a queue round's draftId. Called when the frontend creates a Go API draft
  * for a special draft round that doesn't have one yet.
  */

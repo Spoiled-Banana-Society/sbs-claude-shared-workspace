@@ -148,6 +148,11 @@ export interface MarketplaceTeam {
    *  (deterministic cardId match). Lets the Sell tab hide ghost NFTs
    *  that exist on-chain but have no backend purpose. */
   hasBackendRecord?: boolean;
+  /** Set iff this is a wheel-won JP/HOF pass currently in a STILL-FILLING queue
+   *  round. While set, the pass is sellable on our marketplace even though it's a
+   *  free pass (the normal free-pass listing block is waived); once its draft
+   *  fills this clears and the standard "listable after the season" rule applies. */
+  fillingWheelLevel?: 'jackpot' | 'hof';
   /** USD price the current owner paid for this team on the marketplace, if we
    *  have a purchase record. Shown as "You paid $X" on the owner's own teams. */
   pricePaid?: number | null;
