@@ -446,6 +446,18 @@ export async function POST(req: Request) {
           } catch (e) {
             logger.warn('wheel.spin.jphof_register_go_api_failed', { spinId, userId, err: (e as Error).message });
           }
+          // Queue the pass by its tokenId so it enters a filling JP/HOF round.
+          // create-draft resolves the current owner at fill, so a sale-while-
+          // filling hands the slot to the buyer.
+          const jphofTokenId = res.tokenIds[0];
+          if (jphofTokenId) {
+            try {
+              const { joinQueueWithToken } = await import('@/lib/db');
+              await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+            } catch (qErr) {
+              logger.warn('wheel.spin.jphof_queue_failed', { spinId, userId, err: (qErr as Error).message });
+            }
+          }
           logger.info('wheel.spin.jphof_mint_ok', { spinId, userId, kind: jphofKind, txHash: res.txHash, tokenIds: res.tokenIds });
         } catch (mintErr) {
           logger.error('wheel.spin.jphof_mint_failed', { spinId, userId, kind: jphofKind, err: mintErr });

@@ -431,6 +431,10 @@ export type RoundStatus = 'filling' | 'ready' | 'drafting' | 'completed';
 export interface QueueMember {
   wallet: string;
   joinedAt: number;
+  // Set for wheel-won JP/HOF passes minted as a real NFT: the queue slot is tied
+  // to this token, and the draft is created for whoever owns it at fill time (so
+  // a sale-while-filling hands the slot to the buyer).
+  tokenId?: string;
 }
 
 export interface QueueRound {

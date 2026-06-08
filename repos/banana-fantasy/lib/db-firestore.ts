@@ -1698,6 +1698,43 @@ export async function joinQueue(
 }
 
 /**
+ * Queue a wheel-won JP/HOF pass by its NFT tokenId. Unlike joinQueue, this does
+ * NOT consume an entries counter — the minted pass NFT IS the entry. The slot is
+ * tied to `tokenId`; create-draft resolves the current on-chain owner at fill, so
+ * a sale-while-filling hands the slot to the buyer. Idempotent per token.
+ */
+export async function joinQueueWithToken(
+  userId: string,
+  type: 'jackpot' | 'hof',
+  tokenId: string,
+): Promise<DraftQueue> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+
+  return db.runTransaction(async (tx) => {
+    const queueSnap = await tx.get(queueRef);
+    const queue: DraftQueue = queueSnap.exists ? (queueSnap.data() as DraftQueue) : emptyQueueDoc(type);
+    if (!queue.rounds) queue.rounds = [];
+
+    // Idempotent: never queue the same token twice.
+    if (queue.rounds.some(r => r.members.some(m => m.tokenId === tokenId))) return queue;
+
+    let round = queue.rounds.find(
+      r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
+    );
+    if (!round) {
+      round = newRound(queue.nextRoundId++);
+      queue.rounds.push(round);
+    }
+    round.members.push({ wallet: userId, joinedAt: Date.now(), tokenId });
+
+    tx.set(queueRef, queue);
+    return queue;
+  });
+}
+
+/**
  * Update a queue round's draftId. Called when the frontend creates a Go API draft
  * for a special draft round that doesn't have one yet.
  */

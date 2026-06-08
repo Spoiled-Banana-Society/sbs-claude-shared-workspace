@@ -49,16 +49,35 @@ export async function POST(req: Request) {
       // State doesn't exist — fall through to create new
     }
 
+    // Slot follows the NFT: if this queue member is a wheel-won pass tied to a
+    // token, build the draft for whoever owns that token RIGHT NOW — a sale while
+    // the round was filling hands the slot to the buyer. Falls back to the queued
+    // wallet if there's no token or the chain read fails (never lose the slot).
+    let drafter = userId;
+    const member = existingRound?.members?.find(
+      (m: { wallet: string; tokenId?: string }) => m.wallet === userId,
+    );
+    if (member?.tokenId) {
+      const { getOnchainOwner } = await import('@/lib/onchain/ownerOf');
+      const currentOwner = await getOnchainOwner(member.tokenId);
+      if (currentOwner) {
+        if (currentOwner !== userId.toLowerCase()) {
+          logger.debug('[create-draft] slot follows NFT:', { tokenId: member.tokenId, from: userId, to: currentOwner });
+        }
+        drafter = currentOwner;
+      }
+    }
+
     // 1. Mint a token (may already exist — ignore errors)
     const mintId = 100000 + Math.floor(Math.random() * 50000);
-    await fetch(`${STAGING_API_URL}/owner/${userId}/draftToken/mint`, {
+    await fetch(`${STAGING_API_URL}/owner/${drafter}/draftToken/mint`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ minId: mintId, maxId: mintId }),
-    }).catch((err) => logger.warn(LOG_SOURCES.draft.QUEUE_MINT_FAILED, { err, actor: userId, context: { mintId, queueType, roundId } }));
+    }).catch((err) => logger.warn(LOG_SOURCES.draft.QUEUE_MINT_FAILED, { err, actor: drafter, context: { mintId, queueType, roundId } }));
 
     // 2. Join a slow league via JoinLeagues — this properly creates token + adds to league
-    const joinRes = await fetch(`${STAGING_API_URL}/league/slow/owner/${userId}`, {
+    const joinRes = await fetch(`${STAGING_API_URL}/league/slow/owner/${drafter}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ numLeaguesToJoin: 1 }),
