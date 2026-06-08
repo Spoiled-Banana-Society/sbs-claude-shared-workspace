@@ -278,7 +278,7 @@ export function BuyTab({
                   <FallbackPassSvg gradientId={`passGrad-${team.id}`} />
                 )}
 
-                <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
+                <div className="absolute top-6 right-3 flex flex-col gap-2 z-10">
                   <button
                     onClick={async event => {
                       event.stopPropagation();

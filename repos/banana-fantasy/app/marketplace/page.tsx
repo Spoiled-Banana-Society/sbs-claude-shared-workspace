@@ -181,9 +181,11 @@ export default function MarketplacePage() {
   }, [listings, walletAddress, user]);
 
   const baseTeams = useMemo(() => {
-    // A League # filter is backend-sourced (allNfts = that league's teams) and
-    // overrides the view tabs.
-    if (leagueFilter != null) return allNfts;
+    // A League # filter is backend-sourced (allNfts = that league's teams). On
+    // the Listed tab it must still mean "listed", so intersect with active
+    // listings (orderHash present) — otherwise it leaked unlisted league teams
+    // into Listed. On the other tabs it shows the whole league.
+    if (leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
     if (viewFilter === 'all') return allNfts;
     if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
     return enrichedListings;
