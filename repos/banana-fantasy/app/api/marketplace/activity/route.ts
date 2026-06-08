@@ -111,33 +111,39 @@ export async function GET(req: NextRequest) {
 
   try {
     const db = getAdminFirestore();
-    let query = db
+    // Single-field equality only (no composite index needed). Sort by timestamp
+    // and paginate in memory — a wallet's activity list is small. The previous
+    // `.where(walletAddress).orderBy(timestamp)` required a composite index this
+    // collection doesn't have, so it threw and Transaction History showed nothing.
+    const snapshot = await db
       .collection(COLLECTION)
       .where('walletAddress', '==', wallet.toLowerCase())
-      .orderBy('timestamp', 'desc')
-      .limit(limit + 1);
+      .get();
 
+    const sorted = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+        _ts: doc.data().timestamp?.toDate?.()?.getTime?.() ?? 0,
+      }))
+      .sort((a, b) => b._ts - a._ts);
+
+    // Cursor = the last doc id from the previous page; resume right after it.
+    let start = 0;
     if (cursor) {
-      const cursorDoc = await db.collection(COLLECTION).doc(cursor).get();
-      if (cursorDoc.exists) {
-        query = query.startAfter(cursorDoc);
-      }
+      const idx = sorted.findIndex(a => a.id === cursor);
+      if (idx >= 0) start = idx + 1;
     }
+    const page = sorted.slice(start, start + limit);
+    const hasMore = sorted.length > start + limit;
 
-    const snapshot = await query.get();
-    const docs = snapshot.docs.slice(0, limit);
-    const hasMore = snapshot.docs.length > limit;
-
-    const activities = docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
-    }));
+    const activities = page.map(({ _ts, ...rest }) => rest);
 
     return NextResponse.json({
       activities,
       hasMore,
-      nextCursor: hasMore ? docs[docs.length - 1]?.id : null,
+      nextCursor: hasMore ? page[page.length - 1]?.id : null,
     });
   } catch (err) {
     console.error('[activity] GET error:', err);
