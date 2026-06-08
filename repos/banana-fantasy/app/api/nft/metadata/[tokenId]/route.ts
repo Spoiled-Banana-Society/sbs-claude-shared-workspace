@@ -86,10 +86,14 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   //  - keep Level (JP/HOF/Pro filter), roster slots, and prizes for filtering.
   const leagueNameAttr = rawAttributes.find((a) => /league-?name/i.test(a.trait_type))?.value ?? null;
   const leagueNumber = resolveLeagueNumber(card.image || null, leagueNameAttr);
-  const kept = rawAttributes.filter((a) => !/league-?name/i.test(a.trait_type));
+  // Drop the messy free-text league name AND the stale finalize-doc LEVEL — the
+  // authoritative level is card.level (from the chain-anchored index), so an
+  // old/collided finalize doc can't show e.g. "Pro" on a real Jackpot token.
+  const kept = rawAttributes.filter((a) => !/league-?name/i.test(a.trait_type) && a.trait_type.trim().toUpperCase() !== 'LEVEL');
   const attributes = [
     { trait_type: 'Status', value: 'Team' },
     { trait_type: 'Team #', value: tokenId },
+    { trait_type: 'Level', value: card.level },
     ...(leagueNumber != null ? [{ trait_type: 'League #', value: String(leagueNumber) }] : []),
     ...kept,
   ];

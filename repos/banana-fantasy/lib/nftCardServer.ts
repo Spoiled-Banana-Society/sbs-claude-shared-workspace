@@ -141,10 +141,16 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
       }
     } catch { /* fall through to grey pass */ }
   }
-  // Index says team but the finalize doc had no roster (rare) — honor the
-  // authoritative team status with the index's stored card image.
-  if (indexSaysTeam && indexImage) {
-    return { image: indexImage, drafted: true, level: tierFromLevel(indexLevel || 'pro') === 'jackpot' ? 'Jackpot' : tierFromLevel(indexLevel || 'pro') === 'hof' ? 'Hall of Fame' : 'Pro', players: [] };
+  // The chain-anchored index is AUTHORITATIVE: if it says this on-chain id is a
+  // team, render a team — even when no roster doc lives at draftTokenMetadata/{id}
+  // (on staging the roster was written under a synthetic cardId, so it isn't at
+  // the on-chain-id key). Trust the index for status + level; build a card image
+  // at the index's level when none is stored. This keeps the team stable (the
+  // metadata-route self-heal won't flip it back to a pass) and the level correct.
+  if (indexSaysTeam) {
+    const level = indexLevel === 'jackpot' ? 'Jackpot' : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro';
+    const image = indexImage || buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, players: [] });
+    return { image, drafted: true, level, players: [] };
   }
   return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
 }
