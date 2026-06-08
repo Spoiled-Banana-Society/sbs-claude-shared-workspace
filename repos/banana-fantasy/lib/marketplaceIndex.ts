@@ -29,6 +29,10 @@ export interface MarketplaceIndexEntry {
   level: IndexLevel;
   leagueNumber?: number | null;
   status: 'team' | 'pass';
+  /** Display bits so the marketplace can render a team straight from the index
+   *  (price/owner overlaid from OpenSea at read time). */
+  image?: string | null;
+  roster?: string[];
 }
 
 /**
@@ -46,6 +50,8 @@ export async function upsertMarketplaceIndex(tokenId: string, entry: Marketplace
         level: entry.level,
         leagueNumber: entry.leagueNumber ?? null,
         status: entry.status,
+        image: entry.image ?? null,
+        roster: entry.roster ?? [],
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },

@@ -33,8 +33,11 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
 
   if (!card.drafted) {
     const passType = passTypeLabel(card.passType);
-    // Self-healing stamp (off the hot path; fire-and-forget). Passes have no league.
-    void upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), status: 'pass' });
+    // Self-healing stamp. Awaited (best-effort, never throws) because Vercel
+    // freezes the function after the response — a fire-and-forget write wouldn't
+    // land. This route is OFF the live-draft/generating hot path, so the ~30ms
+    // is invisible there. Passes have no league.
+    await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), status: 'pass', image: card.image });
     return new Response(JSON.stringify({
       name: `Banana Best Ball IV — Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
@@ -81,9 +84,16 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     ...kept,
   ];
 
-  // Self-healing stamp keyed by the on-chain id (off the hot path; fire-and-forget).
-  // Powers the instant JP/HOF + League # marketplace filters.
-  void upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), leagueNumber, status: 'team' });
+  // Self-healing stamp keyed by the on-chain id. Awaited (best-effort) so it
+  // actually lands in Vercel serverless. Off the hot path. Powers the instant
+  // JP/HOF + League # marketplace filters.
+  await upsertMarketplaceIndex(tokenId, {
+    level: normalizeLevel(card.level),
+    leagueNumber,
+    status: 'team',
+    image: card.image,
+    roster: card.players.map((p) => `${p.team} ${p.pos}`),
+  });
 
   return new Response(JSON.stringify({
     name,
