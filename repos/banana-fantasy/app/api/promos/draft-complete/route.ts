@@ -12,11 +12,25 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
   let actorId: string | undefined;
   try {
-    // Only the authenticated wallet can record its own promo progress.
-    const { walletAddress } = await getPrivyUser(req);
+    // Best-effort authorization. This promo write fires automatically from the
+    // draft room WITHOUT an Authorization header, so a MISSING token must NOT
+    // reject the call (requiring one regressed all promo recording — daily
+    // drafts stopped crediting). If a token IS present we enforce that it
+    // matches the userId, so an authenticated session can't record another
+    // wallet's promo. The real protection lives in recordDraftCompletion
+    // (resolveDraftPassType blocks free passes + per-draft dedupe). Fully
+    // closing the "trust the client" gap — verify the caller actually holds a
+    // paid token for this draft — is a separate, tested change.
+    let authedWallet: string | null = null;
+    try {
+      const { walletAddress } = await getPrivyUser(req);
+      authedWallet = (walletAddress || '').toLowerCase();
+    } catch {
+      authedWallet = null; // no/invalid token — fall through to server-side gates
+    }
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
-    if (!walletAddress || walletAddress.toLowerCase() !== userId.toLowerCase()) {
+    if (authedWallet && authedWallet !== userId.toLowerCase()) {
       return jsonError('Forbidden — wallet mismatch', 403);
     }
     const draftId = requireString(body.draftId, 'draftId');
