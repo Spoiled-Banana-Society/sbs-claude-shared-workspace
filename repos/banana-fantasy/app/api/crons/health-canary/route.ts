@@ -1,6 +1,7 @@
 import { jsonError, json } from '@/lib/api/routeUtils';
 import { logErrorEvent } from '@/lib/errorEvents';
 import { runEndpointCanaries } from '@/lib/audits/canary';
+import { recordCronHeartbeat, checkCronHeartbeats } from '@/lib/cronHeartbeat';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,11 @@ export async function GET(req: Request) {
     'https://banana-fantasy-sbs.vercel.app';
 
   try {
-    const findings = await runEndpointCanaries(base);
+    // Endpoint contract canaries + the "is any critical cron dark?" check.
+    const findings = [
+      ...(await runEndpointCanaries(base)),
+      ...(await checkCronHeartbeats(Date.now())),
+    ];
     for (const f of findings) {
       await logErrorEvent({
         source: f.source,
@@ -41,6 +46,8 @@ export async function GET(req: Request) {
         context: f.context,
       });
     }
+    // Stamp our own heartbeat AFTER the work, so it only advances on a real run.
+    await recordCronHeartbeat('health-canary');
     const critical = findings.filter((f) => f.severity === 'critical').length;
     logger.info('cron.health_canary.done', { base, findings: findings.length, critical });
     return json({ ok: true, base, findings: findings.length, critical });

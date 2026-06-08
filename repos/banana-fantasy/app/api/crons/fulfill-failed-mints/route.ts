@@ -7,6 +7,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { withAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { recountFromInventory } from '@/lib/passLedger';
+import { recordCronHeartbeat } from '@/lib/cronHeartbeat';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,8 @@ export async function GET(req: Request) {
   if (!authed(req)) return jsonError('Unauthorized', 401);
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
   if (!isAdminMintConfigured()) return jsonError('Admin mint not configured', 503);
+
+  void recordCronHeartbeat('fulfill-failed-mints'); // liveness for the watchdog
 
   const db = getAdminFirestore();
 

@@ -2,6 +2,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { jsonError, json } from '@/lib/api/routeUtils';
 import { logErrorEvent } from '@/lib/errorEvents';
 import { runAllAudits } from '@/lib/audits/checks';
+import { recordCronHeartbeat, checkCronHeartbeats } from '@/lib/cronHeartbeat';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,10 @@ export async function GET(req: Request) {
   try {
     const db = getAdminFirestore();
     const { findings, summary } = await runAllAudits(db);
-    for (const f of findings) {
+    // Backstop the 5-min canary's heartbeat check (cross-cover: catches the
+    // canary itself going dark, within 6h).
+    const cronFindings = await checkCronHeartbeats(Date.now());
+    for (const f of [...findings, ...cronFindings]) {
       await logErrorEvent({
         source: f.source,
         route: '/api/crons/audit-integrity',
@@ -34,7 +38,8 @@ export async function GET(req: Request) {
         context: f.context,
       });
     }
-    logger.info('cron.audit_integrity.done', { ...summary });
+    await recordCronHeartbeat('audit-integrity');
+    logger.info('cron.audit_integrity.done', { ...summary, cronStopped: cronFindings.length });
     return json({ ok: true, ...summary });
   } catch (err) {
     logger.error('cron.audit_integrity.failed', { err });

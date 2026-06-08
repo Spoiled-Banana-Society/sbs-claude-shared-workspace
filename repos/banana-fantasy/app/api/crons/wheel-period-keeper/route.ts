@@ -5,6 +5,7 @@ import type { Hex } from 'viem';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
+import { recordCronHeartbeat } from '@/lib/cronHeartbeat';
 import {
   computePeriodMerkleTree,
   getCurrentPeriod,
@@ -50,6 +51,8 @@ export async function GET(req: Request) {
   if (expected && auth !== expected && !req.headers.get('x-vercel-cron')) {
     return jsonError('Unauthorized', 401);
   }
+
+  void recordCronHeartbeat('wheel-period-keeper'); // liveness for the watchdog
 
   try {
     const contractAddress = await getWheelProofContractAddress();

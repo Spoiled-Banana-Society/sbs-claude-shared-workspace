@@ -332,6 +332,7 @@ const CRITICAL_PATTERNS: RegExp[] = [
   //    silently broke. These catch the #12-class silent regression in minutes. ──
   /^audit\.promo\.recording_down/i,       // promo routes 401'ing tokenless calls → ALL promo recording broken NOW
   /^audit\.security\.withdraw_auth_open/i, // withdraw route accepted a tokenless call → auth guard regressed (money path)
+  /^audit\.cron\.stopped/i,               // a critical cron went dark → the safety net it powers is down
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a
