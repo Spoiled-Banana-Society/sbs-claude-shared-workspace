@@ -63,19 +63,15 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
     if (!append) setIsLoading(true);
     try {
-      let url: string;
-      if (level || league != null) {
-        // BACKEND-SOURCED: instant level/league filter from the on-chain-id index
-        // (no OpenSea page-scanning). Full set at once.
-        const p = new URLSearchParams();
-        if (level) p.set('level', level);
-        if (league != null) p.set('league', String(league));
-        url = `/api/marketplace/teams?${p}`;
-      } else {
-        const p = new URLSearchParams({ limit: String(limit) });
-        if (nextCursor) p.set('cursor', nextCursor);
-        url = `/api/marketplace/collection-nfts?${p}`;
-      }
+      // ALWAYS backend-sourced: the marketplace_index (keyed by on-chain id) is the
+      // source of truth for which tokens are teams + their level/league/roster/image
+      // — instant, no OpenSea page-scanning. All Teams (no params) returns every
+      // drafted team; level/league add a filter. OpenSea is overlaid server-side
+      // for live price/owner only (the trading layer), never for classification.
+      const p = new URLSearchParams();
+      if (level) p.set('level', level);
+      if (league != null) p.set('league', String(league));
+      const url = `/api/marketplace/teams?${p}`;
 
       const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch collection NFTs: ${res.status}`);

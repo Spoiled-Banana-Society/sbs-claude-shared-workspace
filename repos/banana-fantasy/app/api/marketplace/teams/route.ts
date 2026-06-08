@@ -39,6 +39,7 @@ export async function GET(req: Request) {
     let q: FirebaseFirestore.Query = db.collection('marketplace_index');
     if (hasLeague) q = q.where('leagueNumber', '==', Number(leagueParam));
     else if (wantLevel) q = q.where('level', '==', wantLevel);
+    else q = q.where('status', '==', 'team'); // "All Teams" — only drafted teams
 
     const snap = await q.limit(1000).get();
 
