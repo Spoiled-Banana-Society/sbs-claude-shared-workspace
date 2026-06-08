@@ -328,6 +328,10 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^audit\.balance\.negative/i, // negative money/pass counter → corruption
   /^prizes\.double_payout_blocked/i, // admin pay refused — a prize was already paid by another withdrawal
   /^prizes\.mark_processing_failed/i, // withdraw-all couldn't set the processing lock → double-withdraw window open
+  // ── LIVE endpoint canaries (lib/audits/canary.ts): a critical route's contract
+  //    silently broke. These catch the #12-class silent regression in minutes. ──
+  /^audit\.promo\.recording_down/i,       // promo routes 401'ing tokenless calls → ALL promo recording broken NOW
+  /^audit\.security\.withdraw_auth_open/i, // withdraw route accepted a tokenless call → auth guard regressed (money path)
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a
