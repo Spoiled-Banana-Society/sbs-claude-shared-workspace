@@ -5,71 +5,87 @@ import {
   OPENSEA_API_BASE,
   COLLECTION_SLUG,
   mapOpenSeaNftToTeam,
+  type MarketplaceTeam,
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
 
 export const dynamic = 'force-dynamic';
+// A `level` scan walks many OpenSea pages server-side, so allow more time.
+export const maxDuration = 60;
 
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
+/** Fetch one page of collection NFTs (token 0 filtered out). */
+async function fetchNftPage(cursor: string | null): Promise<{ nfts: OpenSeaNft[]; next: string | null }> {
+  const params = new URLSearchParams({ limit: '50' });
+  if (cursor) params.set('next', cursor);
+  const res = await fetch(`${OPENSEA_API_BASE}/api/v2/collection/${COLLECTION_SLUG}/nfts?${params}`, {
+    headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('[collection-nfts] OpenSea error:', res.status, text);
+    throw new ApiError(res.status >= 500 ? 502 : res.status, 'Failed to fetch NFTs');
+  }
+  const data = await res.json();
+  const nfts: OpenSeaNft[] = (data.nfts ?? []).filter((n: OpenSeaNft) => n.identifier !== '0');
+  return { nfts, next: data.next ?? null };
+}
+
 /**
- * GET /api/marketplace/collection-nfts?limit=50&cursor=...
+ * GET /api/marketplace/collection-nfts?limit=50&cursor=...   (paged browse)
+ * GET /api/marketplace/collection-nfts?level=jackpot|hof      (full level scan)
  *
- * Returns ALL NFTs in the BBB4 collection (listed and unlisted).
- * Each NFT includes listing info if currently listed.
+ * Default: one page of the collection (listed + unlisted).
+ * `level`: Jackpot (1%) and HOF (5%) are too rare to appear in a single page, so
+ * client-side filtering over a page shows "No Teams Found". This scans the whole
+ * collection server-side and returns only that level's teams — keyed by on-chain
+ * id with correct images/traits (OpenSea is the reliable source; the backend's
+ * staging card records lack on-chain ids). Capped + time-boxed for safety.
  */
 export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
+    if (!OPENSEA_API_KEY) return jsonError('OpenSea API key not configured', 503);
+
+    const levelParam = (getSearchParam(req, 'level') || '').toLowerCase();
+    const wantLevel: 'jackpot' | 'hof' | null =
+      levelParam === 'jackpot' ? 'jackpot' : levelParam === 'hof' ? 'hof' : null;
+
+    let teams: MarketplaceTeam[] = [];
+    let next: string | null = null;
+
+    if (wantLevel) {
+      // Full scan: walk pages, keep only the requested level. Cap pages so a
+      // single request stays well within maxDuration.
+      const MAX_PAGES = 40; // 40 * 50 = 2000 tokens (whole BBB4 collection fits)
+      let cursor: string | null = null;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const { nfts, next: pageNext } = await fetchNftPage(cursor);
+        for (const nft of nfts) {
+          const team = mapOpenSeaNftToTeam(nft, '');
+          if (wantLevel === 'jackpot' ? team.isJackpot : team.isHof) teams.push(team);
+        }
+        if (!pageNext) break;
+        cursor = pageNext;
+      }
+    } else {
+      const cursor = getSearchParam(req, 'cursor');
+      const { nfts, next: pageNext } = await fetchNftPage(cursor);
+      teams = nfts.map((nft) => mapOpenSeaNftToTeam(nft, ''));
+      next = pageNext;
     }
 
-    const limit = Math.min(Number(getSearchParam(req, 'limit')) || 50, 50);
-    const cursor = getSearchParam(req, 'cursor');
-
-    const params = new URLSearchParams({ limit: String(limit) });
-    if (cursor) params.set('next', cursor);
-
-    // Fetch ALL NFTs in the collection
-    const nftsRes = await fetch(
-      `${OPENSEA_API_BASE}/api/v2/collection/${COLLECTION_SLUG}/nfts?${params}`,
-      {
-        headers: {
-          accept: 'application/json',
-          'x-api-key': OPENSEA_API_KEY,
-        },
-        cache: 'no-store',
-      },
-    );
-
-    if (!nftsRes.ok) {
-      const text = await nftsRes.text();
-      console.error('[marketplace/collection-nfts] OpenSea error:', nftsRes.status, text);
-      return jsonError('Failed to fetch NFTs', nftsRes.status >= 500 ? 502 : nftsRes.status);
-    }
-
-    const nftsData = await nftsRes.json();
-    // Filter out token 0 — it's a placeholder, not a real NFT
-    const rawNfts: OpenSeaNft[] = (nftsData.nfts ?? []).filter(
-      (nft: OpenSeaNft) => nft.identifier !== '0',
-    );
-
-    // Also fetch active listings to cross-reference which are listed
+    // Cross-reference active listings for price/owner (best-effort).
     const listingsMap = new Map<string, OpenSeaListing>();
     try {
       const listingsRes = await fetch(
         `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-        {
-          headers: {
-            accept: 'application/json',
-            'x-api-key': OPENSEA_API_KEY,
-          },
-          cache: 'no-store',
-        },
+        { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
       );
       if (listingsRes.ok) {
         const listingsData = await listingsRes.json();
@@ -83,10 +99,8 @@ export async function GET(req: Request) {
       }
     } catch { /* silent — listings are enrichment */ }
 
-    // Map NFTs to MarketplaceTeam format, enriching with listing data
-    const nfts = rawNfts.map(nft => {
-      const team = mapOpenSeaNftToTeam(nft, '');
-      const listing = listingsMap.get(nft.identifier);
+    for (const team of teams) {
+      const listing = listingsMap.get(team.tokenId);
       if (listing) {
         const value = listing.price?.current?.value;
         const decimals = listing.price?.current?.decimals ?? 18;
@@ -96,47 +110,36 @@ export async function GET(req: Request) {
         team.ownerAddress = listing.protocol_data.parameters.offerer;
         team.owner = `${team.ownerAddress.slice(0, 6)}...${team.ownerAddress.slice(-4)}`;
       }
-      return team;
-    });
+    }
 
-    // Enrich with SBS owner profiles
+    // Enrich with SBS owner profiles (bounded by unique owners).
     const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
       || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
     try {
-      const uniqueOwners = [...new Set(nfts.filter(n => n.ownerAddress).map(n => n.ownerAddress.toLowerCase()))];
+      const uniqueOwners = [...new Set(teams.filter(n => n.ownerAddress).map(n => n.ownerAddress.toLowerCase()))];
       const ownerProfiles = new Map<string, { name: string; pfp: string | null }>();
-
       await Promise.all(
         uniqueOwners.map(async (addr) => {
           try {
-            const res = await fetch(`${DRAFTS_API}/owner/${addr}`, {
-              signal: AbortSignal.timeout(2500),
-            });
+            const res = await fetch(`${DRAFTS_API}/owner/${addr}`, { signal: AbortSignal.timeout(2500) });
             if (!res.ok) return;
             const profile = await res.json();
             if (profile?.pfp?.displayName || profile?.pfp?.imageUrl) {
-              ownerProfiles.set(addr, {
-                name: profile.pfp?.displayName || '',
-                pfp: profile.pfp?.imageUrl || null,
-              });
+              ownerProfiles.set(addr, { name: profile.pfp?.displayName || '', pfp: profile.pfp?.imageUrl || null });
             }
           } catch { /* skip */ }
         }),
       );
-
-      for (const nft of nfts) {
-        const profile = ownerProfiles.get(nft.ownerAddress.toLowerCase());
+      for (const team of teams) {
+        const profile = ownerProfiles.get(team.ownerAddress.toLowerCase());
         if (profile) {
-          if (profile.name) nft.owner = profile.name;
-          if (profile.pfp) nft.ownerPfp = profile.pfp;
+          if (profile.name) team.owner = profile.name;
+          if (profile.pfp) team.ownerPfp = profile.pfp;
         }
       }
     } catch { /* enrichment failed */ }
 
-    return json({
-      nfts,
-      next: nftsData.next ?? null,
-    });
+    return json({ nfts: teams, next });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/collection-nfts] GET failed:', err);

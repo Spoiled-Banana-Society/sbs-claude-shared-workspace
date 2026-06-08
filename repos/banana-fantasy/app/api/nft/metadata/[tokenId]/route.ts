@@ -2,6 +2,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { resolveCard } from '@/lib/nftCardServer';
 import { passTypeLabel } from '@/lib/nftPassClassify';
 import { resolveLeagueNumber } from '@/lib/opensea';
+import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,8 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
 
   if (!card.drafted) {
     const passType = passTypeLabel(card.passType);
+    // Self-healing stamp (off the hot path; fire-and-forget). Passes have no league.
+    void upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), status: 'pass' });
     return new Response(JSON.stringify({
       name: `Banana Best Ball IV — Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
@@ -77,6 +80,10 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     ...(leagueNumber != null ? [{ trait_type: 'League #', value: String(leagueNumber) }] : []),
     ...kept,
   ];
+
+  // Self-healing stamp keyed by the on-chain id (off the hot path; fire-and-forget).
+  // Powers the instant JP/HOF + League # marketplace filters.
+  void upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), leagueNumber, status: 'team' });
 
   return new Response(JSON.stringify({
     name,

@@ -143,7 +143,11 @@ export default function MarketplacePage() {
   const currentSort = sortMap[sortBy] || sortMap['price-low'];
 
   const { data: listings, isLoading: listingsLoading, hasMore, loadMore, refetch: refetchListings } = useListings(currentSort.sort, currentSort.direction);
-  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts();
+  // Jackpot/HOF are too rare to surface in a paged browse, so for those filters
+  // we ask the server to scan the whole collection by level and return the full
+  // set. Other views stay paged.
+  const collectionLevel = viewFilter === 'jackpot' ? 'jackpot' : viewFilter === 'hof' ? 'hof' : null;
+  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel);
   const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
   const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);

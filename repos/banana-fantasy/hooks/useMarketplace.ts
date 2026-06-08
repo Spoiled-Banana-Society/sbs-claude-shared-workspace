@@ -53,7 +53,7 @@ interface UseCollectionNftsResult {
   refetch: () => void;
 }
 
-export function useCollectionNfts(limit: number = 50): UseCollectionNftsResult {
+export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null): UseCollectionNftsResult {
   const [data, setData] = useState<MarketplaceTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -63,8 +63,15 @@ export function useCollectionNfts(limit: number = 50): UseCollectionNftsResult {
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
     if (!append) setIsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: String(limit) });
-      if (nextCursor) params.set('cursor', nextCursor);
+      const params = new URLSearchParams();
+      if (level) {
+        // Jackpot/HOF are too rare to appear in a paged browse — the server
+        // scans the whole collection by trait and returns the full set at once.
+        params.set('level', level);
+      } else {
+        params.set('limit', String(limit));
+        if (nextCursor) params.set('cursor', nextCursor);
+      }
 
       const res = await fetch(`/api/marketplace/collection-nfts?${params}`);
       if (!res.ok) throw new Error(`Failed to fetch collection NFTs: ${res.status}`);
@@ -80,7 +87,7 @@ export function useCollectionNfts(limit: number = 50): UseCollectionNftsResult {
     } finally {
       setIsLoading(false);
     }
-  }, [limit]);
+  }, [limit, level]);
 
   useEffect(() => {
     fetchNfts(false);
