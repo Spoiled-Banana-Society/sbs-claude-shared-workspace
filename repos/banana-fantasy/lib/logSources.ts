@@ -126,6 +126,15 @@ export const LOG_SOURCES = {
     // Draft-complete promo crediting + the exposure recompute it triggers.
     DRAFT_COMPLETE_FAILED: 'promo.draft_complete.failed',
     EXPOSURE_RECOMPUTE_FAILED: 'promo.exposure_recompute_failed',
+    // Promo credit REFUSED: the Go API confirmed the caller holds no token for
+    // the claimed draft (forged / unowned draftId). Anti-abuse signal — expected
+    // to be ~0 for real users; a spike on a real wallet means a legit draft was
+    // wrongly denied and the gate needs review.
+    PARTICIPATION_DENIED: 'promo.participation_denied',
+    // Promo credit could NOT verify participation (Go API error/timeout) — fell
+    // back to the client value rather than punish a legit user. Watch for spikes
+    // (a Go outage, or someone forcing errors to slip past the participation gate).
+    PARTICIPATION_UNVERIFIED: 'promo.participation_unverified',
   },
   marketplace: {
     BUY_EXECUTION_FAILED: 'marketplace.buy_execution_failed',
