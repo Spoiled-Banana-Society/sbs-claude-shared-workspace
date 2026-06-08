@@ -276,9 +276,9 @@ export function BuyTab({
                 if (sweepMode && team.price != null) onToggleSweepSelect(team.tokenId);
                 else onNavigateToTeam(team.tokenId);
               }}
-              className={`bg-bg-secondary border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+              className={`bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
             >
-              <div className="relative aspect-[3/4] bg-gradient-to-br from-bg-tertiary to-bg-secondary flex items-center justify-center">
+              <div className="relative aspect-[3/4] bg-[#0d0d12] flex items-center justify-center">
                 {team.imageUrl ? (
                   <Image src={team.imageUrl} alt={team.name} fill className="object-contain rounded-2xl shadow-lg" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                 ) : (
