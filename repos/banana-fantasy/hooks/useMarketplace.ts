@@ -53,7 +53,7 @@ interface UseCollectionNftsResult {
   refetch: () => void;
 }
 
-export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null): UseCollectionNftsResult {
+export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null, league?: number | null): UseCollectionNftsResult {
   const [data, setData] = useState<MarketplaceTeam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -63,17 +63,21 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
     if (!append) setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (level) {
-        // Jackpot/HOF are too rare to appear in a paged browse — the server
-        // scans the whole collection by trait and returns the full set at once.
-        params.set('level', level);
+      let url: string;
+      if (level || league != null) {
+        // BACKEND-SOURCED: instant level/league filter from the on-chain-id index
+        // (no OpenSea page-scanning). Full set at once.
+        const p = new URLSearchParams();
+        if (level) p.set('level', level);
+        if (league != null) p.set('league', String(league));
+        url = `/api/marketplace/teams?${p}`;
       } else {
-        params.set('limit', String(limit));
-        if (nextCursor) params.set('cursor', nextCursor);
+        const p = new URLSearchParams({ limit: String(limit) });
+        if (nextCursor) p.set('cursor', nextCursor);
+        url = `/api/marketplace/collection-nfts?${p}`;
       }
 
-      const res = await fetch(`/api/marketplace/collection-nfts?${params}`);
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`Failed to fetch collection NFTs: ${res.status}`);
       const json = await res.json();
 
@@ -87,7 +91,7 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
     } finally {
       setIsLoading(false);
     }
-  }, [limit, level]);
+  }, [limit, level, league]);
 
   useEffect(() => {
     fetchNfts(false);
