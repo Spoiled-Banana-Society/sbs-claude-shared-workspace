@@ -94,7 +94,6 @@ export function BuyTab({
   onOpenSweepModal,
   onLoadMore,
   onToggleWatchlist,
-  onShare,
   onOpenBuyModal,
   onGoToSellTab,
   onNavigateToTeam,
@@ -281,12 +280,28 @@ export function BuyTab({
 
                 <div className="absolute top-3 right-3 flex flex-col gap-2 z-10">
                   <button
-                    onClick={event => onShare(team, event)}
+                    onClick={async event => {
+                      event.stopPropagation();
+                      event.preventDefault();
+                      if (!team.imageUrl) return;
+                      try {
+                        const res = await fetch(team.imageUrl);
+                        const blob = await res.blob();
+                        const objUrl = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = objUrl;
+                        a.download = `SBS-Team-${team.tokenId}.png`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(objUrl);
+                      } catch { /* ignore download failure */ }
+                    }}
                     className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 transition-colors"
-                    title="Share on X"
+                    title="Download card"
                   >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
                     </svg>
                   </button>
                   <button
@@ -296,6 +311,7 @@ export function BuyTab({
                       onToggleWatchlist(team.tokenId, team.price);
                     }}
                     className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition-colors"
+                    title="Add to watchlist"
                   >
                     <svg className={`w-3.5 h-3.5 ${watchlistSet.has(team.tokenId) ? 'text-red-500' : 'text-white'}`} fill={watchlistSet.has(team.tokenId) ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
