@@ -74,22 +74,38 @@ async function fetchOwnedBbb4TokenIds(wallet: string): Promise<string[]> {
 }
 
 /**
- * Reads Go API's current view of a wallet's passes: which tokenIds it has
- * recorded as `available` (unused, mintable for draft entry).
+ * Reads Go API's current view of a wallet's passes: the on-chain token ids it
+ * has recorded as `available` (unused, mintable for draft entry).
  */
 export async function fetchGoApiAvailableTokenIds(wallet: string): Promise<string[]> {
   const lists = await fetchGoApiTokenLists(wallet);
-  return lists.available;
+  return lists.available.map((r) => r.onchainId).filter(Boolean);
+}
+
+/** A Go draft-token reference: its Firestore doc key (`cardId`) plus the decoded
+ *  on-chain BBB4 token id (`realTokenId`, or the bare/staging-encoded cardId). */
+export interface GoTokenRef { cardId: string; onchainId: string }
+
+/** Decode the on-chain BBB4 token id from a Go record. `realTokenId` when set;
+ *  else the cardId is the bare id (<=7 digits) or `<10-digit-secs><tokenId>`. */
+function decodeGoOnchainId(cardId: string, realTokenId: string): string {
+  const rt = String(realTokenId ?? '').trim();
+  if (/^\d+$/.test(rt)) return rt;
+  const c = String(cardId ?? '').trim();
+  if (/^\d{1,7}$/.test(c)) return c;
+  if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+  return '';
 }
 
 /**
- * Reads Go API's full per-wallet token state: both `available` (unused) and
- * `active` (consumed in a league) cardIds. Used by the reconciler to compute
- * the correct "spendable" count = on-chain owned − active count.
+ * Reads Go API's full per-wallet token state: `available` (unused) and `active`
+ * (drafted). Each entry carries its `cardId` (Firestore doc key) AND its decoded
+ * on-chain id — so the reconciler compares against on-chain ownership by the
+ * on-chain id, NOT the cardId (which diverges for staging/synthetic records).
  */
 export async function fetchGoApiTokenLists(
   wallet: string,
-): Promise<{ available: string[]; active: string[] }> {
+): Promise<{ available: GoTokenRef[]; active: GoTokenRef[] }> {
   const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return { available: [], active: [] };
   const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
@@ -97,14 +113,15 @@ export async function fetchGoApiTokenLists(
     logger.warn('reconcile.go_api_fetch_failed', { wallet, status: res.status });
     return { available: [], active: [] };
   }
-  const body = (await res.json()) as {
-    available?: Array<{ _cardId?: string; CardId?: string }>;
-    active?: Array<{ _cardId?: string; CardId?: string }>;
-  };
-  const extract = (arr: Array<{ _cardId?: string; CardId?: string }> | undefined) =>
+  type GoRow = { _cardId?: string; CardId?: string; realTokenId?: string | number };
+  const body = (await res.json()) as { available?: GoRow[]; active?: GoRow[] };
+  const extract = (arr: GoRow[] | undefined): GoTokenRef[] =>
     (arr ?? [])
-      .map((t) => t._cardId ?? t.CardId ?? '')
-      .filter((id) => /^\d+$/.test(id));
+      .map((t) => {
+        const cardId = String(t._cardId ?? t.CardId ?? '').trim();
+        return { cardId, onchainId: decodeGoOnchainId(cardId, String(t.realTokenId ?? '')) };
+      })
+      .filter((r) => /^\d+$/.test(r.cardId));
   return {
     available: extract(body.available),
     active: extract(body.active),
@@ -302,17 +319,23 @@ export async function reconcilePassesForWallet(wallet: string): Promise<Reconcil
     .filter((n) => Number.isFinite(n));
   const ownedSet = new Set(ownedNumericIds.map((n) => String(n)));
 
-  // 2. Go API's view: which tokens are available vs active.
-  const { available: goApiAvailable } = await fetchGoApiTokenLists(w);
-  const goApiSet = new Set(goApiAvailable);
+  // 2. Go API's view: available (unused) + active (drafted), each with its
+  //    DECODED on-chain id so we compare like-for-like with on-chain ownership.
+  const { available: goAvailable, active: goActive } = await fetchGoApiTokenLists(w);
+  // On-chain ids Go already knows under ANY cardId scheme, in EITHER pool. A
+  // token Go records (incl. drafted teams the wallet still holds on-chain) must
+  // never look "missing" just because its cardId != its on-chain id.
+  const knownToGo = new Set([...goAvailable, ...goActive].map((r) => r.onchainId).filter(Boolean));
 
-  // 3. Diff against on-chain reality.
-  //    - missingFromGo: on-chain tokens the Go API doesn't know about (yet
-  //      to be backfilled).
-  //    - staleInGo: Go-API-available tokens the wallet no longer owns
-  //      on-chain (transferred out, sold) — these should be removed.
-  const missingFromGo = ownedNumericIds.filter((n) => !goApiSet.has(String(n)));
-  const staleInGo = goApiAvailable.filter((id) => !ownedSet.has(id));
+  // 3. Diff against on-chain reality, BY ON-CHAIN ID (not cardId).
+  //    - missingFromGo: owned on-chain but Go has no record in either pool → backfill.
+  //    - staleInGo: an AVAILABLE record whose on-chain id the wallet no longer
+  //      owns → transferred out. DELETE BY cardId (the doc key), so a legit
+  //      synthetic-cardId pass whose on-chain id IS owned is never wrongly cut.
+  const missingFromGo = ownedNumericIds.filter((n) => !knownToGo.has(String(n)));
+  const staleInGo = goAvailable
+    .filter((r) => r.onchainId && !ownedSet.has(r.onchainId))
+    .map((r) => r.cardId);
 
   // 4. Repair each side. Stamp each newly-registered token with its real
   //    passType: a token with a pass_origin doc (wheel/admin grant) is FREE,

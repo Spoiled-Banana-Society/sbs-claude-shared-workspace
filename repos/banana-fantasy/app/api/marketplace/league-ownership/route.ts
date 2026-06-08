@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 
     // The drafter's record carries leagueId → realTokenId for every team they
     // drafted (sold ones included — the backend keeps them).
-    let tokens: Array<{ realTokenId?: string | number; _leagueId?: string }> = [];
+    let tokens: Array<{ realTokenId?: string | number; _cardId?: string; _leagueId?: string }> = [];
     try {
       const res = await fetch(`${DRAFTS_API}/owner/${wallet.toLowerCase()}/draftToken/all`, {
         signal: AbortSignal.timeout(4000),
@@ -44,10 +44,22 @@ export async function GET(req: Request) {
       }
     } catch { /* fall through — no tokens means we can't verify, so hide nothing */ }
 
+    // Resolve the on-chain token id: realTokenId when set, else decode it from
+    // the cardId (bare id, or staging `<10-digit-secs><tokenId>`). Drafted teams
+    // usually have NO realTokenId, so without this decode they'd be skipped and
+    // a sold team would keep showing as owned.
+    const onchainId = (t: { realTokenId?: string | number; _cardId?: string }): string => {
+      const rt = String(t.realTokenId ?? '').trim();
+      if (/^\d+$/.test(rt)) return rt;
+      const c = String(t._cardId ?? '').trim();
+      if (/^\d{1,7}$/.test(c)) return c;
+      if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+      return '';
+    };
     const tokenByLeague = new Map<string, string>();
     for (const t of tokens) {
       const lid = String(t._leagueId ?? '');
-      const tid = String(t.realTokenId ?? '');
+      const tid = onchainId(t);
       if (lid && tid) tokenByLeague.set(lid, tid);
     }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
@@ -36,6 +36,13 @@ export function useEnterDraft() {
   const router = useRouter();
   const { user, updateUser, refreshBalance } = useAuth();
   const [joiningLobby, setJoiningLobby] = useState(false);
+  // Synchronous re-entrancy guard. setState (joiningLobby) doesn't take effect
+  // until the next render, so two taps in the same frame would BOTH get past it
+  // and each spend a pass + join a draft (mobile double-tap = double-charge).
+  // A ref flips immediately, so the second concurrent call bails before the
+  // first `await`. Reset on every failure path so a retry is allowed; the
+  // success path navigates away (unmount), which clears it too.
+  const inFlightRef = useRef(false);
 
   const isLive = isStagingMode() && !!user?.walletAddress;
 
@@ -44,6 +51,8 @@ export function useEnterDraft() {
     speed: 'fast' | 'slow' = 'fast',
   ) => {
     if (!user?.walletAddress) return;
+    if (inFlightRef.current) return; // a join is already in flight — ignore the double-tap
+    inFlightRef.current = true;
 
     const beforePaid = user.draftPasses || 0;
     const beforeFree = user.freeDrafts || 0;
@@ -75,6 +84,7 @@ export function useEnterDraft() {
       // because we can't confirm the backend got the decrement.
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       alert('Network error. Please try again.');
+      inFlightRef.current = false;
       return;
     }
 
@@ -84,6 +94,7 @@ export function useEnterDraft() {
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
       alert('No draft passes available. Your balance has been refreshed.');
+      inFlightRef.current = false;
       return;
     }
 
@@ -174,6 +185,7 @@ export function useEnterDraft() {
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
       alert('Could not join a draft right now. Your pass was not used — please try again.');
+      inFlightRef.current = false;
       return;
     }
 
