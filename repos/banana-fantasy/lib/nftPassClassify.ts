@@ -51,6 +51,7 @@ async function loadOwnerTokens(owner: string): Promise<OwnerTokens> {
   const p = (async (): Promise<OwnerTokens> => {
     const passIds = new Map<string, string>();
     const activeIds = new Set<string>();
+    let ok = false;
     try {
       const res = await fetch(`${DRAFTS_API_BASE}/owner/${lo}/draftToken/all`, { signal: AbortSignal.timeout(4000) });
       if (res.ok) {
@@ -63,6 +64,7 @@ async function loadOwnerTokens(owner: string): Promise<OwnerTokens> {
           const id = recordTokenId(t);
           if (id) passIds.set(id, String(t?.passType ?? '').trim());
         }
+        ok = true;
       }
     } catch (err) {
       // Go API down → we can't authoritatively tell pass from team, so callers
@@ -71,7 +73,13 @@ async function loadOwnerTokens(owner: string): Promise<OwnerTokens> {
       logger.warn('nft.pass_classify_go_failed', { owner: lo, err: (err as Error).message });
     }
     const result: OwnerTokens = { passIds, activeIds, ts: Date.now() };
-    byOwner.set(lo, result);
+    // CRITICAL: only cache a SUCCESSFUL fetch. A failed/timed-out Go call yields
+    // empty lists → every one of this owner's tokens would classify as "not a
+    // pass" (a whale's 600 passes flicker to teams). Caching that empty result
+    // pinned the mis-classification for the full 60s TTL. On failure we still
+    // return the empty result for THIS call (caller falls back), but we don't
+    // poison the cache — the next read retries the Go API immediately.
+    if (ok) byOwner.set(lo, result);
     inflight.delete(lo);
     return result;
   })();
