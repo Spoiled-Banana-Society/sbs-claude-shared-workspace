@@ -38,6 +38,7 @@ interface BuyTabProps {
   txError: string | null;
   userUsdcBalance?: number | null;
   onSetViewFilter: (filter: ViewFilter) => void;
+  viewCounts?: { all?: number; jackpot?: number; hof?: number };
   onSetRosterFilter: (chips: string[]) => void;
   leagueFilter: number | null;
   onSetLeagueFilter: (n: number | null) => void;
@@ -84,6 +85,7 @@ export function BuyTab({
   txError,
   userUsdcBalance,
   onSetViewFilter,
+  viewCounts,
   onSetRosterFilter,
   leagueFilter,
   onSetLeagueFilter,
@@ -180,11 +182,11 @@ export function BuyTab({
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
             {([
-              { key: 'listed', label: 'Listed' },
-              { key: 'all', label: 'All Teams' },
-              { key: 'top', label: 'Top Teams' },
-              { key: 'jackpot', label: 'Jackpot' },
-              { key: 'hof', label: 'HOF' },
+              { key: 'listed', label: 'Listed', count: undefined },
+              { key: 'all', label: 'All Teams', count: viewCounts?.all },
+              { key: 'top', label: 'Top Teams', count: undefined },
+              { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
+              { key: 'hof', label: 'HOF', count: viewCounts?.hof },
             ] as const).map(filter => (
               <button
                 key={filter.key}
@@ -192,6 +194,11 @@ export function BuyTab({
                 className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 {filter.label}
+                {typeof filter.count === 'number' && filter.count > 0 && (
+                  <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
+                    {filter.count.toLocaleString()}
+                  </sup>
+                )}
               </button>
             ))}
           </div>

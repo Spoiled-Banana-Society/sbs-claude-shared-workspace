@@ -144,6 +144,17 @@ export default function MarketplacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, viewFilter]);
 
+  // Live tab counts (drafted teams / Jackpot / HOF) from the backend index.
+  const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; jackpot?: number; hof?: number } | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/marketplace/stats')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled && d) setMarketplaceStats({ all: d.teams, jackpot: d.jackpot, hof: d.hof }); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     cancelledRef.current = false;
     return () => {
@@ -812,6 +823,7 @@ export default function MarketplacePage() {
           txError={txError}
           userUsdcBalance={user?.usdcBalance}
           onSetViewFilter={setViewFilter}
+          viewCounts={marketplaceStats}
           onSetRosterFilter={setRosterFilter}
           leagueFilter={leagueFilter}
           onSetLeagueFilter={setLeagueFilter}
