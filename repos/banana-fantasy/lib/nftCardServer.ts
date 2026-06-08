@@ -93,7 +93,11 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
       if (ix.exists) {
         const d = ix.data() as Record<string, unknown>;
         if (d.status === 'pass') {
-          return { image: (d.image as string) || buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
+          // A pass ALWAYS renders the grey pre-reveal pass art — never a stored
+          // image. The index doc can still carry a stale TEAM card image from a
+          // prior era (a token that was a team, now reclassified to pass); using
+          // it would show a drafted team on a draft pass. Always rebuild grey.
+          return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
         }
         if (d.status === 'team') {
           indexSaysTeam = true;
