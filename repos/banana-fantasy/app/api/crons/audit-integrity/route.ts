@@ -5,7 +5,7 @@ import { runAllAudits } from '@/lib/audits/checks';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * Daily state-integrity audit. Runs the money/fairness invariant checks

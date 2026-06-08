@@ -40,10 +40,16 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
   let actorId: string | undefined;
   try {
-    // Verify user is authenticated (Privy DID !== wallet address, so we just verify the JWT is valid)
-    await getPrivyUser(req);
+    // Authenticate AND authorize: verify the JWT, then require the request's
+    // userId to be the caller's own wallet. Without this match an authenticated
+    // user could trigger a withdrawal on another wallet's behalf (same gap the
+    // founder-draft route closes by using the token's walletAddress).
+    const { walletAddress } = await getPrivyUser(req);
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
+    if (!walletAddress || walletAddress.toLowerCase() !== userId.toLowerCase()) {
+      return jsonError('Forbidden — you can only withdraw from your own wallet', 403);
+    }
     actorId = userId;
     const draftId = requireString(body.draftId, 'draftId');
     const amount = requireNumber(body.amount, 'amount');

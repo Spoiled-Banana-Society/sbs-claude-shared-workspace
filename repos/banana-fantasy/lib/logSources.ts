@@ -310,6 +310,8 @@ const CRITICAL_PATTERNS: RegExp[] = [
   // ── State-integrity audits (proactive): a money/fairness invariant is
   //    violated in the data BEFORE a user trips on it. See lib/audits/. ──
   /^audit\.passes\.over/i,      // counter > real spendable tokens → user blocked at join
+  /^audit\.passes\.duplicate/i, // two ledger records for ONE on-chain token → inflated pass count
+  /^audit\.passes\.drafted_still_spendable/i, // a drafted/used pass still counted/usable → "pass came back"
   /^audit\.balance\.negative/i, // negative money/pass counter → corruption
 ];
 

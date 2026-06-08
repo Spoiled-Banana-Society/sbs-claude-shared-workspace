@@ -3,10 +3,9 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
+import { buildActivityEventDoc } from '@/lib/activityEvents';
+import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
-
-const USERS_COLLECTION = 'v2_users';
 
 /**
  * POST /api/owner/refund-pass
@@ -54,7 +53,6 @@ export async function POST(req: Request) {
     }
 
     const field = passType === 'paid' ? 'draftPasses' : 'freeDrafts';
-    const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
     const activityDoc = await buildActivityEventDoc({
       type: 'draft_left',
@@ -68,20 +66,19 @@ export async function POST(req: Request) {
       },
     });
 
-    const result = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(userRef);
-      const current = (snap.exists ? (snap.data()?.[field] as number | undefined) : undefined) ?? 0;
-      tx.set(userRef, { [field]: current + 1 }, { merge: true });
-      addActivityEventToTx(tx, activityDoc);
-      return { refunded: true, before: current, after: current + 1 };
-    });
+    // Set the counter to REAL spendable inventory (the token is already back in
+    // validDraftTokens after the Go leave) instead of a blind +1 — so a retried
+    // or double-fired leave can't push the counter above what the user can
+    // actually spend. Self-healing, exactly like every other counter path.
+    // recountFromInventory writes the draft_left activity event in the same tx.
+    const counts = await recountFromInventory(userId, activityDoc);
 
     return json({
       success: true,
       field,
-      refunded: result.refunded,
-      before: result.before,
-      after: result.after,
+      refunded: true,
+      draftPasses: counts.draftPasses,
+      freeDrafts: counts.freeDrafts,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

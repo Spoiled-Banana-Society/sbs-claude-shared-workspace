@@ -32,7 +32,7 @@
     },
     {
       "path": "/api/crons/audit-integrity",
-      "schedule": "0 8 * * *"
+      "schedule": "0 */6 * * *"
     },
     {
       "path": "/api/crons/king-of-drafts",

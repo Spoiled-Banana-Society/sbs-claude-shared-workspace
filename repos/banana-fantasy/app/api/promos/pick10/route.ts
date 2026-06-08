@@ -3,13 +3,19 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { recordPick10 } from '@/lib/db';
+import { getPrivyUser } from '@/lib/auth';
 
 export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
+    // Only the authenticated wallet can record its own promo progress.
+    const { walletAddress } = await getPrivyUser(req);
     const body = await parseBody(req);
     const userId = requireString(body.userId, 'userId');
+    if (!walletAddress || walletAddress.toLowerCase() !== userId.toLowerCase()) {
+      return jsonError('Forbidden — wallet mismatch', 403);
+    }
     const draftId = requireString(body.draftId, 'draftId');
     const draftName = typeof body.draftName === 'string' ? body.draftName : draftId;
     // Free-pass drafts earn no promo credit (server-enforced in recordPick10).

@@ -56,12 +56,18 @@ export async function POST(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    await getPrivyUser(req);
+    // Authenticate AND authorize: verify the JWT, then require the request's
+    // userId to be the caller's own wallet — an authenticated user must not be
+    // able to settle another wallet's prizes.
+    const { walletAddress } = await getPrivyUser(req);
     const body = await parseBody(req);
     const userIdRaw = requireString(body.userId, 'userId').trim();
     const userId = userIdRaw.toLowerCase();
     if (!ETH_ADDRESS_RE.test(userId)) {
       return jsonError('userId must be a valid wallet address', 400);
+    }
+    if (!walletAddress || walletAddress.toLowerCase() !== userId) {
+      return jsonError('Forbidden — you can only withdraw from your own wallet', 403);
     }
 
     // method is the destination type. Always 'usdc' for now — money

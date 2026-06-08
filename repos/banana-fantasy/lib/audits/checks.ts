@@ -39,6 +39,22 @@ function passTypeOf(data: Record<string, unknown>): 'free' | 'paid' {
 }
 
 /**
+ * The on-chain token id a draft-token record points at. `realTokenId` on newer
+ * records; legacy ones encode it in the cardId — bare on-chain id (≤7 digits)
+ * or staging form `<10-digit unix-seconds><tokenId>`. Lets us line up the two
+ * collections (validDraftTokens / usedDraftTokens) that use different cardId
+ * schemes for the same physical token.
+ */
+function decodeOnchainId(cardId: string, realTokenId: string): string {
+  const rt = String(realTokenId || '').trim();
+  if (/^\d+$/.test(rt)) return rt;
+  const c = String(cardId || '').trim();
+  if (/^\d{1,7}$/.test(c)) return c;
+  if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+  return '';
+}
+
+/**
  * One collectionGroup query → map of owner → spendable {paid, free} token
  * counts. This is the ground truth the draft engine actually spends from.
  */
@@ -158,10 +174,56 @@ export async function auditDuplicatePasses(db: Firestore): Promise<AuditFinding[
   return findings;
 }
 
+/**
+ * DRAFTED-BUT-STILL-SPENDABLE — a token that's been drafted (in usedDraftTokens)
+ * must NOT also remain in validDraftTokens (the spendable pool). If it does, a
+ * USED pass is still counted/usable — the "drafted pass came back" leak (a
+ * reconcile re-registered a drafted token, or a draft-entry delete missed it
+ * because the two collections key the same token under different cardIds). Keyed
+ * on the decoded on-chain id so the differing cardId schemes still line up.
+ */
+export async function auditDraftedStillSpendable(db: Firestore): Promise<AuditFinding[]> {
+  const findings: AuditFinding[] = [];
+  const spendable = new Map<string, Set<string>>();
+  const used = new Map<string, Set<string>>();
+  const collect = async (sub: string, target: Map<string, Set<string>>) => {
+    const snap = await db.collectionGroup(sub).get();
+    snap.forEach((d) => {
+      const m = d.ref.path.match(new RegExp(`owners/([^/]+)/${sub}`));
+      if (!m) return;
+      const w = m[1].toLowerCase();
+      const x = d.data() as Record<string, unknown>;
+      const id = decodeOnchainId(String(x.CardId ?? x.cardId ?? d.id), String(x.RealTokenId ?? x.realTokenId ?? ''));
+      if (!id) return;
+      const set = target.get(w) ?? new Set<string>();
+      set.add(id);
+      target.set(w, set);
+    });
+  };
+  await collect('validDraftTokens', spendable);
+  await collect('usedDraftTokens', used);
+  for (const [w, usedSet] of used) {
+    const spendSet = spendable.get(w);
+    if (!spendSet) continue;
+    const overlap = [...usedSet].filter((id) => spendSet.has(id));
+    if (overlap.length) {
+      findings.push({
+        source: 'audit.passes.drafted_still_spendable',
+        severity: 'critical',
+        actor: w,
+        message: `${overlap.length} drafted token(s) still in the spendable pool — a used pass is counted/usable again. tokens: ${overlap.slice(0, 10).join(', ')}`,
+        context: { count: overlap.length, tokens: overlap.slice(0, 20) },
+      });
+    }
+  }
+  return findings;
+}
+
 /** Every check that runs. Add money/fairness checks here as we build them. */
 export const AUDIT_CHECKS: Array<{ name: string; run: (db: Firestore) => Promise<AuditFinding[]> }> = [
   { name: 'passes', run: auditPassLedger },
   { name: 'duplicate_passes', run: auditDuplicatePasses },
+  { name: 'drafted_still_spendable', run: auditDraftedStillSpendable },
   { name: 'negative_balances', run: auditNegativeBalances },
 ];
 
