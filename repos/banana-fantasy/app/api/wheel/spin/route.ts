@@ -16,6 +16,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { addActivityEventToTx, buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
@@ -254,6 +255,16 @@ export async function POST(req: Request) {
         : 0;
     const mintOnChain = isAdminMintConfigured() && draftPassCount > 0;
 
+    // A Jackpot/HOF wheel win. When the feature flag is ON we mint a REAL pass
+    // NFT for it (marked JP/HOF + wheel-origin) so the prize is a sellable asset,
+    // instead of only bumping the wallet-keyed queue counter. Flag OFF → legacy
+    // counter/queue path is untouched.
+    const jphofKind: 'jackpot' | 'hof' | null =
+      segment.prizeType === 'custom' && segment.prizeValue === 'jackpot' ? 'jackpot'
+      : segment.prizeType === 'custom' && segment.prizeValue === 'hof' ? 'hof'
+      : null;
+    const mintJpHof = isWheelJpHofPassEnabled() && isAdminMintConfigured() && jphofKind !== null;
+
     // Pre-build the spin_won activity doc OUTSIDE the transaction (Firestore
     // forbids new reads after writes inside a transaction). On-chain mint
     // tx hash + tokenIds aren't known yet — they get populated by a
@@ -343,11 +354,14 @@ export async function POST(req: Request) {
         balanceUpdate.freeDrafts = currentFree + draftPassCount;
         winningsWon += draftPassCount;
       }
-      if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-        balanceUpdate.jackpotEntries = currentJp + 1;
+      // When minting a real JP/HOF pass (flag ON), the NFT is the entry — don't
+      // also bump the wallet-keyed counter (that's the legacy queue path). The
+      // win still counts toward the first-purchase promo gate (winningsWon).
+      if (jphofKind === 'jackpot') {
+        if (!mintJpHof) balanceUpdate.jackpotEntries = currentJp + 1;
         winningsWon += 1;
-      } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-        balanceUpdate.hofEntries = currentHof + 1;
+      } else if (jphofKind === 'hof') {
+        if (!mintJpHof) balanceUpdate.hofEntries = currentHof + 1;
         winningsWon += 1;
       }
       // First-purchase popup gate counter. Only matters pre-purchase — skip
@@ -413,6 +427,45 @@ export async function POST(req: Request) {
         }
       }
 
+      // JP/HOF wheel win → mint ONE real pass NFT, marked with its known level so
+      // the marketplace can treat it as a JP/HOF pass before any league reveal.
+      // Flag-gated; the legacy counter/queue path runs instead when OFF.
+      if (mintJpHof && jphofKind) {
+        try {
+          const res = await reserveTokensToWallet({ to: userId, count: 1 });
+          await recordPassOrigins({
+            tokenIds: res.tokenIds,
+            origin: 'spin_reward',
+            ownerAtMint: userId,
+            txHash: res.txHash,
+            reason: `wheel_spin:${spinId}`,
+            level: jphofKind,
+          });
+          try {
+            await registerMintedTokens(userId, res.tokenIds, 'free');
+          } catch (e) {
+            logger.warn('wheel.spin.jphof_register_go_api_failed', { spinId, userId, err: (e as Error).message });
+          }
+          logger.info('wheel.spin.jphof_mint_ok', { spinId, userId, kind: jphofKind, txHash: res.txHash, tokenIds: res.tokenIds });
+        } catch (mintErr) {
+          logger.error('wheel.spin.jphof_mint_failed', { spinId, userId, kind: jphofKind, err: mintErr });
+          try {
+            await db.collection('failed_mints').doc(`${spinId}-jphof`).set({
+              spinId,
+              userId,
+              count: 1,
+              kind: jphofKind,
+              reason: `wheel_spin:${spinId}`,
+              error: (mintErr as Error)?.message ?? String(mintErr),
+              createdAt: FieldValue.serverTimestamp(),
+              retryable: true,
+            });
+          } catch (logErr) {
+            logger.error('wheel.spin.jphof_failed_mint_record_error', { spinId, err: logErr });
+          }
+        }
+      }
+
       // Reconcile freeDrafts to the wallet's REAL spendable inventory now the
       // mint + registration have settled. The spin tx credited freeDrafts
       // optimistically for instant feedback; this corrects it to the truth — a
@@ -473,11 +526,13 @@ export async function POST(req: Request) {
         });
       }
 
-      if (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof')) {
+      // Legacy wallet-keyed queue. Skipped when we minted a real pass (flag ON) —
+      // step 2 binds the queue to that NFT instead.
+      if (jphofKind && !mintJpHof) {
         try {
           const { joinQueue } = await import('@/lib/db');
-          await joinQueue(userId, segment.prizeValue as 'jackpot' | 'hof');
-          logger.debug(`[wheel/spin] Auto-queued ${userId} for ${segment.prizeValue}`);
+          await joinQueue(userId, jphofKind);
+          logger.debug(`[wheel/spin] Auto-queued ${userId} for ${jphofKind}`);
         } catch (qErr) {
           logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
         }
