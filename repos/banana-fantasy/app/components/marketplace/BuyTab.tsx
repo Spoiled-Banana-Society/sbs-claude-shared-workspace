@@ -319,8 +319,8 @@ export function BuyTab({
                 </div>
               </div>
 
-              <div className="p-5">
-                <div className="flex items-start justify-between mb-4">
+              <div className="p-4">
+                <div className="flex items-start justify-between mb-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h3 className="text-lg font-semibold text-text-primary font-mono truncate">{team.name}</h3>
@@ -333,16 +333,6 @@ export function BuyTab({
                     {team.leagueNumber != null && (
                       <p className="text-text-muted text-xs font-mono mt-0.5">League #{team.leagueNumber}</p>
                     )}
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {team.ownerPfp ? (
-                        <Image src={team.ownerPfp} alt="" width={20} height={20} className="rounded-full" />
-                      ) : (
-                        <div className="w-5 h-5 rounded-full bg-bg-tertiary flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px]">🍌</span>
-                        </div>
-                      )}
-                      <p className="text-text-muted text-xs">{team.owner}</p>
-                    </div>
                   </div>
                 </div>
 
