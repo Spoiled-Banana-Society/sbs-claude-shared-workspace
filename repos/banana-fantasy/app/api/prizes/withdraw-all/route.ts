@@ -21,7 +21,7 @@ import { getPrivyUser } from '@/lib/auth';
 import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import { logDirectWithdrawal } from '@/lib/offrampAudit';
-import { markPrizesProcessing } from '@/lib/prizeOverlay';
+import { markPrizesProcessing, getPrizeClaimStates } from '@/lib/prizeOverlay';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { PrizeHistoryItem, PrizeWin } from '@/types';
@@ -164,6 +164,26 @@ export async function POST(req: Request) {
       );
     }
 
+    // Double-withdrawal guard. In the normal flow a prize that is
+    // already 'processing' or 'paid' never reaches `targets` (the
+    // history merge filters it out by overlay status). So this only
+    // trips on a concurrent / duplicate submit — closing the race where
+    // two requests both see the prizes as pending and each create a
+    // withdrawal for the SAME prizes (the double-payout root cause).
+    const targetIds = targets.map((t) => t.id);
+    const claims = await getPrizeClaimStates(targetIds);
+    const conflicting = targetIds.filter((id) => {
+      const c = claims.get(id);
+      return !!c && (c.status === 'processing' || c.status === 'paid');
+    });
+    if (conflicting.length > 0) {
+      logger.warn('withdraw-all.already_in_flight', { userId, conflicting });
+      return jsonError(
+        'Some of these prizes are already being withdrawn or have been paid. Please refresh and try again.',
+        409,
+      );
+    }
+
     // Use the first prize's draftId as the "primary" draftId on the
     // withdrawal doc — required by createWithdrawal for compat. The
     // prizeIds array is the authoritative source of which prizes are
@@ -201,14 +221,24 @@ export async function POST(req: Request) {
     }
 
     // Mark prizes as processing so they show as in-flight on the next
-    // /prizes load — fire-and-forget; never block the response.
-    markPrizesProcessing({
-      prizeIds: targets.map((t) => t.id),
-      userId,
-      withdrawalId: withdrawal.id,
-    }).catch((err) => {
-      logger.warn('withdraw-all.mark_processing_failed', { err: (err as Error).message });
-    });
+    // /prizes load. AWAITED (was fire-and-forget) so the 'processing'
+    // lock is committed before we return — that's what makes the guard
+    // above see a concurrent submit's claim and reject it. If the mark
+    // itself fails we log critical but don't fail the request: the admin
+    // pay route's double-payout backstop is the hard money guarantee.
+    try {
+      await markPrizesProcessing({
+        prizeIds: targetIds,
+        userId,
+        withdrawalId: withdrawal.id,
+      });
+    } catch (err) {
+      logger.error(LOG_SOURCES.prizes.MARK_PROCESSING_FAILED, {
+        err,
+        actor: userId,
+        context: { withdrawalId: withdrawal.id, prizeIds: targetIds },
+      });
+    }
 
     // Track cumulative for KYC threshold.
     await incrementCumulativeWithdrawals(userId, totalAmount).catch((err) => logger.error(LOG_SOURCES.prizes.CUMULATIVE_INCREMENT_FAILED, { err, actor: userId, context: { totalAmount } }));

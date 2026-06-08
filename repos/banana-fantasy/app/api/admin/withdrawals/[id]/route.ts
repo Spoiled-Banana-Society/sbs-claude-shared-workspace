@@ -11,7 +11,8 @@ import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { markDirectWithdrawalPaid } from '@/lib/offrampAudit';
-import { markPrizesPaid, clearPrizeOverlays } from '@/lib/prizeOverlay';
+import { markPrizesPaid, clearPrizeOverlays, getPrizeClaimStates } from '@/lib/prizeOverlay';
+import { LOG_SOURCES } from '@/lib/logSources';
 
 type FirestoreTimestamp = Timestamp | { toDate: () => Date };
 
@@ -62,6 +63,35 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const existing = await ref.get();
     if (!existing.exists) throw new ApiError(404, 'Withdrawal request not found');
     const before = existing.data() ?? {};
+
+    // Double-payout backstop (the hard money guarantee). Before flipping
+    // this withdrawal to 'paid', refuse if any of its prizes were already
+    // paid by a DIFFERENT withdrawal — that prize's money has already
+    // gone out, so paying again would double-pay. Idempotent: re-paying
+    // THIS same withdrawal id is allowed (its own prizes carry its id).
+    if (body.status === 'paid') {
+      const prizeIds = Array.isArray(before.prizeIds)
+        ? (before.prizeIds.filter((s): s is string => typeof s === 'string'))
+        : [];
+      if (prizeIds.length > 0) {
+        const claims = await getPrizeClaimStates(prizeIds);
+        const alreadyPaidElsewhere = prizeIds.filter((pid) => {
+          const c = claims.get(pid);
+          return !!c && c.status === 'paid' && !!c.withdrawalId && c.withdrawalId !== id;
+        });
+        if (alreadyPaidElsewhere.length > 0) {
+          logger.error(LOG_SOURCES.prizes.DOUBLE_PAYOUT_BLOCKED, {
+            requestId,
+            actor,
+            context: { withdrawalId: id, alreadyPaidElsewhere },
+          });
+          throw new ApiError(
+            409,
+            `Refusing to pay — ${alreadyPaidElsewhere.length} prize(s) on this withdrawal were already paid by another withdrawal. Resolve the duplicate before settling.`,
+          );
+        }
+      }
+    }
 
     const updatePayload: Record<string, unknown> = { status: body.status, updatedAt: new Date().toISOString() };
     if (body.status === 'paid' && txHash) updatePayload.paidTxHash = txHash;

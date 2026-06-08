@@ -189,6 +189,12 @@ export const LOG_SOURCES = {
     CUMULATIVE_INCREMENT_FAILED: 'prizes.cumulative_increment_failed',
     OFFRAMP_AUDIT_FAILED: 'prizes.offramp_audit_failed',
     FETCH_FAILED: 'prizes.fetch_failed',
+    // Withdraw-all could not commit the 'processing' lock on the selected
+    // prizes. Critical: the double-withdrawal guard relies on this lock.
+    MARK_PROCESSING_FAILED: 'prizes.mark_processing_failed',
+    // Admin pay route refused to settle a withdrawal whose prizes were
+    // already paid by a DIFFERENT withdrawal — a blocked double-payout.
+    DOUBLE_PAYOUT_BLOCKED: 'prizes.double_payout_blocked',
   },
   profile: {
     ACTIVITY_FETCH_FAILED: 'profile.activity_fetch_failed',
@@ -313,6 +319,8 @@ const CRITICAL_PATTERNS: RegExp[] = [
   /^audit\.passes\.duplicate/i, // two ledger records for ONE on-chain token → inflated pass count
   /^audit\.passes\.drafted_still_spendable/i, // a drafted/used pass still counted/usable → "pass came back"
   /^audit\.balance\.negative/i, // negative money/pass counter → corruption
+  /^prizes\.double_payout_blocked/i, // admin pay refused — a prize was already paid by another withdrawal
+  /^prizes\.mark_processing_failed/i, // withdraw-all couldn't set the processing lock → double-withdraw window open
 ];
 
 // "Low" = fallback/transient/cosmetic errors that don't cause a
