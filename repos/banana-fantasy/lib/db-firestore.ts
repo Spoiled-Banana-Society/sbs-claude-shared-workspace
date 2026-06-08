@@ -5,6 +5,7 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
@@ -1905,6 +1906,68 @@ async function resolveDraftPassType(userId: string, draftId: string): Promise<'f
   }
 }
 
+/**
+ * Is `userId` actually IN the draft `draftId`? Reads the draft's authoritative
+ * roster `drafts/{draftId}/cards`, which the Go engine writes the moment a user
+ * JOINS (models/leagues.go) — well before the draft fills and the promo fires.
+ * So a real participant is always present here; a forged/unowned draftId has no
+ * such roster at all. Keyed by the draftId itself, so it's independent of the
+ * token's sometimes-blank `_leagueId` field.
+ *
+ * Returns 'in' (real participant), 'absent' (draft exists but they're not in it,
+ * OR the draft doesn't exist → forged), or 'error' (read failed — never deny).
+ */
+async function userInDraftRoster(userId: string, draftId: string): Promise<'in' | 'absent' | 'error'> {
+  if (!draftId) return 'absent';
+  try {
+    const snap = await getAdminFirestore().collection(`drafts/${draftId}/cards`).get();
+    const want = userId.toLowerCase();
+    for (const doc of snap.docs) {
+      const data = doc.data() as { OwnerId?: unknown; _ownerId?: unknown };
+      if (String(data.OwnerId ?? data._ownerId ?? '').toLowerCase() === want) return 'in';
+    }
+    return 'absent';
+  } catch {
+    return 'error';
+  }
+}
+
+/**
+ * THE shared promo-credit gate for the auto-fired draft promos (daily-drafts,
+ * pick-10, jackpot). Fast path is unchanged: a stamped token decides instantly
+ * with no extra read. The roster check ONLY runs when no stamp is found — the
+ * ambiguous case where forged-draftId abuse lives — so the normal path adds
+ * zero latency.
+ *
+ *   stamped 'free'           → false (free drafts never earn a promo)
+ *   stamped 'paid'           → true
+ *   no stamp + in roster     → honor a 'free' client hint, else credit (real
+ *                              participant whose stamp was just unreadable — same
+ *                              as the old fallback, so no false-deny)
+ *   no stamp + NOT in roster → false (forged/unowned draftId — the abuse we close)
+ *   no stamp + roster error  → fall back to client value (never deny a real user
+ *                              on a read failure)
+ */
+async function promoCreditAllowed(
+  userId: string,
+  draftId: string,
+  clientPassType: string | undefined,
+  promoTag: string,
+): Promise<boolean> {
+  const stamped = await resolveDraftPassType(userId, draftId);
+  if (stamped === 'free') return false;
+  if (stamped === 'paid') return true;
+  // No pass stamp found — decide via the authoritative draft roster.
+  const roster = await userInDraftRoster(userId, draftId);
+  if (roster === 'in') return clientPassType !== 'free';
+  if (roster === 'absent') {
+    logger.warn(LOG_SOURCES.promo.PARTICIPATION_DENIED, { actor: userId, context: { draftId, promo: promoTag, clientClaimed: clientPassType } });
+    return false;
+  }
+  logger.warn(LOG_SOURCES.promo.PARTICIPATION_UNVERIFIED, { actor: userId, context: { draftId, promo: promoTag, clientClaimed: clientPassType } });
+  return clientPassType !== 'free';
+}
+
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
   // NOTE: the new-user first-purchase gate USED to run here — but this function
   // fires when a draft FILLS, not when it finishes, which pinged the popup too
@@ -1917,8 +1980,9 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
   // pass earns zero daily-drafts credit. The token is stamped with the chosen
   // pass type (source of truth) — use it, falling back to the client value only
   // when the stamp can't be read, so a free draft can never sneak past as paid.
-  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
-  if (authoritativePassType === 'free') {
+  // Credit only a real PAID participant of this draft. Free drafts, forged/
+  // unowned draftIds, and non-participants earn nothing (see promoCreditAllowed).
+  if (!(await promoCreditAllowed(userId, draftId, passType, 'daily-drafts'))) {
     return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
   }
   const db = getAdminFirestore();
@@ -2002,8 +2066,8 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
   // be read, so a free draft can never sneak past as paid (the slot-10 bug).
-  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
-  if (authoritativePassType === 'free') return null;
+  // Credit only a real PAID participant of this draft (see promoCreditAllowed).
+  if (!(await promoCreditAllowed(userId, draftId, passType, 'pick-10'))) return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -2139,8 +2203,9 @@ export async function recordJackpotHit(userId: string, draftId: string, passType
   // jackpot-hit promo. The draft token is stamped with the chosen pass type
   // (source of truth) — use it, falling back to the client value only when the
   // stamp can't be read, so a free draft can never sneak past as paid.
-  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
-  if (authoritativePassType === 'free') return null;
+  // Credit only a real PAID participant of this draft (see promoCreditAllowed).
+  // The winner re-derivation below is an additional jackpot-specific gate.
+  if (!(await promoCreditAllowed(userId, draftId, passType, 'jackpot'))) return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 

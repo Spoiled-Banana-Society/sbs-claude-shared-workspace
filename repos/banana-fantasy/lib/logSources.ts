@@ -126,6 +126,13 @@ export const LOG_SOURCES = {
     // Draft-complete promo crediting + the exposure recompute it triggers.
     DRAFT_COMPLETE_FAILED: 'promo.draft_complete.failed',
     EXPOSURE_RECOMPUTE_FAILED: 'promo.exposure_recompute_failed',
+    // Promo credit REFUSED: no pass stamp for this draft AND the caller is not in
+    // the draft's authoritative roster → a forged/unowned draftId. Anti-abuse
+    // signal; expected ~0 for real users (a real player is always in the roster).
+    PARTICIPATION_DENIED: 'promo.participation_denied',
+    // Promo participation couldn't be verified (roster read failed) — credited on
+    // the client value rather than punish a real user. Watch for spikes.
+    PARTICIPATION_UNVERIFIED: 'promo.participation_unverified',
   },
   marketplace: {
     BUY_EXECUTION_FAILED: 'marketplace.buy_execution_failed',
