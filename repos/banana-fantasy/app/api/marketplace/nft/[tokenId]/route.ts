@@ -1,8 +1,9 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
-import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT, COLLECTION_SLUG } from '@/lib/opensea';
+import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT } from '@/lib/opensea';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
@@ -86,32 +87,8 @@ export async function GET(
     const data = await res.json();
     const nft = data.nft ?? data;
 
-    // Also fetch active listing for this token (if any)
-    let listing = null;
-    try {
-      const listingsRes = await fetch(
-        `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-        {
-          headers: {
-            accept: 'application/json',
-            'x-api-key': OPENSEA_API_KEY,
-          },
-          cache: 'no-store',
-        },
-      );
-      if (listingsRes.ok) {
-        const listingsData = await listingsRes.json();
-        // Find the listing matching this tokenId
-        listing = (listingsData.listings ?? []).find((l: { protocol_data: { parameters: { offer: Array<{ itemType: number; identifierOrCriteria: string }> } } }) => {
-          const nftOffer = l.protocol_data.parameters.offer.find(
-            (o: { itemType: number }) => o.itemType === 2 || o.itemType === 3,
-          );
-          return nftOffer?.identifierOrCriteria === tokenId;
-        }) ?? null;
-      }
-    } catch {
-      // Silent — listing data is optional
-    }
+    // Active listing for this token (from the shared 15s listings cache).
+    let listing: unknown = (await getCollectionListings()).get(tokenId) ?? null;
 
     // Overlay our listing cache to bridge OpenSea's indexing lag: show a
     // just-created listing OpenSea hasn't indexed, hide a just-cancelled one it
@@ -140,44 +117,33 @@ export async function GET(
     const onchainOwner = await getOnchainOwner(tokenId);
     const owner = onchainOwner ?? nft.owners?.[0]?.address ?? null;
 
-    // Enrich owner with SBS profile + inject team data from our backend
+    // Enrich owner with SBS profile + inject team data from our backend.
+    // These four all depend only on `owner`, not on each other, so run them
+    // together instead of in series (was the bulk of the detail-page latency).
     let ownerName: string | null = null;
     let ownerPfp: string | null = null;
     let traits: NftTrait[] = Array.isArray(nft.traits) ? nft.traits : [];
     let team: TeamData | null = null;
-
-    if (owner) {
-      const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-        || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-      try {
-        const profileRes = await fetch(`${DRAFTS_API}/owner/${owner.toLowerCase()}`, {
-          signal: AbortSignal.timeout(2500),
-        });
-        if (profileRes.ok) {
-          const profile = await profileRes.json();
-          if (profile?.pfp?.displayName) ownerName = profile.pfp.displayName;
-          if (profile?.pfp?.imageUrl) ownerPfp = profile.pfp.imageUrl;
-        }
-      } catch { /* enrichment optional */ }
-    }
-
-    team = await getTeamForToken(tokenId, owner);
-    if (team) {
-      traits = mergeTraits(traits, teamDataToTraits(team));
-    }
-
-    // What the current owner paid for this team (so they can see "You paid $X").
     let pricePaid: number | null = null;
-    if (owner) {
-      try {
-        const trades = await getWalletTrades(owner);
-        pricePaid = trades.paidByToken.get(String(tokenId)) ?? null;
-      } catch { /* best-effort */ }
-    }
 
-    // The obsidian SBS card (grey pass / tier team) is the source of truth —
-    // it always wins over OpenSea's image. Keyed on realTokenId via our metadata.
-    const ogImage = await resolveTokenImage(tokenId, owner);
+    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const [profile, teamResult, trades, ogImage] = await Promise.all([
+      owner
+        ? fetch(`${DRAFTS_API}/owner/${owner.toLowerCase()}`, { signal: AbortSignal.timeout(2500) })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
+      getTeamForToken(tokenId, owner).catch(() => null),
+      owner ? getWalletTrades(owner).catch(() => null) : Promise.resolve(null),
+      resolveTokenImage(tokenId, owner).catch(() => ''),
+    ]);
+
+    if (profile?.pfp?.displayName) ownerName = profile.pfp.displayName;
+    if (profile?.pfp?.imageUrl) ownerPfp = profile.pfp.imageUrl;
+    team = teamResult;
+    if (team) traits = mergeTraits(traits, teamDataToTraits(team));
+    if (trades) pricePaid = trades.paidByToken.get(String(tokenId)) ?? null;
     return json({
       ...nft,
       traits,

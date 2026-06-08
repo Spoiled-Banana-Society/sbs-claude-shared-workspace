@@ -20,6 +20,14 @@ export const dynamic = 'force-dynamic';
 
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
+// Short-lived cache of a wallet's raw owned-NFT list. Paginating a whale's
+// holdings (admin owns 600+ passes → 3-4 serial OpenSea pages) is what made the
+// Sell page take ~8s. Ownership changes only on buy/sell, and the recent-trades
+// overlay below ADDS just-bought / REMOVES just-sold teams on every request, so
+// a stale-by-≤45s raw list is reconciled to the truth — reloads are instant.
+const ownedCache = new Map<string, { ts: number; nfts: OpenSeaNft[] }>();
+const OWNED_TTL_MS = 45_000;
+
 /**
  * GET /api/marketplace/nfts?owner=0x...
  *
@@ -51,29 +59,38 @@ export async function GET(req: Request) {
     // Paginate owned NFTs via the `next` cursor — a heavy holder (e.g. someone
     // with many unused draft passes) owns more than one page, and the old
     // single 200-item fetch silently truncated the Sell list. Capped at
-    // MAX_PAGES to bound work.
+    // MAX_PAGES to bound work. Served from a 45s per-owner cache (the slow part)
+    // so reloads are instant; the recent-trades overlay below keeps it correct.
     const rawNfts: OpenSeaNft[] = [];
     let nftFetchFailed: { status: number; text: string } | null = null;
-    let cursor = '';
-    const MAX_PAGES = 10;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const nftParams = new URLSearchParams({ collection: COLLECTION_SLUG, limit: '200' });
-      if (cursor) nftParams.set('next', cursor);
-      const pageRes = await fetch(
-        `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/account/${owner}/nfts?${nftParams}`,
-        {
-          headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
-          cache: 'no-store',
-        },
-      );
-      if (!pageRes.ok) {
-        nftFetchFailed = { status: pageRes.status, text: await pageRes.text() };
-        break;
+    const cacheKey = owner.toLowerCase();
+    const cachedOwned = ownedCache.get(cacheKey);
+    if (cachedOwned && Date.now() - cachedOwned.ts < OWNED_TTL_MS) {
+      rawNfts.push(...cachedOwned.nfts);
+    } else {
+      let cursor = '';
+      const MAX_PAGES = 10;
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const nftParams = new URLSearchParams({ collection: COLLECTION_SLUG, limit: '200' });
+        if (cursor) nftParams.set('next', cursor);
+        const pageRes = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/account/${owner}/nfts?${nftParams}`,
+          {
+            headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
+            cache: 'no-store',
+          },
+        );
+        if (!pageRes.ok) {
+          nftFetchFailed = { status: pageRes.status, text: await pageRes.text() };
+          break;
+        }
+        const pageData = await pageRes.json();
+        rawNfts.push(...((pageData.nfts ?? []) as OpenSeaNft[]));
+        if (!pageData.next) break;
+        cursor = pageData.next;
       }
-      const pageData = await pageRes.json();
-      rawNfts.push(...((pageData.nfts ?? []) as OpenSeaNft[]));
-      if (!pageData.next) break;
-      cursor = pageData.next;
+      // Cache only a fully-successful pagination (don't pin a partial/failed list).
+      if (!nftFetchFailed) ownedCache.set(cacheKey, { ts: Date.now(), nfts: [...rawNfts] });
     }
 
     const listingsRes = await listingsPromise;

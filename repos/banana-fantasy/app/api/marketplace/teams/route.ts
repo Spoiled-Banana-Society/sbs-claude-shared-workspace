@@ -2,15 +2,12 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import {
-  OPENSEA_API_BASE,
-  COLLECTION_SLUG,
   type DraftType,
   type MarketplaceTeam,
 } from '@/lib/opensea';
+import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 
 export const dynamic = 'force-dynamic';
-
-const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
 function colorForDraftType(dt: DraftType): string {
   return dt === 'jackpot' ? 'from-error to-red-700' : dt === 'hof' ? 'from-hof to-pink-600' : 'from-pro to-blue-600';
@@ -74,34 +71,20 @@ export async function GET(req: Request) {
       };
     });
 
-    // Overlay OpenSea listings for live price/owner on listed teams (one call).
-    if (OPENSEA_API_KEY) {
-      try {
-        const res = await fetch(
-          `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const byId = new Map<string, { price?: { current?: { value?: string; decimals?: number } }; order_hash: string; protocol_address: string; protocol_data: { parameters: { offerer: string } } }>();
-          for (const l of (data.listings ?? [])) {
-            const off = l.protocol_data.parameters.offer.find((o: { itemType: number }) => o.itemType === 2 || o.itemType === 3);
-            if (off?.identifierOrCriteria) byId.set(off.identifierOrCriteria, l);
-          }
-          for (const t of teams) {
-            const l = byId.get(t.tokenId);
-            if (l) {
-              const v = l.price?.current?.value;
-              const dec = l.price?.current?.decimals ?? 18;
-              t.price = v ? Number(v) / Math.pow(10, dec) : null;
-              t.orderHash = l.order_hash;
-              t.protocolAddress = l.protocol_address;
-              t.ownerAddress = l.protocol_data.parameters.offerer;
-              t.owner = `${t.ownerAddress.slice(0, 6)}...${t.ownerAddress.slice(-4)}`;
-            }
-          }
-        }
-      } catch { /* listings are best-effort overlay */ }
+    // Overlay OpenSea listings for live price/owner on listed teams. Shared 15s
+    // cache so the Jackpot/HOF/League filters don't re-fetch it every call.
+    const byId = await getCollectionListings();
+    for (const t of teams) {
+      const l = byId.get(t.tokenId);
+      if (l) {
+        const v = l.price?.current?.value;
+        const dec = l.price?.current?.decimals ?? 18;
+        t.price = v ? Number(v) / Math.pow(10, dec) : null;
+        t.orderHash = l.order_hash;
+        t.protocolAddress = l.protocol_address;
+        t.ownerAddress = l.protocol_data.parameters.offerer;
+        t.owner = `${t.ownerAddress.slice(0, 6)}...${t.ownerAddress.slice(-4)}`;
+      }
     }
 
     return json({ nfts: teams, next: null });

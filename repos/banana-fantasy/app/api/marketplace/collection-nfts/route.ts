@@ -7,9 +7,9 @@ import {
   mapOpenSeaNftToTeam,
   type MarketplaceTeam,
   type OpenSeaNft,
-  type OpenSeaListing,
 } from '@/lib/opensea';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 
 /**
  * Overlay our canonical card image + league number from the marketplace_index.
@@ -111,24 +111,8 @@ export async function GET(req: Request) {
       next = pageNext;
     }
 
-    // Cross-reference active listings for price/owner (best-effort).
-    const listingsMap = new Map<string, OpenSeaListing>();
-    try {
-      const listingsRes = await fetch(
-        `${OPENSEA_API_BASE}/api/v2/listings/collection/${COLLECTION_SLUG}/all?limit=50`,
-        { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
-      );
-      if (listingsRes.ok) {
-        const listingsData = await listingsRes.json();
-        for (const listing of (listingsData.listings ?? [])) {
-          const nftOffer = listing.protocol_data.parameters.offer.find(
-            (o: { itemType: number }) => o.itemType === 2 || o.itemType === 3,
-          );
-          const tid = nftOffer?.identifierOrCriteria;
-          if (tid) listingsMap.set(tid, listing);
-        }
-      }
-    } catch { /* silent — listings are enrichment */ }
+    // Cross-reference active listings for price/owner (shared 15s cache).
+    const listingsMap = await getCollectionListings();
 
     for (const team of teams) {
       const listing = listingsMap.get(team.tokenId);
