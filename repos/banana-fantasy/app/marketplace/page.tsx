@@ -226,7 +226,10 @@ export default function MarketplacePage() {
     if (viewFilter === 'jackpot' && !team.isJackpot) return false;
     if (viewFilter === 'hof' && !team.isHof) return false;
     if (viewFilter === 'pro' && (team.isJackpot || team.isHof)) return false;
-    if (viewFilter === 'top' && team.points <= 0) return false;
+    // Top Teams = only teams with real accrued points. Pre-season every team has
+    // 0/undefined points, so this empties Top Teams until games start (an
+    // undefined `points` must also be excluded — `undefined <= 0` is false).
+    if (viewFilter === 'top' && !(team.points > 0)) return false;
     if (viewFilter === 'listed' || viewFilter === 'all') {
       if (hofFilter && !team.isHof) return false;
       if (jackpotFilter && !team.isJackpot) return false;

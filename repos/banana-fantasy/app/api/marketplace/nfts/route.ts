@@ -3,7 +3,6 @@ import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import {
   OPENSEA_API_BASE,
-  OPENSEA_CHAIN,
   BBB4_CONTRACT,
   COLLECTION_SLUG,
   mapOpenSeaNftToTeam,
@@ -68,28 +67,33 @@ export async function GET(req: Request) {
     if (cachedOwned && Date.now() - cachedOwned.ts < OWNED_TTL_MS) {
       rawNfts.push(...cachedOwned.nfts);
     } else {
-      let cursor = '';
-      const MAX_PAGES = 10;
-      for (let page = 0; page < MAX_PAGES; page++) {
-        const nftParams = new URLSearchParams({ collection: COLLECTION_SLUG, limit: '200' });
-        if (cursor) nftParams.set('next', cursor);
-        const pageRes = await fetch(
-          `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/account/${owner}/nfts?${nftParams}`,
-          {
-            headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY },
-            cache: 'no-store',
-          },
-        );
-        if (!pageRes.ok) {
-          nftFetchFailed = { status: pageRes.status, text: await pageRes.text() };
-          break;
-        }
-        const pageData = await pageRes.json();
-        rawNfts.push(...((pageData.nfts ?? []) as OpenSeaNft[]));
-        if (!pageData.next) break;
-        cursor = pageData.next;
+      // Ownership comes from Alchemy (the chain) — ONE fast paginated call for the
+      // whole wallet, vs OpenSea's 3-4 serial account pages that made the Sell page
+      // take ~8s and silently returned empty when rate-limited. We need only the
+      // token ids here; image/traits/name are rebuilt from our backend below.
+      try {
+        const alchemyBase = (process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || '').replace('/v2/', '/nft/v3/').replace(/\/$/, '');
+        if (!alchemyBase) throw new Error('Alchemy RPC url not configured');
+        let pageKey: string | undefined;
+        do {
+          const u = new URL(alchemyBase + '/getNFTsForOwner');
+          u.searchParams.set('owner', owner);
+          u.searchParams.append('contractAddresses[]', BBB4_CONTRACT);
+          u.searchParams.set('withMetadata', 'false');
+          if (pageKey) u.searchParams.set('pageKey', pageKey);
+          const r = await fetch(u, { cache: 'no-store' });
+          if (!r.ok) { nftFetchFailed = { status: r.status, text: await r.text() }; break; }
+          const d = await r.json();
+          for (const n of (d.ownedNfts ?? [])) {
+            const tid = String(BigInt(n.tokenId));
+            rawNfts.push({ identifier: tid, contract: BBB4_CONTRACT, traits: [], name: null, image_url: '', display_image_url: '' } as unknown as OpenSeaNft);
+          }
+          pageKey = d.pageKey;
+        } while (pageKey);
+      } catch (e) {
+        nftFetchFailed = { status: 502, text: String(e) };
       }
-      // Cache only a fully-successful pagination (don't pin a partial/failed list).
+      // Cache only a fully-successful fetch (don't pin a partial/failed list).
       if (!nftFetchFailed) ownedCache.set(cacheKey, { ts: Date.now(), nfts: [...rawNfts] });
     }
 

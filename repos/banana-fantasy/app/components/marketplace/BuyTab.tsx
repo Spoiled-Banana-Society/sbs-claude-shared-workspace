@@ -454,7 +454,7 @@ export function BuyTab({
                           event.preventDefault();
                           onMakeOffer(team.tokenId);
                         }}
-                        className="px-5 py-2.5 border border-banana text-banana text-sm font-semibold rounded-xl hover:bg-banana/10 transition-all"
+                        className="px-9 py-3.5 -mt-1 border border-banana text-banana text-base font-bold rounded-xl hover:bg-banana hover:text-black transition-all"
                       >
                         Make Offer
                       </button>
