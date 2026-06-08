@@ -113,12 +113,15 @@ export function AvatarWithBadge({
   // (derived from `ripeness`; Unripe for everyone else). A stale equipped id
   // from the old catalog falls back to the banana rather than rendering
   // nothing. So every avatar always shows a badge.
-  const defaultBananaId = ripeness?.label
+  // The default banana is EARNED, not given: it only shows once the user has
+  // completed >= 1 paid draft (ripeness.count). A brand-new wallet (0 paid
+  // drafts) shows NO badge unless it has equipped one (e.g. an NFL team badge).
+  const earnedBananaId = ripeness?.label && (ripeness.count ?? 0) >= 1
     ? `ripeness-${ripeness.label.toLowerCase()}`
-    : 'ripeness-unripe';
+    : null;
   const equippedValid = equippedBadge && BADGE_BY_ID[equippedBadge] ? equippedBadge : null;
-  const effectiveBadgeId = equippedValid || defaultBananaId;
-  const badge = showBadge ? (BADGE_BY_ID[effectiveBadgeId] || BADGE_BY_ID['ripeness-unripe']) : undefined;
+  const effectiveBadgeId = equippedValid || earnedBananaId;
+  const badge = showBadge && effectiveBadgeId ? BADGE_BY_ID[effectiveBadgeId] : undefined;
   // Every avatar renders full-frame (object-cover fills the circle), so the
   // badge sits at the identical size + position on ALL of them — banana,
   // upload, anything. The default banana is itself a full-frame image now (a

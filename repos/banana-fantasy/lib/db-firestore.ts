@@ -2557,10 +2557,10 @@ export async function computeAndStoreRipeness(userId: string, paidCount: number)
     .collection(USERS_COLLECTION)
     .doc(lower)
     .set({ ripeness }, { merge: true });
-  // Unlock the earned tier badges (Unripe is always-unlocked → skip). Not
-  // silent: ripening into a new tier should fire a bell + toast.
+  // Unlock the earned tier badges — INCLUDING the first Unripe banana, which is
+  // now earned at 1 paid draft (not handed out at 0). Not silent: ripening into
+  // a new tier (the very first banana included) fires a bell + toast.
   for (const id of unlockedRipenessIds(paidCount)) {
-    if (id === 'ripeness-unripe') continue;
     await unlockBadge(lower, id, { source: 'ripeness', paidCount });
   }
   return ripeness;

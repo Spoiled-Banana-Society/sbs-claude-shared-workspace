@@ -33,7 +33,7 @@ export interface RipenessTier {
 // Ordered low → high. Colors progress green → lime → yellow → orange → brown →
 // dark (Spoiled darkest = most spoiled, framed in gold).
 export const RIPENESS_TIERS: RipenessTier[] = [
-  { key: 'unripe', min: 0, label: 'Unripe', color: '#4e9a2f', range: '1–9' },
+  { key: 'unripe', min: 1, label: 'Unripe', color: '#4e9a2f', range: '1–9' },
   { key: 'fresh', min: 10, label: 'Fresh', color: '#aecb2b', range: '10–19' },
   { key: 'ripe', min: 20, label: 'Ripe', color: '#f7d117', range: '20–49' },
   { key: 'overripe', min: 50, label: 'Overripe', color: '#f0901b', range: '50–99' },
@@ -46,8 +46,10 @@ export function ripenessBadgeId(key: string): string {
   return `ripeness-${key}`;
 }
 
-/** Compute the CURRENT (highest reached) tier from a paid-pass count. Always
- *  returns a tier (0 paid → Unripe), so every user has a banana. */
+/** Compute the CURRENT (highest reached) tier from a paid-DRAFTS-done count.
+ *  Returns a tier object for any count (0 → Unripe shell with count:0), but the
+ *  banana badge is only EARNED at 1+ paid drafts — callers gate display on
+ *  `count >= 1` so a brand-new wallet (0 drafts) shows NO badge. */
 export function ripenessFromCount(count: number): Ripeness {
   const safe = Math.max(0, Math.floor(count || 0));
   // Highest tier whose threshold the count meets.

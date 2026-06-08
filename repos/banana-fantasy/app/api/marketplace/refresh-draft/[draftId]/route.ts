@@ -6,6 +6,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
+import { computeAndStoreRipeness, countPaidDraftsDone } from '@/lib/db';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 import { logger } from '@/lib/logger';
@@ -102,6 +103,28 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
 }
 
 /**
+ * Credit banana ripeness to every participant the instant the draft FILLS.
+ * Recomputes each owner's tier from their paid-drafts-done count, which unlocks
+ * the earned ripeness badge (the FIRST Unripe banana at 1 paid draft) and fires
+ * the bell + toast. Best-effort per owner; never blocks the draft close.
+ */
+async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
+  const db = getAdminFirestore();
+  const owners = new Set<string>();
+  await Promise.all(tokenIds.map(async (id) => {
+    try {
+      const snap = await db.collection('draftTokens').doc(id).get();
+      const o = String(snap.get('OwnerId') ?? snap.get('_ownerId') ?? snap.get('ownerId') ?? '').toLowerCase();
+      if (o && !o.startsWith('bot-')) owners.add(o);
+    } catch { /* skip */ }
+  }));
+  await Promise.all([...owners].map(async (o) => {
+    try { await computeAndStoreRipeness(o, await countPaidDraftsDone(o)); }
+    catch (err) { logger.warn('marketplace.refresh_draft_ripeness_failed', { owner: o, error: String(err) }); }
+  }));
+}
+
+/**
  * POST /api/marketplace/refresh-draft/[draftId]
  *
  * Fired once when a draft closes. Asks OpenSea to re-fetch metadata for ALL 10
@@ -171,6 +194,10 @@ export async function POST(
     // refresh below pulls the new card art (not the old Go GCS image).
     const imagesWritten = await writeFullDataImages(draftId, tokenIds);
     logger.info('marketplace.refresh_draft_images', { draftId, imagesWritten, total: tokenIds.length });
+
+    // Draft has filled → credit banana ripeness to each participant (unlocks the
+    // earned tier badge + fires the bell/toast). Awaited so it lands; best-effort.
+    await creditDraftRipeness(tokenIds);
 
     const results = await Promise.allSettled(tokenIds.map((id) => refreshToken(id)));
     const ok = (i: number) =>
