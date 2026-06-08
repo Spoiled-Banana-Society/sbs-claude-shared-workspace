@@ -32,35 +32,16 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   }
 
   if (!card.drafted) {
-    // STICKY: drafting is ONE-WAY (pass → team, never back). If the index
-    // already recorded this token as a TEAM, the live resolve just flaked
-    // (staging on-chain↔card duality) — render the stored team, never downgrade
-    // a real drafted team to a grey pass on OpenSea/marketplace.
-    if (isFirestoreConfigured()) {
-      try {
-        const idxSnap = await getAdminFirestore().collection('marketplace_index').doc(tokenId).get();
-        const idx = idxSnap.exists ? (idxSnap.data() as Record<string, unknown>) : null;
-        if (idx && idx.status === 'team' && idx.image) {
-          const lvl = String(idx.level || 'pro');
-          const levelLabel = lvl === 'jackpot' ? 'Jackpot' : lvl === 'hof' ? 'Hall of Fame' : 'Pro';
-          const roster = Array.isArray(idx.roster) ? (idx.roster as string[]) : [];
-          const ln = typeof idx.leagueNumber === 'number' ? idx.leagueNumber : null;
-          return new Response(JSON.stringify({
-            name: `Banana Best Ball IV — Team #${tokenId}`,
-            description: 'A Banana Best Ball IV team — onchain fantasy football on Base.',
-            image: idx.image as string,
-            attributes: [
-              { trait_type: 'Status', value: 'Team' },
-              { trait_type: 'Team #', value: tokenId },
-              ...(ln != null ? [{ trait_type: 'League #', value: String(ln) }] : []),
-              { trait_type: 'Level', value: levelLabel },
-              ...roster.map((r, i) => ({ trait_type: `Slot ${i + 1}`, value: r })),
-            ],
-          }), { status: 200, headers });
-        }
-      } catch { /* fall through to pass */ }
-    }
-
+    // Authoritative: resolveCard already consulted the Go API's CURRENT
+    // pass/team split (classifyToken). If it says this token is an undrafted
+    // pass, render the grey pass — do NOT second-guess it from the index.
+    //
+    // We deliberately do NOT "stick" a prior index 'team' record here. On
+    // staging, on-chain ids get reused across contract eras (a number that was
+    // a drafted team last era is re-minted as a fresh pass this era), so
+    // "once a team, always a team" is FALSE and would freeze those ghosts as
+    // teams forever, blocking the index's self-healing. The pass-upsert below
+    // heals any stale 'team' record back to 'pass'.
     const passType = passTypeLabel(card.passType);
     // Self-healing stamp. Awaited (best-effort, never throws) because Vercel
     // freezes the function after the response — a fire-and-forget write wouldn't
