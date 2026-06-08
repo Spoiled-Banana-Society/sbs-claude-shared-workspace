@@ -11,34 +11,51 @@ import {
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 
+function colorForLevel(level: string): string {
+  return level === 'jackpot' ? 'from-error to-red-700' : level === 'hof' ? 'from-hof to-pink-600' : 'from-pro to-blue-600';
+}
+
 /**
- * Overlay our canonical card image + league number from the marketplace_index.
- * OpenSea serves a CDN-resized image (i2c.seadn.io) that crops our 4:5 obsidian
- * card, so a team here looked cut-off while the index-sourced views were clean.
- * The index holds the exact `/api/og/team-card` URL (and the corrected league #),
- * so prefer it whenever the token is indexed. Best-effort; never throws.
+ * Make the marketplace_index the SOURCE OF TRUTH for every token OpenSea returns.
+ * OpenSea serves a CDN-cropped image (i2c.seadn.io) AND can be stale on staging
+ * (a reused-era id it still labels a "team" is really a pass in our backend). So
+ * for any indexed token we override the card with OUR data + clean `/api/og/
+ * team-card` image — NEVER OpenSea's. Reused-id passes get `roster: []` so the
+ * page's existing "hide passes" filter drops them from the teams grid. Best-
+ * effort; never throws.
  */
-async function overlayIndexImages(teams: MarketplaceTeam[]): Promise<void> {
+async function overlayIndexData(teams: MarketplaceTeam[]): Promise<void> {
   if (!isFirestoreConfigured() || teams.length === 0) return;
   try {
     const db = getAdminFirestore();
     const ids = [...new Set(teams.map((t) => t.tokenId).filter((id) => /^\d+$/.test(id)))];
-    const byId = new Map<string, { image?: string; leagueNumber?: number | null }>();
+    const byId = new Map<string, Record<string, unknown>>();
     for (let i = 0; i < ids.length; i += 300) {
       const refs = ids.slice(i, i + 300).map((id) => db.collection('marketplace_index').doc(id));
       const snaps = await db.getAll(...refs);
-      for (const s of snaps) {
-        if (!s.exists) continue;
-        const d = s.data() as Record<string, unknown>;
-        if (d.status === 'team') byId.set(s.id, { image: d.image as string, leagueNumber: (d.leagueNumber as number) ?? null });
-      }
+      for (const s of snaps) if (s.exists) byId.set(s.id, s.data() as Record<string, unknown>);
     }
     for (const t of teams) {
       const idx = byId.get(t.tokenId);
-      if (idx?.image) t.imageUrl = idx.image;
-      if (idx && idx.leagueNumber != null) t.leagueNumber = idx.leagueNumber;
+      if (!idx) continue;
+      // Always our image — never OpenSea's cropped CDN copy.
+      if (idx.image) t.imageUrl = idx.image as string;
+      if (idx.status === 'team') {
+        const lvl = String(idx.level || 'pro');
+        t.draftType = lvl as MarketplaceTeam['draftType'];
+        t.isJackpot = lvl === 'jackpot';
+        t.isHof = lvl === 'hof';
+        t.color = colorForLevel(lvl);
+        t.leagueNumber = (idx.leagueNumber as number) ?? null;
+        if (Array.isArray(idx.roster) && idx.roster.length) t.roster = idx.roster as string[];
+        t.name = `Team #${t.tokenId}`;
+      } else {
+        // Our backend says this id is an undrafted pass (stale OpenSea "team").
+        // Empty roster → the marketplace's hide-passes filter removes it.
+        t.roster = [];
+      }
     }
-  } catch { /* keep OpenSea images */ }
+  } catch { /* keep OpenSea data */ }
 }
 
 export const dynamic = 'force-dynamic';
@@ -154,9 +171,9 @@ export async function GET(req: Request) {
       }
     } catch { /* enrichment failed */ }
 
-    // Prefer our clean obsidian card image (+ corrected league #) over OpenSea's
-    // cropped CDN image for any team we've indexed.
-    await overlayIndexImages(teams);
+    // Make our backend index authoritative: our clean card image + data for
+    // every indexed token, never OpenSea's cropped/stale copy.
+    await overlayIndexData(teams);
 
     return json({ nfts: teams, next });
   } catch (err) {

@@ -19,6 +19,8 @@ import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { UserPopover } from '@/components/social/UserPopover';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import type { Ripeness } from '@/types';
 import { logger } from '@/lib/logger';
 
 interface NftTrait {
@@ -36,6 +38,8 @@ interface NftDetail {
   owner: string | null;
   ownerName: string | null;
   ownerPfp: string | null;
+  ownerBadge?: string | null;
+  ownerRipeness?: Ripeness | null;
   pricePaid?: number | null;
   listing: {
     order_hash: string;
@@ -928,12 +932,21 @@ export default function NftDetailPage() {
             </a>
             {nftOwner && (
               <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
-                  {nft.ownerPfp ? (
-                    <Image src={nft.ownerPfp} alt="" width={16} height={16} className="rounded-full" />
-                  ) : null}
+                <span className="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
+                  {/* Banana pfp + name by default; their custom pfp/name if set;
+                      a badge ONLY if they've equipped/earned one (no default badge). */}
+                  <AvatarWithBadge
+                    imageUrl={nft.ownerPfp}
+                    alt={nft.ownerName ?? 'owner'}
+                    size={20}
+                    equippedBadge={nft.ownerBadge ?? null}
+                    ripeness={nft.ownerRipeness ?? null}
+                    showBadge={!!nft.ownerBadge || (!!nft.ownerRipeness && nft.ownerRipeness.count >= 1)}
+                    useNextImage={false}
+                    badgeRingColor="#13141a"
+                  />
                   <span className="text-text-muted">Owner</span>
-                  <span className="text-text-secondary font-mono">
+                  <span className="text-text-secondary">
                     {nft.ownerName || `${nftOwner.slice(0, 6)}…${nftOwner.slice(-4)}`}
                   </span>
                 </span>

@@ -8,6 +8,8 @@ import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getTeamForToken, getOwnerForToken, teamDataToTraits, mergeTraits, type NftTrait, type TeamData } from '@/lib/marketplace/teamData';
 import { resolveTokenImage } from '@/lib/nftCardServer';
+import { getUserDisplayBatch } from '@/lib/db';
+import type { Ripeness } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,25 +124,40 @@ export async function GET(
     // together instead of in series (was the bulk of the detail-page latency).
     let ownerName: string | null = null;
     let ownerPfp: string | null = null;
+    let ownerBadge: string | null = null;
+    let ownerRipeness: Ripeness | null = null;
     let traits: NftTrait[] = Array.isArray(nft.traits) ? nft.traits : [];
     let team: TeamData | null = null;
     let pricePaid: number | null = null;
 
     const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
       || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-    const [profile, teamResult, trades, ogImage] = await Promise.all([
-      owner
-        ? fetch(`${DRAFTS_API}/owner/${owner.toLowerCase()}`, { signal: AbortSignal.timeout(2500) })
+    const ownerLc = owner ? owner.toLowerCase() : null;
+    const [profile, displays, teamResult, trades, ogImage] = await Promise.all([
+      ownerLc
+        ? fetch(`${DRAFTS_API}/owner/${ownerLc}`, { signal: AbortSignal.timeout(2500) })
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null)
         : Promise.resolve(null),
+      ownerLc ? getUserDisplayBatch([ownerLc]).catch(() => ({})) : Promise.resolve({}),
       getTeamForToken(tokenId, owner).catch(() => null),
       owner ? getWalletTrades(owner).catch(() => null) : Promise.resolve(null),
       resolveTokenImage(tokenId, owner).catch(() => ''),
     ]);
 
-    if (profile?.pfp?.displayName) ownerName = profile.pfp.displayName;
-    if (profile?.pfp?.imageUrl) ownerPfp = profile.pfp.imageUrl;
+    // Owner display identity: custom username → legacy Go name → permanent
+    // "Banana{N}" handle. Pfp: custom → Go pfp → null (UI shows the banana).
+    // Badge: ONLY their equipped badge (an NFL team or an EARNED ripeness banana
+    // from ≥1 paid draft). There is NO default badge — a brand-new wallet shows
+    // just the banana avatar + name, no badge. ripeness is returned so the UI can
+    // render the earned banana badge for drafters who haven't equipped another.
+    const v2 = ownerLc ? (displays as Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }>)[ownerLc] : null;
+    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc ? profile.pfp.displayName : null;
+    const bananaName = v2?.bananaNumber != null ? `Banana${v2.bananaNumber}` : null;
+    ownerName = v2?.username || goName || bananaName;
+    ownerPfp = v2?.profilePicture || profile?.pfp?.imageUrl || null;
+    ownerBadge = v2?.equippedBadge ?? null;
+    ownerRipeness = v2?.ripeness ?? null;
     team = teamResult;
     if (team) traits = mergeTraits(traits, teamDataToTraits(team));
     if (trades) pricePaid = trades.paidByToken.get(String(tokenId)) ?? null;
@@ -157,6 +174,8 @@ export async function GET(
       owner,
       ownerName,
       ownerPfp,
+      ownerBadge,
+      ownerRipeness,
       pricePaid,
       team,
       listing,
