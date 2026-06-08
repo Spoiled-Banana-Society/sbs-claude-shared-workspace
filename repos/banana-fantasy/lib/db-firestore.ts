@@ -5,7 +5,6 @@ import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
 import { logger } from '@/lib/logger';
-import { LOG_SOURCES } from '@/lib/logSources';
 import { verifyPurchaseTx } from '@/lib/onchain/verifyPurchaseTx';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
@@ -1865,100 +1864,45 @@ export async function recordFirstPurchaseDraftFinished(userId: string, draftId: 
 }
 
 /**
- * Looks up the token the user holds for `draftId` from the Go API (the source
- * of truth — every draft token is stamped with the pass type chosen at entry,
- * and a token only exists for a draft the user actually entered). Distinguishes
- * four cases so promo crediting can both block free drafts AND require real
- * participation:
+ * Authoritative pass type ('free' | 'paid') for the token bound to `draftId`,
+ * read from the Go API — every draft token is stamped with the pass type the
+ * user actually chose at entry (DraftToken.PassType, the source of truth).
  *
- *   { passType: 'free',  confirmed: true }   token found, free stamp
- *   { passType: 'paid',  confirmed: true }   token found, paid/blank stamp (real participant)
- *   { passType: null,    confirmed: true }   API OK, NO token for this draft → not a participant
- *   { passType: null,    confirmed: false }  API error/timeout → couldn't determine
+ * Promos must NEVER be earned with a free draft. The client tells us the pass
+ * type, but a free draft that lost its `passType` URL hint defaults to 'paid'
+ * client-side and would slip past the free gate — that's the Pick-10-on-a-free-
+ * draft bug. So we read the real stamp here instead of trusting the client.
  *
- * `confirmed` is the key distinction: a CONFIRMED "no token" means the wallet
- * provably never entered this draft (a forged / unowned draftId), whereas an
- * unconfirmed null is just a transient lookup failure we must not punish.
+ * Returns `null` when it can't be determined (token not found / no stamp / API
+ * error); callers then fall back to the client value (today's behavior — no
+ * regression for legacy tokens), so this only ever makes the gate STRICTER.
  */
-type DraftEntry = { passType: 'free' | 'paid' | null; confirmed: boolean };
-
-async function resolveDraftEntry(userId: string, draftId: string): Promise<DraftEntry> {
-  if (!draftId) return { passType: null, confirmed: false };
+async function resolveDraftPassType(userId: string, draftId: string): Promise<'free' | 'paid' | null> {
+  if (!draftId) return null;
   const lower = userId.toLowerCase();
   const baseUrl = (
     process.env.STAGING_DRAFTS_API_URL ||
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
-
-  // One Go-API read (the SAME call this gate has always made — no added latency
-  // on the normal path). Returns confirmed:true only when the API actually
-  // answered; a thrown error means we couldn't reach it.
-  const attempt = async (): Promise<DraftEntry> => {
+  try {
     const res = await fetch(`${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) throw new Error(`draftToken/all HTTP ${res.status}`);
+    if (!res.ok) return null;
     const body = (await res.json()) as {
       active?: Array<Record<string, unknown>>;
       available?: Array<Record<string, unknown>>;
     };
     const all = [...(body.active ?? []), ...(body.available ?? [])];
     const tok = all.find((t) => String(t._leagueId ?? t.leagueId ?? '') === draftId);
-    if (!tok) return { passType: null, confirmed: true }; // API OK, holds no token for this draft
-    const pt = String(tok.passType ?? '');
-    if (pt === 'free') return { passType: 'free', confirmed: true };
-    return { passType: 'paid', confirmed: true }; // paid or blank stamp → real participant
-  };
-
-  try {
-    return await attempt();
+    const pt = tok ? String(tok.passType ?? '') : '';
+    if (pt === 'free') return 'free';
+    if (pt === 'paid') return 'paid';
+    return null; // unknown — caller falls back to the client-supplied value
   } catch {
-    // Self-heal a one-off blip with a single retry before we conclude "can't
-    // confirm". Only runs on failure, so the normal (success) path is untouched.
-    try {
-      return await attempt();
-    } catch {
-      return { passType: null, confirmed: false }; // couldn't reach Go — unconfirmed
-    }
+    return null;
   }
-}
-
-/**
- * THE shared promo-credit gate for every auto-fired draft promo (daily-drafts,
- * pick-10, jackpot). Credit is granted ONLY when the Go API positively confirms
- * the user holds a PAID token for that exact draft. Anything else earns nothing
- * — we never hand out a promo on a guess:
- *
- *  - paid token         → true  (the only path that earns credit)
- *  - free token         → false (free drafts never earn promos)
- *  - confirmed no token → false (forged/unowned draftId — closes "promo credit
- *                          out of thin air"; logged as an anti-abuse signal)
- *  - couldn't confirm   → false (Go unreachable even after a retry — we do NOT
- *                          credit on uncertainty; logged so it's never invisible)
- *
- * In normal play this never denies a real paid user: the same Go API just ran
- * the draft to fill it, so it's up and the paid token is found. `clientPassType`
- * is recorded for forensics only — it never influences the decision (that's the
- * whole point: don't trust the client). Centralized so all three promos enforce
- * the identical rule and can't drift.
- */
-async function promoCreditAllowed(
-  userId: string,
-  draftId: string,
-  promoTag: string,
-  clientPassType?: string,
-): Promise<boolean> {
-  const entry = await resolveDraftEntry(userId, draftId);
-  if (entry.passType === 'paid') return true;   // confirmed paid → counts
-  if (entry.passType === 'free') return false;  // free draft → never earns (expected, no log)
-  // No paid token confirmed → no credit. Log WHY so a wrongly-denied real user
-  // (which should never happen in normal play) is immediately visible.
-  const source = entry.confirmed
-    ? LOG_SOURCES.promo.PARTICIPATION_DENIED      // API said: holds no token for this draft
-    : LOG_SOURCES.promo.PARTICIPATION_UNVERIFIED; // couldn't reach Go to confirm
-  logger.warn(source, { actor: userId, context: { draftId, promo: promoTag, clientClaimed: clientPassType } });
-  return false;
 }
 
 export async function recordDraftCompletion(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
@@ -1973,9 +1917,8 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
   // pass earns zero daily-drafts credit. The token is stamped with the chosen
   // pass type (source of truth) — use it, falling back to the client value only
   // when the stamp can't be read, so a free draft can never sneak past as paid.
-  // Credit only a CONFIRMED paid draft. Free drafts, forged/unowned draftIds,
-  // and unverifiable calls all earn nothing (see promoCreditAllowed).
-  if (!(await promoCreditAllowed(userId, draftId, 'daily-drafts', passType))) {
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') {
     return { promo: null as Promo | null, justBecameClaimable: false } as unknown as Promo | null;
   }
   const db = getAdminFirestore();
@@ -2059,8 +2002,8 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
   // be read, so a free draft can never sneak past as paid (the slot-10 bug).
-  // Credit only a CONFIRMED paid draft (see promoCreditAllowed).
-  if (!(await promoCreditAllowed(userId, draftId, 'pick-10', passType))) return null;
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
@@ -2196,9 +2139,8 @@ export async function recordJackpotHit(userId: string, draftId: string, passType
   // jackpot-hit promo. The draft token is stamped with the chosen pass type
   // (source of truth) — use it, falling back to the client value only when the
   // stamp can't be read, so a free draft can never sneak past as paid.
-  // Credit only a CONFIRMED paid draft (see promoCreditAllowed). The winner
-  // re-derivation below is an additional jackpot-specific gate on top.
-  if (!(await promoCreditAllowed(userId, draftId, 'jackpot', passType))) return null;
+  const authoritativePassType = (await resolveDraftPassType(userId, draftId)) ?? passType;
+  if (authoritativePassType === 'free') return null;
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
