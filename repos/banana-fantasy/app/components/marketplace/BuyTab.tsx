@@ -7,7 +7,7 @@ import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 
-type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type CardFlowStep = 'idle' | 'funding' | 'waiting' | 'buying';
@@ -38,7 +38,7 @@ interface BuyTabProps {
   txError: string | null;
   userUsdcBalance?: number | null;
   onSetViewFilter: (filter: ViewFilter) => void;
-  viewCounts?: { all?: number; jackpot?: number; hof?: number };
+  viewCounts?: { all?: number; pro?: number; jackpot?: number; hof?: number };
   onSetRosterFilter: (chips: string[]) => void;
   leagueFilter: number | null;
   onSetLeagueFilter: (n: number | null) => void;
@@ -104,7 +104,7 @@ export function BuyTab({
   onSetPaymentMethod,
   onHandleBuy,
 }: BuyTabProps) {
-  const isTeamsLoading = viewFilter === 'all' || viewFilter === 'top' || viewFilter === 'jackpot' || viewFilter === 'hof'
+  const isTeamsLoading = viewFilter === 'all' || viewFilter === 'top' || viewFilter === 'pro' || viewFilter === 'jackpot' || viewFilter === 'hof'
     ? allNftsLoading
     : listingsLoading;
   const canLoadMore = (viewFilter === 'listed' && hasMore && !listingsLoading) || (viewFilter !== 'listed' && allNftsHasMore && !allNftsLoading);
@@ -185,13 +185,14 @@ export function BuyTab({
               { key: 'listed', label: 'Listed', count: undefined },
               { key: 'all', label: 'All Teams', count: viewCounts?.all },
               { key: 'top', label: 'Top Teams', count: undefined },
+              { key: 'pro', label: 'Pro', count: viewCounts?.pro },
               { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
               { key: 'hof', label: 'HOF', count: viewCounts?.hof },
             ] as const).map(filter => (
               <button
                 key={filter.key}
                 onClick={() => onSetViewFilter(filter.key)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
               >
                 {filter.label}
                 {typeof filter.count === 'number' && filter.count > 0 && (

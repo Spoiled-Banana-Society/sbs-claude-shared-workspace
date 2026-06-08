@@ -124,7 +124,13 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
         const attrs = rawAttrs.map((a) => ({ tt: String(a.Trait_Type ?? a.trait_type ?? ''), val: String(a.Value ?? a.value ?? '') }));
         const players = playersFromAttributes(attrs);
         if (players.length >= 10) {
-          const level = attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro';
+          // Level is AUTHORITATIVE from the index (backfilled from Go's
+          // draftTokens._level) when present — the finalize-doc LEVEL attribute
+          // can be stale/wrong (e.g. a prior-era Jackpot doc on a token the
+          // backend now says is Pro). Only fall back to the attr on index-miss.
+          const level = (indexSaysTeam && indexLevel)
+            ? (indexLevel === 'jackpot' ? 'Jackpot' : indexLevel === 'hof' ? 'Hall of Fame' : 'Pro')
+            : (attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro');
           const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
           const image = (isOgImage(stored) && !isPreRevealOg(stored))

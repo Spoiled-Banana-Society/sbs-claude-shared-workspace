@@ -24,7 +24,7 @@ import type { MarketplaceTeam } from '@/lib/opensea';
 import type { Address } from 'viem';
 
 type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist';
-type ViewFilter = 'listed' | 'all' | 'top' | 'jackpot' | 'hof';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type SweepStep = 'confirm' | 'processing' | 'complete';
@@ -129,7 +129,7 @@ export default function MarketplacePage() {
     const tabParam = searchParams?.get('tab');
     if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
     const viewParam = searchParams?.get('view');
-    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'jackpot' || viewParam === 'hof') setViewFilter(viewParam);
+    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'pro' || viewParam === 'jackpot' || viewParam === 'hof') setViewFilter(viewParam);
   }, [searchParams]);
 
   // Persist the current tab + view to the URL so a reload restores them.
@@ -145,12 +145,12 @@ export default function MarketplacePage() {
   }, [activeTab, viewFilter]);
 
   // Live tab counts (drafted teams / Jackpot / HOF) from the backend index.
-  const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; jackpot?: number; hof?: number } | undefined>(undefined);
+  const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; pro?: number; jackpot?: number; hof?: number } | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     fetch('/api/marketplace/stats')
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (!cancelled && d) setMarketplaceStats({ all: d.teams, jackpot: d.jackpot, hof: d.hof }); })
+      .then(d => { if (!cancelled && d) setMarketplaceStats({ all: d.teams, pro: d.pro, jackpot: d.jackpot, hof: d.hof }); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -197,7 +197,9 @@ export default function MarketplacePage() {
     // listings (orderHash present) — otherwise it leaked unlisted league teams
     // into Listed. On the other tabs it shows the whole league.
     if (leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
-    if (viewFilter === 'all') return allNfts;
+    // 'pro' reuses the fast paged full collection (like 'all') and filters out
+    // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).
+    if (viewFilter === 'all' || viewFilter === 'pro') return allNfts;
     if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
     return enrichedListings;
   }, [viewFilter, enrichedListings, allNfts, leagueFilter]);
@@ -223,6 +225,7 @@ export default function MarketplacePage() {
     if (team.roster.length === 0) return false;
     if (viewFilter === 'jackpot' && !team.isJackpot) return false;
     if (viewFilter === 'hof' && !team.isHof) return false;
+    if (viewFilter === 'pro' && (team.isJackpot || team.isHof)) return false;
     if (viewFilter === 'top' && team.points <= 0) return false;
     if (viewFilter === 'listed' || viewFilter === 'all') {
       if (hofFilter && !team.isHof) return false;

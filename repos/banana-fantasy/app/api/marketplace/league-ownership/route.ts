@@ -1,6 +1,7 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
+import { canonTokenId } from '@/lib/onchain/contractSupply';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,10 +51,11 @@ export async function GET(req: Request) {
     // a sold team would keep showing as owned.
     const onchainId = (t: { realTokenId?: string | number; _cardId?: string }): string => {
       const rt = String(t.realTokenId ?? '').trim();
-      if (/^\d+$/.test(rt)) return rt;
+      if (/^\d+$/.test(rt)) return canonTokenId(rt) ?? '';
       const c = String(t._cardId ?? '').trim();
-      if (/^\d{1,7}$/.test(c)) return c;
-      if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+      if (/^\d{1,7}$/.test(c)) return canonTokenId(c) ?? '';
+      // slice(10) can yield a LEADING-ZERO id — canonicalize so it matches "43".
+      if (/^\d{10}\d{1,7}$/.test(c)) return canonTokenId(c.slice(10)) ?? '';
       return '';
     };
     const tokenByLeague = new Map<string, string>();
