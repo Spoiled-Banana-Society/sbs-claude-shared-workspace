@@ -79,17 +79,41 @@ function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardP
 export async function resolveCard(tokenId: string, owner?: string | null): Promise<ResolvedCard> {
   const id = String(tokenId).trim();
 
-  // Authoritative pass check FIRST: if the Go API lists this token as an
-  // undrafted pass (`available`), it's a grey draft pass — even if a stale
-  // roster doc from a prior (recycled) draft still sits in Firestore. This is
-  // what makes the 600+ minted-but-undrafted passes render as draft passes on
-  // OpenSea / the marketplace instead of old recycled teams.
-  try {
-    const cls = await classifyToken(id, owner);
-    if (cls.isPass) {
-      return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [], passType: cls.passType };
-    }
-  } catch { /* Go unavailable — fall through to Firestore */ }
+  // Authoritative index FIRST = the backend source of truth, keyed by the
+  // on-chain id and rebuilt from Go's LIVE `draftTokens._leagueId` (drafted iff
+  // set; cleared on leave). It's GLOBAL, not owner-scoped, so it can't be fooled
+  // by who currently holds the NFT or by a stale `available`/finalize row at a
+  // reused id. Index miss → fall back to the owner-scoped classify below.
+  let indexSaysTeam = false;
+  let indexImage: string | null = null;
+  let indexLevel: string | null = null;
+  if (isFirestoreConfigured() && /^\d+$/.test(id)) {
+    try {
+      const ix = await getAdminFirestore().collection('marketplace_index').doc(id).get();
+      if (ix.exists) {
+        const d = ix.data() as Record<string, unknown>;
+        if (d.status === 'pass') {
+          return { image: (d.image as string) || buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
+        }
+        if (d.status === 'team') {
+          indexSaysTeam = true;
+          indexImage = (d.image as string) || null;
+          indexLevel = (d.level as string) || null;
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Owner-scoped pass check — ONLY when the index didn't already say "team"
+  // (the index is authoritative; this is the fallback for un-indexed tokens).
+  if (!indexSaysTeam) {
+    try {
+      const cls = await classifyToken(id, owner);
+      if (cls.isPass) {
+        return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [], passType: cls.passType };
+      }
+    } catch { /* Go unavailable — fall through to Firestore */ }
+  }
 
   if (isFirestoreConfigured() && /^\d+$/.test(id)) {
     try {
@@ -110,6 +134,11 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
         }
       }
     } catch { /* fall through to grey pass */ }
+  }
+  // Index says team but the finalize doc had no roster (rare) — honor the
+  // authoritative team status with the index's stored card image.
+  if (indexSaysTeam && indexImage) {
+    return { image: indexImage, drafted: true, level: tierFromLevel(indexLevel || 'pro') === 'jackpot' ? 'Jackpot' : tierFromLevel(indexLevel || 'pro') === 'hof' ? 'Hall of Fame' : 'Pro', players: [] };
   }
   return { image: buildDraftPassUrl(id), drafted: false, level: 'Pro', players: [] };
 }
