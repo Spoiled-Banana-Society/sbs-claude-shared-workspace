@@ -5,6 +5,7 @@ import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT } from '@/lib/opensea';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
+import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 import { logger } from '@/lib/logger';
@@ -81,6 +82,18 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
 
         const image = buildOgCardUrl({ tier: tierFromLevel(level), passNo: tokenId, teamNo: tokenId, leagueNo, players });
         await db.collection('draftTokenMetadata').doc(tokenId).set({ Image: image }, { merge: true });
+
+        // Stamp the marketplace index DIRECTLY at draft close — so this team is
+        // in the JP/HOF/League filters the instant the draft ends, instead of
+        // waiting for OpenSea to (maybe) call our metadata endpoint back. Same
+        // data the metadata route would write; keyed by the on-chain token id.
+        await upsertMarketplaceIndex(tokenId, {
+          level: normalizeLevel(level),
+          leagueNumber: leagueNo ? Number(leagueNo) : null,
+          status: 'team',
+          image,
+          roster: players.map((p) => `${p.team} ${p.pos}`),
+        });
         written += 1;
       } catch { /* skip this token, keep the rest */ }
     }),

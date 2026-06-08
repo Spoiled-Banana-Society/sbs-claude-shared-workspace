@@ -38,12 +38,18 @@ export interface ResolvedCard { image: string; drafted: boolean; level: string; 
 
 const ROSTER_TRAIT = /^(QB|RB|WR|TE|DST)\d+$/i;
 
-/** Pull the numeric league id out of the Go-written LEAGUE-NAME / LEAGUE attr
- *  (value is e.g. "League 1380" or "1380"). Returns '' if none. */
+/** Pull the numeric league id out of the Go-written LEAGUE-NAME / LEAGUE attr.
+ *  The id is the number AFTER the '#': "Playoffs Rd 2: #29" → 29, "BBB #1381" →
+ *  1381. NEVER the first number in the string (that grabbed the "2" out of
+ *  "Playoffs Rd 2: #29", colliding a playoff team onto league #2). Only fall back
+ *  to a bare number when the WHOLE value is just "BBB N"/"League N"/"N". Special
+ *  named leagues ("BBB 2025 FINALS", "Hall of Fame Sprint") have no clean id → ''. */
 function leagueNoFromAttrs(attrs: Array<{ tt: string; val: string }>): string {
   const raw = attrs.find((a) => /^league(-?name)?$/i.test(a.tt.trim()))?.val || '';
-  const m = raw.match(/\d+/);
-  return m ? m[0] : '';
+  const hash = raw.match(/#\s*(\d+)/);
+  if (hash) return hash[1];
+  const simple = raw.trim().match(/^(?:bbb\s*)?(?:league\s*)?(\d+)$/i);
+  return simple ? simple[1] : '';
 }
 
 /** Build card players from the Go-written metadata roster attributes

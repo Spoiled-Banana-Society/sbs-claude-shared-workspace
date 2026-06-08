@@ -282,8 +282,12 @@ function nftDisplayName(
  */
 function parseLeagueNumber(leagueName: string | null): number | null {
   if (!leagueName) return null;
-  const m = leagueName.trim().match(/^(?:bbb\s*)?(?:league\s*)?#?(\d+)$/i);
-  return m ? Number(m[1]) : null;
+  // The id is the number AFTER '#' ("Playoffs Rd 2: #29" → 29), never the first
+  // number in the name. Fall back to a bare number only for "BBB N"/"League N"/"N".
+  const hash = leagueName.match(/#\s*(\d+)/);
+  if (hash) return Number(hash[1]);
+  const simple = leagueName.trim().match(/^(?:bbb\s*)?(?:league\s*)?(\d+)$/i);
+  return simple ? Number(simple[1]) : null;
 }
 
 /**

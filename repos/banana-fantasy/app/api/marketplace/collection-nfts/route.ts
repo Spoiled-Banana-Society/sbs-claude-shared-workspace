@@ -9,6 +9,37 @@ import {
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+
+/**
+ * Overlay our canonical card image + league number from the marketplace_index.
+ * OpenSea serves a CDN-resized image (i2c.seadn.io) that crops our 4:5 obsidian
+ * card, so a team here looked cut-off while the index-sourced views were clean.
+ * The index holds the exact `/api/og/team-card` URL (and the corrected league #),
+ * so prefer it whenever the token is indexed. Best-effort; never throws.
+ */
+async function overlayIndexImages(teams: MarketplaceTeam[]): Promise<void> {
+  if (!isFirestoreConfigured() || teams.length === 0) return;
+  try {
+    const db = getAdminFirestore();
+    const ids = [...new Set(teams.map((t) => t.tokenId).filter((id) => /^\d+$/.test(id)))];
+    const byId = new Map<string, { image?: string; leagueNumber?: number | null }>();
+    for (let i = 0; i < ids.length; i += 300) {
+      const refs = ids.slice(i, i + 300).map((id) => db.collection('marketplace_index').doc(id));
+      const snaps = await db.getAll(...refs);
+      for (const s of snaps) {
+        if (!s.exists) continue;
+        const d = s.data() as Record<string, unknown>;
+        if (d.status === 'team') byId.set(s.id, { image: d.image as string, leagueNumber: (d.leagueNumber as number) ?? null });
+      }
+    }
+    for (const t of teams) {
+      const idx = byId.get(t.tokenId);
+      if (idx?.image) t.imageUrl = idx.image;
+      if (idx && idx.leagueNumber != null) t.leagueNumber = idx.leagueNumber;
+    }
+  } catch { /* keep OpenSea images */ }
+}
 
 export const dynamic = 'force-dynamic';
 // A `level` scan walks many OpenSea pages server-side, so allow more time.
@@ -138,6 +169,10 @@ export async function GET(req: Request) {
         }
       }
     } catch { /* enrichment failed */ }
+
+    // Prefer our clean obsidian card image (+ corrected league #) over OpenSea's
+    // cropped CDN image for any team we've indexed.
+    await overlayIndexImages(teams);
 
     return json({ nfts: teams, next });
   } catch (err) {
