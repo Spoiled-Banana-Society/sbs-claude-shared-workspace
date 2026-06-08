@@ -178,6 +178,9 @@ export default function MarketplacePage() {
   }, [baseTeams]);
 
   const filteredTeams = useMemo(() => baseTeams.filter(team => {
+    // Marketplace shows drafted TEAMS only — hide undrafted passes (no roster).
+    // A pass gains a roster once drafted, at which point it shows up as a team.
+    if (team.roster.length === 0) return false;
     if (viewFilter === 'jackpot' && !team.isJackpot) return false;
     if (viewFilter === 'hof' && !team.isHof) return false;
     if (viewFilter === 'top' && team.points <= 0) return false;

@@ -99,15 +99,10 @@ export function SellTab({
   // a "team" = a drafted roster record. Once a pass is drafted it gains a roster
   // record → hasBackendRecord flips true → it shows up in the default Teams view
   // automatically. No special wiring needed for that transition.
-  const [viewType, setViewType] = useState<'teams' | 'paid' | 'free' | 'all'>('teams');
-
-  const teamNfts = myNfts.filter(t => t.hasBackendRecord !== false);
-  const paidPassNfts = myNfts.filter(t => t.hasBackendRecord === false && t.passType !== 'free');
-  const freePassNfts = myNfts.filter(t => t.hasBackendRecord === false && t.passType === 'free');
-  const inView = viewType === 'teams' ? teamNfts
-    : viewType === 'paid' ? paidPassNfts
-    : viewType === 'free' ? freePassNfts
-    : myNfts;
+  // Only DRAFTED TEAMS are sellable/shown here — undrafted passes are never listed
+  // (a pass becomes a team once drafted: it gains a backend roster record, so
+  // hasBackendRecord flips true and it appears). No view toggle.
+  const inView = myNfts.filter(t => t.hasBackendRecord !== false);
 
   // Tier first, then NEWEST first (highest token id) within a tier, so the team
   // you just drafted sits at the very top.
@@ -127,21 +122,7 @@ export function SellTab({
       <div>
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
           <h3 className="text-lg font-semibold text-text-primary mb-2">Sell Your Teams</h3>
-          <p className="text-text-secondary text-sm mb-6">List any of your BBB teams or draft passes for sale. Set your price and buyers can purchase instantly.</p>
-
-          {!myNftsLoading && myNfts.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-6 p-1 bg-bg-primary border border-bg-tertiary rounded-xl w-fit">
-              {([['teams', 'Teams', teamNfts.length], ['paid', 'Paid Passes', paidPassNfts.length], ['free', 'Free Passes', freePassNfts.length], ['all', 'All', myNfts.length]] as const).map(([key, label, count]) => (
-                <button
-                  key={key}
-                  onClick={() => { setViewType(key); setShowUnsellable(false); }}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${viewType === key ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
-                >
-                  {label} <span className="opacity-60">{count}</span>
-                </button>
-              ))}
-            </div>
-          )}
+          <p className="text-text-secondary text-sm mb-6">List any of your teams for sale. Set your price and buyers can purchase instantly.</p>
 
           {myNftsLoading ? (
             <div className="space-y-4">
