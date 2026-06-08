@@ -49,7 +49,7 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     // is invisible there. Passes have no league.
     await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), status: 'pass', image: card.image });
     return new Response(JSON.stringify({
-      name: `Banana Best Ball IV — Draft Pass #${tokenId}`,
+      name: `Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
       image: card.image || `https://banana-fantasy-sbs.vercel.app/api/og/team-card?d=`,
       attributes: [
@@ -64,7 +64,7 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
   // Go-written name (which was "BBB pass #N"); we only read the doc for the real
   // player attributes. This is what makes OpenSea distinguish Draft Pass # vs
   // Team # correctly (and updates to Team # on the metadata refresh after draft).
-  const name = `Banana Best Ball IV — Team #${tokenId}`;
+  const name = `Team #${tokenId}`;
   let rawAttributes = card.players.map((p, i) => ({ trait_type: `${p.pos}${i + 1}`, value: `${p.team} ${p.pos}` }));
   if (isFirestoreConfigured()) {
     try {
