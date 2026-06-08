@@ -2,6 +2,7 @@ import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
+import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
 
@@ -90,10 +91,11 @@ export interface GoTokenRef { cardId: string; onchainId: string }
  *  else the cardId is the bare id (<=7 digits) or `<10-digit-secs><tokenId>`. */
 function decodeGoOnchainId(cardId: string, realTokenId: string): string {
   const rt = String(realTokenId ?? '').trim();
-  if (/^\d+$/.test(rt)) return rt;
+  if (/^\d+$/.test(rt)) return canonTokenId(rt) ?? '';
   const c = String(cardId ?? '').trim();
-  if (/^\d{1,7}$/.test(c)) return c;
-  if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+  if (/^\d{1,7}$/.test(c)) return canonTokenId(c) ?? '';
+  // slice(10) can yield a LEADING-ZERO id — canonicalize so it matches "43".
+  if (/^\d{10}\d{1,7}$/.test(c)) return canonTokenId(c.slice(10)) ?? '';
   return '';
 }
 

@@ -11,6 +11,7 @@
 // Go fetch even when OpenSea hammers the per-token metadata endpoint at once.
 
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
+import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { logger } from '@/lib/logger';
 
 const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
@@ -32,10 +33,10 @@ const ownerOfToken = new Map<string, { owner: string; ts: number }>();
  */
 function recordTokenId(t: Record<string, unknown>): string | null {
   const rt = String(t.realTokenId ?? '').trim();
-  if (/^\d+$/.test(rt)) return rt;
+  if (/^\d+$/.test(rt)) return canonTokenId(rt);
   const cid = String(t._cardId ?? t.cardId ?? '').trim();
-  if (/^\d{1,7}$/.test(cid)) return cid;
-  if (/^\d{10}\d{1,7}$/.test(cid)) return cid.slice(10);
+  if (/^\d{1,7}$/.test(cid)) return canonTokenId(cid);
+  if (/^\d{10}\d{1,7}$/.test(cid)) return canonTokenId(cid.slice(10));
   return null;
 }
 

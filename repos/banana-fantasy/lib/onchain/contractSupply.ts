@@ -38,8 +38,26 @@ export async function currentMaxTokenId(): Promise<number> {
   return cache?.max ?? Number.MAX_SAFE_INTEGER;
 }
 
-/** True if this token id is a real on-chain token (<= current supply + margin). */
+/**
+ * True if this token id is a real on-chain token: a CANONICAL integer id (no
+ * leading zeros) in 1..supply+margin. Requiring the canonical form is what stops
+ * a leftover leading-zero ghost doc ("043") from being counted a SECOND time
+ * alongside the real "43" — both pass the numeric range, only "43" is canonical.
+ */
 export function isRealToken(tokenId: string | number, maxId: number): boolean {
-  const n = Number(tokenId);
-  return Number.isFinite(n) && n >= 1 && n <= maxId;
+  const s = String(tokenId).trim();
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 1 && n <= maxId && String(n) === s;
+}
+
+/**
+ * Canonicalize a decoded on-chain token id to its integer string ("043" → "43").
+ * Synthetic `<10-digit-unix><tokenId>` cardIds can yield LEADING-ZERO ids when
+ * sliced; those pass numeric range checks but collide with / get dropped against
+ * the canonical "43" everywhere we key by id (marketplace_index, owner sets,
+ * league ownership). Always run a decoded id through this so the same on-chain
+ * token has exactly ONE key — keeping counts and team/pass status accurate. */
+export function canonTokenId(raw: string | number | null | undefined): string | null {
+  const n = Number(String(raw ?? '').trim());
+  return Number.isInteger(n) && n > 0 ? String(n) : null;
 }

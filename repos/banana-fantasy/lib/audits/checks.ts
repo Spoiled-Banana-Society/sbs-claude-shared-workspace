@@ -19,6 +19,7 @@
  * If you change a check here, mirror it there.
  */
 import type { Firestore } from 'firebase-admin/firestore';
+import { canonTokenId } from '@/lib/onchain/contractSupply';
 
 export interface AuditFinding {
   source: string; // area.feature.outcome — drives severity via logSeverity()
@@ -47,10 +48,12 @@ function passTypeOf(data: Record<string, unknown>): 'free' | 'paid' {
  */
 function decodeOnchainId(cardId: string, realTokenId: string): string {
   const rt = String(realTokenId || '').trim();
-  if (/^\d+$/.test(rt)) return rt;
+  if (/^\d+$/.test(rt)) return canonTokenId(rt) ?? '';
   const c = String(cardId || '').trim();
-  if (/^\d{1,7}$/.test(c)) return c;
-  if (/^\d{10}\d{1,7}$/.test(c)) return c.slice(10);
+  if (/^\d{1,7}$/.test(c)) return canonTokenId(c) ?? '';
+  // slice(10) can yield a LEADING-ZERO id ("043") — canonicalize so it lines up
+  // with the bare "43" key everywhere (else the same token splits in two).
+  if (/^\d{10}\d{1,7}$/.test(c)) return canonTokenId(c.slice(10)) ?? '';
   return '';
 }
 

@@ -13,12 +13,16 @@ console.log(`totalSupply cutoff maxId=${maxId}`);
 
 // --- decoder (mirrors Go decodeOnchainTokenId / frontend recordTokenId) ---
 function decodeId(cardId, realTokenId){
-  const rt=String(realTokenId??'').trim(); if(/^\d+$/.test(rt)) return rt;
+  const rt=String(realTokenId??'').trim(); if(/^\d+$/.test(rt)) return canon(rt);
   const c=String(cardId??'').trim();
-  if(/^\d{1,7}$/.test(c)) return c;
-  if(/^\d{11,17}$/.test(c)) return c.slice(10);
+  if(/^\d{1,7}$/.test(c)) return canon(c);
+  if(/^\d{11,17}$/.test(c)) return canon(c.slice(10));
   return '';
 }
+// Canonicalize to the integer string — slice(10) of a synthetic cardId can yield
+// LEADING-ZERO ids ("043"), which pass the numeric range check but never match
+// String(n) in the write loop, so the team is dropped / mis-merged. Strip zeros.
+function canon(s){ const n=Number(s); return Number.isInteger(n)&&n>0 ? String(n) : ''; }
 function normLevel(raw){const v=String(raw??'').toLowerCase();if(v.includes('jackpot'))return'jackpot';if(v.includes('hall of fame')||v==='hof')return'hof';return'pro';}
 function leagueNo(name){const h=String(name??'').match(/#\s*(\d+)/);if(h)return Number(h[1]);const s=String(name??'').trim().match(/^(?:bbb\s*)?(?:league\s*)?(\d+)$/i);return s?Number(s[1]):null;}
 
