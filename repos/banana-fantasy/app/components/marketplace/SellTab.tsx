@@ -133,118 +133,96 @@ export function SellTab({
           <p className="text-text-secondary text-sm mb-6">List any of your teams for sale. Set your price and buyers can purchase instantly.</p>
 
           {myNftsLoading ? (
-            <div className="space-y-4">
-              {[...Array(2)].map((_, index) => (
-                <div key={index} className="bg-bg-primary border border-bg-tertiary rounded-xl p-4 animate-pulse">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-bg-tertiary" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 bg-bg-tertiary rounded w-32" />
-                      <div className="h-3 bg-bg-tertiary rounded w-48" />
-                    </div>
-                    <div className="h-10 bg-bg-tertiary rounded w-28" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+              {[...Array(3)].map((_, index) => (
+                <div key={index} className="bg-[#0d0d12] border border-bg-tertiary rounded-2xl overflow-hidden animate-pulse">
+                  <div className="aspect-[3/4] bg-bg-tertiary/40" />
+                  <div className="p-4 space-y-3">
+                    <div className="h-5 bg-bg-tertiary rounded w-28" />
+                    <div className="h-3 bg-bg-tertiary rounded w-20" />
+                    <div className="h-10 bg-bg-tertiary rounded-xl w-full" />
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="grid gap-4">
+            // Same 3-up big-card grid as the Buy sections.
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
               {visibleNfts.map(team => (
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
-                  className={`bg-bg-primary border rounded-xl p-4 flex items-center justify-between transition-all hover:-translate-y-0.5 hover:border-bg-elevated ${team.isHof ? 'border-hof/30' : 'border-bg-tertiary'}`}
+                  className={`h-full flex flex-col bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg ${team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="relative aspect-[3/4] bg-[#0d0d12] flex items-center justify-center">
                     {draftInProgress(team) ? (
-                      // Still drafting — no real team card yet. Show the SBS
-                      // banana logo until the draft finishes and a roster exists.
-                      <div className="w-14 h-14 rounded-xl bg-bg-tertiary/40 border border-bg-tertiary flex items-center justify-center overflow-hidden">
-                        <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={40} height={40} className="object-contain" />
+                      <div className="flex flex-col items-center justify-center gap-3 text-center px-6">
+                        <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={64} height={64} className="object-contain opacity-80" />
+                        <span className="text-text-muted text-xs">Drafting…</span>
                       </div>
                     ) : team.imageUrl ? (
-                      <Image src={team.imageUrl} alt={team.name} width={56} height={56} className="rounded-xl" />
+                      <Image src={team.imageUrl} alt={team.name} fill className="object-contain rounded-2xl shadow-lg" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                     ) : (
-                      <SbsPassThumb
-                        label={`#${team.tokenId}`}
-                        size={56}
-                        roster={team.roster}
-                      />
+                      <SbsPassThumb label={`#${team.tokenId}`} size={140} roster={team.roster} />
                     )}
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-text-primary font-semibold font-mono">Team #{team.tokenId}</h4>
-                        {team.isHof && <span className="px-2 py-0.5 bg-hof/20 text-hof text-[9px] font-bold rounded">HOF</span>}
-                        {team.isJackpot && <span className="px-2 py-0.5 bg-error/20 text-error text-[9px] font-bold rounded">JP</span>}
-                        {team.fillingWheelLevel && (
-                          <span
-                            className={`px-2 py-0.5 text-[9px] font-bold rounded uppercase tracking-wide ${team.fillingWheelLevel === 'jackpot' ? 'bg-error/20 text-error' : 'bg-hof/20 text-hof'}`}
-                            title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
-                          >
-                            {team.fillingWheelLevel === 'jackpot' ? 'JP' : 'HOF'} · Filling
-                          </span>
-                        )}
-                        {team.hasBackendRecord === false && team.passType !== 'free' && (
-                          <span
-                            className="px-2 py-0.5 bg-white/5 text-white/40 text-[9px] font-bold rounded uppercase tracking-wide"
-                            title="Stage-minted NFT with no SBS backend record. Production mints can't produce this state."
-                          >
-                            Stage Mint
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-text-muted text-xs">
-                        {hasSeasonStarted() && team.rank >= 1 && team.rank <= 10 ? `Rank #${team.rank} • ` : ''}
-                        {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : (team.leagueNumber != null ? `League #${team.leagueNumber}` : `Team #${team.tokenId}`)}
-                        {hasSeasonStarted() && team.playoffOdds > 0 ? ` • ${team.playoffOdds}% playoffs` : ''}
-                      </p>
+                    <div className="absolute top-3 left-3 flex items-center gap-2">
+                      {team.isJackpot ? (
+                        <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
+                      ) : team.isHof ? (
+                        <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
+                      ) : (
+                        <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
+                      )}
+                      {team.fillingWheelLevel && (
+                        <span
+                          className={`px-2 py-1 text-[9px] font-bold rounded-full uppercase tracking-wide ${team.fillingWheelLevel === 'jackpot' ? 'bg-error/20 text-error' : 'bg-hof/20 text-hof'}`}
+                          title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
+                        >
+                          {team.fillingWheelLevel === 'jackpot' ? 'JP' : 'HOF'} · Filling
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
-                    <a
-                      href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${team.tokenId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="text-text-muted hover:text-text-primary text-xs underline-offset-4 hover:underline"
-                      title="View on OpenSea"
-                    >
-                      OpenSea ↗
-                    </a>
-                    <SellTabOfferBadge tokenId={team.tokenId} />
-                    {team.orderHash ? (
-                      <>
-                        <span className="text-sm text-green-400 font-medium">Listed at ${team.price?.toFixed(2)}</span>
+                  <div className="p-4 flex flex-col flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-lg font-semibold text-text-primary font-mono truncate">Team #{team.tokenId}</h3>
+                      <SellTabOfferBadge tokenId={team.tokenId} />
+                    </div>
+                    <p className="text-text-muted text-xs font-mono mt-0.5">
+                      {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : (team.leagueNumber != null ? `League #${team.leagueNumber}` : `Team #${team.tokenId}`)}
+                    </p>
+                    <div className="mt-auto pt-4" onClick={e => e.stopPropagation()}>
+                      {team.orderHash ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-green-400 font-medium">Listed ${team.price?.toFixed(2)}</span>
+                          <button
+                            onClick={e => { e.preventDefault(); onHandleCancel(team); }}
+                            disabled={cancellingTokenId === team.tokenId}
+                            className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                          >
+                            {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
+                          </button>
+                        </div>
+                      ) : team.passType === 'free' && isDraftingOpen() ? (
                         <button
-                          onClick={e => { e.preventDefault(); onHandleCancel(team); }}
-                          disabled={cancellingTokenId === team.tokenId}
-                          className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                          onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
+                          className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
                         >
-                          {cancellingTokenId === team.tokenId ? 'Cancelling...' : 'Delist'}
+                          Listable Once Season Starts
                         </button>
-                      </>
-                    ) : team.passType === 'free' && isDraftingOpen() ? (
-                      <button
-                        onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
-                        className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
-                      >
-                        Listable Once Season Starts
-                      </button>
-                    ) : draftInProgress(team) ? (
-                      <span
-                        className="px-5 py-2 rounded-xl text-sm font-semibold bg-white/5 text-white/40 cursor-default"
-                        title="This team is still drafting. You can list it once the draft finishes and your roster is set."
-                      >
-                        Drafting… listable when done
-                      </span>
-                    ) : (
-                      <button
-                        onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
-                        className="px-5 py-2 rounded-xl text-sm font-semibold transition-all bg-banana text-black hover:brightness-110"
-                      >
-                        List for Sale
-                      </button>
-                    )}
+                      ) : draftInProgress(team) ? (
+                        <span className="block w-full text-center px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/5 text-white/40 cursor-default">
+                          Drafting… listable when done
+                        </span>
+                      ) : (
+                        <button
+                          onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
+                          className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all bg-banana text-black hover:brightness-110"
+                        >
+                          List for Sale
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </Link>
                 ))}
