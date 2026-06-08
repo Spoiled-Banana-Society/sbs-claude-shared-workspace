@@ -93,6 +93,7 @@ export default function MarketplacePage() {
   const [hofFilter] = useState(false);
   const [jackpotFilter] = useState(false);
   const [rosterFilter, setRosterFilter] = useState<string[]>([]);
+  const [leagueFilter, setLeagueFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState('price-low');
   const [selectedTeam, setSelectedTeam] = useState<MarketplaceTeam | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -147,7 +148,7 @@ export default function MarketplacePage() {
   // we ask the server to scan the whole collection by level and return the full
   // set. Other views stay paged.
   const collectionLevel = viewFilter === 'jackpot' ? 'jackpot' : viewFilter === 'hof' ? 'hof' : null;
-  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel);
+  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel, leagueFilter);
   const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
   const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
@@ -161,10 +162,13 @@ export default function MarketplacePage() {
   }, [listings, walletAddress, user]);
 
   const baseTeams = useMemo(() => {
+    // A League # filter is backend-sourced (allNfts = that league's teams) and
+    // overrides the view tabs.
+    if (leagueFilter != null) return allNfts;
     if (viewFilter === 'all') return allNfts;
     if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
     return enrichedListings;
-  }, [viewFilter, enrichedListings, allNfts]);
+  }, [viewFilter, enrichedListings, allNfts, leagueFilter]);
 
   // Closed list of valid filter chips: every roster slot seen across the
   // currently visible team set + bare team codes. Restricts the chip
@@ -788,6 +792,8 @@ export default function MarketplacePage() {
           userUsdcBalance={user?.usdcBalance}
           onSetViewFilter={setViewFilter}
           onSetRosterFilter={setRosterFilter}
+          leagueFilter={leagueFilter}
+          onSetLeagueFilter={setLeagueFilter}
           onSetSortBy={setSortBy}
           onToggleSweepMode={() => requireLogin(() => setSweepMode(previous => {
             if (previous) setSweepSelected(new Set());
