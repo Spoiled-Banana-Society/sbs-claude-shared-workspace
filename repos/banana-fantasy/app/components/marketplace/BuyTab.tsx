@@ -285,7 +285,20 @@ export function BuyTab({
                   <FallbackPassSvg gradientId={`passGrad-${team.id}`} />
                 )}
 
-                <div className="absolute top-6 right-3 flex flex-col gap-2 z-10">
+                <div className="absolute top-5 right-3 flex flex-col gap-3 z-10">
+                  <button
+                    onClick={event => {
+                      event.stopPropagation();
+                      event.preventDefault();
+                      onToggleWatchlist(team.tokenId, team.price);
+                    }}
+                    className="flex items-center justify-center transition-transform hover:scale-110"
+                    title="Add to watchlist"
+                  >
+                    <svg className={`w-5 h-5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] ${watchlistSet.has(team.tokenId) ? 'text-red-500' : 'text-white/85 hover:text-white'}`} fill={watchlistSet.has(team.tokenId) ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={async event => {
                       event.stopPropagation();
@@ -304,24 +317,11 @@ export function BuyTab({
                         URL.revokeObjectURL(objUrl);
                       } catch { /* ignore download failure */ }
                     }}
-                    className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/70 transition-colors"
+                    className="flex items-center justify-center transition-transform hover:scale-110"
                     title="Download card"
                   >
-                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <svg className="w-5 h-5 text-white/85 hover:text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={event => {
-                      event.stopPropagation();
-                      event.preventDefault();
-                      onToggleWatchlist(team.tokenId, team.price);
-                    }}
-                    className="w-8 h-8 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center hover:bg-black/70 transition-colors"
-                    title="Add to watchlist"
-                  >
-                    <svg className={`w-3.5 h-3.5 ${watchlistSet.has(team.tokenId) ? 'text-red-500' : 'text-white'}`} fill={watchlistSet.has(team.tokenId) ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
                     </svg>
                   </button>
                 </div>
@@ -330,7 +330,7 @@ export function BuyTab({
                   {team.isJackpot ? (
                     <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                   ) : team.isHof ? (
-                    <span className="px-3 py-1 bg-gradient-to-r from-hof to-pink-600 text-white text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
+                    <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full flex items-center gap-1">
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                         <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                       </svg>
