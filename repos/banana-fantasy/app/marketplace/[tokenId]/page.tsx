@@ -932,7 +932,7 @@ export default function NftDetailPage() {
             </a>
             {nftOwner && (
               <UserPopover walletAddress={nftOwner} username={nft.ownerName ?? undefined} pfpUrl={nft.ownerPfp ?? undefined}>
-                <span className="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
+                <span className="inline-flex items-center gap-2.5 pl-1 pr-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:border-white/20 transition-colors text-xs cursor-pointer">
                   {/* Banana pfp + name by default; their custom pfp/name if set;
                       a badge ONLY if they've equipped/earned one (no default badge). */}
                   <AvatarWithBadge

@@ -277,7 +277,7 @@ export function BuyTab({
                 if (sweepMode && team.price != null) onToggleSweepSelect(team.tokenId);
                 else onNavigateToTeam(team.tokenId);
               }}
-              className={`bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+              className={`h-full flex flex-col bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
             >
               <div className="relative aspect-[3/4] bg-[#0d0d12] flex items-center justify-center">
                 {team.imageUrl ? (
@@ -343,7 +343,7 @@ export function BuyTab({
                 </div>
               </div>
 
-              <div className="p-4">
+              <div className="p-4 flex flex-col flex-1">
                 <div className="flex items-start justify-between mb-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -379,7 +379,7 @@ export function BuyTab({
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mt-auto">
                   <div>
                     {team.price != null ? (
                       <>

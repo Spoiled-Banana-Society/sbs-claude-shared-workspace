@@ -11,6 +11,8 @@ import {
 } from '@/lib/opensea';
 import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
+import { buildDraftPassUrl } from '@/lib/nftCard';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
@@ -151,13 +153,25 @@ export async function GET(req: Request) {
     const teamsByToken = await getTeamsForTokens(
       bbb4Nfts.map(nft => ({ tokenId: nft.identifier, owner })),
     );
-    // Resolve the authoritative obsidian image per token (grey pass for
-    // undrafted, tier team for drafted — exactly what OpenSea's metadata
-    // endpoint serves). Owner is known here, so the pass classifier is cheap.
+    // Image per token from ONE batched index read — the chain-anchored
+    // marketplace_index already stores each team's card image; passes render the
+    // grey pass art. This replaces a per-token resolveTokenImage call (600+
+    // Firestore round-trips for a whale wallet), which was the remaining Sell
+    // latency. getAll is chunked to stay under Firestore's batch limit.
     const ogByToken = new Map<string, string>();
-    await Promise.all(bbb4Nfts.map(async (nft) => {
-      ogByToken.set(nft.identifier, await resolveTokenImage(nft.identifier, owner));
-    }));
+    if (isFirestoreConfigured()) {
+      const db = getAdminFirestore();
+      const ids = bbb4Nfts.map((n) => n.identifier);
+      for (let i = 0; i < ids.length; i += 300) {
+        const refs = ids.slice(i, i + 300).map((id) => db.collection('marketplace_index').doc(id));
+        const docs = await db.getAll(...refs);
+        docs.forEach((d, k) => {
+          const id = ids[i + k];
+          const x = d.exists ? (d.data() as Record<string, unknown>) : null;
+          ogByToken.set(id, x?.status === 'team' && x?.image ? String(x.image) : buildDraftPassUrl(id));
+        });
+      }
+    }
     for (const nft of bbb4Nfts) {
       const team = teamsByToken.get(nft.identifier);
       if (team) {
