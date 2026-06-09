@@ -3,6 +3,7 @@
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildDraftPassUrl, buildOgCardUrl } from '@/lib/nftCard';
+import { getDraftSummary } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import type { TeamData } from '@/lib/marketplace/teamData';
@@ -10,6 +11,46 @@ import { ALL_POSITIONS } from '@/data/nfl-players';
 import { classifyToken } from '@/lib/nftPassClassify';
 
 const PLAYER_META = new Map(ALL_POSITIONS.map((p) => [p.playerId, p]));
+
+/**
+ * Self-heal PICK numbers when BUILDING a team card. The finalize-doc roster
+ * attributes carry no pickNum (→ '-'); the live Go draft summary does. We map
+ * draftTokens/{id} → LeagueId + Owner → that owner's picks. This guarantees a
+ * card built here (e.g. a team whose client-side post-draft refresh never fired)
+ * still gets real picks, server-side, no matter which surface resolves it.
+ * Falls back to the pick-less attribute players if the summary is unavailable —
+ * never throws, never hangs (5s cap).
+ */
+async function playersWithPicks(id: string, fallback: CardPlayer[]): Promise<CardPlayer[]> {
+  try {
+    if (!isFirestoreConfigured() || !/^\d+$/.test(id)) return fallback;
+    const dt = await getAdminFirestore().collection('draftTokens').doc(id).get();
+    if (!dt.exists) return fallback;
+    const leagueId = String(dt.get('LeagueId') ?? dt.get('_leagueId') ?? '');
+    const owner = String(dt.get('OwnerId') ?? dt.get('_ownerId') ?? '').toLowerCase();
+    if (!leagueId || !owner) return fallback;
+    const summary = await Promise.race([
+      getDraftSummary(leagueId),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('summary timeout')), 5000)),
+    ]);
+    const picks: Array<{ playerId: string; pickNum: number }> = [];
+    for (const it of (summary as Array<{ playerInfo?: { ownerAddress?: string; playerId?: string; pickNum?: number } }>)) {
+      const info = it?.playerInfo;
+      if (!info?.playerId || (info.ownerAddress || '').toLowerCase() !== owner) continue;
+      picks.push({ playerId: info.playerId, pickNum: Number(info.pickNum) || 0 });
+    }
+    if (picks.length < 10) return fallback;
+    return picks
+      .sort((a, b) => a.pickNum - b.pickNum)
+      .map((p) => {
+        const [tm, ps] = p.playerId.split('-');
+        const m = PLAYER_META.get(p.playerId);
+        return { team: tm || '', pos: ps || '', bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: p.pickNum };
+      });
+  } catch {
+    return fallback;
+  }
+}
 
 function tierFromLevel(level?: string): CardTier {
   const l = (level || '').toLowerCase();
@@ -137,10 +178,15 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
             : (attrs.find((a) => a.tt.toUpperCase() === 'LEVEL')?.val || 'Pro');
           const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
-          const image = (isOgImage(stored) && !isPreRevealOg(stored))
+          const useStored = isOgImage(stored) && !isPreRevealOg(stored);
+          // When we must BUILD the card (no stored picked image yet), pull real
+          // pick numbers from the Go summary so the PICK column is never blank —
+          // self-heals teams whose post-draft client refresh never fired.
+          const cardPlayers = useStored ? players : await playersWithPicks(id, players);
+          const image = useStored
             ? stored
-            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players });
-          return { image, drafted: true, level, players };
+            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
+          return { image, drafted: true, level, players: cardPlayers };
         }
       }
     } catch { /* fall through to grey pass */ }
