@@ -94,6 +94,23 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
   const mt = marketplaceTeam;
   const isListed = !!mt?.orderHash;
 
+  const [showCard, setShowCard] = useState(false);
+  const downloadCard = async () => {
+    if (!mt?.imageUrl) return;
+    try {
+      const res = await fetch(mt.imageUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `sbs-team-${mt.tokenId}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore download failure */ }
+  };
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(nickname || '');
   useEffect(() => { setDraft(nickname || ''); }, [nickname]);
@@ -168,11 +185,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
       style={{ animationDelay: `${index * 50}ms` }}
     >
       <div className="flex items-stretch">
-        {/* Obsidian team card image — the hero. Tap → full card view (Team tab). */}
+        {/* Obsidian team card image — the hero. Big (4:5) so the whole card
+            reads. Tap → full-screen "View card" lightbox. */}
         <button
           type="button"
-          onClick={() => onOpenModal(league, 'team')}
-          className="group/img w-[118px] sm:w-[172px] flex-shrink-0 self-stretch relative bg-[#070709] border-r border-white/[0.06] overflow-hidden"
+          onClick={() => mt?.imageUrl && setShowCard(true)}
+          className="group/img w-[150px] sm:w-[240px] aspect-[4/5] flex-shrink-0 self-start relative bg-[#070709] border-r border-white/[0.06] overflow-hidden"
           aria-label="View team card"
         >
           {mt?.imageUrl ? (
@@ -180,8 +198,8 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               src={mt.imageUrl}
               alt={`Team #${mt.tokenId}`}
               fill
-              className="object-cover object-top group-hover/img:scale-[1.03] transition-transform duration-300"
-              sizes="(max-width: 640px) 118px, 172px"
+              className="object-cover group-hover/img:scale-[1.03] transition-transform duration-300"
+              sizes="(max-width: 640px) 150px, 240px"
             />
           ) : (
             <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 ${config.bg}`}>
@@ -189,13 +207,18 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               <span className="text-white/80 font-mono text-sm">{mt?.tokenId ? `Team #${mt.tokenId}` : 'Team'}</span>
             </div>
           )}
-          {/* subtle "view" affordance on hover */}
-          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-end justify-center pb-2.5 opacity-0 group-hover/img:opacity-100">
-            <span className="text-[10px] font-semibold text-white/90 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full">View card</span>
-          </div>
+          {/* Always-visible "View card" affordance */}
+          {mt?.imageUrl && (
+            <div className="absolute inset-x-0 bottom-0 pt-8 pb-2.5 flex items-end justify-center bg-gradient-to-t from-black/70 to-transparent">
+              <span className="flex items-center gap-1 text-[11px] font-semibold text-white/90 bg-black/45 backdrop-blur-sm px-2.5 py-1 rounded-full group-hover/img:bg-black/70 transition-colors">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6M14 10l7-7M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+                View card
+              </span>
+            </div>
+          )}
         </button>
 
-        <div className="flex-1 px-4 py-4 sm:px-5 min-w-0">
+        <div className="flex-1 px-4 py-4 sm:px-5 min-w-0 self-center">
           {/* Top row: rank badge + team name + type pill */}
           <div className="flex items-center gap-2.5 mb-3">
             {showRank && getPlaceBadge(league.leagueRank)}
@@ -330,6 +353,34 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           </div>
         </div>
       </div>
+
+      {/* View card lightbox — the obsidian team card at full size + download. */}
+      {showCard && mt?.imageUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-4 sm:p-8 bg-black/80 backdrop-blur-sm"
+          onClick={() => setShowCard(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setShowCard(false)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.16] flex items-center justify-center text-white/70"
+            aria-label="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+          </button>
+          <div className="relative w-auto h-[78vh] aspect-[4/5] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
+            <Image src={mt.imageUrl} alt={`Team #${mt.tokenId}`} fill className="object-contain rounded-2xl" sizes="92vw" />
+          </div>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); void downloadCard(); }}
+            className="mt-5 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-banana text-black text-sm font-semibold hover:brightness-110 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
+            Download
+          </button>
+        </div>
+      )}
     </div>
   );
 }
