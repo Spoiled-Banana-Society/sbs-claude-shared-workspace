@@ -110,6 +110,10 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             fill
             className="object-contain"
             sizes="(max-width: 640px) 100vw, 50vw"
+            // Preload the above-the-fold cards (first 2 rows of the 2-up grid)
+            // so they paint immediately instead of lazy-loading on scroll.
+            priority={index < 4}
+            loading={index < 4 ? undefined : 'lazy'}
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">

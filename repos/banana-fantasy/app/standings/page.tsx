@@ -138,7 +138,20 @@ export default function StandingsPage() {
   const [teamSearch, setTeamSearch] = useState<string[]>([]);
   const [teamsPage, setTeamsPage] = useState(0);
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro'>('all');
+  // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
+  // keeps you on the same tab instead of bouncing back to All.
+  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro'>(() => {
+    if (typeof window === 'undefined') return 'all';
+    const t = new URLSearchParams(window.location.search).get('type');
+    return t === 'jackpot' || t === 'hof' || t === 'pro' ? t : 'all';
+  });
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (typeFilter === 'all') url.searchParams.delete('type');
+    else url.searchParams.set('type', typeFilter);
+    window.history.replaceState(null, '', url.toString());
+  }, [typeFilter]);
 
   // Closed list of valid filter chips: every team-position seen across
   // leagues + the type aliases (Jackpot/HOF/Pro). Restricts the chip
@@ -400,8 +413,8 @@ export default function StandingsPage() {
                     {teamSearch.length > 0
                       ? 'No teams match'
                       : typeFilter !== 'all'
-                        ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : 'Pro'} teams yet`
-                        : 'No teams yet'}
+                        ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : 'Pro'} teams`
+                        : 'No teams'}
                   </p>
                 </div>
               )}
