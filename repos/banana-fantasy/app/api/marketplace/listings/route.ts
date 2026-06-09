@@ -312,7 +312,22 @@ export async function POST(req: Request) {
       const nftItem = offerItems.find((o) => o.itemType === 2 || o.itemType === 3);
       const tokenId = nftItem?.identifierOrCriteria;
       const offerer = String(body.parameters.offerer ?? '').toLowerCase();
-      if (tokenId && offerer) {
+
+      // EXCEPTION to the free-pass block: a wheel-won JP/HOF pass that's still in a
+      // FILLING queue round is intentionally sellable now (the whole point of the
+      // feature) even though it's a free pass. Mirrors the client (SellTab surfaces
+      // it via fillingWheelLevel). Without this the server 403s the very listing the
+      // UI offers. Best-effort: on error fall through to the normal guard.
+      let isFillingWheelPass = false;
+      if (tokenId) {
+        try {
+          const { getFillingWheelPassLevels } = await import('@/lib/db');
+          const levels = await getFillingWheelPassLevels([String(tokenId)]);
+          isFillingWheelPass = !!levels[String(tokenId)];
+        } catch { /* fall through to the normal free-pass guard */ }
+      }
+
+      if (!isFillingWheelPass && tokenId && offerer) {
         try {
           const cls = await classifyToken(String(tokenId), offerer);
           if (cls.isPass && /free/i.test(cls.passType || '')) {
@@ -321,7 +336,7 @@ export async function POST(req: Request) {
           }
         } catch { /* classifier unavailable — fall through to the backstop */ }
       }
-      if (isDraftingOpen() && tokenId && offerer) {
+      if (!isFillingWheelPass && isDraftingOpen() && tokenId && offerer) {
         try {
           const freeIds = new Set((await listFreeOriginTokenIds(offerer)).map(String));
           if (freeIds.has(String(tokenId))) {

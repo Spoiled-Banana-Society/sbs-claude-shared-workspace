@@ -83,7 +83,7 @@ export async function GET(req: Request) {
   const S = (CANVAS_H * 0.88) / (cardH + 8);
   const px = (n: number) => Math.round(n * S);
 
-  const card = preReveal ? renderPass(px, passNo, logoSrc) : renderTeam(px, tier, players, logoSrc, idsLine);
+  const card = preReveal ? renderPass(px, passNo, logoSrc, tier) : renderTeam(px, tier, players, logoSrc, idsLine);
 
   return new ImageResponse(
     (
@@ -151,15 +151,25 @@ function renderTeam(px: Px, tier: Tier, players: ReturnType<typeof fill>[], logo
   );
 }
 
-function renderPass(px: Px, passNo: string, logoSrc?: string) {
+function renderPass(px: Px, passNo: string, logoSrc?: string, tier: Tier = 'pro') {
+  // Pro passes keep the neutral grey shell (unchanged). A wheel-won HOF/Jackpot
+  // pass gets its real tier frame (gold / red) + level badge so the prize reads
+  // accurately before the draft reveals it into a team.
+  const special = tier !== 'pro';
+  const b = BADGE[tier];
   return (
     <div style={{ display: 'flex', position: 'relative' }}>
       {frameWrap(px, 320, 452,
         <>
-          <div style={{ position: 'absolute', top: px(11), left: px(11), right: px(11), bottom: px(11), border: '2px dashed rgba(255,255,255,.20)', borderRadius: px(15) }} />
+          <div style={{ position: 'absolute', top: px(11), left: px(11), right: px(11), bottom: px(11), border: `2px dashed ${special ? b.line : 'rgba(255,255,255,.20)'}`, borderRadius: px(15) }} />
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', padding: `${px(32)}px ${px(24)}px ${px(26)}px` }}>
             {logoSrc ? <img src={logoSrc} width={px(42)} height={px(42)} style={{ objectFit: 'contain' }} /> : null}
             <div style={{ marginTop: px(16), fontSize: px(13.5), fontWeight: 900, letterSpacing: px(3.5), color: 'rgba(255,255,255,.9)' }}>{`DRAFT PASS ${passNo}`.trim()}</div>
+            {special ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: px(8), padding: `${px(3)}px ${px(12)}px`, borderRadius: px(30), fontSize: px(11), fontWeight: 900, letterSpacing: px(1.5), color: b.text, background: b.bg, border: `1px solid ${b.line}` }}>
+                {b.label}
+              </div>
+            ) : null}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: 'auto 0' }}>
               <div style={{ fontStyle: 'italic', fontWeight: 800, fontSize: px(30), lineHeight: 1.05, color: '#fbbf24', textAlign: 'center' }}>BANANA</div>
               <div style={{ fontStyle: 'italic', fontWeight: 800, fontSize: px(30), lineHeight: 1.05, color: '#fbbf24', textAlign: 'center' }}>BEST BALL</div>
@@ -168,7 +178,7 @@ function renderPass(px: Px, passNo: string, logoSrc?: string) {
             <div style={{ fontSize: px(11), fontWeight: 900, letterSpacing: px(2), color: 'rgba(255,255,255,.58)' }}>SBS</div>
           </div>
         </>,
-        GREY_FRAME,
+        special ? FRAME[tier] : GREY_FRAME,
       )}
       <div style={{ position: 'absolute', top: '50%', left: px(-12), width: px(24), height: px(24), borderRadius: px(24), background: '#060608', transform: 'translateY(-50%)' }} />
       <div style={{ position: 'absolute', top: '50%', right: px(-12), width: px(24), height: px(24), borderRadius: px(24), background: '#060608', transform: 'translateY(-50%)' }} />
