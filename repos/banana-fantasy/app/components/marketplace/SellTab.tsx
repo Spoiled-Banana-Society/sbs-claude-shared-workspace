@@ -184,7 +184,11 @@ export function SellTab({
                         </span>
                       )}
                     </div>
-                    <div className="absolute top-3 right-3 z-10"><SellTabOfferBadge tokenId={team.tokenId} /></div>
+                    {/* Offers badge only for LISTED teams — fetching offers per
+                        card for every owned team flooded the rate limiter. */}
+                    {team.orderHash && (
+                      <div className="absolute top-3 right-3 z-10"><SellTabOfferBadge tokenId={team.tokenId} /></div>
+                    )}
 
                     {/* bottom overlay: info + action (no separate footer = no dead space) */}
                     <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">

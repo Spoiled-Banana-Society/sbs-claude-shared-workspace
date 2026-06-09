@@ -531,14 +531,20 @@ export function useMyNftOffers(
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchAllOffers = useCallback(async () => {
-    if (!walletAddress || ownedNfts.length === 0) {
+    // CRITICAL: only fetch offers for teams the user has LISTED for sale.
+    // Fanning out one /api/marketplace/offers request per OWNED NFT fired
+    // hundreds of requests at once for big holders (~600 passes/teams) and
+    // tripped the rate limiter, 429-ing the whole site. Offers on an unlisted
+    // team are still visible on that team's detail page (useNftOffers).
+    const listed = walletAddress ? ownedNfts.filter((n) => !!n.orderHash) : [];
+    if (listed.length === 0) {
       setAllOffers([]);
       return;
     }
     setIsLoading(true);
     try {
       const results = await Promise.all(
-        ownedNfts.map(async (nft) => {
+        listed.map(async (nft) => {
           try {
             const res = await fetch(`/api/marketplace/offers?tokenId=${nft.tokenId}`);
             if (!res.ok) return [];
