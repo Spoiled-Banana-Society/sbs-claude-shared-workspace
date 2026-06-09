@@ -145,7 +145,12 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
   const [draft, setDraft] = useState(nickname || '');
   useEffect(() => { setDraft(nickname || ''); }, [nickname]);
   const canEdit = typeof onRename === 'function';
-  const displayName = nickname?.trim() || league.name;
+  // Title = "Team #<tokenId>" (the NFT), with the league number as a subtitle —
+  // never the raw league name / "Draft Pass" copy. Falls back to the league name
+  // only if we somehow don't have the token id.
+  const teamLabel = mt?.tokenId ? `Team #${mt.tokenId}` : league.name;
+  const displayName = nickname?.trim() || teamLabel;
+  const leagueNo = mt?.leagueNumber ?? (league.name.match(/#\s*(\d+)/)?.[1] ?? null);
   const commit = () => {
     if (!onRename) return;
     void onRename(league.id, draft);
@@ -300,6 +305,10 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               </span>
             )}
           </div>
+
+          {leagueNo != null && (
+            <p className="text-white/40 text-xs font-mono -mt-1.5 mb-3">League #{leagueNo}</p>
+          )}
 
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-3 mb-3">

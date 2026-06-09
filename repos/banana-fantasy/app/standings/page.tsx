@@ -94,6 +94,12 @@ export default function StandingsPage() {
     const draftedIds = new Set(leagues.map(l => l.id));
     const extra: League[] = [];
     for (const n of myNfts) {
+      // ONLY drafted teams belong on My Teams — NEVER undrafted draft passes.
+      // A pass has no backend roster record (hasBackendRecord === false); a
+      // drafted team has one (true/undefined). Without this we listed all 600+
+      // owned passes as "Draft Pass #N" cards. (Wheel-won JP/HOF passes that are
+      // mid-fill are the one exception — they're effectively teams.)
+      if (n.hasBackendRecord === false && n.fillingWheelLevel == null) continue;
       const synthId = n.leagueId || `nft-${n.tokenId}`;
       if (draftedIds.has(synthId)) continue; // already shown as a drafted team
       extra.push(nftToSyntheticLeague(n));
@@ -406,9 +412,9 @@ export default function StandingsPage() {
             <div className="flex gap-2 mb-5">
               {([
                 { key: 'all', label: 'All', color: 'white' },
+                { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
                 { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
                 { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
-                { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
               ] as const).map(({ key, label, color }) => (
                 <button
                   key={key}
