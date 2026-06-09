@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getDraftSummary, getDraftInfo, type ApiDraftPick } from '@/lib/api/drafts';
 import { getOwnerDraftTokens } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
-import type { League } from '@/types';
+import type { League, Ripeness } from '@/types';
 import { LeagueChat } from '@/components/standings/LeagueChat';
 import { useAuth } from '@/hooks/useAuth';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
@@ -293,15 +293,15 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   // name/pfp wins if set. We never surface a raw 0x wallet anywhere in the UI.
   const usersMap = useDraftRoomUsers(playerKeys);
 
-  interface ResolvedUser { name: string; imageUrl: string | null; }
+  interface ResolvedUser { name: string; imageUrl: string | null; equippedBadge: string | null; ripeness: Ripeness | null; }
   const resolveUser = useCallback((key: string): ResolvedUser => {
     if (key.startsWith('bot-')) {
-      return { name: key.replace(/^bot-fast-\d+-/, 'Bot '), imageUrl: null };
+      return { name: key.replace(/^bot-fast-\d+-/, 'Bot '), imageUrl: null, equippedBadge: null, ripeness: null };
     }
     const u = usersMap[key.toLowerCase()];
     const pfpName = allRosters[key]?.pfpDisplayName;
     const name = u?.displayName || pfpName || (key.startsWith('0x') ? truncateAddress(key) : key);
-    return { name, imageUrl: u?.imageUrl ?? null };
+    return { name, imageUrl: u?.imageUrl ?? null, equippedBadge: u?.equippedBadge ?? null, ripeness: u?.ripeness ?? null };
   }, [usersMap, allRosters]);
 
   const getPlayerLabel = (key: string): string => resolveUser(key).name;
@@ -770,25 +770,44 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
                 <div className="overflow-x-auto -mx-5 px-5 pb-2" style={{ maxWidth: 1200, margin: '0 auto' }}>
                   {/* Header row: drafter names */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(10, 1fr)', padding: '10px 0 0' }}>
-                    {columnHeaders.map((header, i) => (
-                      <div
-                        key={`heading-${i}`}
-                        style={{
-                          width: 100,
-                          marginTop: 10,
-                          padding: 5,
-                          textAlign: 'center',
-                          fontWeight: 'bold',
-                          fontSize: 12,
-                          color: i === userColumnIndex ? '#F3E216' : '#fff',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {header}
-                      </div>
-                    ))}
+                    {columnHeaders.map((header, i) => {
+                      // pfp + badge per drafter, exactly like the draft-room board.
+                      const addr = drafterOrder[i];
+                      const ru = addr ? resolveUser(addr) : null;
+                      return (
+                        <div
+                          key={`heading-${i}`}
+                          style={{
+                            width: 100,
+                            marginTop: 10,
+                            padding: 5,
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            fontSize: 12,
+                            color: i === userColumnIndex ? '#F3E216' : '#fff',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          {ru && (
+                            <AvatarWithBadge
+                              imageUrl={ru.imageUrl || '/banana-profile.png'}
+                              alt={header}
+                              size={32}
+                              equippedBadge={ru.equippedBadge}
+                              ripeness={ru.ripeness}
+                              useNextImage={false}
+                            />
+                          )}
+                          <div style={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {header}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Grid rows */}
