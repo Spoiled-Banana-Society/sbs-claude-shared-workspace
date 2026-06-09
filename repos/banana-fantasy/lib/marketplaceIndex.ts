@@ -26,6 +26,18 @@ export function normalizeLevel(raw: string | null | undefined): IndexLevel {
   return 'pro';
 }
 
+/** Self-contained per-player draft data — everything needed to regenerate the
+ *  card with NO dependency on the (ephemeral) Go draft summary. `pick` is the
+ *  irreplaceable, draft-specific bit; team/pos/bye/adp let us rebuild fully. */
+export interface IndexPlayer {
+  team: string;
+  pos: string;
+  pick?: number | string;
+  bye?: number | string;
+  adp?: number | string;
+  playerId?: string;
+}
+
 export interface MarketplaceIndexEntry {
   level: IndexLevel;
   leagueNumber?: number | null;
@@ -34,6 +46,9 @@ export interface MarketplaceIndexEntry {
    *  (price/owner overlaid from OpenSea at read time). */
   image?: string | null;
   roster?: string[];
+  /** Full structured pick list — the durable source of truth in OUR Firestore,
+   *  so picks/ADP/BYE survive even after the Go API drops the draft summary. */
+  players?: IndexPlayer[];
 }
 
 /**
@@ -59,6 +74,9 @@ export async function upsertMarketplaceIndex(tokenId: string, entry: Marketplace
         status: entry.status,
         image: entry.image ?? null,
         roster: entry.roster ?? [],
+        // Only write players when we actually have them (≥10) — never clobber a
+        // good stored pick list with an empty one on a partial/pass re-stamp.
+        ...(entry.players && entry.players.length >= 10 ? { players: entry.players } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },

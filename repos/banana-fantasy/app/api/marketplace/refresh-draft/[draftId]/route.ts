@@ -105,6 +105,9 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
           status: 'team',
           image,
           roster: players.map((p) => `${p.team} ${p.pos}`),
+          // Durable structured pick list — so we can regenerate this card forever
+          // from OUR Firestore, even after the Go draft summary expires.
+          players: players.map((p) => ({ team: p.team, pos: p.pos, pick: p.pick, bye: p.bye, adp: p.adp })),
         });
         written += 1;
       } catch { /* skip this token, keep the rest */ }

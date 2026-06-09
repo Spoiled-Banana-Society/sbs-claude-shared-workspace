@@ -107,6 +107,9 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     status: 'team',
     image: card.image,
     roster: card.players.map((p) => `${p.team} ${p.pos}`),
+    // Persist the full structured pick list so future rebuilds are self-contained
+    // (no Go dependency). resolveCard captured real picks into card.players.
+    players: card.players.map((p) => ({ team: p.team, pos: p.pos, pick: p.pick, bye: p.bye, adp: p.adp })),
   });
 
   return new Response(JSON.stringify({

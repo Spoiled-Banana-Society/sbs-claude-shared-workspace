@@ -128,6 +128,7 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
   let indexSaysTeam = false;
   let indexImage: string | null = null;
   let indexLevel: string | null = null;
+  let indexPlayers: CardPlayer[] | null = null;
   if (isFirestoreConfigured() && /^\d+$/.test(id)) {
     try {
       const ix = await getAdminFirestore().collection('marketplace_index').doc(id).get();
@@ -144,6 +145,10 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           indexSaysTeam = true;
           indexImage = (d.image as string) || null;
           indexLevel = (d.level as string) || null;
+          // Durable stored pick list (incl. pickNum) — lets us rebuild the card
+          // from OUR Firestore with NO Go dependency once it's been captured.
+          const ps = Array.isArray(d.players) ? (d.players as CardPlayer[]) : null;
+          if (ps && ps.length >= 10) indexPlayers = ps;
         }
       }
     } catch { /* fall through */ }
@@ -179,10 +184,12 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
           const useStored = isOgImage(stored) && !isPreRevealOg(stored);
-          // When we must BUILD the card (no stored picked image yet), pull real
-          // pick numbers from the Go summary so the PICK column is never blank —
-          // self-heals teams whose post-draft client refresh never fired.
-          const cardPlayers = useStored ? players : await playersWithPicks(id, players);
+          // Pick source priority when BUILDING: durable stored players (our
+          // Firestore, no Go needed) → live Go summary self-heal → pick-less
+          // attributes. So once captured, the card never depends on the Go API.
+          const cardPlayers = useStored
+            ? players
+            : indexPlayers ?? await playersWithPicks(id, players);
           const image = useStored
             ? stored
             : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
