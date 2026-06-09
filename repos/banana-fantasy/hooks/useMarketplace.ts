@@ -238,9 +238,15 @@ function enrichWithBackendData(
   });
 }
 
+// Last result per wallet — so re-opening the Sell tab paints the cards INSTANTLY
+// from memory while a fresh fetch runs silently in the background (no skeleton
+// flash). Survives tab switches for the life of the page.
+const myNftsCache = new Map<string, MarketplaceTeam[]>();
+
 export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
-  const [data, setData] = useState<MarketplaceTeam[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [data, setData] = useState<MarketplaceTeam[]>(() => (walletAddress ? myNftsCache.get(walletAddress.toLowerCase()) ?? [] : []));
+  // Only show the loading skeleton when we have NOTHING cached to paint.
+  const [isLoading, setIsLoading] = useState(() => !(walletAddress && myNftsCache.has(walletAddress.toLowerCase())));
   const [error, setError] = useState<unknown>(null);
   const fetchingRef = useRef<string | null>(null);
 
@@ -253,7 +259,8 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
     if (fetchingRef.current === walletAddress) return;
     fetchingRef.current = walletAddress;
 
-    setIsLoading(true);
+    // Only block the UI with a skeleton when we have nothing cached to show.
+    if (!myNftsCache.has(walletAddress.toLowerCase())) setIsLoading(true);
     try {
       // Fetch OpenSea NFTs, SBS backend tokens, and free-origin tokenIds in parallel
       const [nftRes, tokens, freeRes] = await Promise.all([
@@ -294,6 +301,7 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
         const lvl = fillingLevels[String(team.tokenId)];
         return lvl ? { ...team, fillingWheelLevel: lvl } : team;
       });
+      myNftsCache.set(walletAddress.toLowerCase(), finalData);
       setData(finalData);
       setError(null);
     } catch (err) {

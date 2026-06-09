@@ -152,20 +152,22 @@ export function SellTab({
                 <Link
                   key={team.id}
                   href={`/marketplace/${team.tokenId}`}
-                  className={`h-full flex flex-col bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg ${team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+                  className={`group relative block bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg ${team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
                 >
-                  <div className="relative aspect-[3/4] bg-[#0d0d12] flex items-center justify-center">
+                  <div className="relative aspect-[4/5] bg-[#0d0d12]">
                     {draftInProgress(team) ? (
-                      <div className="flex flex-col items-center justify-center gap-3 text-center px-6">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
                         <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={64} height={64} className="object-contain opacity-80" />
                         <span className="text-text-muted text-xs">Drafting…</span>
                       </div>
                     ) : team.imageUrl ? (
-                      <Image src={team.imageUrl} alt={team.name} fill className="object-contain rounded-2xl shadow-lg" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                      <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                     ) : (
-                      <SbsPassThumb label={`#${team.tokenId}`} size={140} roster={team.roster} />
+                      <div className="absolute inset-0 flex items-center justify-center"><SbsPassThumb label={`#${team.tokenId}`} size={160} roster={team.roster} /></div>
                     )}
-                    <div className="absolute top-3 left-3 flex items-center gap-2">
+
+                    {/* level badge + filling chip (top-left) */}
+                    <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
                       {team.isJackpot ? (
                         <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                       ) : team.isHof ? (
@@ -182,46 +184,43 @@ export function SellTab({
                         </span>
                       )}
                     </div>
-                  </div>
-                  <div className="p-4 flex flex-col flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-lg font-semibold text-text-primary font-mono truncate">Team #{team.tokenId}</h3>
-                      <SellTabOfferBadge tokenId={team.tokenId} />
-                    </div>
-                    <p className="text-text-muted text-xs font-mono mt-0.5">
-                      {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : (team.leagueNumber != null ? `League #${team.leagueNumber}` : `Team #${team.tokenId}`)}
-                    </p>
-                    <div className="mt-auto pt-4" onClick={e => e.stopPropagation()}>
-                      {team.orderHash ? (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-green-400 font-medium">Listed ${team.price?.toFixed(2)}</span>
+                    <div className="absolute top-3 right-3 z-10"><SellTabOfferBadge tokenId={team.tokenId} /></div>
+
+                    {/* bottom overlay: info + action (no separate footer = no dead space) */}
+                    <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
+                      <div className="min-w-0">
+                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">Team #{team.tokenId}</p>
+                        <p className="font-mono text-[10.5px] text-text-muted">
+                          {hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                        {team.orderHash ? (
                           <button
                             onClick={e => { e.preventDefault(); onHandleCancel(team); }}
                             disabled={cancellingTokenId === team.tokenId}
-                            className="px-4 py-2 rounded-xl text-sm font-semibold transition-all border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                            className="px-5 py-2.5 rounded-xl text-sm font-bold border border-red-500/50 text-red-400 bg-[#08090c]/50 backdrop-blur-sm hover:bg-red-500/15 transition-all disabled:opacity-50"
                           >
                             {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
                           </button>
-                        </div>
-                      ) : team.passType === 'free' && isDraftingOpen() ? (
-                        <button
-                          onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
-                          className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all bg-white/10 text-white/40 hover:bg-white/15 hover:text-white/50"
-                        >
-                          Listable Once Season Starts
-                        </button>
-                      ) : draftInProgress(team) ? (
-                        <span className="block w-full text-center px-5 py-2.5 rounded-xl text-sm font-semibold bg-white/5 text-white/40 cursor-default">
-                          Drafting… listable when done
-                        </span>
-                      ) : (
-                        <button
-                          onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
-                          className="w-full px-5 py-2.5 rounded-xl text-sm font-semibold transition-all bg-banana text-black hover:brightness-110"
-                        >
-                          List for Sale
-                        </button>
-                      )}
+                        ) : team.passType === 'free' && isDraftingOpen() ? (
+                          <button
+                            onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
+                            className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/15 text-white/50 bg-[#08090c]/50 backdrop-blur-sm transition-all"
+                          >
+                            Season Soon
+                          </button>
+                        ) : draftInProgress(team) ? (
+                          <span className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/15 text-white/45 bg-[#08090c]/50 cursor-default">Drafting…</span>
+                        ) : (
+                          <button
+                            onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
+                            className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
+                          >
+                            List for Sale
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </Link>

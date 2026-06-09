@@ -75,7 +75,6 @@ export function BuyTab({
   allNftsHasMore,
   watchlistSet,
   walletAddress,
-  lastSales,
   leaderboardTeams,
   showBuyModal,
   selectedTeam,
@@ -277,13 +276,13 @@ export function BuyTab({
                 if (sweepMode && team.price != null) onToggleSweepSelect(team.tokenId);
                 else onNavigateToTeam(team.tokenId);
               }}
-              className={`h-full flex flex-col bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+              className={`group relative bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
             >
-              <div className="relative aspect-[3/4] bg-[#0d0d12] flex items-center justify-center">
+              <div className="relative aspect-[4/5] bg-[#0d0d12]">
                 {team.imageUrl ? (
-                  <Image src={team.imageUrl} alt={team.name} fill className="object-contain rounded-2xl shadow-lg" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                  <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                 ) : (
-                  <FallbackPassSvg gradientId={`passGrad-${team.id}`} />
+                  <div className="absolute inset-0 flex items-center justify-center"><FallbackPassSvg gradientId={`passGrad-${team.id}`} /></div>
                 )}
 
                 <div className="absolute top-5 right-3 flex flex-col gap-3 z-10">
@@ -327,7 +326,7 @@ export function BuyTab({
                   </button>
                 </div>
 
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
                   {team.isJackpot ? (
                     <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                   ) : team.isHof ? (
@@ -340,121 +339,58 @@ export function BuyTab({
                   ) : (
                     <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
                   )}
-                </div>
-              </div>
-
-              <div className="p-4 flex flex-col flex-1">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-text-primary font-mono truncate">{team.name}</h3>
-                      {team.rank >= 1 && team.rank <= 10 && (
-                        <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/50'}`}>
-                          #{team.rank}
-                        </span>
-                      )}
-                    </div>
-                    {team.leagueNumber != null && (
-                      <p className="text-text-muted text-xs font-mono mt-0.5">League #{team.leagueNumber}</p>
-                    )}
-                  </div>
+                  {team.rank >= 1 && team.rank <= 10 && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/60'}`}>#{team.rank}</span>
+                  )}
                 </div>
 
-                {hasSeasonStarted() && (
-                  <div className={`grid ${team.rank >= 1 && team.rank <= 10 ? 'grid-cols-3' : 'grid-cols-2'} gap-3 p-3 bg-bg-primary rounded-xl mb-4`}>
-                    {team.rank >= 1 && team.rank <= 10 && (
-                      <div className="text-center">
-                        <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Rank</p>
-                        <p className={`font-mono text-sm font-semibold ${team.rank <= 3 ? 'text-banana' : 'text-text-primary'}`}>{team.rank}/{10}</p>
-                      </div>
-                    )}
-                    <div className="text-center">
-                      <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Season</p>
-                      <p className="font-mono text-sm font-semibold text-text-primary">{team.points.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-text-muted text-[10px] uppercase tracking-wider mb-1">Weekly</p>
-                      <p className="font-mono text-sm font-semibold text-success">{team.weeklyAvg.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex items-center justify-between mt-auto">
-                  <div>
+                {/* bottom overlay: price/name + action (no separate footer = no dead space) */}
+                <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
+                  <div className="min-w-0">
                     {team.price != null ? (
                       <>
-                        <p className="text-text-muted text-[10px] mb-0.5">Price</p>
-                        <p className="text-text-primary font-mono text-lg font-bold">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                        {lastSales[team.tokenId] && <p className="text-text-muted text-[10px] font-mono">Last sale: ${lastSales[team.tokenId].price.toFixed(2)}</p>}
+                        <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                        <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
                       </>
                     ) : (
                       <>
-                        <p className="text-text-muted text-xs">Not listed</p>
-                        {lastSales[team.tokenId] && <p className="text-text-muted text-[10px] font-mono">Last sale: ${lastSales[team.tokenId].price.toFixed(2)}</p>}
+                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.name}</p>
+                        <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
                       </>
                     )}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
                     {sweepMode && team.price != null ? (
                       <button
-                        onClick={event => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          onToggleSweepSelect(team.tokenId);
-                        }}
-                        className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-bg-tertiary hover:border-text-muted'}`}
+                        onClick={event => { event.stopPropagation(); event.preventDefault(); onToggleSweepSelect(team.tokenId); }}
+                        className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-white/30 bg-[#08090c]/50 hover:border-white'}`}
                       >
                         {sweepSelected.has(team.tokenId) && (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                            <path d="M5 13l4 4L19 7" />
-                          </svg>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
                         )}
                       </button>
                     ) : walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
                       team.price != null ? (
-                        <span className="text-text-muted text-xs">You</span>
+                        <span className="text-text-muted text-xs font-bold px-3 py-2.5">You</span>
                       ) : (
                         <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                            onGoToSellTab();
-                          }}
-                          className="px-5 py-2 bg-banana text-black text-xs font-semibold rounded-xl hover:brightness-110 transition-all"
+                          onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
+                          className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
                         >
                           List
                         </button>
                       )
                     ) : team.price != null ? (
-                      <>
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            event.preventDefault();
-                            onMakeOffer(team.tokenId);
-                          }}
-                          className="text-banana text-xs font-medium hover:underline"
-                        >
-                          Make Offer
-                        </button>
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            onOpenBuyModal(team);
-                          }}
-                          className="px-6 py-2.5 bg-banana text-black text-sm font-semibold rounded-xl hover:brightness-110 transition-all"
-                        >
-                          Buy Now
-                        </button>
-                      </>
+                      <button
+                        onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
+                        className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
+                      >
+                        Buy Now
+                      </button>
                     ) : (
                       <button
-                        onClick={event => {
-                          event.stopPropagation();
-                          event.preventDefault();
-                          onMakeOffer(team.tokenId);
-                        }}
-                        className="px-9 py-3.5 -mt-1 border border-banana text-banana text-base font-bold rounded-xl hover:bg-banana hover:text-black transition-all"
+                        onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
+                        className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
                       >
                         Make Offer
                       </button>

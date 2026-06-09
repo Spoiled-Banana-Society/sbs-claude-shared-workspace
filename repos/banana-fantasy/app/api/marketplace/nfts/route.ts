@@ -29,6 +29,12 @@ const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 const ownedCache = new Map<string, { ts: number; nfts: OpenSeaNft[] }>();
 const OWNED_TTL_MS = 45_000;
 
+// Full enriched-response cache — a reload / tab-switch within the window returns
+// the prior result instantly (no Alchemy/backend round-trips at all). Short TTL
+// so a buy/sell/draft still shows up within seconds.
+const respCache = new Map<string, { ts: number; nfts: unknown[] }>();
+const RESP_TTL_MS = 12_000;
+
 /**
  * GET /api/marketplace/nfts?owner=0x...
  *
@@ -40,12 +46,15 @@ export async function GET(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
-    }
-
     const owner = getSearchParam(req, 'owner');
     if (!owner) return jsonError('Missing owner address', 400);
+
+    // Instant path: serve the cached enriched response if it's still fresh.
+    const respKey = owner.toLowerCase();
+    const cachedResp = respCache.get(respKey);
+    if (cachedResp && Date.now() - cachedResp.ts < RESP_TTL_MS) {
+      return json({ nfts: cachedResp.nfts });
+    }
 
     // Kick off the active-listings fetch in parallel (used to merge orderHash/
     // price onto owned NFTs so listed teams show "Delist").
@@ -244,6 +253,7 @@ export async function GET(req: Request) {
       finalNfts = [...added.filter((n): n is NonNullable<typeof n> => n !== null), ...finalNfts];
     }
 
+    respCache.set(respKey, { ts: Date.now(), nfts: finalNfts });
     return json({ nfts: finalNfts });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
