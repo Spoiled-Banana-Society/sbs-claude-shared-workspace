@@ -29,6 +29,7 @@ const CRITICAL_CRONS: Array<{ name: string; everyMin: number; graceMin: number; 
   { name: 'health-canary',        everyMin: 5,   graceMin: 15, does: 'live endpoint canaries (promo/withdraw contract checks)' },
   { name: 'audit-integrity',      everyMin: 360, graceMin: 90, does: 'state-integrity audits (pass drift, duplicates, balances)' },
   { name: 'wheel-period-keeper',  everyMin: 5,   graceMin: 15, does: 'wheel period rollover' },
+  { name: 'capture-draft-data',   everyMin: 5,   graceMin: 15, does: 'server-side draft-close pick-data capture (the safety net that guarantees every team card gets its pick data even if no client fires the close trigger)' },
 ];
 
 /** Stamp a successful run. Best-effort — never throws into the cron. */
