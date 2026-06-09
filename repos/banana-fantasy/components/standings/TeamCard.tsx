@@ -8,21 +8,7 @@ import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
-import { useListTeam } from '@/hooks/useListTeam';
-import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
-
-/** Human "time left" for a Seaport order's endTime (Unix seconds string). */
-function listingTimeLeft(endTimeSec?: string | null): string | null {
-  if (!endTimeSec) return null;
-  const diff = Number(endTimeSec) * 1000 - Date.now();
-  if (!Number.isFinite(diff)) return null;
-  if (diff <= 0) return 'Expired';
-  const days = Math.floor(diff / 86400000);
-  const hours = Math.floor((diff % 86400000) / 3600000);
-  if (days > 0) return `${days}d ${hours}h`;
-  const mins = Math.floor((diff % 3600000) / 60000);
-  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
-}
+import { hasSeasonStarted } from '@/lib/draftTypes';
 
 interface TeamCardProps {
   league: League;
@@ -37,9 +23,8 @@ interface TeamCardProps {
   walletAddress?: string;
   /** This league's marketplace NFT (tokenId + listing), matched by leagueId. */
   marketplaceTeam?: MarketplaceTeam | null;
-  /** Called after a successful list, so the parent can optimistically update. */
+  /** Kept for prop compatibility — listing is handled in the marketplace, not here. */
   onListed?: (tokenId: string, orderHash: string, price: number) => void;
-  /** Called after a successful cancel. */
   onCancelled?: (tokenId: string) => void;
 }
 
@@ -49,16 +34,14 @@ const typeConfig = {
     color: 'bg-jackpot',
     text: 'text-jackpot',
     border: 'border-red-500/40',
-    bg: 'bg-gradient-to-r from-red-500/15 via-red-500/5 to-transparent',
-    accentBar: 'bg-gradient-to-b from-red-400 to-red-600',
+    bg: 'bg-gradient-to-r from-red-500/10 via-red-500/[0.03] to-transparent',
   },
   hof: {
     label: 'HOF',
     color: 'bg-hof',
     text: 'text-hof',
     border: 'border-[#D4AF37]/40',
-    bg: 'bg-gradient-to-r from-[#D4AF37]/15 via-[#D4AF37]/5 to-transparent',
-    accentBar: 'bg-gradient-to-b from-[#D4AF37] to-yellow-700',
+    bg: 'bg-gradient-to-r from-[#D4AF37]/10 via-[#D4AF37]/[0.03] to-transparent',
   },
   pro: {
     label: 'Pro',
@@ -66,7 +49,6 @@ const typeConfig = {
     text: 'text-pro',
     border: 'border-purple-500/25',
     bg: 'bg-white/[0.02]',
-    accentBar: 'bg-gradient-to-b from-purple-400 to-purple-700',
   },
   regular: {
     label: 'Pro',
@@ -74,7 +56,6 @@ const typeConfig = {
     text: 'text-pro',
     border: 'border-purple-500/25',
     bg: 'bg-white/[0.02]',
-    accentBar: 'bg-gradient-to-b from-purple-400 to-purple-700',
   },
 };
 
@@ -107,40 +88,12 @@ function getPlaceBadge(place: number) {
   );
 }
 
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, onListed, onCancelled }: TeamCardProps) {
+export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam }: TeamCardProps) {
   const unreadCount = useUnreadChatCount(league.id, walletAddress);
-  const { listTeam, cancelTeam, busy: listBusy, error: listError } = useListTeam(walletAddress ?? null);
-  const [showListInput, setShowListInput] = useState(false);
-  const [listPriceInput, setListPriceInput] = useState('');
 
   const mt = marketplaceTeam;
   const isListed = !!mt?.orderHash;
-  // Any team the wallet owns can be listed, except a free pass during an open
-  // draft window. (We don't gate on roster here: a team bought on the
-  // marketplace doesn't resolve its roster for the new owner, but they still
-  // own the NFT and must be able to list it.)
-  const listBlocked = mt?.passType === 'free' && isDraftingOpen();
-  const canList = !!mt && !listBlocked;
-  const expiresIn = isListed ? listingTimeLeft(mt?.listingEndTime) : null;
 
-  const doList = async () => {
-    if (!mt) return;
-    const p = parseFloat(listPriceInput);
-    if (!Number.isFinite(p) || p <= 0) return;
-    try {
-      const res = await listTeam(mt.tokenId, p, 30 * 24 * 3600);
-      onListed?.(mt.tokenId, res.orderHash, res.price);
-      setShowListInput(false);
-      setListPriceInput('');
-    } catch { /* listError surfaces the message */ }
-  };
-  const doCancel = async () => {
-    if (!mt?.orderHash) return;
-    try {
-      await cancelTeam(mt.tokenId, mt.orderHash);
-      onCancelled?.(mt.tokenId);
-    } catch { /* listError surfaces the message */ }
-  };
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(nickname || '');
   useEffect(() => { setDraft(nickname || ''); }, [nickname]);
@@ -195,17 +148,6 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
       ),
     },
     {
-      tab: 'team',
-      label: 'Team',
-      icon: (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-          <line x1="8" y1="21" x2="16" y2="21" />
-          <line x1="12" y1="17" x2="12" y2="21" />
-        </svg>
-      ),
-    },
-    {
       tab: 'chat',
       label: 'Chat',
       icon: (
@@ -226,29 +168,35 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
       style={{ animationDelay: `${index * 50}ms` }}
     >
       <div className="flex items-stretch">
-        {/* Left accent bar */}
-        <div
-          className={`w-1.5 flex-shrink-0 rounded-l-2xl ${
-            inTheMoney
-              ? 'bg-gradient-to-b from-green-400 to-green-600'
-              : config.accentBar
-          }`}
-        />
-
-        {/* Obsidian team card image (the real NFT card) — opens the team view on tap. */}
-        {mt?.imageUrl && (
-          <button
-            type="button"
-            onClick={() => onOpenModal(league, 'team')}
-            className="hidden sm:block w-[88px] flex-shrink-0 self-stretch relative bg-[#0b0b10] border-r border-white/[0.06] hover:brightness-110 transition"
-            aria-label="View team card"
-          >
-            <Image src={mt.imageUrl} alt={`Team #${mt.tokenId}`} fill className="object-contain p-1.5" sizes="88px" />
-          </button>
-        )}
+        {/* Obsidian team card image — the hero. Tap → full card view (Team tab). */}
+        <button
+          type="button"
+          onClick={() => onOpenModal(league, 'team')}
+          className="group/img w-[118px] sm:w-[172px] flex-shrink-0 self-stretch relative bg-[#070709] border-r border-white/[0.06] overflow-hidden"
+          aria-label="View team card"
+        >
+          {mt?.imageUrl ? (
+            <Image
+              src={mt.imageUrl}
+              alt={`Team #${mt.tokenId}`}
+              fill
+              className="object-cover object-top group-hover/img:scale-[1.03] transition-transform duration-300"
+              sizes="(max-width: 640px) 118px, 172px"
+            />
+          ) : (
+            <div className={`absolute inset-0 flex flex-col items-center justify-center gap-2 ${config.bg}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${config.text}`}>{config.label}</span>
+              <span className="text-white/80 font-mono text-sm">{mt?.tokenId ? `Team #${mt.tokenId}` : 'Team'}</span>
+            </div>
+          )}
+          {/* subtle "view" affordance on hover */}
+          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-end justify-center pb-2.5 opacity-0 group-hover/img:opacity-100">
+            <span className="text-[10px] font-semibold text-white/90 bg-black/50 backdrop-blur-sm px-2.5 py-1 rounded-full">View card</span>
+          </div>
+        </button>
 
         <div className="flex-1 px-4 py-4 sm:px-5 min-w-0">
-          {/* Top row: rank badge + league name + type pill + prize */}
+          {/* Top row: rank badge + team name + type pill */}
           <div className="flex items-center gap-2.5 mb-3">
             {showRank && getPlaceBadge(league.leagueRank)}
             {editing ? (
@@ -269,7 +217,7 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               />
             ) : (
               <h3
-                className="text-white font-medium text-sm sm:text-base truncate flex items-center gap-1.5 group/name"
+                className="text-white font-semibold text-base sm:text-lg truncate flex items-center gap-1.5 group/name"
                 title={nickname?.trim() ? `Custom name (real: ${league.name})` : undefined}
               >
                 <span className="truncate">{displayName}</span>
@@ -294,14 +242,14 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               {config.label}
             </span>
             <FounderPill draftId={league.id} size="sm" />
-            {league.prizeIndicator != null && league.prizeIndicator > 0 && (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 flex-shrink-0">
-                ${league.prizeIndicator}
-              </span>
-            )}
             {inTheMoney && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 flex-shrink-0 border border-green-500/20">
                 Advancing
+              </span>
+            )}
+            {isListed && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 flex-shrink-0 border border-green-500/20">
+                Listed{typeof mt?.price === 'number' ? ` · $${mt.price.toFixed(0)}` : ''}
               </span>
             )}
           </div>
@@ -380,66 +328,6 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               </button>
             ))}
           </div>
-
-          {/* What you paid for this team, if we have a purchase record */}
-          {typeof mt?.pricePaid === 'number' && mt.pricePaid > 0 && (
-            <div className="mt-2.5 pt-2.5 border-t border-white/[0.06] flex items-center gap-1.5 text-[11px]" onClick={e => e.stopPropagation()}>
-              <span className="text-white/40">Bought for</span>
-              <span className="font-mono font-semibold text-banana">${mt.pricePaid.toFixed(2)}</span>
-            </div>
-          )}
-
-          {/* Marketplace: list / cancel for the team's owner */}
-          {mt && (isListed || canList) && (
-            <div className="mt-2.5 pt-2.5 border-t border-white/[0.06]" onClick={e => e.stopPropagation()}>
-              {isListed ? (
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-xs text-green-400 font-medium">
-                    Listed for ${mt.price?.toFixed(2)}{expiresIn ? ` · ${expiresIn} left` : ''}
-                  </span>
-                  <button
-                    onClick={doCancel}
-                    disabled={listBusy}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                  >
-                    {listBusy ? 'Cancelling…' : 'Cancel listing'}
-                  </button>
-                </div>
-              ) : showListInput ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 flex-1 bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-1.5">
-                    <span className="text-white/40 text-xs">$</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={listPriceInput}
-                      onChange={e => setListPriceInput(e.target.value)}
-                      placeholder="Price (USDC)"
-                      autoFocus
-                      className="flex-1 bg-transparent text-white text-xs placeholder:text-white/30 focus:outline-none font-mono w-full"
-                    />
-                  </div>
-                  <button
-                    onClick={doList}
-                    disabled={listBusy || !listPriceInput || parseFloat(listPriceInput) <= 0}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-banana text-black hover:brightness-110 transition-all disabled:opacity-50"
-                  >
-                    {listBusy ? 'Listing…' : 'List'}
-                  </button>
-                  <button onClick={() => { setShowListInput(false); setListPriceInput(''); }} className="text-white/40 hover:text-white/70 text-xs px-1">✕</button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowListInput(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-banana/10 hover:bg-banana/20 border border-banana/30 text-banana text-xs font-semibold transition-colors"
-                >
-                  💰 List for Sale
-                </button>
-              )}
-              {listError && <p className="text-error text-[11px] mt-1.5">{listError}</p>}
-            </div>
-          )}
         </div>
       </div>
     </div>
