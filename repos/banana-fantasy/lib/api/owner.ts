@@ -183,7 +183,7 @@ export function mapDraftTokenToLeague(token: ApiDraftToken): League {
   // League name = backend displayName ("BBB #N" → "League #N"), which uses
   // the GLOBAL FilledLeaguesCount that increments across both fast and slow
   // drafts. That's the number a user sees on the draft-results page header,
-  // on their NFT in OpenSea, and in the 764/800 counter on /standings.
+  // on their NFT in OpenSea, and in the 764/800 counter on /my-teams.
   //
   // The old workaround derived the number from the draftId trailing digits
   // (e.g. "2024-fast-draft-753" → "League #753"), but that's the per-type

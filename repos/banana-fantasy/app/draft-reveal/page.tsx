@@ -234,7 +234,7 @@ function DraftRevealContent() {
                 🎟️ Buy More Drafts
               </a>
               <a
-                href="/standings"
+                href="/my-teams"
                 className="flex-1 py-3 rounded-xl bg-bg-tertiary text-text-primary font-bold text-sm text-center hover:bg-bg-tertiary/80 transition-colors"
               >
                 📊 Standings

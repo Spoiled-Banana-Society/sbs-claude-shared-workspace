@@ -200,7 +200,7 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Check out our leaderboards to see which teams are performing well and have winnings. From there, you can click through to our marketplace to view the team, see who owns it, and make an offer. When you purchase a team, the team and any future prize winnings transfer to your account.',
         link: {
           label: 'View Leaderboards',
-          href: '/standings',
+          href: '/my-teams',
         },
       },
       {

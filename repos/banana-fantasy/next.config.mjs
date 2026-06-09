@@ -36,6 +36,13 @@ const nextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      // The My Teams page moved from /standings → /my-teams. Keep the old URL
+      // working for bookmarks / shared links (query string is preserved).
+      { source: '/standings', destination: '/my-teams', permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

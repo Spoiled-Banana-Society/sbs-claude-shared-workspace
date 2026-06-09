@@ -36,7 +36,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   const navItems = [
     { href: '/drafting', label: 'Drafting', tooltip: 'View active drafts', auth: false },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
-    { href: '/standings', label: 'My Teams', tooltip: 'Your drafted teams', auth: true },
+    { href: '/my-teams', label: 'My Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/rankings', label: 'Rankings', tooltip: 'Custom rankings & auto-draft limits', auth: false },
     { href: '/exposure', label: 'Exposure', tooltip: 'Player & team exposure', auth: true },
     { href: '/marketplace', label: 'Marketplace', tooltip: 'Buy & sell teams', auth: false },

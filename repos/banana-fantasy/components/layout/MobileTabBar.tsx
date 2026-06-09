@@ -52,9 +52,9 @@ export function MobileTabBar() {
       ),
     },
     {
-      href: '/standings',
+      href: '/my-teams',
       label: 'Teams',
-      matchPaths: ['/standings', '/exposure'],
+      matchPaths: ['/my-teams', '/exposure'],
       badge: 0,
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
