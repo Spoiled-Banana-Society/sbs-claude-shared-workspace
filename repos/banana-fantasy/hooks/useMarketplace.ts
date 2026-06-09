@@ -53,21 +53,27 @@ interface UseCollectionNftsResult {
   refetch: () => void;
 }
 
+// Per-filter cache (all / level / league) so switching tabs paints INSTANTLY from
+// memory, and a flaky/empty fetch never blanks a section that already had teams.
+const collectionCache = new Map<string, MarketplaceTeam[]>();
+const ckey = (level?: string | null, league?: number | null) => `${level ?? ''}|${league ?? ''}`;
+
 export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null, league?: number | null): UseCollectionNftsResult {
-  const [data, setData] = useState<MarketplaceTeam[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<MarketplaceTeam[]>(() => collectionCache.get(ckey(level, league)) ?? []);
+  const [isLoading, setIsLoading] = useState(() => !collectionCache.has(ckey(level, league)));
   const [error, setError] = useState<unknown>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
-    if (!append) setIsLoading(true);
+    const key = ckey(level, league);
+    // Only show the skeleton when we have nothing cached for this filter.
+    if (!append && !collectionCache.has(key)) setIsLoading(true);
     try {
       // ALWAYS backend-sourced: the marketplace_index (keyed by on-chain id) is the
-      // source of truth for which tokens are teams + their level/league/roster/image
-      // — instant, no OpenSea page-scanning. All Teams (no params) returns every
-      // drafted team; level/league add a filter. OpenSea is overlaid server-side
-      // for live price/owner only (the trading layer), never for classification.
+      // source of truth for which tokens are teams + level/league/roster/image, and
+      // prices come from our own active_listings cache. No OpenSea on the page path
+      // (the actual trades still settle on Seaport — that's the only OpenSea piece).
       const p = new URLSearchParams();
       if (level) p.set('level', level);
       if (league != null) p.set('league', String(league));
@@ -78,11 +84,19 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
       const json = await res.json();
 
       const nfts: MarketplaceTeam[] = json.nfts ?? [];
-      setData(prev => append ? [...prev, ...nfts] : nfts);
+      // A successful EMPTY result for a filter that previously had teams is almost
+      // always a transient backend blip — keep the cached cards rather than blanking.
+      if (!append && nfts.length === 0 && (collectionCache.get(key)?.length ?? 0) > 0) {
+        setData(collectionCache.get(key)!);
+      } else {
+        if (!append) collectionCache.set(key, nfts);
+        setData(prev => append ? [...prev, ...nfts] : nfts);
+      }
       setCursor(json.next ?? null);
       setHasMore(!!json.next);
       setError(null);
     } catch (err) {
+      // On a failed fetch, keep whatever's on screen — never blank to "No Teams".
       setError(err);
     } finally {
       setIsLoading(false);

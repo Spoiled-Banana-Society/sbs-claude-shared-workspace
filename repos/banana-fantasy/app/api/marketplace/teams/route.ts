@@ -5,7 +5,7 @@ import {
   type DraftType,
   type MarketplaceTeam,
 } from '@/lib/opensea';
-import { getCollectionListings } from '@/lib/marketplace/collectionListings';
+import { getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,11 @@ export const dynamic = 'force-dynamic';
 function colorForDraftType(dt: DraftType): string {
   return dt === 'jackpot' ? 'from-error to-red-700' : dt === 'hof' ? 'from-hof to-pink-600' : 'from-pro to-blue-600';
 }
+
+// Short cache per filter (all/level/league) so rapid tab-switching is instant and
+// doesn't re-hit Firestore + OpenSea every click.
+const teamsCache = new Map<string, { ts: number; nfts: MarketplaceTeam[] }>();
+const TEAMS_TTL_MS = 10_000;
 
 /**
  * GET /api/marketplace/teams?level=jackpot|hof&league=N
@@ -32,6 +37,14 @@ export async function GET(req: Request) {
     const leagueParam = getSearchParam(req, 'league');
     const hasLeague = !!leagueParam && /^\d+$/.test(leagueParam);
     const wantLevel = level === 'jackpot' || level === 'hof' ? level : null;
+
+    // Instant path: serve the cached section if still fresh.
+    const cacheKey = `${wantLevel ?? ''}|${hasLeague ? leagueParam : ''}`;
+    const cached = teamsCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < TEAMS_TTL_MS) {
+      return json({ nfts: cached.nfts, next: null });
+    }
+
     const db = getAdminFirestore();
 
     // Query ONE field (single-field indexes are automatic; no composite index
@@ -78,22 +91,30 @@ export async function GET(req: Request) {
       };
     });
 
-    // Overlay OpenSea listings for live price/owner on listed teams. Shared 15s
-    // cache so the Jackpot/HOF/League filters don't re-fetch it every call.
-    const byId = await getCollectionListings();
-    for (const t of teams) {
-      const l = byId.get(t.tokenId);
-      if (l) {
-        const v = l.price?.current?.value;
-        const dec = l.price?.current?.decimals ?? 18;
-        t.price = v ? Number(v) / Math.pow(10, dec) : null;
-        t.orderHash = l.order_hash;
-        t.protocolAddress = l.protocol_address;
-        t.ownerAddress = l.protocol_data.parameters.offerer;
-        t.owner = `${t.ownerAddress.slice(0, 6)}...${t.ownerAddress.slice(-4)}`;
+    // Overlay live price/owner from OUR backend listings cache (active_listings in
+    // Firestore — written every time someone lists through the app). 100% backend,
+    // no OpenSea API on the page-load path. BEST-EFFORT: a listings hiccup must
+    // NEVER blank the section; on failure we still return every team, just without
+    // prices. (The actual orders still live/settle on Seaport — this is only the
+    // display mirror.)
+    try {
+      const active = (await getAllRecentCachedListings()).filter((l) => l.status === 'active');
+      const byId = new Map(active.map((l) => [String(l.tokenId), l]));
+      for (const t of teams) {
+        const l = byId.get(t.tokenId);
+        if (l) {
+          t.price = l.priceUsd;
+          t.orderHash = l.orderHash;
+          t.protocolAddress = l.protocolAddress;
+          t.ownerAddress = l.offerer;
+          t.owner = `${l.offerer.slice(0, 6)}...${l.offerer.slice(-4)}`;
+        }
       }
+    } catch (e) {
+      console.warn('[marketplace/teams] listings overlay failed (serving teams without prices):', e);
     }
 
+    teamsCache.set(cacheKey, { ts: Date.now(), nfts: teams });
     return json({ nfts: teams, next: null });
   } catch (err) {
     console.error('[marketplace/teams] GET failed:', err);
