@@ -7,7 +7,6 @@ import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
-import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 type SuccessType = 'buy' | 'sell' | 'list';
 
@@ -161,35 +160,28 @@ export function SellTab({
                         <Image src="/sbs-banana-logo.png" alt="Drafting in progress" width={64} height={64} className="object-contain opacity-80" />
                         <span className="text-text-muted text-xs">Drafting…</span>
                       </div>
-                    ) : team.fillingWheelLevel ? (
-                      // Wheel-won JP/HOF pass: render the tier-styled pass art (gold
-                      // HOF / red Jackpot) instead of the generic grey pass image.
-                      <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                     ) : team.imageUrl ? (
                       <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center"><SbsPassThumb label={`#${team.tokenId}`} size={160} roster={team.roster} /></div>
                     )}
 
-                    {/* level badge (top-left) */}
+                    {/* level badge + filling chip (top-left) */}
                     <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-                      {team.fillingWheelLevel ? (
-                        // Wheel-won JP/HOF pass still filling. Its NFT metadata isn't
-                        // stamped JP/HOF until the draft reveals, so team.isHof/isJackpot
-                        // are still false here — drive the badge off the known wheel
-                        // level so it never wrongly falls back to "PRO".
-                        <span
-                          className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}
-                          title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
-                        >
-                          {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · Filling
-                        </span>
-                      ) : team.isJackpot ? (
+                      {team.isJackpot ? (
                         <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                       ) : team.isHof ? (
                         <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
                       ) : (
                         <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
+                      )}
+                      {team.fillingWheelLevel && (
+                        <span
+                          className={`px-2 py-1 text-[9px] font-bold rounded-full uppercase tracking-wide ${team.fillingWheelLevel === 'jackpot' ? 'bg-error/20 text-error' : 'bg-hof/20 text-hof'}`}
+                          title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
+                        >
+                          {team.fillingWheelLevel === 'jackpot' ? 'JP' : 'HOF'} · Filling
+                        </span>
                       )}
                     </div>
                     {/* Offers badge only for LISTED teams — fetching offers per
@@ -215,10 +207,7 @@ export function SellTab({
                           >
                             {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
                           </button>
-                        ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel ? (
-                          // Free passes are normally blocked mid-season — EXCEPT a
-                          // wheel-won JP/HOF pass that's still filling, which falls
-                          // through to "List for Sale" below (matches the detail page).
+                        ) : team.passType === 'free' && isDraftingOpen() ? (
                           <button
                             onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
                             className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/15 text-white/50 bg-[#08090c]/50 backdrop-blur-sm transition-all"

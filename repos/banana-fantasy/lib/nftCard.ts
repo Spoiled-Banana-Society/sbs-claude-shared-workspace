@@ -35,16 +35,3 @@ export function buildOgCardUrl(payload: OgCardPayload, base = siteBaseUrl()): st
 export function buildDraftPassUrl(tokenId: string | number, base = siteBaseUrl()): string {
   return buildOgCardUrl({ preReveal: true, passNo: tokenId }, base);
 }
-
-/**
- * Tier-styled pre-reveal pass image — gold (HOF) / red (Jackpot) frame + badge.
- * Used for a wheel-won JP/HOF pass so the prize reads accurately on the
- * marketplace before its draft fills and reveals it into a team.
- */
-export function buildTieredDraftPassUrl(
-  tokenId: string | number,
-  tier: 'hof' | 'jackpot',
-  base = siteBaseUrl(),
-): string {
-  return buildOgCardUrl({ preReveal: true, passNo: tokenId, tier }, base);
-}
