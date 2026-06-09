@@ -371,10 +371,10 @@ export function SellTab({
                   <SbsPassThumb label={selectedTeam.name?.startsWith('BBB') ? selectedTeam.name.replace('BBB ', '') : `#${selectedTeam.tokenId}`} size={56} />
                 )}
                 <div>
-                  <h3 className="text-text-primary font-semibold font-mono">{selectedTeam.name}</h3>
+                  <h3 className="text-text-primary font-semibold font-mono">Team #{selectedTeam.tokenId}</h3>
                   <p className="text-text-muted text-xs">
                     {hasSeasonStarted() && selectedTeam.rank >= 1 && selectedTeam.rank <= 10 ? `Rank #${selectedTeam.rank} • ` : ''}
-                    {hasSeasonStarted() && selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : `Token #${selectedTeam.tokenId}`}
+                    {hasSeasonStarted() && selectedTeam.playoffOdds > 0 ? `${selectedTeam.playoffOdds}% playoffs` : selectedTeam.leagueNumber != null ? `League #${selectedTeam.leagueNumber}` : `Token #${selectedTeam.tokenId}`}
                   </p>
                 </div>
               </div>
