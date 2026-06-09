@@ -266,6 +266,18 @@ export async function GET(req: Request) {
       }
     } catch { /* enrichment failed — continue with raw data */ }
 
+    // Overlay wheel-won JP/HOF level for any listed pass still in a filling
+    // round, so the Buy grid renders it with its tier (gold HOF / red Jackpot)
+    // + badge like the Sell side. Best-effort.
+    try {
+      const { getFillingWheelPassLevels } = await import('@/lib/db');
+      const levels = await getFillingWheelPassLevels(listings.map(l => String(l.tokenId)));
+      for (const listing of listings) {
+        const lvl = levels[String(listing.tokenId)];
+        if (lvl) (listing as { fillingWheelLevel?: 'jackpot' | 'hof' }).fillingWheelLevel = lvl;
+      }
+    } catch { /* best-effort — Buy card falls back to the generic pass look */ }
+
     return json({
       listings,
       next: listingsData.next ?? null,

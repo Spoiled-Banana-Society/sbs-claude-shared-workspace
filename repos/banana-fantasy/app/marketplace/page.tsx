@@ -240,7 +240,11 @@ export default function MarketplacePage() {
   const filteredTeams = useMemo(() => baseTeams.filter(team => {
     // Marketplace shows drafted TEAMS only — hide undrafted passes (no roster).
     // A pass gains a roster once drafted, at which point it shows up as a team.
-    if (team.roster.length === 0) return false;
+    // EXCEPTION: an actively-LISTED pass (orderHash) is intentionally for sale —
+    // a wheel-won JP/HOF pass sellable while its draft fills. The server only
+    // lets wheel passes list, so "listed + no roster" is always a valid wheel
+    // pass that buyers must be able to see and purchase.
+    if (team.roster.length === 0 && !team.orderHash) return false;
     if (viewFilter === 'jackpot' && !team.isJackpot) return false;
     if (viewFilter === 'hof' && !team.isHof) return false;
     if (viewFilter === 'pro' && (team.isJackpot || team.isHof)) return false;

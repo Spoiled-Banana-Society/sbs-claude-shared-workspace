@@ -4,6 +4,7 @@ import type React from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 
@@ -288,10 +289,13 @@ export function BuyTab({
                 if (sweepMode && team.price != null) onToggleSweepSelect(team.tokenId);
                 else onNavigateToTeam(team.tokenId);
               }}
-              className={`group relative bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : team.isJackpot ? 'border-error/30 hover:shadow-error/20' : team.isHof ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
+              className={`group relative bg-[#0d0d12] border rounded-2xl overflow-hidden transition-all hover:-translate-y-1 hover:shadow-lg cursor-pointer ${sweepMode && sweepSelected.has(team.tokenId) ? 'ring-2 ring-banana border-banana/50' : (team.isJackpot || team.fillingWheelLevel === 'jackpot') ? 'border-error/30 hover:shadow-error/20' : (team.isHof || team.fillingWheelLevel === 'hof') ? 'border-hof/30 hover:shadow-hof/20' : 'border-bg-tertiary hover:border-bg-elevated'}`}
             >
               <div className="relative aspect-[4/5] bg-[#0d0d12]">
-                {team.imageUrl ? (
+                {team.fillingWheelLevel ? (
+                  // Wheel-won JP/HOF pass listed while filling: gold/red tier art.
+                  <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                ) : team.imageUrl ? (
                   <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center"><FallbackPassSvg gradientId={`passGrad-${team.id}`} /></div>
@@ -339,7 +343,13 @@ export function BuyTab({
                 </div>
 
                 <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-                  {team.isJackpot ? (
+                  {team.fillingWheelLevel ? (
+                    // Wheel-won pass still filling: its NFT metadata isn't stamped
+                    // JP/HOF yet, so drive the badge off the known wheel level.
+                    <span className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}>
+                      {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · Filling
+                    </span>
+                  ) : team.isJackpot ? (
                     <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
                   ) : team.isHof ? (
                     <span className="px-3 py-1 bg-hof text-white text-[10px] font-bold uppercase rounded-full">HOF</span>
