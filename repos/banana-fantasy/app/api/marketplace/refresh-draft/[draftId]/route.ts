@@ -72,6 +72,12 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
         const picks = byOwner.get(owner);
         if (!picks || picks.length < 10) return;
 
+        // Prefer the REAL on-chain id for the card identity + index key. The
+        // cards-doc id is usually the on-chain id already, but on staging it can
+        // be a synthetic cardId — RealTokenId (when set) is authoritative.
+        const rawReal = String(snap.get('RealTokenId') ?? snap.get('realTokenId') ?? '').trim();
+        const realId = /^\d{1,7}$/.test(rawReal) ? String(Number(rawReal)) : tokenId;
+
         const players: CardPlayer[] = picks
           .slice()
           .sort((a, b) => a.pickNum - b.pickNum)
@@ -81,14 +87,19 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
             return { team: tm || '', pos: ps || '', bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: p.pickNum };
           });
 
-        const image = buildOgCardUrl({ tier: tierFromLevel(level), passNo: tokenId, teamNo: tokenId, leagueNo, players });
+        const image = buildOgCardUrl({ tier: tierFromLevel(level), passNo: realId, teamNo: realId, leagueNo, players });
         await db.collection('draftTokenMetadata').doc(tokenId).set({ Image: image }, { merge: true });
+        if (realId !== tokenId) {
+          // Mirror under the on-chain id too — the metadata endpoint reads by it.
+          await db.collection('draftTokenMetadata').doc(realId).set({ Image: image }, { merge: true });
+        }
 
         // Stamp the marketplace index DIRECTLY at draft close — so this team is
         // in the JP/HOF/League filters the instant the draft ends, instead of
         // waiting for OpenSea to (maybe) call our metadata endpoint back. Same
         // data the metadata route would write; keyed by the on-chain token id.
-        await upsertMarketplaceIndex(tokenId, {
+        // (upsert itself rejects non-real ids, so this is safe either way.)
+        await upsertMarketplaceIndex(realId, {
           level: normalizeLevel(level),
           leagueNumber: leagueNo ? Number(leagueNo) : null,
           status: 'team',
