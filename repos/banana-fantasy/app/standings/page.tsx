@@ -272,15 +272,19 @@ export default function StandingsPage() {
   };
 
   // Draft type breakdown for portfolio card
+  // Count from mergedLeagues — the teams the user CURRENTLY owns (drafted teams
+  // minus any whose NFT is no longer on-chain-owned by this wallet). This is the
+  // exact set rendered, so the chip totals always match the list (no more
+  // "All (33)" over "21 teams"), and the counts reflect real current ownership.
   const typeBreakdown = useMemo(() => {
     const counts = { jackpot: 0, hof: 0, pro: 0 };
-    leagues.forEach((l) => {
+    mergedLeagues.forEach((l) => {
       if (l.type === 'jackpot') counts.jackpot++;
       else if (l.type === 'hof') counts.hof++;
       else counts.pro++;
     });
     return counts;
-  }, [leagues]);
+  }, [mergedLeagues]);
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
@@ -395,11 +399,8 @@ export default function StandingsPage() {
             <div className="space-y-3 mb-6">
               {filteredLeagues.length > 0 ? (
                 <>
-                  {/* Count + sort toggle */}
-                  <div className="flex items-center justify-between px-1 mb-2">
-                    <p className="text-white/30 text-xs">
-                      {filteredLeagues.length} {filteredLeagues.length === 1 ? 'team' : 'teams'}
-                    </p>
+                  {/* Sort toggle (the chip already shows the count) */}
+                  <div className="flex items-center justify-end px-1 mb-2">
                     <button
                       onClick={() => setSortOrder(prev => prev === 'oldest' ? 'newest' : 'oldest')}
                       className="text-white/30 text-xs hover:text-white/60 transition-colors"
