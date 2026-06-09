@@ -291,12 +291,22 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
       setData([]);
       return;
     }
-    // Avoid duplicate fetches
+    // Paint instantly from the localStorage snapshot the MOMENT the wallet is
+    // known — on a hard refresh the wallet arrives a beat after first render
+    // (Privy rehydrating), and `data` was initialised empty. Without this the
+    // cards showed the "Team" placeholder until the network fetch landed (~1s).
+    const cached = getCachedMyNfts(walletAddress);
+    if (cached && cached.length) {
+      setData(cached);
+      setIsLoading(false);
+    } else {
+      setIsLoading(true);
+    }
+
+    // Avoid duplicate in-flight fetches (after the cache paint, so a refresh
+    // still gets the instant snapshot even while a fetch is already running).
     if (fetchingRef.current === walletAddress) return;
     fetchingRef.current = walletAddress;
-
-    // Only block the UI with a skeleton when we have nothing cached to show.
-    if (!getCachedMyNfts(walletAddress)) setIsLoading(true);
     try {
       // Fetch OpenSea NFTs, SBS backend tokens, and free-origin tokenIds in parallel
       const [nftRes, tokens, freeRes] = await Promise.all([
