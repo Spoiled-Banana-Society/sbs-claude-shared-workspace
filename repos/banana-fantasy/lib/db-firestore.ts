@@ -1773,6 +1773,40 @@ export async function getFillingWheelPassLevels(
 }
 
 /**
+ * Reassign a wheel-won pass's queue slot to a new wallet. Called when the pass
+ * is bought on the marketplace while its draft is still filling: the queue still
+ * records the seller, so the buyer wouldn't see the filling draft on their
+ * drafting page (membership is matched by wallet). Rewrites the member.wallet for
+ * the round(s) holding this tokenId to the new owner. Returns true if anything
+ * changed. Only rewrites rounds that are still FILLING — once the draft starts,
+ * the roster is locked and the slot shouldn't move.
+ */
+export async function reassignQueuePassWallet(tokenId: string, newWallet: string): Promise<boolean> {
+  const db = getAdminFirestore();
+  let changed = false;
+  for (const type of ['jackpot', 'hof'] as const) {
+    const ref = db.collection(QUEUES_COLLECTION).doc(type);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return;
+      const queue = snap.data() as DraftQueue;
+      let mutated = false;
+      for (const round of queue.rounds || []) {
+        if (round.status !== 'filling') continue;
+        for (const m of round.members) {
+          if (m.tokenId && String(m.tokenId) === String(tokenId) && m.wallet !== newWallet) {
+            m.wallet = newWallet;
+            mutated = true;
+          }
+        }
+      }
+      if (mutated) { tx.set(ref, queue); changed = true; }
+    });
+  }
+  return changed;
+}
+
+/**
  * Update a queue round's draftId. Called when the frontend creates a Go API draft
  * for a special draft round that doesn't have one yet.
  */

@@ -27,6 +27,7 @@ export const getQueueStatus = db.getQueueStatus;
 export const joinQueue = db.joinQueue;
 export const joinQueueWithToken = db.joinQueueWithToken;
 export const getFillingWheelPassLevels = db.getFillingWheelPassLevels;
+export const reassignQueuePassWallet = db.reassignQueuePassWallet;
 export const updateQueueRoundDraftId = db.updateQueueRoundDraftId;
 export const updateQueueRoundStatus = db.updateQueueRoundStatus;
 export const fillQueueRoundWithBots = db.fillQueueRoundWithBots;

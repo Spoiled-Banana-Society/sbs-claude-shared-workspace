@@ -458,6 +458,13 @@ export default function NftDetailPage() {
         }
 
         await executeBuy();
+        // Bought a still-filling wheel pass → move the queue slot to us so the
+        // draft shows on our drafting page (server verifies on-chain ownership).
+        if (fillingLevel && walletAddress) {
+          try {
+            await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId, wallet: walletAddress }) });
+          } catch { /* best-effort */ }
+        }
         setBuyStep('complete');
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
@@ -504,6 +511,14 @@ export default function NftDetailPage() {
         setCardFlowStep('buying');
         await executeBuy();
 
+        // Bought a still-filling wheel pass → move the queue slot to us (server
+        // verifies on-chain ownership) so the draft shows on our drafting page.
+        if (fillingLevel && walletAddress) {
+          try {
+            await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId, wallet: walletAddress }) });
+          } catch { /* best-effort */ }
+        }
+
         setBuyStep('complete');
         setCardFlowStep('idle');
         setTimeout(() => fetchNft(), 2000);
@@ -514,7 +529,7 @@ export default function NftDetailPage() {
         setCardFlowStep('idle');
       }
     }
-  }, [nft, walletAddress, paymentMethod, executeBuy, fundWallet, fetchNft]);
+  }, [nft, walletAddress, paymentMethod, executeBuy, fundWallet, fetchNft, fillingLevel, tokenId]);
 
   const handleMakeOffer = useCallback(async () => {
     if (!walletAddress || !selectedWallet || !offerAmount) return;
@@ -1600,7 +1615,11 @@ export default function NftDetailPage() {
                   </svg>
                 </div>
                 <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-                <p className="text-text-secondary text-sm mb-6">{teamName} is now yours</p>
+                <p className="text-text-secondary text-sm mb-6">
+                  {fillingLevel
+                    ? `${fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${tokenId} is yours — your draft is filling`
+                    : `${teamName} is now yours`}
+                </p>
                 <div className="flex gap-3 justify-center">
                   <button
                     onClick={() => {
@@ -1611,11 +1630,13 @@ export default function NftDetailPage() {
                   >
                     Close
                   </button>
+                  {/* A still-filling wheel pass is a draft-in-progress, not a team
+                      yet — send the buyer to their drafting page, not My Teams. */}
                   <Link
-                    href="/marketplace?tab=sell"
+                    href={fillingLevel ? '/drafting' : '/marketplace?tab=sell'}
                     className="px-6 py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all text-sm"
                   >
-                    View My Teams
+                    {fillingLevel ? 'View Draft' : 'View My Teams'}
                   </Link>
                 </div>
               </div>
