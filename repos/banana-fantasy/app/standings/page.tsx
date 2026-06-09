@@ -10,7 +10,6 @@ import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
-import { formatScore, formatRank } from '@/lib/formatters';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 
@@ -155,17 +154,6 @@ export default function StandingsPage() {
   }, [currentGameweek]);
 
   // Summary stats (portfolio card)
-  const summaryStats = useMemo(() => {
-    const totalTeams = leagues.length;
-    const bestRank = leagues.reduce((best, l) => {
-      if (l.leagueRank > 0 && (best === 0 || l.leagueRank < best)) return l.leagueRank;
-      return best;
-    }, 0);
-    const totalSeasonScore = leagues.reduce((sum, l) => sum + l.seasonScore, 0);
-    const totalWinnings = leagues.reduce((sum, l) => sum + (l.prizeIndicator ?? 0), 0);
-    return { totalTeams, bestRank, totalSeasonScore, totalWinnings };
-  }, [leagues]);
-
   // Generate gameweek options (REG weeks 1-18)
   const gameweekOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
@@ -334,63 +322,6 @@ export default function StandingsPage() {
       {/* MY TEAMS VIEW */}
       {isLoggedIn && viewMode === 'myteams' && (
         <>
-          {/* Portfolio Summary Card */}
-          {mergedLeagues.length > 0 && (
-            <div className="glass-card px-5 py-5 sm:px-6 sm:py-6 mb-6">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
-                {/* Total teams with type breakdown */}
-                <div>
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Teams</p>
-                  <p className="text-white font-bold text-2xl">{summaryStats.totalTeams}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {typeBreakdown.jackpot > 0 && (
-                      <span className="text-[10px] text-jackpot font-medium">{typeBreakdown.jackpot} JP</span>
-                    )}
-                    {typeBreakdown.hof > 0 && (
-                      <span className="text-[10px] text-hof font-medium">{typeBreakdown.hof} HOF</span>
-                    )}
-                    {typeBreakdown.pro > 0 && (
-                      <span className="text-[10px] text-pro font-medium">{typeBreakdown.pro} Pro</span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Best rank */}
-                <div>
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Best Rank</p>
-                  <div className="flex items-center gap-2">
-                    {summaryStats.bestRank > 0 && summaryStats.bestRank <= 3 && (
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                        summaryStats.bestRank === 1 ? 'bg-gradient-to-br from-yellow-400 to-yellow-600 text-black shadow-lg shadow-yellow-500/20' :
-                        summaryStats.bestRank === 2 ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-black shadow-lg shadow-gray-400/20' :
-                        'bg-gradient-to-br from-orange-400 to-orange-700 text-white shadow-lg shadow-orange-500/20'
-                      }`}>
-                        {summaryStats.bestRank}
-                      </div>
-                    )}
-                    <p className="text-white font-bold text-2xl">
-                      {summaryStats.bestRank > 0 ? formatRank(summaryStats.bestRank) : '-'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Total season score */}
-                <div>
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Total Score</p>
-                  <p className="text-banana font-bold text-2xl">{formatScore(summaryStats.totalSeasonScore)}</p>
-                </div>
-
-                {/* Total winnings */}
-                <div>
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider mb-1">Winnings</p>
-                  <p className={`font-bold text-2xl ${summaryStats.totalWinnings > 0 ? 'text-green-400' : 'text-white/30'}`}>
-                    {summaryStats.totalWinnings > 0 ? `$${summaryStats.totalWinnings}` : '-'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Search bar */}
           {mergedLeagues.length > 0 && (
             <div className="mb-5">
@@ -411,7 +342,7 @@ export default function StandingsPage() {
           {mergedLeagues.length > 0 && (
             <div className="flex gap-2 mb-5">
               {([
-                { key: 'all', label: 'All', color: 'white' },
+                { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof})`, color: 'white' },
                 { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
                 { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
                 { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
