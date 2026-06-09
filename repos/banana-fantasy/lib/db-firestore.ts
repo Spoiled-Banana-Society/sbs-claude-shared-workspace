@@ -1752,7 +1752,11 @@ export async function getFillingWheelPassLevels(
     if (!snap.exists) continue;
     const queue = snap.data() as DraftQueue;
     for (const round of queue.rounds || []) {
-      if (round.status !== 'filling' || round.draftId) continue; // drafted → not sellable
+      // Sellable window = the round is still FILLING. A filling round gets its
+      // Go-API draftId assigned up front (the slot follows the NFT while filling),
+      // so draftId presence does NOT mean "already drafted" — gate on status only.
+      // The pass stops being sellable when status leaves 'filling' (draft starts).
+      if (round.status !== 'filling') continue;
       for (const m of round.members) {
         if (m.tokenId && want.has(String(m.tokenId))) result[String(m.tokenId)] = type;
       }
