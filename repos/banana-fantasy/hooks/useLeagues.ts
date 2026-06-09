@@ -20,6 +20,6 @@ export function useLeagues(opts?: { userId?: string; status?: 'active' | 'comple
       if (statusFilter === 'all') return leagues;
       return leagues.filter((l) => l.status === statusFilter);
     },
-    { enabled: !!wallet, fallbackData: [] },
+    { enabled: !!wallet, fallbackData: [], persist: true },
   );
 }

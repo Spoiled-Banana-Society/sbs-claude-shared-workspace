@@ -70,6 +70,24 @@ export default function StandingsPage() {
   }), [leaguesQueryRaw]);
   const { data: currentGameweek } = useGameweek();
 
+  // Live updates: revalidate teams + NFTs when the tab regains focus, so a team
+  // drafted elsewhere shows up here without a manual refresh. Ref pattern keeps
+  // the listener stable (no fetch-per-render — see CLAUDE.md render-loop rule).
+  const refetchMyNftsRef = React.useRef(refetchMyNfts);
+  refetchMyNftsRef.current = refetchMyNfts;
+  const mutateLeaguesRef = React.useRef(leaguesQueryRaw.mutate);
+  mutateLeaguesRef.current = leaguesQueryRaw.mutate;
+  React.useEffect(() => {
+    const onFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void refetchMyNftsRef.current?.();
+      void mutateLeaguesRef.current?.();
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
+  }, []);
+
   const leagues = leaguesQuery.data;
 
   // Leagues we can already confirm the wallet still owns (it holds the NFT).
@@ -322,45 +340,45 @@ export default function StandingsPage() {
       {/* MY TEAMS VIEW */}
       {isLoggedIn && viewMode === 'myteams' && (
         <>
-          {/* Search bar */}
+          {/* Type filters + roster search — one clean row */}
           {mergedLeagues.length > 0 && (
-            <div className="mb-5">
-              <MultiChipSearch
-                chips={teamSearch}
-                onChange={setTeamSearch}
-                options={searchOptions}
-                placeholder="Type a roster slot or type (e.g. CIN QB)"
-                className="w-full"
-              />
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 mb-5">
+                <div className="flex gap-2 flex-shrink-0">
+                  {([
+                    { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof})`, color: 'white' },
+                    { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
+                    { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
+                    { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
+                  ] as const).map(({ key, label, color }) => (
+                    <button
+                      key={key}
+                      onClick={() => setTypeFilter(key)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                        typeFilter === key
+                          ? 'bg-white/10 border-white/20 text-white'
+                          : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06]'
+                      }`}
+                      style={typeFilter === key && key !== 'all' ? { borderColor: color, color } : undefined}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <MultiChipSearch
+                    chips={teamSearch}
+                    onChange={setTeamSearch}
+                    options={searchOptions}
+                    placeholder="Type a roster slot or type (e.g. CIN QB)"
+                    className="w-full"
+                  />
+                </div>
+              </div>
               {teamSearch.length > 1 && (
-                <p className="text-white/20 text-[10px] mt-1 ml-1">Showing teams that match ALL filters</p>
+                <p className="text-white/20 text-[10px] -mt-3 mb-4 ml-1">Showing teams that match ALL filters</p>
               )}
-            </div>
-          )}
-
-          {/* Type filter buttons */}
-          {mergedLeagues.length > 0 && (
-            <div className="flex gap-2 mb-5">
-              {([
-                { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof})`, color: 'white' },
-                { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
-                { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
-                { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
-              ] as const).map(({ key, label, color }) => (
-                <button
-                  key={key}
-                  onClick={() => setTypeFilter(key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
-                    typeFilter === key
-                      ? 'bg-white/10 border-white/20 text-white'
-                      : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06]'
-                  }`}
-                  style={typeFilter === key && key !== 'all' ? { borderColor: color, color } : undefined}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            </>
           )}
 
           {/* Loading skeleton */}

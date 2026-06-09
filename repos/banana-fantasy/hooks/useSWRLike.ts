@@ -14,7 +14,14 @@ const cache = new Map<string, CacheEntry<unknown>>();
 export interface UseSWRLikeOptions<T> {
   enabled?: boolean;
   fallbackData: T;
+  /** When true, the last successful payload is mirrored to localStorage and
+   *  hydrated on mount — so a HARD page refresh paints instantly from the last
+   *  snapshot (then revalidates live), instead of showing a skeleton while the
+   *  network round-trips. Opt-in per hook (data must be JSON-serializable). */
+  persist?: boolean;
 }
+
+function lsKey(key: string): string { return `swr:${key}`; }
 
 export interface UseSWRLikeResult<T> {
   data: T;
@@ -39,11 +46,24 @@ export function useSWRLike<T>(
   const usingMockData = isMockDataEnabled();
 
   const enabled = (options.enabled ?? true) && !!key && !usingMockData;
+  const persist = options.persist ?? false;
 
   const cached = useMemo(() => {
     if (!key) return null;
-    return (cache.get(key) as CacheEntry<T> | undefined) ?? null;
-  }, [key]);
+    let entry = cache.get(key) as CacheEntry<T> | undefined;
+    // Hard-refresh hydration: seed the in-memory cache from localStorage so the
+    // first paint has data (no skeleton) before the network revalidation lands.
+    if (!entry && persist && typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(lsKey(key));
+        if (raw) {
+          entry = { data: JSON.parse(raw) as T, error: null, updatedAt: 0 };
+          cache.set(key, entry);
+        }
+      } catch { /* ignore corrupt/oversized localStorage */ }
+    }
+    return entry ?? null;
+  }, [key, persist]);
 
   const [data, setData] = useState<T>(() => (cached?.data ?? null) ?? options.fallbackData);
   const [error, setError] = useState<unknown>(() => cached?.error ?? null);
@@ -75,6 +95,9 @@ export function useSWRLike<T>(
       const next = await fetcherRef.current({ signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       cache.set(key, { data: next, error: null, updatedAt: Date.now() });
+      if (persist && typeof window !== 'undefined') {
+        try { window.localStorage.setItem(lsKey(key), JSON.stringify(next)); } catch { /* quota/serialize — non-fatal */ }
+      }
       setData(next);
       setError(null);
     } catch (err) {
@@ -88,7 +111,7 @@ export function useSWRLike<T>(
         setIsValidating(false);
       }
     }
-  }, [enabled, key]);
+  }, [enabled, key, persist]);
 
   useEffect(() => {
     void runFetch();
