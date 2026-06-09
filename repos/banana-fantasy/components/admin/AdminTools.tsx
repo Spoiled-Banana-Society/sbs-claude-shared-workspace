@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { GrantPrizeForm } from '@/components/admin/GrantPrizeForm';
+import { WinnersImportPanel } from '@/components/admin/WinnersImportPanel';
 import { NftMappingTool } from '@/components/admin/NftMappingTool';
 import { RecoverDraftCardForm } from '@/components/admin/RecoverDraftCardForm';
 import { IntegrityAuditPanel } from '@/components/admin/IntegrityAuditPanel';
@@ -349,6 +350,7 @@ export function AdminTools({ enabled }: { enabled: boolean }) {
       <DigestPreviewButton />
       <IntegrityAuditPanel getHeaders={getHeaders} />
 
+      <WinnersImportPanel />
       <GrantPrizeForm />
 
       <NftMappingTool enabled={enabled} />

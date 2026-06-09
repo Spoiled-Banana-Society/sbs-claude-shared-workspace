@@ -10,9 +10,8 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
-import { markDirectWithdrawalPaid } from '@/lib/offrampAudit';
-import { markPrizesPaid, clearPrizeOverlays, getPrizeClaimStates } from '@/lib/prizeOverlay';
-import { LOG_SOURCES } from '@/lib/logSources';
+import { markWithdrawalPaid, denyWithdrawal } from '@/lib/withdrawalActions';
+import { verifyUsdcPayouts } from '@/lib/verifyPayoutTx';
 
 type FirestoreTimestamp = Timestamp | { toDate: () => Date };
 
@@ -49,126 +48,107 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     const { id } = params;
     if (!id) throw new ApiError(400, 'Missing withdrawal id');
 
-    const body = await parseBody<{ status?: unknown; txHash?: unknown }>(req);
-    // 'paid' is the post-Gnosis-batch confirmation: USDC has actually
-    // landed in the user's wallet. That's when the user-facing activity
-    // event fires. 'approved' is the queue gate before the batch send.
+    const body = await parseBody<{ status?: unknown; txHash?: unknown; skipVerification?: unknown }>(req);
+    // 'paid' is the post-payout confirmation: USDC has actually landed in
+    // the user's wallet. 'approved' is the queue gate before the batch send.
     if (body.status !== 'approved' && body.status !== 'denied' && body.status !== 'paid') {
       throw new ApiError(400, 'Invalid status. Expected approved, denied, or paid');
     }
     const txHash = typeof body.txHash === 'string' && body.txHash.trim() ? body.txHash.trim() : undefined;
+    const skipVerification = body.skipVerification === true;
 
+    if (body.status === 'paid') {
+      // On-chain verification: when a tx hash is supplied, prove the tx
+      // actually sent this withdrawal's USDC to this wallet before
+      // flipping anything. skipVerification is the audited escape hatch
+      // for genuinely off-chain settlements.
+      let verification: 'verified' | 'skipped' | 'none' = 'none';
+      if (txHash && !skipVerification) {
+        const db = getAdminFirestore();
+        const snap = await db.collection('withdrawalRequests').doc(id).get();
+        if (!snap.exists) throw new ApiError(404, 'Withdrawal request not found');
+        const w = snap.data() ?? {};
+        const wallet = typeof w.walletAddress === 'string' && w.walletAddress
+          ? w.walletAddress
+          : (typeof w.userId === 'string' ? w.userId : '');
+        const amount = toNumber(w.amount);
+        if (wallet && amount > 0) {
+          const result = await verifyUsdcPayouts(txHash, [{ key: id, wallet, amount }]);
+          if (result.status === 'tx_not_found') {
+            throw new ApiError(409, 'Transaction not found on Base yet — if the Safe batch just executed, wait a moment and retry.');
+          }
+          if (result.status === 'tx_failed') {
+            throw new ApiError(400, 'That transaction reverted on-chain — no USDC moved. Not marking paid.');
+          }
+          if (result.unmatched.length > 0) {
+            const u = result.unmatched[0];
+            throw new ApiError(
+              400,
+              `Transaction doesn't cover this withdrawal: expected $${u.expectedUsd.toLocaleString()} to ${u.wallet.slice(0, 10)}…, found $${u.foundUsd.toLocaleString()}. Not marking paid.`,
+            );
+          }
+          verification = 'verified';
+        }
+      } else if (txHash && skipVerification) {
+        verification = 'skipped';
+      }
+
+      const res = await markWithdrawalPaid({ id, actor, requestId, txHash, verification });
+      logger.info('admin.withdrawal_status.ok', {
+        requestId, actor, target: id, status: 'paid', verification, durationMs: Date.now() - start,
+      });
+      return json({
+        id: res.id,
+        userId: res.userId,
+        walletAddress: res.walletAddress,
+        amount: res.amount,
+        status: res.status,
+        createdAt: toIsoDate(res.data.createdAt),
+        blueCheckVerified: res.data.blueCheckVerified === true || res.data.isBlueCheckVerified === true,
+        verification,
+        requestId,
+      });
+    }
+
+    if (body.status === 'denied') {
+      const res = await denyWithdrawal({ id, actor, requestId });
+      logger.info('admin.withdrawal_status.ok', {
+        requestId, actor, target: id, status: 'denied', durationMs: Date.now() - start,
+      });
+      return json({
+        id: res.id,
+        userId: res.userId,
+        walletAddress: res.walletAddress,
+        amount: res.amount,
+        status: res.status,
+        createdAt: toIsoDate(res.data.createdAt),
+        blueCheckVerified: res.data.blueCheckVerified === true || res.data.isBlueCheckVerified === true,
+        requestId,
+      });
+    }
+
+    // 'approved' — plain status transition, no money cascade.
     const db = getAdminFirestore();
     const ref = db.collection('withdrawalRequests').doc(id);
     const existing = await ref.get();
     if (!existing.exists) throw new ApiError(404, 'Withdrawal request not found');
     const before = existing.data() ?? {};
 
-    // Double-payout backstop (the hard money guarantee). Before flipping
-    // this withdrawal to 'paid', refuse if any of its prizes were already
-    // paid by a DIFFERENT withdrawal — that prize's money has already
-    // gone out, so paying again would double-pay. Idempotent: re-paying
-    // THIS same withdrawal id is allowed (its own prizes carry its id).
-    if (body.status === 'paid') {
-      const prizeIds = Array.isArray(before.prizeIds)
-        ? (before.prizeIds.filter((s): s is string => typeof s === 'string'))
-        : [];
-      if (prizeIds.length > 0) {
-        const claims = await getPrizeClaimStates(prizeIds);
-        const alreadyPaidElsewhere = prizeIds.filter((pid) => {
-          const c = claims.get(pid);
-          return !!c && c.status === 'paid' && !!c.withdrawalId && c.withdrawalId !== id;
-        });
-        if (alreadyPaidElsewhere.length > 0) {
-          logger.error(LOG_SOURCES.prizes.DOUBLE_PAYOUT_BLOCKED, {
-            requestId,
-            actor,
-            context: { withdrawalId: id, alreadyPaidElsewhere },
-          });
-          throw new ApiError(
-            409,
-            `Refusing to pay — ${alreadyPaidElsewhere.length} prize(s) on this withdrawal were already paid by another withdrawal. Resolve the duplicate before settling.`,
-          );
-        }
-      }
-    }
-
-    const updatePayload: Record<string, unknown> = { status: body.status, updatedAt: new Date().toISOString() };
-    if (body.status === 'paid' && txHash) updatePayload.paidTxHash = txHash;
-    await ref.set(updatePayload, { merge: true });
-
+    await ref.set({ status: 'approved', updatedAt: new Date().toISOString() }, { merge: true });
     const updated = await ref.get();
     const data = updated.data() ?? {};
 
-    // When marking paid, fire the user-facing activity event, update
-    // the matching offramp_attempt, AND cascade prize-paid status to
-    // every prize this withdrawal settles (via the prizeIds field on
-    // the withdrawal doc). Idempotent — calling twice won't
-    // double-emit. Best-effort: never block the admin response on it.
-    if (body.status === 'paid') {
-      const userId = (typeof data.userId === 'string' ? data.userId : '').toLowerCase();
-      const wallet = typeof data.walletAddress === 'string' ? data.walletAddress : undefined;
-      const amount = toNumber(data.amount);
-      const method = data.method === 'bank' ? 'bank' : 'usdc';
-      if (userId && amount > 0) {
-        markDirectWithdrawalPaid({
-          withdrawalId: id,
-          userId,
-          walletAddress: wallet,
-          amount,
-          method,
-          txHash,
-        }).catch((err) => {
-          logger.warn('admin.mark_paid.audit_failed', { requestId, id, err: (err as Error).message });
-        });
-      }
-
-      // Cascade: flip every prize this withdrawal settles to 'paid'.
-      // prizeIds is set by the new /api/prizes/withdraw-all flow. Old
-      // single-prize withdrawals don't have it — no-op there.
-      const prizeIds = Array.isArray(data.prizeIds)
-        ? (data.prizeIds.filter((s): s is string => typeof s === 'string'))
-        : [];
-      if (prizeIds.length > 0 && userId) {
-        markPrizesPaid({ prizeIds, userId, withdrawalId: id }).catch((err) => {
-          logger.warn('admin.mark_paid.prize_cascade_failed', { requestId, id, err: (err as Error).message });
-        });
-      }
-    }
-
-    // If denied, roll back the processing overlay so the user can
-    // re-attempt the withdrawal. Otherwise the prizes get stuck on
-    // 'processing' forever from the frontend's perspective.
-    if (body.status === 'denied') {
-      const prizeIds = Array.isArray(data.prizeIds)
-        ? (data.prizeIds.filter((s): s is string => typeof s === 'string'))
-        : [];
-      if (prizeIds.length > 0) {
-        clearPrizeOverlays(prizeIds).catch((err) => {
-          logger.warn('admin.deny.prize_rollback_failed', { requestId, id, err: (err as Error).message });
-        });
-      }
-    }
-
-    const action: 'approve-withdrawal' | 'deny-withdrawal' | 'mark-paid-withdrawal' =
-      body.status === 'approved' ? 'approve-withdrawal'
-      : body.status === 'denied' ? 'deny-withdrawal'
-      : 'mark-paid-withdrawal';
     await logAdminAction({
       actor,
-      action,
+      action: 'approve-withdrawal',
       target: id,
       before: { status: before.status },
-      after: { status: data.status, paidTxHash: data.paidTxHash },
+      after: { status: data.status },
       requestId,
     });
 
     logger.info('admin.withdrawal_status.ok', {
-      requestId,
-      actor,
-      target: id,
-      status: body.status,
-      durationMs: Date.now() - start,
+      requestId, actor, target: id, status: 'approved', durationMs: Date.now() - start,
     });
 
     return json({
@@ -176,7 +156,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       userId: typeof data.userId === 'string' ? data.userId : '',
       walletAddress: typeof data.walletAddress === 'string' ? data.walletAddress : '',
       amount: toNumber(data.amount),
-      status: typeof data.status === 'string' ? data.status : body.status,
+      status: typeof data.status === 'string' ? data.status : 'approved',
       createdAt: toIsoDate(data.createdAt),
       blueCheckVerified: data.blueCheckVerified === true || data.isBlueCheckVerified === true,
       requestId,

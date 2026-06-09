@@ -2789,3 +2789,19 @@ export async function incrementCumulativeWithdrawals(userId: string, amount: num
   await ref.set({ cumulativeWithdrawals: newTotal }, { merge: true });
   return newTotal;
 }
+
+/**
+ * Reverse a cumulative-withdrawals increment when a withdrawal is denied.
+ * Without this, denied requests permanently inflate the user's running
+ * total and trip the $2k tier-2 KYC gate for money that never moved.
+ * Clamped at 0.
+ */
+export async function decrementCumulativeWithdrawals(userId: string, amount: number): Promise<number> {
+  const db = getAdminFirestore();
+  const ref = db.collection(PERSONA_COLLECTION).doc(userId);
+  const doc = await ref.get();
+  const current = doc.exists ? (doc.data() as PersonaVerificationData).cumulativeWithdrawals || 0 : 0;
+  const newTotal = Math.max(0, current - amount);
+  await ref.set({ cumulativeWithdrawals: newTotal }, { merge: true });
+  return newTotal;
+}

@@ -16,6 +16,7 @@ import { useSendUsdcOnBase } from '@/hooks/useSendUsdcOnBase';
 import {
   useAdminWithdrawals,
   useUpdateWithdrawalStatus,
+  useMarkPaidBatch,
   AdminApiError,
   type AdminWithdrawalItem,
 } from '@/hooks/admin/useAdminApi';
@@ -33,6 +34,7 @@ export function WithdrawalsPanel({ enabled }: { enabled: boolean }) {
   const query = useAdminWithdrawals(enabled);
   const items = query.data ?? [];
   const update = useUpdateWithdrawalStatus();
+  const markPaidBatch = useMarkPaidBatch();
   const { show } = useToast();
   const sendUsdc = useSendUsdcOnBase();
   const [sendingRowId, setSendingRowId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ export function WithdrawalsPanel({ enabled }: { enabled: boolean }) {
 
   const handleMarkPaid = async (id: string) => {
     const txHash = window.prompt(
-      'Gnosis Safe tx hash (optional — leave blank if not available):',
+      'Tx hash (verified on-chain before marking paid; leave blank only for off-chain settlements):',
       '',
     );
     if (txHash === null) return;
@@ -99,29 +101,46 @@ export function WithdrawalsPanel({ enabled }: { enabled: boolean }) {
     }
   };
 
+  // Verified batch settlement: one Safe batch tx hash → the server reads
+  // the receipt from Base and marks paid ONLY the withdrawals whose USDC
+  // transfer actually matches wallet + amount. Unmatched ones stay in
+  // Ready-to-pay with the reason shown.
   const handleMarkAllPaid = async () => {
     if (readyToPay.length === 0) return;
     const txHash = window.prompt(
-      `Gnosis Safe batch tx hash for all ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}):`,
+      `Gnosis Safe batch tx hash for all ${readyToPay.length} payouts ($${readyTotal.toLocaleString()}):\n\nThe server verifies each payout on-chain before marking paid.`,
       '',
     );
     if (txHash === null) return;
-    if (!window.confirm(`Mark all ${readyToPay.length} approved withdrawals as paid? This fires user activity notifications.`)) return;
-    const trimmed = txHash.trim() || undefined;
-    let ok = 0;
-    let fail = 0;
-    for (const w of readyToPay) {
-      try {
-        await update.mutateAsync({ id: w.id, status: 'paid', txHash: trimmed });
-        ok += 1;
-      } catch {
-        fail += 1;
-      }
+    if (!txHash.trim()) {
+      show({ level: 'error', message: 'A tx hash is required — batch settlement is verified on-chain' });
+      return;
     }
-    show({
-      level: fail === 0 ? 'success' : 'error',
-      message: `Marked ${ok} paid${fail ? `, ${fail} failed` : ''}`,
-    });
+    if (!window.confirm(`Verify & mark all ${readyToPay.length} approved withdrawals against that transaction?`)) return;
+    try {
+      const res = await markPaidBatch.mutateAsync({
+        txHash: txHash.trim(),
+        withdrawalIds: readyToPay.map((w) => w.id),
+      });
+      const unmatchedNote = res.unmatched.length
+        ? ` — ${res.unmatched.length} NOT verified (tx didn't cover them; they stay in Ready-to-pay)`
+        : '';
+      show({
+        level: res.unmatched.length || res.failed.length ? 'error' : 'success',
+        message: `Verified & paid ${res.paid.length}/${readyToPay.length}${unmatchedNote}${res.failed.length ? `, ${res.failed.length} failed` : ''}`,
+        requestId: res.requestId,
+      });
+      if (res.unmatched.length > 0) {
+        const lines = res.unmatched
+          .map((u) => `${u.wallet.slice(0, 10)}… expected $${u.expectedUsd.toLocaleString()}, tx sent $${u.foundUsd.toLocaleString()}`)
+          .join('\n');
+        window.alert(`Not verified by that transaction:\n\n${lines}\n\nThese withdrawals are still approved — pay them in another batch or use Send & mark paid.`);
+      }
+    } catch (err) {
+      const e = err as AdminApiError;
+      Sentry.captureException(e, { tags: { admin: true, action: 'mark-paid-batch' } });
+      show({ level: 'error', message: e.message, requestId: e.requestId });
+    }
   };
 
   const handleSendAndPay = async (w: AdminWithdrawalItem) => {
@@ -217,11 +236,11 @@ export function WithdrawalsPanel({ enabled }: { enabled: boolean }) {
               </button>
               <button
                 onClick={handleMarkAllPaid}
-                disabled={update.isPending || sendingRowId !== null}
+                disabled={update.isPending || markPaidBatch.isPending || sendingRowId !== null}
                 className="px-3 py-1.5 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-gray-200 text-xs disabled:opacity-50"
-                title="If you've already sent payouts via Gnosis Safe or another tool, mark them paid with a single tx hash"
+                title="Paste the Gnosis Safe batch tx hash — the server verifies each payout on-chain before marking it paid"
               >
-                Mark all paid (already sent)
+                {markPaidBatch.isPending ? 'Verifying on-chain…' : 'Verify & mark all paid'}
               </button>
               <button
                 onClick={() => copyCsv('airdrop')}

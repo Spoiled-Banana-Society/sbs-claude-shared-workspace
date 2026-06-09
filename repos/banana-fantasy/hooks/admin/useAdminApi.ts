@@ -956,6 +956,42 @@ export function useBanUser() {
   });
 }
 
+export interface MarkPaidBatchResult {
+  paid: string[];
+  unmatched: { key: string; wallet: string; expectedUsd: number; foundUsd: number }[];
+  skipped: { id: string; reason: string }[];
+  failed: { id: string; error: string }[];
+  txStatus: string;
+  requestId?: string;
+}
+
+/**
+ * Verified batch settlement: one Gnosis batch tx hash + the approved
+ * withdrawal ids. Server proves each payout on-chain before marking
+ * paid; unverified ones stay approved and come back as `unmatched`.
+ */
+export function useMarkPaidBatch() {
+  const getHeaders = useAdminAuthHeaders();
+  const qc = useQueryClient();
+  return useMutation<MarkPaidBatchResult, AdminApiError, { txHash: string; withdrawalIds: string[] }>({
+    mutationFn: ({ txHash, withdrawalIds }) =>
+      adminFetch<MarkPaidBatchResult>(
+        '/api/admin/withdrawals/mark-paid-batch',
+        getHeaders,
+        {
+          method: 'POST',
+          body: JSON.stringify({ txHash, withdrawalIds }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'withdrawals'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'stats'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'recent-actions'] });
+      qc.invalidateQueries({ queryKey: ['admin', 'offramp-attempts'] });
+    },
+  });
+}
+
 export interface WithdrawalStatusInput {
   id: string;
   status: 'approved' | 'denied' | 'paid';

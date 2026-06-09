@@ -337,18 +337,37 @@ export default function PrizesPage() {
                   Robinhood pattern: pending is information, never
                   visual weight. With ETA so users know when it lands. */}
               {inFlightBalance > 0 && (() => {
-                const eta = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                const etaLabel = eta.toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  month: 'short',
-                  day: 'numeric',
+                // Honest ETA: 24h from when the withdrawal was actually
+                // REQUESTED (its createdAt), not from page render — the
+                // old version said "arrives tomorrow" forever, even for
+                // a payout stuck for days.
+                const inFlightWds = prizes.filter((p) => {
+                  if (p.type !== 'withdrawal') return false;
+                  const s = p.status as string;
+                  return s === 'pending' || s === 'approved' || s === 'processing';
                 });
+                const newest = inFlightWds
+                  .map((p) => p.createdAt)
+                  .filter((d): d is string => !!d)
+                  .sort()
+                  .pop();
+                const etaMs = newest ? new Date(newest).getTime() + 24 * 60 * 60 * 1000 : NaN;
+                const overdue = Number.isFinite(etaMs) && etaMs < Date.now();
+                const etaLabel = Number.isFinite(etaMs)
+                  ? new Date(etaMs).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : null;
                 return (
                   <div className="mb-8 flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                     <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
                     <p className="text-sm text-text-secondary">
                       <span className="font-medium text-text-primary">{formatBalance(inFlightBalance)}</span>{' '}
-                      on the way · arrives by {etaLabel}
+                      {overdue || !etaLabel
+                        ? 'on the way · processing is taking a little longer than usual'
+                        : `on the way · arrives by ${etaLabel}`}
                     </p>
                   </div>
                 );

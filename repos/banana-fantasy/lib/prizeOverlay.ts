@@ -88,6 +88,53 @@ export async function createSyntheticPrize(input: {
 }
 
 /**
+ * Create a prize record with a caller-supplied deterministic id.
+ * Used by the batch winners import: the id is a hash of
+ * wallet|contestName|amount so re-importing the same CSV row maps to
+ * the same doc. Uses Firestore .create() — fails with ALREADY_EXISTS
+ * if the doc is already there, which the import reports as "skipped"
+ * instead of double-granting. The id MUST keep the `syn_` prefix so
+ * every isSyntheticPrizeId() branch keeps working.
+ *
+ * Returns 'created' | 'exists' | null (Firestore unconfigured).
+ */
+export async function createPrizeRecordWithId(
+  id: string,
+  input: {
+    userId: string;
+    amount: number;
+    contestName: string;
+    draftId?: string;
+    note?: string;
+    grantedBy?: string;
+  },
+): Promise<'created' | 'exists' | null> {
+  if (!isFirestoreConfigured()) return null;
+  if (!isSyntheticPrizeId(id)) throw new Error(`prize record id must start with "${SYNTHETIC_ID_PREFIX}"`);
+  const db = getAdminFirestore();
+  const now = new Date().toISOString();
+  const doc: SyntheticPrize = {
+    id,
+    userId: input.userId.toLowerCase(),
+    amount: input.amount,
+    contestName: input.contestName,
+    status: 'pending',
+    createdAt: now,
+  };
+  if (input.draftId) doc.draftId = input.draftId;
+  if (input.note) doc.note = input.note;
+  if (input.grantedBy) doc.grantedBy = input.grantedBy.toLowerCase();
+  try {
+    await db.collection(SYNTHETIC_COLLECTION).doc(id).create(doc);
+    return 'created';
+  } catch (err) {
+    // Firestore ALREADY_EXISTS = gRPC code 6.
+    if ((err as { code?: number }).code === 6) return 'exists';
+    throw err;
+  }
+}
+
+/**
  * Get all synthetic prizes for a user, projected as PrizeWin so the
  * /prizes history endpoint can merge them with Go-API wins without
  * needing to know they're synthetic.

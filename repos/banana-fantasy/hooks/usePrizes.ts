@@ -26,7 +26,18 @@ export function usePrizes(opts?: { userId?: string }) {
 
   const query = useSWRLike<PrizeHistoryItem[]>(
     ownerId ? `prizes:history:${ownerId}` : null,
-    ({ signal }) => fetchJson<PrizeHistoryItem[]>('/api/prizes/history', { signal, query: { userId: ownerId } }),
+    // The history endpoint is auth-required (money data) — attach the
+    // Privy JWT. Safe re: render-loop rule: useSWRLike stores the
+    // fetcher in a ref, so the privy-derived callback never enters a
+    // dep array.
+    async ({ signal }) => {
+      const token = await privy.getAccessToken();
+      return fetchJson<PrizeHistoryItem[]>('/api/prizes/history', {
+        signal,
+        query: { userId: ownerId },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     { enabled: !!ownerId, fallbackData: [] },
   );
   const refresh = query.mutate;

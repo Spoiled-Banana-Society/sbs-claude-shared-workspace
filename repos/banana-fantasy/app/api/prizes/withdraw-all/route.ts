@@ -22,33 +22,23 @@ import { createWithdrawal } from '@/lib/db';
 import { getPersonaVerification, incrementCumulativeWithdrawals } from '@/lib/db-firestore';
 import { logDirectWithdrawal } from '@/lib/offrampAudit';
 import { markPrizesProcessing, getPrizeClaimStates } from '@/lib/prizeOverlay';
+import { getPrizeHistoryForUser } from '@/lib/prizeHistory';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
-import type { PrizeHistoryItem, PrizeWin } from '@/types';
+import type { PrizeWin } from '@/types';
 
 const ETH_ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
 const KYC_THRESHOLD = 2000;
 
-async function fetchPendingWins(userId: string, origin: string): Promise<PrizeWin[]> {
-  // Re-use the history endpoint as the canonical merge of go-api wins +
-  // synthetic prizes + overlay statuses. Means we can't accidentally
-  // diverge in how the two views compute "what's pending".
-  const url = `${origin}/api/prizes/history?userId=${encodeURIComponent(userId)}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new ApiError(502, 'Failed to load prize history');
-  const items = (await res.json()) as PrizeHistoryItem[];
+async function fetchPendingWins(userId: string): Promise<PrizeWin[]> {
+  // Same canonical merge the /api/prizes/history route serves (go-api
+  // wins + synthetic prizes + overlay statuses) — called directly so we
+  // can't diverge in how the two views compute "what's pending", and so
+  // there's no unauthenticated HTTP self-call.
+  const items = await getPrizeHistoryForUser(userId);
   return items.filter(
     (i): i is PrizeWin => i.type === 'win' && i.status === 'pending',
   );
-}
-
-function getOrigin(req: Request): string {
-  try {
-    const url = new URL(req.url);
-    return `${url.protocol}//${url.host}`;
-  } catch {
-    return 'https://banana-fantasy-sbs.vercel.app';
-  }
 }
 
 export async function POST(req: Request) {
@@ -103,7 +93,7 @@ export async function POST(req: Request) {
     }
 
     // Pull pending wins (Go API + synthetic, with overlays applied).
-    const pending = await fetchPendingWins(userId, getOrigin(req));
+    const pending = await fetchPendingWins(userId);
 
     // Sort oldest-first so partial allocations consume the longest-held
     // prizes first — fairer to the user (they get their old money out

@@ -46,7 +46,7 @@ function nftToSyntheticLeague(n: MarketplaceTeam): League {
 }
 
 export default function StandingsPage() {
-  const { isLoggedIn, user } = useAuth();
+  const { isLoggedIn, isLoading: authLoading, user } = useAuth();
 
   // Marketplace NFTs/listings for the logged-in user, mapped by leagueId so each
   // team card can offer inline List / Cancel with price + time-left.
@@ -301,8 +301,10 @@ export default function StandingsPage() {
         </p>
       </div>
 
-      {/* MY TEAMS VIEW */}
-      {isLoggedIn && viewMode === 'myteams' && (
+      {/* MY TEAMS VIEW — also render while auth is still rehydrating on refresh
+          (authLoading), so the page keeps the My Teams layout instead of briefly
+          flashing the leaderboard before isLoggedIn flips true. */}
+      {(isLoggedIn || authLoading) && viewMode === 'myteams' && (
         <>
           {/* Type filters + roster search — one clean row */}
           {mergedLeagues.length > 0 && (
@@ -438,8 +440,9 @@ export default function StandingsPage() {
         </>
       )}
 
-      {/* LEADERBOARD VIEW */}
-      {(viewMode === 'leaderboard' || !isLoggedIn) && (
+      {/* LEADERBOARD VIEW — only once auth has RESOLVED, so a logged-in user
+          refreshing never sees it flash before isLoggedIn settles. */}
+      {!authLoading && (viewMode === 'leaderboard' || !isLoggedIn) && (
         <LeaderboardView gameweek={gameweek} onOpenLeagueDetail={handleOpenLeagueFromLookup} />
       )}
 
