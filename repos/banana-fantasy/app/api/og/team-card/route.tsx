@@ -170,6 +170,13 @@ function renderPass(px: Px, passNo: string, logoSrc?: string, tier: Tier = 'pro'
                 {b.label}
               </div>
             ) : null}
+            {/* These tier-framed passes only come from the wheel (buildTieredDraftPassUrl),
+                so stamp the origin + that the draft is still filling, right on the art. */}
+            {special ? (
+              <div style={{ display: 'flex', marginTop: px(6), fontSize: px(8), fontWeight: 800, letterSpacing: px(1.6), color: 'rgba(255,255,255,.5)' }}>
+                WHEEL PRIZE · DRAFT FILLING
+              </div>
+            ) : null}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: 'auto 0' }}>
               <div style={{ fontStyle: 'italic', fontWeight: 800, fontSize: px(30), lineHeight: 1.05, color: '#fbbf24', textAlign: 'center' }}>BANANA</div>
               <div style={{ fontStyle: 'italic', fontWeight: 800, fontSize: px(30), lineHeight: 1.05, color: '#fbbf24', textAlign: 'center' }}>BEST BALL</div>
