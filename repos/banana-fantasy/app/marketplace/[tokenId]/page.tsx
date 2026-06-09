@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
@@ -110,6 +110,17 @@ function formatExpiresIn(endTimeSec?: string): string | null {
 export default function NftDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  // Return to the marketplace page/tab the user came FROM (it stores its tab +
+  // filter in the URL), not the default Listed view. history.back() restores
+  // that exact URL; fall back to /marketplace if they deep-linked here.
+  const goBackToMarketplace = useCallback(() => {
+    if (typeof window !== 'undefined' && window.history.length > 1 && document.referrer.includes('/marketplace')) {
+      router.back();
+    } else {
+      router.push('/marketplace');
+    }
+  }, [router]);
   const tokenId = (params?.tokenId as string) ?? '';
   const autoBuy = searchParams?.get('buy') === 'true';
   const autoOffer = searchParams?.get('offer') === 'true';
@@ -203,9 +214,12 @@ export default function NftDetailPage() {
   const ACTIVITY_PREVIEW = 5;
   const visibleActivity = activityExpanded ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PREVIEW);
 
-  const fetchNft = useCallback(() => {
+  const fetchNft = useCallback((opts?: { silent?: boolean }) => {
     if (!tokenId) return;
-    setIsLoading(true);
+    // Silent refetches (the post-landing OpenSea-lag re-checks) update the data
+    // in the background WITHOUT flipping the loading state — otherwise the page
+    // visibly "refreshes" a couple times on its own after landing.
+    if (!opts?.silent) setIsLoading(true);
     // Pass the viewer's wallet so the API can fall back to our backend when
     // OpenSea hasn't revealed a freshly-drafted team yet (a few-minute lag) —
     // the person viewing their own new team is its owner.
@@ -217,7 +231,7 @@ export default function NftDetailPage() {
       })
       .then(data => { setNft(data); setError(null); })
       .catch(err => setError(err.message))
-      .finally(() => setIsLoading(false));
+      .finally(() => { if (!opts?.silent) setIsLoading(false); });
   }, [tokenId, walletAddress]);
 
   const handleOwnerList = useCallback(async () => {
@@ -263,8 +277,8 @@ export default function NftDetailPage() {
   // self-corrects without a manual refresh.
   useEffect(() => {
     if (!tokenId) return;
-    const t1 = setTimeout(() => fetchNft(), 7000);
-    const t2 = setTimeout(() => fetchNft(), 15000);
+    const t1 = setTimeout(() => fetchNft({ silent: true }), 7000);
+    const t2 = setTimeout(() => fetchNft({ silent: true }), 15000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [tokenId, fetchNft]);
 
@@ -284,7 +298,7 @@ export default function NftDetailPage() {
 
     refreshAttemptedRef.current.add(tokenId);
     fetch(`/api/marketplace/refresh/${tokenId}`, { method: 'POST' })
-      .then(res => { if (res.ok) setTimeout(() => fetchNft(), 5000); })
+      .then(res => { if (res.ok) setTimeout(() => fetchNft({ silent: true }), 5000); })
       .catch(() => { /* refresh is best-effort */ });
   }, [tokenId, nft, isLoading, fetchNft]);
 
@@ -745,9 +759,9 @@ export default function NftDetailPage() {
         <div className="text-4xl mb-4">🍌</div>
         <h2 className="text-text-primary text-xl font-semibold mb-2">Team Not Found</h2>
         <p className="text-text-secondary text-sm mb-6">{error || 'This team could not be loaded.'}</p>
-        <Link href="/marketplace" className="text-banana hover:underline text-sm">
+        <button type="button" onClick={goBackToMarketplace} className="text-banana hover:underline text-sm">
           Back to Marketplace
-        </Link>
+        </button>
       </div>
     );
   }
@@ -803,16 +817,17 @@ export default function NftDetailPage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-6xl mx-auto">
-      {/* Back Link */}
-      <Link
-        href="/marketplace"
+      {/* Back Link — returns to the tab/filter the user came from */}
+      <button
+        type="button"
+        onClick={goBackToMarketplace}
         className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary text-sm mb-8 transition-colors"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
         </svg>
         Back to Marketplace
-      </Link>
+      </button>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
         {/* Left: Card Image */}

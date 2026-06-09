@@ -285,7 +285,7 @@ export default function StandingsPage() {
             {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
           </h1>
           <p className="text-white/40 text-sm">
-            {isLoggedIn ? 'Track your teams and league performance' : 'View the global leaderboard'}
+            {viewMode === 'myteams' ? 'Track your teams and league performance' : 'View the global leaderboard'}
           </p>
         </div>
 
@@ -458,20 +458,22 @@ export default function StandingsPage() {
                       {sortOrder === 'oldest' ? 'Oldest first ↑' : 'Newest first ↓'}
                     </button>
                   </div>
-                  {paginatedLeagues.map((league, i) => (
-                    <TeamCard
-                      key={league.id}
-                      league={league}
-                      onOpenModal={handleOpenModal}
-                      index={i}
-                      nickname={nicknames[league.id]}
-                      onRename={setNickname}
-                      walletAddress={user?.walletAddress}
-                      marketplaceTeam={nftByLeague.get(league.id) ?? null}
-                      onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); setTimeout(() => refetchMyNfts(), 12000); }}
-                      onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); setTimeout(() => refetchMyNfts(), 12000); }}
-                    />
-                  ))}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {paginatedLeagues.map((league, i) => (
+                      <TeamCard
+                        key={league.id}
+                        league={league}
+                        onOpenModal={handleOpenModal}
+                        index={i}
+                        nickname={nicknames[league.id]}
+                        onRename={setNickname}
+                        walletAddress={user?.walletAddress}
+                        marketplaceTeam={nftByLeague.get(league.id) ?? null}
+                        onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); setTimeout(() => refetchMyNfts(), 12000); }}
+                        onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); setTimeout(() => refetchMyNfts(), 12000); }}
+                      />
+                    ))}
+                  </div>
                   {/* Pagination */}
                   {totalTeamPages > 1 && (
                     <div className="flex items-center justify-center gap-2 pt-2">
