@@ -38,7 +38,6 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
   const mt = marketplaceTeam;
   const isListed = !!mt?.orderHash;
 
-  const [showCard, setShowCard] = useState(false);
   const downloadCard = async () => {
     if (!mt?.imageUrl) return;
     try {
@@ -110,18 +109,13 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
             alt={`Team #${mt.tokenId}`}
             fill
             className="object-contain"
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            sizes="(max-width: 640px) 100vw, 50vw"
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
             <span className={`text-[11px] font-bold uppercase tracking-widest ${config.text}`}>{config.label}</span>
             <span className="text-white/80 font-mono text-base">{mt?.tokenId ? `Team #${mt.tokenId}` : 'Team'}</span>
           </div>
-        )}
-
-        {/* Full-image click target → bigger view (sits under the badge/buttons) */}
-        {mt?.imageUrl && (
-          <button type="button" onClick={() => setShowCard(true)} className="absolute inset-0 z-10" aria-label="View team card" />
         )}
 
         {/* Tier badge top-left (+ Listed indicator if on sale) */}
@@ -202,21 +196,6 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         ))}
       </div>
 
-      {/* View card lightbox — the obsidian team card at full size + download. */}
-      {showCard && mt?.imageUrl && (
-        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center p-4 sm:p-8 bg-black/80 backdrop-blur-sm" onClick={() => setShowCard(false)}>
-          <button type="button" onClick={() => setShowCard(false)} className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.16] flex items-center justify-center text-white/70" aria-label="Close">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
-          </button>
-          <div className="relative w-auto h-[78vh] aspect-[4/5] max-w-[92vw]" onClick={(e) => e.stopPropagation()}>
-            <Image src={mt.imageUrl} alt={`Team #${mt.tokenId}`} fill className="object-contain rounded-2xl" sizes="92vw" />
-          </div>
-          <button type="button" onClick={(e) => { e.stopPropagation(); void downloadCard(); }} className="mt-5 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-banana text-black text-sm font-semibold hover:brightness-110 transition">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
-            Download
-          </button>
-        </div>
-      )}
     </div>
   );
 }
