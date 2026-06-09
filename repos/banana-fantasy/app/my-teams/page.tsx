@@ -363,7 +363,7 @@ export default function StandingsPage() {
                     value={leagueQuery}
                     onChange={(e) => setLeagueQuery(e.target.value)}
                     placeholder="League #"
-                    className="w-[88px] sm:w-[110px] flex-shrink-0 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm font-mono text-white placeholder:text-white/30 focus:border-banana/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-[88px] sm:w-[110px] flex-shrink-0 px-4 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <input
                     type="number"
@@ -371,7 +371,7 @@ export default function StandingsPage() {
                     value={teamQuery}
                     onChange={(e) => setTeamQuery(e.target.value)}
                     placeholder="Team #"
-                    className="w-[80px] sm:w-[110px] flex-shrink-0 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm font-mono text-white placeholder:text-white/30 focus:border-banana/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-[80px] sm:w-[110px] flex-shrink-0 px-4 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
