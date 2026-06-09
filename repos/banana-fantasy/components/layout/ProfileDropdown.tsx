@@ -143,7 +143,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
               spent on mint immediately and payouts never sit in the wallet.
               Tapping the row jumps to /prizes to cash out. */}
           <Link
-            href="/prizes"
+            href="/winnings"
             onClick={() => setIsOpen(false)}
             className="block px-3 py-2.5 border-b border-bg-tertiary hover:bg-bg-tertiary/60 transition-colors"
           >

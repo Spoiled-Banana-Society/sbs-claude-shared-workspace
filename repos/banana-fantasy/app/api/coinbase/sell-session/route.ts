@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       : undefined;
 
     const origin = getOrigin(req);
-    const redirectUrl = `${origin}/prizes?cashout=success`;
+    const redirectUrl = `${origin}/winnings?cashout=success`;
 
     const partnerUserId = (session.userId || walletAddress).slice(0, 49);
 

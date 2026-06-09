@@ -27,8 +27,8 @@ test.describe('Navigation', () => {
   });
 
   test('can navigate to prizes', async ({ page }) => {
-    await page.goto('/prizes');
-    await expect(page).toHaveURL(/prizes/);
+    await page.goto('/winnings');
+    await expect(page).toHaveURL(/winnings/);
   });
 
   test('can navigate to FAQ', async ({ page }) => {

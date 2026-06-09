@@ -37,7 +37,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     },
     {
-      url: `${SITE_URL}/prizes`,
+      url: `${SITE_URL}/winnings`,
       lastModified,
       changeFrequency: 'weekly',
       priority: 0.8,

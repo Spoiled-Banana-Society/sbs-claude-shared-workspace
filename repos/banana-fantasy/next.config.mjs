@@ -41,6 +41,8 @@ const nextConfig = {
       // The My Teams page moved from /standings → /my-teams. Keep the old URL
       // working for bookmarks / shared links (query string is preserved).
       { source: '/standings', destination: '/my-teams', permanent: false },
+      // The Prizes page moved from /prizes → /winnings (same reasoning).
+      { source: '/prizes', destination: '/winnings', permanent: false },
     ];
   },
   async headers() {

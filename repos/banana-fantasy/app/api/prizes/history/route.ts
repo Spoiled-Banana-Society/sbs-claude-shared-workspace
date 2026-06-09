@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
+import { logger } from '@/lib/logger';
+import { LOG_SOURCES } from '@/lib/logSources';
 import { getWithdrawalsByUser } from '@/lib/db';
 import {
   applyOverlaysToWins,
@@ -135,12 +137,26 @@ export async function GET(req: Request) {
   const userId = getSearchParam(req, 'userId');
   if (!userId) return jsonError('Missing query param: userId', 400);
 
-  // Always-on layer: synthetic (admin-granted) prizes + local withdrawals.
-  // These come from our Firestore and surface regardless of whether the Go
-  // API is reachable — important for testing on staging and for the
-  // admin-grant-prize flow to be visible immediately.
-  const synthetic = await getSyntheticPrizesForUser(userId).catch(() => []);
-  const localWithdrawals = await getWithdrawalsByUser(userId).catch(() => []);
+  // This endpoint returns MONEY. Every source failure below is a hard 503,
+  // never a silent empty list — an empty list renders as "$0.00, win drafts
+  // to get started", which is indistinguishable from a real zero balance and
+  // would terrify a user whose winnings are actually fine. Correctness over
+  // availability: the frontend shows "unable to load, refresh" on 503.
+  let synthetic: PrizeWin[];
+  let localWithdrawals: Awaited<ReturnType<typeof getWithdrawalsByUser>>;
+  try {
+    [synthetic, localWithdrawals] = await Promise.all([
+      getSyntheticPrizesForUser(userId),
+      getWithdrawalsByUser(userId),
+    ]);
+  } catch (err) {
+    logger.error(LOG_SOURCES.prizes.FETCH_FAILED, {
+      actor: userId,
+      err: err instanceof Error ? err.message : String(err),
+      context: { stage: 'firestore_layers' },
+    });
+    return jsonError('Unable to load prize history', 503);
+  }
 
   const buildResult = async (goApiItems: PrizeHistoryItem[] | null) => {
     const goApiHasWithdrawals = goApiItems?.some((i) => i.type === 'withdrawal') ?? false;
@@ -170,9 +186,19 @@ export async function GET(req: Request) {
     return final;
   };
 
+  const failLoud = (stage: string, detail?: unknown) => {
+    logger.error(LOG_SOURCES.prizes.FETCH_FAILED, {
+      actor: userId,
+      err: detail instanceof Error ? detail.message : detail != null ? String(detail) : undefined,
+      context: { stage },
+    });
+    return jsonError('Unable to load prize history', 503);
+  };
+
   try {
     if (!API_BASE) {
-      // No Go API configured — surface synthetic + local-only.
+      // No Go API configured — legit config choice, not a failure.
+      // Surface synthetic + local-only.
       return json(await buildResult(null), 200);
     }
 
@@ -180,29 +206,37 @@ export async function GET(req: Request) {
     try {
       res = await fetch(`${API_BASE}/owner/${userId}/prizes`, { next: { revalidate: 60 } });
     } catch (err) {
-      console.error('Prize history backend fetch failed:', err);
+      return failLoud('go_api_unreachable', err);
+    }
+
+    if (res.status === 404) {
+      // The Go API has no /owner/{id}/prizes endpoint today (verified
+      // 2026-06-09: it's not in owner/owner.go) — prize records live
+      // entirely in our Firestore (synthetic_prizes + withdrawals).
+      // 404 is the expected steady state, not a failure. If the endpoint
+      // ever ships, this branch just stops being hit.
       return json(await buildResult(null), 200);
     }
 
     if (!res.ok) {
       const message = await readErrorMessage(res);
-      console.error(`Prize history API error: ${res.status}`, message);
-      return json(await buildResult(null), 200);
+      return failLoud('go_api_error', `${res.status} ${message ?? ''}`);
     }
 
     let data: unknown;
     try {
       data = await res.json();
     } catch {
-      console.error('Invalid prize history response from backend');
-      return json(await buildResult(null), 200);
+      return failLoud('go_api_bad_json');
     }
 
     const normalized = normalizePrizeHistory(data, userId);
+    // items === null means the payload shape was unrecognized — wins could
+    // be silently missing, so that's a failure too, not an empty history.
+    if (normalized.items === null) return failLoud('go_api_unrecognized_shape');
     return json(await buildResult(normalized.items), 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
-    console.error('Prize history fetch failed:', err);
-    return json(await buildResult(null), 200);
+    return failLoud('unexpected', err);
   }
 }
