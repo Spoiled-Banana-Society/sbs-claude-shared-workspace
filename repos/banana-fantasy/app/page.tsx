@@ -18,7 +18,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useModalStack } from '@/hooks/useModalStack';
 import { useContests } from '@/hooks/useContests';
 import { usePromos } from '@/hooks/usePromos';
-import { usePromoReminders } from '@/hooks/usePromoReminders';
 import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
@@ -92,7 +91,8 @@ export default function HomePage() {
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
-  usePromoReminders(promosQuery.promos);
+  // (Promo reminder notifications removed 2026-06-09 — real-time event notis
+  // cover the moment something is earned; nag-style reminders were noise.)
 
   // Shared entry flow — identical to the /drafting "Enter draft" path. Shows the
   // branded "Joining lobby" overlay, joins BEFORE navigating, and seeds the room
