@@ -7,8 +7,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser, linkedWalletsOf } from '@/lib/privyServer';
 import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
-import { computeAndStoreRipeness, countPaidDraftsDone } from '@/lib/db';
-import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
+import { computeAndStoreRipeness } from '@/lib/db';
+import { mapDraftTokenToLeague, fetchOwnerPaidFilledCount, type ApiDraftToken } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
       .map(t => mapDraftTokenToLeague(normalizeToken(t)));
 
     const completed = leagues.filter(l => l.status === 'completed');
-    const ripeness = await computeAndStoreRipeness(userId, await countPaidDraftsDone(userId).catch(() => 0));
+    const ripeness = await computeAndStoreRipeness(userId, await fetchOwnerPaidFilledCount(userId).catch(() => 0));
     const awards: string[] = [];
     awards.push(...await awardClubBadges(userId, leagues));
     if (await awardOgIfReturning(userId)) awards.push('og');

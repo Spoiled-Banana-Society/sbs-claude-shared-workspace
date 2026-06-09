@@ -6,7 +6,8 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
-import { computeAndStoreRipeness, countPaidDraftsDone } from '@/lib/db';
+import { computeAndStoreRipeness } from '@/lib/db';
+import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
 import { logger } from '@/lib/logger';
@@ -133,7 +134,7 @@ async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
     } catch { /* skip */ }
   }));
   await Promise.all([...owners].map(async (o) => {
-    try { await computeAndStoreRipeness(o, await countPaidDraftsDone(o)); }
+    try { await computeAndStoreRipeness(o, await fetchOwnerPaidFilledCount(o)); }
     catch (err) { logger.warn('marketplace.refresh_draft_ripeness_failed', { owner: o, error: String(err) }); }
   }));
 }

@@ -56,6 +56,9 @@ export const BADGE_CATALOG: Badge[] = [
   })),
 
   // ── Championships ────────────────────────────────────────────────────
+  // Hidden while locked: these are winner-only trophies (snapshot/admin
+  // grant). Non-winners can't earn them, so they don't show as locked teasers
+  // — they only appear in the catalog of the champions who hold them.
   ...BBB_SEASONS.map(([num, roman]): Badge => ({
     id: `bbb-champion-${num}`,
     label: `BBB ${roman} Champion`,
@@ -68,6 +71,7 @@ export const BADGE_CATALOG: Badge[] = [
     contentColor: '#9dc1fb',
     color: '#3b82f6',
     glyph: '👑',
+    hidden: true,
   })),
   ...HOF_SEASONS.map(([num, roman]): Badge => ({
     id: `hof-champion-${num}`,
@@ -81,6 +85,7 @@ export const BADGE_CATALOG: Badge[] = [
     contentColor: '#f7e6ad',
     color: '#cca54f',
     glyph: '🏆',
+    hidden: true,
   })),
 
   // ── Clubs ────────────────────────────────────────────────────────────
@@ -150,6 +155,9 @@ export const BADGE_CATALOG: Badge[] = [
     contentColor: '#f3f5f8',
     color: RIM_GREY,
     glyph: '⭐',
+    // Hidden while locked: you either ARE an OG (past-season player) or you
+    // aren't — it can't be earned this season, so no locked teaser.
+    hidden: true,
   },
 
   // ── NFL team flair ───────────────────────────────────────────────────

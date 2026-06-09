@@ -1782,8 +1782,14 @@ function DraftRoomContent() {
           });
         });
       }
-      // Badge sweep runs server-side on every /api/badges read (called
-      // by the badge notifier) so we don't need to fire it from here.
+      // Fill-moment badge sweep: the draft just hit 10/10, which is when the
+      // Go API binds tokens→league — i.e. when this paid draft starts counting
+      // toward banana ripeness. force=1 skips the 30s throttle so any tier
+      // unlock (bell + toast) lands right now instead of on the notifier's
+      // 5-minute poll. Fire-and-forget; a failure just means the next badges
+      // read catches up.
+      fetch(`/api/badges?userId=${encodeURIComponent(promoUserId)}&force=1`, { cache: 'no-store' })
+        .catch(() => { /* non-fatal */ });
     }
 
     if (id && promoUserId && isPaidDraft && userPos === 9) {

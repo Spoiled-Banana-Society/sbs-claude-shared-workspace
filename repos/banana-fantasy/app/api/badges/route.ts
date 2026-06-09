@@ -5,10 +5,10 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { getUserBadges, unlockBadge, computeAndStoreRipeness, countPaidDraftsDone } from '@/lib/db';
+import { getUserBadges, unlockBadge, computeAndStoreRipeness } from '@/lib/db';
 import { BADGE_CATALOG } from '@/lib/badges/catalog';
 import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
-import { mapDraftTokenToLeague, type ApiDraftToken } from '@/lib/api/owner';
+import { mapDraftTokenToLeague, fetchOwnerPaidFilledCount, type ApiDraftToken } from '@/lib/api/owner';
 import type { User } from '@/types';
 import { logger } from '@/lib/logger';
 
@@ -94,10 +94,14 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
       .map(t => mapDraftTokenToLeague(normalizeToken(t)));
     const completedCount = leagues.filter(l => l.status === 'completed').length;
 
-    // Banana ripeness — PAID drafts the user has DONE (draft_entered, passType
-    // paid). Unlocks earned tier badges (fires bell/toast on a new tier) +
-    // stores the current tier.
-    await computeAndStoreRipeness(userId, await countPaidDraftsDone(userId));
+    // Banana ripeness — PAID drafts that actually FILLED. A token only gets
+    // its leagueId once the draft hits 10/10, so paid+leagueId = a filled
+    // paid draft. Taking a seat counts for nothing until the draft fills.
+    // Unlocks earned tier badges (bell/toast on a new tier) + stores the tier.
+    const paidFilled = active.filter(
+      t => String(t.passType ?? '').toLowerCase() === 'paid' && (t._leagueId || t.leagueId),
+    ).length;
+    await computeAndStoreRipeness(userId, paidFilled);
 
     // Clubs — entering a Jackpot/HOF draft (resolved league type) earns the
     // matching club badge.
@@ -170,7 +174,7 @@ export async function GET(req: Request) {
     // was throttled and the user has never swept), compute it now from the
     // wallet's paid-pass count so the banana always has a tier.
     const ripeness = user?.ripeness
-      ?? await computeAndStoreRipeness(lower, await countPaidDraftsDone(lower).catch(() => 0));
+      ?? await computeAndStoreRipeness(lower, await fetchOwnerPaidFilledCount(lower).catch(() => 0));
 
     return json({
       catalog: BADGE_CATALOG,

@@ -35,7 +35,6 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
-import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { pushStreamEvent } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
@@ -2583,28 +2582,11 @@ export async function revokeBadge(userId: string, badgeId: string): Promise<bool
 }
 
 /**
- * Count the PAID drafts a user has DONE — draft_entered activity events whose
- * passType is 'paid' (i.e. drafts they actually entered using a paid pass).
- * This is the ripeness metric: the banana ripens as you DRAFT, not as you buy.
- * Free drafts don't count (no free-draft farming). Single-field query on userId
- * (auto-indexed) + in-memory filter, so no composite index needed.
- */
-export async function countPaidDraftsDone(userId: string): Promise<number> {
-  const snap = await getAdminFirestore()
-    .collection(ACTIVITY_EVENTS_COLLECTION)
-    .where('userId', '==', userId.toLowerCase())
-    .get();
-  let n = 0;
-  for (const d of snap.docs) {
-    const data = d.data() as { type?: string; metadata?: { passType?: string } };
-    if (data.type === 'draft_entered' && data.metadata?.passType === 'paid') n++;
-  }
-  return n;
-}
-
-/**
- * Sync a user's banana ripeness from their PAID-drafts-DONE count (caller
- * supplies it via countPaidDraftsDone).
+ * Sync a user's banana ripeness from their PAID-drafts-FILLED count (caller
+ * supplies it — paid tokens bound to a league via the Go API; see
+ * countPaidDraftsFilled / fetchOwnerPaidFilledCount in lib/api/owner.ts. A
+ * token only gets its leagueId when the draft hits 10/10, so taking a seat in
+ * a filling draft counts for nothing until the draft really fills).
  *
  * Two effects, both idempotent:
  *  1. Denormalizes the current tier onto the user doc (`ripeness`) so every

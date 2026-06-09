@@ -6,9 +6,11 @@ import type { Ripeness } from '@/types';
  * grey until you cross its threshold, then it turns its tier color and you can
  * equip whichever unlocked banana you want to show off.
  *
- * The count is the number of PAID drafts the user has DONE — draft_entered
- * activity events with passType 'paid' (see db-firestore → countPaidDraftsDone).
- * The banana ripens through play, not purchase; free/promo drafts don't count.
+ * The count is the number of PAID drafts that actually FILLED — Go API tokens
+ * with passType 'paid' that are bound to a league (binding happens at 10/10,
+ * not at seat-taking; see lib/api/owner.ts → countPaidDraftsFilled). The
+ * banana ripens through play, not purchase; free/promo drafts don't count and
+ * a seat in a never-filled draft counts for nothing.
  *
  * Tiers (min paid drafts done to unlock):
  *   Unripe 1–9 · Fresh 10–19 · Ripe 20–49

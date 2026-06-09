@@ -382,6 +382,25 @@ export async function fetchOwnerPaidPassCount(walletAddress: string): Promise<nu
 }
 
 /**
+ * Count PAID drafts that actually FILLED. A token only gets its leagueId once
+ * the draft hits 10/10 (the Go API binds token→league at fill, not at
+ * seat-taking), so "paid token with a leagueId" = a paid draft that filled.
+ * This is the ripeness metric: taking a seat in a filling draft counts for
+ * nothing until the draft really fills.
+ */
+export function countPaidDraftsFilled(tokens: ApiDraftToken[]): number {
+  return tokens.filter(
+    t => String(t.passType ?? '').toLowerCase() === 'paid' && !!t.leagueId,
+  ).length;
+}
+
+/** Fetch a wallet's PAID-drafts-FILLED count from the Go API. */
+export async function fetchOwnerPaidFilledCount(walletAddress: string): Promise<number> {
+  const tokens = await getOwnerDraftTokens(walletAddress);
+  return countPaidDraftsFilled(tokens);
+}
+
+/**
  * Fetch draft tokens and map them to UI `League[]`.
  *
  * This is useful for pages that show a user's active leagues/teams.
