@@ -15,6 +15,7 @@ import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
 import { resolveLeagueNumber } from '@/lib/opensea';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -144,6 +145,9 @@ export default function NftDetailPage() {
   const [nft, setNft] = useState<NftDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Wheel-won JP/HOF level for a pass still in a filling round — drives the
+  // tier-styled card art so the detail/listing page matches the Sell grid.
+  const [fillingLevel, setFillingLevel] = useState<'hof' | 'jackpot' | null>(null);
   const [buyStep, setBuyStep] = useState<'confirm' | 'processing' | 'complete'>('confirm');
   const [txError, setTxError] = useState<string | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -284,6 +288,23 @@ export default function NftDetailPage() {
     const t2 = setTimeout(() => fetchNft({ silent: true }), 15000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [tokenId, fetchNft]);
+
+  // One-shot: is this token a wheel-won JP/HOF pass still in a filling round?
+  // If so, render the tier-styled card art (matches the Sell grid). Deps are a
+  // stable scalar only (tokenId) — no Privy-derived callback (Rule #0).
+  useEffect(() => {
+    if (!tokenId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/queues/wheel-pass-filling?tokenIds=${tokenId}`);
+        if (!r.ok) return;
+        const lvl = ((await r.json()) as { levels?: Record<string, 'hof' | 'jackpot'> }).levels?.[tokenId];
+        if (!cancelled && (lvl === 'hof' || lvl === 'jackpot')) setFillingLevel(lvl);
+      } catch { /* best-effort — falls back to the normal image */ }
+    })();
+    return () => { cancelled = true; };
+  }, [tokenId]);
 
   // Auto-refresh OpenSea metadata once per tokenId when traits look stale
   // (no LEAGUE-NAME and no roster slots). OpenSea sometimes serves a cached
@@ -802,6 +823,10 @@ export default function NftDetailPage() {
   const isOwner = walletAddress && nftOwner && walletAddress.toLowerCase() === nftOwner.toLowerCase();
 
   const imageUrl = nft.display_image_url || nft.image_url;
+  // For a wheel-won JP/HOF pass still filling, show the tier-styled card art
+  // (gold HOF / red Jackpot) instead of the generic pass image — matches the
+  // Sell grid. Keep `imageUrl` for league-number resolution below.
+  const cardImage = fillingLevel ? buildTieredDraftPassUrl(tokenId, fillingLevel) : imageUrl;
   // Users only ever see Team # (= token id) and League #. Never the raw league
   // name ("BBB #…") or "Token #". League # comes from the same source the card
   // image uses (backend-derived), so text === card.
@@ -836,11 +861,11 @@ export default function NftDetailPage() {
         {/* Left: Card Image */}
         <div>
           <div className={`relative aspect-[3/4] rounded-2xl overflow-hidden border ${
-            draftType === 'jackpot' ? 'border-error/40' : draftType === 'hof' ? 'border-hof/40' : 'border-bg-tertiary'
+            (fillingLevel ?? draftType) === 'jackpot' ? 'border-error/40' : (fillingLevel ?? draftType) === 'hof' ? 'border-hof/40' : 'border-bg-tertiary'
           }`}>
-            {imageUrl ? (
+            {cardImage ? (
               <Image
-                src={imageUrl}
+                src={cardImage}
                 alt={teamName}
                 fill
                 className="object-contain"
