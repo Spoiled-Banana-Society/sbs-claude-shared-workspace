@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { getLastPath, isTeamDetailPath } from '@/lib/navHistory';
 import { useFundWallet, useSendTransaction, useWallets } from '@privy-io/react-auth';
 import { useNotifications } from '@/components/NotificationCenter';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
@@ -317,19 +318,16 @@ export default function MarketplacePage() {
   }, [router]);
 
   useEffect(() => {
-    let armed = false;
-    try { armed = sessionStorage.getItem('mkt:restore') === '1'; } catch { /* ignore */ }
-    if (!armed) {
-      // Fresh entry → start at the top; drop any stale saved position.
-      try { sessionStorage.removeItem('mkt:scrollY'); sessionStorage.removeItem('mkt:restore'); } catch { /* ignore */ }
+    // Restore scroll ONLY when we arrived from a team page (works for the in-page
+    // "Back to Marketplace" link, the browser back arrow, and the swipe gesture
+    // alike). Arriving from anywhere else → start at the top.
+    const cameFromTeam = isTeamDetailPath(getLastPath());
+    if (!cameFromTeam) {
+      try { sessionStorage.removeItem('mkt:scrollY'); } catch { /* ignore */ }
       return;
     }
     let y = 0;
-    try {
-      y = Number(sessionStorage.getItem('mkt:scrollY') || '0');
-      sessionStorage.removeItem('mkt:restore');
-      sessionStorage.removeItem('mkt:scrollY');
-    } catch { /* ignore */ }
+    try { y = Number(sessionStorage.getItem('mkt:scrollY') || '0'); sessionStorage.removeItem('mkt:scrollY'); } catch { /* ignore */ }
     if (y > 0) {
       // Cards paint instantly from the in-memory cache on back, so the page has
       // its height — restore after a couple frames so layout has settled.

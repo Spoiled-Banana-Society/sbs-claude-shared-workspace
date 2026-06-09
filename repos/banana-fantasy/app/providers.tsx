@@ -22,6 +22,7 @@ import { useUserEventStream } from '@/hooks/useUserEventStream';
 import { setClientLogWallet } from '@/lib/clientLog';
 import { wakeRealtime } from '@/lib/api/firebase';
 import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
+import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
 
@@ -56,6 +57,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
   const isDraftRoom = pathname === '/draft-room';
+  // App-wide "where did I just come from" recorder. Runs as a parent effect
+  // (after the page's own effects), so any page can read getLastPath() on mount
+  // to see the route it arrived from. Powers the marketplace scroll-restore.
+  useEffect(() => { if (pathname) recordPath(pathname); }, [pathname]);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   // Real-time push from RTDB — primary source for badge unlocks +
