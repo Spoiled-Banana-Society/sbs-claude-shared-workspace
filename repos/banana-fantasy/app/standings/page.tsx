@@ -171,17 +171,6 @@ export default function StandingsPage() {
     }
   }, [currentGameweek]);
 
-  // Summary stats (portfolio card)
-  // Generate gameweek options (REG weeks 1-18)
-  const gameweekOptions = useMemo(() => {
-    const opts: { value: string; label: string }[] = [];
-    for (let i = 1; i <= 18; i++) {
-      const val = `2025REG-${String(i).padStart(2, '0')}`;
-      opts.push({ value: val, label: `Week ${i}` });
-    }
-    return opts;
-  }, []);
-
   // Filter by search query, type filter, and sort by league number
   const filteredLeagues = useMemo(() => {
     let result = [...mergedLeagues];
@@ -288,57 +277,15 @@ export default function StandingsPage() {
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
-      {/* Page header with toggle + gameweek selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-            {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
-          </h1>
-          <p className="text-white/40 text-sm">
-            {viewMode === 'myteams' ? 'Track your teams and league performance' : 'View the global leaderboard'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Gameweek selector */}
-          <select
-            value={gameweek}
-            onChange={(e) => setGameweek(e.target.value)}
-            className="bg-white/[0.06] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white/70 focus:outline-none focus:ring-1 focus:ring-banana/40 appearance-none cursor-pointer"
-          >
-            {gameweekOptions.map((opt) => (
-              <option key={opt.value} value={opt.value} className="bg-bg-primary text-white">
-                {opt.label}
-              </option>
-            ))}
-          </select>
-
-          {/* My Teams / Leaderboard toggle */}
-          {isLoggedIn && (
-            <div className="flex bg-white/[0.04] rounded-lg p-0.5">
-              <button
-                onClick={() => setViewMode('myteams')}
-                className={`text-sm px-4 py-2 rounded-md font-medium transition-colors ${
-                  viewMode === 'myteams'
-                    ? 'bg-banana text-black'
-                    : 'text-white/50 hover:text-white/70'
-                }`}
-              >
-                My Teams
-              </button>
-              <button
-                onClick={() => setViewMode('leaderboard')}
-                className={`text-sm px-4 py-2 rounded-md font-medium transition-colors ${
-                  viewMode === 'leaderboard'
-                    ? 'bg-banana text-black'
-                    : 'text-white/50 hover:text-white/70'
-                }`}
-              >
-                Leaderboard
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Page header — pure My Teams for now. The Week selector + My Teams /
+          Leaderboard toggle return when the season starts (scores exist). */}
+      <div className="mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+          {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
+        </h1>
+        <p className="text-white/40 text-sm">
+          {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
+        </p>
       </div>
 
       {/* MY TEAMS VIEW */}
@@ -449,8 +396,13 @@ export default function StandingsPage() {
                 </>
               ) : (
                 <div className="text-center py-8 rounded-xl border border-white/[0.04] bg-white/[0.02]">
-                  <p className="text-white/40 text-sm">No teams match {teamSearch.map(t => `“${t}”`).join(' + ')}</p>
-                  <button onClick={() => setTeamSearch([])} className="text-banana text-xs mt-1 hover:underline">Clear search</button>
+                  <p className="text-white/40 text-sm">
+                    {teamSearch.length > 0
+                      ? 'No teams match'
+                      : typeFilter !== 'all'
+                        ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : 'Pro'} teams yet`
+                        : 'No teams yet'}
+                  </p>
                 </div>
               )}
             </div>

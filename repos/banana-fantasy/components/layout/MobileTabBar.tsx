@@ -54,7 +54,7 @@ export function MobileTabBar() {
     {
       href: '/standings',
       label: 'Teams',
-      matchPaths: ['/standings', '/exposure', '/leaderboard'],
+      matchPaths: ['/standings', '/exposure'],
       badge: 0,
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
