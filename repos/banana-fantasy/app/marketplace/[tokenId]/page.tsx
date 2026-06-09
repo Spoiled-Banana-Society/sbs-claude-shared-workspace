@@ -951,14 +951,6 @@ export default function NftDetailPage() {
                 </span>
               </UserPopover>
             )}
-            {!nft.team && (
-              <span
-                className="px-2 py-0.5 bg-white/5 text-white/40 text-[10px] font-bold rounded uppercase tracking-wide"
-                title="Stage-minted NFT with no SBS backend record."
-              >
-                Stage Mint
-              </span>
-            )}
           </div>
 
           {/* Price & Buy / Make Offer — primary action, kept at the top */}
