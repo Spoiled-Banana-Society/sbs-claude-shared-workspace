@@ -96,6 +96,19 @@ export default function MarketplacePage() {
   const [rosterFilter, setRosterFilter] = useState<string[]>([]);
   const [leagueFilter, setLeagueFilter] = useState<number | null>(null);
   const [teamFilter, setTeamFilter] = useState<number | null>(null);
+
+  // Searching by League # / Team # only makes sense across the whole collection
+  // — on the "Listed" tab (or JP/HOF/Top) a number search would silently return
+  // nothing unless that exact team happens to be listed. So entering a number
+  // auto-switches the view to "All Teams" so the result actually shows.
+  const searchLeague = useCallback((n: number | null) => {
+    setLeagueFilter(n);
+    if (n != null) setViewFilter('all');
+  }, []);
+  const searchTeam = useCallback((n: number | null) => {
+    setTeamFilter(n);
+    if (n != null) setViewFilter('all');
+  }, []);
   const [sortBy, setSortBy] = useState('price-low');
   const [selectedTeam, setSelectedTeam] = useState<MarketplaceTeam | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -865,9 +878,9 @@ export default function MarketplacePage() {
           viewCounts={marketplaceStats}
           onSetRosterFilter={setRosterFilter}
           leagueFilter={leagueFilter}
-          onSetLeagueFilter={setLeagueFilter}
+          onSetLeagueFilter={searchLeague}
           teamFilter={teamFilter}
-          onSetTeamFilter={setTeamFilter}
+          onSetTeamFilter={searchTeam}
           onSetSortBy={setSortBy}
           onToggleSweepMode={() => requireLogin(() => setSweepMode(previous => {
             if (previous) setSweepSelected(new Set());
