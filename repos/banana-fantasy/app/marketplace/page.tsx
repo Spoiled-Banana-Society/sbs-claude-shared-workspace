@@ -306,6 +306,37 @@ export default function MarketplacePage() {
     });
   }, [requireLogin]);
 
+  // Scroll-position memory: open a team from anywhere in the grid, and pressing
+  // "Back to Marketplace" returns you to the exact spot you were scrolled to —
+  // but arriving fresh (nav menu, or coming back after leaving) starts at the top.
+  // We stash scrollY on card-open; the detail page's Back button "arms" the
+  // restore, so only an explicit return restores (see [tokenId]/page.tsx).
+  const navigateToTeam = useCallback((tokenId: string, suffix = '') => {
+    try { sessionStorage.setItem('mkt:scrollY', String(window.scrollY)); } catch { /* ignore */ }
+    router.push(`/marketplace/${tokenId}${suffix}`);
+  }, [router]);
+
+  useEffect(() => {
+    let armed = false;
+    try { armed = sessionStorage.getItem('mkt:restore') === '1'; } catch { /* ignore */ }
+    if (!armed) {
+      // Fresh entry → start at the top; drop any stale saved position.
+      try { sessionStorage.removeItem('mkt:scrollY'); sessionStorage.removeItem('mkt:restore'); } catch { /* ignore */ }
+      return;
+    }
+    let y = 0;
+    try {
+      y = Number(sessionStorage.getItem('mkt:scrollY') || '0');
+      sessionStorage.removeItem('mkt:restore');
+      sessionStorage.removeItem('mkt:scrollY');
+    } catch { /* ignore */ }
+    if (y > 0) {
+      // Cards paint instantly from the in-memory cache on back, so the page has
+      // its height — restore after a couple frames so layout has settled.
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+    }
+  }, []);
+
   const openSellModal = useCallback((team: MarketplaceTeam) => {
     setSelectedTeam(team);
     setListPrice('');
@@ -849,8 +880,8 @@ export default function MarketplacePage() {
           onShare={handleShare}
           onOpenBuyModal={openBuyModal}
           onGoToSellTab={() => requireLogin(() => setActiveTab('sell'))}
-          onNavigateToTeam={(tokenId) => router.push(`/marketplace/${tokenId}`)}
-          onMakeOffer={(tokenId) => router.push(`/marketplace/${tokenId}?offer=true`)}
+          onNavigateToTeam={(tokenId) => navigateToTeam(tokenId)}
+          onMakeOffer={(tokenId) => navigateToTeam(tokenId, '?offer=true')}
           onCloseBuyModal={() => setShowBuyModal(false)}
           onSetPaymentMethod={setPaymentMethod}
           onHandleBuy={handleBuy}
@@ -905,7 +936,7 @@ export default function MarketplacePage() {
           watchlistSet={watchlistSet}
           deduplicatedTeams={deduplicatedTeams}
           onBrowseTeams={() => setActiveTab('buy')}
-          onViewTeam={(tokenId) => router.push(`/marketplace/${tokenId}`)}
+          onViewTeam={(tokenId) => navigateToTeam(tokenId)}
           onToggleWatchlist={(tokenId, price) => toggleWatchlist(tokenId, price)}
           onOpenBuyModal={openBuyModal}
           onViewAllTeams={() => {

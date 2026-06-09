@@ -115,12 +115,19 @@ export default function NftDetailPage() {
   // filter in the URL), not the default Listed view. history.back() restores
   // that exact URL; fall back to /marketplace if they deep-linked here.
   const goBackToMarketplace = useCallback(() => {
+    // Arm the marketplace's scroll-restore so it returns to where the user was.
+    try { sessionStorage.setItem('mkt:restore', '1'); } catch { /* ignore */ }
     if (typeof window !== 'undefined' && window.history.length > 1 && document.referrer.includes('/marketplace')) {
       router.back();
     } else {
       router.push('/marketplace');
     }
   }, [router]);
+  // Navigating to a team but NOT returning via Back (e.g. tapping a nav link)
+  // should land the marketplace at the top, so disarm restore on mount.
+  useEffect(() => {
+    try { sessionStorage.removeItem('mkt:restore'); } catch { /* ignore */ }
+  }, []);
   const tokenId = (params?.tokenId as string) ?? '';
   const autoBuy = searchParams?.get('buy') === 'true';
   const autoOffer = searchParams?.get('offer') === 'true';
