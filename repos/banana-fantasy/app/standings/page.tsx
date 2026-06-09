@@ -282,7 +282,7 @@ export default function StandingsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-            {isLoggedIn && viewMode === 'myteams' ? 'My Teams' : 'Standings'}
+            {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
           </h1>
           <p className="text-white/40 text-sm">
             {isLoggedIn ? 'Track your teams and league performance' : 'View the global leaderboard'}
@@ -533,6 +533,7 @@ export default function StandingsPage() {
           initialTab={modalTab}
           initialPlayer={modalInitialPlayer}
           walletAddress={user?.walletAddress ?? ''}
+          imageUrl={nftByLeague.get(modalLeague.id)?.imageUrl ?? null}
           onClose={() => { setModalLeague(null); setModalInitialPlayer(undefined); }}
         />
       )}

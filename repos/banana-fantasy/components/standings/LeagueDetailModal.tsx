@@ -15,6 +15,9 @@ interface LeagueDetailModalProps {
   initialTab: ModalTab;
   initialPlayer?: string;
   walletAddress: string;
+  /** The NEW obsidian team card image (from the marketplace index). Preferred
+   *  over the legacy Go `_imageUrl` so the Team tab shows the current card. */
+  imageUrl?: string | null;
   onClose: () => void;
 }
 
@@ -97,7 +100,7 @@ async function fetchRosters(draftId: string): Promise<Record<string, Record<stri
 const NUM_TEAMS = 10;
 const NUM_ROUNDS = 15;
 
-export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, onClose }: LeagueDetailModalProps) {
+export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAddress, imageUrl, onClose }: LeagueDetailModalProps) {
   const { user: authUser } = useAuth();
   const [activeTab, setActiveTab] = useState<ModalTab>(initialTab);
   const [isClosing, setIsClosing] = useState(false);
@@ -117,7 +120,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
   const [boardLoading, setBoardLoading] = useState(true);
 
   // Team state
-  const [cardImageUrl, setCardImageUrl] = useState<string | null>(null);
+  // Prefer the new obsidian image passed from the card; fall back to the Go
+  // `_imageUrl` only when we weren't given one.
+  const [cardImageUrl, setCardImageUrl] = useState<string | null>(imageUrl ?? null);
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [teamLoading, setTeamLoading] = useState(true);
 
@@ -264,7 +269,9 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
           );
           if (match) {
             const imgUrl = String((match as Record<string, unknown>)._imageUrl ?? (match as Record<string, unknown>).imageUrl ?? '');
-            if (imgUrl && !imgUrl.includes('draft-token-image-default')) {
+            // Only use the legacy Go image when the card didn't hand us the new
+            // obsidian one (the preferred, current card art).
+            if (!imageUrl && imgUrl && !imgUrl.includes('draft-token-image-default')) {
               setCardImageUrl(imgUrl);
             }
           }
