@@ -35,11 +35,13 @@ export async function GET(req: Request) {
   try {
     const level = (getSearchParam(req, 'level') || '').toLowerCase();
     const leagueParam = getSearchParam(req, 'league');
+    const teamParam = getSearchParam(req, 'team');
     const hasLeague = !!leagueParam && /^\d+$/.test(leagueParam);
+    const hasTeam = !!teamParam && /^\d+$/.test(teamParam);
     const wantLevel = level === 'jackpot' || level === 'hof' ? level : null;
 
     // Instant path: serve the cached section if still fresh.
-    const cacheKey = `${wantLevel ?? ''}|${hasLeague ? leagueParam : ''}`;
+    const cacheKey = `${wantLevel ?? ''}|${hasLeague ? leagueParam : ''}|${hasTeam ? teamParam : ''}`;
     const cached = teamsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < TEAMS_TTL_MS) {
       return json({ nfts: cached.nfts, next: null });
@@ -47,14 +49,21 @@ export async function GET(req: Request) {
 
     const db = getAdminFirestore();
 
-    // Query ONE field (single-field indexes are automatic; no composite index
-    // needed), then filter the rest in code.
-    let q: FirebaseFirestore.Query = db.collection('marketplace_index');
-    if (hasLeague) q = q.where('leagueNumber', '==', Number(leagueParam));
-    else if (wantLevel) q = q.where('level', '==', wantLevel);
-    else q = q.where('status', '==', 'team'); // "All Teams" — only drafted teams
-
-    const snap = await q.limit(1000).get();
+    // Team # is the on-chain token id = the index doc id → one direct read.
+    // Otherwise query ONE field (single-field indexes are automatic; no composite
+    // index needed) and filter the rest in code.
+    let snapDocs: FirebaseFirestore.QueryDocumentSnapshot[];
+    if (hasTeam) {
+      const one = await db.collection('marketplace_index').doc(teamParam!).get();
+      snapDocs = one.exists ? [one as FirebaseFirestore.QueryDocumentSnapshot] : [];
+    } else {
+      let q: FirebaseFirestore.Query = db.collection('marketplace_index');
+      if (hasLeague) q = q.where('leagueNumber', '==', Number(leagueParam));
+      else if (wantLevel) q = q.where('level', '==', wantLevel);
+      else q = q.where('status', '==', 'team'); // "All Teams" — only drafted teams
+      snapDocs = (await q.limit(1000).get()).docs;
+    }
+    const snap = { docs: snapDocs };
 
     // Only real on-chain tokens (<= current contract supply). Excludes prior-era
     // "ghost" finalize-doc ids that aren't minted on this contract / on OpenSea,

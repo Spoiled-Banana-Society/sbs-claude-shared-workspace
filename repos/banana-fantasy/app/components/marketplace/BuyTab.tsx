@@ -42,6 +42,8 @@ interface BuyTabProps {
   onSetRosterFilter: (chips: string[]) => void;
   leagueFilter: number | null;
   onSetLeagueFilter: (n: number | null) => void;
+  teamFilter: number | null;
+  onSetTeamFilter: (n: number | null) => void;
   onSetSortBy: (value: string) => void;
   onToggleSweepMode: () => void;
   onToggleSweepSelect: (tokenId: string) => void;
@@ -88,6 +90,8 @@ export function BuyTab({
   onSetRosterFilter,
   leagueFilter,
   onSetLeagueFilter,
+  teamFilter,
+  onSetTeamFilter,
   onSetSortBy,
   onToggleSweepMode,
   onToggleSweepSelect,
@@ -211,14 +215,22 @@ export function BuyTab({
             className="w-72"
           />
 
-          {/* League # filter — backend-sourced (instant) via the on-chain-id index. */}
+          {/* League # / Team # filters — backend-sourced (instant) via the on-chain-id index. */}
           <input
             type="number"
             inputMode="numeric"
             value={leagueFilter ?? ''}
             onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
             placeholder="League #"
-            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none"
+            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <input
+            type="number"
+            inputMode="numeric"
+            value={teamFilter ?? ''}
+            onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
+            placeholder="Team #"
+            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
 

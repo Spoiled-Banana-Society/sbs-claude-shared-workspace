@@ -95,6 +95,7 @@ export default function MarketplacePage() {
   const [jackpotFilter] = useState(false);
   const [rosterFilter, setRosterFilter] = useState<string[]>([]);
   const [leagueFilter, setLeagueFilter] = useState<number | null>(null);
+  const [teamFilter, setTeamFilter] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState('price-low');
   const [selectedTeam, setSelectedTeam] = useState<MarketplaceTeam | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
@@ -179,7 +180,7 @@ export default function MarketplacePage() {
   // we ask the server to scan the whole collection by level and return the full
   // set. Other views stay paged.
   const collectionLevel = viewFilter === 'jackpot' ? 'jackpot' : viewFilter === 'hof' ? 'hof' : null;
-  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel, leagueFilter);
+  const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel, leagueFilter, teamFilter);
   const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
   const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
@@ -197,13 +198,16 @@ export default function MarketplacePage() {
     // the Listed tab it must still mean "listed", so intersect with active
     // listings (orderHash present) — otherwise it leaked unlisted league teams
     // into Listed. On the other tabs it shows the whole league.
-    if (leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
+    // A Team # or League # filter is backend-sourced (allNfts = just those
+    // teams). On the Listed tab it must still mean "listed", so intersect with
+    // active listings; on other tabs show the filtered set as-is.
+    if (teamFilter != null || leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
     // 'pro' reuses the fast paged full collection (like 'all') and filters out
     // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).
     if (viewFilter === 'all' || viewFilter === 'pro') return allNfts;
     if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
     return enrichedListings;
-  }, [viewFilter, enrichedListings, allNfts, leagueFilter]);
+  }, [viewFilter, enrichedListings, allNfts, leagueFilter, teamFilter]);
 
   // Closed list of valid filter chips: every roster slot seen across the
   // currently visible team set + bare team codes. Restricts the chip
@@ -862,6 +866,8 @@ export default function MarketplacePage() {
           onSetRosterFilter={setRosterFilter}
           leagueFilter={leagueFilter}
           onSetLeagueFilter={setLeagueFilter}
+          teamFilter={teamFilter}
+          onSetTeamFilter={setTeamFilter}
           onSetSortBy={setSortBy}
           onToggleSweepMode={() => requireLogin(() => setSweepMode(previous => {
             if (previous) setSweepSelected(new Set());

@@ -56,17 +56,17 @@ interface UseCollectionNftsResult {
 // Per-filter cache (all / level / league) so switching tabs paints INSTANTLY from
 // memory, and a flaky/empty fetch never blanks a section that already had teams.
 const collectionCache = new Map<string, MarketplaceTeam[]>();
-const ckey = (level?: string | null, league?: number | null) => `${level ?? ''}|${league ?? ''}`;
+const ckey = (level?: string | null, league?: number | null, team?: number | null) => `${level ?? ''}|${league ?? ''}|${team ?? ''}`;
 
-export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null, league?: number | null): UseCollectionNftsResult {
-  const [data, setData] = useState<MarketplaceTeam[]>(() => collectionCache.get(ckey(level, league)) ?? []);
-  const [isLoading, setIsLoading] = useState(() => !collectionCache.has(ckey(level, league)));
+export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' | null, league?: number | null, team?: number | null): UseCollectionNftsResult {
+  const [data, setData] = useState<MarketplaceTeam[]>(() => collectionCache.get(ckey(level, league, team)) ?? []);
+  const [isLoading, setIsLoading] = useState(() => !collectionCache.has(ckey(level, league, team)));
   const [error, setError] = useState<unknown>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const fetchNfts = useCallback(async (append = false, nextCursor?: string | null) => {
-    const key = ckey(level, league);
+    const key = ckey(level, league, team);
     // Only show the skeleton when we have nothing cached for this filter.
     if (!append && !collectionCache.has(key)) setIsLoading(true);
     try {
@@ -77,6 +77,7 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
       const p = new URLSearchParams();
       if (level) p.set('level', level);
       if (league != null) p.set('league', String(league));
+      if (team != null) p.set('team', String(team));
       const url = `/api/marketplace/teams?${p}`;
 
       const res = await fetch(url);
@@ -101,7 +102,7 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
     } finally {
       setIsLoading(false);
     }
-  }, [limit, level, league]);
+  }, [limit, level, league, team]);
 
   useEffect(() => {
     fetchNfts(false);

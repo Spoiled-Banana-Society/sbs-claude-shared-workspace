@@ -136,6 +136,8 @@ export default function StandingsPage() {
 
   const [gameweek, setGameweek] = useState<string>(currentGameweek);
   const [teamSearch, setTeamSearch] = useState<string[]>([]);
+  const [leagueQuery, setLeagueQuery] = useState('');
+  const [teamQuery, setTeamQuery] = useState('');
   const [teamsPage, setTeamsPage] = useState(0);
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
@@ -193,6 +195,18 @@ export default function StandingsPage() {
       result = result.filter((league) => league.type === typeFilter);
     }
 
+    // League # query — partial match on the league's display number.
+    const lq = leagueQuery.trim().replace(/^#/, '');
+    if (lq) {
+      result = result.filter((league) => (league.name.match(/#\s*(\d+)/)?.[1] ?? '').includes(lq));
+    }
+
+    // Team # query — partial match on the team's on-chain token id (Team #).
+    const tq = teamQuery.trim().replace(/^#/, '');
+    if (tq) {
+      result = result.filter((league) => String(nftByLeague.get(league.id)?.tokenId ?? '').includes(tq));
+    }
+
     if (teamSearch.length > 0) {
       // AND across chips: every chip must match something on the league.
       const terms = teamSearch.map(t => t.trim().toLowerCase().replace(/^#/, '')).filter(Boolean);
@@ -237,7 +251,7 @@ export default function StandingsPage() {
       return sortOrder === 'oldest' ? idNumA - idNumB : idNumB - idNumA;
     });
     return result;
-  }, [mergedLeagues, teamSearch, sortOrder, typeFilter]);
+  }, [mergedLeagues, teamSearch, sortOrder, typeFilter, leagueQuery, teamQuery, nftByLeague]);
 
   // Paginate
   const totalTeamPages = Math.ceil(filteredLeagues.length / TEAMS_PER_PAGE);
@@ -247,7 +261,7 @@ export default function StandingsPage() {
   }, [filteredLeagues, teamsPage]);
 
   // Reset page when search or filter changes
-  React.useEffect(() => { setTeamsPage(0); }, [teamSearch, typeFilter]);
+  React.useEffect(() => { setTeamsPage(0); }, [teamSearch, typeFilter, leagueQuery, teamQuery]);
 
   const handleOpenModal = (league: League, tab: ModalTab) => {
     setModalLeague(league);
@@ -309,7 +323,7 @@ export default function StandingsPage() {
           {/* Type filters + roster search — one clean row */}
           {mergedLeagues.length > 0 && (
             <>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 mb-5">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-5">
                 <div className="flex gap-2 flex-shrink-0">
                   {([
                     { key: 'all', label: `All (${typeBreakdown.pro + typeBreakdown.jackpot + typeBreakdown.hof})`, color: 'white' },
@@ -320,7 +334,7 @@ export default function StandingsPage() {
                     <button
                       key={key}
                       onClick={() => setTypeFilter(key)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                      className={`px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all border ${
                         typeFilter === key
                           ? 'bg-white/10 border-white/20 text-white'
                           : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06]'
@@ -331,13 +345,33 @@ export default function StandingsPage() {
                     </button>
                   ))}
                 </div>
-                <div className="flex-1 min-w-0">
-                  <MultiChipSearch
-                    chips={teamSearch}
-                    onChange={setTeamSearch}
-                    options={searchOptions}
-                    placeholder="Type a roster slot or type (e.g. CIN QB)"
-                    className="w-full"
+                {/* Search group — right-aligned on desktop (aligns to the card grid's
+                    right edge), full-width stack on mobile. */}
+                <div className="flex items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                  <div className="flex-1 sm:flex-none sm:w-[220px] min-w-0">
+                    <MultiChipSearch
+                      chips={teamSearch}
+                      onChange={setTeamSearch}
+                      options={searchOptions}
+                      placeholder="Roster slot"
+                      className="w-full"
+                    />
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={leagueQuery}
+                    onChange={(e) => setLeagueQuery(e.target.value)}
+                    placeholder="League #"
+                    className="w-[88px] sm:w-[110px] flex-shrink-0 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm font-mono text-white placeholder:text-white/30 focus:border-banana/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={teamQuery}
+                    onChange={(e) => setTeamQuery(e.target.value)}
+                    placeholder="Team #"
+                    className="w-[80px] sm:w-[110px] flex-shrink-0 px-3 py-2.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-sm font-mono text-white placeholder:text-white/30 focus:border-banana/50 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
@@ -347,11 +381,25 @@ export default function StandingsPage() {
             </>
           )}
 
-          {/* Loading skeleton */}
-          {leaguesQuery.isValidating && leagues.length === 0 && (
-            <div className="space-y-3 mb-8">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="h-24 rounded-2xl bg-white/[0.03] animate-pulse" />
+          {/* Loading skeleton — show whenever we don't YET have a confirmed
+              answer (auth rehydrating, first load, or revalidating with nothing
+              cached). A card-grid skeleton that matches the page, so a refresh
+              never flashes the "No teams yet" empty state before teams load. */}
+          {mergedLeagues.length === 0 && (authLoading || leaguesQuery.isLoading || leaguesQuery.isValidating) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-5 mb-8">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="rounded-2xl overflow-hidden border border-white/[0.06] bg-white/[0.02]">
+                  <div className="aspect-[4/5] bg-white/[0.04] animate-pulse" />
+                  <div className="px-4 pt-3.5 pb-1 flex items-center justify-between">
+                    <div className="h-4 w-24 bg-white/[0.06] rounded animate-pulse" />
+                    <div className="h-3 w-20 bg-white/[0.04] rounded animate-pulse" />
+                  </div>
+                  <div className="px-4 pb-4 pt-2 flex gap-2">
+                    {Array.from({ length: 3 }).map((_, j) => (
+                      <div key={j} className="flex-1 h-8 bg-white/[0.05] rounded-lg animate-pulse" />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -412,7 +460,7 @@ export default function StandingsPage() {
               ) : (
                 <div className="text-center py-8 rounded-xl border border-white/[0.04] bg-white/[0.02]">
                   <p className="text-white/40 text-sm">
-                    {teamSearch.length > 0
+                    {teamSearch.length > 0 || leagueQuery.trim() || teamQuery.trim()
                       ? 'No teams match'
                       : typeFilter !== 'all'
                         ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : 'Pro'} teams`
@@ -423,8 +471,9 @@ export default function StandingsPage() {
             </div>
           )}
 
-          {/* Empty state */}
-          {!leaguesQuery.isValidating && mergedLeagues.length === 0 && (
+          {/* Empty state — ONLY once we're sure there are no teams (auth resolved,
+              not loading, not validating). Never flash this during a refresh. */}
+          {mergedLeagues.length === 0 && !authLoading && !leaguesQuery.isLoading && !leaguesQuery.isValidating && (
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center mb-8">
               <div className="text-4xl mb-4">🏈</div>
               <p className="text-white/50 font-medium mb-2">No teams yet</p>
