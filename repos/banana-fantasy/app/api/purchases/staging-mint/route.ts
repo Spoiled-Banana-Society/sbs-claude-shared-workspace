@@ -123,9 +123,10 @@ export async function POST(req: Request) {
     // Bump Buy 10 + Buy 2 promo progress and referrer milestones.
     // Best-effort: a Firestore failure here must not roll back the on-chain
     // mint (already happened).
+    let promoAwards = { mintMilestonesEarned: 0, buyBonusMilestonesEarned: 0, firstPurchaseSpinsEarned: 0 };
     if (isFirestoreConfigured()) {
       try {
-        await incrementMintPromos(userId, quantity);
+        promoAwards = await incrementMintPromos(userId, quantity);
       } catch (promoErr) {
         logger.warn('staging-mint.promo_increment_failed', {
           userId,
@@ -144,7 +145,10 @@ export async function POST(req: Request) {
       }
     }
 
-    return json({ success: true, minted: quantity, tokenIds, txHash, draftPasses: newDraftPasses }, 200);
+    // promoAwards lets the buying device fire its milestone toasts + bell
+    // refresh INSTANTLY from this response (mobile's RTDB socket is often
+    // suspended; the stream event is the cross-device copy, deduped client-side).
+    return json({ success: true, minted: quantity, tokenIds, txHash, draftPasses: newDraftPasses, promoAwards }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('staging-mint.unhandled', { route: '/api/purchases/staging-mint', err });

@@ -8,6 +8,7 @@ import { useSWRLike } from '@/hooks/useSWRLike';
 import { useAuth } from '@/hooks/useAuth';
 import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
 import { subscribeUserEvents } from '@/lib/api/firebase';
+import { requestBellRefetch } from '@/lib/localSurfaceDedupe';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -86,8 +87,10 @@ export function usePromos(opts?: { userId?: string }) {
 
         // The persistent "Promo Claimed!" bell entry is now created
         // SERVER-SIDE in claimPromo (real-time content-carrying ping → instant
-        // on every device). Here we only fire the local celebration modal,
-        // which should stay instant on the acting device.
+        // on every device). Here we fire the local celebration modal and nudge
+        // THIS device's bell to refetch immediately — on mobile the RTDB ping
+        // may be dead (iOS PWA), and waiting on the 5s poll felt broken.
+        requestBellRefetch();
         if (res.spinsAdded > 0) {
           celebrate({ count: res.spinsAdded, promoType: res.promo?.type });
         }

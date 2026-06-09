@@ -74,8 +74,8 @@ export async function POST(req: Request) {
     // bell fire within ~100ms; user can claim immediately from the
     // promos page without waiting for the next page-load fetch.
     try {
-      const { pushStreamEvent } = await import('@/lib/userEventStream');
-      void pushStreamEvent(walletAddress, 'promo-new-user', { source: 'twitter-verify' });
+      const { pushStreamEventBg } = await import('@/lib/userEventStream');
+      pushStreamEventBg(walletAddress, 'promo-new-user', { source: 'twitter-verify' });
     } catch {
       // non-fatal
     }

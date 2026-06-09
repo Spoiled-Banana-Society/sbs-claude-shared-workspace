@@ -22,6 +22,8 @@ import { usePromoReminders } from '@/hooks/usePromoReminders';
 import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
+import { useToast } from '@/components/ui/Toast';
+import { surfacePurchasePromoAwards } from '@/lib/promoAwardToasts';
 
 function StagingMintButton({
   userId,
@@ -30,6 +32,7 @@ function StagingMintButton({
   userId: string;
   onMinted: (data?: { draftPasses?: number | null }) => void;
 }) {
+  const { show: showToast } = useToast();
   const [minting, setMinting] = React.useState(false);
   const [qty, setQty] = React.useState(3);
   const [result, setResult] = React.useState<string | null>(null);
@@ -46,6 +49,9 @@ function StagingMintButton({
       const data = await res.json();
       if (res.ok) {
         setResult(`Minted ${qty} — passes ready`);
+        // Instant milestone toasts + bell refresh on this device
+        // (stream copy is deduped client-side).
+        surfacePurchasePromoAwards(data.promoAwards, showToast);
         onMinted({ draftPasses: typeof data.draftPasses === 'number' ? data.draftPasses : null });
       } else {
         setResult(`Error: ${data.error || 'Unknown'}`);

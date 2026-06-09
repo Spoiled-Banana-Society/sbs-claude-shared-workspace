@@ -17,7 +17,7 @@
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { pushStreamEvent } from '@/lib/userEventStream';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 
 const COLLECTION = 'marketplace_notifications';
 
@@ -80,8 +80,9 @@ export async function createNotification(userId: string, n: CreateNotificationIn
 
     // Real-time ping that CARRIES the notification content, so every device
     // renders it instantly (no GET round-trip). The client still refetches to
-    // reconcile read-state/ordering. Best-effort, fire-and-forget.
-    void pushStreamEvent(wallet, 'notification', {
+    // reconcile read-state/ordering. Best-effort, waitUntil-backed so the
+    // ping outlives the response instead of dying with the frozen lambda.
+    pushStreamEventBg(wallet, 'notification', {
       source: 'createNotification',
       notifId: docId,
       notifType: n.type,

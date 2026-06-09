@@ -150,8 +150,11 @@ export function useDraftingPageState() {
   }, [rawPromos, isBB3Holder, newUserPromoClaimed, isTwitterVerified, claimedPromos, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
   const promoCount = promos.length;
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
+  // Manual-only browsing (auto-rotate removed 2026-06-09): promos never
+  // advance on their own. The list is already sorted by the shared home-page
+  // rules (claimable first, then closest to claim — lib/promoFilter.ts), so
+  // the first card is always the actionable one; dots/arrows browse the rest.
   const [promoIndex, setPromoIndex] = useState(0);
-  const [promoAutoRotate, setPromoAutoRotate] = useState(true);
   const [showEntryFlow, setShowEntryFlow] = useState(false);
   // True while the join network call is in flight after the user confirms
   // entry — drives the branded "Joining lobby…" overlay. Cleared on failure;
@@ -1339,13 +1342,8 @@ export function useDraftingPageState() {
     return { displayPhase: 'drafting', playerCount: draft.players, countdown: null, randomizingProgress: null, isFilling: false };
   };
 
-  useEffect(() => {
-    if (!promoAutoRotate || promoCount === 0) return;
-    const interval = setInterval(() => {
-      setPromoIndex(prev => (prev + 1) % promoCount);
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [promoAutoRotate, promoCount]);
+  // (Auto-rotate timer removed 2026-06-09 — promos on this page are
+  // browse-on-click only, matching the home-page carousel.)
 
   useEffect(() => {
     if (promoCount === 0) {
@@ -1501,7 +1499,6 @@ export function useDraftingPageState() {
     setShowBuyPasses,
     setSelectedPromo,
     setPromoIndex,
-    setPromoAutoRotate,
     setShowEntryFlow,
     setShowContestDetails,
     setInfoTopic,

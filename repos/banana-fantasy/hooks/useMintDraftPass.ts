@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWallets } from '@privy-io/react-auth';
 import {
   createPublicClient,
@@ -21,6 +21,8 @@ import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
+import { useToast } from '@/components/ui/Toast';
+import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
 
 type MintFn = (
   quantity: number,
@@ -86,6 +88,11 @@ function normalizeMintError(error: unknown): string {
 export function useMintDraftPass(): UseMintDraftPassResult {
   const { wallets, ready: walletsReady } = useWallets();
   const { walletAddress } = useAuth();
+  // Ref pattern (CLAUDE.md render-loop rule): keep the mint callback's deps to
+  // stable values — `show` may churn per render and must not re-create `mint`.
+  const { show } = useToast();
+  const showToastRef = useRef(show);
+  showToastRef.current = show;
 
   const [isApproving, setIsApproving] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -278,6 +285,8 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           error?: string;
           paymentSucceeded?: boolean;
           txHashes?: { mint?: Hex };
+          promoAwards?: PurchasePromoAwards;
+          cardFreeDraftsEarned?: number;
         };
         if (!res.ok || !data.success) {
           // Payment went through but delivery is pending — NOT a hard failure.
@@ -294,6 +303,11 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const hash = (data.txHashes?.mint ?? '0x') as Hex;
         setTxHash(hash);
         setMintStep('success');
+        // Instant milestone toasts + bell refresh on the buying device
+        // (the stream copy is deduped; mobile's RTDB socket may be dead).
+        surfacePurchasePromoAwards(data.promoAwards, showToastRef.current, {
+          cardFreeDraftsEarned: data.cardFreeDraftsEarned,
+        });
         await refreshContractState();
         return hash;
       } catch (err) {

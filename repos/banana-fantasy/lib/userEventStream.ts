@@ -32,6 +32,7 @@
  * remain as fallbacks.
  */
 
+import { waitUntil } from '@vercel/functions';
 import { getAdminDatabase, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -46,6 +47,8 @@ export type StreamEventType =
   | 'first-purchase-unlocked'
   | 'referral-milestone'
   | 'promo-card-free-draft'
+  | 'promo-buy-bonus'
+  | 'spin-won'
   // Content-less "a new persisted notification exists — refetch the bell"
   // ping. Fired by createNotification (lib/queueNotifications.ts) so the
   // server-backed notification inbox updates in ~100ms across every device.
@@ -62,6 +65,10 @@ export interface StreamEventPayload {
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
+  /** Wheel spin id (spin-won only) — drives the bell entry's dedupeKey. */
+  spinId?: string;
+  /** Human prize label for spin-won (e.g. "2 Draft Passes"). */
+  prizeLabel?: string;
   /**
    * For the `'notification'` ping: the bell entry's content, so receiving
    * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
@@ -139,5 +146,27 @@ export async function pushStreamEvent(
       type,
       err: err instanceof Error ? err.message : String(err),
     });
+  }
+}
+
+/**
+ * Fire-and-forget pushStreamEvent that SURVIVES the response. A bare
+ * `void pushStreamEvent(...)` detaches the promise — on Vercel the lambda
+ * freezes the moment the response is sent, so the RTDB ping (and the
+ * persisted bell notification it dual-writes) lands late or never. That was
+ * the "toast didn't show / noti took 5s" bug: the instant ping died with the
+ * lambda and devices only caught up on the next bell poll. `waitUntil` keeps
+ * the function alive until the push completes without delaying the response.
+ */
+export function pushStreamEventBg(
+  userId: string,
+  type: StreamEventType,
+  payload: StreamEventPayload = {},
+): void {
+  const p = pushStreamEvent(userId, type, payload);
+  try {
+    waitUntil(p);
+  } catch {
+    // No Vercel request context (local dev / scripts) — promise runs detached.
   }
 }

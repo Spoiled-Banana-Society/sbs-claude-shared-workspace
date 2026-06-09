@@ -12,6 +12,8 @@ import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pric
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
+import { useToast } from '@/components/ui/Toast';
+import { surfacePurchasePromoAwards } from '@/lib/promoAwardToasts';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -39,6 +41,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
+  const { show: showToast } = useToast();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
   const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
@@ -838,6 +841,9 @@ export function BuyPassesModal({
                     const data = await res.json();
                     if (res.ok) {
                       if (data.user) updateUser(data.user as Partial<import('@/types').User>);
+                      // Instant milestone toasts + bell refresh on THIS device
+                      // (stream copy is deduped; mobile's socket may be dead).
+                      surfacePurchasePromoAwards(data.promoAwards, showToast);
                       await refreshBalance();
                       goToPickSpeed(quantity);
                     } else {

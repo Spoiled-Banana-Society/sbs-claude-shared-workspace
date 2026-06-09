@@ -20,6 +20,7 @@ import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
+import { pushStreamEvent } from '@/lib/userEventStream';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
@@ -384,6 +385,18 @@ export async function POST(req: Request) {
     // the frontend polls via refreshBalanceUntil to catch up. Awaiting
     // any of this inline made the wheel wait ~10s before spinning.
     waitUntil((async () => {
+      // Instant win notification: synced bell entry on every device + toast on
+      // devices NOT on /banana-wheel (the spinner is watching the reveal
+      // animation — a toast there would spoil the result before it lands).
+      if (segment.prizeType !== 'nothing') {
+        const prizeLabel =
+          jphofKind === 'jackpot' ? 'a Jackpot draft'
+          : jphofKind === 'hof' ? 'a Hall of Fame draft'
+          : draftPassCount === 1 ? '1 free draft'
+          : `${draftPassCount} free drafts`;
+        await pushStreamEvent(userId, 'spin-won', { spinId, prizeLabel });
+      }
+
       let mintTxHash: string | undefined;
       let mintedTokenIds: string[] = [];
 

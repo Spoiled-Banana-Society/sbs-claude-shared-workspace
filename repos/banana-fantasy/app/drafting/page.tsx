@@ -111,7 +111,6 @@ export default function DraftingPage() {
     setShowBuyPasses,
     setSelectedPromo,
     setPromoIndex,
-    setPromoAutoRotate,
     setShowEntryFlow,
     setShowContestDetails,
     setInfoTopic,
@@ -304,19 +303,14 @@ export default function DraftingPage() {
             claimedPromos={claimedPromos}
             onSelectPromo={setSelectedPromo}
             onClaim={handleClaim}
-            onSelectIndex={(index) => {
-              setPromoIndex(index);
-              setPromoAutoRotate(false);
-            }}
+            onSelectIndex={setPromoIndex}
             onPrev={() => {
               if (promoCount === 0) return;
               setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
-              setPromoAutoRotate(false);
             }}
             onNext={() => {
               if (promoCount === 0) return;
               setPromoIndex((promoIndex + 1) % promoCount);
-              setPromoAutoRotate(false);
             }}
           />
           <BatchProofBanner />

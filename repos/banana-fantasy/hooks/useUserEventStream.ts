@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { subscribeUserEvents, type UserStreamEvent } from '@/lib/api/firebase';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
+import { wasRecentLocalSurface } from '@/lib/localSurfaceDedupe';
 
 /**
  * Real-time user event stream — primary surface for badge unlocks +
@@ -206,6 +207,21 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       }
       return;
     }
+    case 'promo-buy-bonus': {
+      const count = event.awardedCount ?? 1;
+      surfaces.showToast(
+        count === 1 ? 'Buy 2 complete — free draft earned!' : `Buy 2 complete — ${count} free drafts earned!`,
+        '/promos',
+      );
+      // Bell entry is persisted server-side (eventNotificationContent).
+      return;
+    }
+    case 'spin-won': {
+      const prize = event.prizeLabel || 'a prize';
+      surfaces.showToast(`🍌 Banana Wheel win — you won ${prize}!`, '/drafting');
+      // Bell entry is persisted server-side (eventNotificationContent).
+      return;
+    }
     case 'referral-milestone': {
       // Friend identity is NOT in the event payload — it lives in
       // authenticated /api/promos. The toast/bell copy is intentionally
@@ -282,9 +298,18 @@ export function useUserEventStream() {
         return;
       }
 
+      // The spinner's own device is watching the wheel's reveal animation —
+      // a "you won X" toast there would spoil the result before it lands.
+      const onWheelPage = (pathnameRef.current ?? '').startsWith('/banana-wheel');
+
       const surfaces: Surfaces = {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
+          if (event.type === 'spin-won' && onWheelPage) return;
+          // The acting device already showed this milestone optimistically
+          // from its API response (instant on mobile) — don't double-toast
+          // when the stream copy of the same event arrives.
+          if (wasRecentLocalSurface(event.type)) return;
           showRef.current({
             level: 'success',
             message,

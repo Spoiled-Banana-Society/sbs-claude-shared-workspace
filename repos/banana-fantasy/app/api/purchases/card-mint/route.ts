@@ -30,7 +30,7 @@ import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
-import { pushStreamEvent } from '@/lib/userEventStream';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -476,9 +476,10 @@ export async function POST(req: Request) {
     // 6. Bump Buy 10 + Buy 2 promo progress and referrer milestones — for the
     //    PAID purchase `quantity` only; the reward draft never advances promos.
     //    Best-effort — must not roll back the on-chain mint (already happened).
+    let promoAwards = { mintMilestonesEarned: 0, buyBonusMilestonesEarned: 0, firstPurchaseSpinsEarned: 0 };
     if (isFirestoreConfigured()) {
       try {
-        await incrementMintPromos(userId, quantity);
+        promoAwards = await incrementMintPromos(userId, quantity);
       } catch (promoErr) {
         logger.warn('card-mint.promo_increment_failed', {
           userId,
@@ -532,7 +533,7 @@ export async function POST(req: Request) {
     // Post-commit: fire the synced bell + bottom toast when a free draft was
     // earned from card-fee credit. Best-effort; never blocks the response.
     if (rewardEarned > 0) {
-      void pushStreamEvent(userId, 'promo-card-free-draft', { awardedCount: rewardEarned });
+      pushStreamEventBg(userId, 'promo-card-free-draft', { awardedCount: rewardEarned });
     }
 
     return json({
@@ -540,6 +541,10 @@ export async function POST(req: Request) {
       minted: quantity,
       tokenIds: mintResult.tokenIds,
       draftPasses: newDraftPasses,
+      // Lets the buying device fire milestone toasts + bell refresh instantly
+      // from this response (stream event is the cross-device copy, deduped).
+      promoAwards,
+      cardFreeDraftsEarned: rewardEarned,
       txHashes: {
         permit: permitTxHash,
         transferFrom: transferTxHash,

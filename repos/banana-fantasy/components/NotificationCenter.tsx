@@ -360,12 +360,18 @@ export function useNotifications() {
     };
     const unsub = subscribeUserEvents(walletAddress, onEvent);
     const onFocus = () => { if (document.visibilityState !== 'hidden') coalesced(); };
+    // Local-action nudge: the device that just claimed/purchased dispatches
+    // this (lib/localSurfaceDedupe.requestBellRefetch) so its bell updates
+    // instantly even where the RTDB socket is suspended (iOS PWA).
+    const onLocalRefetch = () => coalesced();
     window.addEventListener('focus', onFocus);
     document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('sbs-notifs-refetch', onLocalRefetch);
     return () => {
       if (timer) clearTimeout(timer);
       window.removeEventListener('focus', onFocus);
       document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('sbs-notifs-refetch', onLocalRefetch);
       try { unsub(); } catch { /* ignore */ }
     };
   }, [walletAddress]);

@@ -35,7 +35,7 @@ import type {
 } from '@/types';
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
-import { pushStreamEvent } from '@/lib/userEventStream';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
@@ -747,7 +747,7 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
     // the frontend refetches /api/promos (Privy-authed) to render the
     // full toast string ("Your friend Sarah verified!").
     if (result.updated && result.referrerUserId) {
-      void pushStreamEvent(result.referrerUserId, 'referral-milestone', { milestone });
+      pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestone });
     }
     return result;
   });
@@ -962,7 +962,7 @@ export async function incrementMintPromos(
   // Post-commit push: first-purchase bonus spins earned (one-time). Lets the
   // client toast "earned N free spins — claim now" and refresh the promo.
   if (result.firstPurchaseSpinsEarned > 0) {
-    void pushStreamEvent(userId, 'promo-first-purchase', {
+    pushStreamEventBg(userId, 'promo-first-purchase', {
       awardedCount: result.firstPurchaseSpinsEarned,
     });
   }
@@ -970,14 +970,21 @@ export async function incrementMintPromos(
   // can fire multiple times in a single bulk mint — e.g. quantity=20
   // earns 2 spins). awardedCount lets the toast read "earned 2 free spins".
   if (result.mintMilestonesEarned > 0) {
-    void pushStreamEvent(userId, 'promo-buy-10', {
+    pushStreamEventBg(userId, 'promo-buy-10', {
       awardedCount: result.mintMilestonesEarned,
+    });
+  }
+  // Buy 2 → 1 Free milestone — same noti + toast treatment as every other
+  // promo completion ("complete a promo → noti + toast", no silent earns).
+  if (result.buyBonusMilestonesEarned > 0) {
+    pushStreamEventBg(userId, 'promo-buy-bonus', {
+      awardedCount: result.buyBonusMilestonesEarned,
     });
   }
   // Always nudge the user's devices to refetch promos so the mint progress
   // box (e.g. 9/10) syncs in real-time across devices on EVERY purchase, not
   // just when a milestone is hit. (usePromos refetches on any stream ping.)
-  void pushStreamEvent(userId, 'notification', { source: 'purchase' });
+  pushStreamEventBg(userId, 'notification', { source: 'purchase' });
   return result;
 }
 
@@ -1249,13 +1256,13 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
   // directly inside a larger transaction, so we delay the event until
   // after the outer transaction commits successfully.
   if (_mintMilestonesForPostCommitPush > 0) {
-    void pushStreamEvent(prePurchase.userId, 'promo-buy-10', {
+    pushStreamEventBg(prePurchase.userId, 'promo-buy-10', {
       awardedCount: _mintMilestonesForPostCommitPush,
     });
   }
   // Always nudge devices to refetch promos so mint progress (e.g. 9/10) syncs
   // in real-time on every purchase, not just at a milestone.
-  void pushStreamEvent(prePurchase.userId, 'notification', { source: 'purchase' });
+  pushStreamEventBg(prePurchase.userId, 'notification', { source: 'purchase' });
 
   return txResult;
 }
@@ -1913,7 +1920,7 @@ async function _recordWinningsDraftForFirstPurchaseGate(userId: string, draftId:
   });
 
   if (unlocked) {
-    void pushStreamEvent(userId, 'first-purchase-unlocked', {});
+    pushStreamEventBg(userId, 'first-purchase-unlocked', {});
   }
 }
 
@@ -2119,7 +2126,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
     // Idempotent per draftId on the transaction side, so this also
     // only fires once per actual 4th-of-the-day completion.
     if (justBecameClaimable) {
-      void pushStreamEvent(userId, 'promo-daily-drafts', { draftId });
+      pushStreamEventBg(userId, 'promo-daily-drafts', { draftId });
     }
     return promo;
   });
@@ -2183,7 +2190,7 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
     // idempotent on duplicate draftId, so this fires exactly once per
     // actual Pick 10 occurrence).
     if (justAdded) {
-      void pushStreamEvent(userId, 'promo-pick-10', { draftId });
+      pushStreamEventBg(userId, 'promo-pick-10', { draftId });
     }
     return promo;
   });
@@ -2333,7 +2340,7 @@ export async function recordJackpotHit(userId: string, draftId: string, passType
     // gate above (winnerOwnerId !== userId) ensures only the actual
     // winner reaches this code path.
     if (justAdded) {
-      void pushStreamEvent(userId, 'promo-jackpot-hit', { draftId, awardedCount: awarded });
+      pushStreamEventBg(userId, 'promo-jackpot-hit', { draftId, awardedCount: awarded });
     }
     return promo;
   });
@@ -2522,7 +2529,7 @@ export async function unlockBadge(
   // `silent` skips it (ripeness tiers unlock quietly — no notification spam for
   // your banana ripening).
   if (wasNewlyUnlocked && !opts?.silent) {
-    void pushStreamEvent(userId, 'badge-unlock', {
+    pushStreamEventBg(userId, 'badge-unlock', {
       badgeId,
       source: typeof source?.source === 'string' ? source.source : undefined,
     });

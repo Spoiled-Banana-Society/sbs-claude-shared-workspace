@@ -231,6 +231,8 @@ export interface UserStreamEvent {
     | 'first-purchase-unlocked'
     | 'referral-milestone'
     | 'promo-card-free-draft'
+    | 'promo-buy-bonus'
+    | 'spin-won'
     // Content-less refetch ping for the server-backed notification bell.
     | 'notification';
   timestamp: number;
@@ -239,6 +241,9 @@ export interface UserStreamEvent {
   milestone?: 'verified' | 'bought1' | 'bought10';
   source?: string;
   awardedCount?: number;
+  // For 'spin-won' — spin id + human prize label ("2 free drafts", "a Jackpot draft").
+  spinId?: string;
+  prizeLabel?: string;
   // For 'notification' pings — the bell entry, for instant render (no refetch).
   notifId?: string;
   notifType?: string;
