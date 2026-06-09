@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { formatScore, formatRank } from '@/lib/formatters';
 import type { League } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
@@ -228,6 +229,18 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
               : config.accentBar
           }`}
         />
+
+        {/* Obsidian team card image (the real NFT card) — opens the team view on tap. */}
+        {mt?.imageUrl && (
+          <button
+            type="button"
+            onClick={() => onOpenModal(league, 'team')}
+            className="hidden sm:block w-[88px] flex-shrink-0 self-stretch relative bg-[#0b0b10] border-r border-white/[0.06] hover:brightness-110 transition"
+            aria-label="View team card"
+          >
+            <Image src={mt.imageUrl} alt={`Team #${mt.tokenId}`} fill className="object-contain p-1.5" sizes="88px" />
+          </button>
+        )}
 
         <div className="flex-1 px-4 py-4 sm:px-5 min-w-0">
           {/* Top row: rank badge + league name + type pill + prize */}
