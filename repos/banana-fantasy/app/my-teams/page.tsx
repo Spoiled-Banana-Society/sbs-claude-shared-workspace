@@ -27,7 +27,12 @@ function nftToSyntheticLeague(n: MarketplaceTeam): League {
     id: n.leagueId || `nft-${n.tokenId}`,
     name: n.name || `Team #${n.tokenId}`,
     contestId: '',
-    type: (n.isJackpot ? 'jackpot' : n.isHof ? 'hof' : 'pro') as ContestType,
+    // A wheel-won JP/HOF pass isn't stamped JP/HOF in its NFT metadata until the
+    // draft reveals, so isHof/isJackpot are false while it's filling — fall back to
+    // the known wheel level so it shows as HOF/Jackpot (badge, filter, gold art).
+    type: ((n.isJackpot || n.fillingWheelLevel === 'jackpot') ? 'jackpot'
+      : (n.isHof || n.fillingWheelLevel === 'hof') ? 'hof'
+      : 'pro') as ContestType,
     // Only treat the NFT's RANK trait as a rank when it's a real 1-10 league
     // position — pre-season it holds the token id (e.g. 8742), not a rank.
     leagueRank: n.rank >= 1 && n.rank <= 10 ? n.rank : 0,

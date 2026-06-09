@@ -6,6 +6,7 @@ import type { League } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
 import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 interface TeamCardProps {
   league: League;
@@ -103,7 +104,18 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
     >
       {/* Obsidian team card image — the hero. Tap → full-screen view. */}
       <div className="relative aspect-[4/5] bg-[#0d0d12]">
-        {mt?.imageUrl ? (
+        {mt?.fillingWheelLevel ? (
+          // Wheel-won JP/HOF pass still filling: gold HOF / red Jackpot pass art.
+          <Image
+            src={buildTieredDraftPassUrl(mt.tokenId, mt.fillingWheelLevel)}
+            alt={`${mt.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${mt.tokenId}`}
+            fill
+            className="object-contain"
+            sizes="(max-width: 640px) 100vw, 50vw"
+            priority={index < 4}
+            loading={index < 4 ? undefined : 'lazy'}
+          />
+        ) : mt?.imageUrl ? (
           <Image
             src={mt.imageUrl}
             alt={`Team #${mt.tokenId}`}
@@ -127,7 +139,7 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           <span className={`text-[9px] font-bold uppercase tracking-wider text-white px-2.5 py-1 rounded-full ${config.pill}`}>{config.label}</span>
           {isListed && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-1 rounded-full">
-              Listed{typeof mt?.price === 'number' ? ` $${mt.price.toFixed(0)}` : ''}
+              Listed{typeof mt?.price === 'number' ? ` $${mt.price.toFixed(2)}` : ''}
             </span>
           )}
         </div>
