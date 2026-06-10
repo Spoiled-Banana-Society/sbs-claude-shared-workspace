@@ -1779,9 +1779,18 @@ export async function getFillingWheelPassLevels(
  * changed. Only rewrites rounds that are still FILLING — once the draft starts,
  * the roster is locked and the slot shouldn't move.
  */
-export async function reassignQueuePassWallet(tokenId: string, newWallet: string): Promise<boolean> {
+export interface ReassignResult {
+  changed: boolean;
+  /** The seller we replaced (so the caller can make them LEAVE the Go draft). */
+  prevWallet: string | null;
+  /** The Go draftId the seller had created (cleared here so the buyer's next
+   *  entry re-runs create-draft and joins THEM to a fresh draft). */
+  prevDraftId: string | null;
+}
+
+export async function reassignQueuePassWallet(tokenId: string, newWallet: string): Promise<ReassignResult> {
   const db = getAdminFirestore();
-  let changed = false;
+  const result: ReassignResult = { changed: false, prevWallet: null, prevDraftId: null };
   for (const type of ['jackpot', 'hof'] as const) {
     const ref = db.collection(QUEUES_COLLECTION).doc(type);
     await db.runTransaction(async (tx) => {
@@ -1791,17 +1800,21 @@ export async function reassignQueuePassWallet(tokenId: string, newWallet: string
       let mutated = false;
       for (const round of queue.rounds || []) {
         if (round.status !== 'filling') continue;
-        for (const m of round.members) {
-          if (m.tokenId && String(m.tokenId) === String(tokenId) && m.wallet !== newWallet) {
-            m.wallet = newWallet;
-            mutated = true;
-          }
-        }
+        const member = round.members.find(m => m.tokenId && String(m.tokenId) === String(tokenId));
+        if (!member || member.wallet === newWallet) continue;
+        result.prevWallet = member.wallet;
+        result.prevDraftId = round.draftId || null;
+        member.wallet = newWallet;
+        member.joinedAt = Date.now();
+        // Keep the round's draftId: the lobby's foreign-slot filter + draft-room
+        // gate both key off it to lock the seller out. The seller is removed from
+        // the Go draft by the caller (leave), freeing the seat for the buyer.
+        mutated = true;
       }
-      if (mutated) { tx.set(ref, queue); changed = true; }
+      if (mutated) { tx.set(ref, queue); result.changed = true; }
     });
   }
-  return changed;
+  return result;
 }
 
 /**
