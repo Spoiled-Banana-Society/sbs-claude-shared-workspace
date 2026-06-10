@@ -369,6 +369,20 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         }
       }
     }
+    // Expired daily-drafts window reads as a fresh 0/4 + 24:00:00 everywhere.
+    // The STORED doc resets lazily (recordDraftCompletion zeroes it when the
+    // next paid draft fills), but showing the stale "2/4 · 0:00:00" in the
+    // meantime contradicted the rules ("after 24 hours it resets"). Read-side
+    // normalization only — no write.
+    if (
+      promo.type === 'daily-drafts' &&
+      promo.timerEndTime &&
+      !promo.claimable &&
+      new Date(promo.timerEndTime).getTime() < Date.now()
+    ) {
+      promo.progressCurrent = 0;
+      promo.timerEndTime = undefined;
+    }
     // Inject real twitterConnected status for promos that depend on it
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
