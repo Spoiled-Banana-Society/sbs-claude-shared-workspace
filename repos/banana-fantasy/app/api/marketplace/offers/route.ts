@@ -3,7 +3,7 @@ import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import {
   OPENSEA_API_BASE,
-  BBB4_CONTRACT,
+  COLLECTION_SLUG,
   type OfferData,
 } from '@/lib/opensea';
 
@@ -30,47 +30,20 @@ export async function GET(req: Request) {
     const seen = new Set<string>();
     const nowMs = Date.now();
 
-    // 1) OUR offer cache first — the authoritative, instant source. Works even
-    //    when OpenSea's offers endpoint is erroring (which it currently is), so
-    //    an offer made here always shows here.
-    try {
-      const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
-      for (const c of await getRecentCachedOffers(tokenId)) {
-        if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
-        const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        offers.push({
-          orderHash: c.orderHash,
-          offererAddress: c.offerer,
-          offererName: `${c.offerer.slice(0, 6)}...${c.offerer.slice(-4)}`,
-          offererPfp: null,
-          amount: c.priceUsd,
-          expiresAt: c.endTimeSec ? new Date(Number(c.endTimeSec) * 1000).toISOString() : new Date(nowMs + 7 * 86400000).toISOString(),
-          protocolAddress: '',
-        });
-      }
-    } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
-
-    // 2) OpenSea offers — best-effort supplement. NEVER fail the whole request on
-    //    an OpenSea error; our cache already covers offers made through SBS.
+    // 1) OpenSea first — the item-offers endpoint carries the real order hash +
+    //    protocol address, which Accept/Cancel need. (The old GET on
+    //    /v2/orders/.../offers now 405s — OpenSea made that URL POST-only.)
+    //    Best-effort: NEVER fail the whole request on an OpenSea error; our own
+    //    cache below covers offers made through SBS.
     if (OPENSEA_API_KEY) {
       try {
-        const params = new URLSearchParams({
-          asset_contract_address: BBB4_CONTRACT,
-          token_ids: tokenId,
-          order_by: 'eth_price',
-          order_direction: 'desc',
-          limit: '50',
-        });
         const offersRes = await fetch(
-          `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers?${params}`,
+          `${OPENSEA_API_BASE}/api/v2/offers/collection/${COLLECTION_SLUG}/nfts/${tokenId}?limit=50`,
           { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
         );
         if (offersRes.ok) {
           const offersData = await offersRes.json();
-          for (const order of (offersData.orders ?? []) as Array<Record<string, unknown>>) {
-            if (order.cancelled || order.finalized) continue;
+          for (const order of (offersData.offers ?? []) as Array<Record<string, unknown>>) {
             const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; endTime: string } })?.parameters;
             if (!p) continue;
             const hash = order.order_hash as string;
@@ -79,6 +52,7 @@ export async function GET(req: Request) {
             const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
             if (new Date(expiresAt) <= new Date()) continue;
             seen.add(hash);
+            seen.add(`${tokenId}-${p.offerer.toLowerCase()}`); // suppress hashless cache twin of the same offer
             offers.push({
               orderHash: hash,
               offererAddress: p.offerer,
@@ -94,6 +68,27 @@ export async function GET(req: Request) {
         }
       } catch (e) { console.error('[marketplace/offers] OpenSea fetch failed (non-fatal):', e); }
     }
+
+    // 2) OUR offer cache — instant supplement so an offer just made through SBS
+    //    shows before OpenSea has indexed it (and survives OpenSea outages).
+    try {
+      const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
+      for (const c of await getRecentCachedOffers(tokenId)) {
+        if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
+        const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
+        if (seen.has(key) || seen.has(`${c.tokenId}-${c.offerer}`)) continue;
+        seen.add(key);
+        offers.push({
+          orderHash: c.orderHash,
+          offererAddress: c.offerer,
+          offererName: `${c.offerer.slice(0, 6)}...${c.offerer.slice(-4)}`,
+          offererPfp: null,
+          amount: c.priceUsd,
+          expiresAt: c.endTimeSec ? new Date(Number(c.endTimeSec) * 1000).toISOString() : new Date(nowMs + 7 * 86400000).toISOString(),
+          protocolAddress: '',
+        });
+      }
+    } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
 
     offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
@@ -187,8 +182,10 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    // OpenSea's offer response shape has varied — try the known paths.
-    const orderHash = (result.order?.order_hash || result.order_hash || result.orders?.[0]?.order_hash || '') as string;
+    // OpenSea's offer response shape has varied — try the known paths, then the
+    // client-computed Seaport hash (deterministic, so it equals OpenSea's).
+    const metaHash = typeof (body._meta as { orderHash?: unknown })?.orderHash === 'string' ? (body._meta as { orderHash: string }).orderHash : '';
+    const orderHash = (result.order?.order_hash || result.order_hash || result.orders?.[0]?.order_hash || metaHash || '') as string;
 
     // Cache the offer so the detail page shows it instantly. OpenSea's offers
     // feed lags (or silently never returns it), so without a cache a fresh offer
