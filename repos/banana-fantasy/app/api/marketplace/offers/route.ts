@@ -102,6 +102,30 @@ export async function GET(req: Request) {
         return new Date(offer.expiresAt) > new Date();
       });
 
+    // Bridge OpenSea's offer indexing lag: add any cached offer for this token
+    // that OpenSea hasn't surfaced yet (deduped by orderHash). Without this a
+    // fresh offer silently didn't appear for minutes. Best-effort.
+    try {
+      const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
+      const cached = await getRecentCachedOffers(tokenId);
+      const seen = new Set(offers.map((o: OfferData) => o.orderHash));
+      const nowMs = Date.now();
+      for (const c of cached) {
+        if (seen.has(c.orderHash)) continue;
+        if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
+        offers.push({
+          orderHash: c.orderHash,
+          offererAddress: c.offerer,
+          offererName: `${c.offerer.slice(0, 6)}...${c.offerer.slice(-4)}`,
+          offererPfp: null,
+          amount: c.priceUsd,
+          expiresAt: c.endTimeSec ? new Date(Number(c.endTimeSec) * 1000).toISOString() : new Date(nowMs + 7 * 86400000).toISOString(),
+          protocolAddress: '',
+        });
+      }
+      offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
+    } catch { /* best-effort overlay */ }
+
     // Enrich with SBS profiles (same pattern as listings route)
     const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
       || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -190,7 +214,30 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    return json({ orderHash: result.order?.order_hash || '' });
+    const orderHash = result.order?.order_hash || '';
+
+    // Cache the offer so the detail page shows it instantly. OpenSea's offers
+    // feed lags ~5-15s and offers had no cache, so a fresh offer silently didn't
+    // appear (and the owner couldn't act on it). Best-effort.
+    try {
+      const p = body.parameters as {
+        offerer?: string;
+        endTime?: string;
+        offer?: Array<{ startAmount?: string }>;
+        consideration?: Array<{ itemType?: number; identifierOrCriteria?: string }>;
+      };
+      // In a Seaport offer (bid), `offer` is the USDC the bidder puts up and
+      // `consideration` is the NFT they want — so the tokenId lives there.
+      const nftItem = (p.consideration || []).find(c => c.itemType === 2 || c.itemType === 3);
+      const tokenId = nftItem?.identifierOrCriteria;
+      const usdcWei = (p.offer || []).reduce((s, it) => s + BigInt(it.startAmount || '0'), 0n);
+      if (orderHash && tokenId && p.offerer) {
+        const { recordOffer } = await import('@/lib/marketplace/offerCache');
+        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd: Number(usdcWei) / 1e6, offerer: p.offerer, endTimeSec: p.endTime ?? null });
+      }
+    } catch { /* best-effort cache write */ }
+
+    return json({ orderHash });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     console.error('[marketplace/offers] POST failed:', err);

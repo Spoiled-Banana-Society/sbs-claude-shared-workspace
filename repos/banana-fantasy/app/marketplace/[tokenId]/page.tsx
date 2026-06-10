@@ -742,6 +742,7 @@ export default function NftDetailPage() {
         });
       }
 
+      void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash }) }).catch(() => {});
       refetchOffers();
       setTimeout(() => fetchNft(), 2000);
     } catch (err) {
@@ -794,6 +795,7 @@ export default function NftDetailPage() {
         orderHash: offer.orderHash || null,
       });
 
+      void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash }) }).catch(() => {});
       refetchOffers();
     } catch (err) {
       console.error('[NFT Detail] Cancel offer failed:', err);
