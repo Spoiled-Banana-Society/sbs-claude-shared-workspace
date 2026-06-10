@@ -134,6 +134,15 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         { description: 'Cancel your listing', waitForReceipt: true },
       );
       logger.debug('[useListTeam] Cancelled listing for token:', tokenId);
+      // Record a 'cancel' activity so the delisting shows in the token's feed
+      // (mirrors the 'list' record createListing writes). Best-effort.
+      if (walletAddress) {
+        void fetch('/api/marketplace/activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'cancel', walletAddress, tokenId: String(tokenId), orderHash }),
+        }).catch(() => { /* best-effort */ });
+      }
       // Tell the listing cache it's delisted so every page reflects it instantly.
       if (walletAddress) {
         void fetch('/api/marketplace/listings/cancelled', {

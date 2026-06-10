@@ -110,5 +110,19 @@ export async function createListing(
   }
 
   const result = await postRes.json();
-  return { orderHash: result.orderHash || '' };
+  const orderHash = result.orderHash || '';
+
+  // Record a 'list' activity so the listing appears in the token's Activity feed.
+  // (The buy flow logs buy/sell, but listing creation logged nothing — so a new
+  // listing never showed under Activity → Listings.) Best-effort; inlined rather
+  // than importing the hook's logActivity to avoid a lib→hook import cycle.
+  try {
+    await fetch('/api/marketplace/activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'list', walletAddress: sellerAddress, tokenId: String(tokenId), price: priceUsd, orderHash }),
+    });
+  } catch { /* best-effort — listing still succeeds even if the log fails */ }
+
+  return { orderHash };
 }
