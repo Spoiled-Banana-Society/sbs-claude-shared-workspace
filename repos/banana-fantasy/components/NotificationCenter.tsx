@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
 import { subscribeUserEvents } from '@/lib/api/firebase';
@@ -207,6 +208,10 @@ function timeAgo(iso: string): string {
 export function useNotifications() {
   const { walletAddress } = useAuth();
   const { show } = useToast();
+  // Soft client-side navigation for toast "View" — a hard window.location
+  // reload forced a full Privy re-hydration, which could bounce a freshly
+  // logged-in account back to logged-out (caught by Boris 2026-06-10).
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
 
@@ -324,7 +329,7 @@ export function useNotifications() {
             showRef.current({
               level: 'success',
               message: n.title,
-              ...(n.link ? { action: { label: 'View', onClick: () => { window.location.href = n.link as string; } } } : {}),
+              ...(n.link ? { action: { label: 'View', onClick: () => router.push(n.link as string) } } : {}),
             });
           });
         }
