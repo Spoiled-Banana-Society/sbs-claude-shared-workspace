@@ -276,6 +276,33 @@ export default function NftDetailPage() {
     } catch { /* listError surfaces the message */ }
   }, [nft, cancelTeam, tokenId, fetchNft]);
 
+  // Change the price of an active listing. A Seaport order's price is immutable,
+  // so under the hood this cancels the old order and creates a fresh one at the
+  // new price — presented as a single "Update Price" action so it feels like an
+  // in-place edit (no separate cancel + re-list dance for the user).
+  const handleOwnerUpdatePrice = useCallback(async () => {
+    if (!isLoggedIn) { setShowLoginModal(true); return; }
+    const p = parseFloat(ownerListPrice);
+    if (!Number.isFinite(p) || p <= 0) return;
+    const orderHash = nft?.listing?.order_hash;
+    if (!orderHash) return;
+    try {
+      await cancelTeam(tokenId, orderHash);
+      const res = await listTeam(tokenId, p, 30 * 24 * 3600);
+      setOwnerListPrice('');
+      setNft(prev => prev ? {
+        ...prev,
+        listing: {
+          order_hash: res.orderHash,
+          protocol_address: '',
+          price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600) } },
+        },
+      } : prev);
+      setTimeout(() => fetchNft(), 12000);
+    } catch { /* listError surfaces the message */ }
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, nft, cancelTeam, listTeam, tokenId, fetchNft, walletAddress]);
+
   useEffect(() => {
     fetchNft();
   }, [fetchNft]);
@@ -1057,13 +1084,37 @@ export default function NftDetailPage() {
                       Buy Now
                     </button>
                   ) : isOwner ? (
-                    <button
-                      onClick={handleOwnerCancel}
-                      disabled={listBusy}
-                      className="px-6 py-3 border border-red-500/40 text-red-400 font-semibold rounded-xl hover:bg-red-500/10 transition-all disabled:opacity-50"
-                    >
-                      {listBusy ? 'Cancelling…' : 'Cancel Listing'}
-                    </button>
+                    // Owner of a LISTED team: change the price in place, or cancel.
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5 w-28">
+                          <span className="text-text-muted">$</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={ownerListPrice}
+                            onChange={e => setOwnerListPrice(e.target.value)}
+                            placeholder={price.toFixed(2)}
+                            className="w-full bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none font-mono"
+                          />
+                        </div>
+                        <button
+                          onClick={handleOwnerUpdatePrice}
+                          disabled={listBusy || !ownerListPrice || parseFloat(ownerListPrice) <= 0 || parseFloat(ownerListPrice) === price}
+                          className="px-5 py-2.5 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all disabled:opacity-50"
+                        >
+                          {listBusy ? 'Updating…' : 'Update Price'}
+                        </button>
+                      </div>
+                      <button
+                        onClick={handleOwnerCancel}
+                        disabled={listBusy}
+                        className="text-red-400 text-xs hover:underline disabled:opacity-50"
+                      >
+                        Cancel Listing
+                      </button>
+                    </div>
                   ) : null}
                 </div>
 
