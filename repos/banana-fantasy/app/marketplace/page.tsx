@@ -986,10 +986,14 @@ export default function MarketplacePage() {
           watchlist={watchlist}
           watchlistSet={watchlistSet}
           deduplicatedTeams={deduplicatedTeams}
+          walletAddress={walletAddress}
+          myMadeOffers={myMadeOffers}
           onBrowseTeams={() => setActiveTab('buy')}
           onViewTeam={(tokenId) => navigateToTeam(tokenId)}
           onToggleWatchlist={(tokenId, price) => toggleWatchlist(tokenId, price)}
           onOpenBuyModal={openBuyModal}
+          onMakeOffer={(tokenId) => navigateToTeam(tokenId, '?offer=true')}
+          onGoToSellTab={() => requireLogin(() => setActiveTab('sell'))}
           onViewAllTeams={() => {
             setViewFilter('all');
             setActiveTab('buy');

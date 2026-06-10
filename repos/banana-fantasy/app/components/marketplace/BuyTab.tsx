@@ -869,7 +869,7 @@ function InfoCard({
   );
 }
 
-function FallbackPassSvg({ gradientId }: { gradientId: string }) {
+export function FallbackPassSvg({ gradientId }: { gradientId: string }) {
   return (
     <div className="flex items-center justify-center">
       <svg width="160" height="100" viewBox="0 0 160 100" className="drop-shadow-lg">
