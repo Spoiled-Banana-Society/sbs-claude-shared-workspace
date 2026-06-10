@@ -2290,17 +2290,23 @@ function DraftRoomContent() {
 
   const bannerControls = (
     <div className="flex items-center justify-center gap-2 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
-      {visibleDraftType === 'hof' && (
-        <div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/hof-logo.jpg" alt="Hall of Fame" className="w-[50px] mr-2 h-auto" style={{ filter: 'sepia(100%) saturate(400%) brightness(110%) hue-rotate(10deg)' }} />
-        </div>
-      )}
-      {visibleDraftType === 'jackpot' && (
-        <div style={{ marginRight: '5px' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/jackpot-logo.png" alt="Jackpot" className="w-[100px] mr-2 h-auto" />
-        </div>
+      {/* Type word — plain TEXT, same line-height as the buttons, so the
+          banner row (and the colored band with it) is EXACTLY the same
+          height in every room (Boris 2026-06-10: the old jackpot-logo.png
+          image was ~60px tall and bloated the red band vs the pro room).
+          White on the red/black bands; black on the gold HOF band. */}
+      {visibleDraftType && (
+        <span
+          className="font-black uppercase mr-2"
+          style={{
+            fontSize: '16px',
+            lineHeight: 1,
+            letterSpacing: '0.12em',
+            color: visibleDraftType === 'hof' ? '#111' : '#fff',
+          }}
+        >
+          {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
+        </span>
       )}
       {/* Founder pill — sits inline with the JP/HOF logo (when present) and
           the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
