@@ -49,6 +49,5 @@ typechain-types/
 playwright-report/
 test-results/
 blob-report/
-package-lock.json
 yarn.lock
 .env.vercel-check
