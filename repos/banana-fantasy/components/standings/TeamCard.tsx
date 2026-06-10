@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
+import { isDraftingOpen } from '@/lib/draftTypes';
 import type { League } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
@@ -192,6 +194,20 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
           <span className="text-white/40 text-xs font-mono flex-shrink-0">League #{leagueNo}</span>
         )}
       </div>
+
+      {/* List for Sale — straight to the working list/delist form for this token.
+          Shown only when it's actually listable: a wheel-won filling pass, an
+          already-listed item, or a paid team. A free team mid-season can't list. */}
+      {mt?.tokenId && (mt.fillingWheelLevel != null || isListed || !(mt.passType === 'free' && isDraftingOpen())) && (
+        <div className="px-4 pt-2">
+          <Link
+            href={`/marketplace/${mt.tokenId}`}
+            className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg text-xs font-bold transition-colors ${isListed ? 'border border-green-500/30 text-green-400 bg-green-500/[0.06] hover:bg-green-500/15' : 'border border-banana/50 text-banana bg-banana/[0.06] hover:bg-banana hover:text-black'}`}
+          >
+            {isListed ? `Listed${typeof mt.price === 'number' ? ` $${mt.price.toFixed(2)}` : ''} · Manage` : 'List for Sale'}
+          </Link>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="px-4 pb-4 pt-2 flex items-center gap-2">
