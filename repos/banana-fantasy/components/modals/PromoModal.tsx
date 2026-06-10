@@ -188,6 +188,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         <p className="text-text-muted text-sm mt-2">
           {promo.progressCurrent === promo.progressMax
             ? 'Completed! Claim your reward below.'
+            : promo.type === 'daily-drafts'
+            ? `Complete ${promo.progressMax! - (promo.progressCurrent || 0)} more ${(promo.progressMax! - (promo.progressCurrent || 0)) === 1 ? 'draft' : 'drafts'} to claim your Free Spin.`
             : `Complete ${promo.progressMax! - (promo.progressCurrent || 0)} more to claim your reward.`}
         </p>
       </div>
@@ -230,12 +232,13 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <p className="text-text-muted text-xs mt-2">Timer starts when your first paid draft fills</p>
         )}
       </div>
-      <p className="text-text-secondary text-sm">
-        You&apos;ve completed {promo.progressCurrent || 0} of {promo.progressMax} drafts towards your next spin.
-        {promo.claimable && promo.claimCount && promo.claimCount > 0 && (
-          <span className="text-banana font-medium"> You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!</span>
-        )}
-      </p>
+      {/* "You've completed X of Y" line removed — the progress bar already
+          says it (Boris 2026-06-10). Keep only the claim-ready callout. */}
+      {promo.claimable && promo.claimCount && promo.claimCount > 0 ? (
+        <p className="text-banana text-sm font-medium">
+          You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!
+        </p>
+      ) : null}
       {/* Completion history — one row per finished 4-set, newest first.
           ALWAYS rendered (with an empty state) so every promo modal carries
           the same structure: explanation → progress → stats → History. */}
@@ -302,10 +305,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           </div>
         )}
 
-        {/* Pick 10 History */}
-        {promo.modalContent.pick10History && promo.modalContent.pick10History.length > 0 && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Pick 10 History</h4>
+        {/* Pick 10 History — always rendered with an empty state, matching
+            every other promo's History section. */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Pick 10 History</h4>
+          {promo.modalContent.pick10History && promo.modalContent.pick10History.length > 0 ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {promo.modalContent.pick10History.map((entry, index) => (
                 <div key={index} className="flex items-center justify-between py-2 border-b border-bg-elevated last:border-0">
@@ -317,13 +321,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        )}
-        {(!promo.modalContent.pick10History || promo.modalContent.pick10History.length === 0) && (
-          <p className="text-text-muted text-sm text-center py-4">
-            No Pick 10s earned yet. Enter more drafts for a chance!
-          </p>
-        )}
+          ) : (
+            <p className="text-text-muted text-sm">Every 10th slot pick you land in a paid draft lands here with the draft and date.</p>
+          )}
+        </div>
       </>
     );
   };
@@ -578,9 +579,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
           </div>
         </div>
-        {hasHistory ? (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Jackpot Wins</h4>
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Jackpot Wins</h4>
+          {hasHistory ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {history!.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
@@ -589,12 +590,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        ) : (
-          <p className="text-text-muted text-sm text-center py-4">
-            No Jackpots hit yet. Keep drafting for a chance to win!
-          </p>
-        )}
+          ) : (
+            <p className="text-text-muted text-sm">Every Jackpot draft you land lands here with the draft and date.</p>
+          )}
+        </div>
       </>
     );
   };
@@ -605,9 +604,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     return (
       <>
         {renderProgressSection()}
-        {hasHistory ? (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Founder Drafts joined</h4>
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Founder Drafts Joined</h4>
+          {hasHistory ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {history!.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
@@ -618,12 +617,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        ) : (
-          <p className="text-text-muted text-sm text-center py-4">
-            No Founder Drafts joined yet. Catch the next one!
-          </p>
-        )}
+          ) : (
+            <p className="text-text-muted text-sm">Founder Drafts you join land here with the date.</p>
+          )}
+        </div>
       </>
     );
   };
