@@ -597,6 +597,37 @@ export function useMyNftOffers(
   return { allOffers, isLoading, refetch: fetchAllOffers };
 }
 
+/**
+ * Offers the user has MADE (inverse of useMyNftOffers) — one request to our
+ * offer cache, returned as tokenId → offer USD. Drives the "Your offer $X"
+ * chip on marketplace cards. Effect deps are the wallet scalar only (Rule #0).
+ */
+export function useMyMadeOffers(walletAddress: string | null): Record<string, number> {
+  const [byToken, setByToken] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (!walletAddress) { setByToken({}); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/marketplace/offers/mine?address=${walletAddress}`);
+        if (!res.ok || cancelled) return;
+        const json = await res.json();
+        const map: Record<string, number> = {};
+        for (const o of (json.offers ?? []) as Array<{ tokenId: string; priceUsd: number }>) {
+          // Keep the highest live offer per token for display.
+          if (!(o.tokenId in map) || o.priceUsd > map[o.tokenId]) map[o.tokenId] = o.priceUsd;
+        }
+        if (!cancelled) setByToken(map);
+      } catch { /* chip is best-effort */ }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [walletAddress]);
+
+  return byToken;
+}
+
 // ── Log Activity Helper ──────────────────────────────────────────
 
 export async function logActivity(data: {
