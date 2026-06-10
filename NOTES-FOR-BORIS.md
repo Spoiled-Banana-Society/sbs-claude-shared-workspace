@@ -608,3 +608,21 @@ Token 1448 is sold but still `active` under Richard in Go (`/draftToken/all`). I
 None of these touched your `nftPassClassify` / `dedupe-passes` / `refresh-wallet` / `pass-forensics` / `audits` files.
 
 — Richard's Claude
+
+---
+
+## 2026-06-10 — Vercel builds were dying (45-min hangs / @stripe/crypto error): ROOT-CAUSED & FIXED
+
+You saw it: your "King week" deploy + Richard's two deploys all hung at "Linting and checking validity of types" for 45 min and errored. **Your King week code was never the problem** — it ships fine.
+
+**Root cause (we both found the same thing — you pushed the `3.28.0` pin at f4e14ad while I was testing the identical fix):** `package-lock.json` was in `.gitignore`, so the repo had NO lockfile. Every fresh Vercel install resolved `@privy-io/react-auth@^3.28.0` → newest 3.29.x (published Jun 3-4), whose `FiatOnrampScreen` imports `@stripe/crypto` (not a dependency) → fresh builds fail; partially-cached builds memory-thrash and hang to the 45-min kill.
+
+**What's now in place:**
+1. `package.json`: Privy pinned to exact `3.28.0` (your commit + mine agree).
+2. `.gitignore`: removed the `package-lock.json` line (workspace AND sbs-frontend-v2).
+3. Workspace now has a committed `package-lock.json` (generated from a verified-green fresh install + full local build, all 72 pages). **It did NOT make it into sbs-frontend-v2** — deploy.sh's sync skipped it (predates the .gitignore fix). It needs a one-time manual `git add package-lock.json` commit in sbs-frontend-v2; coordinating with Richard so it rides the next normal deploy instead of triggering an extra build.
+4. `VERCEL_FORCE_NO_BUILD_CACHE=1` is temporarily set in Vercel prod env (used to bypass the poisoned cache). **Remove after the next green build** — it makes every build slower/pricier.
+
+**Do-not-reintroduce:** don't bump Privy (or re-ignore the lockfile) without a local fresh-install + full `next build` first. 3.29.x stays broken until they fix the @stripe/crypto import or we add that package deliberately.
+
+— Richard's Claude

@@ -13,7 +13,7 @@ import { SellTab } from '@/app/components/marketplace/SellTab';
 import { SweepModal } from '@/app/components/marketplace/SweepModal';
 import { WatchlistTab } from '@/app/components/marketplace/WatchlistTab';
 import { useAuth } from '@/hooks/useAuth';
-import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
+import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyMadeOffers, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isDraftingOpen } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
@@ -198,6 +198,7 @@ export default function MarketplacePage() {
   const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
   const { watchlist, watchlistSet, toggle: toggleWatchlist } = useWatchlist(isLoggedIn ? walletAddress : null);
+  const myMadeOffers = useMyMadeOffers(isLoggedIn ? walletAddress : null);
 
   const enrichedListings = useMemo(() => {
     if (!walletAddress || !user) return listings;
@@ -897,6 +898,7 @@ export default function MarketplacePage() {
           allNftsHasMore={allNftsHasMore}
           watchlistSet={watchlistSet}
           walletAddress={walletAddress}
+          myMadeOffers={myMadeOffers}
           lastSales={lastSales}
           leaderboardTeams={leaderboardTeams}
           showBuyModal={showBuyModal}

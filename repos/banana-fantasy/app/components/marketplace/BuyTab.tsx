@@ -29,6 +29,8 @@ interface BuyTabProps {
   allNftsHasMore: boolean;
   watchlistSet: Set<string>;
   walletAddress: string | null;
+  /** tokenId → USD of the viewer's own live offer — shows "Your offer $X" on the card. */
+  myMadeOffers?: Record<string, number>;
   lastSales: Record<string, { price: number; timestamp: string }>;
   leaderboardTeams: MarketplaceTeam[];
   showBuyModal: boolean;
@@ -78,6 +80,7 @@ export function BuyTab({
   allNftsHasMore,
   watchlistSet,
   walletAddress,
+  myMadeOffers,
   leaderboardTeams,
   showBuyModal,
   selectedTeam,
@@ -374,6 +377,11 @@ export function BuyTab({
                         <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.name}</p>
                         <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
                       </>
+                    )}
+                    {myMadeOffers?.[team.tokenId] != null && (
+                      <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
+                        Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                      </p>
                     )}
                   </div>
                   <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>

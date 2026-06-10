@@ -74,6 +74,24 @@ export async function recordOfferConsumed(orderHash: string): Promise<void> {
  * us, so this is the long-term source of truth: keep an offer until it's
  * consumed (accepted/cancelled) or its on-chain expiry passes — not a 2-min TTL.
  */
+/** Active, unexpired offers MADE BY a wallet — powers the "Your offer $X" chip
+ *  on marketplace cards. Single field-equality on `offerer` (stored lowercase);
+ *  no composite index needed. Covers offers placed through SBS, which is the
+ *  set the chip is for. */
+export async function getCachedOffersByOfferer(offerer: string): Promise<CachedOffer[]> {
+  if (!isFirestoreConfigured() || !offerer) return [];
+  try {
+    const snap = await getAdminFirestore().collection(COLLECTION).where('offerer', '==', offerer.toLowerCase()).get();
+    const now = Date.now();
+    return snap.docs
+      .map(d => d.data() as CachedOffer)
+      .filter(o => o.status === 'active' && (!o.endTimeSec || Number(o.endTimeSec) * 1000 > now));
+  } catch (e) {
+    logger.warn('offerCache.getByOfferer_failed', { offerer, err: (e as Error).message });
+    return [];
+  }
+}
+
 export async function getRecentCachedOffers(tokenId: string): Promise<CachedOffer[]> {
   if (!isFirestoreConfigured() || !tokenId) return [];
   try {
