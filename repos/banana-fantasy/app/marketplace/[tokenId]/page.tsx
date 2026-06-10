@@ -7,6 +7,7 @@ import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
+import { friendlyTxError } from '@/lib/marketplace/txErrors';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useListTeam } from '@/hooks/useListTeam';
 import { useNotifications } from '@/components/NotificationCenter';
@@ -544,7 +545,7 @@ export default function NftDetailPage() {
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
         console.error('[NFT Detail] Buy failed:', err);
-        setTxError(err instanceof Error ? err.message : 'Transaction failed');
+        setTxError(friendlyTxError(err, 'Transaction failed. Please try again.'));
         setBuyStep('confirm');
       }
     } else {
@@ -599,7 +600,7 @@ export default function NftDetailPage() {
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
         console.error('[NFT Detail] Card buy failed:', err);
-        setTxError(err instanceof Error ? err.message : 'Payment failed');
+        setTxError(friendlyTxError(err, 'Payment failed. Please try again.'));
         setBuyStep('confirm');
         setCardFlowStep('idle');
       }
@@ -700,7 +701,7 @@ export default function NftDetailPage() {
         context: { tokenId, offerAmount: amount, offerExpiration },
         stack: err instanceof Error ? err.stack : undefined,
       });
-      setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
+      setOfferError(friendlyTxError(err, 'Failed to create offer. Please try again.'));
       setOfferStep('input');
     }
   }, [walletAddress, selectedWallet, offerAmount, offerExpiration, tokenId, sendTx, refetchOffers, nft]);
@@ -792,7 +793,7 @@ export default function NftDetailPage() {
         context: { tokenId, orderHash: offer.orderHash, offerAmount: offer.amount, offererAddress: offer.offererAddress || null },
         stack: err instanceof Error ? err.stack : undefined,
       });
-      setAcceptError(err instanceof Error ? err.message : 'Failed to accept offer');
+      setAcceptError(friendlyTxError(err, 'Failed to accept offer. Please try again.'));
     } finally {
       setAcceptingOfferHash(null);
     }
@@ -844,7 +845,7 @@ export default function NftDetailPage() {
         actor: walletAddress,
         context: { tokenId, orderHash: offer.orderHash },
       });
-      setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offer');
+      setAcceptError(friendlyTxError(err, 'Failed to cancel offer. Please try again.'));
     } finally {
       setCancellingOfferHash(null);
     }
@@ -900,7 +901,7 @@ export default function NftDetailPage() {
         actor: walletAddress,
         context: { tokenId, orderHashes: hashes },
       });
-      setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offers');
+      setAcceptError(friendlyTxError(err, 'Failed to cancel offers. Please try again.'));
     } finally {
       setCancellingAllOffers(false);
     }
