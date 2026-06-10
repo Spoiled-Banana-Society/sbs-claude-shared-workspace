@@ -124,6 +124,68 @@ function FirstPurchaseCard({ goBuy, dismiss }: { goBuy: () => void; dismiss: () 
   );
 }
 
+/* ───────────────────── New-user Free Spin banner ───────────────────── */
+
+const SpinIcon = (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
+    <circle cx="12" cy="12" r="9" />
+    <circle cx="12" cy="12" r="2.5" />
+    <path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21" />
+  </svg>
+);
+
+const nuDismissKey = (wallet?: string) => `sbs-new-user-spin-banner-dismissed-${wallet ?? 'anon'}`;
+
+function useNewUserSpinBanner() {
+  const { user, isLoggedIn, newUserPromoClaimed } = useAuth();
+  const router = useRouter();
+  const wallet = user?.walletAddress;
+  const [dismissed, setDismissed] = useState(true); // hidden until storage checked
+  const [settled, setSettled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !wallet) { setDismissed(true); return; }
+    setDismissed(!!window.localStorage.getItem(nuDismissKey(wallet)));
+    // Brief settle delay: claimed users' state arrives via the X-link check a
+    // moment after login — waiting ~1.2s prevents a show-then-vanish flash.
+    const t = setTimeout(() => setSettled(true), 1200);
+    return () => clearTimeout(t);
+  }, [wallet]);
+
+  const dismiss = useCallback(() => {
+    if (typeof window !== 'undefined' && wallet) window.localStorage.setItem(nuDismissKey(wallet), '1');
+    setDismissed(true);
+  }, [wallet]);
+
+  // Straight to the new-user promo modal (seed id 6) — no hunting.
+  const goEarn = useCallback(() => router.push('/promos?promo=6'), [router]);
+
+  // Gone the INSTANT the spin is claimed (newUserPromoClaimed is server-backed,
+  // so it stays gone on every device) — or when ×-dismissed.
+  const show = isLoggedIn && !!wallet && settled && !dismissed && !newUserPromoClaimed;
+
+  return { show, dismiss, goEarn };
+}
+
+function NewUserSpinCard({ goEarn, dismiss }: { goEarn: () => void; dismiss: () => void }) {
+  return (
+    <CardShell>
+      {SpinIcon}
+      <div className="flex-1 min-w-0 cursor-pointer" onClick={goEarn} role="button" tabIndex={0}>
+        <p className="text-text-primary font-semibold text-[14px] leading-tight">Free Spin Waiting</p>
+        <p className="text-text-secondary text-xs mt-0.5">Win up to 20 free drafts — at least 1 guaranteed</p>
+      </div>
+      <button
+        onClick={goEarn}
+        className="flex-none rounded-full bg-banana text-[#1d1d1f] font-bold text-[13px] px-5 py-2.5 transition-transform hover:scale-[1.03]"
+      >
+        Earn Spin
+      </button>
+      <DismissX onClick={dismiss} />
+    </CardShell>
+  );
+}
+
 /* ───────────────────────── Get-the-App banner ───────────────────────── */
 
 const A2HS_ENGAGED_KEY = 'sbs-a2hs-engaged';
@@ -231,6 +293,7 @@ function AppInstallCard({ onClick, dismiss }: { onClick: () => void; dismiss: ()
 
 export function TopBanners() {
   const { user } = useAuth();
+  const nu = useNewUserSpinBanner();
   const fp = useFirstPurchaseBanner();
   const app = useAppInstallBanner();
 
@@ -251,10 +314,11 @@ export function TopBanners() {
   if (!mounted) return null;
 
   const slots: React.ReactNode[] = [];
+  if (nu.show || preview) slots.push(<NewUserSpinCard key="nu" goEarn={nu.goEarn} dismiss={nu.dismiss} />);
   if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
   if (app.show || preview) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
 
-  const two = slots.length === 2;
+  const two = slots.length >= 2;
   return (
     <>
       {slots.length > 0 && (

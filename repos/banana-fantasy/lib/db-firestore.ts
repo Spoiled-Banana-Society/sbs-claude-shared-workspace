@@ -252,6 +252,23 @@ async function ensureUserSeeded(userId: string): Promise<User> {
     // non-fatal
   }
 
+  // Welcome bell notification (Boris 2026-06-10): every new user gets ONE
+  // persisted noti explaining how to earn their free spin, linking straight
+  // to the new-user promo modal. Dedupe-keyed → exactly once per account.
+  try {
+    const { createNotification } = await import('@/lib/queueNotifications');
+    void createNotification(userId, {
+      type: 'welcome',
+      title: 'Welcome! Your Free Spin is Waiting',
+      message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
+      link: '/promos?promo=6',
+      dedupeKey: 'welcome-new-user',
+      icon: '🎁',
+    });
+  } catch {
+    // non-fatal
+  }
+
   return seed.user;
 }
 
