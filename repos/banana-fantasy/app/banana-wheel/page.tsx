@@ -140,12 +140,13 @@ export default function BananaWheelPage() {
             stack: err instanceof Error ? err.stack : undefined,
           });
         });
-        // Pluralize the title to match the count: "Free Draft Won!" for 1,
-        // "Free Drafts Won!" for 2+. Sticking "Drafts" on the title when
-        // the body says "1 free draft" reads sloppy.
+        // Count in the title: "Free Draft Won!" for 1, "2 Free Drafts Won!"
+        // for 2+ (Boris 2026-06-10). This is THE win bell entry — fired at
+        // the exact moment the wheel stops; the server deliberately doesn't
+        // fire one (it double-notified and the timing was off).
         pushNotification({
           type: 'promo',
-          title: segment.prizeValue === 1 ? 'Free Draft Won!' : 'Free Drafts Won!',
+          title: segment.prizeValue === 1 ? 'Free Draft Won!' : `${segment.prizeValue} Free Drafts Won!`,
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
           icon: 'ticket',
@@ -154,16 +155,16 @@ export default function BananaWheelPage() {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
         pushNotification({
           type: 'jackpot_queue',
-          title: '🔥 Jackpot Draft Queued!',
-          message: 'You\'re in the Jackpot queue (8-hour picks). Draft starts as soon as 10 winners join!',
+          title: '🔥 Jackpot Draft Won!',
+          message: 'You won a Jackpot draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
         pushNotification({
           type: 'hof_queue',
-          title: '🏆 HOF Draft Queued!',
-          message: 'You\'re in the HOF queue (8-hour picks). Draft starts as soon as 10 winners join!',
+          title: '🏆 HOF Draft Won!',
+          message: 'You won a HOF draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
         });
       }

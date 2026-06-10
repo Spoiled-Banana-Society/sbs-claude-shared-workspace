@@ -207,12 +207,6 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       }
       return;
     }
-    case 'spin-won': {
-      // NO toast for spin wins — the wheel's win pop-up is the celebration
-      // (a toast on top was redundant; Boris 2026-06-10). The synced bell
-      // entry is persisted server-side, delayed past the reveal animation.
-      return;
-    }
     case 'referral-milestone': {
       // Friend identity is NOT in the event payload — it lives in
       // authenticated /api/promos. The toast/bell copy is intentionally

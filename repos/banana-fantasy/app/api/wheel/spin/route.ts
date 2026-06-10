@@ -20,7 +20,6 @@ import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
-import { pushStreamEvent } from '@/lib/userEventStream';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
 const USERS_COLLECTION = 'v2_users';
@@ -385,23 +384,12 @@ export async function POST(req: Request) {
     // the frontend polls via refreshBalanceUntil to catch up. Awaiting
     // any of this inline made the wheel wait ~10s before spinning.
     waitUntil((async () => {
-      // Win notification: synced bell entry on every device. DELAYED past the
-      // wheel's reveal — the client decelerates for SPIN_DURATION_MS (2s) after
-      // this response, then shows the win pop-up; the bell ping landing before
-      // that would spoil the result. No toast for spin wins anywhere — the
-      // pop-up IS the celebration (Boris, 2026-06-10). Runs in parallel with
-      // the mint work below; awaited at the end so waitUntil keeps it alive.
-      const SPIN_REVEAL_NOTI_DELAY_MS = 3500;
-      const notifyAfterReveal = (async () => {
-        if (segment.prizeType === 'nothing') return;
-        const prizeLabel =
-          jphofKind === 'jackpot' ? 'a Jackpot draft'
-          : jphofKind === 'hof' ? 'a Hall of Fame draft'
-          : draftPassCount === 1 ? '1 free draft'
-          : `${draftPassCount} free drafts`;
-        await new Promise((r) => setTimeout(r, SPIN_REVEAL_NOTI_DELAY_MS));
-        await pushStreamEvent(userId, 'spin-won', { spinId, prizeLabel });
-      })();
+      // NOTE: the win's bell notification is NOT fired here. The wheel page
+      // pushes it client-side at the exact moment the wheel stops
+      // (app/banana-wheel/page.tsx onSpinComplete → pushNotification →
+      // server-persisted + cross-device ping) — server-firing it here either
+      // spoils the reveal (too early) or lags it (delay guessing), and doing
+      // both double-notified. One source, perfect timing.
 
       let mintTxHash: string | undefined;
       let mintedTokenIds: string[] = [];
@@ -568,9 +556,6 @@ export async function POST(req: Request) {
           logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
         }
       }
-
-      // Keep the lambda alive until the reveal-delayed win noti has fired.
-      await notifyAfterReveal;
     })());
 
     // V2 verification payload: if this spin was assigned by an active

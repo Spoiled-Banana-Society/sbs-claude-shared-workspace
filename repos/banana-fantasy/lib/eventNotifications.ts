@@ -137,17 +137,6 @@ export function eventNotificationContent(
         icon: 'users',
       };
     }
-    case 'spin-won': {
-      const prize = payload.prizeLabel || 'a prize';
-      return {
-        type: 'promo',
-        title: 'Banana Wheel win! 🍌',
-        message: `Your spin landed — you won ${prize}.`,
-        link: '/drafting',
-        dedupeKey: payload.spinId ? `spin-won-${payload.spinId}` : undefined,
-        icon: 'spin',
-      };
-    }
     case 'notification':
     default:
       return null;

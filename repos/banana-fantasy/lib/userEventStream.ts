@@ -47,7 +47,6 @@ export type StreamEventType =
   | 'first-purchase-unlocked'
   | 'referral-milestone'
   | 'promo-card-free-draft'
-  | 'spin-won'
   // Content-less "a new persisted notification exists — refetch the bell"
   // ping. Fired by createNotification (lib/queueNotifications.ts) so the
   // server-backed notification inbox updates in ~100ms across every device.
@@ -64,10 +63,6 @@ export interface StreamEventPayload {
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */
   awardedCount?: number;
-  /** Wheel spin id (spin-won only) — drives the bell entry's dedupeKey. */
-  spinId?: string;
-  /** Human prize label for spin-won (e.g. "2 Draft Passes"). */
-  prizeLabel?: string;
   /**
    * For the `'notification'` ping: the bell entry's content, so receiving
    * devices render it INSTANTLY without a refetch round-trip. Non-sensitive
