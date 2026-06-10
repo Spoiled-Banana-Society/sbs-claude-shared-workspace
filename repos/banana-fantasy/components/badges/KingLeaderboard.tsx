@@ -17,6 +17,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 import { BadgeIcon } from '@/components/badges/BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
+import { UserPopover } from '@/components/social/UserPopover';
 
 interface Standing { wallet: string; name: string; pfp: string | null; count: number; rank: number }
 interface LeaderboardData {
@@ -97,10 +98,9 @@ export function KingLeaderboard({ demoData }: { demoData?: LeaderboardData } = {
         <div className="space-y-1">
           {data.top.map((s) => {
             const isMe = wallet && s.wallet === wallet;
-            return (
+            const row = (
               <div
-                key={s.wallet}
-                className={`flex items-center gap-3 rounded-xl px-3 py-1.5 ${isMe ? 'bg-banana/10 border border-banana/30' : 'bg-white/[0.02]'}`}
+                className={`flex items-center gap-3 rounded-xl px-3 py-1.5 ${isMe ? 'bg-banana/10 border border-banana/30' : 'bg-white/[0.02] cursor-pointer hover:bg-white/[0.05] transition-colors'}`}
               >
                 <span className={`w-7 text-[13px] font-bold tabular-nums ${s.rank === 1 ? 'text-banana' : 'text-text-muted'}`}>
                   {s.rank === 1 ? '👑' : `#${s.rank}`}
@@ -121,6 +121,16 @@ export function KingLeaderboard({ demoData }: { demoData?: LeaderboardData } = {
                   )}
                 </span>
               </div>
+            );
+            // Tap anyone else → the same profile popover used across the site
+            // (view profile, friend request, message). Your own row isn't a
+            // popover target.
+            return isMe ? (
+              <div key={s.wallet}>{row}</div>
+            ) : (
+              <UserPopover key={s.wallet} walletAddress={s.wallet} username={s.name} pfpUrl={s.pfp ?? undefined} block>
+                {row}
+              </UserPopover>
             );
           })}
 

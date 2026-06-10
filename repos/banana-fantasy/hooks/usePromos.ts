@@ -20,12 +20,18 @@ type ClaimPromoResponse = {
 type ClaimPromoResult = ClaimPromoResponse | Error | null;
 
 export function usePromos(opts?: { userId?: string }) {
-  const { user, updateUser, claimNewUserPromo } = useAuth();
+  const { user, updateUser, claimNewUserPromo, isLoading: authLoading } = useAuth();
   const { celebrate } = useClaimCelebration();
   const userId = opts?.userId ?? user?.id;
 
+  // While Privy is still rehydrating the session there's no userId yet —
+  // do NOT fall back to the anonymous default templates: they'd flash the
+  // generic order (incl. the new-user promo) for ~1s on every refresh before
+  // the personalized list replaced them (Boris 2026-06-10). null key = skip;
+  // anon promos only render for genuinely logged-out visitors.
+  const swrKey = userId ? `promos:${userId}` : authLoading ? null : 'promos:anon';
   const swr = useSWRLike<Promo[]>(
-    userId ? `promos:${userId}` : 'promos:anon',
+    swrKey,
     ({ signal }) => fetchJson<Promo[]>('/api/promos', { signal, query: userId ? { userId } : {} }),
     { fallbackData: [] },
   );

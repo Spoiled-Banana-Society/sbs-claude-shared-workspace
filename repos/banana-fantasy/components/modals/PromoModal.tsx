@@ -236,10 +236,12 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <span className="text-banana font-medium"> You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!</span>
         )}
       </p>
-      {/* Completion history — one row per finished 4-set, newest first. */}
-      {(promo.modalContent.dailyHistory?.length ?? 0) > 0 && (
-        <div className="bg-bg-tertiary rounded-xl p-4">
-          <h4 className="font-semibold mb-3 text-text-primary">History</h4>
+      {/* Completion history — one row per finished 4-set, newest first.
+          ALWAYS rendered (with an empty state) so every promo modal carries
+          the same structure: explanation → progress → stats → History. */}
+      <div className="bg-bg-tertiary rounded-xl p-4">
+        <h4 className="font-semibold mb-3 text-text-primary">History</h4>
+        {(promo.modalContent.dailyHistory?.length ?? 0) > 0 ? (
           <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
             {promo.modalContent.dailyHistory!.map((entry, index) => (
               <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
@@ -248,8 +250,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-text-muted text-sm">Every 4 paid drafts you complete lands here with the date.</p>
+        )}
+      </div>
     </>
   );
 
@@ -475,7 +479,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           </div>
         )}
 
-        {/* Referral History */}
+        {/* Referral History — empty state keeps the section visible so the
+            modal structure matches every other promo. */}
+        {(!promo.modalContent.referralHistory || promo.modalContent.referralHistory.length === 0) && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <h4 className="font-semibold mb-3 text-text-primary">Referral History</h4>
+            <p className="text-text-muted text-sm">Friends who join with your link land here with their progress.</p>
+          </div>
+        )}
         {promo.modalContent.referralHistory && promo.modalContent.referralHistory.length > 0 && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-3 text-text-primary">Referral History</h4>
@@ -634,10 +645,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
           </div>
         </div>
-        {/* Purchase history — newest first. */}
-        {mintHistory.length > 0 && (
-          <div className="bg-bg-tertiary rounded-xl p-4">
-            <h4 className="font-semibold mb-3 text-text-primary">Purchase History</h4>
+        {/* Purchase history — newest first. Always rendered (empty state when
+            the account predates per-purchase tracking, 2026-06-10). */}
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">Purchase History</h4>
+          {mintHistory.length > 0 ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {mintHistory.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
@@ -646,8 +658,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-text-muted text-sm">Each purchase lands here with its date and pass count.</p>
+          )}
+        </div>
       </>
     );
   };

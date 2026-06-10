@@ -2294,7 +2294,8 @@ function DraftRoomContent() {
           banner row (and the colored band with it) is EXACTLY the same
           height in every room (Boris 2026-06-10: the old jackpot-logo.png
           image was ~60px tall and bloated the red band vs the pro room).
-          White on the red/black bands; black on the gold HOF band. */}
+          White JACKPOT on the red band, black HOF on the gold band, purple
+          PRO on black (Boris's pick 2026-06-10: clean flat word, no glow). */}
       {visibleDraftType && (
         <span
           className="font-black uppercase mr-2"
@@ -2302,7 +2303,7 @@ function DraftRoomContent() {
             fontSize: '16px',
             lineHeight: 1,
             letterSpacing: '0.12em',
-            color: visibleDraftType === 'hof' ? '#111' : '#fff',
+            color: visibleDraftType === 'hof' ? '#111' : visibleDraftType === 'jackpot' ? '#fff' : '#a855f7',
           }}
         >
           {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}

@@ -12,6 +12,9 @@ interface UserPopoverProps {
   children: React.ReactNode;
   /** Visual side of the trigger to anchor against. Default 'auto' (chooses based on viewport). */
   side?: 'top' | 'bottom' | 'auto';
+  /** Render the trigger as a full-width block (row-shaped children like
+   *  leaderboard rows). Default false = inline-flex (avatar-sized triggers). */
+  block?: boolean;
 }
 
 type Relationship = 'self' | 'friend' | 'incoming' | 'outgoing' | 'none' | 'loading';
@@ -40,7 +43,7 @@ function shortWallet(w: string): string {
  * On open, fetches /api/friends + /api/friends/mutual lazily so the popover
  * always reflects current state. Closes on outside click or Escape.
  */
-export function UserPopover({ walletAddress, username, pfpUrl, children, side = 'auto' }: UserPopoverProps) {
+export function UserPopover({ walletAddress, username, pfpUrl, children, side = 'auto', block = false }: UserPopoverProps) {
   const { user } = useAuth();
   const privy = usePrivy();
   const router = useRouter();
@@ -330,7 +333,7 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
         // inline-flex (not default inline) so the wrapped avatar has no
         // baseline gap — otherwise it added phantom height that pushed
         // draft-card content down vs the un-wrapped "you" card.
-        className="cursor-pointer inline-flex"
+        className={`cursor-pointer ${block ? 'block w-full' : 'inline-flex'}`}
       >
         {children}
       </span>
