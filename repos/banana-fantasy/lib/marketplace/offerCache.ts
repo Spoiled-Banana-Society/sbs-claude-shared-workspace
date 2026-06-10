@@ -54,12 +54,17 @@ export async function recordOffer(params: {
   }
 }
 
-/** Mark a cached offer dead once it's been cancelled or accepted. */
-export async function recordOfferConsumed(orderHash: string): Promise<void> {
+/** Mark a cached offer dead once it's been cancelled or accepted. Pass the
+ *  tokenId when known — an offer that was never cached (made directly on
+ *  OpenSea) gets its consumed marker created here, and without tokenId the
+ *  per-token veto query can't see it. */
+export async function recordOfferConsumed(orderHash: string, tokenId?: string): Promise<void> {
   if (!isFirestoreConfigured() || !orderHash) return;
   try {
     await getAdminFirestore().collection(COLLECTION).doc(String(orderHash)).set({
       status: 'consumed',
+      orderHash: String(orderHash),
+      ...(tokenId ? { tokenId: String(tokenId) } : {}),
       updatedAtMs: Date.now(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
@@ -93,16 +98,35 @@ export async function getCachedOffersByOfferer(offerer: string): Promise<CachedO
 }
 
 export async function getRecentCachedOffers(tokenId: string): Promise<CachedOffer[]> {
-  if (!isFirestoreConfigured() || !tokenId) return [];
+  return (await getCachedOfferState(tokenId)).active;
+}
+
+/**
+ * Full cached state for a token in ONE query: live offers to supplement
+ * OpenSea, plus the consumed (accepted/cancelled) hashes so the route can
+ * VETO OpenSea's stale view — OpenSea keeps reporting an offer as live for
+ * minutes after its on-chain cancel, and we know better.
+ */
+export async function getCachedOfferState(tokenId: string): Promise<{ active: CachedOffer[]; consumedHashes: Set<string> }> {
+  if (!isFirestoreConfigured() || !tokenId) return { active: [], consumedHashes: new Set() };
   try {
     // Single field-equality only (no composite index). Filter in memory.
     const snap = await getAdminFirestore().collection(COLLECTION).where('tokenId', '==', String(tokenId)).get();
     const now = Date.now();
-    return snap.docs
-      .map(d => d.data() as CachedOffer)
-      .filter(o => o.status === 'active' && (!o.endTimeSec || Number(o.endTimeSec) * 1000 > now));
+    const active: CachedOffer[] = [];
+    const consumedHashes = new Set<string>();
+    for (const d of snap.docs) {
+      const o = d.data() as CachedOffer;
+      if (o.status === 'consumed') {
+        if (o.orderHash) consumedHashes.add(o.orderHash);
+        continue;
+      }
+      if (o.endTimeSec && Number(o.endTimeSec) * 1000 <= now) continue; // expired
+      active.push(o);
+    }
+    return { active, consumedHashes };
   } catch (e) {
-    logger.warn('offerCache.getRecent_failed', { tokenId, err: (e as Error).message });
-    return [];
+    logger.warn('offerCache.getState_failed', { tokenId, err: (e as Error).message });
+    return { active: [], consumedHashes: new Set() };
   }
 }

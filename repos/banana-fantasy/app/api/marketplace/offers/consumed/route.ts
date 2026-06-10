@@ -12,8 +12,9 @@ export async function POST(req: Request) {
   try {
     const body = await parseBody(req);
     const orderHash = requireString(body.orderHash, 'orderHash');
+    const tokenId = typeof body.tokenId === 'string' ? body.tokenId : undefined;
     const { recordOfferConsumed } = await import('@/lib/marketplace/offerCache');
-    await recordOfferConsumed(orderHash);
+    await recordOfferConsumed(orderHash, tokenId);
     return json({ ok: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);

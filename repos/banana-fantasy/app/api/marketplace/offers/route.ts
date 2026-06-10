@@ -30,6 +30,12 @@ export async function GET(req: Request) {
     const seen = new Set<string>();
     const nowMs = Date.now();
 
+    // Cached state up front: live offers to add later, and consumed hashes to
+    // VETO OpenSea's view — it keeps reporting an offer as live for minutes
+    // after its on-chain cancel/acceptance; our consumed markers know better.
+    const { getCachedOfferState } = await import('@/lib/marketplace/offerCache');
+    const cachedState = await getCachedOfferState(tokenId);
+
     // 1) OpenSea first — the item-offers endpoint carries the real order hash +
     //    protocol address, which Accept/Cancel need. (The old GET on
     //    /v2/orders/.../offers now 405s — OpenSea made that URL POST-only.)
@@ -47,7 +53,7 @@ export async function GET(req: Request) {
             const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; endTime: string } })?.parameters;
             if (!p) continue;
             const hash = order.order_hash as string;
-            if (!hash || seen.has(hash)) continue;
+            if (!hash || seen.has(hash) || cachedState.consumedHashes.has(hash)) continue;
             const totalUsdcWei = (p.offer || []).reduce((s: bigint, it: { startAmount: string }) => s + BigInt(it.startAmount || '0'), 0n);
             const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
             if (new Date(expiresAt) <= new Date()) continue;
@@ -75,8 +81,7 @@ export async function GET(req: Request) {
     //    older indexed offer shadow a newer not-yet-indexed one during the lag.
     //    The per-wallet collapse below picks the display winner.
     try {
-      const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
-      for (const c of await getRecentCachedOffers(tokenId)) {
+      for (const c of cachedState.active) {
         if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
         const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
         if (seen.has(key)) continue;
