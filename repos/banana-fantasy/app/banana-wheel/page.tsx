@@ -155,7 +155,7 @@ export default function BananaWheelPage() {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
         pushNotification({
           type: 'jackpot_queue',
-          title: '🔥 Jackpot Draft Won!',
+          title: 'Jackpot Draft Won!',
           message: 'You won a Jackpot draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
         });
@@ -163,7 +163,7 @@ export default function BananaWheelPage() {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
         pushNotification({
           type: 'hof_queue',
-          title: '🏆 HOF Draft Won!',
+          title: 'HOF Draft Won!',
           message: 'You won a HOF draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
         });

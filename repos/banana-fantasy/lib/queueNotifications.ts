@@ -99,10 +99,9 @@ export async function createNotification(userId: string, n: CreateNotificationIn
 /** Notify user they've been queued */
 export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof', draftCount: number) {
   const label = type === 'jackpot' ? 'Jackpot' : 'HOF';
-  const emoji = type === 'jackpot' ? '🔥' : '🏆';
   await createNotification(wallet, {
     type: `${type}_queue`,
-    title: `${emoji} ${label} Draft Queued!`,
+    title: `${label} Draft Queued!`,
     message: `You're in ${draftCount} ${label} draft queue${draftCount !== 1 ? 's' : ''} (8-hour picks). The draft starts as soon as 10 winners fill the queue!`,
   });
 }
@@ -110,11 +109,10 @@ export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof',
 /** Notify ALL members that a round is full — draft starting now */
 export async function notifyQueueFilled(wallets: string[], type: 'jackpot' | 'hof') {
   const label = type === 'jackpot' ? 'Jackpot' : 'HOF';
-  const emoji = type === 'jackpot' ? '🔥' : '🏆';
   const promises = wallets.map(wallet =>
     createNotification(wallet, {
       type: `${type}_queue`,
-      title: `${emoji} ${label} Draft Starting!`,
+      title: `${label} Draft Starting!`,
       message: `10 winners are in! Your ${label} draft is starting now. 8-hour picks — draft at your own pace.`,
       dedupeKey: `${type}-queue-filled-${wallet.toLowerCase()}`,
     })
