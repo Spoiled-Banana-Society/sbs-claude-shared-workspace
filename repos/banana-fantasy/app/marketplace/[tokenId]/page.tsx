@@ -196,17 +196,19 @@ export default function NftDetailPage() {
     const buyTxs = new Set(
       saleHistory.filter(a => a.type === 'buy' && a.txHash).map(a => a.txHash as string),
     );
-    type Item = { id: string; kind: 'sale' | 'listing' | 'delisting'; label: string; price: number | null; who: string | null; timestamp: string };
+    type Item = { id: string; kind: 'sale' | 'listing' | 'delisting'; label: string; price: number | null; who: string | null; seller: string | null; timestamp: string };
     const items: Item[] = [];
     for (const a of saleHistory) {
       if (a.type === 'sell' && a.txHash && buyTxs.has(a.txHash)) continue; // dup of a buy
       if (a.type === 'buy' || a.type === 'sell') {
+        // Keep BOTH sides so the row can show the viewer's own role (bought vs sold).
         const buyer = a.type === 'buy' ? a.walletAddress : a.counterparty;
-        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: buyer, timestamp: a.timestamp });
+        const seller = a.type === 'buy' ? a.counterparty : a.walletAddress;
+        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: buyer, seller, timestamp: a.timestamp });
       } else if (a.type === 'list') {
-        items.push({ id: a.id, kind: 'listing', label: 'Listed', price: a.price, who: a.walletAddress, timestamp: a.timestamp });
+        items.push({ id: a.id, kind: 'listing', label: 'Listed', price: a.price, who: a.walletAddress, seller: null, timestamp: a.timestamp });
       } else if (a.type === 'cancel') {
-        items.push({ id: a.id, kind: 'delisting', label: 'Listing removed', price: null, who: a.walletAddress, timestamp: a.timestamp });
+        items.push({ id: a.id, kind: 'delisting', label: 'Listing removed', price: null, who: a.walletAddress, seller: null, timestamp: a.timestamp });
       }
     }
     return items;
@@ -1330,9 +1332,17 @@ export default function NftDetailPage() {
                         : item.kind === 'listing'
                           ? { bg: 'bg-banana/10', text: 'text-banana' }
                           : { bg: 'bg-white/5', text: 'text-text-muted' };
-                      const whoLabel = item.who
-                        ? `${item.kind === 'sale' ? 'to' : 'by'} ${item.who.slice(0, 6)}…${item.who.slice(-4)}`
-                        : null;
+                      // Show the row from the viewer's perspective: if the logged-in
+                      // wallet is the buyer → "You bought · from <seller>"; if the
+                      // seller → "You sold · to <buyer>"; otherwise neutral "Sold".
+                      const me = walletAddress?.toLowerCase();
+                      const iBought = item.kind === 'sale' && !!me && item.who?.toLowerCase() === me;
+                      const iSold = item.kind === 'sale' && !!me && item.seller?.toLowerCase() === me;
+                      const saleLabel = item.kind === 'sale' ? (iBought ? 'You bought' : iSold ? 'You sold' : 'Sold') : item.label;
+                      const counterparty = iBought ? item.seller : item.who;
+                      const whoLabel = item.kind === 'sale'
+                        ? (counterparty ? `${iBought ? 'from' : 'to'} ${counterparty.slice(0, 6)}…${counterparty.slice(-4)}` : null)
+                        : item.who ? `by ${item.who.slice(0, 6)}…${item.who.slice(-4)}` : null;
                       return (
                         <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary">
                           <div className="flex items-center gap-3">
@@ -1347,7 +1357,7 @@ export default function NftDetailPage() {
                             </div>
                             <div>
                               <p className="text-text-primary text-sm font-medium">
-                                {item.label}{item.price != null && <span className="font-mono"> · ${item.price.toFixed(2)}</span>}
+                                {saleLabel}{item.price != null && <span className="font-mono"> · ${item.price.toFixed(2)}</span>}
                               </p>
                               {whoLabel && <p className="text-text-muted text-[11px]">{whoLabel}</p>}
                             </div>
