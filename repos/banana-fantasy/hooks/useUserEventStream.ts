@@ -208,9 +208,9 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       return;
     }
     case 'spin-won': {
-      const prize = event.prizeLabel || 'a prize';
-      surfaces.showToast(`🍌 Banana Wheel win — you won ${prize}!`, '/drafting');
-      // Bell entry is persisted server-side (eventNotificationContent).
+      // NO toast for spin wins — the wheel's win pop-up is the celebration
+      // (a toast on top was redundant; Boris 2026-06-10). The synced bell
+      // entry is persisted server-side, delayed past the reveal animation.
       return;
     }
     case 'referral-milestone': {
@@ -289,14 +289,9 @@ export function useUserEventStream() {
         return;
       }
 
-      // The spinner's own device is watching the wheel's reveal animation —
-      // a "you won X" toast there would spoil the result before it lands.
-      const onWheelPage = (pathnameRef.current ?? '').startsWith('/banana-wheel');
-
       const surfaces: Surfaces = {
         showToast: (message, link) => {
           if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
-          if (event.type === 'spin-won' && onWheelPage) return;
           // The acting device already showed this milestone optimistically
           // from its API response (instant on mobile) — don't double-toast
           // when the stream copy of the same event arrives.

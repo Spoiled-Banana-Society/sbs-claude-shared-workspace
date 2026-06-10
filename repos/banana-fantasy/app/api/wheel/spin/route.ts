@@ -385,17 +385,23 @@ export async function POST(req: Request) {
     // the frontend polls via refreshBalanceUntil to catch up. Awaiting
     // any of this inline made the wheel wait ~10s before spinning.
     waitUntil((async () => {
-      // Instant win notification: synced bell entry on every device + toast on
-      // devices NOT on /banana-wheel (the spinner is watching the reveal
-      // animation — a toast there would spoil the result before it lands).
-      if (segment.prizeType !== 'nothing') {
+      // Win notification: synced bell entry on every device. DELAYED past the
+      // wheel's reveal — the client decelerates for SPIN_DURATION_MS (2s) after
+      // this response, then shows the win pop-up; the bell ping landing before
+      // that would spoil the result. No toast for spin wins anywhere — the
+      // pop-up IS the celebration (Boris, 2026-06-10). Runs in parallel with
+      // the mint work below; awaited at the end so waitUntil keeps it alive.
+      const SPIN_REVEAL_NOTI_DELAY_MS = 3500;
+      const notifyAfterReveal = (async () => {
+        if (segment.prizeType === 'nothing') return;
         const prizeLabel =
           jphofKind === 'jackpot' ? 'a Jackpot draft'
           : jphofKind === 'hof' ? 'a Hall of Fame draft'
           : draftPassCount === 1 ? '1 free draft'
           : `${draftPassCount} free drafts`;
+        await new Promise((r) => setTimeout(r, SPIN_REVEAL_NOTI_DELAY_MS));
         await pushStreamEvent(userId, 'spin-won', { spinId, prizeLabel });
-      }
+      })();
 
       let mintTxHash: string | undefined;
       let mintedTokenIds: string[] = [];
@@ -562,6 +568,9 @@ export async function POST(req: Request) {
           logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
         }
       }
+
+      // Keep the lambda alive until the reveal-delayed win noti has fired.
+      await notifyAfterReveal;
     })());
 
     // V2 verification payload: if this spin was assigned by an active
