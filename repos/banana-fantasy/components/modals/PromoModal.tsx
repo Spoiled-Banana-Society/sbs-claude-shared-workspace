@@ -210,7 +210,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           </div>
         </div>
         {!promo.timerEndTime && (
-          <p className="text-text-muted text-xs mt-2">Timer starts when you begin your first paid draft</p>
+          <p className="text-text-muted text-xs mt-2">Timer starts when your first paid draft fills</p>
         )}
       </div>
       <p className="text-text-secondary text-sm">

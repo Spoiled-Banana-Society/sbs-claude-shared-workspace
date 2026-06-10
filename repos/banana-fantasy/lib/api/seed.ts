@@ -337,7 +337,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: '4 Drafts Daily → FREE SPIN',
       explanation:
-        'Complete 4 paid drafts within 24 hours to earn a Free Banana Wheel Spin. Your 24-hour timer starts when you begin your first paid draft. Once you complete 4, your progress and timer reset so you can earn another Spin! Only for Paid Drafts.',
+        'Complete 4 paid drafts within 24 hours to earn a Free Banana Wheel Spin. Your 24-hour timer starts when your first paid draft fills. Once you complete 4, your progress and timer reset so you can earn another Spin! Only for Paid Drafts.',
     },
   },
   {
