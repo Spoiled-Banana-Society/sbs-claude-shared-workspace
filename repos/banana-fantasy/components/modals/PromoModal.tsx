@@ -206,7 +206,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="text-text-muted text-xs mt-1">Paid Drafts All-Time</div>
           </div>
           <div className="text-center border-l border-bg-elevated">
-            <div className="text-2xl font-bold text-banana tabular-nums">{promo.modalContent.totalDailyClaims ?? 0}</div>
+            {/* Floor at the live unclaimed count — spins earned before the
+                all-time counter existed would otherwise read 0 while CLAIM(n)
+                sits right below (caught by Boris 2026-06-10). */}
+            <div className="text-2xl font-bold text-banana tabular-nums">{Math.max(promo.modalContent.totalDailyClaims ?? 0, promo.claimCount ?? 0)}</div>
             <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
           </div>
         </div>

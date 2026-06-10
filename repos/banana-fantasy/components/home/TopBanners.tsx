@@ -160,9 +160,20 @@ function useNewUserSpinBanner() {
   // Straight to the new-user promo modal (seed id 6) — no hunting.
   const goEarn = useCallback(() => router.push('/promos?promo=6'), [router]);
 
+  // NEW USERS ONLY (Boris 2026-06-10): account created within the last 7
+  // days. "Hasn't claimed" alone was too loose — it showed for any long-time
+  // account that simply never did the X-verify (caught on Boris's admin
+  // wallet, whose claim lives on his old wallet).
+  const createdMs = user?.createdAt ? new Date(user.createdAt).getTime() : 0;
+  // Belt + suspenders: anyone already holding PAID passes isn't "new",
+  // whatever their doc-creation date says.
+  const isNewAccount = createdMs > 0
+    && Date.now() - createdMs < 7 * 24 * 60 * 60 * 1000
+    && (user?.draftPasses ?? 0) === 0;
+
   // Gone the INSTANT the spin is claimed (newUserPromoClaimed is server-backed,
   // so it stays gone on every device) — or when ×-dismissed.
-  const show = isLoggedIn && !!wallet && settled && !dismissed && !newUserPromoClaimed;
+  const show = isLoggedIn && !!wallet && settled && !dismissed && isNewAccount && !newUserPromoClaimed;
 
   return { show, dismiss, goEarn };
 }

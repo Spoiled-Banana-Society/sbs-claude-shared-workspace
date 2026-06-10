@@ -28,6 +28,33 @@ export async function GET(req: Request) {
       }
     } catch { /* stats are decoration — promos still return */ }
 
+    // One-time backfill: users who bought passes BEFORE per-purchase history
+    // existed (2026-06-10) get their Buy-10 Purchase History reconstructed
+    // from the real completed purchase records, then persisted so this never
+    // runs again for them.
+    try {
+      const mint = promos.find((p) => p.type === 'mint');
+      if (mint && (mint.modalContent.totalMinted ?? 0) > 0 && !(mint.modalContent.mintHistory?.length)) {
+        const { getPurchaseHistory } = await import('@/lib/db');
+        const completed = (await getPurchaseHistory(userId))
+          .filter((x) => x.status === 'completed' && x.quantity > 0)
+          .sort((a, b) => (b.createdAt < a.createdAt ? -1 : 1))
+          .slice(0, 50);
+        if (completed.length > 0) {
+          mint.modalContent.mintHistory = completed.map((x) => ({
+            date: x.createdAt.slice(0, 10),
+            quantity: x.quantity,
+            status: 'claimed' as const,
+          }));
+          const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+          await getAdminFirestore()
+            .collection('v2_users').doc(userId)
+            .collection('promos').doc(mint.id)
+            .set({ modalContent: { mintHistory: mint.modalContent.mintHistory } }, { merge: true });
+        }
+      }
+    } catch { /* backfill is best-effort */ }
+
     return json(promos, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
