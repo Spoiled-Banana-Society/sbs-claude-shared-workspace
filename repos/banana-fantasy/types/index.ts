@@ -421,6 +421,10 @@ export interface Promo {
     founderHistory?: { date: string; draftName: string; amount: number }[];
     mintHistory?: { date: string; quantity: number; status: 'pending' | 'claim' | 'claimed' }[];
     totalMinted?: number;
+    /** All-time 4-draft completions (daily-drafts promo) — never decrements. */
+    totalDailyClaims?: number;
+    /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
+    lifetimePaidDrafts?: number;
   };
 }
 

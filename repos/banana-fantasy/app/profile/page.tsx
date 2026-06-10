@@ -54,6 +54,26 @@ export default function ProfilePage() {
   // Account-synced first-draft promo claim state.
   const [promoClaimed] = useSyncedFlag<boolean>('firstDraftPromoClaimed', false);
 
+  // Real name-based referral link (…/r/BorisV) for the Referral Code row —
+  // this used to show the raw wallet address, which is NOT a referral code.
+  const [refData, setRefData] = useState<{ code: string | null; link: string | null } | null>(null);
+  const [copiedRef, setCopiedRef] = useState(false);
+  const refUserId = user?.walletAddress ?? user?.id;
+  const refName = user?.username || '';
+  useEffect(() => {
+    if (!refUserId) return;
+    fetch(`/api/referrals?userId=${encodeURIComponent(refUserId)}${refName ? `&username=${encodeURIComponent(refName)}` : ''}`)
+      .then((r) => r.json())
+      .then((d) => setRefData({ code: d.code ?? null, link: d.link ?? null }))
+      .catch(() => {});
+  }, [refUserId, refName]);
+  const handleCopyReferral = () => {
+    if (!refData?.link) return;
+    navigator.clipboard.writeText(refData.link).catch(() => {});
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 2000);
+  };
+
   // Not logged in
   if (authLoading) {
     return (
@@ -323,15 +343,18 @@ export default function ProfilePage() {
               <div className="flex items-center gap-2">
                 <span className="text-lg">🔗</span>
                 <div>
-                  <p className="text-white text-sm font-medium">Referral Code</p>
-                  <p className="text-white/30 text-xs font-mono">{truncateAddress(user.walletAddress)}</p>
+                  <p className="text-white text-sm font-medium">Referral Link</p>
+                  <p className="text-white/30 text-xs font-mono">
+                    {refData?.code ? `/r/${refData.code}` : 'Loading…'}
+                  </p>
                 </div>
               </div>
               <button
-                onClick={handleCopyWallet}
-                className="text-banana text-xs font-bold hover:underline"
+                onClick={handleCopyReferral}
+                disabled={!refData?.link}
+                className="text-banana text-xs font-bold hover:underline disabled:opacity-40"
               >
-                {copiedWallet ? 'Copied!' : 'Copy'}
+                {copiedRef ? 'Copied!' : 'Copy Link'}
               </button>
             </div>
           </div>

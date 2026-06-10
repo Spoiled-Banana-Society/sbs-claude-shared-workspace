@@ -5,6 +5,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { getPublicUsers } from '@/lib/friends';
+import { currentKingWeek } from '@/lib/kingWeek';
+import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
 /**
@@ -21,20 +23,6 @@ import { logger } from '@/lib/logger';
  * a fresh fill shows within seconds.
  */
 
-const WEEK_CLOSE_UTC_HOUR = 6; // Monday 06:00 UTC == Sunday 11pm PT (PDT)
-
-/** Start of the current King week: the most recent Monday 06:00 UTC ≤ now. */
-function currentWeekStart(nowMs: number): Date {
-  const d = new Date(nowMs);
-  const day = d.getUTCDay(); // 0=Sun..6=Sat
-  // Days since the most recent Monday (UTC).
-  let daysSinceMonday = (day + 6) % 7;
-  // Before Monday 06:00 UTC we're still in the PREVIOUS week.
-  if (daysSinceMonday === 0 && d.getUTCHours() < WEEK_CLOSE_UTC_HOUR) daysSinceMonday = 7;
-  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - daysSinceMonday, WEEK_CLOSE_UTC_HOUR, 0, 0));
-  return start;
-}
-
 interface Standing { wallet: string; name: string; pfp: string | null; count: number; rank: number }
 
 let cache: { ts: number; weekStartIso: string; standings: Standing[]; totalPlayers: number } | null = null;
@@ -48,9 +36,8 @@ export async function GET(req: Request) {
   try {
     const me = (new URL(req.url).searchParams.get('me') || '').toLowerCase();
     const now = Date.now();
-    const weekStart = currentWeekStart(now);
-    const weekStartIso = weekStart.toISOString();
-    const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const week = currentKingWeek(now); // Mon 5am PT → Sun 11pm PT
+    const weekStartIso = week.startIso;
 
     if (!cache || now - cache.ts > CACHE_TTL_MS || cache.weekStartIso !== weekStartIso) {
       const db = getAdminFirestore();
@@ -61,9 +48,10 @@ export async function GET(req: Request) {
 
       const counts = new Map<string, number>();
       for (const doc of snap.docs) {
-        const e = doc.data() as { type?: string; userId?: string; metadata?: { passType?: string } };
+        const e = doc.data() as { type?: string; userId?: string; createdAtIso?: string; metadata?: { passType?: string } };
         if (e.type !== 'draft_filled') continue;
         if (e.metadata?.passType !== 'paid') continue;
+        if ((e.createdAtIso ?? '') >= week.endIso) continue; // fills after Sun 11pm PT don't count
         const wallet = (e.userId || '').toLowerCase();
         if (!wallet || wallet.startsWith('bot-')) continue;
         counts.set(wallet, (counts.get(wallet) ?? 0) + 1);
@@ -89,12 +77,20 @@ export async function GET(req: Request) {
 
     const meEntry = me ? cache.standings.find((s) => s.wallet === me) ?? null : null;
 
+    // Lifetime paid filled drafts for the viewer — same authoritative Go
+    // count ripeness uses, so "this week" and "all-time" can sit side by side.
+    const lifetime = me
+      ? await fetchOwnerPaidFilledCount(me).catch(() => null)
+      : null;
+
     return json({
       weekStartIso,
-      finalizesAtIso: weekEnd.toISOString(),
+      finalizesAtIso: week.endIso,
       totalPlayers: cache.totalPlayers,
       top: cache.standings.slice(0, 10),
-      me: meEntry ? { rank: meEntry.rank, count: meEntry.count } : me ? { rank: null, count: 0 } : null,
+      me: me
+        ? { rank: meEntry?.rank ?? null, count: meEntry?.count ?? 0, lifetime }
+        : null,
     });
   } catch (err) {
     logger.error('badges.king_leaderboard.failed', { err });

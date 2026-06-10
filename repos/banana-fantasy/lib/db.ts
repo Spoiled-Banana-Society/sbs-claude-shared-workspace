@@ -8,6 +8,7 @@ export const claimPromo = db.claimPromo;
 export const updatePromo = db.updatePromo;
 export const getReferralStats = db.getReferralStats;
 export const generateReferralCode = db.generateReferralCode;
+export const ensureNamedReferralCode = db.ensureNamedReferralCode;
 export const trackReferral = db.trackReferral;
 export const updateReferralRewards = db.updateReferralRewards;
 export const spinWheel = db.spinWheel;

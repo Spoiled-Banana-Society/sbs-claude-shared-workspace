@@ -69,11 +69,12 @@ export default function ReferralsPage() {
   const userId = user?.walletAddress || '';
   const username = user?.username || '';
 
-  // Fetch referral data
+  // Fetch referral data. Passing the display name keeps the name-based code
+  // (/r/BorisV) in sync if they renamed since the code was minted.
   useEffect(() => {
     if (!userId) return;
     setLoading(true);
-    fetch(`/api/referrals?userId=${encodeURIComponent(userId)}`)
+    fetch(`/api/referrals?userId=${encodeURIComponent(userId)}${username ? `&username=${encodeURIComponent(username)}` : ''}`)
       .then(r => r.json())
       .then(d => setData(d))
       .catch((err) => {
@@ -86,7 +87,7 @@ export default function ReferralsPage() {
         });
       })
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [userId, username]);
 
   // Generate code
   const handleGenerate = useCallback(async () => {
