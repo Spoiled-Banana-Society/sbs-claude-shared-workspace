@@ -16,7 +16,6 @@ import { logger } from '@/lib/logger';
  */
 
 const COLLECTION = 'active_offers';
-const FRESHNESS_MS = 120_000;
 
 export interface CachedOffer {
   tokenId: string;
@@ -35,9 +34,12 @@ export async function recordOffer(params: {
   offerer: string;
   endTimeSec: string | null;
 }): Promise<void> {
-  if (!isFirestoreConfigured() || !params.tokenId || !params.orderHash) return;
+  if (!isFirestoreConfigured() || !params.tokenId || !params.offerer) return;
   try {
-    await getAdminFirestore().collection(COLLECTION).doc(String(params.orderHash)).set({
+    // Key by orderHash when we have it; otherwise tokenId+offerer (one live offer
+    // per offerer per token) so the offer still records + shows.
+    const docId = params.orderHash || `${params.tokenId}-${params.offerer.toLowerCase()}`;
+    await getAdminFirestore().collection(COLLECTION).doc(docId).set({
       tokenId: String(params.tokenId),
       orderHash: params.orderHash,
       priceUsd: params.priceUsd,
@@ -66,17 +68,21 @@ export async function recordOfferConsumed(orderHash: string): Promise<void> {
   }
 }
 
-/** Recent (within freshness window), still-active cached offers for a token. */
+/**
+ * Active, not-yet-expired cached offers for a token. Unlike the listing cache
+ * (a short bridge over OpenSea's lag), OpenSea's OFFERS feed is unreliable for
+ * us, so this is the long-term source of truth: keep an offer until it's
+ * consumed (accepted/cancelled) or its on-chain expiry passes — not a 2-min TTL.
+ */
 export async function getRecentCachedOffers(tokenId: string): Promise<CachedOffer[]> {
   if (!isFirestoreConfigured() || !tokenId) return [];
   try {
-    // Single field-equality only (no composite index). Filter status + freshness
-    // in memory — a single token has few live offers.
+    // Single field-equality only (no composite index). Filter in memory.
     const snap = await getAdminFirestore().collection(COLLECTION).where('tokenId', '==', String(tokenId)).get();
     const now = Date.now();
     return snap.docs
       .map(d => d.data() as CachedOffer)
-      .filter(o => o.status === 'active' && now - (o.updatedAtMs ?? 0) <= FRESHNESS_MS);
+      .filter(o => o.status === 'active' && (!o.endTimeSec || Number(o.endTimeSec) * 1000 > now));
   } catch (e) {
     logger.warn('offerCache.getRecent_failed', { tokenId, err: (e as Error).message });
     return [];

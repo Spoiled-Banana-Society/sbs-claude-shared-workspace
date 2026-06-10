@@ -21,98 +21,25 @@ export async function GET(req: Request) {
   if (rateLimited) return rateLimited;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
-    }
-
     const tokenId = getSearchParam(req, 'tokenId');
     if (!tokenId) {
       return jsonError('Missing tokenId parameter', 400);
     }
 
-    // Fetch offers from OpenSea orderbook
-    const params = new URLSearchParams({
-      asset_contract_address: BBB4_CONTRACT,
-      token_ids: tokenId,
-      order_by: 'eth_price',
-      order_direction: 'desc',
-      limit: '50',
-    });
+    const offers: OfferData[] = [];
+    const seen = new Set<string>();
+    const nowMs = Date.now();
 
-    const offersRes = await fetch(
-      `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers?${params}`,
-      {
-        headers: {
-          accept: 'application/json',
-          'x-api-key': OPENSEA_API_KEY,
-        },
-        cache: 'no-store',
-      },
-    );
-
-    if (!offersRes.ok) {
-      const text = await offersRes.text();
-      console.error('[marketplace/offers] OpenSea error:', offersRes.status, text);
-      return jsonError('Failed to fetch offers', offersRes.status >= 500 ? 502 : offersRes.status);
-    }
-
-    const offersData = await offersRes.json();
-    const orders = offersData.orders ?? [];
-
-    // Parse each offer
-    const offers: OfferData[] = orders
-      .filter((order: Record<string, unknown>) => {
-        // Only include active/valid offers
-        const cancelled = order.cancelled as boolean;
-        const finalized = order.finalized as boolean;
-        return !cancelled && !finalized;
-      })
-      .map((order: Record<string, unknown>) => {
-        const protocolData = order.protocol_data as {
-          parameters: {
-            offerer: string;
-            offer: Array<{ startAmount: string; token: string }>;
-            endTime: string;
-          };
-        };
-        const params = protocolData.parameters;
-
-        // Sum USDC amounts from the offer array (the USDC the offerer is putting up)
-        const totalUsdcWei = params.offer.reduce((sum: bigint, item: { startAmount: string }) => {
-          return sum + BigInt(item.startAmount);
-        }, 0n);
-
-        // Convert from USDC wei (6 decimals) to dollars
-        const amount = Number(totalUsdcWei) / 1e6;
-
-        const expiresAt = new Date(Number(params.endTime) * 1000).toISOString();
-
-        return {
-          orderHash: order.order_hash as string,
-          offererAddress: params.offerer,
-          offererName: `${params.offerer.slice(0, 6)}...${params.offerer.slice(-4)}`,
-          offererPfp: null,
-          amount,
-          expiresAt,
-          protocolAddress: order.protocol_address as string,
-        };
-      })
-      .filter((offer: OfferData) => {
-        // Filter out expired offers
-        return new Date(offer.expiresAt) > new Date();
-      });
-
-    // Bridge OpenSea's offer indexing lag: add any cached offer for this token
-    // that OpenSea hasn't surfaced yet (deduped by orderHash). Without this a
-    // fresh offer silently didn't appear for minutes. Best-effort.
+    // 1) OUR offer cache first — the authoritative, instant source. Works even
+    //    when OpenSea's offers endpoint is erroring (which it currently is), so
+    //    an offer made here always shows here.
     try {
       const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
-      const cached = await getRecentCachedOffers(tokenId);
-      const seen = new Set(offers.map((o: OfferData) => o.orderHash));
-      const nowMs = Date.now();
-      for (const c of cached) {
-        if (seen.has(c.orderHash)) continue;
+      for (const c of await getRecentCachedOffers(tokenId)) {
         if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
+        const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         offers.push({
           orderHash: c.orderHash,
           offererAddress: c.offerer,
@@ -123,8 +50,52 @@ export async function GET(req: Request) {
           protocolAddress: '',
         });
       }
-      offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
-    } catch { /* best-effort overlay */ }
+    } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
+
+    // 2) OpenSea offers — best-effort supplement. NEVER fail the whole request on
+    //    an OpenSea error; our cache already covers offers made through SBS.
+    if (OPENSEA_API_KEY) {
+      try {
+        const params = new URLSearchParams({
+          asset_contract_address: BBB4_CONTRACT,
+          token_ids: tokenId,
+          order_by: 'eth_price',
+          order_direction: 'desc',
+          limit: '50',
+        });
+        const offersRes = await fetch(
+          `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers?${params}`,
+          { headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY }, cache: 'no-store' },
+        );
+        if (offersRes.ok) {
+          const offersData = await offersRes.json();
+          for (const order of (offersData.orders ?? []) as Array<Record<string, unknown>>) {
+            if (order.cancelled || order.finalized) continue;
+            const p = (order.protocol_data as { parameters?: { offerer: string; offer: Array<{ startAmount: string }>; endTime: string } })?.parameters;
+            if (!p) continue;
+            const hash = order.order_hash as string;
+            if (!hash || seen.has(hash)) continue;
+            const totalUsdcWei = (p.offer || []).reduce((s: bigint, it: { startAmount: string }) => s + BigInt(it.startAmount || '0'), 0n);
+            const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
+            if (new Date(expiresAt) <= new Date()) continue;
+            seen.add(hash);
+            offers.push({
+              orderHash: hash,
+              offererAddress: p.offerer,
+              offererName: `${p.offerer.slice(0, 6)}...${p.offerer.slice(-4)}`,
+              offererPfp: null,
+              amount: Number(totalUsdcWei) / 1e6,
+              expiresAt,
+              protocolAddress: order.protocol_address as string,
+            });
+          }
+        } else {
+          console.error('[marketplace/offers] OpenSea error (non-fatal):', offersRes.status);
+        }
+      } catch (e) { console.error('[marketplace/offers] OpenSea fetch failed (non-fatal):', e); }
+    }
+
+    offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
     // Enrich with SBS profiles (same pattern as listings route)
     const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
@@ -216,7 +187,8 @@ export async function POST(req: Request) {
     }
 
     const result = JSON.parse(text);
-    const orderHash = result.order?.order_hash || '';
+    // OpenSea's offer response shape has varied — try the known paths.
+    const orderHash = (result.order?.order_hash || result.order_hash || result.orders?.[0]?.order_hash || '') as string;
 
     // Cache the offer so the detail page shows it instantly. OpenSea's offers
     // feed lags (or silently never returns it), so without a cache a fresh offer
@@ -235,11 +207,16 @@ export async function POST(req: Request) {
       const offerer = meta.offerer || p.offerer;
       const usdcWei = (p.offer || []).reduce((s, it) => s + BigInt(it.startAmount || '0'), 0n);
       const priceUsd = typeof meta.priceUsd === 'number' ? meta.priceUsd : Number(usdcWei) / 1e6;
-      if (orderHash && tokenId && offerer) {
+      // Record even if OpenSea didn't return an orderHash — the offer cache uses
+      // a tokenId+offerer fallback key, so the offer still shows (the owner just
+      // can't one-click-accept until a real hash is known; the offer is real).
+      if (tokenId && offerer) {
         const { recordOffer } = await import('@/lib/marketplace/offerCache');
         await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd, offerer, endTimeSec: meta.endTimeSec || p.endTime || null });
+      } else {
+        console.error('[marketplace/offers] cache skip — missing tokenId/offerer', { hasMeta: !!body._meta, tokenId, offerer });
       }
-    } catch { /* best-effort cache write */ }
+    } catch (e) { console.error('[marketplace/offers] cache write failed:', e); }
 
     return json({ orderHash });
   } catch (err) {
