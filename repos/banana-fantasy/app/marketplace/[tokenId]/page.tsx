@@ -423,6 +423,14 @@ export default function NftDetailPage() {
     const txHashResult = (receipt as Record<string, unknown>).transactionHash ?? (receipt as Record<string, unknown>).hash;
 
     const sellerAddr = nft.listing?.protocol_data?.parameters?.offerer || nft.owner;
+
+    // The purchase consumed the seller's order — mark it dead in our listing
+    // cache (keyed by tokenId) so it no longer reads as "Listed" for the buyer.
+    void fetch('/api/marketplace/listings/cancelled', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokenId, wallet: sellerAddr || walletAddress }),
+    }).catch(() => { /* best-effort */ });
+
     if (sellerAddr) {
       notifySeller({
         sellerWallet: sellerAddr,

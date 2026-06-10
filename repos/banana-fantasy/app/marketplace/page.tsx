@@ -450,6 +450,20 @@ export default function MarketplacePage() {
       } catch { /* best-effort */ }
     };
 
+    // The purchase FULFILLS (consumes) the seller's order — but unlike a cancel,
+    // nothing told our listing cache it's dead, so the bought item kept showing
+    // "Listed $X" for the buyer. Mark it consumed (keyed by tokenId) + clear it
+    // locally so it reads as unlisted immediately.
+    const markListingConsumed = async () => {
+      try {
+        await fetch('/api/marketplace/listings/cancelled', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tokenId: selectedTeam.tokenId, wallet: selectedTeam.ownerAddress || walletAddress }),
+        });
+      } catch { /* best-effort */ }
+      patchMyNftListing(selectedTeam.tokenId, null);
+    };
+
     if (paymentMethod === 'usdc') {
       setBuyStep('processing');
       setTxError(null);
@@ -464,6 +478,7 @@ export default function MarketplacePage() {
 
         await executeBuy();
         await reassignFillingPassIfNeeded();
+        await markListingConsumed();
         setBuyStep('complete');
         setTimeout(() => {
           setShowBuyModal(false);
@@ -526,6 +541,7 @@ export default function MarketplacePage() {
       setCardFlowStep('buying');
       await executeBuy();
       await reassignFillingPassIfNeeded();
+      await markListingConsumed();
       setBuyStep('complete');
       setCardFlowStep('idle');
       setTimeout(() => {
@@ -549,7 +565,7 @@ export default function MarketplacePage() {
       setBuyStep('confirm');
       setCardFlowStep('idle');
     }
-  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, selectedTeam, walletAddress, cardFlowStep]);
+  }, [executeBuy, fundWallet, paymentMethod, refetchActivity, refetchListings, refetchMyNfts, patchMyNftListing, selectedTeam, walletAddress, cardFlowStep]);
 
   const handleList = useCallback(async () => {
     if (!selectedTeam || !walletAddress || !listPrice) return;
