@@ -10,6 +10,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
+import { runInBackground } from '@/lib/serverBackground';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import {
@@ -63,8 +64,10 @@ export async function GET(
     };
 
     // Mark read on every GET — opening the thread counts as reading it.
+    // waitUntil-backed: a detached promise dies with the frozen lambda and
+    // the thread incorrectly stays unread.
     if (thread) {
-      void markThreadRead(user.walletAddress, otherWallet).catch(() => {});
+      runInBackground('dm.mark-read', markThreadRead(user.walletAddress, otherWallet));
     }
 
     return NextResponse.json({

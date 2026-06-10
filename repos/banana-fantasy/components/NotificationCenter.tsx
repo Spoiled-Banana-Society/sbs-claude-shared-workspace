@@ -152,6 +152,27 @@ export function pushNotification(notif: { type: NotificationType; title: string;
   if (typeof window === 'undefined') return;
   const wallet = resolveWallet();
   if (!wallet) return;
+  // INSTANT local render: when a dedupeKey is provided we can predict the
+  // server doc id (mirrors dedupeDocId in lib/queueNotifications.ts), so the
+  // bell on THIS device shows the entry the same millisecond — no waiting on
+  // the POST → Firestore → RTDB round trip (which read as a ~2s late ping,
+  // e.g. after the wheel stopped). The server copy reconciles under the same
+  // id, so nothing duplicates.
+  if (notif.dedupeKey) {
+    const id = `${wallet}__${notif.dedupeKey}`.replace(/[/\\\s]+/g, '_').slice(0, 1400);
+    window.dispatchEvent(new CustomEvent('sbs-notifs-local', {
+      detail: {
+        id,
+        type: notif.type,
+        title: notif.title,
+        message: notif.message,
+        link: notif.link,
+        icon: notif.icon,
+        createdAt: new Date().toISOString(),
+        read: false,
+      },
+    }));
+  }
   void fetch('/api/marketplace/notifications', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -226,6 +247,11 @@ export function useNotifications() {
   // that re-render gets eaten (the "first tap highlights but does nothing, second
   // tap works" bug). We only setState when something actually changed.
   const lastSigRef = useRef<string>('');
+  // Optimistic entries injected locally by pushNotification (id → entry).
+  // A refetch racing the POST would return a list WITHOUT the just-pushed
+  // entry and wipe it from the bell; we re-merge anything younger than 15s
+  // until the server copy (same deterministic id) shows up.
+  const localEntriesRef = useRef<Map<string, Notification>>(new Map());
 
   const refetch = useCallback(async () => {
     const w = walletRef.current;
@@ -234,7 +260,7 @@ export function useNotifications() {
       const res = await fetch(`/api/marketplace/notifications?wallet=${encodeURIComponent(w)}&all=1`);
       if (!res.ok) return;
       const json = await res.json();
-      const mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => {
+      let mapped: Notification[] = (json.notifications ?? []).map((n: Record<string, unknown>) => {
         const id = n.id as string;
         const serverRead = Boolean(n.read);
         // Server confirmed read → local override no longer needed.
@@ -254,6 +280,20 @@ export function useNotifications() {
           icon: (n.icon as string) || undefined,
         };
       });
+      // Re-merge optimistic local entries the server hasn't returned yet
+      // (POST still in flight). Expire after 15s — by then the server copy
+      // either landed under the same id or the POST genuinely failed.
+      if (localEntriesRef.current.size > 0) {
+        const nowMs = Date.now();
+        const serverIds = new Set(mapped.map((n) => n.id));
+        for (const [id, entry] of localEntriesRef.current) {
+          if (serverIds.has(id) || nowMs - new Date(entry.createdAt).getTime() > 15_000) {
+            localEntriesRef.current.delete(id);
+          } else {
+            mapped = [entry, ...mapped];
+          }
+        }
+      }
       currentIdsRef.current = mapped.map((n) => n.id);
 
       // Mobile poll-driven toast: iOS suspends the websocket, so the live
@@ -375,6 +415,26 @@ export function useNotifications() {
       try { unsub(); } catch { /* ignore */ }
     };
   }, [walletAddress]);
+
+  // Instant local insert from pushNotification (same-device, zero-latency —
+  // e.g. the wheel-stop win noti appears the millisecond the wheel stops,
+  // not after the POST→Firestore→ping round trip). Server copy reconciles
+  // under the same deterministic id, so refetches dedupe naturally.
+  useEffect(() => {
+    const onLocal = (e: Event) => {
+      const entry = (e as CustomEvent).detail as Notification | undefined;
+      if (!entry?.id || !entry.title) return;
+      _toastedIds.add(entry.id); // acting device has its own pop-up — never poll-toast this
+      localEntriesRef.current.set(entry.id, entry);
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === entry.id)) return prev;
+        currentIdsRef.current = [entry.id, ...currentIdsRef.current];
+        return [entry, ...prev];
+      });
+    };
+    window.addEventListener('sbs-notifs-local', onLocal);
+    return () => window.removeEventListener('sbs-notifs-local', onLocal);
+  }, []);
 
   // Cross-instance read-all: the bell badge (header) and the /notifications
   // page are SEPARATE useNotifications instances. Without this, "mark all read"

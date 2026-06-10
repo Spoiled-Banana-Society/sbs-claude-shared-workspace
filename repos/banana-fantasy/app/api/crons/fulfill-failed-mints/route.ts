@@ -1,4 +1,5 @@
 import { FieldValue } from 'firebase-admin/firestore';
+import { runInBackground } from '@/lib/serverBackground';
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { json, jsonError } from '@/lib/api/routeUtils';
@@ -47,7 +48,7 @@ export async function GET(req: Request) {
   if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
   if (!isAdminMintConfigured()) return jsonError('Admin mint not configured', 503);
 
-  void recordCronHeartbeat('fulfill-failed-mints'); // liveness for the watchdog
+  runInBackground('cron.heartbeat', recordCronHeartbeat('fulfill-failed-mints')); // liveness for the watchdog
 
   const db = getAdminFirestore();
 

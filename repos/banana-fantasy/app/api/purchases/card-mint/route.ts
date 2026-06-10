@@ -31,6 +31,7 @@ import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { pushStreamEventBg } from '@/lib/userEventStream';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -315,7 +316,8 @@ export async function POST(req: Request) {
       logger.warn('card-mint.register_go_api_failed', { userId, err: (e as Error).message });
     }
     // Grey pre-reveal draft-pass image for each fresh token (real token id → #).
-    void writeDraftPassMetadata(mintResult.tokenIds);
+    // waitUntil-backed — a detached write dies with the frozen lambda.
+    runInBackground('mint.pass-metadata', writeDraftPassMetadata(mintResult.tokenIds));
 
     // 4. Card-fee credit → free draft (card payments only). Credit the MoonPay
     //    fee for this quantity (feeForQty) toward a free draft; once accumulated
@@ -382,7 +384,7 @@ export async function POST(req: Request) {
         // Register as 'paid' (NOT 'free' / no free-origin stamp) so the reward
         // draft is a normal usable pass — enterable in promos.
         await registerMintedTokens(userId, rewardMint.tokenIds, 'paid');
-        void writeDraftPassMetadata(rewardMint.tokenIds);
+        runInBackground('mint.reward-pass-metadata', writeDraftPassMetadata(rewardMint.tokenIds));
         try {
           await getAdminFirestore()
             .collection(CARD_FEE_CREDIT_COLLECTION)

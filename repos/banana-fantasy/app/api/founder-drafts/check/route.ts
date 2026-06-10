@@ -1,4 +1,5 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { runInBackground } from '@/lib/serverBackground';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -80,9 +81,9 @@ async function creditAllDrafters(
     try {
       const promo = await recordFounderDraftJoin(wallet, draftId);
       // Founders League badge — playing in a founder draft earns it. Idempotent
-      // + fires the bell/toast on first unlock. Fire-and-forget so a badge
-      // hiccup never blocks the founder-promo credit.
-      void unlockBadge(wallet, 'founders-league', { draftId }).catch(() => {});
+      // + fires the bell/toast on first unlock. waitUntil-backed so the unlock
+      // survives the response without blocking the founder-promo credit.
+      runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
       out.results.push({
         wallet,
         ok: !!promo,

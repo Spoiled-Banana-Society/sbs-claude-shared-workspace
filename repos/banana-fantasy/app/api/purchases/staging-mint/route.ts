@@ -9,6 +9,7 @@ import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
 import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -69,8 +70,10 @@ export async function POST(req: Request) {
     }
 
     // 1c. Give each fresh token the grey pre-reveal draft-pass image (keyed on
-    //     the real token id) so it shows the pass on OpenSea/wallet before draft.
-    void writeDraftPassMetadata(tokenIds);
+    //     the real token id) so it shows the pass on OpenSea/wallet before
+    //     draft. waitUntil-backed — a detached write dies with the frozen
+    //     lambda and the pass shows blank on OpenSea.
+    runInBackground('mint.pass-metadata', writeDraftPassMetadata(tokenIds));
 
     // 2. Recount the counter from the engine's real spendable inventory and
     //    write the activity event in the same transaction. draftPasses becomes

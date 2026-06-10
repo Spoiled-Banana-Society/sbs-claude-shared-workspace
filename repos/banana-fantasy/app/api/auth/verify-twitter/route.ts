@@ -61,10 +61,12 @@ export async function POST(req: Request) {
       newUserPromoClaimed: false,
     });
 
-    // Fire-and-forget user event
+    // Background user event (waitUntil-backed — feeds referral milestone
+    // detection; a detached promise dies with the frozen lambda).
     try {
       const { logUserEvent } = await import('@/lib/userEvents');
-      void logUserEvent(walletAddress, 'x_linked', { twitterHandle });
+      const { runInBackground } = await import('@/lib/serverBackground');
+      runInBackground('auth.x-linked-event', logUserEvent(walletAddress, 'x_linked', { twitterHandle }));
     } catch {
       // non-fatal
     }

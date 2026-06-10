@@ -15,6 +15,7 @@
 export const dynamic = 'force-dynamic';
 
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { runInBackground } from '@/lib/serverBackground';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
@@ -95,15 +96,15 @@ export async function POST(req: Request) {
       fiatCurrency: 'USD',
     });
 
-    // Log the session for the admin onramp dashboard. Fire-and-forget;
-    // never block the response on it.
-    logOnrampSessionCreated({
+    // Log the session for the admin onramp dashboard. waitUntil-backed;
+    // never blocks the response.
+    runInBackground('onramp.session-created', logOnrampSessionCreated({
       userId: walletAddress,
       walletAddress,
       provider: 'coinbase',
       partnerUserId,
       amount: presetCryptoAmount,
-    }).catch(() => { /* non-fatal */ });
+    }));
 
     return json({ url, sessionToken: token, redirectUrl });
   } catch (err) {

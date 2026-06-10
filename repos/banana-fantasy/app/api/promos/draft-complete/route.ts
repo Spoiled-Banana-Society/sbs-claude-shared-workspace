@@ -1,4 +1,5 @@
 import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
+import { runInBackground } from '@/lib/serverBackground';
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
@@ -40,9 +41,12 @@ export async function POST(req: Request) {
 
     const promo = await recordDraftCompletion(userId, draftId, passType);
 
-    // Fire-and-forget exposure recompute. Idempotent + reads from the Go
-    // API, so runs in the background without blocking the response.
-    void recomputeUserExposure(userId).catch((err) => logger.warn(LOG_SOURCES.promo.EXPOSURE_RECOMPUTE_FAILED, { err, actor: userId, context: { draftId } }));
+    // Background exposure recompute (waitUntil-backed so it survives the
+    // response). Idempotent + reads from the Go API; never blocks the response.
+    runInBackground(
+      'promo.exposure-recompute',
+      recomputeUserExposure(userId).catch((err) => logger.warn(LOG_SOURCES.promo.EXPOSURE_RECOMPUTE_FAILED, { err, actor: userId, context: { draftId } })),
+    );
 
     return json({ promo }, 200);
   } catch (err) {

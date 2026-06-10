@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { runInBackground } from '@/lib/serverBackground';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
@@ -91,7 +92,7 @@ export async function GET(req: Request) {
         const n = parseFloat(s);
         return Number.isFinite(n) ? n : undefined;
       };
-      updateOfframpFromTx({
+      runInBackground('offramp.tx-audit', updateOfframpFromTx({
         userId: auditUserKey,
         coinbaseTxId: target.id,
         coinbaseTxStatus: target.status,
@@ -99,7 +100,7 @@ export async function GET(req: Request) {
         coinbaseTotalUsd: numOrUndef(target.total?.value),
         coinbaseFeeUsd: numOrUndef(target.coinbase_fee?.value),
         coinbaseExchangeRate: numOrUndef(target.exchange_rate?.value),
-      }).catch(() => { /* ignored — audit is fire-and-forget */ });
+      }));
     }
 
     return json({

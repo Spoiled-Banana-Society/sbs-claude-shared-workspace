@@ -15,6 +15,7 @@
 export const dynamic = 'force-dynamic';
 
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { runInBackground } from '@/lib/serverBackground';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
@@ -156,14 +157,14 @@ export async function GET(req: Request) {
     // so support can see exactly why a user got stuck. Fire-and-forget.
     if (classified.kind === 'failed') {
       const userKey = (session.walletAddress ?? session.userId).toLowerCase();
-      logOnrampFailure({
+      runInBackground('onramp.failure-log', logOnrampFailure({
         userId: userKey,
         failureReason: classified.code,
         failureMessage: classified.reason,
         ...(classified.nextAvailableAt ? { nextAvailableAt: classified.nextAvailableAt } : {}),
         coinbaseTxId: latest.id,
         coinbaseTxStatus: latest.status,
-      }).catch(() => { /* non-fatal */ });
+      }));
     }
 
     return json(classified);

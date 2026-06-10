@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import type { Firestore } from 'firebase-admin/firestore';
+import { runInBackground } from '@/lib/serverBackground';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
@@ -103,7 +104,7 @@ export async function GET(req: Request) {
   }
   const dry = new URL(req.url).searchParams.get('dry') === '1';
 
-  void recordCronHeartbeat('capture-draft-data'); // liveness for the watchdog
+  runInBackground('cron.heartbeat', recordCronHeartbeat('capture-draft-data')); // liveness for the watchdog
 
   try {
     const db = getAdminFirestore();

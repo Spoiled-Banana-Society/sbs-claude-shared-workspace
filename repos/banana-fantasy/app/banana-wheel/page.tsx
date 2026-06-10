@@ -150,6 +150,9 @@ export default function BananaWheelPage() {
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
           icon: 'ticket',
+          // Stable key → idempotent server doc AND the instant local bell
+          // insert in pushNotification (entry shows the ms the wheel stops).
+          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
@@ -158,6 +161,7 @@ export default function BananaWheelPage() {
           title: 'Jackpot Draft Won!',
           message: 'You won a Jackpot draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
+          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
@@ -166,6 +170,7 @@ export default function BananaWheelPage() {
           title: 'HOF Draft Won!',
           message: 'You won a HOF draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
           link: '/drafting',
+          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
         });
       }
     },

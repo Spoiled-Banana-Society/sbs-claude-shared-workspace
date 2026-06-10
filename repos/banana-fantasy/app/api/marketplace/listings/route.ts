@@ -1,4 +1,5 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { runInBackground } from '@/lib/serverBackground';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import {
@@ -216,10 +217,10 @@ export async function GET(req: Request) {
       if (teamsByToken.has(tokenId)) continue;
       if (refreshedTokenIds.has(tokenId)) continue;
       refreshedTokenIds.add(tokenId);
-      void fetch(
+      runInBackground('opensea.metadata-refresh', fetch(
         `${OPENSEA_API_BASE}/api/v2/chain/${OPENSEA_CHAIN}/contract/${BBB4_CONTRACT}/nfts/${tokenId}/refresh`,
         { method: 'POST', headers: { accept: 'application/json', 'x-api-key': OPENSEA_API_KEY } },
-      ).catch(() => { /* refresh is best-effort */ });
+      ));
     }
 
     // Deduplicate — keep only the first (most recent) listing per team

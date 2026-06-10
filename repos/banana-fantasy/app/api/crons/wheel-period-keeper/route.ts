@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import type { Hex } from 'viem';
+import { runInBackground } from '@/lib/serverBackground';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
@@ -52,7 +53,7 @@ export async function GET(req: Request) {
     return jsonError('Unauthorized', 401);
   }
 
-  void recordCronHeartbeat('wheel-period-keeper'); // liveness for the watchdog
+  runInBackground('cron.heartbeat', recordCronHeartbeat('wheel-period-keeper')); // liveness for the watchdog
 
   try {
     const contractAddress = await getWheelProofContractAddress();

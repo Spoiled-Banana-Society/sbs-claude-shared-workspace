@@ -5,6 +5,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { getQueueStatus, joinQueue } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { notifyQueueJoined, notifyQueueFilled } from '@/lib/queueNotifications';
+import { runInBackground } from '@/lib/serverBackground';
 
 export async function GET() {
   try {
@@ -32,15 +33,17 @@ export async function POST(req: Request) {
 
     const queue = await joinQueue(userId, queueType);
 
-    // Notifications (fire-and-forget)
+    // Notifications — waitUntil-backed so they SURVIVE the response (a bare
+    // .catch() detaches the promise, which dies with the frozen lambda; queue
+    // notis were silently lost that way).
     const userRounds = queue.rounds.filter(r => r.status === 'filling' && r.members.some(m => m.wallet === userId)).length;
     if (userRounds > 0) {
-      notifyQueueJoined(userId, queueType, userRounds).catch(() => {});
+      runInBackground('queue.notify-joined', notifyQueueJoined(userId, queueType, userRounds));
     }
     // Notify all members of any rounds that just filled
     for (const r of queue.rounds) {
       if (r.status === 'ready' && r.members.length >= 10) {
-        notifyQueueFilled(r.members.map(m => m.wallet), queueType).catch(() => {});
+        runInBackground('queue.notify-filled', notifyQueueFilled(r.members.map(m => m.wallet), queueType));
       }
     }
 
