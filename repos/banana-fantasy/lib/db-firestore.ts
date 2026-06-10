@@ -255,9 +255,11 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   // Welcome bell notification (Boris 2026-06-10): every new user gets ONE
   // persisted noti explaining how to earn their free spin, linking straight
   // to the new-user promo modal. Dedupe-keyed → exactly once per account.
+  // AWAITED — a `void` fire-and-forget can die when the lambda freezes
+  // after the response (the same failure that ate promo notis pre-June-9).
   try {
     const { createNotification } = await import('@/lib/queueNotifications');
-    void createNotification(userId, {
+    await createNotification(userId, {
       type: 'welcome',
       title: 'Welcome! Your Free Spin is Waiting',
       message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',

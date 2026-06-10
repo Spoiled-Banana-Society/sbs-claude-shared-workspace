@@ -183,7 +183,7 @@ function NewUserSpinCard({ goEarn, dismiss }: { goEarn: () => void; dismiss: () 
     <CardShell>
       {SpinIcon}
       <div className="flex-1 min-w-0 cursor-pointer" onClick={goEarn} role="button" tabIndex={0}>
-        <p className="text-text-primary font-semibold text-[14px] leading-tight">Free Spin Waiting</p>
+        <p className="text-text-primary font-semibold text-[14px] leading-tight">New User Promo — Free Spin Waiting</p>
         <p className="text-text-secondary text-xs mt-0.5">Win up to 20 free drafts — at least 1 guaranteed</p>
       </div>
       <button

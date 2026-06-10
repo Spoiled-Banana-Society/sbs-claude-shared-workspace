@@ -55,6 +55,27 @@ export async function GET(req: Request) {
       }
     } catch { /* backfill is best-effort */ }
 
+    // Backstop: new accounts seeded before the welcome noti existed (or whose
+    // seed-time write was lost) get it here — dedupe-keyed, so for everyone
+    // else this is a guaranteed no-op. Only fires for genuinely new accounts.
+    try {
+      const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+      const userSnap = await getAdminFirestore().collection('v2_users').doc(userId).get();
+      const createdAt = userSnap.get('createdAt') as string | undefined;
+      const isNew = !!createdAt && Date.now() - new Date(createdAt).getTime() < 7 * 24 * 60 * 60 * 1000;
+      if (isNew) {
+        const { createNotification } = await import('@/lib/queueNotifications');
+        await createNotification(userId, {
+          type: 'welcome',
+          title: 'Welcome! Your Free Spin is Waiting',
+          message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
+          link: '/promos?promo=6',
+          dedupeKey: 'welcome-new-user',
+          icon: '🎁',
+        });
+      }
+    } catch { /* best-effort */ }
+
     return json(promos, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
