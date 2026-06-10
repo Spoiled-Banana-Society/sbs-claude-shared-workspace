@@ -113,6 +113,24 @@ export default function TestBadges() {
         </div>
       ))}
 
+      {/* TEMP: live tooltip QA — hover any disc. Real <BadgeIcon> with the real
+          <Tooltip>, unlocked (description) + locked (criteria) variants. */}
+      <h2 style={{ fontSize: 15, color: '#fbbf24', marginTop: 46 }}>Tooltip QA (hover — left = unlocked, right = locked)</h2>
+      <div id="tooltip-qa" style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginTop: 12, paddingTop: 70 }}>
+        {['ripeness-ripe', 'bbb-champion-3', 'hof-champion-2', 'jackpot-club', 'hof-club', 'king-of-drafts', 'founders-league', 'og', 'team-kc'].map(id => {
+          const b = BADGE_CATALOG.find(x => x.id === id)!;
+          return (
+            <div key={id} style={{ textAlign: 'center' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <span data-qa={`tip-${id}-unlocked`}><BadgeIcon badge={b} size={44} unlocked /></span>
+                <span data-qa={`tip-${id}-locked`}><BadgeIcon badge={b} size={44} unlocked={false} /></span>
+              </div>
+              <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 6 }}>{b.label}</div>
+            </div>
+          );
+        })}
+      </div>
+
       <h2 style={{ fontSize: 15, color: '#fbbf24', marginTop: 46 }}>The 6 banana tiers (locked vs unlocked)</h2>
       <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', marginTop: 12 }}>
         {RIPENESS_LADDER.map((r, i) => {

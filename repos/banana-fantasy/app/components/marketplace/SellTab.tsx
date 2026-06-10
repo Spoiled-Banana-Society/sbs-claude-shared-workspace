@@ -100,6 +100,11 @@ export function SellTab({
   onCloseSuccessModal,
 }: SellTabProps) {
   const [showUnsellable, setShowUnsellable] = useState(false);
+  // Team # / League # search (Boris 2026-06-10) — same instant client-side
+  // filter style as the Buy tab's inputs. Team # = token id; league # comes
+  // from the marketplace index overlay.
+  const [teamSearch, setTeamSearch] = useState('');
+  const [leagueSearch, setLeagueSearch] = useState('');
   // Inventory view toggle. DEFAULT = drafted TEAMS (the thing people actually
   // sell). Passes live behind toggles, split paid vs free, plus an All view.
   // A "pass" = an NFT with no backend roster record (hasBackendRecord === false);
@@ -111,7 +116,11 @@ export function SellTab({
   // hasBackendRecord flips true and it appears). No view toggle.
   // ...plus wheel-won JP/HOF passes that are still filling — those are sellable
   // now (until their draft fills), so surface them even without a roster record.
-  const inView = myNfts.filter(t => t.hasBackendRecord !== false || t.fillingWheelLevel != null);
+  const searched = myNfts.filter(t =>
+    (!teamSearch || String(t.tokenId) === teamSearch.trim()) &&
+    (!leagueSearch || String(t.leagueNumber ?? '') === leagueSearch.trim()),
+  );
+  const inView = searched.filter(t => t.hasBackendRecord !== false || t.fillingWheelLevel != null);
 
   // Tier first, then NEWEST first (highest token id) within a tier, so the team
   // you just drafted sits at the very top.
@@ -130,7 +139,27 @@ export function SellTab({
     <>
       <div>
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
-          <h3 className="text-lg font-semibold text-text-primary mb-2">Sell Your Teams</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+            <h3 className="text-lg font-semibold text-text-primary">Sell Your Teams</h3>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={teamSearch}
+                onChange={(e) => setTeamSearch(e.target.value)}
+                placeholder="Team #"
+                className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                value={leagueSearch}
+                onChange={(e) => setLeagueSearch(e.target.value)}
+                placeholder="League #"
+                className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+            </div>
+          </div>
           <p className="text-text-secondary text-sm mb-6">List any of your teams for sale. Set your price and buyers can purchase instantly.</p>
 
           {myNftsLoading ? (
@@ -247,7 +276,13 @@ export function SellTab({
             </div>
           )}
 
-          {!myNftsLoading && sellable.length === 0 && unsellable.length > 0 && !showUnsellable && (
+          {!myNftsLoading && (teamSearch || leagueSearch) && fullList.length === 0 && myNfts.length > 0 && (
+            <p className="text-text-muted text-sm text-center py-6">
+              No teams match your search.
+            </p>
+          )}
+
+          {!myNftsLoading && !(teamSearch || leagueSearch) && sellable.length === 0 && unsellable.length > 0 && !showUnsellable && (
             <p className="text-text-muted text-sm text-center py-6">
               Nothing you can list right now — your teams/passes are free entries, listable once the season starts.
             </p>

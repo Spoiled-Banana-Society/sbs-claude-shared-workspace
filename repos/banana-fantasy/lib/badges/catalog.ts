@@ -41,10 +41,10 @@ export const BADGE_CATALOG: Badge[] = [
   ...RIPENESS_TIERS.map((t): Badge => ({
     id: ripenessBadgeId(t.key),
     label: t.label,
-    description: `Your banana is ${t.label} — ${t.range} paid drafts done in BBB4.`,
+    description: `${t.range} paid drafts this season.`,
     criteria: t.min <= 0
-      ? 'Your starting banana — everyone has one'
-      : `Do ${t.min}+ paid BBB4 drafts`,
+      ? 'Everyone starts here.'
+      : `Fill ${t.min}+ paid drafts.`,
     category: 'ripeness',
     contentKind: 'banana',
     contentColor: t.color, // the banana fills with this when unlocked
@@ -62,8 +62,8 @@ export const BADGE_CATALOG: Badge[] = [
   ...BBB_SEASONS.map(([num, roman]): Badge => ({
     id: `bbb-champion-${num}`,
     label: `BBB ${roman} Champion`,
-    description: `BBB Season ${num} Champion`,
-    criteria: 'Win a BBB season final',
+    description: `Won the Season ${num} final.`,
+    criteria: 'Win a BBB season final.',
     category: 'championship',
     contentKind: 'numeral-crown',
     numeral: roman,
@@ -76,8 +76,8 @@ export const BADGE_CATALOG: Badge[] = [
   ...HOF_SEASONS.map(([num, roman]): Badge => ({
     id: `hof-champion-${num}`,
     label: `HOF ${roman} Champion`,
-    description: `HOF Season ${num} Champion`,
-    criteria: 'Win a HOF bracket',
+    description: `Won the Season ${num} HOF bracket.`,
+    criteria: 'Win a HOF bracket.',
     category: 'championship',
     contentKind: 'hof-champ',
     numeral: roman,
@@ -92,8 +92,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'jackpot-club',
     label: 'Jackpot Club',
-    description: "Jackpot Club — you've entered a Jackpot draft",
-    criteria: 'Enter a Jackpot draft (or win Jackpot on the wheel)',
+    description: 'You landed a Jackpot draft.',
+    criteria: 'Land a Jackpot draft.',
     category: 'club',
     contentKind: 'text',
     text: 'JP',
@@ -105,8 +105,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'hof-club',
     label: 'HOF Club',
-    description: "HOF Club — you've entered a Hall of Fame draft",
-    criteria: 'Enter a HOF draft (or win HOF on the wheel)',
+    description: 'You landed a Hall of Fame draft.',
+    criteria: 'Land a HOF draft.',
     category: 'club',
     contentKind: 'text',
     text: 'HOF',
@@ -120,8 +120,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'king-of-drafts',
     label: 'King of Drafts',
-    description: 'King of Drafts — most paid drafts last week',
-    criteria: 'Enter the most paid drafts of anyone in a week',
+    description: 'Most paid drafts filled this week. Wear the crown.',
+    criteria: 'Fill the most paid drafts Mon–Sun.',
     category: 'status',
     contentKind: 'icon',
     iconName: 'crown',
@@ -133,8 +133,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'founders-league',
     label: 'Founders League',
-    description: 'Founders League — you played in a founders league',
-    criteria: 'Play in a Founders league',
+    description: 'You played in a Founders league.',
+    criteria: 'Play in a Founders league.',
     category: 'status',
     contentKind: 'icon',
     iconName: 'key',
@@ -146,8 +146,8 @@ export const BADGE_CATALOG: Badge[] = [
   {
     id: 'og',
     label: 'OG',
-    description: 'OG — played a past Banana Best Ball season (BBB1, 2 or 3)',
-    criteria: 'Played a past Banana Best Ball season (BBB1–3)',
+    description: 'Here since BBB1–3.',
+    criteria: 'Played a past BBB season.',
     category: 'status',
     contentKind: 'text',
     text: 'OG',
@@ -199,8 +199,8 @@ export const BADGE_CATALOG: Badge[] = [
   ] as const).map(([id, name, code, color]): Badge => ({
     id,
     label: name,
-    description: `${name} fan`,
-    criteria: 'Always available — pick your team',
+    description: `Rep the ${name}.`,
+    criteria: 'Free for everyone.',
     category: 'team',
     contentKind: 'logo',
     rimColor: RIM_GREY,
