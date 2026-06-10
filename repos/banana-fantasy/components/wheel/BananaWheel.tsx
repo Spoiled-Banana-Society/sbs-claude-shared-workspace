@@ -478,7 +478,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               preserveAspectRatio="xMidYMid meet"
             />
             <circle cx="50" cy="50" r="7" fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
-            <circle cx="50" cy="50" r="6.5" fill="none" stroke="rgba(251,191,36,0.5)" strokeWidth="0.8" />
+            {/* Full-strength brand banana (#fbbf24) — at 50% opacity over the
+                dark hub it muddied into an antique gold, off-brand. */}
+            <circle cx="50" cy="50" r="6.5" fill="none" stroke="#fbbf24" strokeWidth="0.8" />
           </svg>
         </div>
 
