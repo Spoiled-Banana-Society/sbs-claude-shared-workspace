@@ -235,7 +235,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Get Pick 10 Get a SPIN',
       explanation:
-        'When you get the 10th pick in any paid draft you earn a free Banana Wheel spin. This can happen multiple times - each Pick 10 earns you a spin! 🍌 Good to know: this reward is for paid drafts. Free passes are on us purely for the fun of drafting, so they don\'t count toward this one.',
+        'When you get the 10th pick in any paid draft, you earn a Free Banana Spin. This can happen multiple times — each Pick 10 earns another Free Banana Spin! Only for Paid Drafts.',
       // Per-user state — starts empty. Real Pick 10s are appended by
       // recordPick10 on actual paid drafts. (Previously this carried 3 fake
       // demo rows incl. 2 'claim' entries, which were cloned into every real
@@ -257,15 +257,15 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Spin on the prize wheel\n\nEarn bonus spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.',
+        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Banana Spin on the prize wheel\n\nEarn bonus Free Banana Spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
       referralLink: 'https://banana-fantasy-sbs.vercel.app?ref=BANANA-CK99-2026',
       referralRewards: [
-        { milestone: 'Friend Verifies & Claims Free Spin', reward: '1 Free Spin' },
-        { milestone: 'Friend buys 1 draft', reward: '1 Free Spin' },
-        { milestone: 'Friend buys 10 drafts', reward: '1 Free Spin' },
+        { milestone: 'Friend Verifies & Claims Free Banana Spin', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend buys 1 draft', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend buys 10 drafts', reward: '1 Free Banana Spin' },
       ],
       referralHistory: [],
     },
@@ -283,7 +283,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Tweet Engagement Rewards',
       explanation:
-        'Engage with the SBS launch tweet (like, repost, or meaningful reply) to earn a Banana Wheel spin. Claims are one-time per campaign and reviewed for abuse prevention.',
+        'Engage with the SBS launch tweet (like, repost, or meaningful reply) to earn a Free Banana Spin. Claims are one-time per campaign and reviewed for abuse prevention.',
       additionalRules: 'One reward per user per campaign. Low-quality spam engagement may be denied.',
       twitterConnected: false,
     },
@@ -301,7 +301,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'New User → FREE SPIN',
       explanation:
-        'Verify your account by connecting your X to claim your spin.\n\nThen spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n\nOne account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
+        'Verify your account by connecting your X to claim your Free Banana Spin.\n\nThen spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n\nOne account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
       additionalRules: '',
       twitterConnected: false,
     },
@@ -319,7 +319,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'First Purchase → BONUS SPINS',
       explanation:
-        'Your very first draft-pass purchase earns bonus Banana Wheel spins — every 4 passes = 1 spin (buy 8 for 2, buy 12 for 3, and so on, no limit). One-time offer: it applies only to your first purchase, so buy them all in one transaction to lock in the most spins. After you buy, claim your spins right here. 🍌',
+        'Your very first draft-pass purchase earns bonus Free Banana Spins — every 4 passes = 1 Free Banana Spin (buy 8 for 2, buy 12 for 3, and so on, no limit). One-time offer: it applies only to your first purchase, so buy them all in one transaction to lock in the most Spins. After you buy, claim your Spins right here.',
     },
   },
   {
@@ -337,7 +337,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: '4 Drafts Daily → FREE SPIN',
       explanation:
-        'Complete 4 paid drafts within 24 hours to earn a Free Banana Wheel Spin. Your 24-hour timer starts when your first paid draft fills. Once you complete 4, your progress and timer reset right away — there\'s no limit, every 4 paid drafts earns another Spin! Only for Paid Drafts.',
+        'Complete 4 paid drafts within 24 hours to earn a Free Banana Spin. Your 24-hour timer starts when your first paid draft fills. Once you complete 4, your progress and timer reset right away — there\'s no limit, every 4 paid drafts earns another Spin! Only for Paid Drafts.',
     },
   },
   {
@@ -354,7 +354,7 @@ const seedPromos: Promo[] = [
     claimCount: 0,
     modalContent: {
       title: 'Buy 10 → FREE SPIN',
-      explanation: 'For every 10 drafts purchased, you get a free Banana Spin.',
+      explanation: 'For every 10 drafts purchased, you get a Free Banana Spin.',
       totalMinted: 0,
     },
   },
@@ -392,7 +392,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Share Big Wins → FREE SPIN',
       explanation:
-        'Share your Jackpot, HOF, or 5+ draft wins on X. Every 3 verified shares earns you a free Banana Wheel spin. Small wins can still be shared for bragging rights but don\'t count toward the free spin.',
+        'Share your Jackpot, HOF, or 5+ draft wins on X. Every 3 verified shares earns you a Free Banana Spin. Small wins can still be shared for bragging rights but don\'t count toward the Free Banana Spin.',
       additionalRules:
         'You need to link your X account in your profile. After tweeting, it may take up to a minute for us to verify. Each spin can only be shared once.',
     },
@@ -410,7 +410,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
       explanation:
-        '• 1 Jackpot draft in every 100 drafts\n\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 free spins\n\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 free spins\n\n• Cycle resets after every 100 drafts\n\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n\n• 🍌 Good to know: paid drafts are what enter you into the Jackpot promo — free passes are on us just for the fun of drafting.',
+        '• 1 Jackpot draft in every 100 drafts\n\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins\n\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins\n\n• Cycle resets after every 100 drafts\n\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n\n• 🍌 Good to know: paid drafts are what enter you into the Jackpot promo — free passes are on us just for the fun of drafting.',
       jackpotHistory: [],
     },
   },
@@ -429,7 +429,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Founder Draft → FREE SPIN',
       explanation:
-        '• Founder Draft happens every week at the same time\n\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 free spin to claim\n\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
+        '• Founder Draft happens every week at the same time\n\n• When the clock hits 0:00:00, click "Join Draft" the second it strikes\n\n• Multiple drafts fill in the rush — the one the founder lands in is the Founder Draft\n\n• Every drafter in the Founder Draft earns 1 Free Banana Spin to claim\n\n• Founder League Perk: Score more points than the founder in your Founder league → you\'re entered into a draw with everyone else who beat the founder across all Founder leagues. One person is randomly picked to skip straight to the finals!',
       founderHistory: [],
     },
   },
