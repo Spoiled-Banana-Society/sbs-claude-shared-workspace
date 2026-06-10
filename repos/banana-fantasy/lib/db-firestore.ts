@@ -2082,7 +2082,7 @@ async function userInDraftRoster(userId: string, draftId: string): Promise<'in' 
  *   no stamp + roster error  → fall back to client value (never deny a real user
  *                              on a read failure)
  */
-async function promoCreditAllowed(
+export async function promoCreditAllowed(
   userId: string,
   draftId: string,
   clientPassType: string | undefined,

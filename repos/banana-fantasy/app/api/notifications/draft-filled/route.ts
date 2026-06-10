@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deliverToRecipient } from '@/lib/notifications/deliver';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { recordDraftCompletion, recordPick10 } from '@/lib/db';
+import { getDraftInfo } from '@/lib/draftApi';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -73,6 +76,31 @@ export async function POST(req: NextRequest) {
     if (wallets.length === 0) {
       return NextResponse.json({ ok: true, reports: [] });
     }
+
+    // SERVER-SIDE promo crediting at the fill moment. This webhook is the
+    // only RELIABLE fill observer — the client paths (drafting page /
+    // draft-room) only fire if that wallet's browser happens to be open when
+    // the draft fills, which silently missed credits (Boris's "timer never
+    // started" bug). Both records are idempotent per draftId, so the client
+    // firing too is harmless. promoCreditAllowed inside enforces PAID-only
+    // off the authoritative token stamp (passType undefined → stamp decides).
+    runInBackground('promo.fill-credit', (async () => {
+      // 4 Drafts Daily: +1 (and the 24h timer on the first) for every human.
+      await Promise.allSettled(wallets.map((w) => recordDraftCompletion(w.toLowerCase(), draftId)));
+      // Pick 10: slot 10 = draft-order index 9 (bots included in the order).
+      try {
+        const info = await getDraftInfo(draftId);
+        const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
+        if (slot10 && !slot10.startsWith('bot-')) {
+          await recordPick10(slot10, draftId, draftName ?? draftId);
+        }
+      } catch (err) {
+        logger.warn('notifications.draft_filled.pick10_credit_failed', {
+          draftId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })());
 
     // Jackpot/HOF queue drafts get type-named copy ("Jackpot Draft filled").
     const queueLabel = await queueDraftLabel(draftId);
