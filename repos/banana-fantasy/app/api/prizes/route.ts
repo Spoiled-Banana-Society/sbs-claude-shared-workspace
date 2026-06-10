@@ -6,7 +6,7 @@ import { mockPrizes } from '@/lib/mock/prizes';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
-const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL || '';
+const API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // staging only — NEXT_PUBLIC_DRAFTS_API_URL is the OLD PROD API
 
 async function readErrorMessage(res: Response): Promise<string | null> {
   try {

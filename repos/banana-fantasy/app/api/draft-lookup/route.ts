@@ -3,8 +3,7 @@ import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
-const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL
-  || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+const API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 export async function GET(req: Request) {

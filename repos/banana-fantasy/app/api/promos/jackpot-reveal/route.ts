@@ -25,8 +25,8 @@ export async function GET(req: Request) {
     if (!draftId) throw new ApiError(400, 'draftId required');
 
     const apiBase = (
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
       process.env.STAGING_DRAFTS_API_URL ||
-      process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
       'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
     ).replace(/\/$/, '');
 

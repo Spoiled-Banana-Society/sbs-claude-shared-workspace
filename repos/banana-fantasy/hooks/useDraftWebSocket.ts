@@ -107,7 +107,7 @@ export interface UseDraftWebSocketReturn {
 
 // ==================== CONSTANTS ====================
 
-const DEFAULT_SERVER_URL = 'wss://sbs-drafts-server-w5wydprnbq-uc.a.run.app';
+const DEFAULT_SERVER_URL = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app'; // staging WS — never prod
 const MAX_BACKOFF_MS = 30_000;
 const INITIAL_BACKOFF_MS = 1_000;
 const PING_INTERVAL_MS = 30_000;

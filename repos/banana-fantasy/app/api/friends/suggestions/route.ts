@@ -20,8 +20,7 @@ import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import { listForUser, getPublicUsers, getNamedMembers, type PublicUser } from '@/lib/friends';
 
-const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL
-  || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+const API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 const MAX_DRAFTS = 8;       // how many of the user's recent drafts to scan

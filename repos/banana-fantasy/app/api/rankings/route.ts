@@ -4,7 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { mockTeamPositions } from '@/lib/mock/teamPositions';
 
-const API_BASE = process.env.NEXT_PUBLIC_DRAFTS_API_URL || '';
+const API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // staging only — NEXT_PUBLIC_DRAFTS_API_URL is the OLD PROD API
 
 async function readErrorMessage(res: Response): Promise<string | null> {
   try {

@@ -1149,7 +1149,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     if (ids.length > 0) {
       const minId = Math.min(...ids);
       const maxId = Math.max(...ids);
-      const apiBase = process.env.NEXT_PUBLIC_DRAFTS_API_URL?.trim();
+      const apiBase = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app').trim(); // staging only — never the old prod API
       if (apiBase) {
         const res = await fetch(`${apiBase}/owner/${expectedFrom.toLowerCase()}/draftToken/mint`, {
           method: 'POST',
@@ -2287,8 +2287,8 @@ function jackpotWinnerIndex(draftId: string): number {
 async function getDraftWinnerOwner(draftId: string, winnerIndex: number): Promise<string | null> {
   try {
     const baseUrl = (
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
       process.env.STAGING_DRAFTS_API_URL ||
-      process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
       'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
     ).replace(/\/$/, '');
     const res = await fetch(`${baseUrl}/draft/${encodeURIComponent(draftId)}/state/info`);

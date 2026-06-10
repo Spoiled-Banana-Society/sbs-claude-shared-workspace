@@ -72,7 +72,10 @@ export function getDraftsApiUrl(): string {
     const url = getStagingApiUrl();
     if (url) return url;
   }
-  return process.env.NEXT_PUBLIC_DRAFTS_API_URL || '';
+  // Unreachable (isStagingMode() is always true, getStagingApiUrl() always
+  // resolves) — but NEVER fall back to NEXT_PUBLIC_DRAFTS_API_URL here: it
+  // points at the OLD PROD Go API.
+  return DEFAULT_STAGING_DRAFTS_API_URL;
 }
 
 /**
@@ -83,5 +86,6 @@ export function getDraftServerUrl(): string {
     const url = getStagingWsUrl();
     if (url) return url;
   }
-  return process.env.NEXT_PUBLIC_DRAFT_SERVER_URL || '';
+  // Unreachable — same reasoning as getDraftsApiUrl(); never prod.
+  return DEFAULT_STAGING_DRAFT_SERVER_URL;
 }

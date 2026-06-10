@@ -141,7 +141,7 @@ export async function fetchGoApiTokenLists(
 function getServerDraftsApiUrl(): string {
   const staging = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ?? '').trim();
   if (staging) return staging;
-  return (process.env.NEXT_PUBLIC_DRAFTS_API_URL ?? '').trim();
+  return 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // staging only — never the old prod API
 }
 
 /**

@@ -388,8 +388,7 @@ interface TeamRow {
 async function readUserTeams(wallet: string, gameweek: string): Promise<TeamRow[] | null> {
   const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
   const base =
-    process.env.NEXT_PUBLIC_DRAFTS_API_URL
-    || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
     || process.env.STAGING_DRAFTS_API_URL
     || STAGING_FALLBACK;
 
