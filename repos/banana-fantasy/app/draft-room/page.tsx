@@ -2066,14 +2066,16 @@ function DraftRoomContent() {
   useEffect(() => {
     if (slotAnimationDone) {
       window.dispatchEvent(new CustomEvent('bbb:type-revealed'));
-      // Server-side reveal report: the slot machine + VRF just FINISHED
-      // showing the type — if it's Jackpot/HOF the server unlocks the club
-      // badge for all 10 drafters + credits Jackpot Hit, at this exact
-      // moment (never at raw fill — that would spoil the reveal). The
-      // server verifies the type itself; this call carries no information.
-      // localStorage-guarded so 10 re-renders don't spam (server dedupes too).
+      // Server-side reveal report: the slot machine + VRF just FINISHED.
+      // The server credits Pick 10 (the draft ORDER exists by now — it does
+      // NOT at raw fill, caught live on draft 1382) and, for Jackpot/HOF,
+      // unlocks the club badge for all 10 + credits Jackpot Hit at this
+      // exact moment (never at raw fill — that would spoil the reveal).
+      // Fired for EVERY draft type; the server verifies the type itself, so
+      // this call carries no information. localStorage-guarded so re-renders
+      // don't spam (server dedupes too).
       const id = draftId || urlDraftId;
-      if (id && (draftType === 'jackpot' || draftType === 'hof')) {
+      if (id) {
         const revealKey = `reveal-reported:${id}`;
         if (!localStorage.getItem(revealKey)) {
           localStorage.setItem(revealKey, '1');

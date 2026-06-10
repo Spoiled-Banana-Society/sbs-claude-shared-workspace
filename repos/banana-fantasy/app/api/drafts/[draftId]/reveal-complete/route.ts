@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { recordJackpotHit, unlockBadge } from '@/lib/db';
+import { recordJackpotHit, recordPick10, unlockBadge } from '@/lib/db';
+import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
 
 /**
@@ -39,6 +40,21 @@ export async function POST(req: Request, { params }: { params: { draftId: string
     const level = String(draftSnap.get('Level') ?? '').toLowerCase();
     const isJackpot = level.includes('jackpot');
     const isHof = level.includes('hof') || level.includes('hall of fame');
+
+    // Pick 10 — credited here (not at fill: the draft ORDER doesn't exist
+    // until after randomization, caught live on draft 1382). Any watcher's
+    // reveal report triggers it; recordPick10 is idempotent per draft and
+    // paid-gated internally. Best-effort — the Go state may not be
+    // initialized yet on slower countdowns; the close backstop
+    // (refresh-draft) guarantees it regardless.
+    try {
+      const info = await getDraftInfo(draftId);
+      const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
+      if (slot10 && !slot10.startsWith('bot-')) {
+        await recordPick10(slot10, draftId, String(draftSnap.get('DisplayName') ?? draftId));
+      }
+    } catch { /* state not initialized yet — close backstop covers it */ }
+
     if (!isJackpot && !isHof) {
       return json({ ok: true, level: 'pro', unlocked: false });
     }

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deliverToRecipient } from '@/lib/notifications/deliver';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { computeAndStoreRipeness, recordDraftCompletion, recordPick10, resolveDraftPassType, unlockBadge } from '@/lib/db';
+import { computeAndStoreRipeness, recordDraftCompletion, resolveDraftPassType, unlockBadge } from '@/lib/db';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logActivityEvent } from '@/lib/activityEvents';
-import { getDraftInfo } from '@/lib/draftApi';
 import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -122,19 +121,12 @@ export async function POST(req: NextRequest) {
         ));
       }
 
-      // Pick 10: slot 10 = draft-order index 9 (bots included in the order).
-      try {
-        const info = await getDraftInfo(draftId);
-        const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
-        if (slot10 && !slot10.startsWith('bot-')) {
-          await recordPick10(slot10, draftId, draftName ?? draftId);
-        }
-      } catch (err) {
-        logger.warn('notifications.draft_filled.pick10_credit_failed', {
-          draftId,
-          err: err instanceof Error ? err.message : String(err),
-        });
-      }
+      // NOTE: Pick 10 is NOT credited here — at the fill instant the draft
+      // ORDER doesn't exist yet (slots are randomized after fill), so
+      // getDraftInfo has no slot-10 to read (caught live on draft 1382,
+      // 2026-06-10). Pick 10 credits at the reveal moment (reveal-complete
+      // route — any watcher triggers it, order exists by then) with the
+      // guaranteed backstop at close (refresh-draft route).
     })());
     const event = { type: 'draft.filled' as const, draftId, draftName: queueLabel ?? draftName };
 

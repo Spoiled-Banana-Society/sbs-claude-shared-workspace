@@ -6,7 +6,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
-import { computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordJackpotHit } from '@/lib/db';
+import { computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordJackpotHit, recordPick10 } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
@@ -240,6 +240,19 @@ export async function POST(
       String((d.data() as Record<string, unknown>)?.Level ?? '').toLowerCase().includes('jackpot'),
     );
     await creditDraftRipeness(draftId, tokenIds, isJackpot);
+
+    // Pick 10 — GUARANTEED backstop at close (the order doesn't exist at the
+    // fill instant; the reveal-complete route credits earlier when anyone
+    // watched the reveal; idempotent per draft + paid-gated internally).
+    try {
+      const info = await getDraftInfo(draftId);
+      const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
+      if (slot10 && !slot10.startsWith('bot-')) {
+        await recordPick10(slot10, draftId, info?.displayName ?? draftId);
+      }
+    } catch (err) {
+      logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });
+    }
 
     const results = await Promise.allSettled(tokenIds.map((id) => refreshToken(id)));
     const ok = (i: number) =>
