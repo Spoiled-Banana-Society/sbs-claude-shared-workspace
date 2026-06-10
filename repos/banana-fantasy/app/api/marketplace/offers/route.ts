@@ -52,7 +52,6 @@ export async function GET(req: Request) {
             const expiresAt = new Date(Number(p.endTime) * 1000).toISOString();
             if (new Date(expiresAt) <= new Date()) continue;
             seen.add(hash);
-            seen.add(`${tokenId}-${p.offerer.toLowerCase()}`); // suppress hashless cache twin of the same offer
             offers.push({
               orderHash: hash,
               offererAddress: p.offerer,
@@ -71,12 +70,16 @@ export async function GET(req: Request) {
 
     // 2) OUR offer cache — instant supplement so an offer just made through SBS
     //    shows before OpenSea has indexed it (and survives OpenSea outages).
+    //    Dedupe by orderHash ONLY (cache hashes are the client-computed Seaport
+    //    hash, identical to OpenSea's) — deduping by offerer here would let an
+    //    older indexed offer shadow a newer not-yet-indexed one during the lag.
+    //    The per-wallet collapse below picks the display winner.
     try {
       const { getRecentCachedOffers } = await import('@/lib/marketplace/offerCache');
       for (const c of await getRecentCachedOffers(tokenId)) {
         if (c.endTimeSec && Number(c.endTimeSec) * 1000 <= nowMs) continue; // expired
         const key = c.orderHash || `${c.tokenId}-${c.offerer}`;
-        if (seen.has(key) || seen.has(`${c.tokenId}-${c.offerer}`)) continue;
+        if (seen.has(key)) continue;
         seen.add(key);
         offers.push({
           orderHash: c.orderHash,
