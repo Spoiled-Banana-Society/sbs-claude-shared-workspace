@@ -37,10 +37,10 @@ function timeLeftLabel(finalizesAtIso: string): string {
   return `${m}m left`;
 }
 
-export function KingLeaderboard() {
+export function KingLeaderboard({ demoData }: { demoData?: LeaderboardData } = {}) {
   const { user, walletAddress } = useAuth();
   const wallet = (walletAddress || user?.walletAddress || '').toLowerCase();
-  const [data, setData] = useState<LeaderboardData | null>(null);
+  const [live, setLive] = useState<LeaderboardData | null>(null);
   const [, setTick] = useState(0); // countdown re-render
 
   const refetch = useCallback(async () => {
@@ -48,20 +48,22 @@ export function KingLeaderboard() {
       const q = wallet ? `?me=${encodeURIComponent(wallet)}` : '';
       const res = await fetch(`/api/badges/king-leaderboard${q}`);
       if (!res.ok) return;
-      setData(await res.json());
+      setLive(await res.json());
     } catch { /* keep last-known */ }
   }, [wallet]);
 
   useEffect(() => {
+    if (demoData) return; // mockup mode — no fetching
     void refetch();
     const poll = setInterval(() => { void refetch(); }, 60_000);
     const tick = setInterval(() => setTick((t) => t + 1), 60_000);
     return () => { clearInterval(poll); clearInterval(tick); };
-  }, [refetch]);
+  }, [refetch, demoData]);
 
   // Live: any fill pings the stream → standings refresh within ~seconds.
-  useStreamRefetch(wallet || null, () => { void refetch(); });
+  useStreamRefetch(demoData ? null : wallet || null, () => { void refetch(); });
 
+  const data = demoData ?? live;
   if (!data) return null;
 
   const meInTop = !!(wallet && data.top.some((s) => s.wallet === wallet));
@@ -69,23 +71,22 @@ export function KingLeaderboard() {
 
   return (
     <div
-      className="rounded-2xl p-5 mb-6 backdrop-blur-md"
+      className="rounded-2xl p-4 mb-6 backdrop-blur-md"
       style={{
         background: 'rgba(20, 20, 20, 0.7)',
         border: '1px solid rgba(255, 255, 255, 0.08)',
         boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
       }}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-2.5">
-          <BadgeIcon badge={BADGE_BY_ID['king-of-drafts']} size={32} unlocked showTooltip={false} />
-          <h3 className="text-[16px] font-semibold text-white tracking-tight">King of Drafts</h3>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <BadgeIcon badge={BADGE_BY_ID['king-of-drafts']} size={28} unlocked showTooltip={false} />
+          <h3 className="text-[15px] font-semibold text-white tracking-tight">King of Drafts</h3>
         </div>
         <span className="text-banana text-[12px] font-semibold tabular-nums">{timeLeftLabel(data.finalizesAtIso)}</span>
       </div>
-      <p className="text-text-muted text-[11px] mb-4 leading-relaxed">
-        Fill the most paid drafts in a week and wear the crown all next week.
-        Weeks run Monday 5 AM&nbsp;PT&nbsp;&rarr; Sunday 11 PM&nbsp;PT &mdash; the winner is crowned at the close.
+      <p className="text-text-muted text-[11px] mb-3 leading-relaxed">
+        Most paid drafts this week wins the crown for next week &middot; Mon 5&nbsp;AM &ndash; Sun 11&nbsp;PM&nbsp;PT <span className="text-white/25">(a draft counts once it fills)</span>
       </p>
 
       {data.top.length === 0 ? (
@@ -99,7 +100,7 @@ export function KingLeaderboard() {
             return (
               <div
                 key={s.wallet}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 ${isMe ? 'bg-banana/10 border border-banana/30' : 'bg-white/[0.02]'}`}
+                className={`flex items-center gap-3 rounded-xl px-3 py-1.5 ${isMe ? 'bg-banana/10 border border-banana/30' : 'bg-white/[0.02]'}`}
               >
                 <span className={`w-7 text-[13px] font-bold tabular-nums ${s.rank === 1 ? 'text-banana' : 'text-text-muted'}`}>
                   {s.rank === 1 ? '👑' : `#${s.rank}`}

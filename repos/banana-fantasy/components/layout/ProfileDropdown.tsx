@@ -28,6 +28,27 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
   const [walletCopied, setWalletCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // Name-based referral link (…/r/BorisV) — fetched once when the dropdown
+  // first opens (not on mount: no point hitting the API for a closed menu).
+  const [refCode, setRefCode] = useState<string | null>(null);
+  const [refLink, setRefLink] = useState<string | null>(null);
+  const [copiedRef, setCopiedRef] = useState(false);
+  const refWallet = user?.walletAddress ?? user?.id ?? null;
+  const refName = user?.username || '';
+  useEffect(() => {
+    if (!isOpen || !refWallet || refCode) return;
+    fetch(`/api/referrals?userId=${encodeURIComponent(refWallet)}${refName ? `&username=${encodeURIComponent(refName)}` : ''}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.code) { setRefCode(d.code); setRefLink(d.link); } })
+      .catch(() => {});
+  }, [isOpen, refWallet, refName, refCode]);
+  const handleCopyReferral = () => {
+    if (!refLink) return;
+    navigator.clipboard.writeText(refLink).catch(() => {});
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 1800);
+  };
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -181,6 +202,30 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             </div>
           </div>
 
+          {/* Referral link — one tap to copy, matches the Winnings row styling
+              (Boris 2026-06-10: surface the code so users never hunt for it
+              in the promo modal). */}
+          <button
+            type="button"
+            onClick={handleCopyReferral}
+            className="w-full px-3 py-2.5 border-b border-bg-tertiary hover:bg-bg-tertiary/60 transition-colors text-left"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-5 h-5 rounded-full bg-banana/15 flex items-center justify-center flex-none">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                  </svg>
+                </div>
+                <span className="text-text-muted text-xs uppercase tracking-wider">Referral Link</span>
+              </div>
+              <span className={`text-xs font-mono truncate max-w-[150px] ${copiedRef ? 'text-success font-bold' : 'text-banana'}`}>
+                {copiedRef ? 'Copied!' : refCode ? `/r/${refCode}` : '…'}
+              </span>
+            </div>
+          </button>
+
           {/* Card-fee credit → free draft — only show after first card purchase */}
           {(user.cardFeeCreditCents || 0) > 0 && (() => {
             const credit = Math.min(FREE_DRAFT_CREDIT_CENTS, user.cardFeeCreditCents || 0);
@@ -240,6 +285,18 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
               Messages
+            </Link>
+
+            <Link
+              href="/profile?tab=badges"
+              onClick={() => setIsOpen(false)}
+              className="w-full px-4 py-2 text-left text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors flex items-center gap-3 text-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="8" r="6" />
+                <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
+              </svg>
+              Badges
             </Link>
 
             <Link

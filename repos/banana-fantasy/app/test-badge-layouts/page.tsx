@@ -63,7 +63,28 @@ export default function TestBadgeLayouts() {
 
       {opt === 'a' && (
         <div>
-          <p className="text-white/30 text-[12px] mb-4">King panel leads (with the badge + how-it-works line), catalog under it.</p>
+          <p className="text-white/30 text-[12px] mb-2">King panel leads (with the badge + how-it-works line), catalog under it.</p>
+          <p className="text-banana/70 text-[12px] mb-4">▼ SAMPLE DATA version — full top 10 + you pinned at #25 (live-updates exactly like this as fills happen)</p>
+          <KingLeaderboard
+            demoData={{
+              finalizesAtIso: new Date(Date.now() + (4 * 24 + 9) * 3600_000).toISOString(),
+              totalPlayers: 41,
+              top: [
+                { wallet: '0xaa1', name: 'BananaKing99', pfp: null, count: 18, rank: 1 },
+                { wallet: '0xaa2', name: 'DraftDog', pfp: null, count: 15, rank: 2 },
+                { wallet: '0xaa3', name: 'Banana41522', pfp: null, count: 13, rank: 3 },
+                { wallet: '0xaa4', name: 'PeelGood', pfp: null, count: 11, rank: 4 },
+                { wallet: '0xaa5', name: 'GridironGoblin', pfp: null, count: 10, rank: 5 },
+                { wallet: '0xaa6', name: 'Banana90761', pfp: null, count: 8, rank: 6 },
+                { wallet: '0xaa7', name: 'SundaySlumper', pfp: null, count: 7, rank: 7 },
+                { wallet: '0xaa8', name: 'TopBanana', pfp: null, count: 6, rank: 8 },
+                { wallet: '0xaa9', name: 'Banana11203', pfp: null, count: 5, rank: 9 },
+                { wallet: '0xa10', name: 'CheeseheadChad', pfp: null, count: 4, rank: 10 },
+              ],
+              me: { rank: 25, count: 2, lifetime: 47 },
+            }}
+          />
+          <p className="text-banana/70 text-[12px] mb-4">▼ LIVE version (real current-week data — quiet week looks like this)</p>
           <KingLeaderboard />
           <BadgeCatalogGrid />
         </div>

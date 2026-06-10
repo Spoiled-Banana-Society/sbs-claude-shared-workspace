@@ -423,6 +423,8 @@ export interface Promo {
     totalMinted?: number;
     /** All-time 4-draft completions (daily-drafts promo) — never decrements. */
     totalDailyClaims?: number;
+    /** One entry per completed 4-set (daily-drafts promo), newest first. */
+    dailyHistory?: { date: string; count: number }[];
     /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
     lifetimePaidDrafts?: number;
   };

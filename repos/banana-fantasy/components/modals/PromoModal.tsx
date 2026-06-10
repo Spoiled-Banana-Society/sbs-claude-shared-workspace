@@ -233,6 +233,20 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <span className="text-banana font-medium"> You have {promo.claimCount} {promo.claimCount === 1 ? 'spin' : 'spins'} ready to claim!</span>
         )}
       </p>
+      {/* Completion history — one row per finished 4-set, newest first. */}
+      {(promo.modalContent.dailyHistory?.length ?? 0) > 0 && (
+        <div className="bg-bg-tertiary rounded-xl p-4">
+          <h4 className="font-semibold mb-3 text-text-primary">History</h4>
+          <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
+            {promo.modalContent.dailyHistory!.map((entry, index) => (
+              <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
+                <span className="text-text-secondary text-sm">{entry.date}</span>
+                <span className="text-banana font-medium text-sm">{entry.count}/4 drafts · 1 spin</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 
@@ -601,18 +615,34 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   };
 
   const renderMintContent = () => {
+    const mintHistory = promo.modalContent.mintHistory ?? [];
+    const totalMinted = promo.modalContent.totalMinted ?? 0;
     return (
       <>
         {renderProgressSection()}
-        {promo.modalContent.totalMinted !== undefined && (
+        {/* Live cumulative stats — same two-tile shape as the other promos. */}
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-banana tabular-nums">{totalMinted}</div>
+            <div className="text-text-muted text-xs mt-1">Passes Purchased All-Time</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{Math.floor(totalMinted / 10)}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
+          </div>
+        </div>
+        {/* Purchase history — newest first. */}
+        {mintHistory.length > 0 && (
           <div className="bg-bg-tertiary rounded-xl p-4">
-            <div className="flex justify-between items-center">
-              <span className="text-text-primary font-medium">Total Passes Purchased</span>
-              <span className="text-2xl font-bold text-banana">{promo.modalContent.totalMinted}</span>
+            <h4 className="font-semibold mb-3 text-text-primary">Purchase History</h4>
+            <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
+              {mintHistory.map((entry, index) => (
+                <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
+                  <span className="text-text-secondary text-sm">{entry.date}</span>
+                  <span className="text-banana font-medium text-sm">+{entry.quantity} {entry.quantity === 1 ? 'pass' : 'passes'}</span>
+                </div>
+              ))}
             </div>
-            <p className="text-text-muted text-sm mt-2">
-              You&apos;ve earned {Math.floor(promo.modalContent.totalMinted / 10)} spins from buying!
-            </p>
           </div>
         )}
       </>

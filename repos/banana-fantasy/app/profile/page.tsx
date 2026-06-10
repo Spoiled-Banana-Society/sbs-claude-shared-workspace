@@ -1,11 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 import { useExportWallet } from '@privy-io/react-auth';
 import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
@@ -50,29 +48,6 @@ export default function ProfilePage() {
       setActiveTab(tab);
     }
   }, [searchParams]);
-
-  // Account-synced first-draft promo claim state.
-  const [promoClaimed] = useSyncedFlag<boolean>('firstDraftPromoClaimed', false);
-
-  // Real name-based referral link (…/r/BorisV) for the Referral Code row —
-  // this used to show the raw wallet address, which is NOT a referral code.
-  const [refData, setRefData] = useState<{ code: string | null; link: string | null } | null>(null);
-  const [copiedRef, setCopiedRef] = useState(false);
-  const refUserId = user?.walletAddress ?? user?.id;
-  const refName = user?.username || '';
-  useEffect(() => {
-    if (!refUserId) return;
-    fetch(`/api/referrals?userId=${encodeURIComponent(refUserId)}${refName ? `&username=${encodeURIComponent(refName)}` : ''}`)
-      .then((r) => r.json())
-      .then((d) => setRefData({ code: d.code ?? null, link: d.link ?? null }))
-      .catch(() => {});
-  }, [refUserId, refName]);
-  const handleCopyReferral = () => {
-    if (!refData?.link) return;
-    navigator.clipboard.writeText(refData.link).catch(() => {});
-    setCopiedRef(true);
-    setTimeout(() => setCopiedRef(false), 2000);
-  };
 
   // Not logged in
   if (authLoading) {
@@ -315,50 +290,10 @@ export default function ProfilePage() {
           </div>
         </motion.div>
 
-        {/* ─── Promo Status ─── */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 mb-6"
-        >
-          <h3 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest mb-3">Promos & Referrals</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{promoClaimed ? '✅' : '🎁'}</span>
-                <div>
-                  <p className="text-white text-sm font-medium">Welcome Gift — 50% Off</p>
-                  <p className="text-white/30 text-xs">{promoClaimed ? 'Claimed' : 'Available — claim in Buy Drafts'}</p>
-                </div>
-              </div>
-              {!promoClaimed && (
-                <Link href="/buy-drafts" className="text-banana text-xs font-bold hover:underline">
-                  Claim →
-                </Link>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🔗</span>
-                <div>
-                  <p className="text-white text-sm font-medium">Referral Link</p>
-                  <p className="text-white/30 text-xs font-mono">
-                    {refData?.code ? `/r/${refData.code}` : 'Loading…'}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={handleCopyReferral}
-                disabled={!refData?.link}
-                className="text-banana text-xs font-bold hover:underline disabled:opacity-40"
-              >
-                {copiedRef ? 'Copied!' : 'Copy Link'}
-              </button>
-            </div>
-          </div>
-        </motion.div>
+        {/* Promos & Referrals section REMOVED (Boris 2026-06-10) — the welcome
+            gift lives in Buy Drafts and the referral link lives in /referrals
+            + the Refer-a-Friend promo modal; duplicating them here confused
+            more than it helped. */}
 
         </>}
 

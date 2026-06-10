@@ -10,6 +10,7 @@ import React from 'react';
 const TYPES = {
   jackpot: {
     label: 'JACKPOT',
+    band: '#C0282D', // EXACT band color the real room uses
     edge: 'rgba(239,68,68,0.85)',
     gradient: 'linear-gradient(180deg, #FFE0E0 0%, #FF4D4D 35%, #B91C1C 70%, #FFC2C2 100%)',
     glow: 'rgba(239,68,68,0.95)',
@@ -18,6 +19,7 @@ const TYPES = {
   },
   hof: {
     label: 'HOF',
+    band: '#C9A227', // EXACT band color the real room uses
     edge: 'rgba(255,215,0,0.85)',
     gradient: 'linear-gradient(180deg, #FFF6C2 0%, #FFD700 30%, #B8860B 65%, #FFE57F 100%)',
     glow: 'rgba(255,215,0,0.95)',
@@ -26,6 +28,7 @@ const TYPES = {
   },
   pro: {
     label: 'PRO',
+    band: '#6D28D9', // proposed purple band — same depth as the JP/HOF tones
     edge: 'rgba(168,85,247,0.85)',
     gradient: 'linear-gradient(180deg, #F0DFFF 0%, #C084FC 30%, #7E22CE 65%, #E1C6FF 100%)',
     glow: 'rgba(168,85,247,0.95)',
@@ -91,45 +94,33 @@ function RoomMock({
     <div className="mb-10">
       <h2 className="text-banana text-[15px] font-semibold mb-1">{title}</h2>
       <p className="text-white/40 text-[12px] mb-3">{note}</p>
-      <div
-        className="relative rounded-lg overflow-hidden"
-        style={{
-          background: '#0a0a0d',
-          boxShadow: `inset 0 0 0 2px ${s.edge}`,
-          padding: '14px 12px 18px',
-        }}
-      >
-        {full && (
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{ background: `radial-gradient(ellipse at top, ${s.soft}, transparent 60%)` }}
-          />
-        )}
-        {/* player boxes row */}
-        <div className="relative flex gap-2 justify-center flex-wrap mb-4">
-          <PlayerBox name="Boris Vagner" slot={1} you accent={full ? s.accent : '#F3E216'} tinted={full} />
-          <PlayerBox name="Player 2" slot={2} accent={s.accent} />
-          <PlayerBox name="Player 3" slot={3} accent={s.accent} />
-          <PlayerBox name="---" slot={4} accent={s.accent} />
-          <PlayerBox name="---" slot={5} accent={s.accent} />
+      <div className="relative rounded-lg overflow-hidden" style={{ background: '#000' }}>
+        {/* Type-colored BAND behind the strip — same structure as the real
+            room: band covers boxes + count + banner; content below is black. */}
+        <div style={{ background: full ? s.band : '#000', padding: '14px 12px 10px' }}>
+          <div className="relative flex gap-2 justify-center flex-wrap mb-4">
+            <PlayerBox name="Boris Vagner" slot={1} you accent="#F3E216" />
+            <PlayerBox name="Player 2" slot={2} accent={s.accent} />
+            <PlayerBox name="Player 3" slot={3} accent={s.accent} />
+            <PlayerBox name="---" slot={4} accent={s.accent} />
+            <PlayerBox name="---" slot={5} accent={s.accent} />
+          </div>
+          <div className="relative text-center mb-2">
+            <span className="text-[20px] font-black" style={{ color: '#F3E216' }}>3/10</span>
+            <span className="text-[11px] font-semibold tracking-widest ml-2" style={{ color: full ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.5)' }}>WAITING FOR PLAYERS...</span>
+          </div>
+          <div className="relative flex items-center justify-center gap-3 py-2">
+            <Wordmark t={t} />
+            <button className="text-[11px] text-white/80 border border-gray-400 px-1.5 py-0.5">← EXIT</button>
+            <button className="text-[11px] text-white/80 border border-gray-400 px-1.5 py-0.5">MUTE 🎵</button>
+            <button className="text-[11px] text-white/80 border border-gray-400 px-1.5 py-0.5">✈ OFF</button>
+          </div>
         </div>
-        {/* count + banner row (matches the draft-room bannerControls layout) */}
-        <div className="relative text-center mb-2">
-          <span className="text-[20px] font-black" style={{ color: full ? s.accent : '#fff' }}>3/10</span>
-          <span className="text-[11px] text-white/50 font-semibold tracking-widest ml-2">WAITING FOR PLAYERS...</span>
-        </div>
-        <div
-          className="relative flex items-center justify-center gap-3 py-2"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.15)' }}
-        >
-          <Wordmark t={t} />
-          <button className="text-[11px] text-white/70 border border-gray-500 px-1.5 py-0.5">← EXIT</button>
-          <button className="text-[11px] text-white/70 border border-gray-500 px-1.5 py-0.5">MUTE 🎵</button>
-          <button className="text-[11px] text-white/70 border border-gray-500 px-1.5 py-0.5">✈ OFF</button>
-        </div>
-        {/* tab strip hint */}
-        <div className="relative flex justify-center gap-4 pt-3 text-[11px] font-bold">
-          <span style={{ color: full ? s.accent : '#F3E216', border: `1px solid ${full ? s.accent : '#F3E216'}`, padding: '1px 8px', borderRadius: 4 }}>DRAFT</span>
+        {/* page edge (the thin pulsing 2px frame the real room shows) */}
+        <div className="absolute inset-0 pointer-events-none" style={{ boxShadow: `inset 0 0 0 2px ${s.edge}` }} />
+        {/* tab strip hint on black, like the real room */}
+        <div className="relative flex justify-center gap-4 py-3 text-[11px] font-bold" style={{ background: '#000' }}>
+          <span style={{ color: '#F3E216', border: '1px solid #F3E216', padding: '1px 8px', borderRadius: 4 }}>DRAFT</span>
           <span className="text-white/60">QUEUE</span>
           <span className="text-white/60">BOARD</span>
           <span className="text-white/60">ROSTER</span>
@@ -143,19 +134,42 @@ function RoomMock({
 export default function TestDraftStyle() {
   return (
     <div style={{ background: '#060608', minHeight: '100vh', padding: '28px 18px', maxWidth: 1100, margin: '0 auto' }}>
-      <h1 className="text-white text-xl font-bold mb-1">PRO draft styling — pick an option</h1>
+      <h1 className="text-white text-xl font-bold mb-1">Draft room styling</h1>
       <p className="text-white/40 text-[13px] mb-8">
-        All headers use the NEW metallic wordmark (replaces the old jackpot-logo.png / hof-logo.jpg images).
-        Jackpot + HOF shown first for reference in the new style.
+        Section 1: REAL screenshots of the Jackpot + HOF rooms as deployed right now (lobby + drafting).
+        Section 2: the PRO options to pick from, drawn in the exact same structure.
       </p>
 
-      <RoomMock t="jackpot" full title="Reference — Jackpot (new metallic wordmark)" note="Same red edge + red treatment it has today, header logo image swapped for the metallic JACKPOT wordmark." />
-      <RoomMock t="hof" full title="Reference — HOF (new metallic wordmark)" note="Gold edge + gold treatment, metallic HOF wordmark." />
+      <h2 className="text-banana text-[16px] font-bold mb-3">1 · REAL deployed Jackpot + HOF (screenshots, not mockups)</h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        {([
+          ['/style-preview/jackpot-lobby.png', 'Jackpot — lobby (filling)'],
+          ['/style-preview/hof-lobby.png', 'HOF — lobby (filling)'],
+          ['/style-preview/jackpot-drafting.png', 'Jackpot — drafting'],
+          ['/style-preview/hof-drafting.png', 'HOF — drafting'],
+        ] as const).map(([src, cap]) => (
+          <figure key={src}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={src} alt={cap} className="rounded-lg border border-white/10 w-full" />
+            <figcaption className="text-white/40 text-[11px] mt-1">{cap}</figcaption>
+          </figure>
+        ))}
+      </div>
+      <p className="text-white/35 text-[12px] mb-8">
+        Note: the small JACKPOT / HOF logo image in the banner is still the OLD asset — the metallic
+        wordmark below is the proposed replacement. Say the word and I swap it in all rooms.
+      </p>
 
       <div className="h-px bg-white/10 my-8" />
 
-      <RoomMock t="pro" full={false} title="OPTION A — PRO: purple edge + wordmark only" note="Purple outer edge lines + metallic purple PRO in the header. Everything else stays the normal room (yellow accents)." />
-      <RoomMock t="pro" full title="OPTION B — PRO: full purple treatment" note="Edge + wordmark + the same extras Jackpot/HOF get: purple count, purple glow wash, your box + active tab tinted purple." />
+      <h2 className="text-banana text-[16px] font-bold mb-3">2 · PRO options (same structure as the real rooms above)</h2>
+      <RoomMock t="jackpot" full title="Reference — Jackpot with metallic wordmark" note="Exact band red (#C0282D) the real room uses; logo image swapped for the metallic JACKPOT wordmark." />
+      <RoomMock t="hof" full title="Reference — HOF with metallic wordmark" note="Exact band gold (#C9A227); metallic HOF wordmark." />
+
+      <div className="h-px bg-white/10 my-8" />
+
+      <RoomMock t="pro" full={false} title="OPTION A — PRO: purple edge + wordmark only" note="Purple outer edge + metallic purple PRO wordmark. NO band — the strip stays black like today's pro rooms." />
+      <RoomMock t="pro" full title="OPTION B — PRO: full purple treatment" note="Same treatment JP/HOF get: deep-purple band behind the boxes + purple edge + PRO wordmark." />
     </div>
   );
 }

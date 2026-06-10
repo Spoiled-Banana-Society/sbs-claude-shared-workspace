@@ -937,6 +937,12 @@ async function _incrementMintPromosInTx(
   if (mintPromoDoc) {
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
     mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
+    // Purchase history for the modal ("big picture") — newest first, capped
+    // so the promo doc can't grow unbounded.
+    mintPromo.modalContent.mintHistory = [
+      { date: todayDate(), quantity, status: 'claimed' as const },
+      ...(mintPromo.modalContent.mintHistory || []),
+    ].slice(0, 50);
     const max = mintPromo.progressMax || 10;
     const { progressCurrent, milestonesEarned } = computeMintProgress(mintPromo.progressCurrent || 0, max, quantity);
     mintPromo.progressCurrent = progressCurrent;
@@ -2199,6 +2205,11 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
       // Cumulative all-time counter for the modal stats ("spins earned from
       // this promo") — claimCount drains on claim, this never decrements.
       promo.modalContent.totalDailyClaims = (promo.modalContent.totalDailyClaims || 0) + 1;
+      // History entry per completed 4-set ("big picture" list in the modal).
+      promo.modalContent.dailyHistory = [
+        { date: todayDate(), count: 4 },
+        ...(promo.modalContent.dailyHistory || []),
+      ].slice(0, 50);
       promo.timerEndTime = undefined;
       promo.completedDraftIds = [];
       needsTimerDelete = true;
