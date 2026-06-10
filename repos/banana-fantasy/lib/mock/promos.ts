@@ -154,7 +154,7 @@ export const mockPromos: Promo[] = [
     claimCount: 0,
     modalContent: {
       title: 'Buy 10 → FREE SPIN',
-      explanation: 'Purchase 10 draft passes to earn a Banana Wheel spin. This keeps stacking - buy 20 passes and get 2 spins or 30 passes for 3 spins and so on!',
+      explanation: 'For every 10 drafts purchased, you get a free Banana Spin.',
       totalMinted: 30,
     },
   },
