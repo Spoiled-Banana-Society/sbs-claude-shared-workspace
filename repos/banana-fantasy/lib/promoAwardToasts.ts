@@ -68,15 +68,8 @@ export function surfacePurchasePromoAwards(
     );
   }
 
-  const buyBonus = awards?.buyBonusMilestonesEarned ?? 0;
-  if (buyBonus > 0) {
-    markLocalSurface('promo-buy-bonus');
-    toast(
-      show,
-      buyBonus === 1 ? 'Buy 2 complete — free draft earned!' : `Buy 2 complete — ${buyBonus} free drafts earned!`,
-      '/promos',
-    );
-  }
+  // buy-bonus (Buy 2 → 1 Free) intentionally gets NO toast — that promo is
+  // hidden from the UI (retired); surfacing it here would confuse users.
 
   const cardFree = opts.cardFreeDraftsEarned ?? 0;
   if (cardFree > 0) {
@@ -90,7 +83,7 @@ export function surfacePurchasePromoAwards(
     );
   }
 
-  if (firstPurchase > 0 || buy10 > 0 || buyBonus > 0 || cardFree > 0) {
+  if (firstPurchase > 0 || buy10 > 0 || cardFree > 0) {
     requestBellRefetch();
   }
 }

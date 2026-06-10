@@ -207,15 +207,6 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       }
       return;
     }
-    case 'promo-buy-bonus': {
-      const count = event.awardedCount ?? 1;
-      surfaces.showToast(
-        count === 1 ? 'Buy 2 complete — free draft earned!' : `Buy 2 complete — ${count} free drafts earned!`,
-        '/promos',
-      );
-      // Bell entry is persisted server-side (eventNotificationContent).
-      return;
-    }
     case 'spin-won': {
       const prize = event.prizeLabel || 'a prize';
       surfaces.showToast(`🍌 Banana Wheel win — you won ${prize}!`, '/drafting');

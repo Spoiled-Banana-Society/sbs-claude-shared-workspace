@@ -231,7 +231,6 @@ export interface UserStreamEvent {
     | 'first-purchase-unlocked'
     | 'referral-milestone'
     | 'promo-card-free-draft'
-    | 'promo-buy-bonus'
     | 'spin-won'
     // Content-less refetch ping for the server-backed notification bell.
     | 'notification';

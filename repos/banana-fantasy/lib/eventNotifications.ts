@@ -137,19 +137,6 @@ export function eventNotificationContent(
         icon: 'users',
       };
     }
-    case 'promo-buy-bonus': {
-      const count = payload.awardedCount ?? 1;
-      return {
-        type: 'promo',
-        title: count === 1 ? 'Free draft earned!' : `${count} free drafts earned!`,
-        message: count === 1
-          ? 'You completed Buy 2 → 1 Free — claim your free draft.'
-          : `You completed Buy 2 → 1 Free ${count}× — claim your free drafts.`,
-        link: '/promos',
-        icon: 'ticket',
-        // No stable id in payload — server fires once per buy; auto-id.
-      };
-    }
     case 'spin-won': {
       const prize = payload.prizeLabel || 'a prize';
       return {

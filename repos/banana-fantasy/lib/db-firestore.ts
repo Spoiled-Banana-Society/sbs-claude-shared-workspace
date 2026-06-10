@@ -974,13 +974,9 @@ export async function incrementMintPromos(
       awardedCount: result.mintMilestonesEarned,
     });
   }
-  // Buy 2 → 1 Free milestone — same noti + toast treatment as every other
-  // promo completion ("complete a promo → noti + toast", no silent earns).
-  if (result.buyBonusMilestonesEarned > 0) {
-    pushStreamEventBg(userId, 'promo-buy-bonus', {
-      awardedCount: result.buyBonusMilestonesEarned,
-    });
-  }
+  // NOTE: buy-bonus (Buy 2 → 1 Free) milestones intentionally fire NO event —
+  // that promo is HIDDEN from the UI (not in VISIBLE_PROMO_TYPES; Boris
+  // retired it). A noti/toast would surface a promo users can't see.
   // Always nudge the user's devices to refetch promos so the mint progress
   // box (e.g. 9/10) syncs in real-time across devices on EVERY purchase, not
   // just when a milestone is hit. (usePromos refetches on any stream ping.)

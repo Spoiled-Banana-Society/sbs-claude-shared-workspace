@@ -47,7 +47,6 @@ export type StreamEventType =
   | 'first-purchase-unlocked'
   | 'referral-milestone'
   | 'promo-card-free-draft'
-  | 'promo-buy-bonus'
   | 'spin-won'
   // Content-less "a new persisted notification exists — refetch the bell"
   // ping. Fired by createNotification (lib/queueNotifications.ts) so the
