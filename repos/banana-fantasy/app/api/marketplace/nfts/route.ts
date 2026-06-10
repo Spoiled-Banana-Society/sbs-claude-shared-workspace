@@ -171,6 +171,7 @@ export async function GET(req: Request) {
     // Firestore round-trips for a whale wallet), which was the remaining Sell
     // latency. getAll is chunked to stay under Firestore's batch limit.
     const ogByToken = new Map<string, string>();
+    const leagueByToken = new Map<string, number>(); // index leagueNumber → recency sort
     if (isFirestoreConfigured()) {
       const db = getAdminFirestore();
       const ids = bbb4Nfts.map((n) => n.identifier);
@@ -181,6 +182,9 @@ export async function GET(req: Request) {
           const id = ids[i + k];
           const x = d.exists ? (d.data() as Record<string, unknown>) : null;
           ogByToken.set(id, x?.status === 'team' && x?.image ? String(x.image) : buildDraftPassUrl(id));
+          if (x?.status === 'team' && typeof x?.leagueNumber === 'number') {
+            leagueByToken.set(id, x.leagueNumber as number);
+          }
         });
       }
     }
@@ -255,6 +259,15 @@ export async function GET(req: Request) {
       }));
       finalNfts = [...added.filter((n): n is NonNullable<typeof n> => n !== null), ...finalNfts];
     }
+
+    // Most-recent-first (Boris 2026-06-10): drafted TEAMS sort to the top by
+    // league number descending (newest draft first), passes after. Stable for
+    // ties so OpenSea's order is the secondary key.
+    const leagueOf = (n: { tokenId: string }) => leagueByToken.get(String(n.tokenId)) ?? -1;
+    finalNfts = finalNfts
+      .map((n, i) => ({ n, i }))
+      .sort((a, b) => (leagueOf(b.n) - leagueOf(a.n)) || (a.i - b.i))
+      .map(({ n }) => n);
 
     respCache.set(respKey, { ts: Date.now(), nfts: finalNfts });
     return json({ nfts: finalNfts });

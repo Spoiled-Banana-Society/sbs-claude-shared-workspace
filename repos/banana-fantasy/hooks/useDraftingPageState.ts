@@ -644,15 +644,20 @@ export function useDraftingPageState() {
 
     void loadLiveDrafts();
     // Re-poll every 5s so a leave on another device clears this one within
-    // ~5s instead of needing a manual refresh. Also re-poll on tab focus —
-    // common case is user switches back from phone to laptop.
+    // ~5s instead of needing a manual refresh. Also re-poll on tab focus AND
+    // visibilitychange — mobile returning from the app switcher/background
+    // fires visibilitychange (NOT focus), which is why the page showed a
+    // stale cached phase ("randomizing…") for ~10s after coming back.
     const interval = setInterval(() => { void loadLiveDrafts(); }, 5000);
     const onFocus = () => { void loadLiveDrafts(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') void loadLiveDrafts(); };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       cancelled = true;
       clearInterval(interval);
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [hiddenDraftIds, explicitlyClearedIds, isLive, user]);
 
@@ -993,7 +998,11 @@ export function useDraftingPageState() {
       }, 500);
     };
 
+    // visibilitychange too — mobile returning from background fires it (not
+    // focus); without it the cached phase rendered stale for ~10s.
+    const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
     intervalId = setInterval(() => {
       void syncLiveDrafts();
     }, 3000);
@@ -1001,6 +1010,7 @@ export function useDraftingPageState() {
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
       if (focusTimeout) clearTimeout(focusTimeout);
       if (intervalId) clearInterval(intervalId);
     };

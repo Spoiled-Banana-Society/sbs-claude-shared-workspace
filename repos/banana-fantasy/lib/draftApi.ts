@@ -2,9 +2,18 @@
 
 import { getDraftsApiUrl } from '@/lib/staging';
 
+// SERVER-SIDE callers land on this fallback (isStagingMode() is false when
+// `window` is undefined, so getDraftsApiUrl() returns '' on the server).
+// It used to fall through to the PROD Go API — every server-side
+// getDraftInfo/getDraftSummary call (refresh-draft card writer, pick-10
+// backstop, reveal-complete) silently 404'd against prod, which is why
+// imagesWritten was 0 at close and My Teams kept the grey pass image
+// (caught live on draft 2024-fast-draft-1382, 2026-06-10). Staging code
+// must NEVER default to prod.
 const FALLBACK_URL =
+  process.env.STAGING_DRAFTS_API_URL ||
   process.env.NEXT_PUBLIC_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
+  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 
 // ==================== TYPES ====================

@@ -125,6 +125,12 @@ export async function GET(req: Request) {
       console.warn('[marketplace/teams] listings overlay failed (serving teams without prices):', e);
     }
 
+    // Most-recent-first (Boris 2026-06-10): newest league at the top of All
+    // Teams / Pro / JP / HOF, token id desc breaking ties within a league.
+    teams.sort((a, b) =>
+      ((b.leagueNumber ?? -1) - (a.leagueNumber ?? -1)) || (Number(b.tokenId) - Number(a.tokenId)),
+    );
+
     teamsCache.set(cacheKey, { ts: Date.now(), nfts: teams });
     return json({ nfts: teams, next: null });
   } catch (err) {
