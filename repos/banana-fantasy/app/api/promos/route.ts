@@ -57,12 +57,22 @@ export async function GET(req: Request) {
 
     // Backstop: new accounts seeded before the welcome noti existed (or whose
     // seed-time write was lost) get it here — dedupe-keyed, so for everyone
-    // else this is a guaranteed no-op. Only fires for genuinely new accounts.
+    // else this is a guaranteed no-op. Some user docs are created by stub
+    // writes that bypass the full seed and carry NO createdAt (caught live on
+    // 0x9a74…e17b) — stamp those now, and treat zero-activity unstamped docs
+    // as new. Accounts with any passes/spins/balance can never qualify.
     try {
       const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
-      const userSnap = await getAdminFirestore().collection('v2_users').doc(userId).get();
-      const createdAt = userSnap.get('createdAt') as string | undefined;
-      const isNew = !!createdAt && Date.now() - new Date(createdAt).getTime() < 7 * 24 * 60 * 60 * 1000;
+      const userRef = getAdminFirestore().collection('v2_users').doc(userId);
+      const userSnap = await userRef.get();
+      const u = (userSnap.data() ?? {}) as { createdAt?: string; draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number };
+      if (userSnap.exists && !u.createdAt) {
+        await userRef.set({ createdAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+      }
+      const zeroActivity = !(u.draftPasses ?? 0) && !(u.freeDrafts ?? 0) && !(u.wheelSpins ?? 0) && !(u.usdcBalance ?? 0);
+      const isNew = u.createdAt
+        ? Date.now() - new Date(u.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
+        : userSnap.exists && zeroActivity;
       if (isNew) {
         const { createNotification } = await import('@/lib/queueNotifications');
         await createNotification(userId, {
