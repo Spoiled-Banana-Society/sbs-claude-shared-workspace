@@ -206,18 +206,28 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     let token: string | null = null;
     const tokenFn = getTokenRef.current;
     if (tokenFn) {
-      try {
-        token = await tokenFn();
-      } catch (err) {
-        console.warn('[ws] failed to get access token:', err);
-        reportClientError({
-          source: LOG_SOURCES.draft.WS_TOKEN_FETCH_FAILED,
-          message: err instanceof Error ? err.message : String(err),
-          route: 'draft-room',
-          actor: walletAddress,
-          context: { draftName },
-          stack: err instanceof Error ? err.stack : undefined,
-        });
+      // Retry the token fetch up to 3 times (300ms apart) — a momentary Privy
+      // blink used to make us connect TOKEN-LESS, the server 401'd the
+      // upgrade, and the room silently ran on slow polling for the whole
+      // session. One hiccup shouldn't cost the user their live updates.
+      for (let attempt = 1; attempt <= 3 && !token && mountedRef.current; attempt++) {
+        try {
+          token = await tokenFn();
+        } catch (err) {
+          if (attempt === 3) {
+            console.warn('[ws] failed to get access token after 3 attempts:', err);
+            reportClientError({
+              source: LOG_SOURCES.draft.WS_TOKEN_FETCH_FAILED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletAddress,
+              context: { draftName, attempts: 3 },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          } else {
+            await new Promise((r) => setTimeout(r, 300));
+          }
+        }
       }
     }
     if (!mountedRef.current) return;

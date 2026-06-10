@@ -6,7 +6,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
-import { computeAndStoreRipeness } from '@/lib/db';
+import { computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordJackpotHit } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
@@ -124,7 +124,7 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
  * the earned ripeness badge (the FIRST Unripe banana at 1 paid draft) and fires
  * the bell + toast. Best-effort per owner; never blocks the draft close.
  */
-async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
+async function creditDraftRipeness(draftId: string, tokenIds: string[], isJackpot: boolean): Promise<void> {
   const db = getAdminFirestore();
   const owners = new Set<string>();
   await Promise.all(tokenIds.map(async (id) => {
@@ -137,6 +137,20 @@ async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
   await Promise.all([...owners].map(async (o) => {
     try { await computeAndStoreRipeness(o, await fetchOwnerPaidFilledCount(o)); }
     catch (err) { logger.warn('marketplace.refresh_draft_ripeness_failed', { owner: o, error: String(err) }); }
+
+    // SERVER-SIDE promo crediting at close — these used to be browser-fired
+    // only (results page / draft room), so a user who closed the tab missed
+    // them forever. Both are idempotent per draftId and internally gated
+    // (paid-only via the token stamp; jackpot additionally re-derives the
+    // single deterministic winner — calling it for every owner is the same
+    // thing the per-drafter client calls did).
+    try { await recordFirstPurchaseDraftFinished(o, draftId); }
+    catch (err) { logger.warn('marketplace.refresh_draft_first_purchase_gate_failed', { owner: o, error: String(err) }); }
+    if (isJackpot) {
+      try { await recordJackpotHit(o, draftId); }
+      catch (err) { logger.warn('marketplace.refresh_draft_jackpot_credit_failed', { owner: o, error: String(err) }); }
+    }
+
     // Silent content-less refetch ping: the team card image was JUST written
     // to marketplace_index — nudge every device of this owner to refetch so
     // My Teams swaps the grey pass for the real team image in ~300ms.
@@ -218,9 +232,14 @@ export async function POST(
     const imagesWritten = await writeFullDataImages(draftId, tokenIds);
     logger.info('marketplace.refresh_draft_images', { draftId, imagesWritten, total: tokenIds.length });
 
-    // Draft has filled → credit banana ripeness to each participant (unlocks the
-    // earned tier badge + fires the bell/toast). Awaited so it lands; best-effort.
-    await creditDraftRipeness(tokenIds);
+    // Draft closed → per-owner credits: banana ripeness (tier badge + bell/
+    // toast), the first-purchase gate, jackpot-hit spins when this draft
+    // revealed as Jackpot, and the silent My Teams refresh ping. The revealed
+    // level lives on the cards docs (same field the proof feed reads).
+    const isJackpot = cardsSnap.docs.some((d) =>
+      String((d.data() as Record<string, unknown>)?.Level ?? '').toLowerCase().includes('jackpot'),
+    );
+    await creditDraftRipeness(draftId, tokenIds, isJackpot);
 
     const results = await Promise.allSettled(tokenIds.map((id) => refreshToken(id)));
     const ok = (i: number) =>

@@ -820,6 +820,7 @@ async function postNotification(data: {
   title: string;
   message: string;
   link?: string;
+  dedupeKey?: string;
 }) {
   try {
     await fetch('/api/marketplace/notifications', {
@@ -832,13 +833,16 @@ async function postNotification(data: {
   }
 }
 
-/** Notify seller that their item was sold */
+/** Notify seller that their item was sold. The Alchemy transfer webhook fires
+ *  the same noti server-side (guaranteed even if this tab closes) — the shared
+ *  dedupeKey (tokenId + txHash) makes whichever lands second a no-op. */
 export function notifySeller(data: {
   sellerWallet: string;
   tokenId: string;
   teamName: string;
   price: number;
   buyerWallet: string;
+  txHash?: string;
 }) {
   postNotification({
     wallet: data.sellerWallet,
@@ -846,6 +850,7 @@ export function notifySeller(data: {
     title: 'Your Team Was Sold!',
     message: `${data.teamName} sold for $${data.price.toFixed(2)}`,
     link: `/marketplace/${data.tokenId}`,
+    ...(data.txHash ? { dedupeKey: `sale-${data.tokenId}-${data.txHash}` } : {}),
   });
 }
 

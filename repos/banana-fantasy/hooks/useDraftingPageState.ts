@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { isDraftingOpen } from '@/lib/draftTypes';
@@ -1007,13 +1008,35 @@ export function useDraftingPageState() {
 
   const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
 
+  // Privy access token for the WS auth gate, via the ref pattern (Rule #0:
+  // privy-derived callbacks must never enter effect deps). The Go WS server
+  // verifies this JWT before upgrading — these lobby connections were
+  // rejected 401 on EVERY attempt since auth was added because no token was
+  // ever sent; the page silently fell back to polling and nobody noticed.
+  const privyForWs = usePrivy();
+  const getWsTokenRef = useRef(privyForWs.getAccessToken);
+  getWsTokenRef.current = privyForWs.getAccessToken;
+
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;
 
     const wallet = user.walletAddress.trim().toLowerCase();
     const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 
-    const syncConnections = () => {
+    let syncInFlight = false;
+    const syncConnections = async () => {
+      // Re-entrancy guard: the token fetch awaits, and an overlapping 3s tick
+      // could double-connect the same draft.
+      if (syncInFlight) return;
+      syncInFlight = true;
+      try {
+        await syncConnectionsInner();
+      } finally {
+        syncInFlight = false;
+      }
+    };
+
+    const syncConnectionsInner = async () => {
       // WS connections are opened with the current wallet as the `address` param
       // — stale connections from a prior wallet would auth against the wrong
       // user and leak events into the wrong account. Scope by current wallet
@@ -1039,13 +1062,25 @@ export function useDraftingPageState() {
         }
       });
 
+      // Fetch the Privy token ONCE per sync (same token for every draft).
+      // Without it the server 401s the upgrade and we silently lose live
+      // updates; on fetch failure we still attempt token-less (= today's
+      // behavior: rejected → the 3s poll keeps the page fresh).
+      let wsToken: string | null = null;
+      if (draftingDrafts.some((d) => !conns.has(d.id))) {
+        try {
+          wsToken = (await getWsTokenRef.current?.()) ?? null;
+        } catch { /* token-less attempt below; poll remains the fallback */ }
+      }
+
       for (const draft of draftingDrafts) {
         if (conns.has(draft.id)) continue;
 
         const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
         if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
 
-        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}`;
+        const tokenParam = wsToken ? `&token=${encodeURIComponent(wsToken)}` : '';
+        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}${tokenParam}`;
         const ws = new WebSocket(url);
         conns.set(draft.id, ws);
 
@@ -1120,8 +1155,8 @@ export function useDraftingPageState() {
       }
     };
 
-    syncConnections();
-    const interval = setInterval(syncConnections, 3000);
+    void syncConnections();
+    const interval = setInterval(() => { void syncConnections(); }, 3000);
 
     return () => {
       clearInterval(interval);

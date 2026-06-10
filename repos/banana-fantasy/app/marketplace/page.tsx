@@ -419,6 +419,7 @@ export default function MarketplacePage() {
         teamName: selectedTeam.name,
         price: selectedTeam.price || 0,
         buyerWallet: walletAddress,
+        txHash: txHash ? String(txHash) : undefined,
       });
     }
 
@@ -827,7 +828,7 @@ export default function MarketplacePage() {
         const txHash = receipt.hash;
 
         if (team.ownerAddress) {
-          notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress });
+          notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress, txHash: txHash ? String(txHash) : undefined });
         }
         logActivity({ type: 'buy', walletAddress, tokenId: team.tokenId, teamName: team.name, price: team.price, counterparty: team.ownerAddress || null, orderHash: team.orderHash || null, txHash: txHash ? String(txHash) : null });
         if (team.ownerAddress) {
