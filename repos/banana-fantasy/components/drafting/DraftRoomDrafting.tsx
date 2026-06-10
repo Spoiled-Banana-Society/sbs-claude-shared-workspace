@@ -160,7 +160,13 @@ export function DraftRoomDrafting({
             >
               {engine.draftSummary.map((slot) => {
                 const isPicked = slot.playerId !== '';
-                const isCurrent = slot.pickNum === engine.currentPickNumber;
+                // A picked slot can NEVER render as "current" — at the final
+                // pick (and briefly on every pick between landing and advance)
+                // both were true, stacking the current-pick clock border +
+                // position-needs row ON TOP of the picked-card border + player
+                // name. That's the "lines over the boxes" glitch during the
+                // 1s final-pick reveal hold.
+                const isCurrent = slot.pickNum === engine.currentPickNumber && !isPicked;
                 const isUpcoming = slot.pickNum > engine.currentPickNumber;
                 const isUserCard = slot.ownerIndex === engine.userDraftPosition;
                 const posHex = isPicked ? getPositionColorHex(slot.position) : '';

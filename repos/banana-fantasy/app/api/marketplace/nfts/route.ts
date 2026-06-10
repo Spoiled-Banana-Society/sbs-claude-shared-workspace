@@ -33,7 +33,10 @@ const OWNED_TTL_MS = 45_000;
 // the prior result instantly (no Alchemy/backend round-trips at all). Short TTL
 // so a buy/sell/draft still shows up within seconds.
 const respCache = new Map<string, { ts: number; nfts: unknown[] }>();
-const RESP_TTL_MS = 12_000;
+// 4s (was 12s): the draft-close stream ping refetches My Teams ~300ms after
+// the team image lands in marketplace_index — a longer TTL could serve the
+// stale grey-pass response right past that nudge.
+const RESP_TTL_MS = 4_000;
 
 /**
  * GET /api/marketplace/nfts?owner=0x...

@@ -9,6 +9,7 @@ import { LeagueChat } from '@/components/standings/LeagueChat';
 import { useAuth } from '@/hooks/useAuth';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { saveImageToDevice } from '@/lib/saveImage';
 
 export type ModalTab = 'roster' | 'board' | 'standings' | 'team' | 'chat';
 
@@ -386,13 +387,11 @@ export function LeagueDetailModal({ league, initialTab, initialPlayer, walletAdd
     return parts[parts.length - 1]?.replace(/[0-9]/g, '').toUpperCase() || '';
   };
 
-  // Download card
+  // Download card — shared fetch→blob helper (the old /api/save-card proxy
+  // rejects same-origin card URLs; see lib/saveImage.ts).
   const handleSaveCard = useCallback(() => {
     if (!cardImageUrl) return;
-    const a = document.createElement('a');
-    a.href = `/api/save-card?url=${encodeURIComponent(cardImageUrl)}`;
-    a.download = `${league.name}.png`;
-    a.click();
+    void saveImageToDevice(cardImageUrl, league.name);
   }, [cardImageUrl, league.name]);
 
   // Download roster image

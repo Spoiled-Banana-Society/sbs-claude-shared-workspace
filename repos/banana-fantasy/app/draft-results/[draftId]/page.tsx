@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
 import { buildOgCardUrl } from '@/lib/nftCard';
+import { saveImageToDevice } from '@/lib/saveImage';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -561,17 +562,18 @@ export default function DraftResultsPage() {
     setTimeout(() => setRosterSaved(false), 2000);
   }, [generateRosterImage, title]);
 
-  // Save card image — direct download of the 1080x1350 (X-safe) obsidian card.
+  // Save card image — fetch→blob→download via the shared helper (mobile gets
+  // the native share sheet). The old /api/save-card proxy rejected our
+  // same-origin /api/og/team-card URL, so it "downloaded" a JSON error named
+  // .png that failed to save on desktop and mobile.
   const [saved, setSaved] = useState(false);
   const handleSave = useCallback(async (url: string) => {
     if (!url) return;
-    const proxyUrl = `/api/save-card?url=${encodeURIComponent(url)}`;
-    const a = document.createElement('a');
-    a.href = proxyUrl;
-    a.download = `${title}.png`;
-    a.click();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    const ok = await saveImageToDevice(url, title);
+    if (ok) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   }, [title]);
 
   // Point this token's NFT image (OpenSea / marketplace / X) at the obsidian team

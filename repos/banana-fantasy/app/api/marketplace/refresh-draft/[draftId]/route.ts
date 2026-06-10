@@ -7,6 +7,7 @@ import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { computeAndStoreRipeness } from '@/lib/db';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
@@ -136,11 +137,14 @@ async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
   await Promise.all([...owners].map(async (o) => {
     try { await computeAndStoreRipeness(o, await fetchOwnerPaidFilledCount(o)); }
     catch (err) { logger.warn('marketplace.refresh_draft_ripeness_failed', { owner: o, error: String(err) }); }
+    // Silent content-less refetch ping: the team card image was JUST written
+    // to marketplace_index — nudge every device of this owner to refetch so
+    // My Teams swaps the grey pass for the real team image in ~300ms.
+    // Deliberately NOT a bell notification (Boris 2026-06-10 — the generating
+    // screen already covers the announcement); 'notification' pings with no
+    // content trigger the stream-refetch hooks and nothing else.
+    pushStreamEventBg(o, 'notification', { source: 'draft-close-team-image' });
   }));
-  // NOTE: deliberately NO "your team is ready" notification here (Boris,
-  // 2026-06-10) — the post-draft generating screen already walks the user to
-  // their new team; a bell entry on top was noise. My Teams still refreshes
-  // itself in real time via the stream nudge in useMyNfts.
 }
 
 /**

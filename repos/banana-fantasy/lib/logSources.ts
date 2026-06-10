@@ -157,6 +157,9 @@ export const LOG_SOURCES = {
     // Post-draft: push an OpenSea metadata refresh for all 10 freshly-drafted
     // teams so the revealed roster/card art shows on OpenSea + the marketplace.
     REFRESH_DRAFT_FAILED: 'marketplace.refresh_draft_failed',
+    // Saving the team-card image to the user's device failed (roster page /
+    // league modal download button).
+    CARD_SAVE_FAILED: 'marketplace.card_save_failed',
   },
   wheel: {
     SPIN_FAILED: 'wheel.spin_failed',

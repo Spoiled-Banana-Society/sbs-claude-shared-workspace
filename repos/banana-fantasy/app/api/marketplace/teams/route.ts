@@ -17,7 +17,9 @@ function colorForDraftType(dt: DraftType): string {
 // Short cache per filter (all/level/league) so rapid tab-switching is instant and
 // doesn't re-hit Firestore + OpenSea every click.
 const teamsCache = new Map<string, { ts: number; nfts: MarketplaceTeam[] }>();
-const TEAMS_TTL_MS = 10_000;
+// 3s (was 10s): a just-closed draft's teams + league should appear in the
+// marketplace browse near-real-time, not up to 10s later.
+const TEAMS_TTL_MS = 3_000;
 
 /**
  * GET /api/marketplace/teams?level=jackpot|hof&league=N
