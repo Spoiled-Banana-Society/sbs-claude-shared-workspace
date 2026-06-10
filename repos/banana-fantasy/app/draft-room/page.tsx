@@ -69,6 +69,33 @@ function DraftRoomContent() {
   draftIdRef.current = draftId;
   const isLiveMode = modeParam === 'live' && !!walletParam;
 
+  // Ownership gate for wheel-pass (queue) drafts. If this draftId belongs to a
+  // queue round but the connected wallet is NOT one of its members — e.g. they
+  // sold the pass while it was filling and the slot moved to the buyer — bounce
+  // them back to the lobby; they don't own this draft anymore. One-shot fetch,
+  // deps are stable scalars only (no Privy-derived callback) per Rule #0.
+  useEffect(() => {
+    if (!draftId || !walletParam || spectateParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/queues');
+        if (!res.ok) return;
+        const queues = (await res.json()) as Record<string, { rounds?: Array<{ draftId?: string | null; members?: Array<{ wallet?: string }> }> }>;
+        const me = walletParam.toLowerCase();
+        for (const q of Object.values(queues || {})) {
+          for (const r of q.rounds || []) {
+            if (!r.draftId || String(r.draftId) !== String(draftId)) continue;
+            const isMember = (r.members || []).some((m) => m.wallet?.toLowerCase() === me);
+            if (!isMember && !cancelled) router.replace('/drafting');
+            return; // found the round for this draft — done either way
+          }
+        }
+      } catch { /* best-effort — never block a legit user on a fetch error */ }
+    })();
+    return () => { cancelled = true; };
+  }, [draftId, walletParam, spectateParam, router]);
+
   // Wrap setDraftId to also update the URL so refresh rejoins the same draft.
   // Belt-and-suspenders:
   //  - window.history.replaceState updates the URL bar synchronously RIGHT

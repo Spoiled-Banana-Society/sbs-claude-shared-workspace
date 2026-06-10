@@ -187,6 +187,11 @@ export function useDraftingPageState() {
     }
   });
   const [queueDrafts, setQueueDrafts] = useState<Draft[]>([]);
+  // Go draftIds of wheel-pass queue rounds the user is NOT a member of (e.g. a
+  // pass they sold while it was filling — the queue slot moved to the buyer). The
+  // live queue is authoritative, so these are filtered out of the lobby and
+  // blocked at the draft room, clearing any stale localStorage row that lingers.
+  const [foreignQueueDraftIds, setForeignQueueDraftIds] = useState<Set<string>>(new Set());
   const [creatingQueueDraft, setCreatingQueueDraft] = useState<string | null>(null);
 
   useEffect(() => {
@@ -203,6 +208,7 @@ export function useDraftingPageState() {
       fetchJson<Record<string, DraftQueue>>('/api/queues')
         .then(async (queues) => {
           const drafts: Draft[] = [];
+          const foreign = new Set<string>();
           let totalRounds = 0;
 
           for (const q of Object.values(queues)) {
@@ -217,7 +223,13 @@ export function useDraftingPageState() {
               );
 
               logger.debug('[Queue]', q.type, 'round', r.roundId, ':', isMember ? 'MATCH' : 'no match', 'wallets:', memberWallets.join(','));
-              if (!isMember) continue;
+              if (!isMember) {
+                // A wheel-pass round that isn't ours (e.g. we sold the pass and
+                // the slot moved to the buyer). Record its draftId so the lobby
+                // hides any stale cached row for it and the draft room blocks us.
+                if (r.draftId) foreign.add(String(r.draftId));
+                continue;
+              }
 
               drafts.push({
                 id: `queue-${q.type}-${r.roundId}`,
@@ -280,6 +292,15 @@ export function useDraftingPageState() {
 
           logger.debug('[Queue] Found', drafts.length, 'matching queue drafts out of', totalRounds, 'total rounds');
           setQueueDrafts(drafts);
+          setForeignQueueDraftIds(foreign);
+          // Permanently drop any cached local row for a slot that's no longer
+          // ours. Guarded on existence so we don't re-notify listeners every poll.
+          if (foreign.size) {
+            const stored = draftStore.getActiveDrafts();
+            for (const did of foreign) {
+              if (stored.some(d => d.id === did)) draftStore.removeDraft(did);
+            }
+          }
         })
         .catch((e) => {
           console.error('[Queue] Poll failed:', e);
@@ -1165,9 +1186,12 @@ export function useDraftingPageState() {
     });
 
     return [...remainingBase, ...mergedQueueDrafts].filter(
-      d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed',
+      d => (d.specialType || !hiddenDraftIds.has(d.id)) && d.status !== 'completed'
+        // Hide wheel-pass drafts whose slot now belongs to someone else (sold).
+        && !foreignQueueDraftIds.has(d.id)
+        && !(d.queueDraftId && foreignQueueDraftIds.has(d.queueDraftId)),
     );
-  }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, user?.walletAddress]);
+  }, [hiddenDraftIds, isLive, liveDrafts, localDrafts, queueDrafts, foreignQueueDraftIds, user?.walletAddress]);
 
   // Sort key: the slot number embedded in draft.id ("2024-fast-draft-804"
   // → 804). Within the same speed/year the slot counter increments per
