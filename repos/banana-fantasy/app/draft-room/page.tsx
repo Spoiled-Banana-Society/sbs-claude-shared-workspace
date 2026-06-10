@@ -2359,17 +2359,19 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {/* Persistent edge treatment for special drafts — gold for HOF, red
-          for Jackpot. Pointer-events-none so clicks pass through; a gentle
-          pulse keeps it alive without being distracting. Thin 2px border
-          plus a soft inset glow that fades inward ~200px. */}
-      {visibleDraftType && (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') && (
+      {/* Persistent edge treatment — gold for HOF, red for Jackpot, purple
+          for PRO (Boris's pick 2026-06-10: purple outside line + flat purple
+          word, nothing else). Pointer-events-none so clicks pass through; a
+          gentle pulse keeps it alive without being distracting. */}
+      {visibleDraftType && (
         <div
           className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
           style={{
             boxShadow: visibleDraftType === 'jackpot'
               ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
-              : 'inset 0 0 0 2px rgba(255,215,0,0.85)',
+              : visibleDraftType === 'hof'
+              ? 'inset 0 0 0 2px rgba(255,215,0,0.85)'
+              : 'inset 0 0 0 2px rgba(168,85,247,0.85)',
           }}
         />
       )}
