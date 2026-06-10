@@ -197,6 +197,20 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const renderDailyDraftsContent = () => (
     <>
       {renderProgressSection()}
+      {/* Live cumulative stats — refreshed in real time off the user-event
+          stream (usePromos refetches on every server promo credit). */}
+      {(promo.modalContent.lifetimePaidDrafts !== undefined || promo.modalContent.totalDailyClaims !== undefined) && (
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-banana tabular-nums">{promo.modalContent.lifetimePaidDrafts ?? 0}</div>
+            <div className="text-text-muted text-xs mt-1">Paid Drafts All-Time</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{promo.modalContent.totalDailyClaims ?? 0}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
+          </div>
+        </div>
+      )}
       {/* Timer display - always show, 24:00:00 if not started */}
       <div className="bg-bg-tertiary rounded-xl p-4">
         <div className="flex items-center justify-between">
@@ -382,8 +396,27 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       setGeneratingReferral(false);
     };
 
+    const refHistory = promo.modalContent.referralHistory ?? [];
+    const refRewardsEarned = refHistory.reduce((s, e) => {
+      const r = e.rewards;
+      if (!r) return s;
+      return s + [r.verified, r.bought1, r.bought10].filter((x) => x === 'claimed' || x === 'claim').length;
+    }, 0);
+
     return (
       <>
+        {/* Live cumulative stats — friends joined + spins their milestones earned. */}
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-banana tabular-nums">{refHistory.length}</div>
+            <div className="text-text-muted text-xs mt-1">Friends Joined</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{refRewardsEarned}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
+          </div>
+        </div>
+
         {/* Referral Link */}
         {promo.modalContent.referralLink ? (
           <div className="bg-bg-tertiary rounded-xl p-4">
@@ -500,9 +533,23 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       );
     }
 
+    const totalJackpots = history?.length ?? 0;
+    const totalJpSpins = (history ?? []).reduce((s, e) => s + (e.amount || 0), 0);
+
     return (
       <>
         {renderProgressSection()}
+        {/* Live cumulative stats — Jackpots landed + spins they earned. */}
+        <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-jackpot tabular-nums">{totalJackpots}</div>
+            <div className="text-text-muted text-xs mt-1">Jackpots Hit</div>
+          </div>
+          <div className="text-center border-l border-bg-elevated">
+            <div className="text-2xl font-bold text-banana tabular-nums">{totalJpSpins}</div>
+            <div className="text-text-muted text-xs mt-1">Spins Earned Here</div>
+          </div>
+        </div>
         {hasHistory ? (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <h4 className="font-semibold mb-3 text-text-primary">Jackpot Wins</h4>

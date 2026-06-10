@@ -15,13 +15,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useStreamRefetch } from '@/hooks/useStreamRefetch';
+import { BadgeIcon } from '@/components/badges/BadgeIcon';
+import { BADGE_BY_ID } from '@/lib/badges/catalog';
 
 interface Standing { wallet: string; name: string; pfp: string | null; count: number; rank: number }
 interface LeaderboardData {
   finalizesAtIso: string;
   totalPlayers: number;
   top: Standing[];
-  me: { rank: number | null; count: number } | null;
+  me: { rank: number | null; count: number; lifetime: number | null } | null;
 }
 
 function timeLeftLabel(finalizesAtIso: string): string {
@@ -74,12 +76,16 @@ export function KingLeaderboard() {
         boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
       }}
     >
-      <div className="flex items-baseline justify-between mb-1">
-        <h3 className="text-[16px] font-semibold text-white tracking-tight">King of Drafts</h3>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2.5">
+          <BadgeIcon badge={BADGE_BY_ID['king-of-drafts']} size={32} unlocked showTooltip={false} />
+          <h3 className="text-[16px] font-semibold text-white tracking-tight">King of Drafts</h3>
+        </div>
         <span className="text-banana text-[12px] font-semibold tabular-nums">{timeLeftLabel(data.finalizesAtIso)}</span>
       </div>
-      <p className="text-text-muted text-[11px] mb-4">
-        Most paid drafts filled this week takes the crown · finalizes Sunday 11 PM PT
+      <p className="text-text-muted text-[11px] mb-4 leading-relaxed">
+        Fill the most paid drafts in a week and wear the crown all next week.
+        Weeks run Monday 5 AM&nbsp;PT&nbsp;&rarr; Sunday 11 PM&nbsp;PT &mdash; the winner is crowned at the close.
       </p>
 
       {data.top.length === 0 ? (
@@ -109,6 +115,9 @@ export function KingLeaderboard() {
                 </span>
                 <span className="text-[13px] font-semibold tabular-nums text-text-secondary">
                   {s.count} {s.count === 1 ? 'draft' : 'drafts'}
+                  {isMe && data.me?.lifetime != null && (
+                    <span className="text-text-muted font-normal"> · {data.me.lifetime} all-time</span>
+                  )}
                 </span>
               </div>
             );
@@ -119,9 +128,14 @@ export function KingLeaderboard() {
               <div className="h-px bg-white/[0.06] my-2" />
               <div className="flex items-center gap-3 rounded-xl px-3 py-2 bg-banana/10 border border-banana/30">
                 <span className="w-7 text-[13px] font-bold tabular-nums text-banana">#{data.me.rank}</span>
-                <span className="flex-1 text-[13px] text-banana font-semibold">You</span>
+                <span className="flex-1 text-[13px] text-banana font-semibold">
+                  You <span className="text-text-muted font-normal">of {data.totalPlayers}</span>
+                </span>
                 <span className="text-[13px] font-semibold tabular-nums text-text-secondary">
-                  {data.me.count} {data.me.count === 1 ? 'draft' : 'drafts'}
+                  {data.me.count} this week
+                  {data.me.lifetime != null && (
+                    <span className="text-text-muted font-normal"> · {data.me.lifetime} all-time</span>
+                  )}
                 </span>
               </div>
             </>
@@ -130,6 +144,7 @@ export function KingLeaderboard() {
           {wallet && data.me && data.me.rank === null && (
             <p className="text-text-muted text-[11px] pt-2 text-center">
               Fill a paid draft to enter this week&apos;s race · {data.totalPlayers} competing
+              {data.me.lifetime != null && data.me.lifetime > 0 ? ` · ${data.me.lifetime} paid drafts all-time` : ''}
             </p>
           )}
         </div>

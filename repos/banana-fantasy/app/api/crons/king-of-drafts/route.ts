@@ -5,11 +5,11 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { unlockBadge, revokeBadge } from '@/lib/db';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
+import { lastClosedKingWeek } from '@/lib/kingWeek';
 import { logger } from '@/lib/logger';
 
 // Singleton doc tracking who currently holds the transient King badge.
 const KING_STATE_DOC = 'badgeState/king-of-drafts';
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 function authed(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -41,7 +41,11 @@ export async function GET(req: Request) {
 
   try {
     const db = getAdminFirestore();
-    const sinceIso = new Date(Date.now() - WEEK_MS).toISOString();
+    // The week that just closed: Mon 5am PT → Sun 11pm PT (lib/kingWeek.ts) —
+    // the SAME window the live leaderboard shows, so what users watched all
+    // week is exactly what gets crowned.
+    const week = lastClosedKingWeek(Date.now());
+    const sinceIso = week.startIso;
 
     // Single-field range query (auto-indexed) — filter type + paid in memory
     // so we don't depend on a composite index.
@@ -55,10 +59,12 @@ export async function GET(req: Request) {
       const e = doc.data() as {
         type?: string;
         userId?: string;
+        createdAtIso?: string;
         metadata?: { passType?: string };
       };
       if (e.type !== 'draft_filled') continue; // FILLED paid drafts only — not entries
       if (e.metadata?.passType !== 'paid') continue; // free drafts don't count
+      if ((e.createdAtIso ?? '') >= week.endIso) continue; // after Sun 11pm PT close
       const wallet = (e.userId || '').toLowerCase();
       if (!wallet || wallet.startsWith('bot-')) continue;
       counts.set(wallet, (counts.get(wallet) ?? 0) + 1);

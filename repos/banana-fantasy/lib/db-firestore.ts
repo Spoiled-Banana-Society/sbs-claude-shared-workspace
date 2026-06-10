@@ -302,10 +302,15 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // (seedDb.referralsByUser['1'] = 'BANANA-CK99-2026'). Replace with a
   // per-user deterministic code on read AND persist + claim the reverse
   // lookup doc so /api/referrals/track resolves to this user.
+  // ONLY heal missing/legacy machine codes (`BANANA-…` with hyphens) — a
+  // name-based code from ensureNamedReferralCode must never be overwritten
+  // (sanitized names contain no hyphen, so the prefix check can't collide).
   const expectedCode = buildPerUserReferralCode(userId);
   const expectedLink = `https://banana-fantasy-sbs.vercel.app?ref=${expectedCode}`;
   const referralPromoToFix = allDocs.find(
-    (p) => p.type === 'referral' && p.modalContent.inviteCode !== expectedCode,
+    (p) => p.type === 'referral'
+      && (!p.modalContent.inviteCode || p.modalContent.inviteCode.startsWith('BANANA-'))
+      && p.modalContent.inviteCode !== expectedCode,
   );
   if (referralPromoToFix) {
     referralPromoToFix.modalContent.inviteCode = expectedCode;
@@ -636,24 +641,59 @@ export async function getReferralStats(userId: string): Promise<ReferralStats> {
 }
 
 export async function generateReferralCode(userId: string, username?: string) {
+  return ensureNamedReferralCode(userId, username);
+}
+
+const REFERRAL_SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
+
+/** Strip a display name down to a clean code: letters+digits only, max 16. */
+function sanitizeRefName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+}
+
+/**
+ * Name-based referral code (Boris 2026-06-10): the share link ends in the
+ * user's display name — `…/r/BorisV` — short and clean. Uses their edited
+ * name when set, else the default Banana##### name. The code doc id is the
+ * UPPERCASED name (lookups are case-insensitive); on a name collision we
+ * append 2, 3, … . When the user renames, the next read mints a fresh code
+ * for the new name — old codes stay in v2_referral_codes so links already
+ * shared keep resolving to them.
+ */
+export async function ensureNamedReferralCode(userId: string, displayName?: string) {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
-  const base = (username || `USER-${userId}`).replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toUpperCase();
-  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
-  const code = `BANANA-${base}-${suffix}`;
-  const link = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
+  const fallback = `Banana${userId.replace(/[^a-zA-Z0-9]/g, '').slice(-5)}`;
+  const base = sanitizeRefName(displayName || '') || sanitizeRefName(fallback);
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);
-  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(code);
+
+  // Already minted for this exact name → reuse (no writes on the hot path).
+  const metaSnap = await referralRef.get();
+  const meta = metaSnap.data() as { code?: string; base?: string } | undefined;
+  if (meta?.code && meta?.base === base.toUpperCase()) {
+    return { code: meta.code, link: `${REFERRAL_SITE_URL}/r/${meta.code}` };
+  }
+
+  // Find a free id: NAME, NAME2 … NAME99 (id uppercase; pretty case kept in doc).
+  let pretty = base;
+  for (let n = 2; n <= 99; n++) {
+    const snap = await db.collection(REFERRAL_CODES_COLLECTION).doc(pretty.toUpperCase()).get();
+    if (!snap.exists || (snap.data() as { userId?: string }).userId === userId) break;
+    pretty = `${base}${n}`;
+  }
+  const code = pretty;
+  const link = `${REFERRAL_SITE_URL}/r/${code}`;
+  const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(code.toUpperCase());
 
   await db.runTransaction(async (tx) => {
     const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
     const referralPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'referral');
 
-    tx.set(referralRef, stripUndefined({ code, createdAt: todayDate() }), { merge: true });
-    tx.set(codeRef, { userId, code });
+    tx.set(referralRef, stripUndefined({ code, base: base.toUpperCase(), createdAt: todayDate() }), { merge: true });
+    tx.set(codeRef, { userId, code }, { merge: true });
 
     if (referralPromoDoc) {
       const promo = deepClone(referralPromoDoc.data() as Promo);
@@ -2156,6 +2196,9 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
       promo.progressCurrent = 0;
       promo.claimable = true;
       promo.claimCount = (promo.claimCount || 0) + 1;
+      // Cumulative all-time counter for the modal stats ("spins earned from
+      // this promo") — claimCount drains on claim, this never decrements.
+      promo.modalContent.totalDailyClaims = (promo.modalContent.totalDailyClaims || 0) + 1;
       promo.timerEndTime = undefined;
       promo.completedDraftIds = [];
       needsTimerDelete = true;

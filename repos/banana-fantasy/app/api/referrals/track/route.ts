@@ -23,9 +23,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing referrerCode or referredUserId' }, { status: 400 });
     }
 
-    // Look up referrer by code in Firestore
+    // Look up referrer by code in Firestore. Name-based codes are stored
+    // with an UPPERCASE doc id (links get typed/shared in any case); legacy
+    // BANANA-… codes were already uppercase, so this is back-compatible.
     const db = getAdminFirestore();
-    const codeSnap = await db.collection(REFERRAL_CODES_COLLECTION).doc(referrerCode).get();
+    const codeId = String(referrerCode).replace(/[^a-zA-Z0-9-]/g, '').toUpperCase();
+    const codeSnap = await db.collection(REFERRAL_CODES_COLLECTION).doc(codeId).get();
 
     let referrerUserId: string | null = null;
     if (codeSnap.exists) {
