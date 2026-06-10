@@ -2066,8 +2066,23 @@ function DraftRoomContent() {
   useEffect(() => {
     if (slotAnimationDone) {
       window.dispatchEvent(new CustomEvent('bbb:type-revealed'));
+      // Server-side reveal report: the slot machine + VRF just FINISHED
+      // showing the type — if it's Jackpot/HOF the server unlocks the club
+      // badge for all 10 drafters + credits Jackpot Hit, at this exact
+      // moment (never at raw fill — that would spoil the reveal). The
+      // server verifies the type itself; this call carries no information.
+      // localStorage-guarded so 10 re-renders don't spam (server dedupes too).
+      const id = draftId || urlDraftId;
+      if (id && (draftType === 'jackpot' || draftType === 'hof')) {
+        const revealKey = `reveal-reported:${id}`;
+        if (!localStorage.getItem(revealKey)) {
+          localStorage.setItem(revealKey, '1');
+          fetch(`/api/drafts/${encodeURIComponent(id)}/reveal-complete`, { method: 'POST' }).catch(() => {});
+        }
+      }
     }
-  }, [slotAnimationDone]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotAnimationDone, draftType, draftId, urlDraftId]);
 
   useEffect(() => {
     if (mainCountdown <= 15 && screenShake) setScreenShake(false);

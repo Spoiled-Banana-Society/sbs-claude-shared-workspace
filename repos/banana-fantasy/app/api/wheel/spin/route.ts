@@ -497,18 +497,10 @@ export async function POST(req: Request) {
         }
       }
 
-      try {
-        // Winning JP/HOF on the wheel is an alternate path into the matching
-        // club badge — same membership as entering that draft type.
-        const { unlockBadge } = await import('@/lib/db');
-        if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
-          await unlockBadge(userId.toLowerCase(), 'jackpot-club', { source: 'wheel', spinId }).catch(() => {});
-        } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
-          await unlockBadge(userId.toLowerCase(), 'hof-club', { source: 'wheel', spinId }).catch(() => {});
-        }
-      } catch (badgeErr) {
-        logger.warn('wheel.spin.badge_unlock_failed', { spinId, err: (badgeErr as Error).message });
-      }
+      // NOTE: NO club badge unlock at spin time (Boris 2026-06-10). Winning
+      // a JP/HOF draft on the wheel unlocks the club badge when that queue
+      // DRAFT FILLS — fired by the draft-filled webhook (queue-draft-filled
+      // source), not here.
 
       if (mintOnChain && mintedTokenIds.length > 0) {
         await logActivityEvent({

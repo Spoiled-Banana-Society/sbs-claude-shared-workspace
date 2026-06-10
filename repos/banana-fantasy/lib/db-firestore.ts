@@ -36,7 +36,6 @@ import type {
 import { BADGE_BY_ID, BADGE_CATALOG, seedUserBadges } from '@/lib/badges/catalog';
 import { ripenessFromCount, unlockedRipenessIds } from '@/lib/badges/ripeness';
 import { pushStreamEventBg } from '@/lib/userEventStream';
-import { runInBackground } from '@/lib/serverBackground';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 
@@ -798,16 +797,9 @@ export async function spinWheel(userId: string): Promise<{ spin: WheelSpin; user
     return { spin: deepClone(spin), user: deepClone(user) };
   });
 
-  // Club badges on a jackpot/HOF wheel win — waitUntil-backed so the unlock
-  // survives the response (a detached promise dies with the frozen lambda and
-  // the badge ping is lost). Idempotent, so retries (and the badge sweep) are
-  // safe. Winning JP/HOF on the wheel is an alternate path into the same club
-  // as entering that draft type.
-  if (result.spin.prize.type === 'jackpot') {
-    runInBackground('badge.wheel-jackpot-club', unlockBadge(userId, 'jackpot-club', { source: 'wheel', spinId: result.spin.id }));
-  } else if (result.spin.prize.type === 'hof') {
-    runInBackground('badge.wheel-hof-club', unlockBadge(userId, 'hof-club', { source: 'wheel', spinId: result.spin.id }));
-  }
+  // NOTE: NO club badge unlock at spin time (Boris 2026-06-10). A wheel-won
+  // JP/HOF draft unlocks the club badge when that queue DRAFT FILLS — fired
+  // by the draft-filled webhook (source: queue-draft-filled).
 
   return result;
 }
@@ -2012,7 +2004,7 @@ export async function recordFirstPurchaseDraftFinished(userId: string, draftId: 
  * error); callers then fall back to the client value (today's behavior — no
  * regression for legacy tokens), so this only ever makes the gate STRICTER.
  */
-async function resolveDraftPassType(userId: string, draftId: string): Promise<'free' | 'paid' | null> {
+export async function resolveDraftPassType(userId: string, draftId: string): Promise<'free' | 'paid' | null> {
   if (!draftId) return null;
   const lower = userId.toLowerCase();
   const baseUrl = (

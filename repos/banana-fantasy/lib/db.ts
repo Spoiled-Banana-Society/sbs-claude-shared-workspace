@@ -38,6 +38,7 @@ export const recordPick10 = db.recordPick10;
 export const recordJackpotHit = db.recordJackpotHit;
 export const recordFounderDraftJoin = db.recordFounderDraftJoin;
 export const promoCreditAllowed = db.promoCreditAllowed;
+export const resolveDraftPassType = db.resolveDraftPassType;
 export const markFounderDraft = db.markFounderDraft;
 export const isFounderDraftMarked = db.isFounderDraftMarked;
 export const getUserBadges = db.getUserBadges;

@@ -40,7 +40,7 @@
     },
     {
       "path": "/api/crons/king-of-drafts",
-      "schedule": "0 9 * * 1"
+      "schedule": "0 6 * * 1"
     },
     {
       "path": "/api/crons/capture-draft-data",

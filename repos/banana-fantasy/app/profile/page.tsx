@@ -11,6 +11,7 @@ import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
+import { KingLeaderboard } from '@/components/badges/KingLeaderboard';
 import { NotificationSettings } from '@/components/notifications/NotificationSettings';
 import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 
@@ -185,6 +186,7 @@ export default function ProfilePage() {
 
         {activeTab === 'badges' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <KingLeaderboard />
             <BadgeCatalogGrid />
           </motion.div>
         )}

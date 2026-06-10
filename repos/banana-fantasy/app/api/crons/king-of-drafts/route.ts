@@ -20,10 +20,18 @@ function authed(req: Request): boolean {
 /**
  * GET /api/crons/king-of-drafts  (Vercel weekly cron + manual admin trigger)
  *
- * Crowns the wallet that entered the most PAID drafts in the trailing 7 days
- * (free drafts don't count). The badge is transient — it's revoked from the
- * previous holder and unlocked on the new one (which fires their bell + toast).
- * If the same wallet wins again, it's a no-op beyond refreshing the count.
+ * Crowns the wallet whose PAID drafts FILLED the most in the Mon–Sun week
+ * closing Sunday 11pm PT (cron: Monday 06:00 UTC = Sun 11pm PDT). Counting
+ * basis is `draft_filled` activity events written by the fill webhook — NOT
+ * entries: an entered-then-left draft refunds the pass and must not count
+ * (Boris 2026-06-10; also closes the join/leave farming hole). Free passes
+ * never count. The badge is transient — revoked from the previous holder and
+ * unlocked on the new one (which fires their bell + toast). If the same
+ * wallet wins again, it's a no-op beyond refreshing the count.
+ *
+ * The live in-week standings use the SAME counting in
+ * /api/badges/king-leaderboard, so what users watch all week is exactly what
+ * gets crowned.
  *
  * Auth: Vercel injects `Authorization: Bearer ${CRON_SECRET}`. Manual runs
  * must send the same header.
@@ -49,7 +57,7 @@ export async function GET(req: Request) {
         userId?: string;
         metadata?: { passType?: string };
       };
-      if (e.type !== 'draft_entered') continue;
+      if (e.type !== 'draft_filled') continue; // FILLED paid drafts only — not entries
       if (e.metadata?.passType !== 'paid') continue; // free drafts don't count
       const wallet = (e.userId || '').toLowerCase();
       if (!wallet || wallet.startsWith('bot-')) continue;

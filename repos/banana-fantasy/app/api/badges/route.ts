@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { getUserBadges, unlockBadge, computeAndStoreRipeness } from '@/lib/db';
+import { getUserBadges, computeAndStoreRipeness } from '@/lib/db';
 import { BADGE_CATALOG } from '@/lib/badges/catalog';
 import { awardClubBadges, awardOgIfReturning, awardChampionBadges } from '@/lib/badges/awards';
 import { mapDraftTokenToLeague, fetchOwnerPaidFilledCount, type ApiDraftToken } from '@/lib/api/owner';
@@ -107,28 +107,11 @@ async function maybeRunSweep(userId: string, force = false): Promise<{
     // matching club badge.
     awards.push(...await awardClubBadges(userId, leagues));
 
-    // Club catch-up for jackpot/HOF wheel winners — the wheel route also
-    // fires these inline; this re-checks for spins from before the badge
-    // system shipped. Query the top-level wheelSpins collection.
-    try {
-      const spinsSnap = await db
-        .collection('wheelSpins')
-        .where('userId', '==', userId)
-        .limit(50)
-        .get();
-      for (const doc of spinsSnap.docs) {
-        const spin = doc.data();
-        const prizeType = spin?.prize?.type;
-        const prizeValue = spin?.prize?.value;
-        if (prizeType === 'custom' && prizeValue === 'jackpot') {
-          if (await unlockBadge(userId, 'jackpot-club', { source: 'wheel', spinId: doc.id })) awards.push('jackpot-club');
-        } else if (prizeType === 'custom' && prizeValue === 'hof') {
-          if (await unlockBadge(userId, 'hof-club', { source: 'wheel', spinId: doc.id })) awards.push('hof-club');
-        }
-      }
-    } catch (err) {
-      logger.warn('badges.read.wheel-sweep.failed', { userId, err });
-    }
+    // NOTE: the wheel-spin club catch-up sweep was REMOVED (Boris 2026-06-10).
+    // Winning a JP/HOF draft on the wheel no longer unlocks the club badge at
+    // spin time — the badge unlocks when that queue DRAFT FILLS (draft-filled
+    // webhook, source: queue-draft-filled). awardClubBadges above (resolved
+    // league type, i.e. revealed/filled drafts) remains the lazy backstop.
 
     return { ran: true, joined, completed: completedCount, awards };
   } catch (err) {
