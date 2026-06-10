@@ -235,7 +235,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Get Pick 10 Get a SPIN',
       explanation:
-        'For every 10th Slot Pick in a Draft you Hit you get a Free Banana Spin. Paid Drafts Only.',
+        'For every 10th Slot Pick in a Draft you Hit you get a Free Banana Spin.\nPaid Drafts Only.',
       // Per-user state — starts empty. Real Pick 10s are appended by
       // recordPick10 on actual paid drafts. (Previously this carried 3 fake
       // demo rows incl. 2 'claim' entries, which were cloned into every real
@@ -337,7 +337,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: '4 Drafts Daily → FREE SPIN',
       explanation:
-        'Complete 4 paid drafts within 24 hours to earn a Free Banana Spin. Your 24-hour timer starts when your first paid draft fills. Once you complete 4, your progress and timer reset right away — there\'s no limit, every 4 paid drafts earns another Spin! Paid Drafts Only.',
+        'Complete 4 paid drafts within 24 hours to earn a Free Banana Spin. Your 24-hour timer starts when your first paid draft fills. Once you complete 4, your progress and timer reset right away — there\'s no limit, every 4 paid drafts earns another Spin!\nPaid Drafts Only.',
     },
   },
   {
