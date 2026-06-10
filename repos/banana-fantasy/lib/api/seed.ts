@@ -257,7 +257,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Banana Spin on the prize wheel\n\nEarn bonus Free Banana Spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.',
+        'Share your unique referral link with friends. Your friend must:\n\n1) Verify their X account\n2) Claim and use their Free Banana Spin on the prize wheel\n\nEarn bonus Free Banana Spins when they purchase draft passes.\n\nOne account per person — if you have more than one account you are not eligible to win prizes.\n\nReal players only: referrals must actually play fantasy football. Inviting people just to farm free spins makes BOTH you and your referral ineligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
@@ -301,7 +301,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'New User → FREE SPIN',
       explanation:
-        'Verify your account by connecting your X to claim your Free Banana Spin.\n\nThen spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n\nOne account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.',
+        'Verify your account by connecting your X to claim your Free Banana Spin.\n\nThen spin the Banana Wheel for a chance to win 20, 10, 5, or 1 Free Drafts — or a Jackpot/HOF draft.\n\nOne account per person — if you have more than one account you are not eligible to win prizes. This helps us ensure fair play for everyone.\n\nYou must actually play fantasy football — accounts made just to farm free spins are not eligible to win prizes.',
       additionalRules: '',
       twitterConnected: false,
     },
