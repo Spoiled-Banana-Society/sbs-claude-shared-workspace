@@ -200,6 +200,24 @@ func (db *DatabaseConn) CreateOrUpdateDocument(collection string, documentId str
 	return nil
 }
 
+// UpdateDocumentField updates a single field on a document, with the same
+// slow/failed-op instrumentation as the other wrapper methods. Added for the
+// pick path's playerState field update — the exact call that hit a 60s
+// DeadlineExceeded and froze draft 2024-fast-draft-1381 (2026-06-10), and the
+// only pick-path write that previously bypassed the timed wrapper.
+func (db *DatabaseConn) UpdateDocumentField(collection string, documentId string, fieldPath string, value any) error {
+	ctx := context.Background()
+	start := time.Now()
+	_, err := db.Client.Collection(collection).Doc(documentId).Update(ctx, []firestore.Update{
+		{Path: fieldPath, Value: value},
+	})
+	logDbOp("update-field", collection, documentId, start, err, value)
+	if err != nil {
+		return fmt.Errorf("error updating field %s at %s/%s: %v", fieldPath, collection, documentId, err)
+	}
+	return nil
+}
+
 func (db *DatabaseConn) ReturnNumOfDocumentsInCollection(collection string) (int, error) {
 	iter := db.Client.Collection(collection).Documents(context.Background())
 	data, err := iter.GetAll()

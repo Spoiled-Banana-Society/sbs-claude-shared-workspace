@@ -1,11 +1,9 @@
 package models
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
-	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
 
@@ -214,16 +212,8 @@ func (pick *PlayerStateInfo) UpdatePlayerInDraft(draftId string) error {
 	if pick.PlayerId == "" {
 		return fmt.Errorf("cannot update this pick in the draft player state as the pick object is nil")
 	}
-	ctx := context.Background()
-
-	_, err := utils.Db.Client.Collection(fmt.Sprintf("drafts/%s/state", draftId)).Doc("playerState").Update(ctx, []firestore.Update{
-		{
-			Path:  pick.PlayerId,
-			Value: pick,
-		},
-	})
-	if err != nil {
-		return err
-	}
-	return nil
+	// Routed through the timed wrapper (slow>2s WARN / failure ERROR with
+	// path+ms) — this exact write hit a 60s DeadlineExceeded on 2026-06-10
+	// and froze draft 2024-fast-draft-1381, invisibly.
+	return utils.Db.UpdateDocumentField(fmt.Sprintf("drafts/%s/state", draftId), "playerState", pick.PlayerId, pick)
 }
