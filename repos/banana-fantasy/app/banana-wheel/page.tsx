@@ -52,6 +52,33 @@ export default function BananaWheelPage() {
   const historyQuery = useWheelHistory(user?.id);
   const spinHistory = historyQuery.data ?? [];
 
+  // Lifetime spin winnings — the "My Winnings" scoreboard. Computed from the
+  // full spin history (cumulative, never decreases), unlike the spendable
+  // balances which drop when a pass/entry is used. Stored `prize` is the
+  // source of truth; legacy rows without one derive from the segment id.
+  const wonTotals = useMemo(() => {
+    let drafts = 0;
+    let jackpot = 0;
+    let hof = 0;
+    for (const s of spinHistory) {
+      const p = s.prize;
+      if (p && typeof p === 'object' && p.type) {
+        if (p.type === 'draft_pass' && typeof p.value === 'number') drafts += p.value;
+        else if (p.type === 'custom' && p.value === 'jackpot') jackpot += 1;
+        else if (p.type === 'custom' && p.value === 'hof') hof += 1;
+        continue;
+      }
+      const r = s.result || '';
+      if (r.startsWith('jackpot')) jackpot += 1;
+      else if (r.startsWith('hof')) hof += 1;
+      else {
+        const m = r.match(/^draft-(\d+)/);
+        if (m) drafts += Number(m[1]);
+      }
+    }
+    return { drafts, jackpot, hof };
+  }, [spinHistory]);
+
   const spinsAvailable = Math.max(0, user?.wheelSpins ?? 0);
 
   const segmentMap = useMemo(() => new Map(wheelSegments.map((segment) => [segment.id, segment])), []);
@@ -368,19 +395,31 @@ export default function BananaWheelPage() {
           >
             <h3 className="text-[16px] font-semibold text-white tracking-tight">My Winnings</h3>
 
-            {/* Totals — your scoreboard, tabular numerals so digits line up */}
+            {/* Totals — big number = LIFETIME won from spins (cumulative, never
+                drops); muted suffix = spendable balance left right now. Both
+                live: totals bump when the wheel lands, "left" rides the
+                real-time balance stream (drops the moment a pass is used). */}
             <div className="mt-4 space-y-3.5">
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">Free Drafts</span>
-                <span className="text-[#32d74b] font-semibold text-[16px] tabular-nums">{user?.freeDrafts || 0}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#32d74b] font-semibold text-[16px] tabular-nums">{wonTotals.drafts}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {user?.freeDrafts || 0} left</span>
+                </span>
               </div>
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">Jackpot</span>
-                <span className="text-[#ff6b6b] font-semibold text-[16px] tabular-nums">{(user?.jackpotEntries || 0) + queuedJP}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#ff6b6b] font-semibold text-[16px] tabular-nums">{wonTotals.jackpot}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.jackpotEntries || 0) + queuedJP} left</span>
+                </span>
               </div>
               <div className="flex justify-between items-baseline">
                 <span className="text-white text-[14px] font-medium">HOF</span>
-                <span className="text-[#ffd60a] font-semibold text-[16px] tabular-nums">{(user?.hofEntries || 0) + queuedHOF}</span>
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[#ffd60a] font-semibold text-[16px] tabular-nums">{wonTotals.hof}</span>
+                  <span className="text-white/35 text-[12px] tabular-nums">won · {(user?.hofEntries || 0) + queuedHOF} left</span>
+                </span>
               </div>
             </div>
 

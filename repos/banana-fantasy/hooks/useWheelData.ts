@@ -31,6 +31,8 @@ export interface WheelHistoryEntry {
   spinId: string;
   date: string;
   result: string;
+  /** Prize the spin paid out — drives the lifetime "won" totals in My Winnings. */
+  prize?: { type?: string; value?: number | string } | null;
 }
 
 export function useWheelHistory(userId: string | undefined | null) {
@@ -38,7 +40,7 @@ export function useWheelHistory(userId: string | undefined | null) {
     queryKey: ['wheel', 'history', userId || ''],
     enabled: !!userId,
     queryFn: async () => {
-      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string }>>(
+      const raw = await fetchJson<Array<{ id?: string; spinId?: string; date?: string; result?: string; prize?: { type?: string; value?: number | string } | null }>>(
         `/api/wheel/history?userId=${encodeURIComponent(userId!)}`,
       );
       if (!Array.isArray(raw)) return [];
@@ -48,6 +50,7 @@ export function useWheelHistory(userId: string | undefined | null) {
           spinId: h.spinId || h.id || '',
           date: h.date || '',
           result: h.result || '',
+          prize: h.prize ?? null,
         }))
         .filter((h) => h.spinId && h.result);
     },
