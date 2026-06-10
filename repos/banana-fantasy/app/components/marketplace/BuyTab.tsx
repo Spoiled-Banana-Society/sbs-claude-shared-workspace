@@ -770,7 +770,7 @@ export function BuyTab({
                   </svg>
                 </div>
                 <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-                <p className="text-text-secondary text-sm">{selectedTeam.name} is now yours</p>
+                <p className="text-text-secondary text-sm">{selectedTeam.fillingWheelLevel ? `Your ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} draft is filling` : `${selectedTeam.name} is now yours`}</p>
               </div>
             )}
           </div>

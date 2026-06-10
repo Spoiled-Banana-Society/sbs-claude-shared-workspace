@@ -441,6 +441,15 @@ export default function MarketplacePage() {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
     const price = selectedTeam.price || 0;
 
+    // Bought a still-filling wheel pass → move its queue slot to us (server
+    // verifies on-chain ownership) so the draft shows on our drafting page.
+    const reassignFillingPassIfNeeded = async () => {
+      if (!selectedTeam.fillingWheelLevel || !walletAddress) return;
+      try {
+        await fetch('/api/queues/reassign-pass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tokenId: selectedTeam.tokenId, wallet: walletAddress }) });
+      } catch { /* best-effort */ }
+    };
+
     if (paymentMethod === 'usdc') {
       setBuyStep('processing');
       setTxError(null);
@@ -454,6 +463,7 @@ export default function MarketplacePage() {
         }
 
         await executeBuy();
+        await reassignFillingPassIfNeeded();
         setBuyStep('complete');
         setTimeout(() => {
           setShowBuyModal(false);
@@ -515,6 +525,7 @@ export default function MarketplacePage() {
 
       setCardFlowStep('buying');
       await executeBuy();
+      await reassignFillingPassIfNeeded();
       setBuyStep('complete');
       setCardFlowStep('idle');
       setTimeout(() => {
@@ -976,13 +987,19 @@ export default function MarketplacePage() {
               </svg>
             </div>
             <h3 className="text-text-primary font-semibold text-lg mb-2">Purchase Complete!</h3>
-            <p className="text-text-secondary text-sm mb-6">The team has been transferred to your wallet.</p>
+            <p className="text-text-secondary text-sm mb-6">
+              {selectedTeam.fillingWheelLevel
+                ? `${selectedTeam.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} pass transferred — your draft is filling.`
+                : 'The team has been transferred to your wallet.'}
+            </p>
+            {/* A still-filling wheel pass is a draft-in-progress, not a team yet —
+                send the buyer to their drafting lobby, not the team page. */}
             <Link
-              href={`/marketplace/${selectedTeam.tokenId}`}
+              href={selectedTeam.fillingWheelLevel ? '/drafting' : `/marketplace/${selectedTeam.tokenId}`}
               onClick={() => setShowSuccessModal(false)}
               className="w-full py-3 bg-banana text-black font-semibold rounded-xl hover:brightness-110 transition-all block mb-3"
             >
-              View Your Team
+              {selectedTeam.fillingWheelLevel ? 'View Draft' : 'View Your Team'}
             </Link>
             <button onClick={() => setShowSuccessModal(false)} className="w-full py-3 border border-bg-tertiary text-text-secondary rounded-xl hover:bg-bg-tertiary transition-all text-sm">
               Back to Marketplace
