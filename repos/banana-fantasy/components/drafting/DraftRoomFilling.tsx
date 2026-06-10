@@ -49,7 +49,12 @@ export function DraftRoomFilling({
 
   return (
     <>
-      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: '#000' }}>
+      {/* Type-colored band behind the box strip — SAME treatment as the
+          drafting phase (DraftRoomDrafting): gold for HOF, red for Jackpot.
+          The lobby used to keep the old design (solid-color user box, no
+          band), so wheel-won JP/HOF drafts looked stale while filling
+          (caught by Boris on 2025-slow-draft-62, 2026-06-10). */}
+      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: visibleDraftType === 'hof' ? '#C9A227' : visibleDraftType === 'jackpot' ? '#C0282D' : '#000' }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
@@ -88,12 +93,12 @@ export function DraftRoomFilling({
             }
 
             const truncatedName = displayName.length > 14 ? `${displayName.substring(0, 12)}...` : displayName;
-            const bgColor = isUser && isFilled
-              ? (visibleDraftType === 'hof' ? '#F3E216' : visibleDraftType === 'jackpot' ? '#FF474C' : '#222')
-              : '#222';
-            const textColor = isUser && visibleDraftType === 'hof' ? '#111'
-              : isUser && visibleDraftType === 'jackpot' ? '#222'
-              : '#fff';
+            // Boxes stay DARK for every type — only YOUR box gets the yellow
+            // ring (matches the drafting phase + Boris's design sketches).
+            // The old solid gold/red fill on the user box is gone; the type
+            // color now lives in the band behind the strip.
+            const bgColor = '#222';
+            const textColor = '#fff';
 
             return (
               <div
@@ -151,7 +156,7 @@ export function DraftRoomFilling({
                   {showSkeleton ? (
                     <div className="mt-2 mx-auto animate-shimmer rounded h-[14px] w-[60%]" />
                   ) : (
-                    <div className={`mt-2 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? (visibleDraftType ? textColor : '#F3E216') : textColor) : '#444' }}>
+                    <div className={`mt-2 font-bold text-[11px] lg:text-[14px] font-primary ${isRandomizing && !isUser ? 'animate-pulse' : ''}`} style={{ color: isFilled ? (isUser ? '#F3E216' : textColor) : '#444' }}>
                       {truncatedName}
                     </div>
                   )}
