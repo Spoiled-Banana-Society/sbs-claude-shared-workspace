@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useAuth } from '@/hooks/useAuth';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 export interface PublicUser {
   walletAddress: string;
@@ -72,6 +74,11 @@ export function useFriends(enabled: boolean): {
     const id = setInterval(() => { void refreshRef.current(); }, POLL_MS);
     return () => clearInterval(id);
   }, [enabled]);
+
+  // Instant: friend requests/accepts fire a server noti ping — refresh the
+  // buckets within ~300ms instead of waiting out the 15s poll.
+  const { walletAddress } = useAuth();
+  useStreamRefetch(enabled ? walletAddress : null, () => { void refreshRef.current(); });
 
   const sendRequest = useCallback(async (targetWallet: string) => {
     try {

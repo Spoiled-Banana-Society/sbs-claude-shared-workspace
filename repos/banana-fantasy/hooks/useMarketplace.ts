@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 import type { MarketplaceTeam, DraftType, OfferData } from '@/lib/opensea';
 import type { CollectionStats } from '@/lib/opensea';
 import { getOwnerDraftTokens, type ApiDraftToken } from '@/lib/api/owner';
@@ -363,6 +364,11 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
     fetchMyNfts();
   }, [fetchMyNfts]);
 
+  // Instant: sales/team-ready/offer events fire a server noti ping — refetch
+  // My Teams within ~300ms (a sold team disappears, a fresh team appears)
+  // instead of waiting for a manual refresh.
+  useStreamRefetch(walletAddress, () => { void fetchMyNfts(); });
+
   const patchListing = useCallback((tokenId: string, listing: { orderHash: string; price: number } | null) => {
     setData(prev => prev.map(t =>
       String(t.tokenId) === String(tokenId)
@@ -582,6 +588,11 @@ export function useMyNftOffers(
   useEffect(() => {
     fetchAllOffers();
   }, [fetchAllOffers]);
+
+  // Instant: an incoming offer fires a server noti ping — refresh the offers
+  // list within ~300ms instead of waiting for a manual refresh. Coalesced and
+  // listed-teams-only (see fetchAllOffers), so no request fan-out risk.
+  useStreamRefetch(walletAddress, () => { void fetchAllOffers(); });
 
   return { allOffers, isLoading, refetch: fetchAllOffers };
 }
@@ -918,6 +929,10 @@ export function useFirestoreNotifications(walletAddress: string | null): UseFire
     const interval = setInterval(fetchNotifications, 30_000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
+
+  // Instant: every createNotification fires a stream ping — pick the new
+  // entry up within ~300ms instead of the 30s poll.
+  useStreamRefetch(walletAddress, () => { void fetchNotifications(); });
 
   const markAllRead = useCallback(async () => {
     if (!walletAddress) return;

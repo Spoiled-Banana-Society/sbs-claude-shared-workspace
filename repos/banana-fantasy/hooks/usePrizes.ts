@@ -6,6 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import type { EligibilityStatus, PrizeHistoryItem, PrizeWithdrawal } from '@/types';
 import { AppApiError, fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 interface WithdrawResponse {
   status: PrizeWithdrawal['status'];
@@ -41,6 +42,10 @@ export function usePrizes(opts?: { userId?: string }) {
     { enabled: !!ownerId, fallbackData: [] },
   );
   const refresh = query.mutate;
+
+  // Instant: a prize grant fires a server noti ping — refresh winnings within
+  // ~300ms instead of only on page load / manual refresh.
+  useStreamRefetch(ownerId, () => { void refresh(); });
 
   const prizes = query.data ?? [];
 

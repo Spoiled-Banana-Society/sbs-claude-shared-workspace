@@ -17,6 +17,51 @@
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { bananaDefaultName } from '@/utils/helpers';
+import { createNotification } from '@/lib/queueNotifications';
+import { runInBackground } from '@/lib/serverBackground';
+
+/**
+ * Display name for friend notifications — the requester/acceptor's chosen
+ * username, or the on-brand "Banana #1234" default. Best-effort.
+ */
+async function friendDisplayName(wallet: string): Promise<string> {
+  try {
+    const map = await getPublicUsers([wallet]);
+    return map.get(wallet.toLowerCase())?.username || bananaDefaultName(wallet);
+  } catch {
+    return bananaDefaultName(wallet);
+  }
+}
+
+/** Synced bell noti for a new friend request (instant ping on all devices). */
+function notifyFriendRequest(toWallet: string, fromWallet: string, friendshipDocId: string): void {
+  runInBackground('friends.request-noti', (async () => {
+    const name = await friendDisplayName(fromWallet);
+    await createNotification(toWallet, {
+      type: 'friend_request',
+      title: 'Friend request',
+      message: `${name} wants to be friends.`,
+      link: '/friends',
+      dedupeKey: `friend-req-${friendshipDocId}`,
+      icon: 'users',
+    });
+  })());
+}
+
+/** Synced bell noti when a request is accepted — sent to the original requester. */
+function notifyFriendAccepted(requesterWallet: string, acceptorWallet: string, friendshipDocId: string): void {
+  runInBackground('friends.accepted-noti', (async () => {
+    const name = await friendDisplayName(acceptorWallet);
+    await createNotification(requesterWallet, {
+      type: 'friend_request',
+      title: 'Friend request accepted',
+      message: `${name} accepted your friend request.`,
+      link: '/friends',
+      dedupeKey: `friend-acc-${friendshipDocId}`,
+      icon: 'users',
+    });
+  })());
+}
 
 /**
  * A stored/legacy display name that isn't a real, user-chosen name: empty, a
@@ -188,6 +233,7 @@ export async function sendRequest(senderWallet: string, targetWallet: string): P
     // Their pending request + my send = mutual → auto-accept.
     if (data.status === 'pending' && data.requestedBy === target) {
       await ref.update({ status: 'accepted', acceptedAt: Date.now() });
+      notifyFriendAccepted(target, sender, id);
       return (await getFriendship(sender, target))!;
     }
   }
@@ -200,6 +246,7 @@ export async function sendRequest(senderWallet: string, targetWallet: string): P
     requestedAt: Date.now(),
   };
   await ref.set(doc);
+  notifyFriendRequest(target, sender, id);
   return { id, ...doc };
 }
 
@@ -216,6 +263,7 @@ export async function acceptRequest(acceptorWallet: string, otherWallet: string)
     throw new Error('only the recipient can accept');
   }
   await ref.update({ status: 'accepted', acceptedAt: Date.now() });
+  notifyFriendAccepted(other, acceptor, ref.id);
   return getFriendship(acceptor, other);
 }
 

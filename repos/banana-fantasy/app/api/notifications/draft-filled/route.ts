@@ -1,7 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deliverToRecipient } from '@/lib/notifications/deliver';
+import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
+
+/**
+ * Queue drafts (Jackpot/HOF) are known-type by construction — their round
+ * stores the created draftId. Resolve so the alert can say "Jackpot Draft
+ * filled" instead of the generic draft name. Best-effort: any failure falls
+ * back to the generic copy.
+ */
+async function queueDraftLabel(draftId: string): Promise<string | null> {
+  if (!isFirestoreConfigured()) return null;
+  try {
+    const db = getAdminFirestore();
+    const [jp, hof] = await Promise.all([
+      db.collection('v2_queues').doc('jackpot').get(),
+      db.collection('v2_queues').doc('hof').get(),
+    ]);
+    const has = (snap: FirebaseFirestore.DocumentSnapshot) => {
+      const rounds = (snap.exists ? snap.data()?.rounds : null) as Array<{ draftId?: string }> | null;
+      return Array.isArray(rounds) && rounds.some((r) => r?.draftId === draftId);
+    };
+    if (has(jp)) return 'Jackpot Draft';
+    if (has(hof)) return 'HOF Draft';
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 const INTERNAL_SECRET = process.env.NOTIFICATIONS_INTERNAL_SECRET;
 
@@ -47,7 +74,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, reports: [] });
     }
 
-    const event = { type: 'draft.filled' as const, draftId, draftName };
+    // Jackpot/HOF queue drafts get type-named copy ("Jackpot Draft filled").
+    const queueLabel = await queueDraftLabel(draftId);
+    const event = { type: 'draft.filled' as const, draftId, draftName: queueLabel ?? draftName };
 
     // One bad recipient (e.g. a dedup-store hiccup) must not sink the batch.
     const reports = await Promise.all(
