@@ -174,6 +174,7 @@ export default function NftDetailPage() {
 
   // Cancel offer state
   const [cancellingOfferHash, setCancellingOfferHash] = useState<string | null>(null);
+  const [cancellingAllOffers, setCancellingAllOffers] = useState(false);
 
   // Share state
   const [shareCopied, setShareCopied] = useState(false);
@@ -812,6 +813,62 @@ export default function NftDetailPage() {
     }
   }, [walletAddress, sendTransaction, refetchOffers, tokenId, nft]);
 
+  /** Cancel EVERY offer the viewer has on this token — Seaport's cancel takes
+   *  an array of orders, so this is one signature / one sponsored tx. */
+  const handleCancelAllOffers = useCallback(async (myOffers: OfferData[]) => {
+    if (!walletAddress || myOffers.length === 0) return;
+    setCancellingAllOffers(true);
+    setAcceptError(null);
+
+    const hashes = myOffers.map(o => o.orderHash).filter(Boolean);
+    try {
+      const res = await fetch('/api/marketplace/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHashes: hashes, type: 'offer' }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Failed to cancel offers' }));
+        throw new Error(errData.error || `Cancel failed: ${res.status}`);
+      }
+
+      const tx = await res.json();
+
+      await sendTransaction(
+        { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
+        { sponsor: true, uiOptions: { description: `Cancel ${hashes.length} offers in one go — fees covered by SBS` } },
+      );
+
+      logger.debug('[NFT Detail] Cancelled all offers:', hashes);
+
+      for (const offer of myOffers) {
+        logActivity({
+          type: 'cancel',
+          walletAddress,
+          tokenId,
+          teamName: nft?.name || `Team #${tokenId}`,
+          price: offer.amount,
+          orderHash: offer.orderHash || null,
+        });
+        void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash: offer.orderHash }) }).catch(() => {});
+      }
+      refetchOffers();
+    } catch (err) {
+      console.error('[NFT Detail] Cancel all offers failed:', err);
+      reportClientError({
+        source: LOG_SOURCES.marketplace.CANCEL_OFFER_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'marketplace-detail',
+        actor: walletAddress,
+        context: { tokenId, orderHashes: hashes },
+      });
+      setAcceptError(err instanceof Error ? err.message : 'Failed to cancel offers');
+    } finally {
+      setCancellingAllOffers(false);
+    }
+  }, [walletAddress, sendTransaction, refetchOffers, tokenId, nft]);
+
   if (isLoading) {
     return (
       <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-6xl mx-auto">
@@ -1258,11 +1315,27 @@ export default function NftDetailPage() {
                 <h3 className="text-text-primary font-semibold text-sm">
                   Offers {offers.length > 0 && <span className="text-text-muted font-normal">({offers.length})</span>}
                 </h3>
-                {bestOffer && (
-                  <span className="text-xs text-text-muted">
-                    Best: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
-                  </span>
-                )}
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const myOffers = walletAddress
+                      ? offers.filter(o => o.offererAddress?.toLowerCase() === walletAddress.toLowerCase() && o.orderHash)
+                      : [];
+                    return myOffers.length >= 2 ? (
+                      <button
+                        onClick={() => handleCancelAllOffers(myOffers)}
+                        disabled={cancellingAllOffers || cancellingOfferHash != null}
+                        className="px-3 py-1 rounded-lg text-xs font-semibold border border-error/40 text-error hover:bg-error/10 transition-all disabled:opacity-50"
+                      >
+                        {cancellingAllOffers ? 'Cancelling…' : `Cancel all (${myOffers.length})`}
+                      </button>
+                    ) : null;
+                  })()}
+                  {bestOffer && (
+                    <span className="text-xs text-text-muted">
+                      Best: <span className="text-banana font-mono font-semibold">${bestOffer.amount.toFixed(2)}</span>
+                    </span>
+                  )}
+                </div>
               </div>
 
               {offersLoading && offers.length === 0 ? (
