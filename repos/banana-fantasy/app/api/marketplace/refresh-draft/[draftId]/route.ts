@@ -7,7 +7,6 @@ import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { computeAndStoreRipeness } from '@/lib/db';
-import { createNotification } from '@/lib/queueNotifications';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
 import { ALL_POSITIONS } from '@/data/nfl-players';
@@ -124,7 +123,7 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
  * the earned ripeness badge (the FIRST Unripe banana at 1 paid draft) and fires
  * the bell + toast. Best-effort per owner; never blocks the draft close.
  */
-async function creditDraftRipeness(draftId: string, tokenIds: string[]): Promise<void> {
+async function creditDraftRipeness(tokenIds: string[]): Promise<void> {
   const db = getAdminFirestore();
   const owners = new Set<string>();
   await Promise.all(tokenIds.map(async (id) => {
@@ -137,22 +136,11 @@ async function creditDraftRipeness(draftId: string, tokenIds: string[]): Promise
   await Promise.all([...owners].map(async (o) => {
     try { await computeAndStoreRipeness(o, await fetchOwnerPaidFilledCount(o)); }
     catch (err) { logger.warn('marketplace.refresh_draft_ripeness_failed', { owner: o, error: String(err) }); }
-    // "Team ready" — the card art was just written, so the user's new Digital
-    // Team exists NOW. Synced bell entry on every device (instant ping via
-    // createNotification); dedupeKey makes refresh-draft retries idempotent.
-    try {
-      await createNotification(o, {
-        type: 'system',
-        title: 'Your team is ready!',
-        message: 'Your Digital Team card is minted — check it out in My Teams.',
-        link: '/my-teams',
-        dedupeKey: `team-ready-${draftId}-${o}`,
-        icon: 'sparkles',
-      });
-    } catch (err) {
-      logger.warn('marketplace.refresh_draft_team_ready_noti_failed', { owner: o, error: String(err) });
-    }
   }));
+  // NOTE: deliberately NO "your team is ready" notification here (Boris,
+  // 2026-06-10) — the post-draft generating screen already walks the user to
+  // their new team; a bell entry on top was noise. My Teams still refreshes
+  // itself in real time via the stream nudge in useMyNfts.
 }
 
 /**
@@ -227,9 +215,8 @@ export async function POST(
     logger.info('marketplace.refresh_draft_images', { draftId, imagesWritten, total: tokenIds.length });
 
     // Draft has filled → credit banana ripeness to each participant (unlocks the
-    // earned tier badge + fires the bell/toast) and tell each owner their team
-    // card is ready. Awaited so it lands; best-effort.
-    await creditDraftRipeness(draftId, tokenIds);
+    // earned tier badge + fires the bell/toast). Awaited so it lands; best-effort.
+    await creditDraftRipeness(tokenIds);
 
     const results = await Promise.allSettled(tokenIds.map((id) => refreshToken(id)));
     const ok = (i: number) =>
