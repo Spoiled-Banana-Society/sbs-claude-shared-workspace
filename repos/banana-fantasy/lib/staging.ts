@@ -26,7 +26,11 @@ function getUrlParams(): URLSearchParams | null {
 }
 
 export function isStagingMode(): boolean {
-  if (typeof window === 'undefined') return false;
+  // Server-side too: this entire deployment IS staging. Returning false here
+  // made every server-side getDraftsApiUrl() fall through to
+  // NEXT_PUBLIC_DRAFTS_API_URL — the OLD PROD Go API — so close-pipeline
+  // reads (card writer, pick-10 backstop, reveal credits) silently 404'd.
+  if (typeof window === 'undefined') return true;
 
   // Always use real server — entire site points at staging backend
   // Runtime URL overrides still work via ?apiUrl= and ?wsUrl= params

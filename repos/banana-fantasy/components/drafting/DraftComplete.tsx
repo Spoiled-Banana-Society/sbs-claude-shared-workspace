@@ -121,7 +121,7 @@ export function DraftComplete({
 
     async function pollCardReady() {
       const { getDraftsApiUrl } = await import('@/lib/staging');
-      const FALLBACK_URL = process.env.NEXT_PUBLIC_DRAFTS_API_URL || 'https://sbs-drafts-api-w5wydprnbq-uc.a.run.app';
+      const FALLBACK_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // never prod
       const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
 
       // Retry up to 10 times over ~30s — matches prior behaviour. The card
