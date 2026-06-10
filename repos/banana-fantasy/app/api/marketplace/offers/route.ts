@@ -189,6 +189,8 @@ export async function POST(req: Request) {
       return jsonError('Missing signed order fields', 400);
     }
 
+    // Forward ONLY the order fields to OpenSea — never our internal `_meta`.
+    const openSeaBody = { parameters: body.parameters, signature: body.signature, protocol_address: body.protocol_address };
     const postRes = await fetch(
       `${OPENSEA_API_BASE}/api/v2/orders/base/seaport/offers`,
       {
@@ -198,7 +200,7 @@ export async function POST(req: Request) {
           'content-type': 'application/json',
           'x-api-key': OPENSEA_API_KEY,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(openSeaBody),
       },
     );
 
@@ -217,23 +219,25 @@ export async function POST(req: Request) {
     const orderHash = result.order?.order_hash || '';
 
     // Cache the offer so the detail page shows it instantly. OpenSea's offers
-    // feed lags ~5-15s and offers had no cache, so a fresh offer silently didn't
-    // appear (and the owner couldn't act on it). Best-effort.
+    // feed lags (or silently never returns it), so without a cache a fresh offer
+    // never appeared. Prefer the client's explicit `_meta`; fall back to digging
+    // the fields out of the signed order. Best-effort.
     try {
+      const meta = (body._meta || {}) as { tokenId?: string; priceUsd?: number; offerer?: string; endTimeSec?: string };
       const p = body.parameters as {
         offerer?: string;
         endTime?: string;
         offer?: Array<{ startAmount?: string }>;
-        consideration?: Array<{ itemType?: number; identifierOrCriteria?: string }>;
+        consideration?: Array<{ itemType?: number | string; identifierOrCriteria?: string; identifier?: string }>;
       };
-      // In a Seaport offer (bid), `offer` is the USDC the bidder puts up and
-      // `consideration` is the NFT they want — so the tokenId lives there.
-      const nftItem = (p.consideration || []).find(c => c.itemType === 2 || c.itemType === 3);
-      const tokenId = nftItem?.identifierOrCriteria;
+      const nftItem = (p.consideration || []).find(c => Number(c.itemType) === 2 || Number(c.itemType) === 3);
+      const tokenId = meta.tokenId || nftItem?.identifierOrCriteria || nftItem?.identifier;
+      const offerer = meta.offerer || p.offerer;
       const usdcWei = (p.offer || []).reduce((s, it) => s + BigInt(it.startAmount || '0'), 0n);
-      if (orderHash && tokenId && p.offerer) {
+      const priceUsd = typeof meta.priceUsd === 'number' ? meta.priceUsd : Number(usdcWei) / 1e6;
+      if (orderHash && tokenId && offerer) {
         const { recordOffer } = await import('@/lib/marketplace/offerCache');
-        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd: Number(usdcWei) / 1e6, offerer: p.offerer, endTimeSec: p.endTime ?? null });
+        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd, offerer, endTimeSec: meta.endTimeSec || p.endTime || null });
       }
     } catch { /* best-effort cache write */ }
 
