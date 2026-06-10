@@ -31,6 +31,10 @@ func (lr *LeagueResources) Routes() chi.Router {
 
 type JoinLeagueRequestBody struct {
 	NumLeaguesToJoin int `json:"numLeaguesToJoin"`
+	// PassType ('paid'|'free') — which kind of pass the user chose to enter
+	// with. The token selection consumes a pass of this exact type. Empty
+	// defaults to 'paid' (matches legacy tokens).
+	PassType string `json:"passType"`
 }
 
 const JOIN_LEAGUE_DEADLINE = 1788826800
@@ -67,7 +71,7 @@ func (lr *LeagueResources) joinDraftLeagues(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	cards, err := models.JoinLeagues(ownerId, req.NumLeaguesToJoin, draftType)
+	cards, err := models.JoinLeagues(ownerId, req.NumLeaguesToJoin, draftType, req.PassType)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

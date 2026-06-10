@@ -2,9 +2,11 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
@@ -130,9 +132,42 @@ func getFirebaseCreds(isRunningLocal bool) ([]byte, error) {
 
 }
 
+// slowOpThreshold: Firestore ops slower than this get a structured WARNING
+// line (path + duration + payload size). Failures always log as ERROR with
+// the same fields. Pure observability — added 2026-06-10 after a transient
+// 60s DeadlineExceeded on a playerState write mid-pick froze draft
+// 2024-fast-draft-1381 and the engine only logged THAT it failed, not which
+// doc / how long / how big. Grep: firestore_slow_op / firestore_op_failed.
+const slowOpThreshold = 2 * time.Second
+
+func logDbOp(op, collection, documentId string, start time.Time, opErr error, v any) {
+	d := time.Since(start)
+	if opErr == nil && d < slowOpThreshold {
+		return
+	}
+	sizeBytes := -1
+	if v != nil {
+		if data, mErr := json.Marshal(v); mErr == nil {
+			sizeBytes = len(data)
+		}
+	}
+	severity := "WARNING"
+	event := "firestore_slow_op"
+	errStr := ""
+	if opErr != nil {
+		severity = "ERROR"
+		event = "firestore_op_failed"
+		errStr = opErr.Error()
+	}
+	fmt.Printf(`{"severity":"%s","event":"%s","op":"%s","path":"%s/%s","ms":%d,"sizeBytes":%d,"error":%q}`+"\n",
+		severity, event, op, collection, documentId, d.Milliseconds(), sizeBytes, errStr)
+}
+
 func (db *DatabaseConn) ReadDocument(collection string, documentId string, v any) error {
 	ctx := context.Background()
+	start := time.Now()
 	snapshot, err := db.Client.Collection(collection).Doc(documentId).Get(ctx)
+	logDbOp("read", collection, documentId, start, err, nil)
 	if err != nil {
 		return fmt.Errorf("error when reading document at %s/%s with an error of: %v", collection, documentId, err)
 	}
@@ -156,12 +191,9 @@ func (db *DatabaseConn) CreateEmptyCollection(collection string, docName string)
 
 func (db *DatabaseConn) CreateOrUpdateDocument(collection string, documentId string, v any) error {
 	ctx := context.Background()
-	// data, err := json.Marshal(v)
-	// if err != nil {
-	// 	return fmt.Errorf("error in marshalling the given object (%v) with error: %v", v, err)
-	// }
-
+	start := time.Now()
 	_, err := db.Client.Collection(collection).Doc(documentId).Set(ctx, v)
+	logDbOp("write", collection, documentId, start, err, v)
 	if err != nil {
 		return fmt.Errorf("error in Updating/Creating document at %s/%s: %v", collection, documentId, err)
 	}

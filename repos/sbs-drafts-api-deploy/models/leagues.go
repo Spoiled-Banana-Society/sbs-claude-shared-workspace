@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,6 +12,48 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
+
+// normalizePassType folds anything that isn't explicitly "free" into "paid"
+// (legacy tokens have an empty PassType and are treated as paid).
+func normalizePassType(pt string) string {
+	if pt == "free" {
+		return "free"
+	}
+	return "paid"
+}
+
+// selectTokensByType returns the `count` lowest-numbered tokens whose PassType
+// matches `want` ('paid'|'free'), honoring the user's choice at entry. Sorts by
+// numeric id (real NFT ids), with any non-numeric ids (staging stock) ordered
+// after, by string — both deterministic. Errors if fewer than `count` of the
+// requested type exist, so we never silently consume the wrong type.
+func selectTokensByType(tokens []DraftToken, want string, count int) ([]DraftToken, error) {
+	want = normalizePassType(want)
+	matching := make([]DraftToken, 0, len(tokens))
+	for _, t := range tokens {
+		if normalizePassType(t.PassType) == want {
+			matching = append(matching, t)
+		}
+	}
+	if len(matching) < count {
+		return nil, fmt.Errorf("not enough %s draft passes: have %d, need %d", want, len(matching), count)
+	}
+	sort.Slice(matching, func(i, j int) bool {
+		ai, aerr := strconv.ParseInt(matching[i].CardId, 10, 64)
+		bi, berr := strconv.ParseInt(matching[j].CardId, 10, 64)
+		if aerr == nil && berr == nil {
+			return ai < bi
+		}
+		if aerr == nil { // numeric before non-numeric
+			return true
+		}
+		if berr == nil {
+			return false
+		}
+		return matching[i].CardId < matching[j].CardId
+	})
+	return matching[:count], nil
+}
 
 // runConcurrently runs every fn in its own goroutine, waits for all of them
 // to finish, and returns the first non-nil error (if any). Used for
@@ -192,7 +235,7 @@ func CreateLeague(ownerId string, draftNum int, draftType string) (*League, erro
 	return res, nil
 }
 
-func JoinLeagues(ownerId string, numLeaguesToJoin int, draftType string) ([]DraftToken, error) {
+func JoinLeagues(ownerId string, numLeaguesToJoin int, draftType string, passType string) ([]DraftToken, error) {
 	if time.Now().Unix() > int64(1092090938093) {
 		err := fmt.Errorf("the deadline to join a BBB league has passed")
 		return nil, err
@@ -203,8 +246,19 @@ func JoinLeagues(ownerId string, numLeaguesToJoin int, draftType string) ([]Draf
 		return nil, err
 	}
 
-	if len(data) < numLeaguesToJoin {
-		err := fmt.Errorf("there does not seem to be enough valid draft tokens needed to enter into this number of leagues: You have %d / %d valid tokens", len(data), numLeaguesToJoin)
+	// Pick the lowest-numbered passes of the type the user chose (free vs paid).
+	// Honors the choice and never consumes the wrong type; errors clearly if the
+	// wallet doesn't hold enough of that type.
+	allTokens := make([]DraftToken, 0, len(data))
+	for _, d := range data {
+		var t DraftToken
+		if err := d.DataTo(&t); err != nil {
+			return nil, err
+		}
+		allTokens = append(allTokens, t)
+	}
+	selected, err := selectTokensByType(allTokens, passType, numLeaguesToJoin)
+	if err != nil {
 		return nil, err
 	}
 
@@ -225,13 +279,8 @@ func JoinLeagues(ownerId string, numLeaguesToJoin int, draftType string) ([]Draf
 
 	res := make([]DraftToken, 0)
 
-	for i := 0; i < numLeaguesToJoin; i++ {
-		var t DraftToken
-		err := data[i].DataTo(&t)
-		if err != nil {
-			return nil, err
-		}
-
+	for i := range selected {
+		t := selected[i]
 		if Environment == "prod" {
 			cardNum, _ := strconv.ParseInt(t.CardId, 10, 64)
 			contractOwner, _ := utils.Contract.GetOwnerOfToken(int(cardNum))

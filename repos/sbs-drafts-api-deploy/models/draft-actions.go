@@ -70,6 +70,17 @@ func CheckIfPlayerIsPickedAlready(draftId, playerId string) error {
 	return nil
 }
 
+// logCriticalDraftError emits a structured ERROR line for draft-breaking
+// failures. Cloud Logging parses the severity, and the admin error-sync cron
+// (severity>=ERROR) surfaces it in the admin Logs feed within ~5 minutes.
+// The plain-text prints alone were INVISIBLE to alerting — the 2026-06-10
+// freeze of 2024-fast-draft-1381 (60s Firestore DeadlineExceeded on the
+// playerState write mid-pick → advance + next auto-pick task lost) never
+// reached admin. Use for failures that can stall a draft, not benign races.
+func logCriticalDraftError(event, draftId string, pick int, err error) {
+	fmt.Printf(`{"severity":"ERROR","event":"%s","draftId":"%s","pick":%d,"error":%q}`+"\n", event, draftId, pick, err.Error())
+}
+
 func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) error {
 	realTimeDraftInfo, err := GetRealTimeDraftInfoForDraft(draftId)
 	if err != nil {
@@ -106,18 +117,21 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 	err = pickInfo.UpdateDraftSummary(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (UpdateDraftSummary): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
+		logCriticalDraftError("pick_summary_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 
 	err = UpdateRosterFromPick(draftId, pickInfo.OwnerAddress, pickInfo.Team, pickInfo.Position, pickInfo.PlayerId, pickInfo.DisplayName, pickInfo.Round)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (UpdateRosterFromPick): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
+		logCriticalDraftError("pick_roster_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 
 	err = pickInfo.UpdatePlayerInDraft(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (UpdatePlayerInDraft): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
+		logCriticalDraftError("pick_player_state_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 
@@ -167,11 +181,13 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 	err = realTimeDraftInfo.Update(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (realTimeDraftInfo.Update): draftId=%s err=%v\n", draftId, err)
+		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 	err = draftInfo.Update(draftId)
 	if err != nil {
 		fmt.Printf("ProcessNewPick error (draftInfo.Update): draftId=%s err=%v\n", draftId, err)
+		logCriticalDraftError("pick_advance_write_failed", draftId, pickInfo.PickNum, err)
 		return err
 	}
 

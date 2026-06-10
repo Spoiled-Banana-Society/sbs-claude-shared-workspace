@@ -102,11 +102,11 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 
 		// Mint a fresh token for this wallet
 		tokenId := fmt.Sprintf("special-%d-%d", time.Now().UnixMilli(), league.NumPlayers)
-		token, err := models.MintDraftTokenInDb(tokenId, wallet)
+		token, err := models.MintDraftTokenInDb(tokenId, wallet, "paid")
 		if err != nil {
 			// Token might already exist, try with a different ID
 			tokenId = fmt.Sprintf("special-%d-%d-retry", time.Now().UnixMilli(), league.NumPlayers)
-			token, err = models.MintDraftTokenInDb(tokenId, wallet)
+			token, err = models.MintDraftTokenInDb(tokenId, wallet, "paid")
 			if err != nil {
 				fmt.Printf("[CreateSpecialDraft] Error minting token for wallet %s: %s\n", wallet, err.Error())
 				continue
@@ -304,12 +304,16 @@ func (sr *StagingResources) MintTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// passType ('paid'|'free') lets us stock a test wallet with either kind of
+	// pass (e.g. ?passType=free). Defaults to paid in MintDraftTokenInDb.
+	passType := r.URL.Query().Get("passType")
+
 	timestamp := time.Now().UnixMilli()
 	tokens := make([]map[string]interface{}, 0)
 
 	for i := 0; i < count; i++ {
 		tokenId := fmt.Sprintf("staging-%d-%d", timestamp, i)
-		_, err := models.MintDraftTokenInDb(tokenId, ownerId)
+		_, err := models.MintDraftTokenInDb(tokenId, ownerId, passType)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error minting token %d: %s", i, err.Error()), http.StatusInternalServerError)
 			return
@@ -370,7 +374,7 @@ func (sr *StagingResources) FillBots(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			token, err := models.MintDraftTokenInDb(botTokenId, botOwnerId)
+			token, err := models.MintDraftTokenInDb(botTokenId, botOwnerId, "paid")
 			if err != nil {
 				errs[idx] = fmt.Errorf("error minting bot token %d: %s", idx, err.Error())
 				return
@@ -456,7 +460,7 @@ func (sr *StagingResources) FillBots(w http.ResponseWriter, r *http.Request) {
 			joinedLeagueId = discoveredLeagueId
 		} else {
 			// Bot 0: expensive search to find the league
-			cards, err := models.JoinLeagues(bot.ownerId, 1, "paid")
+			cards, err := models.JoinLeagues(bot.ownerId, 1, "paid", "paid")
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Error joining league for bot %d: %s", i, err.Error()), http.StatusInternalServerError)
 				return
