@@ -81,6 +81,9 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   /^ws\./i,
   /^draft\.(pick|state)_error/i,
   /^draft\.autopick_failed/i,
+  // Frozen draft: pick clock expired, engine never advanced (the 2026-06-10
+  // freeze class). Fired by the health-canary stall watchdog.
+  /^draft\.stalled_no_advance/i,
   // Draft money + blocking gaps (Phase 1 coverage). Note: `^ws\.` does NOT
   // match `draft.ws.*`, and `autopick_failed` does NOT match
   // `autopick_submit_failed` — so these are listed explicitly.

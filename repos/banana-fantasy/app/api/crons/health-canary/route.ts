@@ -1,6 +1,7 @@
 import { jsonError, json } from '@/lib/api/routeUtils';
 import { logErrorEvent } from '@/lib/errorEvents';
 import { runEndpointCanaries } from '@/lib/audits/canary';
+import { runDraftStallCanary } from '@/lib/audits/draftStallCanary';
 import { recordCronHeartbeat, checkCronHeartbeats } from '@/lib/cronHeartbeat';
 import { logger } from '@/lib/logger';
 
@@ -32,10 +33,13 @@ export async function GET(req: Request) {
     'https://banana-fantasy-sbs.vercel.app';
 
   try {
-    // Endpoint contract canaries + the "is any critical cron dark?" check.
+    // Endpoint contract canaries + the "is any critical cron dark?" check
+    // + the frozen-draft watchdog (live draft whose pick clock expired
+    // minutes ago with no advance — the 2026-06-10 freeze class).
     const findings = [
       ...(await runEndpointCanaries(base)),
       ...(await checkCronHeartbeats(Date.now())),
+      ...(await runDraftStallCanary(Date.now())),
     ];
     for (const f of findings) {
       await logErrorEvent({

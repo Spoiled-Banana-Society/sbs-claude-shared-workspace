@@ -42,6 +42,12 @@ export type LogArea = (typeof LOG_AREAS)[number];
  */
 export const LOG_SOURCES = {
   draft: {
+    // A live draft's pick clock expired minutes ago and the pick never
+    // advanced — the engine's auto-pick chain died (e.g. the 2026-06-10
+    // freeze: transient Firestore DeadlineExceeded mid-pick, no retry, no
+    // watchdog). Fired by the health-canary stall watchdog. CRITICAL: a
+    // frozen draft strands 10 paying players.
+    STALLED_NO_ADVANCE: 'draft.stalled_no_advance',
     WS_TOKEN_FETCH_FAILED: 'draft.ws.token_fetch_failed',
     WS_MESSAGE_PARSE_FAILED: 'draft.ws.message_parse_failed',
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
