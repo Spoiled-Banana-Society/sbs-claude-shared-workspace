@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useClaimCelebration } from '@/contexts/ClaimCelebrationContext';
 import { subscribeUserEvents } from '@/lib/api/firebase';
 import { requestBellRefetch } from '@/lib/localSurfaceDedupe';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 type ClaimPromoResponse = {
   promo: Promo;
@@ -41,6 +42,14 @@ export function usePromos(opts?: { userId?: string }) {
     // keep local promos in sync with SWR source when it changes
     setLocalPromos(swr.data);
   }, [swr.data]);
+
+  // LIVE: any server promo credit (fill, pick-10, jackpot hit, purchase)
+  // pings the user-event stream → refetch within seconds, so an open promo
+  // modal shows progress + stats moving in real time. useStreamRefetch
+  // coalesces bursts and keeps its callback in a ref (Rule #0 — no
+  // Privy-derived deps enter an effect dep array).
+  const streamWallet = (user?.walletAddress || userId || '').toLowerCase() || null;
+  useStreamRefetch(streamWallet, () => { void mutateRef.current(); });
 
   const promos = useMemo(() => localPromos ?? swr.data, [localPromos, swr.data]);
 

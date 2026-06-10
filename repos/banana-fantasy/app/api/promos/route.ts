@@ -16,6 +16,18 @@ export async function GET(req: Request) {
     }
 
     const promos = await getPromos(userId);
+
+    // Stamp live lifetime stats onto the daily-drafts promo for the modal
+    // ("paid drafts all-time"). Authoritative Go count (same source as
+    // ripeness/King); best-effort — a Go hiccup must never break promos.
+    try {
+      const daily = promos.find((p) => p.type === 'daily-drafts');
+      if (daily && /^0x[0-9a-fA-F]{40}$/.test(userId)) {
+        const { fetchOwnerPaidFilledCount } = await import('@/lib/api/owner');
+        daily.modalContent.lifetimePaidDrafts = await fetchOwnerPaidFilledCount(userId.toLowerCase());
+      }
+    } catch { /* stats are decoration — promos still return */ }
+
     return json(promos, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
