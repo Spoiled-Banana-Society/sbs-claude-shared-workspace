@@ -93,21 +93,9 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
 
-    // Collapse to ONE offer per wallet — highest amount, latest expiry on ties.
-    // Re-signing an offer creates a brand-new Seaport order on OpenSea, so a
-    // buyer who retried shows up with several identical live offers; only the
-    // best one is actionable UX.
-    const bestByOfferer = new Map<string, OfferData>();
-    for (const o of offers) {
-      const k = o.offererAddress.toLowerCase();
-      const cur = bestByOfferer.get(k);
-      if (!cur || o.amount > cur.amount || (o.amount === cur.amount && o.expiresAt > cur.expiresAt)) {
-        bestByOfferer.set(k, o);
-      }
-    }
-    offers.length = 0;
-    offers.push(...bestByOfferer.values());
-
+    // Show EVERY live offer (deduped by orderHash above) — each is a separate
+    // signed order the owner can accept and the offerer can cancel, so hiding
+    // any of them hides a real cancellable/acceptable order.
     offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
     // Enrich with SBS profiles (same pattern as listings route)
