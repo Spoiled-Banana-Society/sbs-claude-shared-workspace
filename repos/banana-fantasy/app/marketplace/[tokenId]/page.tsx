@@ -142,6 +142,43 @@ export default function NftDetailPage() {
     return wallets[0];
   }, [walletAddress, wallets]);
 
+  // Route transactions by wallet type — same pattern as marketplace/page.tsx.
+  // Privy's useSendTransaction with sponsor:true is gasless but ONLY works for
+  // embedded Privy wallets; calling it with an external wallet (MetaMask,
+  // Coinbase) throws "No embedded or connected wallet found for address."
+  // External wallets sign via their own provider and pay their own gas.
+  const sendTx = useCallback(async (
+    txRequest: { to: `0x${string}`; data?: `0x${string}`; value?: bigint; chainId: number },
+    opts: { description: string; waitForReceipt?: boolean },
+  ): Promise<{ hash: string }> => {
+    if (!selectedWallet) throw new Error('No wallet connected');
+
+    if (selectedWallet.walletClientType === 'privy') {
+      const receipt = await sendTransaction(
+        txRequest,
+        { sponsor: true, uiOptions: { description: opts.description } },
+      );
+      const r = receipt as Record<string, unknown>;
+      return { hash: String(r.hash ?? r.transactionHash ?? '') };
+    }
+
+    const ethereum = await selectedWallet.getEthereumProvider();
+    const currentChainHex = (await ethereum.request({ method: 'eth_chainId' })) as string;
+    if (parseInt(currentChainHex, 16) !== txRequest.chainId) {
+      await selectedWallet.switchChain(txRequest.chainId);
+    }
+    const { ethers } = await import('ethers');
+    const provider = new ethers.BrowserProvider(ethereum);
+    const signer = await provider.getSigner();
+    const tx = await signer.sendTransaction({
+      to: txRequest.to,
+      data: txRequest.data,
+      value: txRequest.value,
+    });
+    if (opts.waitForReceipt) await tx.wait();
+    return { hash: tx.hash };
+  }, [selectedWallet, sendTransaction]);
+
   const [nft, setNft] = useState<NftDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -417,11 +454,11 @@ export default function NftDetailPage() {
       walletAddress,
       nft.listing.protocol_address,
     );
-    const receipt = await sendTransaction(
-      { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { sponsor: true, uiOptions: { description: 'Purchase NFT — gas fees covered by SBS' } },
+    const receipt = await sendTx(
+      { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+      { description: 'Purchase NFT — gas fees covered by SBS' },
     );
-    const txHashResult = (receipt as Record<string, unknown>).transactionHash ?? (receipt as Record<string, unknown>).hash;
+    const txHashResult = receipt.hash;
 
     const sellerAddr = nft.listing?.protocol_data?.parameters?.offerer || nft.owner;
 
@@ -474,7 +511,7 @@ export default function NftDetailPage() {
     });
 
     return txHashResult;
-  }, [nft, walletAddress, sendTransaction, tokenId, addNotification]);
+  }, [nft, walletAddress, sendTx, tokenId, addNotification]);
 
   const handleBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
@@ -614,9 +651,9 @@ export default function NftDetailPage() {
         // Approve max USDC for the conduit (sponsored)
         const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
         const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
-        await sendTransaction(
+        await sendTx(
           { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: 'Approve USDC for offers — no cost to you' } },
+          { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true },
         );
       }
 
@@ -666,7 +703,7 @@ export default function NftDetailPage() {
       setOfferError(err instanceof Error ? err.message : 'Failed to create offer');
       setOfferStep('input');
     }
-  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, tokenId, sendTransaction, refetchOffers, nft]);
+  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, tokenId, sendTx, refetchOffers, nft]);
 
   const handleAcceptOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress || !selectedWallet) return;
@@ -703,9 +740,9 @@ export default function NftDetailPage() {
 
       if (!isApproved) {
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
-        await sendTransaction(
+        await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { sponsor: true, uiOptions: { description: 'Approve marketplace — no cost to you' } },
+          { description: 'Approve marketplace — no cost to you', waitForReceipt: true },
         );
       }
 
@@ -716,9 +753,9 @@ export default function NftDetailPage() {
         tokenId,
       );
 
-      await sendTransaction(
-        { to: tx.to, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: 'Accept offer — gas fees covered by SBS' } },
+      await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Accept offer — gas fees covered by SBS' },
       );
 
       logger.debug('[NFT Detail] Offer accepted:', offer.orderHash);
@@ -759,7 +796,7 @@ export default function NftDetailPage() {
     } finally {
       setAcceptingOfferHash(null);
     }
-  }, [walletAddress, selectedWallet, tokenId, sendTransaction, refetchOffers, nft, fetchNft]);
+  }, [walletAddress, selectedWallet, tokenId, sendTx, refetchOffers, nft, fetchNft]);
 
   const handleCancelOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress) return;
@@ -780,9 +817,9 @@ export default function NftDetailPage() {
 
       const tx = await res.json();
 
-      await sendTransaction(
+      await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: 'Cancel your offer — fees covered by SBS' } },
+        { description: 'Cancel your offer — fees covered by SBS' },
       );
 
       logger.debug('[NFT Detail] Cancelled offer:', offer.orderHash);
@@ -811,7 +848,7 @@ export default function NftDetailPage() {
     } finally {
       setCancellingOfferHash(null);
     }
-  }, [walletAddress, sendTransaction, refetchOffers, tokenId, nft]);
+  }, [walletAddress, sendTx, refetchOffers, tokenId, nft]);
 
   /** Cancel EVERY offer the viewer has on this token — Seaport's cancel takes
    *  an array of orders, so this is one signature / one sponsored tx. */
@@ -835,9 +872,9 @@ export default function NftDetailPage() {
 
       const tx = await res.json();
 
-      await sendTransaction(
+      await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
-        { sponsor: true, uiOptions: { description: `Cancel ${hashes.length} offers in one go — fees covered by SBS` } },
+        { description: `Cancel ${hashes.length} offers in one go — fees covered by SBS` },
       );
 
       logger.debug('[NFT Detail] Cancelled all offers:', hashes);
@@ -867,7 +904,7 @@ export default function NftDetailPage() {
     } finally {
       setCancellingAllOffers(false);
     }
-  }, [walletAddress, sendTransaction, refetchOffers, tokenId, nft]);
+  }, [walletAddress, sendTx, refetchOffers, tokenId, nft]);
 
   if (isLoading) {
     return (
