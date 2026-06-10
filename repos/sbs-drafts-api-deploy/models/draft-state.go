@@ -849,6 +849,19 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	return nil
 }
 
+// rosterHasPlayer: true if this exact player is already on the position list.
+// Makes a re-run of a half-saved pick (retry after a mid-pick failure)
+// harmless — the player can never be added twice. Part of the 2026-06-10
+// freeze fix: retries are only safe if every step is safe to repeat.
+func rosterHasPlayer(list []RosterPlayer, playerId string) bool {
+	for _, p := range list {
+		if p.PlayerId == playerId {
+			return true
+		}
+	}
+	return false
+}
+
 func UpdateRosterFromPick(draftId, address, teamName, position, playerId, displayName string, roundNum int) error {
 	data := &RosterState{
 		Rosters: make(map[string]*DraftStateRoster),
@@ -859,16 +872,28 @@ func UpdateRosterFromPick(draftId, address, teamName, position, playerId, displa
 		return err
 	}
 
-	if strings.ToLower(position) == "qb" {
-		data.Rosters[address].QB = append(data.Rosters[address].QB, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
-	} else if strings.ToLower(position) == "rb" {
-		data.Rosters[address].RB = append(data.Rosters[address].RB, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
-	} else if strings.ToLower(position) == "wr" {
-		data.Rosters[address].WR = append(data.Rosters[address].WR, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
-	} else if strings.ToLower(position) == "te" {
-		data.Rosters[address].TE = append(data.Rosters[address].TE, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
-	} else if strings.ToLower(position) == "dst" {
-		data.Rosters[address].DST = append(data.Rosters[address].DST, RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName})
+	newPlayer := RosterPlayer{Team: teamName, PlayerId: playerId, DisplayName: displayName}
+	switch strings.ToLower(position) {
+	case "qb":
+		if !rosterHasPlayer(data.Rosters[address].QB, playerId) {
+			data.Rosters[address].QB = append(data.Rosters[address].QB, newPlayer)
+		}
+	case "rb":
+		if !rosterHasPlayer(data.Rosters[address].RB, playerId) {
+			data.Rosters[address].RB = append(data.Rosters[address].RB, newPlayer)
+		}
+	case "wr":
+		if !rosterHasPlayer(data.Rosters[address].WR, playerId) {
+			data.Rosters[address].WR = append(data.Rosters[address].WR, newPlayer)
+		}
+	case "te":
+		if !rosterHasPlayer(data.Rosters[address].TE, playerId) {
+			data.Rosters[address].TE = append(data.Rosters[address].TE, newPlayer)
+		}
+	case "dst":
+		if !rosterHasPlayer(data.Rosters[address].DST, playerId) {
+			data.Rosters[address].DST = append(data.Rosters[address].DST, newPlayer)
+		}
 	}
 
 	size := 0

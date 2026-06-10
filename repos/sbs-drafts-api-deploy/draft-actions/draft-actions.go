@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
+	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
 )
 
@@ -174,6 +175,20 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
 			fmt.Printf("autoDraft error (ProcessNewPick): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
+			// TRANSIENT failure (stall/blip): tell Cloud Tasks the truth so it
+			// re-delivers — the in-process 2s×3 retries are the first line; this
+			// is the backstop. Safe: the top-of-handler "pick already completed
+			// → no-op 200" guard plus idempotent pick steps (same-slot summary,
+			// deduped roster, same-value playerState) make re-delivery harmless.
+			// Returning 200 here is what turned a 60s blip into a permanently
+			// frozen draft on 2026-06-10 (2024-fast-draft-1381).
+			if utils.IsTransientDbErr(err) {
+				fmt.Printf(`{"severity":"ERROR","event":"autodraft_transient_will_retry","draftId":"%s","pick":%d,"error":%q}`+"\n", draftId, currentPickNumber, err.Error())
+				http.Error(w, "transient failure — retry", http.StatusServiceUnavailable)
+				return
+			}
+			// Non-transient (benign race: pick landed concurrently, validation
+			// mismatch) — retrying would fail identically; keep the no-retry 200.
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Pick processed successfully"))
 			return
@@ -225,6 +240,12 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
 			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
+			// Same transient-vs-benign split as the AutoDraft branch above.
+			if utils.IsTransientDbErr(err) {
+				fmt.Printf(`{"severity":"ERROR","event":"autodraft_transient_will_retry","draftId":"%s","pick":%d,"error":%q}`+"\n", draftId, currentPickNumber, err.Error())
+				http.Error(w, "transient failure — retry", http.StatusServiceUnavailable)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Pick processed successfully"))
 			return

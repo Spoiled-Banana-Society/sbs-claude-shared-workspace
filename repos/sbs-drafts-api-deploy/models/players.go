@@ -174,6 +174,18 @@ func (pick *PlayerStateInfo) UpdateDraftSummary(draftId string) error {
 		return nil
 	}
 
+	// Replay of OUR OWN identical pick (same player, owner, slot) — happens
+	// when a mid-pick failure is retried after the summary write already
+	// landed. That's a success, not a conflict: the slot already holds
+	// exactly what we came to write. Part of the 2026-06-10 freeze fix —
+	// retries are only safe if every step treats its own replay as done.
+	existing := summary.Summary[pick.PickNum-1].PlayerInfo
+	if existing.PlayerId == pick.PlayerId && existing.OwnerAddress == pick.OwnerAddress && existing.PickNum == pick.PickNum {
+		fmt.Printf("Draft summary already holds this exact pick (replay) — treating as success. Pick %d: %v\r", pick.PickNum-1, pick.PlayerId)
+		return nil
+	}
+
+	// A DIFFERENT pick occupies the slot — real conflict, keep rejecting.
 	fmt.Printf("New Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
 	return fmt.Errorf("new Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
 }
