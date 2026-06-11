@@ -548,6 +548,16 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                       <span className="text-text-muted text-xs">{Math.min(entry.draftsPurchased, 10)} drafts purchased</span>
                     )}
                   </div>
+                  {entry.rewards?.verified === 'claimed' ? (
+                    <p className="text-success text-[11px] mb-1.5 flex items-center gap-1">
+                      <svg className="w-3 h-3 flex-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      Verified X &amp; claimed their spin{entry.verifiedAt ? <span className="text-text-muted"> · {fmtWhen(entry.verifiedAt)}</span> : null}
+                    </p>
+                  ) : (
+                    <p className="text-text-muted text-[11px] mb-1.5">
+                      Awaiting X verify — purchases count now, your spins unlock once they verify.
+                    </p>
+                  )}
                   {entry.rewards && (
                     <div className="flex gap-3 mt-2 justify-end">
                       <div className="flex flex-col items-center gap-1 w-16">

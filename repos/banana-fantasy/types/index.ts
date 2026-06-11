@@ -387,6 +387,8 @@ export interface ReferralEntryRewards {
 export interface ReferralEntry {
   /** ISO timestamps for when each bought milestone was hit (real history). */
   milestoneDates?: { bought1?: string; bought4?: string; bought10?: string };
+  /** When the friend verified X + claimed their spin (unlocks the ladder). */
+  verifiedAt?: string;
   username: string;
   referredUserId?: string;
   dateJoined: string;

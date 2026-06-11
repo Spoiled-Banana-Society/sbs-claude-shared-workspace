@@ -820,6 +820,7 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
       // — but it UNLOCKS the mint ladder. Fire any milestones the friend's
       // prior purchases already earned (buys-before-verify aren't lost).
       entry.rewards.verified = 'claimed';
+      (entry as { verifiedAt?: string }).verifiedAt = new Date().toISOString();
       if (entry.rewards.bought4 === undefined) entry.rewards.bought4 = 'pending';
       const lateLadder: Array<{ key: 'bought1' | 'bought4' | 'bought10'; at: number }> = [
         { key: 'bought1', at: 1 },
