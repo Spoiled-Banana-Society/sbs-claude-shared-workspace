@@ -21,8 +21,15 @@ import { pushStreamEventBg } from '@/lib/userEventStream';
 
 const COLLECTION = 'marketplace_notifications';
 
+import type { NotificationType } from '@/components/NotificationCenter';
+
 export interface CreateNotificationInput {
-  type: string;
+  /** MUST be a type the client knows how to render — typed against the
+   *  client's NotificationType union so adding a server-side type without
+   *  teaching the client maps fails the BUILD instead of crashing the bell
+   *  in production (2026-06-10: unmapped 'prize'/'welcome' types crashed
+   *  the panel + /notifications for any holder — looked like logouts). */
+  type: NotificationType;
   title: string;
   message: string;
   link?: string;
