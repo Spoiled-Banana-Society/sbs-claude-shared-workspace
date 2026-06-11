@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const filter = url.searchParams.get('filter') ?? 'all'; // 'all' | 'unread' | 'open'
 
-    const { conversations, configured } = await listConversations({
+    const { conversations, configured, authFailed } = await listConversations({
       filterUnread: filter === 'unread',
       filterResolved: filter === 'open' ? false : undefined,
     });
@@ -40,6 +40,7 @@ export async function GET(req: Request) {
     return json({
       conversations: enriched,
       configured,
+      authFailed: authFailed ?? false,
       inboxUrl: crispInboxUrl(),
       requestId,
     });
