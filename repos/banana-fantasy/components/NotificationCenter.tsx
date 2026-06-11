@@ -28,6 +28,16 @@ export interface Notification {
 
 // ─── Config ──────────────────────────────────────────────────────────────
 
+// Support-chat notis don't navigate — they open the Crisp widget in place.
+// CrispChat listens for this event; a full page load with ?support=open is
+// the fallback for cold starts.
+function isSupportLink(link: string | undefined | null): boolean {
+  return !!link && link.includes('support=open');
+}
+function openSupportChat() {
+  try { window.dispatchEvent(new Event('sbs:open-support')); } catch { /* no-op */ }
+}
+
 const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = {
   draft_starting: { emoji: '🏈', color: '#22c55e' },
   draft_results: { emoji: '📊', color: '#3b82f6' },
@@ -345,7 +355,7 @@ export function useNotifications() {
             showRef.current({
               level: 'success',
               message: n.title,
-              ...(n.link ? { action: { label: 'View', onClick: () => router.push(n.link as string) } } : {}),
+              ...(n.link ? { action: { label: 'View', onClick: () => { if (isSupportLink(n.link)) openSupportChat(); else router.push(n.link as string); } } } : {}),
             });
           });
         }
@@ -689,6 +699,14 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                   </motion.div>
                 );
 
+                if (isSupportLink(notif.link)) {
+                  // Open the Crisp widget in place instead of navigating.
+                  return (
+                    <div key={notif.id} className="block cursor-pointer" onClick={openSupportChat}>
+                      {content}
+                    </div>
+                  );
+                }
                 return notif.link ? (
                   <Link key={notif.id} href={notif.link} className="block">
                     {content}

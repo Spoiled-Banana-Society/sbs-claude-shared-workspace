@@ -43,11 +43,13 @@ export function CrispChat() {
     style.textContent = `
       #crisp-chatbox,
       .crisp-client {
+        display: none !important;
         visibility: hidden !important;
         pointer-events: none !important;
       }
       html.crisp-open #crisp-chatbox,
       html.crisp-open .crisp-client {
+        display: block !important;
         visibility: visible !important;
         pointer-events: auto !important;
       }
@@ -66,6 +68,9 @@ export function CrispChat() {
           }]);
           w.$crisp.push(['on', 'chat:closed', () => {
             document.documentElement.classList.remove('crisp-open');
+            // Crisp re-surfaces its own bubble launcher after close —
+            // re-hide so the SBS button/profile entry stay the only doors.
+            try { w.$crisp!.push(['do', 'chat:hide']); } catch {}
           }]);
         } catch {}
         clearInterval(waitForEvents);
@@ -87,6 +92,33 @@ export function CrispChat() {
       if (crispScript) crispScript.remove();
       style.remove();
     };
+  }, []);
+
+  // Open the chat from a bell noti ("SBS Team Replied" links /?support=open)
+  // — both on a fresh page load carrying the query AND via the in-app event
+  // NotificationCenter dispatches for SPA navigations.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const openChat = () => {
+      const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+      document.documentElement.classList.add('crisp-open');
+      try {
+        w.$crisp?.push(['do', 'chat:show']);
+        w.$crisp?.push(['do', 'chat:open']);
+      } catch {}
+    };
+    if (new URLSearchParams(window.location.search).get('support') === 'open') {
+      // Crisp may still be booting — retry briefly.
+      let tries = 0;
+      const id = setInterval(() => {
+        tries += 1;
+        const w = window as Window & { $crisp?: { push: (cmd: unknown[]) => void } };
+        if (w.$crisp && typeof w.$crisp.push === 'function') { openChat(); clearInterval(id); }
+        else if (tries > 20) clearInterval(id);
+      }, 500);
+    }
+    window.addEventListener('sbs:open-support', openChat);
+    return () => window.removeEventListener('sbs:open-support', openChat);
   }, []);
 
   // Outside-click to close: when the chat is open (<html> has the
