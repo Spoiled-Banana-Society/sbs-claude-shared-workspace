@@ -120,7 +120,7 @@ export async function GET(req: Request) {
           message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
           link: '/promos?promo=6',
           dedupeKey: 'welcome-new-user',
-          icon: '🎉',
+          icon: 'party',
         });
       }
     } catch { /* best-effort */ }

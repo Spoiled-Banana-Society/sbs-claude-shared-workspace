@@ -19,7 +19,6 @@
 
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useFriends } from '@/hooks/useFriends';
 import { useDmInbox, type DmThreadView } from '@/hooks/useDms';
 import { pushNotification } from '@/components/NotificationCenter';
 
@@ -43,43 +42,16 @@ export function SocialNotifier() {
   const wallet = (user?.walletAddress || '').toLowerCase();
   const enabled = !!wallet;
 
-  const { data: friends } = useFriends(enabled);
   const { inbox } = useDmInbox(enabled);
 
-  // Per-wallet localStorage keys so switching accounts never cross-fires.
-  const friendsKey = `sbs-social-seen-friends:${wallet}`;
+  // Per-wallet localStorage key so switching accounts never cross-fires.
   const threadsKey = `sbs-social-seen-threads:${wallet}`;
 
-  // ── New incoming friend requests ──────────────────────────────────────
-  // friends.incoming churns identity each 15s poll, so this effect re-runs
-  // every poll — exactly when we want to diff. No fetch happens in here.
-  const incoming = friends.incoming;
-  useEffect(() => {
-    if (!enabled) return;
-    const incomingWallets = incoming.map((u) => u.walletAddress.toLowerCase());
-    const seen = readJSON<string[]>(friendsKey, []);
-    // First run for this wallet (no baseline stored): seed it silently so
-    // we don't notify for requests that were already sitting there.
-    const firstRun = localStorage.getItem(friendsKey) === null;
-    if (firstRun) {
-      writeJSON(friendsKey, incomingWallets);
-      return;
-    }
-    const seenSet = new Set(seen);
-    const fresh = incoming.filter((u) => !seenSet.has(u.walletAddress.toLowerCase()));
-    for (const u of fresh) {
-      pushNotification({
-        type: 'friend_request',
-        title: 'New friend request',
-        message: `${u.username || 'Someone'} wants to be friends.`,
-        link: '/messages',
-        dedupeKey: `friend-req-${u.walletAddress.toLowerCase()}`,
-      });
-    }
-    // Persist the current set (drops requests that were accepted/withdrawn
-    // so a re-sent request later can notify again).
-    writeJSON(friendsKey, incomingWallets);
-  }, [enabled, incoming, friendsKey]);
+  // ── Friend requests: server-side bell only ────────────────────────────
+  // lib/friends.ts notifyFriendRequest writes the synced, cross-device bell
+  // (deduped per friendship doc). The old client-side poll-diff here
+  // double-pinged every request ("New friend request" + "Friend request",
+  // Boris 2026-06-11) — removed; DMs below still notify client-side.
 
   // ── New direct messages ───────────────────────────────────────────────
   // Covers both accepted threads and pending message requests. A thread

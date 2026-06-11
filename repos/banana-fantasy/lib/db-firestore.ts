@@ -11,6 +11,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { logActivityEvent } from '@/lib/activityEvents';
+import { bananaDefaultName } from '@/utils/helpers';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
   CompletedDraft,
@@ -267,7 +268,7 @@ async function ensureUserSeeded(userId: string): Promise<User> {
       message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
       link: '/promos?promo=6',
       dedupeKey: 'welcome-new-user',
-      icon: '🎉',
+      icon: 'party',
     });
   } catch {
     // non-fatal
@@ -768,8 +769,16 @@ export async function trackReferral(referrerUserId: string, referredUserId: stri
     );
     if (exists) return { success: true, duplicate: true };
 
+    // Stamp a clean fallback name — the modal live-resolves via
+    // display-batch, but this is what shows if that lookup ever misses.
+    // Placeholder junk ("User-0x12ab", raw wallets) becomes the canonical
+    // wallet-derived banana handle, same as the user's own header.
+    const cleanUsername =
+      referredUsername && !/^user-?[0-9a-fx]/i.test(referredUsername.trim()) && !/^0x[0-9a-f]{6,}/i.test(referredUsername.trim())
+        ? referredUsername.trim()
+        : bananaDefaultName(referredUserId);
     const entry: ReferralEntry = {
-      username: referredUsername,
+      username: cleanUsername,
       referredUserId,
       dateJoined: todayDate(),
       status: 'pending',

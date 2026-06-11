@@ -590,7 +590,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                       (promos refetch on the stream ping when it happens). */}
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-text-secondary text-xs">
-                      Verified X &amp; Claimed Free Spin
+                      Verified X &amp; Spun Free Spin
                       {entry.verifiedAt ? <span className="text-text-muted"> · {fmtWhen(entry.verifiedAt)}</span> : null}
                     </span>
                     {entry.rewards?.verified === 'claimed' ? (

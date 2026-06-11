@@ -1,4 +1,5 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { bananaDefaultName } from '@/utils/helpers';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { BBB4_CONTRACT } from '@/lib/opensea';
@@ -77,7 +78,8 @@ export async function GET(
     // "Banana{N}" handle. Badge: only an EQUIPPED badge (no default).
     const v2 = ownerLc ? (displays as Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }>)[ownerLc] : null;
     const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc ? profile.pfp.displayName : null;
-    const bananaName = v2?.bananaNumber != null ? `Banana${v2.bananaNumber}` : null;
+    // Wallet-derived default — same derivation as the header (bananaDefaultName).
+    const bananaName = ownerLc ? bananaDefaultName(ownerLc) : null;
     const ownerName = v2?.username || goName || bananaName;
     const ownerPfp = v2?.profilePicture || profile?.pfp?.imageUrl || null;
     const ownerBadge = v2?.equippedBadge ?? null;

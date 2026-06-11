@@ -7,6 +7,7 @@ import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getUserDisplayBatch } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { Ripeness } from '@/types';
+import { bananaDefaultName } from '@/utils/helpers';
 
 const MAX_BATCH = 30;
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -103,10 +104,13 @@ export async function POST(req: Request) {
     const out: Record<string, UserDisplay> = {};
     for (const w of realWallets) {
       const v = v2[w];
-      // Order: real username → legacy Go-API name → permanent unique banana
-      // handle ("Banana10000", server-assigned, never collides). The banana
-      // handle is the guaranteed non-null floor, so a wallet never leaks.
-      const bananaName = v?.bananaNumber != null ? `Banana${v.bananaNumber}` : null;
+      // Order: real username → legacy Go-API name → the wallet-derived
+      // banana handle. The floor MUST be bananaDefaultName(wallet) — the
+      // same derivation the header/profile uses — so a user's default reads
+      // identically everywhere (the old server-assigned bananaNumber floor
+      // made referral rows show a different "default" than the user's own
+      // header, Boris 2026-06-11).
+      const bananaName = bananaDefaultName(w);
       out[w] = {
         displayName: v?.username || goApiData[w]?.displayName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
