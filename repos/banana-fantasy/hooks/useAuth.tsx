@@ -405,6 +405,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [walletAddress, privy.user, verifyTwitterWithBackend, checkExistingTwitterLink]);
 
+  // Web2 returning-player check (Boris 2026-06-10): old-prod Thirdweb players
+  // signing in with the SAME X/Gmail get a fresh Privy wallet, so the wallet
+  // snapshot can't see them. One auth'd server call per login matches their
+  // (server-derived) identities against the old player list; a hit flips the
+  // returning experience on (same switch as BBB3 holders). Rule #0: privy
+  // lives in a ref; effect deps are stable scalars only.
+  const privyRef2 = useRef(privy);
+  privyRef2.current = privy;
+  const returningCheckedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!walletAddress) return;
+    if (returningCheckedRef.current === walletAddress) return;
+    returningCheckedRef.current = walletAddress;
+    (async () => {
+      try {
+        const token = await privyRef2.current.getAccessToken();
+        if (!token) return;
+        const res = await fetch('/api/users/returning-check', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.returning) setIsBB3Holder(true);
+      } catch { /* best-effort — wallet-snapshot path still applies */ }
+    })();
+  }, [walletAddress]);
+
   // Tag Sentry with the current user so every frontend error / breadcrumb
   // is attributable to a specific wallet. Without this, admin sees
   // 'X events · 1 users' but no way to know WHICH user. With this, the

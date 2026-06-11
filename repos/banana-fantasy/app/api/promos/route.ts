@@ -65,7 +65,7 @@ export async function GET(req: Request) {
       const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
       const userRef = getAdminFirestore().collection('v2_users').doc(userId);
       const userSnap = await userRef.get();
-      const u = (userSnap.data() ?? {}) as { createdAt?: string; createdAtEstimated?: boolean; draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number };
+      const u = (userSnap.data() ?? {}) as { createdAt?: string; createdAtEstimated?: boolean; isReturningPlayer?: boolean; draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number };
       if (userSnap.exists && !u.createdAt) {
         // Backfill stamp is marked ESTIMATED — a legacy account stamped
         // "today" must never read as a 7-day-new account on its next visit
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
       // Played a previous season (BBB1-3)? Not a "new user" — no welcome
       // noti, whatever the account age (Boris's definition 2026-06-10).
       const { isReturningWalletSync } = await import('@/lib/returningUsers');
-      if (isNew && !isReturningWalletSync(userId)) {
+      if (isNew && !u.isReturningPlayer && !isReturningWalletSync(userId)) {
         const { createNotification } = await import('@/lib/queueNotifications');
         await createNotification(userId, {
           type: 'welcome',
