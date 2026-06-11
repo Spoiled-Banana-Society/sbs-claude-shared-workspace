@@ -598,6 +598,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!wipeTimerRef.current) {
         wipeTimerRef.current = setTimeout(() => {
           wipeTimerRef.current = null;
+          // Breadcrumb for "I got logged out and didn't press Log Out"
+          // reports (Boris hit this on a fresh test wallet, 2026-06-10):
+          // Privy stayed unauthenticated past the debounce — a REAL session
+          // loss, not a blink. Context shows what the session looked like.
+          try {
+            reportClientError({
+              source: 'auth.session_lost',
+              message: 'Privy stayed unauthenticated past debounce — user wiped without explicit logout',
+              route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+              context: {
+                privyReady: privy.ready,
+                ua: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 80) : '',
+              },
+            });
+          } catch { /* breadcrumb only */ }
           setUser(null);
           fetchingRef.current = null;
           setIsNewUser(false);
