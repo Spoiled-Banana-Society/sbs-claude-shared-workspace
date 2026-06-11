@@ -236,6 +236,18 @@ export default function NotificationsPage() {
                   </motion.div>
                 );
 
+                if (notif.link && notif.link.includes('support=open')) {
+                  // Support-chat noti: open the Crisp widget in place.
+                  return (
+                    <div
+                      key={notif.id}
+                      className="block cursor-pointer"
+                      onClick={() => { try { window.dispatchEvent(new Event('sbs:open-support')); } catch { /* no-op */ } }}
+                    >
+                      {inner}
+                    </div>
+                  );
+                }
                 return notif.link ? (
                   <Link key={notif.id} href={notif.link} className="block">
                     {inner}

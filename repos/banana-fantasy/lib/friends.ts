@@ -19,6 +19,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { bananaDefaultName } from '@/utils/helpers';
 import { createNotification } from '@/lib/queueNotifications';
 import { runInBackground } from '@/lib/serverBackground';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 
 /**
  * Display name for friend notifications — the requester/acceptor's chosen
@@ -234,6 +235,7 @@ export async function sendRequest(senderWallet: string, targetWallet: string): P
     if (data.status === 'pending' && data.requestedBy === target) {
       await ref.update({ status: 'accepted', acceptedAt: Date.now() });
       notifyFriendAccepted(target, sender, id);
+      pushStreamEventBg(sender, 'notification', { source: 'friend-accepted' });
       return (await getFriendship(sender, target))!;
     }
   }
@@ -247,6 +249,9 @@ export async function sendRequest(senderWallet: string, targetWallet: string): P
   };
   await ref.set(doc);
   notifyFriendRequest(target, sender, id);
+  // Content-less ping so the sender's own other tabs/devices refetch their
+  // outgoing list instantly (the target's ping rides the bell noti above).
+  pushStreamEventBg(sender, 'notification', { source: 'friend-request-sent' });
   return { id, ...doc };
 }
 
@@ -264,12 +269,18 @@ export async function acceptRequest(acceptorWallet: string, otherWallet: string)
   }
   await ref.update({ status: 'accepted', acceptedAt: Date.now() });
   notifyFriendAccepted(other, acceptor, ref.id);
+  // Acceptor's own surfaces (popover, Friends tab, other devices) refetch
+  // instantly instead of waiting out the 15s poll — the "accepted it but it
+  // still showed pending until I refreshed" bug (Boris 2026-06-11).
+  pushStreamEventBg(acceptor, 'notification', { source: 'friend-accepted' });
   return getFriendship(acceptor, other);
 }
 
 export async function rejectOrRemove(myWallet: string, otherWallet: string): Promise<void> {
   // Same operation either way — delete the doc. Friends: unfriend. Pending: reject/cancel.
   await docRef(myWallet, otherWallet).delete();
+  pushStreamEventBg(myWallet.toLowerCase(), 'notification', { source: 'friend-removed' });
+  pushStreamEventBg(otherWallet.toLowerCase(), 'notification', { source: 'friend-removed' });
 }
 
 // ─── User profile resolution ───────────────────────────────────────────────

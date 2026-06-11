@@ -92,3 +92,29 @@ export function crispConversationUrl(sessionId: string): string {
 export function crispInboxUrl(): string {
   return `https://app.crisp.chat/website/${CRISP_WEBSITE_ID}/inbox/`;
 }
+
+/**
+ * Conversation meta — nickname + the session data map we stamp from the
+ * widget (wallet, userId). Used by the webhook to route "team replied"
+ * bell notis to the right wallet.
+ */
+export async function getConversationMeta(sessionId: string): Promise<{ nickname: string | null; data: Record<string, string> } | null> {
+  const creds = getCrispCredentials();
+  if (!creds) return null;
+  const tier = (process.env.CRISP_TIER ?? 'user').trim();
+  try {
+    const res = await fetch(`${CRISP_BASE}/website/${CRISP_WEBSITE_ID}/conversation/${encodeURIComponent(sessionId)}/meta`, {
+      headers: { Authorization: authHeader(creds), 'X-Crisp-Tier': tier },
+    });
+    if (!res.ok) {
+      logger.warn('crisp.conversation_meta.http_error', { status: res.status });
+      return null;
+    }
+    const body = await res.json();
+    const meta = (body?.data ?? {}) as { nickname?: string; data?: Record<string, string> };
+    return { nickname: meta.nickname ?? null, data: meta.data ?? {} };
+  } catch (err) {
+    logger.warn('crisp.conversation_meta.failed', { err: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
