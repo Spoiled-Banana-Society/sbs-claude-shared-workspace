@@ -11,7 +11,7 @@ import { NotificationIcon } from '@/components/NotificationIcons';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received';
+export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received' | 'welcome';
 
 export interface Notification {
   id: string;
@@ -45,7 +45,14 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = 
   listing_created: { emoji: '📋', color: '#a855f7' },
   friend_request: { emoji: '👋', color: '#3b82f6' },
   message_received: { emoji: '💬', color: '#22c55e' },
+  welcome: { emoji: '🎁', color: '#fbbf24' },
 };
+
+// Server-created notis can carry types this client bundle doesn't know yet
+// (old tab + new deploy). An unmapped type must NEVER crash the bell —
+// 'undefined is not an object (r.color)' took down the whole app shell
+// (caught live by Boris, 2026-06-10).
+const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280' };
 
 const PREFS_KEY = 'sbs-notification-prefs';
 
@@ -633,7 +640,7 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
               </div>
             ) : (
               notifications.slice(0, 15).map((notif, i) => {
-                const config = TYPE_CONFIG[notif.type];
+                const config = TYPE_CONFIG[notif.type] ?? FALLBACK_TYPE_CONFIG;
                 const content = (
                   <motion.div
                     initial={i < 5 ? { opacity: 0, x: -8 } : false}

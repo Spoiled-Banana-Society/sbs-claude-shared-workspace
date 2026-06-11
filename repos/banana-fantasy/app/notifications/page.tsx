@@ -23,7 +23,10 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   listing_created: { emoji: '📋', color: '#a855f7', label: 'Listing' },
   friend_request: { emoji: '👋', color: '#3b82f6', label: 'Friend' },
   message_received: { emoji: '💬', color: '#22c55e', label: 'Message' },
+  welcome: { emoji: '🎁', color: '#fbbf24', label: 'Welcome' },
 };
+
+const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280', label: 'Notification' };
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -178,7 +181,7 @@ export default function NotificationsPage() {
               </motion.div>
             ) : (
               filtered.map((notif, i) => {
-                const config = TYPE_CONFIG[notif.type];
+                const config = TYPE_CONFIG[notif.type] ?? FALLBACK_TYPE_CONFIG;
                 const inner = (
                   <motion.div
                     key={notif.id}
