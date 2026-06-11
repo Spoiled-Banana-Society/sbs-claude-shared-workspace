@@ -24,6 +24,11 @@ export async function getOnchainOwner(tokenId: string | number): Promise<string 
         method: 'eth_call',
         params: [{ to: BBB4_CONTRACT_ADDRESS, data }, 'latest'],
       }),
+      // MUST be fresh: Next.js App Router caches fetch() by default, which made
+      // ownerOf return the PRE-SALE owner for minutes after a sale — sold teams
+      // lingered in My Teams and "You paid" priced for the old owner. Ownership
+      // is never cacheable.
+      cache: 'no-store',
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
