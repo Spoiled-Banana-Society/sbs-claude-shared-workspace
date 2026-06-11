@@ -744,7 +744,7 @@ export function useTokenSaleHistory(tokenId: string | null) {
     }
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/marketplace/activity?tokenId=${tokenId}&type=buy,sell,list,cancel`);
+      const res = await fetch(`/api/marketplace/activity?tokenId=${tokenId}&type=buy,sell,list,cancel,offer_accepted`);
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       const json = await res.json();
       setActivities(json.activities ?? []);

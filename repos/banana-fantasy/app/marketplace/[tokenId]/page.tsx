@@ -244,6 +244,10 @@ export default function NftDetailPage() {
         const buyer = a.type === 'buy' ? a.walletAddress : a.counterparty;
         const seller = a.type === 'buy' ? a.counterparty : a.walletAddress;
         items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: buyer, seller, timestamp: a.timestamp });
+      } else if (a.type === 'offer_accepted') {
+        // Offer acceptance IS a sale: the owner (walletAddress) sold to the
+        // offerer (counterparty). Without this the sale never showed in the feed.
+        items.push({ id: a.id, kind: 'sale', label: 'Sold', price: a.price, who: a.counterparty, seller: a.walletAddress, timestamp: a.timestamp });
       } else if (a.type === 'list') {
         items.push({ id: a.id, kind: 'listing', label: 'Listed', price: a.price, who: a.walletAddress, seller: null, timestamp: a.timestamp });
       } else if (a.type === 'cancel') {
