@@ -7,7 +7,7 @@ import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDispl
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
-import { reportClientError } from '@/lib/clientErrors';
+import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
@@ -190,6 +190,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
   const privyAvailable = usePrivyAvailable();
   const [user, setUser] = useState<User | null>(MOCK_USER);
+  // Live mirror of `user` for the desync self-heal interval (no dep churn).
+  const userStateRef = useRef<User | null>(MOCK_USER);
+  useEffect(() => { userStateRef.current = user; }, [user]);
+  // Bumped to force the Privy→user sync effect to re-run after a desync.
+  const [resyncTick, setResyncTick] = useState(0);
   const [isBalanceLoaded, setIsBalanceLoaded] = useState(MOCK_AUTH);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showMobileLoginModal, setShowMobileLoginModal] = useState(false);
@@ -620,7 +625,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, AUTH_WIPE_DEBOUNCE_MS);
       }
     }
-  }, [privy.ready, privy.authenticated, privy.user, walletAddress]);
+  }, [privy.ready, privy.authenticated, privy.user, walletAddress, resyncTick]);
+
+  // SELF-HEAL auth desync (Boris 2026-06-10): Privy session alive but local
+  // `user` is null — the exact "looks logged out + Log In button does
+  // nothing until refresh" state. The sync effect's fetchingRef guard can
+  // wedge after a wipe/error, so it never re-fetches. Detect within ~4s,
+  // report (throttle-bypassed), unstick the guard, and re-run the sync.
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    const iv = setInterval(() => {
+      if (privy.ready && privy.authenticated && privy.user && walletAddress && !userStateRef.current) {
+        try {
+          reportClientEvent({
+            source: 'auth.desync_self_heal',
+            message: 'Privy authenticated but local user null — unsticking fetch guard and re-syncing',
+            route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+            actor: walletAddress,
+            context: { stuckFetchingRef: fetchingRef.current ?? null },
+          }, { skipThrottle: true });
+        } catch { /* diagnostic only */ }
+        fetchingRef.current = null;
+        setResyncTick((t) => t + 1);
+      }
+    }, 4000);
+    return () => clearInterval(iv);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [privy.ready, privy.authenticated, walletAddress]);
 
   // Read on-chain NFT balance + USDC balance and sync to user
   // Runs on login, every 30s, and on network reconnect
