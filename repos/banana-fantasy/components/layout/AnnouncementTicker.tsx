@@ -22,7 +22,7 @@ function eventTimeLabelPT(iso: string): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: undefined, timeZone: 'America/Los_Angeles' }) + ' PT';
 }
 
-export function AnnouncementTicker() {
+export function AnnouncementTicker({ previewMessage }: { previewMessage?: string } = {}) {
   const { schedule, loaded } = useFounderSchedule();
   const [, setTick] = React.useState(0);
 
@@ -33,14 +33,16 @@ export function AnnouncementTicker() {
     return () => clearInterval(t);
   }, []);
 
-  if (!loaded || !schedule.active || !schedule.at) return null;
-  const eventMs = Date.parse(schedule.at);
-  if (!Number.isFinite(eventMs)) return null;
-  const now = Date.now();
-  if (now < eventMs - SHOW_BEFORE_MS || now >= eventMs) return null;
-
-  const timeLabel = eventTimeLabelPT(schedule.at);
-  const message = `FOUNDER DRAFT TODAY · ${timeLabel} · Draft with the Vag Bros · Paid entries win a Free Banana Spin + the Founders badge`;
+  let message = previewMessage ?? '';
+  if (!previewMessage) {
+    if (!loaded || !schedule.active || !schedule.at) return null;
+    const eventMs = Date.parse(schedule.at);
+    if (!Number.isFinite(eventMs)) return null;
+    const now = Date.now();
+    if (now < eventMs - SHOW_BEFORE_MS || now >= eventMs) return null;
+    const timeLabel = eventTimeLabelPT(schedule.at);
+    message = `FOUNDER DRAFT TODAY · ${timeLabel} · Draft with the Vag Bros · Paid entries win a Free Banana Spin + the Founders badge`;
+  }
   // Repeat so the marquee loop is seamless at any viewport width.
   const strip = Array(4).fill(message).join('   ✦   ');
 
