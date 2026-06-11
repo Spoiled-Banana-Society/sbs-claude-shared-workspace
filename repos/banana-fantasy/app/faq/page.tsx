@@ -9,6 +9,18 @@ export default function FAQPage() {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
+  // Deep links like /faq#founder-draft (the announcement strip's Learn
+  // more) auto-expand that section and scroll to it.
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const hash = window.location.hash.replace('#', '');
+    if (!hash) return;
+    if (mockFAQSections.some((sec) => sec.id === hash)) {
+      setExpandedSection(hash);
+      setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
+  }, []);
+
   const toggleSection = (sectionId: string) => {
     setExpandedSection(expandedSection === sectionId ? null : sectionId);
   };
@@ -60,7 +72,8 @@ export default function FAQPage() {
       {/* FAQ Sections */}
       <div className="space-y-4">
         {mockFAQSections.map((section) => (
-          <Card key={section.id} className="p-0 overflow-hidden">
+          <div key={section.id} id={section.id}>
+          <Card className="p-0 overflow-hidden">
             {/* Section Header */}
             <button
               onClick={() => toggleSection(section.id)}
@@ -142,6 +155,7 @@ export default function FAQPage() {
               </div>
             )}
           </Card>
+          </div>
         ))}
       </div>
 

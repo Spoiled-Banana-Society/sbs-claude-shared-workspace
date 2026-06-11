@@ -96,6 +96,28 @@ export const mockFAQSections: FAQSection[] = [
     ],
   },
   {
+    id: 'founder-draft',
+    title: 'Founder Drafts',
+    items: [
+      {
+        question: 'What is a Founder Draft?',
+        answer: 'Every Wednesday at 6 PM PT, the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft. If you\'re in it, you drafted with the founders.',
+      },
+      {
+        question: 'What do I win?',
+        answer: 'Everyone in the Founder Draft who entered with a PAID pass gets a Free Banana Spin (added straight to your wheel, with a notification) and unlocks the exclusive Founders badge. Free entries are welcome in the draft too — they just don\'t earn the rewards.',
+      },
+      {
+        question: 'How do I get in?',
+        answer: 'There\'s no scheduled room — at exactly 6 PM PT, join a draft. Drafts fill fast in the rush, and only the one the founders actually land in counts. Once it fills, you\'ll see the founders\' wallet in your draft and the FOUNDER tag in the room.',
+      },
+      {
+        question: 'Is there an extra perk?',
+        answer: 'Yes — outscore the founder in your Founder league and you\'re entered into a draw with everyone else who beat them across all Founder leagues. One winner is picked to skip straight to the finals.',
+      },
+    ],
+  },
+  {
     id: 'hof',
     title: 'Hall of Fame Drafts',
     items: [
