@@ -392,6 +392,12 @@ export async function getPromos(userId: string): Promise<Promo[]> {
         if (seed.modalContent.additionalRules !== undefined) {
           promo.modalContent.additionalRules = seed.modalContent.additionalRules;
         }
+        // The Earn Spins tier list is STATIC COPY too (the 1/4/10 ladder) —
+        // without this overlay, users seeded before a copy change keep the
+        // old tiers forever (caught by Boris 2026-06-11).
+        if (seed.modalContent.referralRewards !== undefined) {
+          promo.modalContent.referralRewards = seed.modalContent.referralRewards;
+        }
       }
     }
     // Expired daily-drafts window reads as a fresh 0/4 + 24:00:00 everywhere.

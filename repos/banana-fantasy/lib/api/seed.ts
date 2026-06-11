@@ -257,7 +257,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Refer a Friend Get a Free SPIN',
       explanation:
-        '• Share your unique referral link with friends.\n• Your friend must verify their X account, then claim and use their Free Banana Spin on the prize wheel.\n• Earn bonus Free Banana Spins when they purchase draft passes.\n• One account per person — more than one account makes you ineligible to win prizes.\n• Real players only: referrals must actually play fantasy football. Farming free spins with fake invites makes BOTH you and your referral ineligible to win prizes.',
+        '• Share your unique referral link with friends.\n• You earn a Free Banana Spin at each milestone as your friend buys draft passes: their 1st pass, 4 total, and 10 total — up to 3 Spins per friend.\n• Your friend must also verify their X account and claim their own Free Banana Spin.\n• One account per person — more than one account makes you ineligible to win prizes.\n• Real players only: referrals must actually play fantasy football. Farming free spins with fake invites makes BOTH you and your referral ineligible to win prizes.',
       additionalRules:
         'Referred users must participate in fantasy football to qualify. Banana Fantasy reserves the right to revoke draft passes or drafted teams from users found to be abusing this promotion.',
       inviteCode: 'BANANA-CK99-2026',
@@ -410,7 +410,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
       explanation:
-        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins\n• Cycle resets after every 100 drafts\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
+        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• Cycle resets after every 100 drafts\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
       jackpotHistory: [],
     },
   },
