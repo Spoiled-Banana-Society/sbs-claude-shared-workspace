@@ -273,7 +273,7 @@ export default function BananaWheelPage() {
           <div className="flex justify-center order-1 lg:order-2">
             <div className="w-[300px] h-[300px] bg-bg-tertiary rounded-full animate-pulse" />
           </div>
-          <div className="flex flex-col gap-4 order-2 lg:order-3">
+          <div className="flex flex-col gap-4 order-2 lg:order-3 mt-5 lg:mt-0">
             {skeletonCard}
             {skeletonCard}
           </div>
@@ -472,8 +472,9 @@ export default function BananaWheelPage() {
 
       {/* Promo cards — the carousel renders its own heading. Tight gap now
           that the "Earn spins by" list + extra heading are gone. */}
-      <section id="earn-spins" className="mt-4 scroll-mt-24">
+      <section id="earn-spins" className="mt-4 lg:mt-14 scroll-mt-24">
         <PromoCarousel
+          heading="Promos to Earn Spins"
           promos={promosQuery.data ?? []}
           autoPlay={false}
           claimPromo={promosQuery.claimPromo}

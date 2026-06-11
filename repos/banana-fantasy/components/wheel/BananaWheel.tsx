@@ -505,7 +505,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           onClick={spin}
           disabled={spinsAvailable <= 0 || isSpinning}
           className={`
-            relative px-20 py-4 text-xl font-semibold tracking-wide rounded-full
+            relative px-16 py-3.5 text-lg sm:px-20 sm:py-4 sm:text-xl font-semibold tracking-wide rounded-full
             transition-all duration-300 ease-out
             ${spinsAvailable <= 0 || isSpinning
               ? 'bg-[#2a2a35] text-[#666] cursor-not-allowed'
