@@ -134,7 +134,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const originalClaimCount = promo.claimCount || 0;
   const remainingClaims = Math.max(0, originalClaimCount - claimedCount);
 
-  const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
+  // Binary promos (max <= 1) don't render a progress section — "0/1" says nothing.
+  const hasProgress = promo.progressMax !== undefined && promo.progressMax > 1;
   const progressPercent = hasProgress
     ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
     : 0;

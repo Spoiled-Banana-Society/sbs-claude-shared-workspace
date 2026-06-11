@@ -43,7 +43,8 @@ export function PromosSidebar({
       ) : (
         (() => {
           const promo = promos[promoIndex];
-          const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
+          // Binary promos (max <= 1) skip the counter+bar — "0/1" says nothing.
+          const hasProgress = promo.progressMax !== undefined && promo.progressMax > 1;
           const progressPercent = hasProgress ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100 : 0;
 
           return (

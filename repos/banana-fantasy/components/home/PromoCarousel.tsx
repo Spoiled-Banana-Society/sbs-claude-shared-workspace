@@ -324,18 +324,24 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                         </div>
                       )}
 
-                      {/* Mint & Pick 10 promo - show progress + claim if available */}
+                      {/* Mint & Pick 10 promo - show progress + claim if available.
+                          Binary promos (max <= 1) skip the counter+bar — "0/1"
+                          says nothing (Boris 2026-06-11). */}
                       {(promo.type === 'mint' || promo.type === 'pick-10') && (
                         <div className="-mt-2">
-                          <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                          </div>
-                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
+                          {progressMax > 1 && (
+                            <>
+                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                              </div>
+                              <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
                           {promo.claimable && !isClaimed ? (
                             <>
                               <button
@@ -360,15 +366,19 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       {/* Progress bar - show for other promos with progress (not daily-drafts, mint, pick-10, new-user, tweet-engagement) */}
                       {promo.type !== 'daily-drafts' && promo.type !== 'mint' && promo.type !== 'pick-10' && promo.type !== 'new-user' && promo.type !== 'tweet-engagement' && (showProgressBar && (!promo.claimable || isClaimed)) && (
                         <div className="-mt-2">
-                          <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
-                            <span className="font-semibold">{progressCurrent}/{progressMax}</span>
-                          </div>
-                          <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
-                              style={{ width: `${progressPercent}%` }}
-                            />
-                          </div>
+                          {progressMax > 1 && (
+                            <>
+                              <div className="flex justify-center text-xs text-[#4a4a4a] mb-1">
+                                <span className="font-semibold">{progressCurrent}/{progressMax}</span>
+                              </div>
+                              <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
+                                  style={{ width: `${progressPercent}%` }}
+                                />
+                              </div>
+                            </>
+                          )}
                           <p className={`text-center text-xs text-[#1d1d1f] font-semibold mt-2 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                             Learn more
                           </p>
