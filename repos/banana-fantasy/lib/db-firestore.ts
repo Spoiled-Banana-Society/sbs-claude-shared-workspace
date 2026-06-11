@@ -816,12 +816,29 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
     if (entry.rewards[milestone] !== 'pending') return { updated: false };
 
     if (milestone === 'verified') {
-      // Verified is INFORMATIONAL since 2026-06-10 — it shows progress in
-      // the history but pays the referrer nothing (payouts start at the
-      // friend's first PAID purchase; kills verify-farming).
+      // Verified pays the referrer NOTHING by itself (kills verify-farming)
+      // — but it UNLOCKS the mint ladder. Fire any milestones the friend's
+      // prior purchases already earned (buys-before-verify aren't lost).
       entry.rewards.verified = 'claimed';
+      if (entry.rewards.bought4 === undefined) entry.rewards.bought4 = 'pending';
+      const lateLadder: Array<{ key: 'bought1' | 'bought4' | 'bought10'; at: number }> = [
+        { key: 'bought1', at: 1 },
+        { key: 'bought4', at: 4 },
+        { key: 'bought10', at: 10 },
+      ];
+      let lateFired = 0;
+      for (const t of lateLadder) {
+        if ((entry.draftsPurchased || 0) >= t.at && entry.rewards[t.key] === 'pending') {
+          entry.rewards[t.key] = 'claim';
+          entry.status = 'claim';
+          entry.milestoneDates = { ...(entry.milestoneDates || {}), [t.key]: new Date().toISOString() };
+          promo.claimCount = (promo.claimCount || 0) + 1;
+          promo.claimable = true;
+          lateFired += 1;
+        }
+      }
       tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
-      return { updated: true, referrerUserId };
+      return { updated: true, referrerUserId, lateFired, friendName: entry.username, friendTotal: entry.draftsPurchased || 0 };
     }
 
     entry.rewards[milestone] = 'claim';
@@ -838,6 +855,22 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
     // full toast string ("Your friend Sarah verified!").
     if (result.updated && result.referrerUserId) {
       pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestone });
+      const late = (result as { lateFired?: number; friendName?: string; friendTotal?: number }).lateFired ?? 0;
+      if (late > 0) {
+        void (async () => {
+          try {
+            const { createNotification } = await import('@/lib/queueNotifications');
+            await createNotification(result.referrerUserId as string, {
+              type: 'referral',
+              title: late === 1 ? 'Free Spin to Claim!' : `${late} Free Spins to Claim!`,
+              message: `${(result as { friendName?: string }).friendName ?? 'Your referral'} verified their X — their ${(result as { friendTotal?: number }).friendTotal ?? 0} passes unlocked your ${late === 1 ? 'Free Banana Spin' : 'Free Banana Spins'}. Claim now.`,
+              link: '/promos?promo=3',
+              dedupeKey: `ref-late-${referredUserId}`,
+              icon: '🔗',
+            });
+          } catch { /* best-effort */ }
+        })();
+      }
     }
     return result;
   });
@@ -1122,8 +1155,14 @@ async function _incrementReferralPromosInTx(
     { key: 'bought4', at: 4 },
     { key: 'bought10', at: 10 },
   ];
+  // Requirement (Boris 2026-06-11): the friend must have VERIFIED their X
+  // (and claimed their own spin — that's when 'verified' flips) before any
+  // mint milestone pays the referrer. Purchases still ACCUMULATE in
+  // draftsPurchased — if they verify later, the verified handler re-runs
+  // this ladder and the held milestones fire then (nothing is lost).
+  const friendVerified = entry.rewards?.verified === 'claimed';
   for (const t of ladder) {
-    if (entry.draftsPurchased >= t.at && entry.rewards?.[t.key] === 'pending') {
+    if (friendVerified && entry.draftsPurchased >= t.at && entry.rewards?.[t.key] === 'pending') {
       entry.rewards[t.key] = 'claim';
       entry.status = 'claim';
       entry.milestoneDates = { ...(entry.milestoneDates || {}), [t.key]: new Date().toISOString() };
