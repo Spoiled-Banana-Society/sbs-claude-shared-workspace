@@ -809,6 +809,15 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
     // Only upgrade from 'pending' to 'claim'
     if (entry.rewards[milestone] !== 'pending') return { updated: false };
 
+    if (milestone === 'verified') {
+      // Verified is INFORMATIONAL since 2026-06-10 — it shows progress in
+      // the history but pays the referrer nothing (payouts start at the
+      // friend's first PAID purchase; kills verify-farming).
+      entry.rewards.verified = 'claimed';
+      tx.set(referralPromoDoc.ref, stripUndefined(promo), { merge: true });
+      return { updated: true, referrerUserId };
+    }
+
     entry.rewards[milestone] = 'claim';
     entry.status = 'claim';
     promo.claimCount = (promo.claimCount || 0) + 1;
@@ -945,7 +954,7 @@ async function _incrementMintPromosInTx(
   userRef: FirebaseFirestore.DocumentReference,
   quantity: number,
   opts: { handleFirstPurchase?: boolean } = {},
-): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number }> {
+): Promise<{ mintMilestonesEarned: number; buyBonusMilestonesEarned: number; firstPurchaseSpinsEarned: number; newTotalMinted: number }> {
   // READS FIRST — Firestore requires every read before any write in a tx.
   const promosSnap = await tx.get(userRef.collection(PROMOS_SUBCOLLECTION));
   // Only the wrapper-driven paid paths (card-mint / staging-mint) handle the
@@ -954,10 +963,12 @@ async function _incrementMintPromosInTx(
   const userSnap = opts.handleFirstPurchase ? await tx.get(userRef) : null;
 
   let mintMilestonesEarned = 0;
+  let newTotalMinted = 0;
   const mintPromoDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'mint');
   if (mintPromoDoc) {
     const mintPromo = deepClone(mintPromoDoc.data() as Promo);
     mintPromo.modalContent.totalMinted = (mintPromo.modalContent.totalMinted || 0) + quantity;
+    newTotalMinted = mintPromo.modalContent.totalMinted;
     // Purchase history for the modal ("big picture") — newest first, capped
     // so the promo doc can't grow unbounded.
     mintPromo.modalContent.mintHistory = [
@@ -1016,7 +1027,7 @@ async function _incrementMintPromosInTx(
     tx.set(buyBonusDoc.ref, stripUndefined(buyBonusPromo), { merge: true });
   }
 
-  return { mintMilestonesEarned, buyBonusMilestonesEarned, firstPurchaseSpinsEarned };
+  return { mintMilestonesEarned, buyBonusMilestonesEarned, firstPurchaseSpinsEarned, newTotalMinted };
 }
 
 /**
@@ -1076,7 +1087,7 @@ async function _incrementReferralPromosInTx(
   buyerUser: User,
   buyerUserId: string,
   quantity: number,
-): Promise<{ referralMilestonesEarned: number }> {
+): Promise<{ referralMilestonesEarned: number; referrerUserId?: string | null; friendName?: string; friendTotal?: number; newlyHit?: string[] }> {
   if (!buyerUser.referredBy) return { referralMilestonesEarned: 0 };
 
   const db = getAdminFirestore();
@@ -1094,25 +1105,37 @@ async function _incrementReferralPromosInTx(
   if (!entry) return { referralMilestonesEarned: 0 };
 
   let milestonesEarned = 0;
+  const newlyHit: string[] = [];
   entry.draftsPurchased = (entry.draftsPurchased || 0) + quantity;
-
-  if (entry.draftsPurchased >= 1 && entry.rewards?.bought1 === 'pending') {
-    entry.rewards.bought1 = 'claim';
-    entry.status = 'claim';
-    referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
-    referralPromo.claimable = true;
-    milestonesEarned += 1;
-  }
-  if (entry.draftsPurchased >= 10 && entry.rewards?.bought10 === 'pending') {
-    entry.rewards.bought10 = 'claim';
-    entry.status = 'claim';
-    referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
-    referralPromo.claimable = true;
-    milestonesEarned += 1;
+  // Ladder v2 (Boris 2026-06-10): 1 → 4 → 10 lifetime passes, one spin each
+  // (max 3 per friend). bought4 mirrors the friend's own First-Purchase
+  // milestone; bought10 mirrors Buy-10 — aligned incentives.
+  if (entry.rewards && entry.rewards.bought4 === undefined) entry.rewards.bought4 = 'pending';
+  const ladder: Array<{ key: 'bought1' | 'bought4' | 'bought10'; at: number }> = [
+    { key: 'bought1', at: 1 },
+    { key: 'bought4', at: 4 },
+    { key: 'bought10', at: 10 },
+  ];
+  for (const t of ladder) {
+    if (entry.draftsPurchased >= t.at && entry.rewards?.[t.key] === 'pending') {
+      entry.rewards[t.key] = 'claim';
+      entry.status = 'claim';
+      entry.milestoneDates = { ...(entry.milestoneDates || {}), [t.key]: new Date().toISOString() };
+      referralPromo.claimCount = (referralPromo.claimCount || 0) + 1;
+      referralPromo.claimable = true;
+      milestonesEarned += 1;
+      newlyHit.push(t.key);
+    }
   }
 
   tx.set(referralPromoDoc.ref, stripUndefined(referralPromo), { merge: true });
-  return { referralMilestonesEarned: milestonesEarned };
+  return {
+    referralMilestonesEarned: milestonesEarned,
+    referrerUserId: buyerUser.referredBy ?? null,
+    friendName: buyerUser.username || `${buyerUserId.slice(0, 6)}…${buyerUserId.slice(-4)}`,
+    friendTotal: entry.draftsPurchased,
+    newlyHit,
+  };
 }
 
 export async function incrementReferralPromos(
@@ -1123,12 +1146,36 @@ export async function incrementReferralPromos(
   const db = getAdminFirestore();
   await ensureUserSeeded(buyerUserId);
   const userRef = db.collection(USERS_COLLECTION).doc(buyerUserId);
-  return db.runTransaction(async (tx) => {
+  const result = await db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
     if (!userSnap.exists) return { referralMilestonesEarned: 0 };
     const buyerUser = userSnap.data() as User;
     return _incrementReferralPromosInTx(tx, buyerUser, buyerUserId, quantity);
   });
+  await notifyReferrerOfMilestones(result, quantity);
+  return { referralMilestonesEarned: result.referralMilestonesEarned };
+}
+
+/** Post-commit: ring the referrer's bell the moment a milestone fires —
+ *  AWAITED (a void fire-and-forget can die with the lambda). */
+async function notifyReferrerOfMilestones(
+  result: { referralMilestonesEarned: number; referrerUserId?: string | null; friendName?: string; friendTotal?: number; newlyHit?: string[] },
+  quantity: number,
+): Promise<void> {
+  if (!result.referralMilestonesEarned || !result.referrerUserId) return;
+  const spins = result.referralMilestonesEarned;
+  try {
+    const { createNotification } = await import('@/lib/queueNotifications');
+    await createNotification(result.referrerUserId, {
+      type: 'referral',
+      title: spins === 1 ? 'Free Spin to Claim!' : `${spins} Free Spins to Claim!`,
+      message: `${result.friendName} — who you referred — just bought ${quantity} ${quantity === 1 ? 'pass' : 'passes'} (${result.friendTotal} total). Claim your ${spins === 1 ? 'Free Banana Spin' : 'Free Banana Spins'}.`,
+      link: '/promos?promo=3',
+      dedupeKey: `ref-milestones-${result.friendName}-${(result.newlyHit ?? []).join('-')}`,
+      icon: '🔗',
+    });
+  } catch { /* noti best-effort — the claim is already committed */ }
+  pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestones: result.newlyHit ?? [] });
 }
 
 export async function verifyPurchase(purchaseId: string, txHash: string) {
@@ -1146,6 +1193,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
   // only AFTER the transaction commits (firing inside would notify on
   // a tx that might still roll back). Captured by closure on userId.
   let _mintMilestonesForPostCommitPush = 0;
+  let _referralResultForPostCommit: { referralMilestonesEarned: number; referrerUserId?: string | null; friendName?: string; friendTotal?: number; newlyHit?: string[] } | null = null;
 
   // Idempotent short-circuit: already completed → return existing state.
   if (prePurchase.status === 'completed') {
@@ -1282,7 +1330,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     // still roll back).
     _mintMilestonesForPostCommitPush = mintMilestonesEarned;
 
-    await _incrementReferralPromosInTx(tx, user, purchase.userId, purchase.quantity);
+    _referralResultForPostCommit = await _incrementReferralPromosInTx(tx, user, purchase.userId, purchase.quantity);
 
     // NOTE: the legacy "every 6 card purchases = 1 free draft" payout was
     // removed here. The card-fee → free-draft reward now lives solely in the
@@ -1326,6 +1374,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
   // own event; this verifyPurchase path calls _incrementMintPromosInTx
   // directly inside a larger transaction, so we delay the event until
   // after the outer transaction commits successfully.
+  if (_referralResultForPostCommit) {
+    await notifyReferrerOfMilestones(_referralResultForPostCommit, prePurchase.quantity);
+  }
   if (_mintMilestonesForPostCommitPush > 0) {
     pushStreamEventBg(prePurchase.userId, 'promo-buy-10', {
       awardedCount: _mintMilestonesForPostCommitPush,

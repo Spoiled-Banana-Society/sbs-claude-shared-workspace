@@ -58,7 +58,9 @@ export interface StreamEventPayload {
   /** Badge id (badge-unlock only). */
   badgeId?: string;
   /** Referral milestone name. */
-  milestone?: 'verified' | 'bought1' | 'bought10';
+  milestone?: 'verified' | 'bought1' | 'bought4' | 'bought10';
+  /** Referral milestones batch (one purchase can cross several). */
+  milestones?: string[];
   /** Diagnostic label for where the event was fired from. */
   source?: string;
   /** Bulk award count (Buy 10 fires once per buy regardless of multiplier). */

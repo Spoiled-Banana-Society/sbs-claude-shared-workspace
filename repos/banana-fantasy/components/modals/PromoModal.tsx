@@ -527,16 +527,25 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                   {entry.rewards && (
                     <div className="flex gap-3 mt-2 justify-end">
                       <div className="flex flex-col items-center gap-1 w-16">
-                        <span className="text-[8px] text-text-muted">Verified</span>
-                        {getRewardBadge(entry.rewards.verified, 'Verified', entry.username)}
-                      </div>
-                      <div className="flex flex-col items-center gap-1 w-16">
                         <span className="text-[8px] text-text-muted">Bought 1</span>
                         {getRewardBadge(entry.rewards.bought1, 'Bought 1', entry.username)}
+                        {entry.milestoneDates?.bought1 && (
+                          <span className="text-[8px] text-text-muted">{fmtWhen(entry.milestoneDates.bought1)}</span>
+                        )}
                       </div>
                       <div className="flex flex-col items-center gap-1 w-16">
-                        <span className="text-[8px] text-text-muted">Bought 10</span>
-                        {getRewardBadge(entry.rewards.bought10, 'Bought 10', entry.username)}
+                        <span className="text-[8px] text-text-muted">4 Total</span>
+                        {getRewardBadge(entry.rewards.bought4 ?? 'pending', '4 Total', entry.username)}
+                        {entry.milestoneDates?.bought4 && (
+                          <span className="text-[8px] text-text-muted">{fmtWhen(entry.milestoneDates.bought4)}</span>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-center gap-1 w-16">
+                        <span className="text-[8px] text-text-muted">10 Total</span>
+                        {getRewardBadge(entry.rewards.bought10, '10 Total', entry.username)}
+                        {entry.milestoneDates?.bought10 && (
+                          <span className="text-[8px] text-text-muted">{fmtWhen(entry.milestoneDates.bought10)}</span>
+                        )}
                       </div>
                     </div>
                   )}

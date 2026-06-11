@@ -375,12 +375,18 @@ export interface ReferralReward {
 }
 
 export interface ReferralEntryRewards {
+  /** Friend verified X + used their spin — informational only since
+   *  2026-06-10 (no referrer payout; payouts start at bought1). */
   verified: 'pending' | 'claim' | 'claimed';
   bought1: 'pending' | 'claim' | 'claimed';
+  /** Friend's LIFETIME passes reached 4 (added 2026-06-10). */
+  bought4?: 'pending' | 'claim' | 'claimed';
   bought10: 'pending' | 'claim' | 'claimed';
 }
 
 export interface ReferralEntry {
+  /** ISO timestamps for when each bought milestone was hit (real history). */
+  milestoneDates?: { bought1?: string; bought4?: string; bought10?: string };
   username: string;
   referredUserId?: string;
   dateJoined: string;

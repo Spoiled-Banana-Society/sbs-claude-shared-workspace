@@ -263,9 +263,9 @@ const seedPromos: Promo[] = [
       inviteCode: 'BANANA-CK99-2026',
       referralLink: 'https://banana-fantasy-sbs.vercel.app?ref=BANANA-CK99-2026',
       referralRewards: [
-        { milestone: 'Friend Verifies & Claims Free Banana Spin', reward: '1 Free Banana Spin' },
-        { milestone: 'Friend buys 1 draft', reward: '1 Free Banana Spin' },
-        { milestone: 'Friend buys 10 drafts', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend buys their 1st draft pass', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend reaches 4 passes total', reward: '1 Free Banana Spin' },
+        { milestone: 'Friend reaches 10 passes total', reward: '1 Free Banana Spin' },
       ],
       referralHistory: [],
     },
