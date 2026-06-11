@@ -190,12 +190,12 @@ export async function POST(req: Request) {
     const seed = generateSeed();
     const nonce = generateNonce();
 
-    // Allow forced results in staging — check multiple env signals
-    const allowForcedResult =
-      process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging' ||
-      process.env.VERCEL_ENV === 'preview' ||
-      (process.env.VERCEL_URL || '').includes('banana-fantasy') ||
-      process.env.NODE_ENV === 'development';
+    // forceWheel is ADMIN-ONLY: it bypasses the VRF period and mints real
+    // prizes, so only allowlisted wallets may use it. The old env-sniffing
+    // gate (VERCEL_URL contains 'banana-fantasy') was effectively always-on
+    // for this project — any user who knew the URL param could force a jackpot.
+    const { isWalletAdmin } = await import('@/lib/adminAllowlist');
+    const allowForcedResult = isWalletAdmin(userId) || process.env.NODE_ENV === 'development';
     const forceResult =
       allowForcedResult && typeof body.forceResult === 'string' ? body.forceResult : null;
     let segment: typeof segments[number];
