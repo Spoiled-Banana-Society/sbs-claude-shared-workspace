@@ -78,7 +78,10 @@ export async function GET(req: Request) {
       const isNew = u.createdAt && !u.createdAtEstimated
         ? Date.now() - new Date(u.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
         : userSnap.exists && zeroActivity;
-      if (isNew) {
+      // Played a previous season (BBB1-3)? Not a "new user" — no welcome
+      // noti, whatever the account age (Boris's definition 2026-06-10).
+      const { isReturningWalletSync } = await import('@/lib/returningUsers');
+      if (isNew && !isReturningWalletSync(userId)) {
         const { createNotification } = await import('@/lib/queueNotifications');
         await createNotification(userId, {
           type: 'welcome',

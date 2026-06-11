@@ -258,6 +258,8 @@ async function ensureUserSeeded(userId: string): Promise<User> {
   // AWAITED — a `void` fire-and-forget can die when the lambda freezes
   // after the response (the same failure that ate promo notis pre-June-9).
   try {
+    const { isReturningWalletSync } = await import('@/lib/returningUsers');
+    if (isReturningWalletSync(userId)) throw new Error('returning player — no welcome noti');
     const { createNotification } = await import('@/lib/queueNotifications');
     await createNotification(userId, {
       type: 'welcome',

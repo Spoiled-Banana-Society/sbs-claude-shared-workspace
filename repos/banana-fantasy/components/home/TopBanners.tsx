@@ -137,7 +137,7 @@ const SpinIcon = (
 const nuDismissKey = (wallet?: string) => `sbs-new-user-spin-banner-dismissed-${wallet ?? 'anon'}`;
 
 function useNewUserSpinBanner() {
-  const { user, isLoggedIn, newUserPromoClaimed } = useAuth();
+  const { user, isLoggedIn, newUserPromoClaimed, isBB3Holder } = useAuth();
   const router = useRouter();
   const wallet = user?.walletAddress;
   const [dismissed, setDismissed] = useState(true); // hidden until storage checked
@@ -173,7 +173,9 @@ function useNewUserSpinBanner() {
 
   // Gone the INSTANT the spin is claimed (newUserPromoClaimed is server-backed,
   // so it stays gone on every device) — or when ×-dismissed.
-  const show = isLoggedIn && !!wallet && settled && !dismissed && isNewAccount && !newUserPromoClaimed;
+  // Returning players (held BBB3 / played past seasons) are never "new",
+  // whatever this wallet's account age on the new site.
+  const show = isLoggedIn && !!wallet && settled && !dismissed && isNewAccount && !isBB3Holder && !newUserPromoClaimed;
 
   return { show, dismiss, goEarn };
 }
