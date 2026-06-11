@@ -7,6 +7,8 @@ import { Button } from '../ui/Button';
 import { Promo } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -56,6 +58,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [jpWinnerLabel, setJpWinnerLabel] = useState<string | null>(null);
   const [jpSeedBasis, setJpSeedBasis] = useState<string | null>(null);
   const [jpSpectating, setJpSpectating] = useState(false);
+
+  // Live display names + pfps for referral history entries (default Banana
+  // name or their edited name — same resolver as everywhere else). Empty
+  // list (no fetch) unless the open promo is the referral one.
+  const referralWallets = promo?.type === 'referral'
+    ? (promo.modalContent.referralHistory ?? []).map((e) => e.referredUserId ?? null)
+    : [];
+  const referralUsers = useDraftRoomUsers(referralWallets);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -540,10 +550,23 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               }).map((entry, index) => (
                 <div key={index} className="border-b border-bg-elevated last:border-0 pb-3 last:pb-0">
                   <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="text-text-primary font-medium">{entry.username}</p>
-                      <p className="text-text-muted text-xs">{entry.dateJoined}</p>
-                    </div>
+                    {(() => {
+                      const live = entry.referredUserId ? referralUsers[entry.referredUserId.toLowerCase()] : undefined;
+                      const name = live?.displayName || entry.username;
+                      const pfp = live?.imageUrl || '/banana-profile.png';
+                      return (
+                        <UserPopover walletAddress={entry.referredUserId ?? ''} username={name} pfpUrl={pfp}>
+                          <div className="flex items-center gap-2.5 cursor-pointer">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={pfp} alt="" className="w-8 h-8 rounded-full object-cover flex-none" />
+                            <div>
+                              <p className="text-text-primary font-medium">{name}</p>
+                              <p className="text-text-muted text-xs">{entry.dateJoined}</p>
+                            </div>
+                          </div>
+                        </UserPopover>
+                      );
+                    })()}
                     {entry.draftsPurchased !== undefined && (
                       <span className="text-text-muted text-xs">{Math.min(entry.draftsPurchased, 10)} drafts purchased</span>
                     )}
