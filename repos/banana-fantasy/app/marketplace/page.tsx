@@ -246,9 +246,13 @@ export default function MarketplacePage() {
     // lets wheel passes list, so "listed + no roster" is always a valid wheel
     // pass that buyers must be able to see and purchase.
     if (team.roster.length === 0 && !team.orderHash) return false;
-    if (viewFilter === 'jackpot' && !team.isJackpot) return false;
-    if (viewFilter === 'hof' && !team.isHof) return false;
-    if (viewFilter === 'pro' && (team.isJackpot || team.isHof)) return false;
+    // A filling wheel pass IS its wheel tier — the NFT's JP/HOF stamp only
+    // lands when the draft fills, so tier views must also honor fillingWheelLevel.
+    const isJp = team.isJackpot || team.fillingWheelLevel === 'jackpot';
+    const isHof = team.isHof || team.fillingWheelLevel === 'hof';
+    if (viewFilter === 'jackpot' && !isJp) return false;
+    if (viewFilter === 'hof' && !isHof) return false;
+    if (viewFilter === 'pro' && (isJp || isHof)) return false;
     // Top Teams = only teams with real accrued points. Pre-season every team has
     // 0/undefined points, so this empties Top Teams until games start (an
     // undefined `points` must also be excluded — `undefined <= 0` is false).

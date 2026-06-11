@@ -175,6 +175,22 @@ export async function GET(req: Request) {
     // every indexed token, never OpenSea's cropped/stale copy.
     await overlayIndexData(teams);
 
+    // Wheel-won JP/HOF passes listed while their draft fills: the NFT's tier
+    // stamp doesn't exist yet, so attach the live wheel level (same as the
+    // listings route) — drives the gold/red badge + tier-view filters. Only
+    // listed empty-roster tokens can be wheel passes, so the lookup is tiny.
+    try {
+      const passTokens = teams.filter(t => t.roster.length === 0 && t.orderHash).map(t => t.tokenId);
+      if (passTokens.length > 0) {
+        const { getFillingWheelPassLevels } = await import('@/lib/db');
+        const levels = await getFillingWheelPassLevels(passTokens);
+        for (const team of teams) {
+          const lvl = levels[String(team.tokenId)];
+          if (lvl) team.fillingWheelLevel = lvl;
+        }
+      }
+    } catch { /* badge enrichment is best-effort */ }
+
     return json({ nfts: teams, next });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
