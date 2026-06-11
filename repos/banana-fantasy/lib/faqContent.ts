@@ -101,7 +101,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What is a Founder Draft?',
-        answer: 'Every Wednesday at 6 PM PT, the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft. If you\'re in it, you drafted with the founders.',
+        answer: 'Every Wednesday at 6 PM PT, the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft. If you\'re in it, you drafted with the founders — and they stream the whole draft live on X.',
       },
       {
         question: 'What do I win?',

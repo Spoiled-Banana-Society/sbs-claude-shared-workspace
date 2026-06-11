@@ -261,7 +261,7 @@ export function FounderDraftCard({ fd: fdProp, standalone = false }: { fd?: Retu
         <p className="text-text-primary font-semibold text-[14px] leading-tight">
           Founder Draft {fd.isToday ? 'Today' : 'Wednesday'} — {fd.timeLabel || '6 PM PT'}
         </p>
-        <p className="text-text-secondary text-xs mt-0.5">Draft with the Vag Bros · paid entries win a Free Banana Spin</p>
+        <p className="text-text-secondary text-xs mt-0.5">Live on X with the Vag Bros · paid entries win a Free Banana Spin</p>
       </div>
       <button
         onClick={fd.learnMore}
