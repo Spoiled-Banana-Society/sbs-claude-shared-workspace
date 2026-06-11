@@ -470,9 +470,9 @@ export default function BananaWheelPage() {
         </div>
       </div>
 
-      {/* How to Earn Spins */}
-      <section id="earn-spins" className="mt-12 scroll-mt-24">
-        <h2 className="text-xl font-semibold text-text-primary mb-4">How to Earn Spins</h2>
+      {/* Promo cards — the carousel renders its own heading. Tight gap now
+          that the "Earn spins by" list + extra heading are gone. */}
+      <section id="earn-spins" className="mt-4 scroll-mt-24">
         <PromoCarousel
           promos={promosQuery.data ?? []}
           autoPlay={false}

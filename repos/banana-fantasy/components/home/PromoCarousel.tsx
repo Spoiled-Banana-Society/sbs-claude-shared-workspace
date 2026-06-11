@@ -192,7 +192,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   return (
     <div className="space-y-4">
       {/* Section Title */}
-      <h2 className="text-2xl font-bold text-text-primary text-center">Promos</h2>
+      <h2 className="text-2xl font-bold text-text-primary text-center">Promos to Earn Spins</h2>
 
       {/* Carousel with arrows */}
       <div className="flex items-center justify-center gap-6">

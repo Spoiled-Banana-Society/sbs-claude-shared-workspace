@@ -531,18 +531,8 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           <p className="mt-3 text-red-400 text-sm">{spinError}</p>
         )}
 
-        {spinsAvailable <= 0 && !isSpinning && (
-          <div className="mt-5 text-center text-[13px] text-text-muted">
-            <p className="text-text-secondary mb-2 font-medium">Earn spins by:</p>
-            <ul className="space-y-1">
-              <li>Buying 10 draft passes → 1 free spin</li>
-              <li>Completing Pick-10 milestones</li>
-              <li>Referring friends who buy passes</li>
-              <li>Engaging with SBS on X</li>
-            </ul>
-            <p className="mt-3 text-[12px] text-text-muted/70">See promos below for details.</p>
-          </div>
-        )}
+        {/* "Earn spins by:" list removed entirely (Boris 2026-06-11) — the
+            promo cards below the wheel already explain every earn path. */}
       </div>
 
       {/* Prize Won Modal - Apple-style with confetti */}
