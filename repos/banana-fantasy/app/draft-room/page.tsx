@@ -2300,9 +2300,9 @@ function DraftRoomContent() {
         <span
           className="font-black uppercase mr-2"
           style={{
-            fontSize: '16px',
+            fontSize: '18px',
             lineHeight: 1,
-            letterSpacing: '0.12em',
+            letterSpacing: '0.14em',
             color: visibleDraftType === 'hof' ? '#111' : visibleDraftType === 'jackpot' ? '#fff' : '#a855f7',
           }}
         >
