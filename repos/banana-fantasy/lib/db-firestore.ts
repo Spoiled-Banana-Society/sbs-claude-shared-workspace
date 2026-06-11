@@ -961,7 +961,7 @@ async function _incrementMintPromosInTx(
     // Purchase history for the modal ("big picture") — newest first, capped
     // so the promo doc can't grow unbounded.
     mintPromo.modalContent.mintHistory = [
-      { date: todayDate(), quantity, status: 'claimed' as const },
+      { date: new Date().toISOString(), quantity, status: 'claimed' as const },
       ...(mintPromo.modalContent.mintHistory || []),
     ].slice(0, 50);
     const max = mintPromo.progressMax || 10;
@@ -2228,7 +2228,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
       promo.modalContent.totalDailyClaims = (promo.modalContent.totalDailyClaims || 0) + 1;
       // History entry per completed 4-set ("big picture" list in the modal).
       promo.modalContent.dailyHistory = [
-        { date: todayDate(), count: 4 },
+        { date: new Date().toISOString(), count: 4 },
         ...(promo.modalContent.dailyHistory || []),
       ].slice(0, 50);
       promo.timerEndTime = undefined;
@@ -2262,7 +2262,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
 const PICK10_PROMO_ID = '2';
 
-export async function recordPick10(userId: string, draftId: string, _draftName: string, passType?: string): Promise<Promo | null> {
+export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
@@ -2287,16 +2287,20 @@ export async function recordPick10(userId: string, draftId: string, _draftName: 
 
     const history = promo.modalContent.pick10History || [];
 
-    // Already recorded this draft → no-op, no event push.
-    if (history.some(h => h.draftName === draftId)) {
+    // Already recorded this draft → no-op, no event push. Legacy entries
+    // stored the raw draftId in draftName; new ones carry draftId separately.
+    if (history.some(h => (h as { draftId?: string }).draftId === draftId || h.draftName === draftId)) {
       return { promo, justAdded: false };
     }
 
     history.unshift({
-      date: new Date().toISOString().split('T')[0],
-      draftName: draftId,
+      // Full ISO — the modal shows real date AND time (Boris 2026-06-10).
+      date: new Date().toISOString(),
+      draftId,
+      // Human name ("BBB #1374") when the caller has it; raw id as fallback.
+      draftName: draftName && draftName !== draftId ? draftName : draftId,
       status: 'claim' as const,
-    });
+    } as (typeof history)[number]);
     promo.modalContent.pick10History = history;
     promo.modalContent.totalPick10s = (promo.modalContent.totalPick10s || 0) + 1;
 
@@ -2449,7 +2453,7 @@ export async function recordJackpotHit(userId: string, draftId: string, passType
     }
 
     history.unshift({
-      date: new Date().toISOString().split('T')[0],
+      date: new Date().toISOString(), // full ISO → modal shows date + time
       draftName: draftId,
       amount: reward,
     });

@@ -20,6 +20,17 @@ interface PromoModalProps {
   onGenerateReferralCode?: () => Promise<{ code: string; link: string } | null>;
 }
 
+
+// History timestamps: new entries are full ISO (date + time); legacy ones are
+// date-only strings. Render "Jun 10 · 8:42 PM" for ISO, pass legacy through.
+function fmtWhen(d: string | undefined): string {
+  if (!d) return '';
+  if (!d.includes('T')) return d;
+  const t = new Date(d);
+  if (Number.isNaN(t.getTime())) return d;
+  return `${t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
@@ -248,7 +259,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
             {promo.modalContent.dailyHistory!.map((entry, index) => (
               <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
-                <span className="text-text-secondary text-sm">{entry.date}</span>
+                <span className="text-text-secondary text-sm">{fmtWhen(entry.date)}</span>
                 <span className="text-banana font-medium text-sm">{entry.count}/4 drafts · 1 spin</span>
               </div>
             ))}
@@ -315,7 +326,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 <div key={index} className="flex items-center justify-between py-2 border-b border-bg-elevated last:border-0">
                   <div>
                     <p className="text-text-secondary text-sm">{entry.draftName}</p>
-                    <p className="text-text-muted text-xs">{entry.date}</p>
+                    <p className="text-text-muted text-xs">{fmtWhen(entry.date)}</p>
                   </div>
                   {getPick10Badge(entry.status, entry.draftName)}
                 </div>
@@ -585,7 +596,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {history!.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
-                  <span className="text-text-secondary">{entry.draftName}</span>
+                  <div>
+                    <p className="text-text-secondary text-sm">{entry.draftName}</p>
+                    <p className="text-text-muted text-xs">{fmtWhen(entry.date)}</p>
+                  </div>
                   <span className="text-jackpot font-semibold">{entry.amount} {entry.amount === 1 ? 'spin' : 'spins'}</span>
                 </div>
               ))}
@@ -610,7 +624,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {history!.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
-                  <span className="text-text-secondary">{entry.draftName}</span>
+                  <div>
+                    <p className="text-text-secondary text-sm">{entry.draftName}</p>
+                    <p className="text-text-muted text-xs">{fmtWhen(entry.date)}</p>
+                  </div>
                   <span className="font-semibold" style={{ color: '#06b6d4' }}>
                     {entry.amount} {entry.amount === 1 ? 'free spin' : 'free spins'}
                   </span>
@@ -650,7 +667,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {mintHistory.map((entry, index) => (
                 <div key={index} className="flex justify-between py-2 border-b border-bg-elevated last:border-0">
-                  <span className="text-text-secondary text-sm">{entry.date}</span>
+                  <span className="text-text-secondary text-sm">{fmtWhen(entry.date)}</span>
                   <span className="text-banana font-medium text-sm">+{entry.quantity} {entry.quantity === 1 ? 'pass' : 'passes'}</span>
                 </div>
               ))}

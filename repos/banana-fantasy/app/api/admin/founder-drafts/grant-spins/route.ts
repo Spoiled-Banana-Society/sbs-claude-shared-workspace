@@ -23,6 +23,8 @@ import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
 import { buildActivityEventDoc, addActivityEventToTx } from '@/lib/activityEvents';
+import { resolveDraftPassType, unlockBadge } from '@/lib/db';
+import { createNotification } from '@/lib/queueNotifications';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -112,9 +114,17 @@ export async function POST(req: Request) {
     // FieldValue.increment is safe to call on a missing field (treats
     // as 0). Each user gets one transaction so the write is small and
     // we can record per-user activity events.
-    const results: { wallet: string; ok: boolean; error?: string }[] = [];
+    const results: { wallet: string; ok: boolean; skipped?: string; error?: string }[] = [];
     for (const wallet of recipients) {
       try {
+        // PAID entries only (Boris 2026-06-10): everyone is welcome in the
+        // founder draft, but the Free Spin + Founders badge go only to
+        // wallets that entered with a PAID pass — authoritative token stamp.
+        const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
+        if (passType !== 'paid') {
+          results.push({ wallet, ok: true, skipped: 'free-pass' });
+          continue;
+        }
         await db.runTransaction(async (tx) => {
           const userRef = db.collection(USERS_COLLECTION).doc(wallet);
           tx.set(userRef, { wheelSpins: FieldValue.increment(1) }, { merge: true });
@@ -139,6 +149,18 @@ export async function POST(req: Request) {
           });
           if (evt) addActivityEventToTx(tx, evt);
         });
+        // Bell noti — instant, dedupe-keyed per draft so re-runs can't spam.
+        await createNotification(wallet, {
+          type: 'promo',
+          title: 'Founder Draft — Free Spin!',
+          message: 'You drafted with the founders — a Free Banana Spin was added to your wheel. Tap to spin.',
+          link: '/banana-wheel',
+          dedupeKey: `founder-spin-${draftId}`,
+          icon: '🔑',
+        });
+        // Founders badge (paid founder-draft entry) — unlockBadge is
+        // idempotent and fires its own bell + toast on first unlock.
+        await unlockBadge(wallet, 'founders-league', { source: 'founder-draft', draftId }).catch(() => {});
         results.push({ wallet, ok: true });
       } catch (err) {
         results.push({
@@ -149,14 +171,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const grantedCount = results.filter((r) => r.ok).length;
-    const failedCount = results.length - grantedCount;
+    const grantedCount = results.filter((r) => r.ok && !r.skipped).length;
+    const skippedFreeCount = results.filter((r) => r.skipped === 'free-pass').length;
+    const failedCount = results.filter((r) => !r.ok).length;
 
     // Mark the founder draft as bulk-spun so we don't double-grant.
     await founderDraftRef.set({
       bulkSpinGrantedAt: FieldValue.serverTimestamp(),
       bulkSpinGrantedBy: actorWallet,
       bulkSpinGrantedCount: grantedCount,
+      bulkSpinSkippedFreeCount: skippedFreeCount,
       bulkSpinFailedCount: failedCount,
     }, { merge: true });
 
@@ -185,6 +209,7 @@ export async function POST(req: Request) {
       ok: failedCount === 0,
       draftId,
       grantedCount,
+      skippedFreeCount,
       failedCount,
       results,
       requestId,
