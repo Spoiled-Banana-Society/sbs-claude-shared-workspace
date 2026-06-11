@@ -25,7 +25,7 @@ import type { MarketplaceTeam } from '@/lib/opensea';
 import type { Address } from 'viem';
 
 type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist';
-type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type SweepStep = 'confirm' | 'processing' | 'complete';
@@ -144,7 +144,7 @@ export default function MarketplacePage() {
     const tabParam = searchParams?.get('tab');
     if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
     const viewParam = searchParams?.get('view');
-    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'pro' || viewParam === 'jackpot' || viewParam === 'hof') setViewFilter(viewParam);
+    if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'pro' || viewParam === 'jackpot' || viewParam === 'hof' || viewParam === 'passes') setViewFilter(viewParam);
   }, [searchParams]);
 
   // Persist the current tab + view to the URL so a reload restores them.
@@ -218,6 +218,7 @@ export default function MarketplacePage() {
     if (teamFilter != null || leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
     // 'pro' reuses the fast paged full collection (like 'all') and filters out
     // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).
+    if (viewFilter === 'passes') return enrichedListings;
     if (viewFilter === 'all' || viewFilter === 'pro') return allNfts;
     if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
     return enrichedListings;
@@ -250,6 +251,7 @@ export default function MarketplacePage() {
     // lands when the draft fills, so tier views must also honor fillingWheelLevel.
     const isJp = team.isJackpot || team.fillingWheelLevel === 'jackpot';
     const isHof = team.isHof || team.fillingWheelLevel === 'hof';
+    if (viewFilter === 'passes' && team.roster.length > 0) return false;
     if (viewFilter === 'jackpot' && !isJp) return false;
     if (viewFilter === 'hof' && !isHof) return false;
     if (viewFilter === 'pro' && (isJp || isHof)) return false;
@@ -913,7 +915,7 @@ export default function MarketplacePage() {
           txError={txError}
           userUsdcBalance={user?.usdcBalance}
           onSetViewFilter={setViewFilter}
-          viewCounts={marketplaceStats}
+          viewCounts={{ ...marketplaceStats, passes: enrichedListings.filter(t => t.roster.length === 0).length }}
           onSetRosterFilter={setRosterFilter}
           leagueFilter={leagueFilter}
           onSetLeagueFilter={searchLeague}

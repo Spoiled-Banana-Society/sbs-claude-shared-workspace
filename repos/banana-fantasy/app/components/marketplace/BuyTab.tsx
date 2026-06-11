@@ -8,7 +8,7 @@ import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 
-type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof';
+type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
 type CardFlowStep = 'idle' | 'funding' | 'waiting' | 'buying';
@@ -41,7 +41,7 @@ interface BuyTabProps {
   txError: string | null;
   userUsdcBalance?: number | null;
   onSetViewFilter: (filter: ViewFilter) => void;
-  viewCounts?: { all?: number; pro?: number; jackpot?: number; hof?: number };
+  viewCounts?: { all?: number; pro?: number; jackpot?: number; hof?: number; passes?: number };
   onSetRosterFilter: (chips: string[]) => void;
   leagueFilter: number | null;
   onSetLeagueFilter: (n: number | null) => void;
@@ -195,6 +195,7 @@ export function BuyTab({
               { key: 'pro', label: 'Pro', count: viewCounts?.pro },
               { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
               { key: 'hof', label: 'HOF', count: viewCounts?.hof },
+              { key: 'passes', label: 'Passes', count: viewCounts?.passes },
             ] as const).map(filter => (
               <button
                 key={filter.key}
@@ -269,10 +270,12 @@ export function BuyTab({
         <div className="text-center py-16 mb-12">
           <div className="text-4xl mb-4">🍌</div>
           <h3 className="text-text-primary font-semibold text-lg mb-2">
-            {viewFilter === 'listed' ? 'No Listings Found' : 'No Teams Found'}
+            {viewFilter === 'listed' ? 'No Listings Found' : viewFilter === 'passes' ? 'No Passes for Sale' : 'No Teams Found'}
           </h3>
           <p className="text-text-secondary text-sm">
-            {viewFilter === 'jackpot'
+            {viewFilter === 'passes'
+              ? 'No Jackpot or HOF draft passes are listed right now. Wheel winners can sell their special-draft passes here while the draft fills.'
+              : viewFilter === 'jackpot'
               ? 'No Jackpot teams found. These are rare — 1 in 100 paid drafts, plus wheel wins.'
               : viewFilter === 'hof'
                 ? 'No Hall of Fame teams found in this view.'
