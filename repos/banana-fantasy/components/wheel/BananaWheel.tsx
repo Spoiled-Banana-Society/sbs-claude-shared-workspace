@@ -495,7 +495,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       </div>
 
       {/* Spin Count & Button - Apple-style */}
-      <div className="mt-10 text-center">
+      <div className="mt-6 text-center">
         <p className="text-text-secondary mb-5 text-[15px] tracking-wide">
           <span className="text-banana font-semibold text-2xl">{spinsAvailable}</span>
           <span className="ml-2">spin{spinsAvailable !== 1 ? 's' : ''} available</span>
