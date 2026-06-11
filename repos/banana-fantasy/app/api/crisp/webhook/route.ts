@@ -40,6 +40,15 @@ interface CrispWebhookPayload {
   timestamp?: number;
 }
 
+/** Session-data wallet: stamped as 'addr-0x…' (string-safe — Crisp
+ *  number-coerces bare hex). Tolerates legacy bare strings; rejects the
+ *  numeric junk Crisp made of old stamps. */
+function parseStampedWallet(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const v = (raw.startsWith('addr-') ? raw.slice(5) : raw).toLowerCase();
+  return /^0x[0-9a-f]{40}$/.test(v) ? v : null;
+}
+
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content;
   return '[attachment]';
@@ -74,7 +83,7 @@ export async function POST(req: Request) {
     if (event === 'message:send' && d.from === 'user') {
       // Visitor wrote in — resolve who, then ping every admin instantly.
       const meta = sessionId ? await getConversationMeta(sessionId).catch(() => null) : null;
-      const wallet = meta?.data?.wallet;
+      const wallet = parseStampedWallet(meta?.data?.wallet);
       const who = d.user?.nickname || meta?.nickname || (wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : 'A user');
       const text = textOf(d.content);
       await Promise.all(getAdminWalletAllowlist().map((admin) =>
@@ -91,7 +100,7 @@ export async function POST(req: Request) {
     } else if (event === 'message:received' && d.from === 'operator') {
       // Team replied — bell the user so they come back to the chat.
       const meta = sessionId ? await getConversationMeta(sessionId).catch(() => null) : null;
-      const wallet = meta?.data?.wallet?.toLowerCase();
+      const wallet = parseStampedWallet(meta?.data?.wallet);
       if (wallet && /^0x[0-9a-f]{40}$/.test(wallet)) {
         await createNotification(wallet, {
           type: 'message_received',

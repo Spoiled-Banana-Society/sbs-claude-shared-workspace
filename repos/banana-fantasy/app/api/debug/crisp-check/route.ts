@@ -15,10 +15,10 @@ export async function GET() {
   // disagree on the X-Crisp-Tier header, and 401 looks identical otherwise.
   const tries: Record<string, { status: number | null; body: string }> = {};
   if (creds) {
-    for (const t of ['plugin', 'user']) {
+    for (const t of ['website', 'plugin']) {
       try {
         const res = await fetch(
-          'https://api.crisp.chat/v1/website/ed386428-a6f2-435a-a3e1-043f0a078093/conversations/1',
+          'https://api.crisp.chat/v1/website/ed386428-a6f2-435a-a3e1-043f0a078093/conversations',
           {
             headers: {
               Authorization: `Basic ${Buffer.from(`${creds.identifier}:${creds.key}`).toString('base64')}`,

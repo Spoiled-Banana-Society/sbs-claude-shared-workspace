@@ -164,9 +164,11 @@ export function CrispChat() {
     const tryIdentify = () => {
       try {
         w.$crisp!.push(['set', 'user:nickname', [user?.username || walletAddress.slice(0, 10)]]);
+        // 'addr-' prefix keeps the value a STRING — Crisp number-coerces
+        // bare 0x-hex and destroys the address (seen live 2026-06-11).
         w.$crisp!.push(['set', 'session:data', [[
-          ['wallet', walletAddress],
-          ...(user?.id ? [['userId', user.id]] : []),
+          ['wallet', `addr-${walletAddress}`],
+          ...(user?.id ? [['userId', `addr-${user.id}`]] : []),
         ]]]);
       } catch {}
     };
