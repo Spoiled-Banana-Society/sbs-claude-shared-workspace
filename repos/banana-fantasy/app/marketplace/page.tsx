@@ -12,6 +12,7 @@ import { BuyTab } from '@/app/components/marketplace/BuyTab';
 import { SellTab } from '@/app/components/marketplace/SellTab';
 import { SweepModal } from '@/app/components/marketplace/SweepModal';
 import { WatchlistTab } from '@/app/components/marketplace/WatchlistTab';
+import { OffersMadeTab } from '@/app/components/marketplace/OffersMadeTab';
 import { useAuth } from '@/hooks/useAuth';
 import { logActivity, notifySeller, useActivityHistory, useCollectionNfts, useCollectionStats, useLastSales, useListings, useMyMadeOffers, useMyNftOffers, useMyNfts, useWatchlist } from '@/hooks/useMarketplace';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
@@ -24,7 +25,7 @@ import { logger } from '@/lib/logger';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { Address } from 'viem';
 
-type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist';
+type TabKey = 'buy' | 'sell' | 'activity' | 'watchlist' | 'offers';
 type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
 type PaymentMethod = 'card' | 'usdc';
@@ -89,6 +90,36 @@ export default function MarketplacePage() {
     return { hash: tx.hash };
   }, [selectedWallet, sendTransaction]);
 
+  // Cancel one or many of the user's own offers in a SINGLE transaction (Seaport
+  // cancel takes an order array). Powers the My Offers tab's Cancel / Cancel All.
+  const handleCancelMadeOffers = useCallback(async (orderHashes: string[]): Promise<boolean> => {
+    if (!walletAddress || orderHashes.length === 0) return false;
+    try {
+      const res = await fetch('/api/marketplace/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderHashes, type: 'offer' }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Cancel failed' }));
+        throw new Error(err.error || `Cancel failed: ${res.status}`);
+      }
+      const tx = await res.json();
+      await sendTx(
+        { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: orderHashes.length > 1 ? `Cancel ${orderHashes.length} offers in one go — fees covered by SBS` : 'Cancel your offer — fees covered by SBS' },
+      );
+      // Mark each consumed so it stops showing during OpenSea's indexing lag.
+      for (const orderHash of orderHashes) {
+        void fetch('/api/marketplace/offers/consumed', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderHash }) }).catch(() => {});
+      }
+      return true;
+    } catch (err) {
+      addNotification({ type: 'system', title: 'Cancel failed', message: friendlyTxError(err, 'Could not cancel your offers. Please try again.') });
+      return false;
+    }
+  }, [walletAddress, sendTx, addNotification]);
+
   const [activeTab, setActiveTab] = useState<TabKey>('buy');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
   const [hofFilter] = useState(false);
@@ -142,7 +173,7 @@ export default function MarketplacePage() {
     if (didInitFromUrl.current) return;
     didInitFromUrl.current = true;
     const tabParam = searchParams?.get('tab');
-    if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist') setActiveTab(tabParam);
+    if (tabParam === 'buy' || tabParam === 'sell' || tabParam === 'activity' || tabParam === 'watchlist' || tabParam === 'offers') setActiveTab(tabParam);
     const viewParam = searchParams?.get('view');
     if (viewParam === 'listed' || viewParam === 'all' || viewParam === 'top' || viewParam === 'pro' || viewParam === 'jackpot' || viewParam === 'hof' || viewParam === 'passes') setViewFilter(viewParam);
   }, [searchParams]);
@@ -1011,6 +1042,13 @@ export default function MarketplacePage() {
         />
       )}
 
+      {activeTab === 'offers' && (
+        <OffersMadeTab
+          walletAddress={isLoggedIn ? walletAddress : null}
+          onCancelOffers={handleCancelMadeOffers}
+        />
+      )}
+
       {activeTab === 'watchlist' && (
         <WatchlistTab
           watchlist={watchlist}
@@ -1101,6 +1139,7 @@ function Header({
         <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
           <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} />
           <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} />
+          <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} />
           <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} />
           <button
             onClick={() => onChangeTab('watchlist')}
