@@ -107,7 +107,7 @@ export async function GET(req: Request) {
       const hash = await wallet.writeContract({
         address: BBB4_CONTRACT_ADDRESS,
         abi: BBB4_ABI,
-        functionName: 'withdraw',
+        functionName: 'withdrawUSDC',
         args: [],
       });
       result.withdrawTxHash = hash;

@@ -121,7 +121,9 @@ export const BBB4_ABI = [
   {
     type: 'function',
     stateMutability: 'nonpayable',
-    name: 'withdraw',
+    // The deployed SBSDraftPassBBB4 exposes withdrawUSDC(), not withdraw() —
+    // calling the latter hits the fallback and reverts (skim.withdraw_failed).
+    name: 'withdrawUSDC',
     inputs: [],
     outputs: [],
   },
