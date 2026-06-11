@@ -120,3 +120,4 @@ export async function getConversationMeta(sessionId: string): Promise<{ nickname
     return null;
   }
 }
+// env-bump 1781219734 — fresh deploy to load new CRISP_* env
