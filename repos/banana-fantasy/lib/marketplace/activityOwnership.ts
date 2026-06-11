@@ -51,6 +51,11 @@ export async function getWalletTrades(wallet: string): Promise<WalletTrades> {
         if (tsMs >= cutoff) recentBuys.push({ tokenId, teamName: d.teamName ?? null });
       } else if (d.type === 'sell' && tsMs >= cutoff) {
         recentSells.add(tokenId);
+      } else if (d.type === 'offer_accepted' && tsMs >= cutoff) {
+        // A team sold by accepting an offer: the acceptor (this walletAddress)
+        // is the SELLER. Drop it from their My Teams instantly, same as a 'sell'.
+        // (Newer sales log a real buy+sell pair; this covers legacy rows.)
+        recentSells.add(tokenId);
       }
     }
     return { paidByToken, recentBuys, recentSells };

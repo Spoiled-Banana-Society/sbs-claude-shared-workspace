@@ -758,22 +758,42 @@ export default function NftDetailPage() {
         tokenId,
       );
 
-      await sendTx(
+      const acceptReceipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
         { description: 'Accept offer — gas fees covered by SBS' },
       );
+      const acceptTxHash = acceptReceipt.hash || null;
 
       logger.debug('[NFT Detail] Offer accepted:', offer.orderHash);
 
+      // Accepting an offer IS a sale — log it as a buy+sell pair (same shape as
+      // a Buy Now), not just 'offer_accepted'. This is what powers "You paid $X"
+      // for the buyer (paidByToken reads 'buy') and the instant drop from the
+      // seller's My Teams (recentSells reads 'sell'); offer_accepted alone fed
+      // neither, so a sold-via-offer team lingered and "You paid" stayed stale.
+      // Same txHash on both → the activity feed dedups them into one Sold row.
       logActivity({
-        type: 'offer_accepted',
+        type: 'sell',
         walletAddress,
         tokenId,
         teamName: nft?.name || `Team #${tokenId}`,
         price: offer.amount,
         counterparty: offer.offererAddress || null,
         orderHash: offer.orderHash || null,
+        txHash: acceptTxHash,
       });
+      if (offer.offererAddress) {
+        logActivity({
+          type: 'buy',
+          walletAddress: offer.offererAddress,
+          tokenId,
+          teamName: nft?.name || `Team #${tokenId}`,
+          price: offer.amount,
+          counterparty: walletAddress,
+          orderHash: offer.orderHash || null,
+          txHash: acceptTxHash,
+        });
+      }
 
       // Notify the offerer (Firestore — they're not on this page)
       if (offer.offererAddress) {
