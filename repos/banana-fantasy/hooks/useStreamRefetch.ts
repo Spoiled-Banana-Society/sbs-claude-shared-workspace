@@ -35,8 +35,11 @@ export function useStreamRefetch(
     // reuse detection, revoking the whole session family (Boris's "bell
     // logged me out on Mac AND iPhone in the same second"). A random
     // 300-1800ms spread per tab keeps refetches near-real-time while making
-    // a same-instant multi-tab auth stampede effectively impossible.
-    const jitterMs = 300 + Math.random() * 1500;
+    // a same-instant multi-tab auth stampede effectively impossible. Spread
+    // kept TIGHT (300-700ms) — realtime must still feel instant (Boris);
+    // the dangerous collision window is milliseconds wide, so even a few
+    // hundred ms of decorrelation kills the race without visible delay.
+    const jitterMs = 300 + Math.random() * 400;
     const coalesced = () => {
       if (timer) return;
       timer = setTimeout(() => { timer = null; refetchRef.current(); }, jitterMs);
