@@ -448,6 +448,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         if (!localStorage.getItem(SESSION_STARTED_KEY)) {
           localStorage.setItem(SESSION_STARTED_KEY, String(Date.now()));
+          // Identity diagnostic (Boris's repeated session losses 2026-06-10):
+          // log the Privy DID + every linked wallet at session start. If two
+          // of his wallets show under ONE DID, the "logged out of my account"
+          // mystery is wallet-linking entanglement, not a session bug.
+          try {
+            const linkedWallets = (privy.user?.linkedAccounts ?? [])
+              .filter((a) => a.type === 'wallet')
+              .map((a) => ((a as { address?: string }).address ?? '').slice(0, 12));
+            reportClientEvent({
+              source: 'auth.session_started',
+              message: 'session start identity snapshot',
+              route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
+              actor: walletAddress,
+              context: { did: privy.user?.id ?? null, linkedWallets, active: walletAddress.slice(0, 12) },
+            }, { skipThrottle: true });
+          } catch { /* diagnostic only */ }
         }
       } catch { /* ignore */ }
 
