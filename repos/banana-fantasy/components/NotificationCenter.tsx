@@ -45,7 +45,7 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = 
   listing_created: { emoji: '📋', color: '#a855f7' },
   friend_request: { emoji: '👋', color: '#3b82f6' },
   message_received: { emoji: '💬', color: '#22c55e' },
-  welcome: { emoji: '🎁', color: '#fbbf24' },
+  welcome: { emoji: '🎉', color: '#fbbf24' },
   prize: { emoji: '💰', color: '#22c55e' },
   prize_won: { emoji: '💰', color: '#22c55e' },
   withdrawal_paid: { emoji: '✅', color: '#22c55e' },

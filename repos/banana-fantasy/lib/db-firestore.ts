@@ -261,11 +261,11 @@ async function ensureUserSeeded(userId: string): Promise<User> {
     const { createNotification } = await import('@/lib/queueNotifications');
     await createNotification(userId, {
       type: 'welcome',
-      title: 'Welcome! Your Free Spin is Waiting',
+      title: 'Welcome! Free Spin Waiting',
       message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
       link: '/promos?promo=6',
       dedupeKey: 'welcome-new-user',
-      icon: '🎁',
+      icon: '🎉',
     });
   } catch {
     // non-fatal
