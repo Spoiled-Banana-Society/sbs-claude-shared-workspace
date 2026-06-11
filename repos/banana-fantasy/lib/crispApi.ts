@@ -39,7 +39,7 @@ export async function listConversations(opts: {
   page?: number;
   filterUnread?: boolean;
   filterResolved?: boolean;
-} = {}): Promise<{ conversations: CrispConversation[]; configured: boolean }> {
+} = {}): Promise<{ conversations: CrispConversation[]; configured: boolean; authFailed?: boolean }> {
   const creds = getCrispCredentials();
   if (!creds) {
     return { conversations: [], configured: false };
@@ -65,8 +65,10 @@ export async function listConversations(opts: {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      logger.warn('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200), tier });
-      return { conversations: [], configured: true };
+      logger.error('crisp.list_conversations.http_error', { status: res.status, body: body.slice(0, 200), tier });
+      // 401 invalid_session = the token was revoked/expired — surface it
+      // loudly in the admin Support tab instead of a silent empty inbox.
+      return { conversations: [], configured: true, authFailed: res.status === 401 };
     }
     const data = await res.json();
     const conversations = (data.data ?? []) as CrispConversation[];
