@@ -40,7 +40,6 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
   const [copied, setCopied] = useState(false);
-  const [showAdditionalRules, setShowAdditionalRules] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
   const [_timerTick, setTimerTick] = useState(0);
@@ -1070,36 +1069,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 promo.modalContent.explanation
               )}
             </p>
-            {promo.modalContent.additionalRules && (
-              <button
-                onClick={() => setShowAdditionalRules(!showAdditionalRules)}
-                className="p-1 hover:bg-bg-tertiary rounded-full transition-colors flex-shrink-0"
-                title="View additional rules"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-text-muted hover:text-text-primary"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="16" x2="12" y2="12" />
-                  <line x1="12" y1="8" x2="12.01" y2="8" />
-                </svg>
-              </button>
-            )}
           </div>
-          {showAdditionalRules && promo.modalContent.additionalRules && (
-            <div className="mt-3 p-3 bg-bg-tertiary rounded-lg text-sm text-text-muted">
-              {promo.modalContent.additionalRules}
-            </div>
-          )}
         </div>
 
         {/* Dynamic Content Based on Promo Type */}

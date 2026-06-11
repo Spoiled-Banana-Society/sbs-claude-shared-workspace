@@ -392,9 +392,8 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Share Big Wins → FREE SPIN',
       explanation:
-        '• Share your Jackpot, HOF, or 5+ draft wins on X.\n• Every 3 verified shares earns you a Free Banana Spin.\n• Small wins can still be shared for bragging rights but don\'t count toward the Spin.',
-      additionalRules:
-        'You need to link your X account in your profile. After tweeting, it may take up to a minute for us to verify. Each spin can only be shared once.',
+        '• Share your Jackpot, HOF, or 5+ draft wins on X.\n• Every 3 verified shares earns you a Free Banana Spin.\n• Small wins can still be shared for bragging rights but don\'t count toward the Spin.\n• Link your X account in your profile first — verification can take up to a minute after tweeting.',
+      additionalRules: '',
     },
   },
   {
