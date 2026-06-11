@@ -65,12 +65,17 @@ export async function GET(req: Request) {
       const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
       const userRef = getAdminFirestore().collection('v2_users').doc(userId);
       const userSnap = await userRef.get();
-      const u = (userSnap.data() ?? {}) as { createdAt?: string; draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number };
+      const u = (userSnap.data() ?? {}) as { createdAt?: string; createdAtEstimated?: boolean; draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number };
       if (userSnap.exists && !u.createdAt) {
-        await userRef.set({ createdAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+        // Backfill stamp is marked ESTIMATED — a legacy account stamped
+        // "today" must never read as a 7-day-new account on its next visit
+        // (that loophole gave Boris's admin wallet a welcome noti).
+        await userRef.set({ createdAt: new Date().toISOString(), createdAtEstimated: true }, { merge: true }).catch(() => {});
       }
       const zeroActivity = !(u.draftPasses ?? 0) && !(u.freeDrafts ?? 0) && !(u.wheelSpins ?? 0) && !(u.usdcBalance ?? 0);
-      const isNew = u.createdAt
+      // New = real (non-estimated) createdAt within 7 days. Accounts with
+      // only an estimated stamp (or none) must ALSO be zero-activity.
+      const isNew = u.createdAt && !u.createdAtEstimated
         ? Date.now() - new Date(u.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
         : userSnap.exists && zeroActivity;
       if (isNew) {
