@@ -2454,6 +2454,154 @@ async function getCurrentBatchPosition(): Promise<number> {
   }
 }
 
+/**
+ * Jackpot draw v2 (Boris 2026-06-10) — the ONE award path for a revealed
+ * Jackpot draft. Called once per draft (reveal-complete + close backstop);
+ * the jackpot_draws/{draftId} create() makes every re-run a no-op.
+ *
+ *  • Winner drawn among PAID entrants ONLY (slot order), index =
+ *    sha256('jp-draw:' + draftId) mod paidCount — committed before the type
+ *    was known, so neither side can steer it. (Seed basis recorded for the
+ *    provably-fair display; upgradeable to the merkle-round VRF seed.)
+ *  • Reward by cycle position (1-25 → 10, 26-50 → 5, else 1 spin).
+ *  • Winner: promo credit + "You won N Free Spins" bell.
+ *  • Other drafters: ONE noti each — combined with the Jackpot Club badge
+ *    copy when the badge just unlocked, draw-only otherwise (badge unlock
+ *    runs silent here so nobody gets two pings).
+ */
+export async function awardJackpotDraw(draftId: string, displayName?: string): Promise<{ winnerWallet: string | null; reward: number } | null> {
+  const db = getAdminFirestore();
+
+  // Idempotency gate FIRST.
+  const drawRef = db.collection('jackpot_draws').doc(draftId);
+  try {
+    await drawRef.create({ draftId, pending: true, atIso: new Date().toISOString() });
+  } catch {
+    const existing = await drawRef.get();
+    const d = existing.data() ?? {};
+    return { winnerWallet: (d.winnerWallet as string) ?? null, reward: Number(d.reward ?? 0) };
+  }
+
+  // Slot order from the Go API (public draft order).
+  let order: string[] = [];
+  try {
+    const baseUrl = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app').replace(/\/$/, '');
+    const res = await fetch(`${baseUrl}/draft/${encodeURIComponent(draftId)}/state/info`);
+    if (res.ok) {
+      const data = (await res.json()) as { draftOrder?: { ownerId?: string }[]; displayName?: string };
+      order = (data.draftOrder ?? []).map((o) => (o.ownerId ?? '').toLowerCase()).filter(Boolean);
+      if (!displayName && data.displayName) displayName = data.displayName;
+    }
+  } catch { /* falls through to empty order */ }
+  const humans = order.filter((w) => /^0x[0-9a-f]{40}$/.test(w));
+  if (humans.length === 0) {
+    await drawRef.set({ pending: false, noOrder: true }, { merge: true });
+    return null;
+  }
+
+  // Paid entrants only — authoritative token stamp per wallet.
+  const paid: string[] = [];
+  for (const w of humans) {
+    const t = await resolveDraftPassType(w, draftId).catch(() => null);
+    if (t === 'paid') paid.push(w);
+  }
+
+  const position = await getCurrentBatchPosition();
+  const reward = jackpotSpinReward(position);
+  const filledCount = await (async () => {
+    try {
+      const snap = await db.collection('drafts').doc('draftTracker').get();
+      return Number((snap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
+    } catch { return 0; }
+  })();
+
+  let winnerWallet: string | null = null;
+  if (paid.length > 0) {
+    const hash = crypto.createHash('sha256').update(`jp-draw:${draftId}`).digest();
+    winnerWallet = paid[hash.readUInt32BE(0) % paid.length];
+  }
+
+  // Display names for the draw animation + notis.
+  const { getPublicUsers } = await import('@/lib/friends');
+  const nameMap = await getPublicUsers(humans).catch(() => new Map());
+  const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || `${w.slice(0, 6)}…${w.slice(-4)}`;
+
+  await drawRef.set({
+    pending: false,
+    draftId,
+    displayName: displayName ?? draftId,
+    winnerWallet,
+    winnerName: winnerWallet ? nameOf(winnerWallet) : null,
+    eligible: paid.map((w, i) => ({ wallet: w, name: nameOf(w), idx: i })),
+    participants: humans.length,
+    reward,
+    position,
+    filledCount,
+    atIso: new Date().toISOString(),
+    seedBasis: 'sha256("jp-draw:" + draftId) → uint32 % paidCount, paid entrants in slot order',
+  }, { merge: true });
+
+  // Credit the winner's jackpot promo (history + claimable spins).
+  if (winnerWallet) {
+    await creditJackpotWinnerPromo(winnerWallet, draftId, displayName ?? draftId, reward).catch(() => {});
+  }
+
+  const { createNotification } = await import('@/lib/queueNotifications');
+  for (const w of humans) {
+    const isWinner = w === winnerWallet;
+    // Badge unlock SILENT here — we send the one combined/draw noti below.
+    const newlyBadged = await unlockBadge(w, 'jackpot-club', { source: 'jackpot-draw', draftId }, { silent: true }).catch(() => false);
+    if (isWinner) {
+      await createNotification(w, {
+        type: 'jackpot',
+        title: `You Won ${reward} Free Spins!`,
+        message: `The ${reward}-Spin Draw from your Jackpot draft landed on YOU — up to ${reward * 20} free drafts. Claim your spins.${newlyBadged ? ' Jackpot Club badge unlocked.' : ''}`,
+        link: `/promos?promo=4&draw=${encodeURIComponent(draftId)}`,
+        dedupeKey: `jp-draw-win-${draftId}`,
+        icon: '🎰',
+      }).catch(() => {});
+    } else {
+      await createNotification(w, {
+        type: 'jackpot',
+        title: newlyBadged ? 'JACKPOT! Badge Unlocked + Draw Live' : `The ${reward}-Spin Draw Is Live`,
+        message: newlyBadged
+          ? `You're in a Jackpot draft — Jackpot Club badge unlocked, and the ${reward}-Spin Draw just ran. Watch the draw.`
+          : `Your Jackpot draft triggered the ${reward}-Spin Draw. Watch the draw.`,
+        link: `/promos?promo=4&draw=${encodeURIComponent(draftId)}`,
+        dedupeKey: `jp-draw-${draftId}`,
+        icon: '🎰',
+      }).catch(() => {});
+    }
+  }
+  logger.info('promo.jackpot_draw.awarded', { context: { draftId, winnerWallet, reward, position, paidCount: paid.length } });
+  return { winnerWallet, reward };
+}
+
+/** Credit the drawn winner's Jackpot promo: history entry + claimable spins.
+ *  Idempotent per draft (history dedupe). Used by awardJackpotDraw. */
+async function creditJackpotWinnerPromo(userId: string, draftId: string, displayName: string, reward: number): Promise<void> {
+  const db = getAdminFirestore();
+  await ensureUserSeeded(userId);
+  const promoRef = db.collection(USERS_COLLECTION).doc(userId).collection(PROMOS_SUBCOLLECTION).doc(JACKPOT_HIT_PROMO_ID);
+  await db.runTransaction(async (tx) => {
+    const promoSnap = await tx.get(promoRef);
+    if (!promoSnap.exists) return;
+    const promo = deepClone(promoSnap.data() as Promo);
+    if (promo.type !== 'jackpot') return;
+    const history = promo.modalContent.jackpotHistory || [];
+    if (history.some(h => h.draftName === draftId || h.draftName === displayName)) return;
+    history.unshift({ date: new Date().toISOString(), draftName: displayName || draftId, amount: reward });
+    promo.modalContent.jackpotHistory = history;
+    promo.progressCurrent = 1;
+    promo.claimable = true;
+    promo.claimCount = (promo.claimCount || 0) + reward;
+    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
+    tx.set(promoRef, stripUndefined(promo), { merge: true });
+  });
+  pushStreamEventBg(userId, 'promo-jackpot-hit', { draftId, awardedCount: reward });
+}
+
 export async function recordJackpotHit(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward the
   // jackpot-hit promo. The draft token is stamped with the chosen pass type

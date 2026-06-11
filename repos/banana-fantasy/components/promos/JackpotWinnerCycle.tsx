@@ -36,6 +36,8 @@ export function JackpotWinnerCycle({
   const onSettledRef = useRef(onSettled);
   onSettledRef.current = onSettled;
 
+  const labelsRef = useRef(labels);
+  labelsRef.current = labels;
   const run = useCallback(async (id: string) => {
     cancelRef.current?.();
     let cancelled = false;
@@ -49,21 +51,22 @@ export function JackpotWinnerCycle({
     setSettled(false);
     setHighlightIdx(null);
 
+    const count = labelsRef.current && labelsRef.current.length > 0 ? labelsRef.current.length : 10;
     let winnerIdx = 0;
     try {
       const enc = new TextEncoder();
       const digest = await crypto.subtle.digest('SHA-256', enc.encode(id));
       const view = new DataView(digest);
-      winnerIdx = view.getUint32(0, false) % 10;
+      winnerIdx = view.getUint32(0, false) % count;
     } catch {
       let h = 0;
       for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
-      winnerIdx = Math.abs(h) % 10;
+      winnerIdx = Math.abs(h) % count;
     }
     if (cancelled) return;
 
     const totalTicks = 28;
-    let curr = ((winnerIdx - (totalTicks - 1)) % 10 + 10) % 10;
+    let curr = ((winnerIdx - (totalTicks - 1)) % count + count) % count;
 
     const tick = (n: number) => {
       if (cancelled) return;
@@ -75,7 +78,7 @@ export function JackpotWinnerCycle({
         return;
       }
       setHighlightIdx(curr);
-      curr = (curr + 1) % 10;
+      curr = (curr + 1) % count;
       const t = n / totalTicks;
       const interval = 70 + Math.pow(t, 2) * 380;
       timeoutId = setTimeout(() => tick(n + 1), interval);
@@ -104,7 +107,7 @@ export function JackpotWinnerCycle({
       </div>
 
       <div className="grid grid-cols-5 gap-2">
-        {Array.from({ length: 10 }, (_, i) => {
+        {Array.from({ length: labels && labels.length > 0 ? labels.length : 10 }, (_, i) => {
           const isCycling = highlightIdx === i && !settled;
           const isWinner = settled && highlightIdx === i;
           const label = labels?.[i] ?? `#${i + 1}`;

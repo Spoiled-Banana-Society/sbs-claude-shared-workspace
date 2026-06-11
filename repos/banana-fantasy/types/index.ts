@@ -433,6 +433,10 @@ export interface Promo {
     dailyHistory?: { date: string; count: number }[];
     /** Authoritative Go count of paid FILLED drafts — stamped at read time. */
     lifetimePaidDrafts?: number;
+    /** Jackpot promo: live cycle data stamped at read time. */
+    cycle?: { filledCount: number; position: number; tenLeft: number; fiveLeft: number };
+    /** Jackpot promo: most recent draw (social proof in the modal). */
+    latestDraw?: { draftName: string; winnerName: string; reward: number; atIso: string };
   };
 }
 

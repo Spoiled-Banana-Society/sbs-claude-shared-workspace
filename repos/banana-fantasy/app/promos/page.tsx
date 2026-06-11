@@ -52,6 +52,8 @@ export default function PromosPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const promoQueryId = searchParams?.get('promo') ?? null;
+  // Jackpot draw replay deep-link (noti → ?promo=4&draw=<draftId>).
+  const drawQueryId = searchParams?.get('draw') ?? null;
   const autoOpenedRef = useRef<string | null>(null);
 
   const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed, isBalanceLoaded } = useAuth();
@@ -338,6 +340,7 @@ export default function PromosPage() {
 
       {/* ── Detail modal ───────────────────────────────────────────────── */}
       <PromoModal
+        drawDraftId={drawQueryId}
         isOpen={!!selectedPromo}
         onClose={() => setSelectedPromo(null)}
         promo={selectedPromo}

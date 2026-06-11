@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { recordJackpotHit, recordPick10, unlockBadge } from '@/lib/db';
+import { awardJackpotDraw, recordPick10, unlockBadge } from '@/lib/db';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
 
@@ -75,17 +75,19 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       .map((u) => String(u?.OwnerId ?? '').toLowerCase())
       .filter((w) => /^0x[0-9a-f]{40}$/.test(w) && !w.startsWith('bot-'));
 
-    const badgeId = isJackpot ? 'jackpot-club' : 'hof-club';
-    await Promise.allSettled(wallets.map(async (w) => {
-      await unlockBadge(w, badgeId, { source: 'draft-reveal', draftId });
-      // Jackpot Hit promo at the same moment (idempotent per draft; only the
-      // deterministic winner is credited inside; paid-only gate applies).
-      if (isJackpot) {
-        await recordJackpotHit(w, draftId).catch(() => { /* logged inside */ });
-      }
-    }));
+    if (isJackpot) {
+      // ONE call handles everything: paid-only VRF-style winner draw, winner
+      // promo credit, draw record (for the modal replay + provably-fair
+      // display), Jackpot Club badges (silent) and the combined/draw notis —
+      // idempotent per draft via jackpot_draws create().
+      await awardJackpotDraw(draftId, String(draftSnap.get('DisplayName') ?? draftId)).catch(() => {});
+    } else {
+      await Promise.allSettled(wallets.map((w) =>
+        unlockBadge(w, 'hof-club', { source: 'draft-reveal', draftId }),
+      ));
+    }
 
-    logger.info('draft.reveal_complete.unlocked', { draftId, level: badgeId, wallets: wallets.length });
+    logger.info('draft.reveal_complete.unlocked', { draftId, level: isJackpot ? 'jackpot' : 'hof', wallets: wallets.length });
     return json({ ok: true, level: isJackpot ? 'jackpot' : 'hof', unlocked: true, wallets: wallets.length });
   } catch (err) {
     logger.error('draft.reveal_complete.failed', { draftId, err });

@@ -6,7 +6,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
-import { computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordJackpotHit, recordPick10 } from '@/lib/db';
+import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10 } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
@@ -147,7 +147,7 @@ async function creditDraftRipeness(draftId: string, tokenIds: string[], isJackpo
     try { await recordFirstPurchaseDraftFinished(o, draftId); }
     catch (err) { logger.warn('marketplace.refresh_draft_first_purchase_gate_failed', { owner: o, error: String(err) }); }
     if (isJackpot) {
-      try { await recordJackpotHit(o, draftId); }
+      try { await awardJackpotDraw(draftId); }
       catch (err) { logger.warn('marketplace.refresh_draft_jackpot_credit_failed', { owner: o, error: String(err) }); }
     }
 

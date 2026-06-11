@@ -28,6 +28,37 @@ export async function GET(req: Request) {
       }
     } catch { /* stats are decoration — promos still return */ }
 
+    // Jackpot promo: live cycle position + latest draw (real counter — the
+    // same drafts/draftTracker.FilledLeaguesCount the award logic uses).
+    try {
+      const jp = promos.find((p) => p.type === 'jackpot');
+      if (jp) {
+        const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+        const db = getAdminFirestore();
+        const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
+        const filled = Number((trackerSnap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0);
+        const position = filled <= 0 ? 1 : ((filled - 1) % 100) + 1;
+        jp.modalContent.cycle = {
+          filledCount: filled,
+          position,
+          tenLeft: Math.max(0, 25 - position),
+          fiveLeft: Math.max(0, 50 - position),
+        };
+        const last = await db.collection('jackpot_draws')
+          .where('pending', '==', false).orderBy('atIso', 'desc').limit(1).get()
+          .catch(() => null);
+        const d = last && !last.empty ? last.docs[0].data() : null;
+        if (d?.winnerName) {
+          jp.modalContent.latestDraw = {
+            draftName: String(d.displayName ?? d.draftId ?? ''),
+            winnerName: String(d.winnerName),
+            reward: Number(d.reward ?? 0),
+            atIso: String(d.atIso ?? ''),
+          };
+        }
+      }
+    } catch { /* live stats are decoration */ }
+
     // One-time backfill: users who bought passes BEFORE per-purchase history
     // existed (2026-06-10) get their Buy-10 Purchase History reconstructed
     // from the real completed purchase records, then persisted so this never

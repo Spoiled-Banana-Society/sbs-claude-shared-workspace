@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
@@ -14,6 +14,9 @@ interface PromoModalProps {
   isOpen: boolean;
   onClose: () => void;
   promo: Promo | null;
+  /** Replay a recorded Jackpot draw (from a noti deep-link ?draw=) —
+   *  spectate mode: plays the real draw for non-winners too. */
+  drawDraftId?: string | null;
   onClaim: (promo: Promo) => void;
   isPromoClaimed?: boolean;
   onVerifyTweet?: (promoId: string) => Promise<{ verified: boolean; alreadyVerified?: boolean; hasReplied?: boolean; hasQuoted?: boolean; message?: string } | null>;
@@ -31,7 +34,7 @@ function fmtWhen(d: string | undefined): string {
   return `${t.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
 }
 
-export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode }: PromoModalProps) {
+export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -50,6 +53,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [jpRevealSeed, setJpRevealSeed] = useState<string | null>(null);
   const [jpRevealSettled, setJpRevealSettled] = useState(false);
   const [jpRevealError, setJpRevealError] = useState<string | null>(null);
+  const [jpWinnerLabel, setJpWinnerLabel] = useState<string | null>(null);
+  const [jpSeedBasis, setJpSeedBasis] = useState<string | null>(null);
+  const [jpSpectating, setJpSpectating] = useState(false);
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -95,6 +101,16 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     }
   }, [isOpen, promo]);
 
+  // Spectate replay deep-link (noti → /promos?promo=4&draw=<id>).
+  const spectateStartedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isOpen || !promo || promo.type !== 'jackpot' || !drawDraftId) return;
+    if (spectateStartedRef.current === drawDraftId) return;
+    spectateStartedRef.current = drawDraftId;
+    void startJackpotReveal(drawDraftId, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, promo?.id, drawDraftId]);
+
   if (!promo) return null;
 
   // Calculate remaining claims by subtracting claimed history items
@@ -129,9 +145,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     }
   };
 
-  const startJackpotReveal = async () => {
+  const startJackpotReveal = async (overrideDraftId?: string, spectate = false) => {
     const history = promo.modalContent.jackpotHistory;
-    const draftId = history && history.length > 0 ? history[0].draftName : null;
+    const draftId = overrideDraftId ?? (history && history.length > 0 ? history[0].draftName : null);
+    setJpSpectating(spectate);
     setJpRevealing(true);
     setJpRevealSettled(false);
     setJpRevealError(null);
@@ -147,11 +164,18 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     try {
       const res = await fetch(`/api/promos/jackpot-reveal?draftId=${encodeURIComponent(draftId)}`);
       if (!res.ok) throw new Error(`reveal lookup failed: ${res.status}`);
-      const data = (await res.json()) as { labels?: string[] };
-      if (Array.isArray(data?.labels) && data.labels.length === 10) {
+      const data = (await res.json()) as { labels?: string[]; draw?: { seed: string; winnerName?: string | null; seedBasis?: string } };
+      if (Array.isArray(data?.labels) && data.labels.length > 0) {
         setJpRevealLabels(data.labels);
       } else {
         setJpRevealLabels(null);
+      }
+      if (data?.draw) {
+        // Recorded draw: replay with the REAL seed so the cycle settles on
+        // the actual winner (same sha256/uint32 math as the server).
+        setJpRevealSeed(data.draw.seed);
+        setJpWinnerLabel(data.draw.winnerName ?? null);
+        setJpSeedBasis(data.draw.seedBasis ?? null);
       }
     } catch (err) {
       reportClientError({
@@ -571,8 +595,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <JackpotWinnerCycle
             seed={jpRevealSeed}
             labels={jpRevealLabels ?? undefined}
+            winnerLabel={jpWinnerLabel ?? undefined}
             onSettled={() => setJpRevealSettled(true)}
           />
+          {jpSeedBasis && jpRevealSettled && (
+            <p className="text-text-muted text-[10px] text-center">
+              Provably fair ✓ — winner = {jpSeedBasis}
+            </p>
+          )}
           {jpRevealError && (
             <p className="text-text-muted text-xs text-center">
               Couldn&apos;t load drafter names — animation falls back to position labels.
@@ -585,9 +615,36 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     const totalJackpots = history?.length ?? 0;
     const totalJpSpins = (history ?? []).reduce((s, e) => s + (e.amount || 0), 0);
 
+    const cycle = promo.modalContent.cycle;
+    const latest = promo.modalContent.latestDraw;
     return (
       <>
         {renderProgressSection()}
+        {/* LIVE cycle tracker — real draft counter, same number the award
+            logic reads; refreshed on every stream ping. */}
+        {cycle && (
+          <div className="bg-bg-tertiary rounded-xl p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-text-primary font-medium">Draft #{cycle.filledCount}</span>
+              <span className="text-text-muted text-xs">#{cycle.position} of 100 this cycle</span>
+            </div>
+            <div className="h-2 bg-bg-elevated rounded-full overflow-hidden mb-2">
+              <div className="h-full bg-jackpot rounded-full transition-all duration-500" style={{ width: `${cycle.position}%` }} />
+            </div>
+            <p className="text-text-secondary text-sm">
+              {cycle.tenLeft > 0
+                ? `${cycle.tenLeft} ${cycle.tenLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 10 Free Spins — up to 200 free drafts.`
+                : cycle.fiveLeft > 0
+                ? `${cycle.fiveLeft} ${cycle.fiveLeft === 1 ? 'draft' : 'drafts'} left where a Jackpot hit pays 5 Free Spins — up to 100 free drafts.`
+                : 'Bonus windows closed for this cycle — a fresh cycle (and the 10-Spin window) starts at the next 100.'}
+            </p>
+            {latest && (
+              <p className="text-text-muted text-xs mt-2">
+                Latest winner: <span className="text-jackpot font-medium">{latest.winnerName}</span> · {latest.draftName} · {fmtWhen(latest.atIso)} · {latest.reward} spins
+              </p>
+            )}
+          </div>
+        )}
         {/* Live cumulative stats — Jackpots landed + spins they earned. */}
         <div className="bg-bg-tertiary rounded-xl p-4 grid grid-cols-2 gap-3">
           <div className="text-center">
@@ -936,7 +993,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const baseCanClaim = promo.claimable && remainingClaims > 0 && !isPromoClaimed && !alreadyClaimed && isLoggedIn && (!requiresTwitter || isTwitterVerified);
   // Jackpot needs an extra step: clicking CLAIM once enters the reveal
   // animation; the button only finalizes after the cycle has settled.
-  const canClaim = baseCanClaim && (promo.type !== 'jackpot' || !jpRevealing || jpRevealSettled);
+  const canClaim = !jpSpectating && baseCanClaim && (promo.type !== 'jackpot' || !jpRevealing || jpRevealSettled);
   const jpRevealRunning = promo.type === 'jackpot' && jpRevealing && !jpRevealSettled;
   const claimButtonText = jpRevealRunning
     ? 'Picking winner…'
