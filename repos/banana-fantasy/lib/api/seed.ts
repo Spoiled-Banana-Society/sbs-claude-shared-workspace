@@ -409,7 +409,7 @@ const seedPromos: Promo[] = [
     modalContent: {
       title: 'Jackpot Hit → FREE SPIN',
       explanation:
-        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• Cycle resets after every 100 drafts\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
+        '• 1 Jackpot draft in every 100 drafts\n• Jackpot hit within first 25 drafts → 1 of the 10 drafters in the Jackpot draft wins 10 Free Banana Spins — up to 200 Free Drafts\n• Jackpot hit within first 50 drafts → 1 of the 10 drafters in the Jackpot draft wins 5 Free Banana Spins — up to 100 Free Drafts\n• Cycle resets after every 100 drafts\n• Winner drawn from VRF randomness sealed on-chain before the draft exists — every draw posts an instant on-chain receipt\n• Jackpot League Perk: Win your Jackpot league and go straight to the finals, skipping the first two rounds of playoffs!\n• Paid Drafts Only.',
       jackpotHistory: [],
     },
   },

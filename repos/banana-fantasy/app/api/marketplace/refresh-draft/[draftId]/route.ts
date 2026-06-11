@@ -149,6 +149,12 @@ async function creditDraftRipeness(draftId: string, tokenIds: string[], isJackpo
     if (isJackpot) {
       try { await awardJackpotDraw(draftId); }
       catch (err) { logger.warn('marketplace.refresh_draft_jackpot_credit_failed', { owner: o, error: String(err) }); }
+      // If the draw's instant on-chain receipt failed at draw time (RPC
+      // blip), post it now — no-op once receiptTxHash exists.
+      try {
+        const { ensureDrawReceipt } = await import('@/lib/jackpotDrawProof');
+        await ensureDrawReceipt(draftId);
+      } catch (err) { logger.warn('marketplace.refresh_draft_receipt_backstop_failed', { owner: o, error: String(err) }); }
     }
 
     // Silent content-less refetch ping: the team card image was JUST written

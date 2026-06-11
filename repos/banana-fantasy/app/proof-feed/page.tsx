@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 interface FeedDraft {
@@ -9,6 +9,13 @@ interface FeedDraft {
   level: 'Jackpot' | 'Hall of Fame' | 'Pro' | null;
   displayName: string;
   speed: 'fast' | 'slow';
+  draw?: {
+    winnerName: string | null;
+    paidCount: number;
+    reward: number;
+    receiptTxHash: string | null;
+    vrfPeriod: number | null;
+  } | null;
 }
 
 interface RoundSummary {
@@ -166,13 +173,37 @@ export default function ProofFeedPage() {
                 const level = d.level ?? 'Pro';
                 const colors = LEVEL_COLORS[level];
                 return (
-                  <tr key={d.draftId} className="border-t border-white/5 hover:bg-white/5">
-                    <td className="px-4 py-2 text-white/80 font-mono">#{d.draftNumber}</td>
-                    <td className="px-4 py-2 font-semibold" style={{ color: colors.color }}>{colors.label}</td>
-                    <td className="px-4 py-2 text-right">
-                      <Link href={`/proof/${d.draftId}`} className="text-banana hover:underline">Verify →</Link>
-                    </td>
-                  </tr>
+                  <React.Fragment key={d.draftId}>
+                    <tr className="border-t border-white/5 hover:bg-white/5">
+                      <td className="px-4 py-2 text-white/80 font-mono">#{d.draftNumber}</td>
+                      <td className="px-4 py-2 font-semibold" style={{ color: colors.color }}>{colors.label}</td>
+                      <td className="px-4 py-2 text-right">
+                        <Link href={`/proof/${d.draftId}`} className="text-banana hover:underline">Verify →</Link>
+                      </td>
+                    </tr>
+                    {d.draw && (
+                      <tr className="border-t border-white/5 bg-white/[0.02]">
+                        <td colSpan={3} className="px-4 py-1.5 text-[11px] text-white/55">
+                          <span style={{ color: '#ef4444' }} className="font-semibold">Spin Draw</span>
+                          {' · '}{d.draw.reward}-Spin Draw among {d.draw.paidCount} paid {d.draw.paidCount === 1 ? 'entry' : 'entries'}
+                          {d.draw.winnerName ? <> · won by <span className="text-white/80">{d.draw.winnerName}</span></> : null}
+                          {d.draw.receiptTxHash && (
+                            <>
+                              {' · '}
+                              <a
+                                href={BASESCAN_TX(d.draw.receiptTxHash)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-banana hover:underline"
+                              >
+                                On-chain receipt →
+                              </a>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

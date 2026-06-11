@@ -37,6 +37,9 @@ export async function GET(req: Request) {
           winnerName?: string | null;
           reward?: number;
           seedBasis?: string;
+          vrfPeriod?: number | null;
+          saltHash?: string | null;
+          receiptTxHash?: string | null;
         } | undefined;
         if (drawSnap.exists && d && d.pending === false && Array.isArray(d.eligible) && d.eligible.length > 0) {
           const labels = d.eligible.map((e) => e.name || `${e.wallet.slice(0, 6)}…${e.wallet.slice(-4)}`);
@@ -49,6 +52,9 @@ export async function GET(req: Request) {
               winnerName: d.winnerName ?? null,
               reward: d.reward ?? 0,
               seedBasis: d.seedBasis ?? '',
+              vrfPeriod: d.vrfPeriod ?? null,
+              saltHash: d.saltHash ?? null,
+              receiptTxHash: d.receiptTxHash ?? null,
             },
           });
         }

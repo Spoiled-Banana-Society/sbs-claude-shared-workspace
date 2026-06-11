@@ -56,6 +56,8 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [jpRevealError, setJpRevealError] = useState<string | null>(null);
   const [jpWinnerLabel, setJpWinnerLabel] = useState<string | null>(null);
   const [jpSeedBasis, setJpSeedBasis] = useState<string | null>(null);
+  const [jpWinnerIdx, setJpWinnerIdx] = useState<number | null>(null);
+  const [jpVrf, setJpVrf] = useState<{ period: number | null; saltHash: string | null; receiptTxHash: string | null } | null>(null);
   const [jpSpectating, setJpSpectating] = useState(false);
 
   // Live display names + pfps for referral history entries (default Banana
@@ -173,18 +175,31 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     try {
       const res = await fetch(`/api/promos/jackpot-reveal?draftId=${encodeURIComponent(draftId)}`);
       if (!res.ok) throw new Error(`reveal lookup failed: ${res.status}`);
-      const data = (await res.json()) as { labels?: string[]; draw?: { seed: string; winnerName?: string | null; seedBasis?: string } };
+      const data = (await res.json()) as {
+        labels?: string[];
+        draw?: {
+          seed: string; winnerIdx?: number | null; winnerName?: string | null; seedBasis?: string;
+          vrfPeriod?: number | null; saltHash?: string | null; receiptTxHash?: string | null;
+        };
+      };
       if (Array.isArray(data?.labels) && data.labels.length > 0) {
         setJpRevealLabels(data.labels);
       } else {
         setJpRevealLabels(null);
       }
       if (data?.draw) {
-        // Recorded draw: replay with the REAL seed so the cycle settles on
-        // the actual winner (same sha256/uint32 math as the server).
+        // Recorded draw: replay settles on the server-recorded winner index
+        // (VRF draws derive from the sealed period seed — not recomputable
+        // client-side until the period reveals).
         setJpRevealSeed(data.draw.seed);
+        setJpWinnerIdx(typeof data.draw.winnerIdx === 'number' ? data.draw.winnerIdx : null);
         setJpWinnerLabel(data.draw.winnerName ?? null);
         setJpSeedBasis(data.draw.seedBasis ?? null);
+        setJpVrf({
+          period: data.draw.vrfPeriod ?? null,
+          saltHash: data.draw.saltHash ?? null,
+          receiptTxHash: data.draw.receiptTxHash ?? null,
+        });
       }
     } catch (err) {
       reportClientError({
@@ -632,12 +647,28 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             seed={jpRevealSeed}
             labels={jpRevealLabels ?? undefined}
             winnerLabel={jpWinnerLabel ?? undefined}
+            winnerIdxOverride={jpWinnerIdx}
             onSettled={() => setJpRevealSettled(true)}
           />
-          {jpSeedBasis && jpRevealSettled && (
-            <p className="text-text-muted text-[10px] text-center">
-              Provably fair ✓ — winner = {jpSeedBasis}
-            </p>
+          {jpRevealSettled && (jpVrf?.receiptTxHash || jpVrf?.saltHash || jpSeedBasis) && (
+            <div className="bg-bg-tertiary/60 rounded-lg px-3 py-2 space-y-1">
+              <p className="text-text-muted text-[10px] text-center">
+                Provably fair ✓ — drawn from VRF randomness sealed on-chain before this draft existed
+                {typeof jpVrf?.period === 'number' ? ` (period ${jpVrf.period})` : ''}.
+              </p>
+              {jpVrf?.receiptTxHash && (
+                <p className="text-[10px] text-center">
+                  <a
+                    href={`https://basescan.org/tx/${jpVrf.receiptTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-banana hover:underline"
+                  >
+                    View on-chain draw receipt →
+                  </a>
+                </p>
+              )}
+            </div>
           )}
           {jpRevealError && (
             <p className="text-text-muted text-xs text-center">

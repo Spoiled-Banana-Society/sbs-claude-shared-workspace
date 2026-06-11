@@ -2562,10 +2562,20 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     } catch { return 0; }
   })();
 
+  // Winner from the wheel period's SEALED seed (salt + VRF randomness locked
+  // on-chain before this draft existed) bound to this draft's paid list —
+  // unpredictable pre-fill, fully recomputable at period reveal. Legacy
+  // draftId-only basis is the fallback so a draw never blocks on period state.
+  const { getSealedDrawSeed, deriveDrawWinnerIdx, sealedSeedBasis, postDrawReceiptOnchain } =
+    await import('@/lib/jackpotDrawProof');
+  const sealed = await getSealedDrawSeed();
   let winnerWallet: string | null = null;
+  let winnerIdx: number | null = null;
   if (paid.length > 0) {
-    const hash = crypto.createHash('sha256').update(`jp-draw:${draftId}`).digest();
-    winnerWallet = paid[hash.readUInt32BE(0) % paid.length];
+    winnerIdx = sealed
+      ? deriveDrawWinnerIdx(sealed, draftId, paid.length)
+      : crypto.createHash('sha256').update(`jp-draw:${draftId}`).digest().readUInt32BE(0) % paid.length;
+    winnerWallet = paid[winnerIdx];
   }
 
   // Display names for the draw animation + notis.
@@ -2573,20 +2583,41 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
   const nameMap = await getPublicUsers(humans).catch(() => new Map());
   const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || `${w.slice(0, 6)}…${w.slice(-4)}`;
 
+  const atIso = new Date().toISOString();
   await drawRef.set({
     pending: false,
     draftId,
     displayName: displayName ?? draftId,
     winnerWallet,
     winnerName: winnerWallet ? nameOf(winnerWallet) : null,
+    winnerIdx,
     eligible: paid.map((w, i) => ({ wallet: w, name: nameOf(w), idx: i })),
     participants: humans.length,
     reward,
     position,
     filledCount,
-    atIso: new Date().toISOString(),
-    seedBasis: 'sha256("jp-draw:" + draftId) → uint32 % paidCount, paid entrants in slot order',
+    atIso,
+    vrfPeriod: sealed?.periodNumber ?? null,
+    saltHash: sealed?.saltHash ?? null,
+    seedBasis: sealed
+      ? sealedSeedBasis(sealed)
+      : 'sha256("jp-draw:" + draftId) → uint32 % paidCount, paid entrants in slot order',
   }, { merge: true });
+
+  // INSTANT on-chain receipt — the full draw record lands on Base within
+  // seconds. Never blocks the draw; close backstop retries via ensureDrawReceipt.
+  const receiptTxHash = await postDrawReceiptOnchain({
+    draftId,
+    displayName: displayName ?? draftId,
+    periodNumber: sealed?.periodNumber ?? null,
+    saltHash: sealed?.saltHash ?? null,
+    paid,
+    winnerWallet,
+    winnerIdx,
+    reward,
+    atIso,
+  });
+  if (receiptTxHash) await drawRef.set({ receiptTxHash }, { merge: true });
 
   // Credit the winner's jackpot promo (history + claimable spins).
   if (winnerWallet) {

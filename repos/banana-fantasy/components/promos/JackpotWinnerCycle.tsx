@@ -20,6 +20,9 @@ export interface JackpotWinnerCycleProps {
   labels?: string[];
   winnerLabel?: string;
   autoPlay?: boolean;
+  /** Recorded winner index from the server draw. Required for VRF draws —
+   *  the sealed seed can't be recomputed client-side until period reveal. */
+  winnerIdxOverride?: number | null;
   onSettled?: (winnerIdx: number) => void;
 }
 
@@ -27,6 +30,7 @@ export function JackpotWinnerCycle({
   seed,
   labels,
   autoPlay = true,
+  winnerIdxOverride,
   onSettled,
 }: JackpotWinnerCycleProps) {
   const [highlightIdx, setHighlightIdx] = useState<number | null>(null);
@@ -38,6 +42,8 @@ export function JackpotWinnerCycle({
 
   const labelsRef = useRef(labels);
   labelsRef.current = labels;
+  const winnerIdxRef = useRef(winnerIdxOverride);
+  winnerIdxRef.current = winnerIdxOverride;
   const run = useCallback(async (id: string) => {
     cancelRef.current?.();
     let cancelled = false;
@@ -53,15 +59,22 @@ export function JackpotWinnerCycle({
 
     const count = labelsRef.current && labelsRef.current.length > 0 ? labelsRef.current.length : 10;
     let winnerIdx = 0;
-    try {
-      const enc = new TextEncoder();
-      const digest = await crypto.subtle.digest('SHA-256', enc.encode(id));
-      const view = new DataView(digest);
-      winnerIdx = view.getUint32(0, false) % count;
-    } catch {
-      let h = 0;
-      for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
-      winnerIdx = Math.abs(h) % count;
+    const override = winnerIdxRef.current;
+    if (typeof override === 'number' && override >= 0 && override < count) {
+      // Server-recorded winner (VRF draws — sealed seed isn't recomputable
+      // client-side until the period reveals).
+      winnerIdx = override;
+    } else {
+      try {
+        const enc = new TextEncoder();
+        const digest = await crypto.subtle.digest('SHA-256', enc.encode(id));
+        const view = new DataView(digest);
+        winnerIdx = view.getUint32(0, false) % count;
+      } catch {
+        let h = 0;
+        for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
+        winnerIdx = Math.abs(h) % count;
+      }
     }
     if (cancelled) return;
 

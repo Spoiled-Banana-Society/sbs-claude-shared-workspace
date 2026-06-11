@@ -13,6 +13,14 @@ interface FeedDraft {
   displayName: string;
   speed: 'fast' | 'slow';
   filledAt: string | null; // ISO timestamp from StartDate; null if unknown
+  /** Jackpot drafts only: the recorded Spin Draw + its on-chain receipt. */
+  draw?: {
+    winnerName: string | null;
+    paidCount: number;
+    reward: number;
+    receiptTxHash: string | null;
+    vrfPeriod: number | null;
+  } | null;
 }
 
 interface RoundSummary {
@@ -93,6 +101,7 @@ export async function GET(req: Request) {
     // the same league shows up under multiple year-prefix candidates.
     const seen = new Set<number>();
     const drafts: FeedDraft[] = [];
+    const jackpotSlotIds = new Map<number, string>(); // globalNumber → slot doc id (jackpot_draws key)
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const snap = snaps[i];
@@ -116,10 +125,12 @@ export async function GET(req: Request) {
       // written). Better than StartDate (season kickoff, identical for
       // every draft) or createTime (lobby open, well before fill).
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
+      const level = normalizeLevel(data?.Level);
+      if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber), // proof URL = /proof/{globalNum}
         draftNumber: globalNumber,
-        level: normalizeLevel(data?.Level),
+        level,
         displayName: dn || `BBB #${globalNumber}`,
         speed: c.speed,
         filledAt,
@@ -128,6 +139,31 @@ export async function GET(req: Request) {
 
     drafts.sort((a, b) => b.draftNumber - a.draftNumber);
     if (drafts.length > FEED_LIMIT) drafts.length = FEED_LIMIT;
+
+    // Attach the recorded Spin Draw (winner + on-chain receipt) to jackpot
+    // rows — the public feed shows every draw, not just your own.
+    await Promise.all(
+      drafts
+        .filter((d) => d.level === 'Jackpot' && jackpotSlotIds.has(d.draftNumber))
+        .map(async (d) => {
+          try {
+            const drawSnap = await db.collection('jackpot_draws').doc(jackpotSlotIds.get(d.draftNumber)!).get();
+            const dd = drawSnap.data() as {
+              pending?: boolean; winnerName?: string | null; eligible?: unknown[];
+              reward?: number; receiptTxHash?: string | null; vrfPeriod?: number | null;
+            } | undefined;
+            if (drawSnap.exists && dd && dd.pending === false) {
+              d.draw = {
+                winnerName: dd.winnerName ?? null,
+                paidCount: Array.isArray(dd.eligible) ? dd.eligible.length : 0,
+                reward: Number(dd.reward ?? 0),
+                receiptTxHash: dd.receiptTxHash ?? null,
+                vrfPeriod: dd.vrfPeriod ?? null,
+              };
+            }
+          } catch { /* row simply renders without draw info */ }
+        }),
+    );
 
     return json({ drafts, round: await loadRound(db) });
   } catch (err) {
