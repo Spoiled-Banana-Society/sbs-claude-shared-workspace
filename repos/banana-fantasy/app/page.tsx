@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { TopBanners } from '@/components/home/TopBanners';
-import { AnnouncementTicker } from '@/components/layout/AnnouncementTicker';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
@@ -155,7 +154,6 @@ export default function HomePage() {
 
       {/* Founder Draft event banner — only renders on the day-of (within 24h before
           the event) or during the live window. Otherwise self-hides. */}
-      <AnnouncementTicker />
 
       {/* Featured Contest */}
       <section className="mb-6">

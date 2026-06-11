@@ -21,6 +21,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
+import { useFounderSchedule } from '@/hooks/useFounderSchedule';
 import { InstallModal } from '@/components/home/AddToHomeScreenCard';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 
@@ -199,7 +200,88 @@ function NewUserSpinCard({ goEarn, dismiss }: { goEarn: () => void; dismiss: () 
   );
 }
 
+/* ───────────────────── Founder Draft banner ───────────────────── */
+
+const KeyIcon = (
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
+    <circle cx="7.5" cy="15.5" r="4.5" />
+    <path d="M10.7 12.3 21 2l-3 0 0 3-2 0 0 2-2 0 0 2" />
+  </svg>
+);
+
+const fdDismissKey = (eventAt: string) => `sbs-founder-banner-dismissed-${eventAt}`;
+// Show from 37h before the event (Tue 5 AM PT for a Wed 6 PM PT draft).
+const FOUNDER_SHOW_BEFORE_MS = 37 * 3600_000;
+
+function useFounderDraftCard() {
+  const { schedule, loaded } = useFounderSchedule();
+  const router = useRouter();
+  const [dismissed, setDismissed] = useState(true);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !schedule.at) { setDismissed(true); return; }
+    setDismissed(!!window.localStorage.getItem(fdDismissKey(schedule.at)));
+  }, [schedule.at]);
+
+  const dismiss = useCallback(() => {
+    if (typeof window !== 'undefined' && schedule.at) window.localStorage.setItem(fdDismissKey(schedule.at), '1');
+    setDismissed(true);
+  }, [schedule.at]);
+
+  const learnMore = useCallback(() => router.push('/faq#founder-draft'), [router]);
+
+  const eventMs = schedule.at ? Date.parse(schedule.at) : NaN;
+  const now = Date.now();
+  const inWindow = Number.isFinite(eventMs) && now >= eventMs - FOUNDER_SHOW_BEFORE_MS && now < eventMs;
+  const isToday = inWindow && new Date(eventMs).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' }) === new Date(now).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+  const timeLabel = Number.isFinite(eventMs)
+    ? new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' }) + ' PT'
+    : '';
+
+  // EVERY user sees it (logged in or not) — vanishes at draft start or on ×.
+  const show = loaded && schedule.active && inWindow && !dismissed;
+  return { show, dismiss, learnMore, isToday, timeLabel };
+}
+
+export function FounderDraftCard({ fd: fdProp, standalone = false }: { fd?: ReturnType<typeof useFounderDraftCard>; standalone?: boolean } = {}) {
+  // Standalone mode (drafting page): runs its own hook + gates + spaces itself.
+  const own = useFounderDraftCard();
+  const fd = fdProp ?? own;
+  if (standalone && !fd.show) return null;
+  const card = (
+    <CardShell>
+      {KeyIcon}
+      <div className="flex-1 min-w-0 cursor-pointer" onClick={fd.learnMore} role="button" tabIndex={0}>
+        <p className="text-text-primary font-semibold text-[14px] leading-tight">
+          Founder Draft {fd.isToday ? 'Today' : 'Wednesday'} — {fd.timeLabel || '6 PM PT'}
+        </p>
+        <p className="text-text-secondary text-xs mt-0.5">Draft with the Vag Bros · paid entries win a Free Banana Spin</p>
+      </div>
+      <button
+        onClick={fd.learnMore}
+        className="flex-none rounded-full bg-banana text-[#1d1d1f] font-bold text-[13px] px-5 py-2.5 transition-transform hover:scale-[1.03]"
+      >
+        How It Works
+      </button>
+      <DismissX onClick={fd.dismiss} />
+    </CardShell>
+  );
+  if (!standalone) return card;
+  return (
+    <div className="mb-6 flex justify-center px-4 sm:px-8 lg:px-12 pt-4">
+      <div className="w-full max-w-lg">{card}</div>
+    </div>
+  );
+}
+
 /* ───────────────────────── Get-the-App banner ───────────────────────── */
+
 
 const A2HS_ENGAGED_KEY = 'sbs-a2hs-engaged';
 
@@ -306,6 +388,7 @@ function AppInstallCard({ onClick, dismiss }: { onClick: () => void; dismiss: ()
 
 export function TopBanners() {
   const { user } = useAuth();
+  const fd = useFounderDraftCard();
   const nu = useNewUserSpinBanner();
   const fp = useFirstPurchaseBanner();
   const app = useAppInstallBanner();
@@ -327,6 +410,8 @@ export function TopBanners() {
   if (!mounted) return null;
 
   const slots: React.ReactNode[] = [];
+  // Founder card first — it's the time-sensitive one.
+  if (fd.show || preview) slots.push(<FounderDraftCard key="fd" fd={fd} />);
   if (nu.show || preview) slots.push(<NewUserSpinCard key="nu" goEarn={nu.goEarn} dismiss={nu.dismiss} />);
   if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
   if (app.show || preview) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
