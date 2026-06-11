@@ -464,6 +464,13 @@ export async function POST(req: Request) {
             } catch (qErr) {
               logger.warn('wheel.spin.jphof_queue_failed', { spinId, userId, err: (qErr as Error).message });
             }
+            // Ask OpenSea to re-pull metadata now that the pass is queued — its
+            // metadata route now emits the JP/HOF Level trait while filling, so
+            // a refresh makes it show under OpenSea's Level filter immediately.
+            try {
+              const { refreshOpenSeaTokens } = await import('@/lib/opensea');
+              await refreshOpenSeaTokens([jphofTokenId]);
+            } catch { /* refresh is best-effort; OpenSea re-pulls on its own too */ }
           }
           logger.info('wheel.spin.jphof_mint_ok', { spinId, userId, kind: jphofKind, txHash: res.txHash, tokenIds: res.tokenIds });
         } catch (mintErr) {

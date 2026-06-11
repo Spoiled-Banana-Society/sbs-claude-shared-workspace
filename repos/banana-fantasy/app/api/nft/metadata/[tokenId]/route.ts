@@ -43,11 +43,23 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     // teams forever, blocking the index's self-healing. The pass-upsert below
     // heals any stale 'team' record back to 'pass'.
     const passType = passTypeLabel(card.passType);
+
+    // A wheel-won JP/HOF pass that's still FILLING has no tier stamp yet (the
+    // chain trait only lands at draft fill). Surface its wheel tier as a Level
+    // trait NOW so OpenSea's "Level: Jackpot/Hall of Fame" filter shows it while
+    // it's sellable. Undrafted Pro passes get no Level (same as before).
+    let wheelLevel: 'jackpot' | 'hof' | null = null;
+    try {
+      const { getFillingWheelPassLevels } = await import('@/lib/db');
+      wheelLevel = (await getFillingWheelPassLevels([tokenId]))[tokenId] ?? null;
+    } catch { /* best-effort */ }
+    const levelLabel = wheelLevel === 'jackpot' ? 'Jackpot' : wheelLevel === 'hof' ? 'Hall of Fame' : null;
+
     // Self-healing stamp. Awaited (best-effort, never throws) because Vercel
     // freezes the function after the response — a fire-and-forget write wouldn't
     // land. This route is OFF the live-draft/generating hot path, so the ~30ms
     // is invisible there. Passes have no league.
-    await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(card.level), status: 'pass', image: card.image });
+    await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(levelLabel || card.level), status: 'pass', image: card.image });
     return new Response(JSON.stringify({
       name: `Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
@@ -56,6 +68,7 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
         { trait_type: 'Status', value: 'Draft Pass' },
         { trait_type: 'Pass Type', value: passType },
         { trait_type: 'Draft Pass #', value: tokenId },
+        ...(levelLabel ? [{ trait_type: 'Level', value: levelLabel }] : []),
       ],
     }), { status: 200, headers });
   }
