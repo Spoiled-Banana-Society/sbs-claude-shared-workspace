@@ -103,6 +103,18 @@ export function useFriends(enabled: boolean): {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) return { ok: false, error: json.error || `error ${res.status}` };
+      // Optimistic: move them incoming → friends NOW so this surface flips
+      // instantly; refresh + the server stream ping confirm everywhere else.
+      const w = otherWallet.toLowerCase();
+      setData((prev) => {
+        const entry = prev.incoming.find((u) => u.walletAddress.toLowerCase() === w);
+        if (!entry) return prev;
+        return {
+          ...prev,
+          incoming: prev.incoming.filter((u) => u.walletAddress.toLowerCase() !== w),
+          friends: prev.friends.some((u) => u.walletAddress.toLowerCase() === w) ? prev.friends : [...prev.friends, entry],
+        };
+      });
       await refresh();
       return { ok: true };
     } catch (err) {

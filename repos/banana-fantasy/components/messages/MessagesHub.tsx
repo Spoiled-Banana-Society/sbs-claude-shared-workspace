@@ -27,6 +27,7 @@ import { getTruncatedAccountName } from '@/utils/helpers';
 type View =
   | { kind: 'general' }
   | { kind: 'friends' }
+  | { kind: 'all-users' }
   | { kind: 'requests' }
   | { kind: 'blocked' }
   | { kind: 'dm'; wallet: string };
@@ -471,6 +472,112 @@ function FriendsPane({ onSelectDm, onBack }: { onSelectDm: (wallet: string) => v
 
 // ─── (Old Add-friend pane removed — search lives at the top of Friends) ─────
 
+// ─── All Users pane ──────────────────────────────────────────────────────────
+// Directory of everyone who has logged into the new site (new or returning),
+// live names + pfps (default Banana handle or edited), Add Friend on each.
+
+function AllUsersPane({ onBack }: { onBack: () => void }) {
+  const { user, isLoggedIn } = useAuth();
+  const privy = usePrivy();
+  const myWallet = (user?.walletAddress || '').toLowerCase();
+  const enabled = !!user?.walletAddress && isLoggedIn;
+  const { data, accept, sendRequest } = useFriends(enabled);
+  const [roster, setRoster] = useState<PublicUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Ref the token getter — Privy hook identity churns per render and a fetch
+  // effect must never depend on it directly ([[render-loop-self-ddos]]).
+  const getTokenRef = useRef(privy.getAccessToken);
+  useEffect(() => { getTokenRef.current = privy.getAccessToken; }, [privy.getAccessToken]);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getTokenRef.current();
+        const res = await fetch('/api/users/roster', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error(`roster ${res.status}`);
+        const json = (await res.json()) as { users?: PublicUser[] };
+        if (!cancelled) setRoster(json.users ?? []);
+      } catch { /* shows empty-state */ }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [enabled]);
+
+  const flash = (text: string) => {
+    setFeedback(text);
+    setTimeout(() => setFeedback(null), 2000);
+  };
+
+  const stateFor = (wallet: string): 'friend' | 'incoming' | 'outgoing' | 'none' => {
+    const w = wallet.toLowerCase();
+    if (data.friends.some((u) => u.walletAddress.toLowerCase() === w)) return 'friend';
+    if (data.incoming.some((u) => u.walletAddress.toLowerCase() === w)) return 'incoming';
+    if (data.outgoing.some((u) => u.walletAddress.toLowerCase() === w)) return 'outgoing';
+    return 'none';
+  };
+
+  const q = filter.trim().toLowerCase();
+  const shown = roster.filter((u) =>
+    !q || u.username.toLowerCase().includes(q) || u.walletAddress.startsWith(q),
+  );
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0">
+        <button onClick={onBack} className="md:hidden text-white/40 hover:text-white" aria-label="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <h2 className="text-white text-lg font-semibold flex-1">All Users</h2>
+        <span className="text-white/40 text-xs">{roster.length} user{roster.length === 1 ? '' : 's'}</span>
+      </div>
+
+      <div className="px-4 pt-4 pb-2 flex-shrink-0">
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by name or wallet…"
+          className="w-full bg-[#1c1c1e] border border-white/10 rounded-xl px-4 py-2.5 text-white placeholder-white/30 focus:outline-none focus:border-banana/50"
+          maxLength={60}
+        />
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        {feedback && <p className="text-white/50 text-xs text-center mb-2">{feedback}</p>}
+        {loading && <p className="text-white/30 text-sm text-center py-8">Loading users…</p>}
+        {!loading && shown.length === 0 && <p className="text-white/30 text-sm text-center py-8">No users found.</p>}
+        <div className="space-y-1">
+          {shown.map((u) => {
+            const isMe = u.walletAddress.toLowerCase() === myWallet;
+            const state = stateFor(u.walletAddress);
+            let action: React.ReactNode = null;
+            if (isMe) action = <span className="text-white/30 text-xs px-3 py-1.5">You</span>;
+            else if (state === 'friend') action = <span className="text-green-400 text-xs px-3 py-1.5">Friends</span>;
+            else if (state === 'incoming') action = (
+              <button onClick={async () => { const r = await accept(u.walletAddress); flash(r.ok ? 'Friend added' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Accept</button>
+            );
+            else if (state === 'outgoing') action = <span className="text-white/40 text-xs px-3 py-1.5">Requested</span>;
+            else action = (
+              <button onClick={async () => { const r = await sendRequest(u.walletAddress); flash(r.ok ? 'Request sent' : r.error || 'Failed'); }} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-banana text-black hover:bg-banana-light">Add Friend</button>
+            );
+            return (
+              <div key={u.walletAddress} className="flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.04]">
+                <Avatar user={u} />
+                <span className="text-white text-sm flex-1 truncate">{u.username}</span>
+                {action}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Blocked-users pane ─────────────────────────────────────────────────────
 
 function BlockedPane({ onBack, onChange }: { onBack: () => void; onChange?: () => void }) {
@@ -561,6 +668,7 @@ export function MessagesHub() {
     const v = searchParams?.get('view') || '';
     const w = searchParams?.get('with') || '';
     if (v === 'friends') return { kind: 'friends' };
+    if (v === 'all-users') return { kind: 'all-users' };
     if (v === 'requests') return { kind: 'requests' };
     if (v === 'add-friend') return { kind: 'friends' };
     if (v === 'blocked') return { kind: 'blocked' };
@@ -578,6 +686,7 @@ export function MessagesHub() {
     const w = searchParams?.get('with') || '';
     const fromUrl: View = (() => {
       if (v === 'friends') return { kind: 'friends' };
+      if (v === 'all-users') return { kind: 'all-users' };
       if (v === 'requests') return { kind: 'requests' };
       if (v === 'add-friend') return { kind: 'friends' };
       if (v === 'blocked') return { kind: 'blocked' };
@@ -594,6 +703,7 @@ export function MessagesHub() {
     let url = '/messages';
     if (next.kind === 'general') url = '/messages?view=general';
     else if (next.kind === 'friends') url = '/messages?view=friends';
+    else if (next.kind === 'all-users') url = '/messages?view=all-users';
     else if (next.kind === 'requests') url = '/messages?view=requests';
     else if (next.kind === 'blocked') url = '/messages?view=blocked';
     else if (next.kind === 'dm') url = `/messages?with=${encodeURIComponent(next.wallet)}`;
@@ -633,7 +743,7 @@ export function MessagesHub() {
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-4 py-4">
       <div className="h-full flex bg-[#0f0f12] border border-white/[0.06] rounded-2xl overflow-hidden">
         {/* Sidebar */}
-        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'all-users' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
           <SidebarContent
             view={view}
             inbox={inbox}
@@ -660,7 +770,7 @@ export function MessagesHub() {
         )}
 
         {/* Main pane */}
-        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
+        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'all-users' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
           {view.kind === 'general' && (
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
@@ -675,6 +785,7 @@ export function MessagesHub() {
             </div>
           )}
           {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
+          {view.kind === 'all-users' && <AllUsersPane onBack={() => navigate({ kind: 'general' })} />}
           {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} onChange={refreshInbox} />}
           {view.kind === 'requests' && (
             <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
@@ -734,6 +845,11 @@ function SidebarContent({
             badge={friendRequestCount}
             active={isActive('friends')}
             onClick={() => onNavigate({ kind: 'friends' })}
+          />
+          <SidebarLink
+            label="All Users"
+            active={isActive('all-users')}
+            onClick={() => onNavigate({ kind: 'all-users' })}
           />
           <SidebarLink
             label="Message Requests"
