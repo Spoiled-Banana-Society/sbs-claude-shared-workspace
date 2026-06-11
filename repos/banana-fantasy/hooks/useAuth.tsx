@@ -650,8 +650,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // reports (Boris hit this on a fresh test wallet, 2026-06-10):
           // Privy stayed unauthenticated past the debounce — a REAL session
           // loss, not a blink. Context shows what the session looked like.
+          // Only when there was a user to lose — anonymous visitors (and bots
+          // hammering "/") sit unauthenticated forever and are not losses.
           try {
-            reportClientError({
+            if (userStateRef.current) reportClientError({
               source: 'auth.session_lost',
               message: 'Privy stayed unauthenticated past debounce — user wiped without explicit logout',
               route: typeof window !== 'undefined' ? window.location.pathname : 'unknown',
