@@ -11,7 +11,7 @@ import { NotificationIcon } from '@/components/NotificationIcons';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received' | 'welcome';
+export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received' | 'welcome' | 'prize' | 'prize_won' | 'withdrawal_paid' | 'withdrawal_denied';
 
 export interface Notification {
   id: string;
@@ -46,6 +46,10 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = 
   friend_request: { emoji: '👋', color: '#3b82f6' },
   message_received: { emoji: '💬', color: '#22c55e' },
   welcome: { emoji: '🎁', color: '#fbbf24' },
+  prize: { emoji: '💰', color: '#22c55e' },
+  prize_won: { emoji: '💰', color: '#22c55e' },
+  withdrawal_paid: { emoji: '✅', color: '#22c55e' },
+  withdrawal_denied: { emoji: '⚠️', color: '#ef4444' },
 };
 
 // Server-created notis can carry types this client bundle doesn't know yet
@@ -77,6 +81,11 @@ const CATEGORY_MAP: Record<NotificationType, NotificationCategory> = {
   listing_created: 'marketplace',
   friend_request: 'friends',
   message_received: 'messages',
+  welcome: 'promos',
+  prize: 'system',
+  prize_won: 'system',
+  withdrawal_paid: 'system',
+  withdrawal_denied: 'system',
 };
 
 export const CATEGORY_LABELS: Record<NotificationCategory, { label: string; emoji: string }> = {

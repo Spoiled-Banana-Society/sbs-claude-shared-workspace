@@ -24,6 +24,10 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   friend_request: { emoji: '👋', color: '#3b82f6', label: 'Friend' },
   message_received: { emoji: '💬', color: '#22c55e', label: 'Message' },
   welcome: { emoji: '🎁', color: '#fbbf24', label: 'Welcome' },
+  prize: { emoji: '💰', color: '#22c55e', label: 'Prize' },
+  prize_won: { emoji: '💰', color: '#22c55e', label: 'Prize' },
+  withdrawal_paid: { emoji: '✅', color: '#22c55e', label: 'Cash Out' },
+  withdrawal_denied: { emoji: '⚠️', color: '#ef4444', label: 'Cash Out' },
 };
 
 const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280', label: 'Notification' };
