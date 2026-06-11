@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { resolveCard } from '@/lib/nftCardServer';
+import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { passTypeLabel } from '@/lib/nftPassClassify';
 import { resolveLeagueNumber } from '@/lib/opensea';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
@@ -55,15 +56,22 @@ export async function GET(_req: Request, { params }: { params: { tokenId: string
     } catch { /* best-effort */ }
     const levelLabel = wheelLevel === 'jackpot' ? 'Jackpot' : wheelLevel === 'hof' ? 'Hall of Fame' : null;
 
+    // A filling JP/HOF pass should LOOK like its tier (gold HOF / red Jackpot),
+    // not the grey default — same tiered art our own marketplace renders. Only
+    // wheel JP/HOF passes get this; a plain Pro pass keeps the grey card.
+    const passImage = wheelLevel
+      ? buildTieredDraftPassUrl(tokenId, wheelLevel)
+      : (card.image || `https://banana-fantasy-sbs.vercel.app/api/og/team-card?d=`);
+
     // Self-healing stamp. Awaited (best-effort, never throws) because Vercel
     // freezes the function after the response — a fire-and-forget write wouldn't
     // land. This route is OFF the live-draft/generating hot path, so the ~30ms
     // is invisible there. Passes have no league.
-    await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(levelLabel || card.level), status: 'pass', image: card.image });
+    await upsertMarketplaceIndex(tokenId, { level: normalizeLevel(levelLabel || card.level), status: 'pass', image: passImage });
     return new Response(JSON.stringify({
       name: `Draft Pass #${tokenId}`,
       description: 'A Banana Best Ball IV draft pass. Reveals into your Digital Team after you draft.',
-      image: card.image || `https://banana-fantasy-sbs.vercel.app/api/og/team-card?d=`,
+      image: passImage,
       attributes: [
         { trait_type: 'Status', value: 'Draft Pass' },
         { trait_type: 'Pass Type', value: passType },
