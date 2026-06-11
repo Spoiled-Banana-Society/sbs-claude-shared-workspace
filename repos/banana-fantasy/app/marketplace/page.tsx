@@ -159,6 +159,23 @@ export default function MarketplacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, viewFilter]);
 
+  // Live wheel-won JP/HOF passes in filling rounds — appear in Buy views the
+  // moment the wheel mints them, listed or not. Plain fetch, scalar-free deps
+  // (Rule #0), 60s refresh keeps browsers current without a reload.
+  const [wheelPasses, setWheelPasses] = useState<MarketplaceTeam[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      fetch('/api/marketplace/wheel-passes')
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => { if (!cancelled && d?.passes) setWheelPasses(d.passes); })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   // Live tab counts (drafted teams / Jackpot / HOF) from the backend index.
   const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; pro?: number; jackpot?: number; hof?: number } | undefined>(undefined);
   useEffect(() => {
@@ -216,13 +233,20 @@ export default function MarketplacePage() {
     // teams). On the Listed tab it must still mean "listed", so intersect with
     // active listings; on other tabs show the filtered set as-is.
     if (teamFilter != null || leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
+    // Wheel passes merge into browse views; a LISTED copy (price/orderHash)
+    // always wins over the queue-sourced one.
+    const withWheel = (teams: MarketplaceTeam[]) => {
+      const have = new Set(teams.map(t => t.tokenId));
+      return teams.concat(wheelPasses.filter(p => !have.has(p.tokenId)));
+    };
     // 'pro' reuses the fast paged full collection (like 'all') and filters out
     // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).
-    if (viewFilter === 'passes') return enrichedListings;
-    if (viewFilter === 'all' || viewFilter === 'pro') return allNfts;
-    if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return enrichedListings.concat(allNfts.filter(team => !team.orderHash));
+    if (viewFilter === 'passes') return withWheel(enrichedListings);
+    if (viewFilter === 'all') return withWheel(allNfts.concat(enrichedListings.filter(l => !allNfts.some(n => n.tokenId === l.tokenId))));
+    if (viewFilter === 'pro') return allNfts;
+    if (viewFilter === 'jackpot' || viewFilter === 'hof' || viewFilter === 'top') return withWheel(enrichedListings.concat(allNfts.filter(team => !team.orderHash)));
     return enrichedListings;
-  }, [viewFilter, enrichedListings, allNfts, leagueFilter, teamFilter]);
+  }, [viewFilter, enrichedListings, allNfts, leagueFilter, teamFilter, wheelPasses]);
 
   // Closed list of valid filter chips: every roster slot seen across the
   // currently visible team set + bare team codes. Restricts the chip
@@ -246,7 +270,7 @@ export default function MarketplacePage() {
     // a wheel-won JP/HOF pass sellable while its draft fills. The server only
     // lets wheel passes list, so "listed + no roster" is always a valid wheel
     // pass that buyers must be able to see and purchase.
-    if (team.roster.length === 0 && !team.orderHash) return false;
+    if (team.roster.length === 0 && !team.orderHash && !team.fillingWheelLevel) return false;
     // A filling wheel pass IS its wheel tier — the NFT's JP/HOF stamp only
     // lands when the draft fills, so tier views must also honor fillingWheelLevel.
     const isJp = team.isJackpot || team.fillingWheelLevel === 'jackpot';
@@ -915,7 +939,7 @@ export default function MarketplacePage() {
           txError={txError}
           userUsdcBalance={user?.usdcBalance}
           onSetViewFilter={setViewFilter}
-          viewCounts={{ ...marketplaceStats, passes: enrichedListings.filter(t => t.roster.length === 0).length }}
+          viewCounts={{ ...marketplaceStats, passes: new Set(enrichedListings.filter(t => t.roster.length === 0).map(t => t.tokenId).concat(wheelPasses.map(p => p.tokenId))).size }}
           onSetRosterFilter={setRosterFilter}
           leagueFilter={leagueFilter}
           onSetLeagueFilter={searchLeague}
