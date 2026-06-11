@@ -876,7 +876,7 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
               message: `${(result as { friendName?: string }).friendName ?? 'Your referral'} verified their X — their ${(result as { friendTotal?: number }).friendTotal ?? 0} passes unlocked your ${late === 1 ? 'Free Banana Spin' : 'Free Banana Spins'}. Claim now.`,
               link: '/promos?promo=3',
               dedupeKey: `ref-late-${referredUserId}`,
-              icon: '🔗',
+              icon: 'users',
             });
           } catch { /* best-effort */ }
         })();
@@ -1227,7 +1227,7 @@ async function notifyReferrerOfMilestones(
       message: `${result.friendName} — who you referred — just bought ${quantity} ${quantity === 1 ? 'pass' : 'passes'} (${result.friendTotal} total). Claim your ${spins === 1 ? 'Free Banana Spin' : 'Free Banana Spins'}.`,
       link: '/promos?promo=3',
       dedupeKey: `ref-milestones-${result.friendName}-${(result.newlyHit ?? []).join('-')}`,
-      icon: '🔗',
+      icon: 'users',
     });
   } catch { /* noti best-effort — the claim is already committed */ }
   pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestones: result.newlyHit ?? [] });
@@ -2600,7 +2600,9 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
     winnerWallet,
     winnerName: winnerWallet ? nameOf(winnerWallet) : null,
     winnerIdx,
-    eligible: paid.map((w, i) => ({ wallet: w, name: nameOf(w), idx: i })),
+    // slot = the entrant's REAL position in the draft order (1-based), so the
+    // draw animation shows the same slot numbers people saw in the room.
+    eligible: paid.map((w, i) => ({ wallet: w, name: nameOf(w), idx: i, slot: order.indexOf(w) + 1 })),
     participants: humans.length,
     reward,
     position,
@@ -2645,7 +2647,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
         message: `The ${reward}-Spin Draw from your Jackpot draft landed on YOU — up to ${reward * 20} free drafts. Claim your spins.${newlyBadged ? ' Jackpot Club badge unlocked.' : ''}`,
         link: `/promos?promo=4&draw=${encodeURIComponent(draftId)}`,
         dedupeKey: `jp-draw-win-${draftId}`,
-        icon: '🎰',
+        icon: 'sparkles',
       }).catch(() => {});
     } else {
       await createNotification(w, {
@@ -2656,7 +2658,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
           : `Your Jackpot draft triggered the ${reward}-Spin Draw. Watch the draw.`,
         link: `/promos?promo=4&draw=${encodeURIComponent(draftId)}`,
         dedupeKey: `jp-draw-${draftId}`,
-        icon: '🎰',
+        icon: 'sparkles',
       }).catch(() => {});
     }
   }

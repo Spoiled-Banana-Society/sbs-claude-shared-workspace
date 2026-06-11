@@ -9,15 +9,29 @@
 
 import React, { useState } from 'react';
 import { JackpotWinnerCycle } from '@/components/promos/JackpotWinnerCycle';
+import { NotificationIcon } from '@/components/NotificationIcons';
 
-const PAID = ['BananaKing', 'Richard', 'Banana81244', 'GridironGor', 'Banana20471', 'MookieMash', 'Banana90211'];
-const WINNER_IDX = 4; // Banana20471
+// Real draft slots (paid entrants only — slots 3, 6, 9 were free entries and
+// sit out the draw). Names/pfps live-resolve in the real modal.
+const PAID_ENTRIES = [
+  { name: 'BananaKing', slot: 1 },
+  { name: 'Richard', slot: 2 },
+  { name: 'Banana81244', slot: 4 },
+  { name: 'GridironGor', slot: 5 },
+  { name: 'Banana20471', slot: 7 },
+  { name: 'MookieMash', slot: 8 },
+  { name: 'Banana90211', slot: 10 },
+];
+const WINNER_IDX = 4; // Banana20471 (slot #7)
 const SAMPLE_TX = '0x3bb8f35f74523edef80058dc8e48c3fd40d2dddc9573e0431a0a1ef30330e8a1';
 
 function NotiCard({ title, message, time }: { title: string; message: string; time: string }) {
   return (
     <div className="flex gap-3 items-start bg-bg-tertiary rounded-xl px-4 py-3">
-      <div className="text-2xl leading-none mt-0.5">🎰</div>
+      {/* Same clean line icon the real bell uses for everything jackpot. */}
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5" style={{ backgroundColor: '#ef444415' }}>
+        <NotificationIcon icon="sparkles" type="jackpot" color="#ef4444" size={20} />
+      </div>
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
           <p className="text-white font-semibold text-sm">{title}</p>
@@ -96,8 +110,8 @@ export default function TestJackpotDrawPage() {
           <JackpotWinnerCycle
             key={runId}
             seed="2024-fast-draft-1391"
-            labels={PAID}
-            winnerLabel={PAID[WINNER_IDX]}
+            entries={PAID_ENTRIES}
+            winnerLabel={PAID_ENTRIES[WINNER_IDX].name}
             winnerIdxOverride={WINNER_IDX}
             onSettled={() => setSettled(true)}
           />

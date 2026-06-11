@@ -57,6 +57,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const [jpWinnerLabel, setJpWinnerLabel] = useState<string | null>(null);
   const [jpSeedBasis, setJpSeedBasis] = useState<string | null>(null);
   const [jpWinnerIdx, setJpWinnerIdx] = useState<number | null>(null);
+  const [jpEntries, setJpEntries] = useState<{ wallet: string; name: string; slot: number }[] | null>(null);
   const [jpVrf, setJpVrf] = useState<{ period: number | null; saltHash: string | null; receiptTxHash: string | null } | null>(null);
   const [jpSpectating, setJpSpectating] = useState(false);
 
@@ -67,6 +68,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     ? (promo.modalContent.referralHistory ?? []).map((e) => e.referredUserId ?? null)
     : [];
   const referralUsers = useDraftRoomUsers(referralWallets);
+
+  // Live names + pfps for jackpot draw entrants (default-or-edited, same
+  // resolver as the draft room). Empty unless a draw is loaded.
+  const jpEntryUsers = useDraftRoomUsers((jpEntries ?? []).map((e) => e.wallet));
 
   // Timer tick for countdown updates
   useEffect(() => {
@@ -177,6 +182,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       if (!res.ok) throw new Error(`reveal lookup failed: ${res.status}`);
       const data = (await res.json()) as {
         labels?: string[];
+        entries?: { wallet: string; name: string; slot: number }[];
         draw?: {
           seed: string; winnerIdx?: number | null; winnerName?: string | null; seedBasis?: string;
           vrfPeriod?: number | null; saltHash?: string | null; receiptTxHash?: string | null;
@@ -187,6 +193,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
       } else {
         setJpRevealLabels(null);
       }
+      setJpEntries(Array.isArray(data?.entries) && data.entries.length > 0 ? data.entries : null);
       if (data?.draw) {
         // Recorded draw: replay settles on the server-recorded winner index
         // (VRF draws derive from the sealed period seed — not recomputable
@@ -646,6 +653,14 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <JackpotWinnerCycle
             seed={jpRevealSeed}
             labels={jpRevealLabels ?? undefined}
+            entries={jpEntries?.map((e) => {
+              const live = jpEntryUsers[e.wallet.toLowerCase()];
+              return {
+                name: live?.displayName || e.name,
+                slot: e.slot,
+                pfp: live?.imageUrl || null,
+              };
+            })}
             winnerLabel={jpWinnerLabel ?? undefined}
             winnerIdxOverride={jpWinnerIdx}
             onSettled={() => setJpRevealSettled(true)}

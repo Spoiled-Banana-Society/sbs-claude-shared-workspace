@@ -32,7 +32,7 @@ export async function GET(req: Request) {
         const drawSnap = await getAdminFirestore().collection('jackpot_draws').doc(draftId).get();
         const d = drawSnap.data() as {
           pending?: boolean;
-          eligible?: { wallet: string; name: string; idx: number }[];
+          eligible?: { wallet: string; name: string; idx: number; slot?: number }[];
           winnerWallet?: string | null;
           winnerName?: string | null;
           reward?: number;
@@ -43,9 +43,18 @@ export async function GET(req: Request) {
         } | undefined;
         if (drawSnap.exists && d && d.pending === false && Array.isArray(d.eligible) && d.eligible.length > 0) {
           const labels = d.eligible.map((e) => e.name || `${e.wallet.slice(0, 6)}…${e.wallet.slice(-4)}`);
+          // Rich entries: real draft slot + wallet so the client can
+          // live-resolve names/pfps (default-or-edited) and label tiles
+          // with the slots people actually had in the room.
+          const entries = d.eligible.map((e, i) => ({
+            wallet: e.wallet,
+            name: e.name || `${e.wallet.slice(0, 6)}…${e.wallet.slice(-4)}`,
+            slot: typeof e.slot === 'number' && e.slot > 0 ? e.slot : i + 1,
+          }));
           const winnerIdx = d.eligible.findIndex((e) => e.wallet === d.winnerWallet);
           return json({
             labels,
+            entries,
             draw: {
               seed: `jp-draw:${draftId}`,
               winnerIdx: winnerIdx >= 0 ? winnerIdx : null,

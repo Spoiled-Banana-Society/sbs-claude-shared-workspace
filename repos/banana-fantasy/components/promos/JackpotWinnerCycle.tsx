@@ -15,9 +15,20 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 // `winnerLabel` defaults to "Drafter #N" but callers can pass real
 // usernames in `labels` to show actual handles.
 
+export interface JackpotDrawEntry {
+  /** Live-resolved display name (default Banana##### or edited). */
+  name: string;
+  /** The entrant's REAL slot number in the draft (1-based), not a renumbering. */
+  slot: number;
+  /** Live pfp URL; defaults to the plain banana. */
+  pfp?: string | null;
+}
+
 export interface JackpotWinnerCycleProps {
   seed: string;
   labels?: string[];
+  /** Rich entries (real slot # + live name + pfp). Preferred over labels. */
+  entries?: JackpotDrawEntry[];
   winnerLabel?: string;
   autoPlay?: boolean;
   /** Recorded winner index from the server draw. Required for VRF draws —
@@ -29,6 +40,7 @@ export interface JackpotWinnerCycleProps {
 export function JackpotWinnerCycle({
   seed,
   labels,
+  entries,
   autoPlay = true,
   winnerIdxOverride,
   onSettled,
@@ -40,8 +52,9 @@ export function JackpotWinnerCycle({
   const onSettledRef = useRef(onSettled);
   onSettledRef.current = onSettled;
 
-  const labelsRef = useRef(labels);
-  labelsRef.current = labels;
+  const effectiveLabels = entries && entries.length > 0 ? entries.map((e) => e.name) : labels;
+  const labelsRef = useRef(effectiveLabels);
+  labelsRef.current = effectiveLabels;
   const winnerIdxRef = useRef(winnerIdxOverride);
   winnerIdxRef.current = winnerIdxOverride;
   const run = useCallback(async (id: string) => {
@@ -120,11 +133,14 @@ export function JackpotWinnerCycle({
       </div>
 
       <div className="grid grid-cols-5 gap-2">
-        {Array.from({ length: labels && labels.length > 0 ? labels.length : 10 }, (_, i) => {
+        {Array.from({ length: effectiveLabels && effectiveLabels.length > 0 ? effectiveLabels.length : 10 }, (_, i) => {
           const isCycling = highlightIdx === i && !settled;
           const isWinner = settled && highlightIdx === i;
-          const label = labels?.[i] ?? `#${i + 1}`;
+          const entry = entries?.[i];
+          const label = effectiveLabels?.[i] ?? `#${i + 1}`;
           const truncated = label.length > 10 ? `${label.slice(0, 8)}…` : label;
+          // Real draft slot when known (entries) — never a renumbering.
+          const slotNo = entry?.slot ?? i + 1;
 
           const bg = isWinner ? '#FF474C' : isCycling ? '#fbbf24' : '#1a1a1a';
           const border = isWinner ? '#fff' : isCycling ? '#fbbf24' : '#333';
@@ -149,7 +165,7 @@ export function JackpotWinnerCycle({
                 boxShadow: shadow,
                 transform,
                 transition: 'all 120ms ease-out',
-                minHeight: 56,
+                minHeight: entry ? 78 : 56,
                 zIndex: isWinner ? 10 : isCycling ? 5 : 1,
               }}
             >
@@ -165,7 +181,16 @@ export function JackpotWinnerCycle({
                   WINNER
                 </div>
               )}
-              <span className="text-[10px] font-bold opacity-70">#{i + 1}</span>
+              {entry ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={entry.pfp || '/banana-profile.png'}
+                  alt=""
+                  className="w-6 h-6 rounded-full object-cover mb-0.5"
+                  style={{ border: `1px solid ${isWinner || isCycling ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.15)'}` }}
+                />
+              ) : null}
+              <span className="text-[10px] font-bold opacity-70">#{slotNo}</span>
               <span className="text-[11px] font-semibold leading-tight">{truncated}</span>
             </div>
           );
@@ -173,7 +198,7 @@ export function JackpotWinnerCycle({
       </div>
 
       <p className="text-[11px] text-text-muted text-center mt-3">
-        Winner = sha256(draftId) mod 10. Same source as the on-chain credit.
+        Drawn from VRF randomness sealed on-chain before this draft existed.
       </p>
     </div>
   );

@@ -156,7 +156,7 @@ export async function POST(req: Request) {
           message: 'You drafted with the founders — a Free Banana Spin was added to your wheel. Tap to spin.',
           link: '/banana-wheel',
           dedupeKey: `founder-spin-${draftId}`,
-          icon: '🔑',
+          icon: 'spin',
         });
         // Founders badge (paid founder-draft entry) — unlockBadge is
         // idempotent and fires its own bell + toast on first unlock.

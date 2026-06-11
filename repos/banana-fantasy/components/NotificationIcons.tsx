@@ -3,6 +3,12 @@ import type { NotificationType } from '@/components/NotificationCenter';
 
 /**
  * Clean stroke line-icons (Get-the-App banner style) for notifications.
+ *
+ * RULE (Boris 2026-06-11): bell/toast notifications NEVER use raw emoji
+ * icons — always a named key from ICON_PATHS (add a new clean line icon
+ * here if none fits). One icon per category, always the same: jackpot
+ * things are always 'sparkles', referral always 'users', etc.
+ *
  * Static SVG path strings, keyed. A notification renders an icon by:
  *   1. its explicit `icon` field if it's a known key (SVG), else
  *   2. its explicit `icon` field treated as an emoji glyph (e.g. a badge), else
