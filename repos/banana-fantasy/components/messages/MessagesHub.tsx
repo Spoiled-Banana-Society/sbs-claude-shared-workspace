@@ -26,6 +26,7 @@ import { getTruncatedAccountName } from '@/utils/helpers';
  */
 
 type View =
+  | { kind: 'menu' } // mobile root: the Messages list itself (desktop treats it as general)
   | { kind: 'general' }
   | { kind: 'friends' }
   | { kind: 'all-users' }
@@ -694,7 +695,12 @@ export function MessagesHub() {
     if (v === 'blocked') return { kind: 'blocked' };
     if (v === 'general') return { kind: 'general' };
     if (w) return { kind: 'dm', wallet: w };
-    // Default: general chat for unauth; messages list for auth with no selection.
+    // Default: the Messages MENU on mobile (otherwise you're trapped in
+    // #general with no way to the rest, Boris 2026-06-11); general on desktop
+    // where the sidebar is always visible anyway.
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+      return { kind: 'menu' };
+    }
     return { kind: 'general' };
   }, [searchParams]);
 
@@ -712,6 +718,9 @@ export function MessagesHub() {
       if (v === 'blocked') return { kind: 'blocked' };
       if (v === 'general') return { kind: 'general' };
       if (w) return { kind: 'dm', wallet: w };
+      if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+        return { kind: 'menu' };
+      }
       return { kind: 'general' };
     })();
     setView(fromUrl);
@@ -721,7 +730,8 @@ export function MessagesHub() {
   const navigate = (next: View) => {
     setView(next);
     let url = '/messages';
-    if (next.kind === 'general') url = '/messages?view=general';
+    if (next.kind === 'menu') url = '/messages';
+    else if (next.kind === 'general') url = '/messages?view=general';
     else if (next.kind === 'friends') url = '/messages?view=friends';
     else if (next.kind === 'all-users') url = '/messages?view=all-users';
     else if (next.kind === 'requests') url = '/messages?view=requests';
@@ -757,13 +767,12 @@ export function MessagesHub() {
   // For mobile: when a content view is active, hide the sidebar.
   const hideSidebarOnMobile = view.kind !== 'general' || (view.kind === 'general' && false);
   void hideSidebarOnMobile;
-  const showSidebarMobile = true; // sidebar is always visible on desktop; on mobile, hidden once a non-general view is selected.
 
   return (
     <div className="max-w-6xl mx-auto h-[calc(100vh-7rem)] sm:h-[calc(100vh-9rem)] px-2 sm:px-4 py-4">
       <div className="h-full flex bg-[#0f0f12] border border-white/[0.06] rounded-2xl overflow-hidden">
         {/* Sidebar */}
-        <aside className={`flex flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'all-users' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`flex-col w-full md:w-72 lg:w-80 border-r border-white/[0.06] ${view.kind === 'menu' ? 'flex' : 'hidden'} md:flex`}>
           <SidebarContent
             view={view}
             inbox={inbox}
@@ -774,27 +783,12 @@ export function MessagesHub() {
           />
         </aside>
 
-        {/* Mobile: sidebar shown when no view selected. We always show one or
-            the other on mobile to avoid blank screen. */}
-        {!showSidebarMobile && (
-          <aside className="flex md:hidden flex-col w-full">
-            <SidebarContent
-              view={view}
-              inbox={inbox}
-              loading={loading}
-              requestCount={requestCount}
-              friendRequestCount={friendRequestCount}
-              onNavigate={navigate}
-            />
-          </aside>
-        )}
-
         {/* Main pane */}
-        <main className={`flex-1 flex flex-col min-w-0 ${view.kind === 'general' || view.kind === 'friends' || view.kind === 'all-users' || view.kind === 'requests' || view.kind === 'blocked' || view.kind === 'dm' ? 'flex' : 'hidden md:flex'}`}>
-          {view.kind === 'general' && (
+        <main className={`flex-1 flex-col min-w-0 ${view.kind === 'menu' ? 'hidden' : 'flex'} md:flex`}>
+          {(view.kind === 'general' || view.kind === 'menu') && (
             <div className="flex flex-col h-full">
               <div className="flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] flex-shrink-0 md:hidden">
-                <button onClick={() => navigate({ kind: 'general' })} className="text-white/40 hover:text-white" aria-label="Back">
+                <button onClick={() => navigate({ kind: 'menu' })} className="text-white/40 hover:text-white" aria-label="Back">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
                 <h2 className="text-white font-semibold">#general</h2>
@@ -804,13 +798,13 @@ export function MessagesHub() {
               </div>
             </div>
           )}
-          {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'all-users' && <AllUsersPane onBack={() => navigate({ kind: 'general' })} />}
-          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'general' })} onChange={refreshInbox} />}
+          {view.kind === 'friends' && <FriendsPane onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'menu' })} />}
+          {view.kind === 'all-users' && <AllUsersPane onBack={() => navigate({ kind: 'menu' })} />}
+          {view.kind === 'blocked' && <BlockedPane onBack={() => navigate({ kind: 'menu' })} onChange={refreshInbox} />}
           {view.kind === 'requests' && (
-            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'general' })} onReject={rejectDmRequest} />
+            <RequestsPane inbox={inbox} onSelectDm={(w) => navigate({ kind: 'dm', wallet: w })} onBack={() => navigate({ kind: 'menu' })} onReject={rejectDmRequest} />
           )}
-          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'general' })} onBlockChange={refreshInbox} />}
+          {view.kind === 'dm' && <ThreadPane otherWallet={view.wallet} onBack={() => navigate({ kind: 'menu' })} onBlockChange={refreshInbox} />}
         </main>
       </div>
     </div>
