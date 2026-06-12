@@ -17,6 +17,17 @@ export interface RosterUser {
   profilePicture?: string | null;
 }
 
+// Known test wallets — never shown in the directory (Boris 2026-06-11:
+// only real members; his + Richard's ADMIN wallets are pre-stamped, the
+// piles of throwaway test wallets are not).
+const ROSTER_EXCLUDE = new Set([
+  '0xd3301bc039faf4223da98bceb5fb81abc9399362', // Boris old Privy login wallet
+  '0xd3301bc039faf4223da98bceb5fb818c9993620',  // corrupted mock dup
+  '0xbd2e09c009a7834cd32f9fa8a87073c5b3083f11', // Richard test wallet (r8)
+  '0xc0f982492c323fcd314af56d6c1a35cc9b0fc31e', // team test wallet
+  '0x27fe00a5a1212e9294b641ba860a383783016c67', // team test wallet
+]);
+
 const CACHE_COLLECTION = 'system_cache';
 const CACHE_DOC = 'userRoster';
 const TTL_MS = 10 * 60_000;
@@ -33,22 +44,29 @@ export async function getUserRoster(): Promise<RosterUser[]> {
     }
   } catch { /* rebuild below */ }
 
-  // Rebuild: every wallet-keyed user doc = a user who has logged in here.
-  const refs = await db.collection('v2_users').listDocuments();
-  const wallets = Array.from(new Set(
-    refs.map((r) => r.id).filter((id) => /^0x[0-9a-f]{40}$/i.test(id)).map((id) => id.toLowerCase()),
-  ));
+  // Rebuild: ONLY wallets that actually logged into the new product —
+  // firstLoginAt is stamped at login (returning-check). Doc existence alone
+  // would drag in BBB1-3 imports, referral stubs, and bot wallets that have
+  // never touched the site (Boris 2026-06-11). List starts short, grows as
+  // people sign in; newest members first.
+  const snap = await db.collection('v2_users')
+    .orderBy('firstLoginAt', 'desc')
+    .limit(2000)
+    .get();
+  const wallets = snap.docs
+    .map((d) => d.id)
+    .filter((id) => /^0x[0-9a-f]{40}$/i.test(id))
+    .map((id) => id.toLowerCase())
+    .filter((w) => !ROSTER_EXCLUDE.has(w));
   const profileMap = await getPublicUsers(wallets);
-  const users: RosterUser[] = wallets
-    .map((w) => {
-      const p = profileMap.get(w);
-      return {
-        walletAddress: w,
-        username: p?.username || w,
-        profilePicture: p?.profilePicture ?? null,
-      };
-    })
-    .sort((a, b) => a.username.localeCompare(b.username));
+  const users: RosterUser[] = wallets.map((w) => {
+    const p = profileMap.get(w);
+    return {
+      walletAddress: w,
+      username: p?.username || w,
+      profilePicture: p?.profilePicture ?? null,
+    };
+  });
 
   await cacheRef.set({ builtAt: Date.now(), users }).catch(() => {});
   return users;

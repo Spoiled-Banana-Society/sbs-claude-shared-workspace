@@ -37,6 +37,15 @@ export async function POST(req: Request) {
     // Already decided for this account → cheap idempotent answer.
     const userRef = db.collection('v2_users').doc(wallet);
     const userSnap = await userRef.get();
+
+    // First REAL login on the new product: stamp it and bust the roster
+    // cache so the All Users directory picks them up within seconds.
+    // (Doc existence alone is meaningless — imports/referrals/promo writes
+    // create docs for wallets that never logged in here.)
+    if (!userSnap.get('firstLoginAt')) {
+      await userRef.set({ firstLoginAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+      await db.collection('system_cache').doc('userRoster').delete().catch(() => {});
+    }
     if (userSnap.get('isReturningPlayer') === true) {
       return json({ returning: true, via: userSnap.get('returningVia') ?? 'unknown' });
     }
