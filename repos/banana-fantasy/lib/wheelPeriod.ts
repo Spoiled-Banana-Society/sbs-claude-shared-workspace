@@ -20,7 +20,11 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
 import { buildMerkleTree, deriveSpinOutcome, getMerkleProof, leafHash, type MerkleTree } from '@/lib/wheelMerkle';
 
-export const MAX_SPINS_PER_PERIOD = 10_000;
+// One period is sized to cover the WHOLE contest (Boris 2026-06-12: the wheel
+// is final and we want a single season-long commitment, not rolling batches).
+// If spins ever DO hit the cap, the keeper cron auto-rolls to the next period
+// with zero downtime — that's the built-in emergency overflow.
+export const MAX_SPINS_PER_PERIOD = 100_000;
 const PERIODS_COLLECTION = 'wheel_periods';
 const SYSTEM_CONFIG = 'system_config';
 const WHEEL_STATE_DOC = 'wheelPeriodState';
@@ -156,38 +160,33 @@ export function computePeriodMerkleRoot(salt: string, vrf: string): Hex {
 }
 
 /**
- * Serialize the Merkle tree's leaves into a Firestore-friendly blob.
- * For 10k leaves, this is 10k * 64 hex chars ≈ 640KB. We store only the
- * leaves (not internal nodes) — the tree's internal nodes can be
- * recomputed from leaves on demand at proof-generation time. Storing
- * just leaves keeps the period doc compact and makes the schema
- * extensible if we shard in the future.
- */
-function serializeLeaves(tree: MerkleTree): string[] {
-  return tree.leaves;
-}
-
-/**
- * Subcollection: wheel_periods/{N}/leaves/{shardId}. For 10k leaves we
- * use ONE shard ("0") containing all leaves. Future scale to 100k+ adds
- * more shards transparently — proof generation re-reads only the shards
- * it needs.
+ * Subcollection: wheel_periods/{N}/leaves/{shardId}. Leaves are stored in
+ * shards of 10k (10k * 66 hex chars ≈ 660KB — safely under Firestore's
+ * 1MB doc limit). A 100k-spin period writes 10 shard docs. Period 1
+ * (single shard "0") reads back identically through the same path.
  */
 const LEAVES_SUBCOLLECTION = 'leaves';
+const LEAF_SHARD_SIZE = 10_000;
 
 export async function storePeriodLeaves(periodNumber: number, tree: MerkleTree): Promise<void> {
   const db = getAdminFirestore();
-  const ref = db
+  const col = db
     .collection(PERIODS_COLLECTION)
     .doc(String(periodNumber))
-    .collection(LEAVES_SUBCOLLECTION)
-    .doc('0');
-  await ref.set({
-    shardId: 0,
-    startIndex: 0,
-    endIndex: tree.leaves.length - 1,
-    leaves: serializeLeaves(tree),
-  });
+    .collection(LEAVES_SUBCOLLECTION);
+  const writes: Promise<unknown>[] = [];
+  for (let shardId = 0, i = 0; i < tree.leaves.length; shardId += 1, i += LEAF_SHARD_SIZE) {
+    const chunk = tree.leaves.slice(i, i + LEAF_SHARD_SIZE);
+    writes.push(
+      col.doc(String(shardId)).set({
+        shardId,
+        startIndex: i,
+        endIndex: i + chunk.length - 1,
+        leaves: chunk,
+      }),
+    );
+  }
+  await Promise.all(writes);
 }
 
 export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
@@ -196,12 +195,17 @@ export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
     .collection(PERIODS_COLLECTION)
     .doc(String(periodNumber))
     .collection(LEAVES_SUBCOLLECTION)
-    .doc('0')
     .get();
-  if (!snap.exists) throw new Error(`Period ${periodNumber} has no stored leaves`);
-  const data = snap.data() as { leaves: Hex[] } | undefined;
-  if (!data?.leaves) throw new Error(`Period ${periodNumber} leaves doc malformed`);
-  return data.leaves;
+  if (snap.empty) throw new Error(`Period ${periodNumber} has no stored leaves`);
+  const shards = snap.docs
+    .map((d) => d.data() as { shardId: number; leaves: Hex[] })
+    .sort((a, b) => a.shardId - b.shardId);
+  const leaves: Hex[] = [];
+  for (const shard of shards) {
+    if (!shard?.leaves) throw new Error(`Period ${periodNumber} leaves shard malformed`);
+    leaves.push(...shard.leaves);
+  }
+  return leaves;
 }
 
 /**

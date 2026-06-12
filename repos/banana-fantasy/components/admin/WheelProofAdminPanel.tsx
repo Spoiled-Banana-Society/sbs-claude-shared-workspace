@@ -159,7 +159,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
     return runPost(
       '/api/admin/wheel-period/finalize',
       { periodNumber: period.periodNumber },
-      `Finalize period ${period.periodNumber}?\n\nReads VRF randomness from the contract, pre-computes 10k outcomes, builds a Merkle tree, commits the root on-chain. Takes ~1-3s of compute + one Base tx.`,
+      `Finalize period ${period.periodNumber}?\n\nReads VRF randomness from the contract, pre-computes 100k outcomes, builds a Merkle tree, commits the root on-chain. Takes ~1-3s of compute + one Base tx.`,
     );
   }, [runPost, period]);
 
@@ -182,7 +182,7 @@ export function WheelProofAdminPanel({ getHeaders, enabled }: WheelProofAdminPan
         <div>
           <h4 className="text-xs font-semibold text-white uppercase tracking-wider">Banana Wheel Proof (VRF + Merkle)</h4>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Provable-fair spin outcomes verified by Chainlink VRF. 10,000 spins per round, Merkle root committed on-chain at open, salt revealed at close.
+            Provable-fair spin outcomes verified by Chainlink VRF. 100,000 spins per period (sized to cover the whole contest; auto-rolls if ever full), Merkle root committed on-chain at open, salt revealed at close.
           </p>
         </div>
         <button
