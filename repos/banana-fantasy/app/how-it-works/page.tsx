@@ -91,10 +91,6 @@ const FAQS = [
     a: 'The same batch commit that decides Jackpot placement also fixes the 5 HOF positions. Winners of HOF leagues compete in an end-of-season tournament for bonus prizes. You can also win an HOF entry on the Banana Wheel.',
   },
   {
-    q: 'Can a draft be both a wheel special and a slot special? (Combo drafts)',
-    a: 'Yes — and it stacks. Two independent things can make a draft special: a Jackpot or HOF entry you won on the Banana Wheel, and the per-100 slot reveal when the draft fills. When both land on the same draft, they combine into a combo with bigger rewards:\n• Jackpot + Jackpot slot: BOTH 1st and 2nd place skip to the Finals.\n• HOF + HOF slot: BOTH 1st and 2nd place enter the HOF playoff bracket.\n• Jackpot + HOF slot (or HOF + Jackpot slot): 1st place advances to the Finals AND the HOF playoffs.\nA normal single Jackpot sends 1st to the Finals; a single HOF sends 1st to the HOF bracket — combos double up on those.',
-  },
-  {
     q: 'How does scoring work?',
     a: 'Standard PPR scoring. Your best lineup is auto-calculated each week from your 10 players. Scores update live during NFL games.',
   },
@@ -380,7 +376,7 @@ export default function HowItWorksPage() {
                         transition={{ duration: 0.25 }}
                         className="px-5 pb-4"
                       >
-                        <p className="text-gray-400 text-sm leading-relaxed whitespace-pre-line">{faq.a}</p>
+                        <p className="text-gray-400 text-sm leading-relaxed">{faq.a}</p>
                       </motion.div>
                     )}
                   </div>

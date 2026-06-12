@@ -20,7 +20,6 @@ import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
 import { DraftRoomReveal } from '@/components/drafting/DraftRoomReveal';
-import { ComboRevealBanner, type ComboKind } from '@/components/drafting/ComboRevealBanner';
 import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
 import { BatchRandomnessLoading } from '@/components/drafting/BatchRandomnessLoading';
 import { useBatchProofReady } from '@/hooks/useBatchProofReady';
@@ -58,17 +57,6 @@ function DraftRoomContent() {
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
   const specialTypeParam = searchParams?.get('specialType') as 'jackpot' | 'hof' | null;
-  // Combo reveal — a wheel special whose slot ALSO landed a special. `?forceCombo=`
-  // (jp-jp | hof-hof | mixed) previews the "screen goes insane" moment instantly.
-  // Real auto-trigger needs the backend SlotLevel exposed in draft state + wheel
-  // drafts to still spin the slot (today they short-circuit to the wheel level).
-  const forceComboParam = ((): ComboKind | null => {
-    const v = searchParams?.get('forceCombo');
-    if (v === 'jp-jp' || v === 'jackpot-jackpot') return 'jackpot-jackpot';
-    if (v === 'hof-hof') return 'hof-hof';
-    if (v === 'mixed' || v === 'jp-hof' || v === 'hof-jp') return 'mixed';
-    return null;
-  })();
   // Spectator mode: same URL flow as a live participant, but no actions
   // fire (no pick submit, no leave, no queue mutations) and a SPECTATOR
   // badge replaces the user's identity-related UI. The page still
@@ -378,7 +366,6 @@ function DraftRoomContent() {
   const [jackpotRain, setJackpotRain] = useState<Array<{ id: number; x: number; delay: number; size: number }>>([]);
   const [particleBurst, setParticleBurst] = useState<Array<{ id: number; x: number; y: number; angle: number; color: string }>>([]);
   const [pulseGlow, setPulseGlow] = useState(false);
-  const [comboDismissed, setComboDismissed] = useState(false);
 
   const [draftOrder, setDraftOrder] = useState<typeof DRAFT_PLAYERS>(() => {
     if (stored?.draftOrder) return stored.draftOrder;
@@ -2370,15 +2357,8 @@ function DraftRoomContent() {
     </div>
   );
 
-  // The active combo to celebrate: the preview param now; auto-detection from
-  // wheel-base vs slot-reveal levels can feed this once SlotLevel is in state.
-  const activeComboKind: ComboKind | null = forceComboParam;
-
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {activeComboKind && !comboDismissed && (
-        <ComboRevealBanner kind={activeComboKind} onClose={() => setComboDismissed(true)} />
-      )}
       {/* Persistent edge treatment — gold for HOF, red for Jackpot, purple
           for PRO (Boris's pick 2026-06-10: purple outside line + flat purple
           word, nothing else). Pointer-events-none so clicks pass through; a
