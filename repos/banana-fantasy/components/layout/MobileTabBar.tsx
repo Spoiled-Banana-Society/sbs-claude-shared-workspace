@@ -85,9 +85,11 @@ export function MobileTabBar() {
     <nav
       aria-label="Mobile navigation"
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0f]/95 backdrop-blur-xl border-t border-white/[0.06]"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      // max() guarantees clearance even where safe-area reports 0 (older
+      // iOS / in-app browsers); taller row = bigger tap targets.
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}
     >
-      <div className="flex items-center justify-around h-14">
+      <div className="flex items-center justify-around h-16">
         {tabs.map(tab => {
           const active = isActive(tab);
           return (

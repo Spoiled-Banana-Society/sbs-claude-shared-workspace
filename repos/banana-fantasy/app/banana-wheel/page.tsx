@@ -273,7 +273,7 @@ export default function BananaWheelPage() {
           <div className="flex justify-center order-1 lg:order-2">
             <div className="w-[300px] h-[300px] bg-bg-tertiary rounded-full animate-pulse" />
           </div>
-          <div className="flex flex-col gap-4 order-2 lg:order-3 mt-12 lg:mt-0">
+          <div className="flex flex-col gap-4 order-2 lg:order-3 mt-16 lg:mt-0">
             {skeletonCard}
             {skeletonCard}
           </div>

@@ -68,6 +68,10 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: true,
   themeColor: '#F3E216',
+  // Required for env(safe-area-inset-*) to report real values on iOS —
+  // without it the home-indicator bar overlaps the bottom tab bar and
+  // taps land on the indicator instead (Boris 2026-06-11).
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
