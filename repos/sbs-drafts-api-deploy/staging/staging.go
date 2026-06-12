@@ -31,6 +31,7 @@ func (sr *StagingResources) Routes() chi.Router {
 	r.Post("/clear-all-tokens/{ownerId}", sr.ClearAllTokenLeagues)
 	r.Post("/create-special-draft", sr.CreateSpecialDraft)
 	r.Post("/join-special-draft", sr.JoinSpecialDraft)
+	r.Post("/swap-special-draft-member", sr.SwapSpecialDraftMember)
 	r.Post("/merkle-open-next-round", sr.MerkleOpenNextRound)
 	r.Post("/merkle-reset", sr.MerkleReset)
 	return r
@@ -100,13 +101,16 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	for _, wallet := range req.Wallets {
 		wallet = strings.ToLower(wallet)
 
-		// Mint a fresh token for this wallet
+		// Mint a fresh token for this wallet. PassType 'free' is load-bearing:
+		// it is the stamp the frontend promo gate (promoCreditAllowed) reads, and
+		// special wheel drafts must NEVER earn promos (no pick-10 spin, no
+		// daily-drafts count, no jackpot draw credit).
 		tokenId := fmt.Sprintf("special-%d-%d", time.Now().UnixMilli(), league.NumPlayers)
-		token, err := models.MintDraftTokenInDb(tokenId, wallet, "paid")
+		token, err := models.MintDraftTokenInDb(tokenId, wallet, "free")
 		if err != nil {
 			// Token might already exist, try with a different ID
 			tokenId = fmt.Sprintf("special-%d-%d-retry", time.Now().UnixMilli(), league.NumPlayers)
-			token, err = models.MintDraftTokenInDb(tokenId, wallet, "paid")
+			token, err = models.MintDraftTokenInDb(tokenId, wallet, "free")
 			if err != nil {
 				fmt.Printf("[CreateSpecialDraft] Error minting token for wallet %s: %s\n", wallet, err.Error())
 				continue
@@ -186,60 +190,92 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 
 	wallet := strings.ToLower(req.Wallet)
 
-	// Read the existing league
-	var league models.League
-	err := utils.Db.ReadDocument("drafts", req.DraftId, &league)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("League %s not found: %s", req.DraftId, err.Error()), http.StatusNotFound)
-		return
-	}
-
-	// Check if wallet is already in the league
-	for _, u := range league.CurrentUsers {
-		if strings.ToLower(u.OwnerId) == wallet {
-			// Already in — return success (idempotent)
-			resp := map[string]interface{}{
-				"draftId":    req.DraftId,
-				"numPlayers": league.NumPlayers,
-				"status":     "already_joined",
-			}
-			data, _ := json.Marshal(resp)
-			w.Header().Set("Content-Type", "application/json")
-			w.Write(data)
+	// Mint the seat token FIRST (outside the league transaction; cleaned up if
+	// the join loses). Always a fresh special token — never consume a token from
+	// the wallet's existing pool (a wheel winner's paid passes stay untouched;
+	// the wheel pass NFT itself is the entry, mirroring CreateSpecialDraft).
+	// PassType 'free' is load-bearing: it is the stamp the frontend promo gate
+	// (promoCreditAllowed) reads, and special wheel drafts must NEVER earn promos.
+	tokenId := fmt.Sprintf("special-%d-%s", time.Now().UnixMilli(), wallet[2:8])
+	minted, mintErr := models.MintDraftTokenInDb(tokenId, wallet, "free")
+	if mintErr != nil {
+		tokenId = fmt.Sprintf("special-%d-%s-retry", time.Now().UnixMilli(), wallet[2:8])
+		minted, mintErr = models.MintDraftTokenInDb(tokenId, wallet, "free")
+		if mintErr != nil {
+			http.Error(w, fmt.Sprintf("Mint failed for wallet %s: %s", wallet, mintErr.Error()), http.StatusInternalServerError)
 			return
 		}
 	}
+	token := *minted
 
-	if league.NumPlayers >= 10 {
-		http.Error(w, "League is already full", http.StatusBadRequest)
+	// Seat the wallet inside a TRANSACTION — two wheel winners joining in the
+	// same instant must not lose each other's seat (read-modify-write races).
+	var league models.League
+	alreadyJoined := false
+	leagueRef := utils.Db.Client.Collection("drafts").Doc(req.DraftId)
+	err := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(leagueRef)
+		if err != nil {
+			return fmt.Errorf("league %s not found: %w", req.DraftId, err)
+		}
+		var l models.League
+		if err := doc.DataTo(&l); err != nil {
+			return err
+		}
+		alreadyJoined = false
+		for _, u := range l.CurrentUsers {
+			if strings.ToLower(u.OwnerId) == wallet {
+				alreadyJoined = true
+				league = l
+				return nil
+			}
+		}
+		if l.NumPlayers >= 10 {
+			return fmt.Errorf("league is already full")
+		}
+		l.CurrentUsers = append(l.CurrentUsers, models.LeagueUser{
+			OwnerId: wallet,
+			TokenId: token.CardId,
+		})
+		l.NumPlayers++
+		league = l
+		return tx.Set(leagueRef, &l)
+	})
+	if err != nil {
+		// The seat didn't land — remove the pre-minted token so it can't linger
+		// as a spendable pass.
+		utils.Db.DeleteDocument(utils.GetDraftTokenCollectionName(), token.CardId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/validDraftTokens", wallet), token.CardId)
+		if strings.Contains(err.Error(), "already full") {
+			http.Error(w, "League is already full", http.StatusBadRequest)
+		} else if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("Error joining league: %s", err.Error()), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	// Find an available token for this wallet
-	docs, err := utils.Db.Client.Collection("draftTokens").Where("OwnerId", "==", wallet).Where("LeagueId", "==", "").Documents(context.Background()).GetAll()
-	if err != nil || len(docs) == 0 {
-		http.Error(w, fmt.Sprintf("No available token for wallet %s", wallet), http.StatusBadRequest)
+	if alreadyJoined {
+		// Idempotent: seat already held — drop the redundant minted token.
+		utils.Db.DeleteDocument(utils.GetDraftTokenCollectionName(), token.CardId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/validDraftTokens", wallet), token.CardId)
+		resp := map[string]interface{}{
+			"draftId":    req.DraftId,
+			"numPlayers": league.NumPlayers,
+			"status":     "already_joined",
+		}
+		data, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
 		return
 	}
 
-	var token models.DraftToken
-	if err := docs[0].DataTo(&token); err != nil {
-		http.Error(w, fmt.Sprintf("Error reading token: %s", err.Error()), http.StatusInternalServerError)
-		return
-	}
-
-	// Update the token
+	// Update the token with league info
 	token.LeagueId = league.LeagueId
 	token.DraftType = "slow"
 	token.LeagueDisplayName = league.DisplayName
 	token.Level = league.Level
-
-	// Add user to league
-	league.CurrentUsers = append(league.CurrentUsers, models.LeagueUser{
-		OwnerId: wallet,
-		TokenId: token.CardId,
-	})
-	league.NumPlayers++
 
 	// Save token
 	err = token.UpdateInUseDraftTokenInDatabase(league.LeagueId)
@@ -250,13 +286,6 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 
 	// Remove from available pool
 	utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", wallet)).Doc(token.CardId).Delete(context.Background())
-
-	// Save updated league
-	err = utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, &league)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error saving league: %s", err.Error()), http.StatusInternalServerError)
-		return
-	}
 
 	// Update RTDB with current player count
 	ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", league.LeagueId))
@@ -274,6 +303,152 @@ func (sr *StagingResources) JoinSpecialDraft(w http.ResponseWriter, r *http.Requ
 		"draftId":    req.DraftId,
 		"numPlayers": league.NumPlayers,
 		"status":     "joined",
+	}
+	data, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(data)
+}
+
+// SwapSpecialDraftMember atomically hands a seat in a FILLING special draft from
+// the seller of a wheel-won pass to its marketplace buyer. The seller's special
+// token is destroyed (a sold pass must never return to their pool); the buyer
+// gets a fresh 'free'-stamped token in the same seat. NumPlayers is unchanged,
+// so this can never race the fill threshold. Rejected once the draft is full —
+// seats lock at 10/10.
+func (sr *StagingResources) SwapSpecialDraftMember(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DraftId    string `json:"draftId"`
+		FromWallet string `json:"fromWallet"`
+		ToWallet   string `json:"toWallet"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.DraftId == "" || req.FromWallet == "" || req.ToWallet == "" {
+		http.Error(w, "draftId, fromWallet and toWallet are required", http.StatusBadRequest)
+		return
+	}
+	fromWallet := strings.ToLower(req.FromWallet)
+	toWallet := strings.ToLower(req.ToWallet)
+
+	var league models.League
+	err := utils.Db.ReadDocument("drafts", req.DraftId, &league)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("League %s not found: %s", req.DraftId, err.Error()), http.StatusNotFound)
+		return
+	}
+	if league.Level != "Jackpot" && league.Level != "Hall of Fame" {
+		http.Error(w, "Not a special draft league", http.StatusBadRequest)
+		return
+	}
+
+	// Mint the buyer's token first — if anything below fails it's cleaned up,
+	// and the league is only ever touched inside the transaction.
+	// PassType 'free': special-draft tokens never earn promos (frontend gate).
+	newTokenId := fmt.Sprintf("special-%d-swap", time.Now().UnixMilli())
+	newToken, mintErr := models.MintDraftTokenInDb(newTokenId, toWallet, "free")
+	if mintErr != nil {
+		newTokenId = fmt.Sprintf("special-%d-swap-retry", time.Now().UnixMilli())
+		newToken, mintErr = models.MintDraftTokenInDb(newTokenId, toWallet, "free")
+		if mintErr != nil {
+			http.Error(w, fmt.Sprintf("Mint failed for buyer %s: %s", toWallet, mintErr.Error()), http.StatusInternalServerError)
+			return
+		}
+	}
+	newToken.LeagueId = league.LeagueId
+	newToken.DraftType = "slow"
+	newToken.LeagueDisplayName = league.DisplayName
+	newToken.Level = league.Level
+
+	// Replace the seat in a TRANSACTION — a concurrent join must not be lost,
+	// and a fill that lands first must win (seat locks at 10/10).
+	oldTokenId := ""
+	alreadySwapped := false
+	leagueRef := utils.Db.Client.Collection("drafts").Doc(req.DraftId)
+	err = utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+		doc, err := tx.Get(leagueRef)
+		if err != nil {
+			return err
+		}
+		var l models.League
+		if err := doc.DataTo(&l); err != nil {
+			return err
+		}
+		alreadySwapped = false
+		for _, u := range l.CurrentUsers {
+			if strings.EqualFold(u.OwnerId, toWallet) {
+				alreadySwapped = true
+				league = l
+				return nil
+			}
+		}
+		if l.NumPlayers >= 10 {
+			return fmt.Errorf("draft already filled")
+		}
+		seatIdx := -1
+		for i, u := range l.CurrentUsers {
+			if strings.EqualFold(u.OwnerId, fromWallet) {
+				oldTokenId = u.TokenId
+				seatIdx = i
+				break
+			}
+		}
+		if seatIdx == -1 {
+			return fmt.Errorf("wallet %s holds no seat", fromWallet)
+		}
+		l.CurrentUsers[seatIdx] = models.LeagueUser{OwnerId: toWallet, TokenId: newToken.CardId}
+		league = l
+		return tx.Set(leagueRef, &l)
+	})
+	if err != nil {
+		// Swap didn't land — remove the pre-minted buyer token.
+		utils.Db.DeleteDocument(utils.GetDraftTokenCollectionName(), newToken.CardId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/validDraftTokens", toWallet), newToken.CardId)
+		if strings.Contains(err.Error(), "already filled") {
+			http.Error(w, "Draft already filled — the pass is locked to its current owner", http.StatusConflict)
+		} else if strings.Contains(err.Error(), "holds no seat") {
+			http.Error(w, fmt.Sprintf("Wallet %s holds no seat in league %s", fromWallet, req.DraftId), http.StatusNotFound)
+		} else {
+			http.Error(w, fmt.Sprintf("Error swapping seat: %s", err.Error()), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if alreadySwapped {
+		utils.Db.DeleteDocument(utils.GetDraftTokenCollectionName(), newToken.CardId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/validDraftTokens", toWallet), newToken.CardId)
+		resp := map[string]interface{}{"draftId": req.DraftId, "numPlayers": league.NumPlayers, "status": "already_swapped"}
+		data, _ := json.Marshal(resp)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(data)
+		return
+	}
+
+	if err := newToken.UpdateInUseDraftTokenInDatabase(league.LeagueId); err != nil {
+		fmt.Printf("[SwapSpecialDraftMember] Error updating buyer token %s: %s\n", newToken.CardId, err.Error())
+	}
+	utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", toWallet)).Doc(newToken.CardId).Delete(context.Background())
+
+	// Destroy the seller's special token everywhere — it must NOT reappear as a
+	// spendable pass (this is a sale, not a leave).
+	if oldTokenId != "" {
+		utils.Db.DeleteDocument(utils.GetDraftTokenCollectionName(), oldTokenId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/usedDraftTokens", fromWallet), oldTokenId)
+		utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/validDraftTokens", fromWallet), oldTokenId)
+		utils.Db.DeleteDocument(fmt.Sprintf("drafts/%s/cards", league.LeagueId), oldTokenId)
+	}
+
+	// Nudge the room: numPlayers unchanged, but the write pings RTDB listeners
+	// so the lobby re-resolves identities and shows the buyer immediately.
+	ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", league.LeagueId))
+	ref.Set(context.TODO(), map[string]interface{}{"numPlayers": league.NumPlayers})
+
+	resp := map[string]interface{}{
+		"draftId":    req.DraftId,
+		"numPlayers": league.NumPlayers,
+		"status":     "swapped",
+		"newTokenId": newToken.CardId,
 	}
 	data, _ := json.Marshal(resp)
 	w.Header().Set("Content-Type", "application/json")

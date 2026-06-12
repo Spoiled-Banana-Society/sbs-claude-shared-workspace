@@ -500,6 +500,15 @@ func RemoveUserFromDraftWithRTBUpdate(tokenId, ownerId, draftId string, withRTBU
 			return fmt.Errorf("you cannot leave this draft as it already has 10 members")
 		}
 
+		// Special wheel-won drafts (Jackpot/HOF level assigned BEFORE fill) have
+		// locked seats: the only exit is selling the pass on the marketplace,
+		// which transfers the seat via the swap endpoint — never via leave.
+		// Normal drafts only receive a Level at fill (10/10), where the check
+		// above already blocks leaving, so this only ever matches special drafts.
+		if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+			return fmt.Errorf("seats in a special %s draft are locked — sell the pass on the marketplace instead", league.Level)
+		}
+
 		isInLeague := false
 		newCurrentUsers := make([]LeagueUser, 0)
 		fmt.Printf("Requested Ownerid: %s, requested tokenId: %s\r", ownerId, tokenId)
