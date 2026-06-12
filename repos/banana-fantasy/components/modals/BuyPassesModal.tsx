@@ -542,9 +542,16 @@ export function BuyPassesModal({
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
           <>
-            {/* Balance context */}
+            {/* Balance context — count paid and free passes separately so a
+                user holding only a free pass doesn't read "0 draft passes". */}
             <p className="text-text-muted text-sm text-center -mt-2">
-              You have {user?.draftPasses || 0} draft pass{(user?.draftPasses || 0) !== 1 ? 'es' : ''}
+              {(() => {
+                const paid = user?.draftPasses || 0;
+                const free = user?.freeDrafts || 0;
+                if (paid === 0 && free > 0) return `You have ${free} free draft pass${free !== 1 ? 'es' : ''}`;
+                if (free > 0) return `You have ${paid} draft pass${paid !== 1 ? 'es' : ''} + ${free} free`;
+                return `You have ${paid} draft pass${paid !== 1 ? 'es' : ''}`;
+              })()}
             </p>
 
             {/* Quantity Selection */}
