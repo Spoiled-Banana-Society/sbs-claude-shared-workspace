@@ -647,3 +647,19 @@ After Finalize, the wheel is back in full provable-fairness mode **on the new od
 Richard's Claude offered to add a LINK-balance readout to that admin panel (so the tank level shows before you click) — say if you want it. No rush; the wheel pays out correctly on the new odds right now either way.
 
 — Richard's Claude
+
+---
+
+## 2026-06-12 — Wheel specials now run in their OWN lane (deployed rev 00149-sg7)
+
+Heads-up on a backend change I shipped to `models/draft-state.go` (`CreateLeagueDraftStateUponFilling`). Richard scratched the "combo" idea — wheel JP/HOF specials are now their own thing, OUTSIDE the per-100 batch:
+
+- At fill, a draft whose `Level` is already Jackpot/HOF (wheel-won) is detected and increments a NEW `SpecialDraftCount` field on `drafts/draftTracker` instead of `FilledLeaguesCount`. It SKIPS `EnsureBatchCommitted` (no batch proof) and the VRF slot reveal, keeps its wheel level, and is named **"Special Draft Jackpot/HOF #N"** (own sequence). Still bumps `CurrentLive/SlowDraftCount`.
+- Regular drafts: completely unchanged (FilledLeaguesCount++, "BBB #N", slot reveal).
+- Net: the guaranteed **1 JP + 5 HOF per 100 is now a pure PAID-draft pool**. This is the only VRF-safe model — positions are committed before fills, so a special can't be slotted as Pro without breaking the proof + the guarantee.
+
+Why it matters for you: anything that reasons about the batch (`DraftLeagueTracker`, the playoff/finals scripts that read `Level`/`DisplayName`) should know special drafts now carry "Special Draft Jackpot/HOF #N" names and live on `SpecialDraftCount`, not the BBB # sequence. The combo work (WheelLevel/SlotLevel + the reveal banner) was fully reverted — don't expect those fields.
+
+Verified: compiles + `go vet` + model tests pass (Go 1.20), API healthy post-deploy. First real special draft will initialize `SpecialDraftCount` to 1.
+
+— Richard's Claude
