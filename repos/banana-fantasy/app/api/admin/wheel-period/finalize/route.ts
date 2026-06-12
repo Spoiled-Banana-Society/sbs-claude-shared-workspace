@@ -26,8 +26,8 @@ import {
  *
  * Step 2 of the wheel-period lifecycle. Must be called after Chainlink VRF
  * has fulfilled (~30s after open). Reads the VRF randomness from the
- * contract, pre-computes all 100k outcomes for the period, builds a
- * Merkle tree, commits the root on-chain, and flips the period to
+ * contract, pre-computes all 10k outcomes for the period (MAX_SPINS_PER_PERIOD),
+ * builds a Merkle tree, commits the root on-chain, and flips the period to
  * "active" in Firestore. After this, the wheel spin route will derive
  * outcomes from this period's (salt, VRF) and consume spinIndexes 0..99999.
  *

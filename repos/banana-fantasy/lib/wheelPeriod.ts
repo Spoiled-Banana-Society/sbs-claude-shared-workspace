@@ -17,7 +17,7 @@ import { keccak256, type Hex } from 'viem';
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { wheelSegments } from '@/lib/wheelConfig';
+import { wheelSegments, type WheelSegment } from '@/lib/wheelConfig';
 import { buildMerkleTree, deriveSpinOutcome, getMerkleProof, leafHash, type MerkleTree } from '@/lib/wheelMerkle';
 
 export const MAX_SPINS_PER_PERIOD = 10_000;
@@ -46,6 +46,11 @@ export interface WheelPeriodDoc {
   commitTxHash?: string;
   rootCommitTxHash?: string;
   revealTxHash?: string;
+  // Immutable copy of the prize table this period's outcomes were derived
+  // from, stamped at open. Auditors can re-derive every leaf from
+  // (salt, vrf, segmentsSnapshot) without trusting the deployed code.
+  segmentsSnapshot?: WheelSegment[];
+  segmentsHash?: string; // sha256 of canonical segments JSON
 }
 
 export interface WheelPeriodStateDoc {
@@ -106,6 +111,7 @@ export async function recordPeriodRequested(input: {
 }): Promise<void> {
   const db = getAdminFirestore();
   const now = Date.now();
+  const segmentsJson = JSON.stringify(wheelSegments.map((s) => ({ id: s.id, label: s.label, probability: s.probability })));
   const doc: WheelPeriodDoc = {
     periodNumber: input.periodNumber,
     status: 'requested',
@@ -116,6 +122,8 @@ export async function recordPeriodRequested(input: {
     maxSpins: MAX_SPINS_PER_PERIOD,
     openedAt: now,
     commitTxHash: input.commitTxHash,
+    segmentsSnapshot: wheelSegments,
+    segmentsHash: crypto.createHash('sha256').update(segmentsJson).digest('hex'),
   };
   await db.collection(PERIODS_COLLECTION).doc(String(input.periodNumber)).set(doc);
   await db.collection(SYSTEM_CONFIG).doc(WHEEL_STATE_DOC).set(

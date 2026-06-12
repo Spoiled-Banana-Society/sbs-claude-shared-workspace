@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { generateNonce, generateSeed, pickWeighted } from '@/lib/rng';
-import { getWheelConfig } from '@/lib/wheelConfigFirestore';
+import { wheelSegments, WHEEL_SEGMENT_ANGLE } from '@/lib/wheelConfig';
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { logger } from '@/lib/logger';
@@ -186,7 +186,12 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
 
-    const { segments, segmentAngle } = await getWheelConfig();
+    // Single source of truth: the hardcoded prize table (same one the client
+    // wheel renders and period Merkle trees are derived from). The old
+    // Firestore `config/wheel` override was removed 2026-06-12 — a DB edit
+    // could silently diverge live odds from the period commitment.
+    const segments = wheelSegments;
+    const segmentAngle = WHEEL_SEGMENT_ANGLE;
     const seed = generateSeed();
     const nonce = generateNonce();
 
