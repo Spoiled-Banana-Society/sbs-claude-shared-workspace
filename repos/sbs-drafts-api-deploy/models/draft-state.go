@@ -637,15 +637,13 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// the deferred call near the end of this function.
 	// Two independent specials can apply to one draft and STACK into a combo:
 	//   1) WheelLevel — the base the draft was won with on the wheel (already in
-	//      leagueInfo.Level before this point for a wheel draft); never consumes
-	//      the guaranteed 1+5.
-	//   2) SlotLevel — the per-100 batch reveal below (the guaranteed 1 JP/5 HOF
-	//      ride THIS, keyed on FilledLeaguesCount position). If it lands on a
-	//      wheel draft, that IS one of the guaranteed → the combo.
-	// We record BOTH, then set Level to the effective/primary (JP > HOF > Pro) so
-	// existing display + the playoff/finals scripts keep working unchanged. The
-	// wheel draft counts toward the 100 (FilledLeaguesCount already ++'d) without
-	// its base level consuming a guaranteed slot — that's the batch rule, intact.
+	//      leagueInfo.Level before this point for a wheel draft).
+	//   2) SlotLevel — the per-100 batch reveal below, keyed on the
+	//      FilledLeaguesCount position.
+	// We only RECORD both here, then set Level to the effective/primary
+	// (JP > HOF > Pro) so existing display + the playoff/finals scripts keep
+	// working unchanged. The guaranteed-distribution accounting (which positions
+	// are JP/HOF) lives in the batch tracker and is NOT changed by this.
 	wheelLevel := ""
 	if leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" {
 		wheelLevel = leagueInfo.Level // pre-set wheel base

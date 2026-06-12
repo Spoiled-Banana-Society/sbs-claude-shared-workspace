@@ -92,7 +92,7 @@ const FAQS = [
   },
   {
     q: 'Can a draft be both a wheel special and a slot special? (Combo drafts)',
-    a: 'Yes — and it stacks. There are two independent ways a draft turns special: winning a Jackpot or HOF entry on the Banana Wheel, and the per-100 slot reveal (the guaranteed 1 Jackpot + 5 HOF per batch). A wheel-won special still counts toward the 100, but it never uses up the guaranteed 1+5 — those always ride the slot reveal. So your wheel-Jackpot or wheel-HOF draft can ALSO land a slot special, stacking into a combo with bigger rewards:\n• Jackpot + Jackpot slot: BOTH 1st and 2nd place skip to the Finals.\n• HOF + HOF slot: BOTH 1st and 2nd place enter the HOF playoff bracket.\n• Jackpot + HOF slot (or HOF + Jackpot slot): 1st place advances to the Finals AND the HOF playoffs.\nA normal single Jackpot sends 1st to the Finals; a single HOF sends 1st to the HOF bracket — combos double up on those.',
+    a: 'Yes — and it stacks. Two independent things can make a draft special: a Jackpot or HOF entry you won on the Banana Wheel, and the per-100 slot reveal when the draft fills. When both land on the same draft, they combine into a combo with bigger rewards:\n• Jackpot + Jackpot slot: BOTH 1st and 2nd place skip to the Finals.\n• HOF + HOF slot: BOTH 1st and 2nd place enter the HOF playoff bracket.\n• Jackpot + HOF slot (or HOF + Jackpot slot): 1st place advances to the Finals AND the HOF playoffs.\nA normal single Jackpot sends 1st to the Finals; a single HOF sends 1st to the HOF bracket — combos double up on those.',
   },
   {
     q: 'How does scoring work?',
