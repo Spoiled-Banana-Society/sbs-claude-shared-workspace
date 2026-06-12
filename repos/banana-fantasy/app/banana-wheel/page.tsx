@@ -472,7 +472,7 @@ export default function BananaWheelPage() {
 
       {/* Promo cards — the carousel renders its own heading. Tight gap now
           that the "Earn spins by" list + extra heading are gone. */}
-      <section id="earn-spins" className="mt-4 lg:mt-14 scroll-mt-24">
+      <section id="earn-spins" className="mt-8 lg:mt-14 scroll-mt-24">
         <PromoCarousel
           heading="Promos to Earn Spins"
           promos={promosQuery.data ?? []}
