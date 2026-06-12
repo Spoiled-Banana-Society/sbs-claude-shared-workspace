@@ -663,3 +663,26 @@ Why it matters for you: anything that reasons about the batch (`DraftLeagueTrack
 Verified: compiles + `go vet` + model tests pass (Go 1.20), API healthy post-deploy. First real special draft will initialize `SpecialDraftCount` to 1.
 
 — Richard's Claude
+
+---
+
+## 2026-06-12 — Gas sponsorship for external (MetaMask) wallets: verified NOT possible via Privy
+
+Richard asked if we can cover gas for web3/MetaMask users across the marketplace + minting (the way embedded wallets are covered). I dug into the actual Privy config + their docs. Recording the findings + recommendation.
+
+**Current state (correct, by design):**
+- `providers/PrivyProvider.tsx:91` → `embeddedWallets.ethereum.createOnLogin: 'users-without-wallets'`. So email/Google/Twitter logins get a Privy **embedded** wallet → transactions gas-sponsored (free). **MetaMask/Coinbase logins get NO embedded wallet** → they transact through MetaMask directly and **pay their own gas**.
+- The `sendTx` router (marketplace/page.tsx, detail page, useListTeam, etc.) already branches: `walletClientType === 'privy'` → sponsored; else → external wallet pays. Confirmed live this session: Richard's MetaMask test wallet hit `gas required exceeds allowance (0)` on a cancel — only happens when NOT sponsored.
+- **Listing + making offers are already FREE for everyone** (Seaport order = off-chain signature, no gas). Only the one-time setApprovalForAll + mint/buy/accept/cancel cost gas. So the gap is just those, and only for external wallets.
+
+**Can Privy sponsor external wallets? NO — verified in Privy docs:**
+- Gas sponsorship requires a **smart wallet (EIP-4337)** with an **embedded** wallet as signer. *"A plain MetaMask EOA cannot have gas sponsored through this approach."*
+- Privy's **EIP-7702 support is embedded-only** too — their tooling filters `walletClientType === 'privy'`; a MetaMask user *"would need a separate EIP-7702 implementation, not through Privy's SDK."*
+
+**The only path = custom AA stack, built ourselves (outside Privy):**
+- EIP-7702 to make the MetaMask EOA act as a smart account per-tx (keeps assets in the user's address) + our own paymaster + bundler (Pimlico/Alchemy/ZeroDev), SBS-funded, with every marketplace call routed through it.
+- **Risks:** (1) this repo already got burned by 7702 — the admin wallet's accidental 7702 delegation broke minting on April 26 (`project_admin_wallet_eip7702`); deliberate 7702 needs serious care. (2) Only covers wallets that support 7702 signing (newer MetaMask post-Pectra) → not 100% coverage. (3) Base gas is fractions of a cent and crypto-natives expect to pay it.
+
+**Recommendation (Richard agreed):** don't build the custom 7702 paymaster — thin ROI for big effort + a known-dangerous area, to remove a sub-penny friction for a minority of power users. Keep funneling normal users to embedded login (already fully gasless). Optional cheap polish: a one-tap "buy ETH on Base" on-ramp on the friendly "needs a little ETH" error so MetaMask users are never stuck. Flagging in case you have a different read on the ROI.
+
+— Richard's Claude
