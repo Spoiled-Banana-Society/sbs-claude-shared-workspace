@@ -75,6 +75,13 @@ export async function POST(req: Request) {
       pfpUrl,
       text,
     });
+    // Broadcast ping: ONE RTDB write — every open #general refetches in
+    // ~300ms instead of waiting out the 2s poll (Boris 2026-06-11).
+    try {
+      const { getAdminDatabase } = await import('@/lib/firebaseAdmin');
+      const { runInBackground } = await import('@/lib/serverBackground');
+      runInBackground('global-chat-ping', getAdminDatabase().ref('globalChatPing').set({ at: Date.now(), id }));
+    } catch { /* ping is best-effort; poll remains the fallback */ }
     return NextResponse.json({ ok: true, id });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'write failed';

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
+import { subscribeGlobalChatPing } from '@/lib/api/firebase';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { ChatModerationMenu } from '@/components/chat/ChatModerationMenu';
 import { UserPopover } from '@/components/social/UserPopover';
@@ -78,6 +79,24 @@ export function GlobalChat() {
   const authHeadersRef = useRef(authHeaders);
   useEffect(() => { authHeadersRef.current = authHeaders; }, [authHeaders]);
 
+  // Optimistic echoes: your own just-sent messages render INSTANTLY and the
+  // poll reconciles. An echo survives merges until the server list contains
+  // its id (or 15s passes — abandoned echo from a failed write).
+  const echoesRef = useRef<Map<string, ChatMessage>>(new Map());
+  const mergeWithEchoes = (server: ChatMessage[]): ChatMessage[] => {
+    const now = Date.now();
+    for (const [id, echo] of echoesRef.current) {
+      if (server.some((m) => m.id === id) || now - echo.timestamp > 15_000) {
+        echoesRef.current.delete(id);
+      }
+    }
+    if (echoesRef.current.size === 0) return server;
+    return [...server, ...echoesRef.current.values()];
+  };
+
+  // Callable handle on the poll's fetch so the realtime ping can reuse it.
+  const fetchOnceRef = useRef<() => void>(() => {});
+
   // Poll messages every 2s.
   useEffect(() => {
     let cancelled = false;
@@ -87,13 +106,27 @@ export function GlobalChat() {
         if (!res.ok) return;
         const data = (await res.json()) as { messages?: ChatMessage[] };
         if (cancelled) return;
-        setMessages(Array.isArray(data.messages) ? data.messages : []);
+        setMessages(mergeWithEchoes(Array.isArray(data.messages) ? data.messages : []));
       } catch { /* network blip */ }
       finally { if (!cancelled) setIsLoading(false); }
     };
     void fetchOnce();
+    fetchOnceRef.current = fetchOnce;
     const id = setInterval(fetchOnce, POLL_MS);
     return () => { cancelled = true; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Instant: the server bumps a shared RTDB node on every message — refetch
+  // within ~300ms (coalesced). The 2s poll stays as the fallback.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const coalesced = () => {
+      if (timer) return;
+      timer = setTimeout(() => { timer = null; fetchOnceRef.current(); }, 300);
+    };
+    const unsub = subscribeGlobalChatPing(coalesced);
+    return () => { if (timer) clearTimeout(timer); try { unsub(); } catch { /* ignore */ } };
   }, []);
 
   // Poll my mute status every 15s (and on mount). Cheap server check; if a
@@ -147,6 +180,20 @@ export function GlobalChat() {
         headers,
         body: JSON.stringify({ text, username, pfpUrl }),
       });
+      if (res.ok && walletAddress) {
+        // Instant local echo with the REAL id — next poll reconciles.
+        const data = (await res.json().catch(() => ({}))) as { id?: string };
+        const echo: ChatMessage = {
+          id: data.id || `echo-${Date.now()}`,
+          walletAddress,
+          username,
+          pfpUrl,
+          text,
+          timestamp: Date.now(),
+        };
+        echoesRef.current.set(echo.id, echo);
+        setMessages((prev) => (prev.some((m) => m.id === echo.id) ? prev : [...prev, echo]));
+      }
       if (!res.ok) {
         // 403 with { error: 'muted', mute: {...} } → reflect mute in UI
         const data = await res.json().catch(() => ({}));

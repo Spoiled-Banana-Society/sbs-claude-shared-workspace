@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useAuth } from '@/hooks/useAuth';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 
 export interface PublicUser {
   walletAddress: string;
@@ -88,6 +90,11 @@ export function useDmInbox(enabled: boolean): {
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
 
+  // Instant: a dm-message stream ping (sent by the DM POST route) refetches
+  // the inbox within ~300ms — the 15s poll becomes the fallback.
+  const { walletAddress: myWalletForStream } = useAuth();
+  useStreamRefetch(enabled ? myWalletForStream : null, () => { void refreshRef.current(); });
+
   useEffect(() => {
     if (!enabled) { setLoading(false); return; }
     void refreshRef.current();
@@ -167,6 +174,11 @@ export function useDmThread(otherWallet: string | null): {
   // would fire many more requests than intended.
   const refreshRef = useRef(refresh);
   useEffect(() => { refreshRef.current = refresh; }, [refresh]);
+
+  // Instant: incoming dm-message pings refetch the OPEN thread in ~300ms;
+  // the 2s poll remains the fallback.
+  const { walletAddress: myWalletForStream } = useAuth();
+  useStreamRefetch(otherWallet ? myWalletForStream : null, () => { void refreshRef.current(); });
 
   useEffect(() => {
     if (!otherWallet) {

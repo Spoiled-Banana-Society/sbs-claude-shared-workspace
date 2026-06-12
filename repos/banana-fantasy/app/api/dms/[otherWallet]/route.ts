@@ -9,6 +9,8 @@
 
 export const dynamic = 'force-dynamic';
 
+import { pushStreamEventBg } from '@/lib/userEventStream';
+
 import { NextResponse } from 'next/server';
 import { runInBackground } from '@/lib/serverBackground';
 import { getPrivyUser } from '@/lib/auth';
@@ -113,6 +115,10 @@ export async function POST(
       recipientWallet: otherWallet,
       text,
     });
+    // Instant ping → recipient's inbox/thread/noti surfaces refetch in
+    // ~300ms instead of waiting out the 15s poll (Boris 2026-06-11:
+    // all chat must be realtime, both directions).
+    pushStreamEventBg(otherWallet.toLowerCase(), 'notification', { source: 'dm-message' });
     return NextResponse.json({ ok: true, thread, message });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'failed';

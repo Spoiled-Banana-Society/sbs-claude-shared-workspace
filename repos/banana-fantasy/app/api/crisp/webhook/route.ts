@@ -112,8 +112,21 @@ export async function POST(req: Request) {
       logger.info('crisp.webhook.visitor_message', { context: { sessionId, who } });
     } else if (event === 'message:received' && d.from === 'operator') {
       // Team replied — bell the user so they come back to the chat.
-      const meta = sessionId ? await getConversationMeta(sessionId).catch(() => null) : null;
-      const wallet = parseStampedWallet(meta?.data?.wallet);
+      // session→wallet cache skips the Crisp REST lookup on repeat replies
+      // (~400ms off the bell latency).
+      const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+      const db = getAdminFirestore();
+      const cacheRef = sessionId ? db.collection('crisp_session_wallets').doc(sessionId) : null;
+      let wallet: string | null = null;
+      if (cacheRef) {
+        const cached = await cacheRef.get().catch(() => null);
+        wallet = (cached?.get('wallet') as string | undefined) ?? null;
+      }
+      if (!wallet) {
+        const meta = sessionId ? await getConversationMeta(sessionId).catch(() => null) : null;
+        wallet = parseStampedWallet(meta?.data?.wallet);
+        if (wallet && cacheRef) await cacheRef.set({ wallet, at: new Date().toISOString() }).catch(() => {});
+      }
       if (wallet && /^0x[0-9a-f]{40}$/.test(wallet)) {
         // Show the actual reply text (like DM notis do); generic line only
         // for attachments.

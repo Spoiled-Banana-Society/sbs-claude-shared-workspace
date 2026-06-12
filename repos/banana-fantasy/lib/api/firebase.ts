@@ -262,6 +262,19 @@ export interface UserStreamEvent {
  *
  * Returns no-op if Firebase isn't configured.
  */
+/**
+ * Subscribe to the global-chat broadcast ping — a single shared RTDB node the
+ * server bumps on every #general message. One write, every open chat hears
+ * it instantly. Returns no-op if Firebase isn't configured.
+ */
+export function subscribeGlobalChatPing(cb: () => void): Unsubscribe {
+  const db = getFirebaseDatabase();
+  if (!db) return () => {};
+  const r = ref(db, '/globalChatPing');
+  const unsub = onValue(r, () => cb(), () => { /* permission/network — poll covers it */ });
+  return unsub;
+}
+
 export function subscribeUserEvents(
   userId: string,
   cb: (event: UserStreamEvent) => void,
