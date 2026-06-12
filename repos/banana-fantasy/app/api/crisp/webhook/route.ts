@@ -115,10 +115,15 @@ export async function POST(req: Request) {
       const meta = sessionId ? await getConversationMeta(sessionId).catch(() => null) : null;
       const wallet = parseStampedWallet(meta?.data?.wallet);
       if (wallet && /^0x[0-9a-f]{40}$/.test(wallet)) {
+        // Show the actual reply text (like DM notis do); generic line only
+        // for attachments.
+        const replyText = textOf(d.content);
         await createNotification(wallet, {
           type: 'message_received',
           title: 'SBS Team Replied',
-          message: 'Support replied to your chat — tap to open it.',
+          message: replyText === '[attachment]'
+            ? 'Support replied to your chat — tap to open it.'
+            : `"${replyText.slice(0, 120)}" — tap to open the chat.`,
           link: '/?support=open',
           dedupeKey: `crisp-out-${fingerprint}`,
           icon: 'msg',
