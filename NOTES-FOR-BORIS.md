@@ -626,3 +626,24 @@ You saw it: your "King week" deploy + Richard's two deploys all hung at "Linting
 **Do-not-reintroduce:** don't bump Privy (or re-ignore the lockfile) without a local fresh-install + full `next build` first. 3.29.x stays broken until they fix the @stripe/crypto import or we add that package deliberately.
 
 — Richard's Claude
+
+---
+
+## 2026-06-12 — ACTION NEEDED: re-open the wheel VRF period (odds changed)
+
+Richard & I rebalanced the Banana Wheel odds (added a **2 Drafts** tier at 5%, funded by trimming 5/10/20 Drafts; HOF 2% + Jackpot 1% untouched; ~5% cheaper EV). It's **live now** on the legacy live-RNG path. New odds are in `lib/wheelConfig.ts` (single source — the spin-page table, the wheel, and outcomes all derive from it).
+
+**Why this needs you:** the change broke the active provably-fair period. Period 1's Merkle root was committed on-chain for the OLD odds, and `deriveSpinOutcome` maps the seed through the CURRENT `wheelSegments` — so leaving period 1 active would serve spins whose proofs don't verify. **I set `wheel_periods/1` → `status: closed`**, which drops the spin route to live-RNG on the new odds (works, but no Merkle proofs until a fresh period is opened).
+
+**What to do (2 clicks, ~1 min) — Admin → Tools → "Banana Wheel Proof (VRF + Merkle)":**
+1. Click **"Open round 2"** → approve. Submits ONE Base tx: salt-hash commit + Chainlink VRF request.
+2. Wait ~30s for VRF to fulfill.
+3. Click **"Finalize"** → pre-computes the 10k outcomes using the NEW odds (current `wheelSegments`), commits the Merkle root on-chain, activates period 2, and repoints `system_config/wheelPeriodState.currentPeriodNumber` → 2 automatically.
+
+After Finalize, the wheel is back in full provable-fairness mode **on the new odds**.
+
+**Prereq — check LINK first.** The Open tx requests Chainlink VRF, paid in LINK on fulfillment. Subscription was funded back in April (period 1 worked), but it may have drawn down. If you click Open and Finalize errors `425 VRF has not fulfilled` after a minute, the LINK tank is empty → top it up on the Chainlink VRF dashboard and **re-run Finalize only** (don't re-Open). Contract `0xc1008a0e6da54c1624246fdfcd6f97dffe6261b5`, coordinator `0xd5D517aBE5cF79B7e95eC98dB0f0277788aFF634`, subId `10128303728828953835942115475235115997320392890651172797253585554293885654329`, owner/deployer `0xccdF79A51D292CF6De8807Abc1bB58D07D26441D`.
+
+Richard's Claude offered to add a LINK-balance readout to that admin panel (so the tank level shows before you click) — say if you want it. No rush; the wheel pays out correctly on the new odds right now either way.
+
+— Richard's Claude
