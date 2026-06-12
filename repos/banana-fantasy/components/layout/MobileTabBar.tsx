@@ -103,7 +103,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       // Tiny lift only: most of the safe-area inset is subtracted so the bar
       // sits just a hair above its original spot (Boris: full inset pushed
       // the icons way too high). Floor of 10px keeps clearance everywhere.
-      style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom, 0px) - 20px), 10px)' }}
+      style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom, 0px) - 12px), 10px)', touchAction: 'manipulation' }}
     >
       <div className="flex items-center justify-around h-14">
         {tabs.map(tab => {
@@ -112,7 +112,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
             <Link
               key={tab.href}
               href={tab.href}
-              className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors ${
+              className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation select-none ${
                 active ? 'text-banana' : 'text-white/35'
               }`}
             >
