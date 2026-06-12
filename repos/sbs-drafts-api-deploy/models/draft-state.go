@@ -503,6 +503,16 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		return err
 	}
 
+	// Wheel-won special drafts have their Jackpot/HOF Level set BEFORE fill. They
+	// run in their OWN lane: they never enter the per-100 batch (no
+	// FilledLeaguesCount, no VRF JP/HOF slot assignment, no batch proof), get
+	// their own counter + "Special Draft Jackpot/HOF #N" name, and KEEP the level
+	// they were won with. This keeps the guaranteed 1 JP + 5 HOF per 100 a pure
+	// paid-draft pool, which is the only way to honor it under VRF (batch
+	// positions are committed before fills, so a special can't be slotted as Pro).
+	isSpecialDraft := leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame"
+	specialLevel := leagueInfo.Level
+
 	// PHASE 1: atomic increment of the global tracker.
 	//
 	// FilledLeaguesCount + CurrentLive/SlowDraftCount must update in a
@@ -525,7 +535,11 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		} else {
 			counts.CurrentSlowDraftCount++
 		}
-		counts.FilledLeaguesCount++
+		if isSpecialDraft {
+			counts.SpecialDraftCount++ // own lane — NOT the per-100 batch
+		} else {
+			counts.FilledLeaguesCount++
+		}
 		return tx.Set(trackerRef, &counts)
 	})
 	if err != nil {
@@ -551,7 +565,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	positionInBatch := (postIncrement - 1) % batchproof.BatchSize
 
 	var batchJpGlobals, batchHofGlobals []int
-	if mgr := batchproof.Default(); mgr != nil {
+	if mgr := batchproof.Default(); mgr != nil && !isSpecialDraft {
 		if disabled, msg := mgr.Disabled(); disabled {
 			fmt.Printf("[batchproof] disabled, skipping batch %d derivation: %s\n", batchNumber, msg)
 		} else {
@@ -598,34 +612,39 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		}
 	}
 
-	leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
-
-	// Decide JP/HOF type now (sets leagueInfo.Level in memory) but DEFER
-	// the per-card Level write until after RTDB + first Cloud Task are
-	// scheduled. MakeLeagueJackpot/HOF do ~10 sequential Firestore writes
-	// to drafts/{draftId}/cards. Letting that run before RTDB is written
-	// risks the draft staying stuck at pick 1 if anything errors — RTDB
-	// never gets initialized → auto-pick guard fails → draft freezes.
-	// Per-card Level is cosmetic; the draft is fully functional without
-	// it. So: set Level in memory, persist it via the leagueInfo write
-	// below (so the league doc reflects the type), but run the per-card
-	// fan-out only after the critical-path state is good. See note on
-	// the deferred call near the end of this function.
+	// The per-card Level stamp (MakeLeagueJackpot/HOF) is DEFERRED below until
+	// after RTDB + the first Cloud Task — those do ~10 sequential Firestore
+	// writes, and running them before RTDB risks a stuck/frozen draft. Per-card
+	// Level is cosmetic; we set the league doc's Level here and fan out later.
 	isJackpot := false
 	isHOF := false
-	for i := 0; i < len(counts.HofLeagueIds); i++ {
-		if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
-			leagueInfo.Level = "Hall of Fame"
-			isHOF = true
-			break
+	if isSpecialDraft {
+		// Own lane: its own name + counter, KEEP the wheel level, NO slot reveal.
+		tierName := "Jackpot"
+		if specialLevel == "Hall of Fame" {
+			tierName = "HOF"
 		}
-	}
-	for i := 0; i < len(counts.JackpotLeagueIds); i++ {
-		if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
-			leagueInfo.Level = "Jackpot"
-			isJackpot = true
-			isHOF = false
-			break
+		leagueInfo.DisplayName = fmt.Sprintf("Special Draft %s #%d", tierName, counts.SpecialDraftCount)
+		leagueInfo.Level = specialLevel
+		isJackpot = specialLevel == "Jackpot"
+		isHOF = specialLevel == "Hall of Fame"
+	} else {
+		leagueInfo.DisplayName = fmt.Sprintf("BBB #%d", counts.FilledLeaguesCount)
+		// Slot reveal — the guaranteed 1 JP / 5 HOF ride these committed positions.
+		for i := 0; i < len(counts.HofLeagueIds); i++ {
+			if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
+				leagueInfo.Level = "Hall of Fame"
+				isHOF = true
+				break
+			}
+		}
+		for i := 0; i < len(counts.JackpotLeagueIds); i++ {
+			if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
+				leagueInfo.Level = "Jackpot"
+				isJackpot = true
+				isHOF = false
+				break
+			}
 		}
 	}
 

@@ -165,6 +165,11 @@ type DraftLeagueTracker struct {
 	FilledLeaguesCount    int   `json:"filledLeaguesCount" firestore:"FilledLeaguesCount"`
 	HofLeagueIds          []int `json:"hofLeagueIds" firestore:"HofLeagueIds"`
 	JackpotLeagueIds      []int `json:"jackpotLeagueIds" firestore:"JackpotLeagueIds"`
+	// SpecialDraftCount is the OWN sequence for wheel-won Jackpot/HOF drafts.
+	// They run outside the per-100 batch entirely (never touch FilledLeaguesCount
+	// or the VRF JP/HOF position lists), so the guaranteed 1+5 per 100 stays a
+	// pure paid-draft pool. Names them "Special Draft Jackpot/HOF #N".
+	SpecialDraftCount     int   `json:"specialDraftCount" firestore:"SpecialDraftCount"`
 }
 
 type Score struct {
