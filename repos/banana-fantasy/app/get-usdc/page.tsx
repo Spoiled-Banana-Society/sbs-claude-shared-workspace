@@ -380,6 +380,21 @@ export default function GetUsdcPage() {
           </ul>
         </div>
 
+        {/* Why we moved — the TL;DR */}
+        <div className="glass-card p-6 sm:p-7 mt-10">
+          <h2 className="text-xl font-bold text-text-primary mb-4 flex items-center gap-2">
+            <span>🍌</span> Why we moved — the TL;DR
+          </h2>
+          <ul className="space-y-2 text-sm text-text-secondary leading-relaxed">
+            <li>• <span className="text-text-primary font-semibold">$25 is $25</span> — entries are priced in dollars now, not ETH. No price swings.</li>
+            <li>• <span className="text-text-primary font-semibold">Prize pools hold their value</span> — $100K in USDC stays $100K, all season long.</li>
+            <li>• <span className="text-text-primary font-semibold">Transactions are instant</span> — mints, sales, and payouts confirm in seconds on Base.</li>
+            <li>• <span className="text-text-primary font-semibold">Zero gas on SBS</span> — we cover every fee for minting and the marketplace.</li>
+            <li>• <span className="text-text-primary font-semibold">Getting here is cheap too</span> — swapping or bridging into Base costs cents and takes seconds, anywhere you do it.</li>
+          </ul>
+          <p className="text-text-muted text-sm mt-4">Same game. Better rails. More of your money in play.</p>
+        </div>
+
         {/* CTAs */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-10">
           <Link

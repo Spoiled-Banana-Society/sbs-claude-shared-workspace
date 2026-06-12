@@ -212,6 +212,10 @@ export const mockFAQSections: FAQSection[] = [
         },
       },
       {
+        question: 'Why did SBS move to Base & USDC?',
+        answer: 'Stability and speed. Entries are a flat $25 in USDC, and prize pools hold their value - $100K is $100K all season, no ETH price swings. Transactions confirm in seconds, everything on SBS is gas-free (we cover it), and even swapping or bridging into Base costs cents. Same game, better rails - more of your money in play.',
+      },
+      {
         question: 'What is Base?',
         answer: 'Base is an Ethereum Layer 2 network built by Coinbase. It uses the same wallets and the same addresses as Ethereum - your MetaMask or Coinbase Wallet works as-is, you just switch networks. Transactions are near-instant and cost a fraction of a cent.',
       },
