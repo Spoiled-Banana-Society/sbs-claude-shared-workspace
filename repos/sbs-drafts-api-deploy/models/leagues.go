@@ -144,6 +144,14 @@ type League struct {
 	EndDate      time.Time         `json:"endDate"`
 	DraftType    string            `json:"draftType"`
 	Level        string            `json:"level"`
+	// WheelLevel is the BASE special a draft was won with on the wheel (Jackpot/
+	// Hall of Fame), set before fill and never overwritten by the slot reveal.
+	// SlotLevel is what the per-100 batch reveal independently assigned at fill.
+	// They STACK into combos (e.g. wheel Jackpot + slot HOF). `Level` stays the
+	// effective/primary level (Jackpot > HOF > Pro) for existing display + the
+	// playoff/finals scripts; the combo perks read WheelLevel+SlotLevel.
+	WheelLevel   string            `json:"wheelLevel,omitempty" firestore:"WheelLevel,omitempty"`
+	SlotLevel    string            `json:"slotLevel,omitempty" firestore:"SlotLevel,omitempty"`
 	IsLocked     bool              `json:"isFilled"`
 	ADP          []PlayerDraftInfo `json:"ADPData"`
 }

@@ -491,6 +491,30 @@ type Players struct {
 	Players map[string]PlayerStateInfo `json:"players"`
 }
 
+// effectiveLevel returns the strongest of two special levels (wheel + slot):
+// Jackpot beats Hall of Fame beats Pro. Empty inputs count as Pro. Used to keep
+// `Level` a single primary value for existing display + the playoff scripts,
+// while WheelLevel/SlotLevel retain the full combo for perk resolution.
+func effectiveLevel(a, b string) string {
+	rank := func(l string) int {
+		switch l {
+		case "Jackpot":
+			return 2
+		case "Hall of Fame":
+			return 1
+		default:
+			return 0
+		}
+	}
+	if rank(a) >= rank(b) {
+		if rank(a) == 0 {
+			return "Pro"
+		}
+		return a
+	}
+	return b
+}
+
 func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	fillStart := time.Now()
 	defer func() {
@@ -611,23 +635,42 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	// below (so the league doc reflects the type), but run the per-card
 	// fan-out only after the critical-path state is good. See note on
 	// the deferred call near the end of this function.
-	isJackpot := false
-	isHOF := false
+	// Two independent specials can apply to one draft and STACK into a combo:
+	//   1) WheelLevel — the base the draft was won with on the wheel (already in
+	//      leagueInfo.Level before this point for a wheel draft); never consumes
+	//      the guaranteed 1+5.
+	//   2) SlotLevel — the per-100 batch reveal below (the guaranteed 1 JP/5 HOF
+	//      ride THIS, keyed on FilledLeaguesCount position). If it lands on a
+	//      wheel draft, that IS one of the guaranteed → the combo.
+	// We record BOTH, then set Level to the effective/primary (JP > HOF > Pro) so
+	// existing display + the playoff/finals scripts keep working unchanged. The
+	// wheel draft counts toward the 100 (FilledLeaguesCount already ++'d) without
+	// its base level consuming a guaranteed slot — that's the batch rule, intact.
+	wheelLevel := ""
+	if leagueInfo.Level == "Jackpot" || leagueInfo.Level == "Hall of Fame" {
+		wheelLevel = leagueInfo.Level // pre-set wheel base
+	}
+	slotLevel := ""
 	for i := 0; i < len(counts.HofLeagueIds); i++ {
 		if counts.HofLeagueIds[i] == counts.FilledLeaguesCount {
-			leagueInfo.Level = "Hall of Fame"
-			isHOF = true
+			slotLevel = "Hall of Fame"
 			break
 		}
 	}
 	for i := 0; i < len(counts.JackpotLeagueIds); i++ {
 		if counts.JackpotLeagueIds[i] == counts.FilledLeaguesCount {
-			leagueInfo.Level = "Jackpot"
-			isJackpot = true
-			isHOF = false
+			slotLevel = "Jackpot"
 			break
 		}
 	}
+	leagueInfo.WheelLevel = wheelLevel
+	leagueInfo.SlotLevel = slotLevel
+	// Effective/primary level for display + scripts: Jackpot beats HOF beats Pro,
+	// taking the strongest of wheel and slot.
+	leagueInfo.Level = effectiveLevel(wheelLevel, slotLevel)
+	// Per-card Level stamp fires for whichever specials apply (either side).
+	isJackpot := wheelLevel == "Jackpot" || slotLevel == "Jackpot"
+	isHOF := !isJackpot && (wheelLevel == "Hall of Fame" || slotLevel == "Hall of Fame")
 
 	err = utils.Db.CreateOrUpdateDocument("drafts", draftId, &leagueInfo)
 	if err != nil {
