@@ -135,7 +135,7 @@ export default function FAQPage() {
                       {/* Answer */}
                       {isExpanded && (
                         <div className="px-6 pb-4 animate-slide-up">
-                          <p className="text-text-secondary leading-relaxed">{item.answer}</p>
+                          <p className="text-text-secondary leading-relaxed whitespace-pre-line">{item.answer}</p>
                           {item.link && (
                             <Link
                               href={item.link.href}

@@ -392,7 +392,7 @@ export default function GetUsdcPage() {
             <li>• <span className="text-text-primary font-semibold">Zero gas on SBS</span> — we cover every fee for minting and the marketplace.</li>
             <li>• <span className="text-text-primary font-semibold">Getting here is cheap too</span> — swapping or bridging into Base costs cents and takes seconds, anywhere you do it.</li>
           </ul>
-          <p className="text-text-muted text-sm mt-4">Same game. Better rails. More of your money in play.</p>
+          <p className="text-text-muted text-sm mt-4">The game, made better for you.</p>
         </div>
 
         {/* CTAs */}

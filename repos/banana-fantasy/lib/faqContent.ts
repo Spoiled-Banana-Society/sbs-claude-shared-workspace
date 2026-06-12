@@ -213,7 +213,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'Why did SBS move to Base & USDC?',
-        answer: 'Stability and speed. Entries are a flat $25 in USDC, and prize pools hold their value - $100K is $100K all season, no ETH price swings. Transactions confirm in seconds, everything on SBS is gas-free (we cover it), and even swapping or bridging into Base costs cents. Same game, better rails - more of your money in play.',
+        answer: '• $25 is $25 - entries are priced in dollars, not ETH. No price swings.\n• Prize pools hold their value - $100K in USDC stays $100K, all season.\n• Transactions confirm in seconds on Base.\n• Everything on SBS is gas-free - we cover it.\n• Even swapping or bridging into Base costs cents.\nThe game, made better for you.',
       },
       {
         question: 'What is Base?',
