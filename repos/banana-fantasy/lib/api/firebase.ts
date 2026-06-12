@@ -267,6 +267,39 @@ export interface UserStreamEvent {
  * server bumps on every #general message. One write, every open chat hears
  * it instantly. Returns no-op if Firebase isn't configured.
  */
+/**
+ * Shared presence map — ONE RTDB listener no matter how many avatars render
+ * dots. `presence/{wallet}` holds a server-stamped lastSeen (ms); online =
+ * within the last 90s. Subscribers get the full map on every change.
+ */
+type PresenceMap = Record<string, number>;
+let presenceMap: PresenceMap = {};
+let presenceUnsub: Unsubscribe | null = null;
+const presenceSubs = new Set<(m: PresenceMap) => void>();
+
+export function subscribePresenceMap(cb: (m: PresenceMap) => void): () => void {
+  presenceSubs.add(cb);
+  cb(presenceMap);
+  if (!presenceUnsub) {
+    const db = getFirebaseDatabase();
+    if (db) {
+      presenceUnsub = onValue(ref(db, '/presence'), (snap) => {
+        presenceMap = (snap.val() as PresenceMap | null) ?? {};
+        presenceSubs.forEach((fn) => fn(presenceMap));
+      }, () => { /* read rule missing — dots simply don't render */ });
+    }
+  }
+  return () => {
+    presenceSubs.delete(cb);
+    if (presenceSubs.size === 0 && presenceUnsub) {
+      try { presenceUnsub(); } catch { /* ignore */ }
+      presenceUnsub = null;
+    }
+  };
+}
+
+export const PRESENCE_ONLINE_WINDOW_MS = 90_000;
+
 export function subscribeGlobalChatPing(cb: () => void): Unsubscribe {
   const db = getFirebaseDatabase();
   if (!db) return () => {};

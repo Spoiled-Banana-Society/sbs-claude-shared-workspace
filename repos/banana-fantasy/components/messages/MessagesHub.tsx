@@ -8,6 +8,7 @@ import { useBlockedUsers, useDmInbox, useDmThread, type DmThreadView, type Publi
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { useFriends } from '@/hooks/useFriends';
 import { useFriendSuggestions } from '@/hooks/useFriendSuggestions';
+import { usePresenceMap } from '@/hooks/usePresence';
 import { GlobalChat } from '@/components/chat/GlobalChat';
 import { getTruncatedAccountName } from '@/utils/helpers';
 
@@ -34,14 +35,33 @@ type View =
 
 function Avatar({ user, size = 'sm' }: { user: PublicUser; size?: 'sm' | 'md' }) {
   const px = size === 'sm' ? 32 : 40;
+  const { isOnline } = usePresenceMap();
+  const online = isOnline(user.walletAddress);
   return (
-    <AvatarWithBadge
-      imageUrl={user.profilePicture}
-      alt={user.username}
-      size={px}
-      equippedBadge={user.equippedBadge ?? null}
-      useNextImage={false}
-    />
+    <div className="relative flex-shrink-0">
+      <AvatarWithBadge
+        imageUrl={user.profilePicture}
+        alt={user.username}
+        size={px}
+        equippedBadge={user.equippedBadge ?? null}
+        useNextImage={false}
+      />
+      {online && (
+        // Quiet presence dot — green only when online; absence = offline.
+        <span
+          title="Online"
+          className="absolute rounded-full"
+          style={{
+            width: Math.max(8, Math.round(px * 0.28)),
+            height: Math.max(8, Math.round(px * 0.28)),
+            right: -1,
+            bottom: -1,
+            background: '#22c55e',
+            border: '2px solid #111114',
+          }}
+        />
+      )}
+    </div>
   );
 }
 

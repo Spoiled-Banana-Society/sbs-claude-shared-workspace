@@ -20,6 +20,7 @@
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useDmInbox, type DmThreadView } from '@/hooks/useDms';
+import { usePresenceHeartbeat } from '@/hooks/usePresence';
 import { pushNotification } from '@/components/NotificationCenter';
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -43,6 +44,9 @@ export function SocialNotifier() {
   const enabled = !!wallet;
 
   const { inbox } = useDmInbox(enabled);
+
+  // Online-dot heartbeat — marks this user online while the tab is open.
+  usePresenceHeartbeat(enabled ? wallet : null);
 
   // Per-wallet localStorage key so switching accounts never cross-fires.
   const threadsKey = `sbs-social-seen-threads:${wallet}`;
