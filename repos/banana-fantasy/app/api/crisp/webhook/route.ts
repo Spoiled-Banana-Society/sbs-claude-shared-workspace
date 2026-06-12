@@ -79,6 +79,19 @@ export async function POST(req: Request) {
   const sessionId = d.session_id ?? '';
   const fingerprint = `${sessionId}-${payload.timestamp ?? ''}`.slice(-48);
 
+  // Durable trace of every delivery — Crisp's event names/shapes have
+  // shifted before and info-level logs don't persist. Read these docs to
+  // see exactly what arrived when a bell doesn't fire.
+  try {
+    const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+    await getAdminFirestore().collection('crisp_webhook_events').add({
+      event, from: d.from ?? null, origin: d.origin ?? null, type: d.type ?? null,
+      sessionId, nickname: d.user?.nickname ?? null,
+      text: typeof d.content === 'string' ? d.content.slice(0, 80) : null,
+      at: new Date().toISOString(),
+    });
+  } catch { /* trace only */ }
+
   try {
     if (event === 'message:send' && d.from === 'user') {
       // Visitor wrote in — resolve who, then ping every admin instantly.
