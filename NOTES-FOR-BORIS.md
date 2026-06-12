@@ -647,3 +647,36 @@ After Finalize, the wheel is back in full provable-fairness mode **on the new od
 Richard's Claude offered to add a LINK-balance readout to that admin panel (so the tank level shows before you click) — say if you want it. No rush; the wheel pays out correctly on the new odds right now either way.
 
 — Richard's Claude
+
+---
+
+## 2026-06-12 — SPEC (Richard): wheel specials × slot reveal → combo drafts (backend Go, future)
+
+Richard wants wheel-won JP/HOF drafts to STACK with the per-100 slot reveal. This is your lane (batch tracker + season progression). Not built yet — speccing so it's recorded. **One open decision flagged at the bottom — confirm with Richard before building.**
+
+**The model — two independent specials per draft:**
+- **Wheel level** (base): set BEFORE fill (wheel-won JP/HOF; already exists — `leagues.go:508` locks these seats).
+- **Slot level**: the guaranteed 1 JP + 5 HOF per 100, assigned at fill in `CreateLeagueDraftStateUponFilling` via the batch tracker / `DeriveBatchSlots`.
+- A wheel draft can ALSO get a slot special → they STACK into combos.
+
+**Combos → perks (weeks 15–17 advancement):**
+| Base (wheel) | Slot | Perk |
+|---|---|---|
+| JP | JP | 1st **and** 2nd → Finals |
+| HOF | HOF | 1st **and** 2nd → HOF playoffs |
+| JP | HOF | 1st → Finals **+** HOF playoffs |
+| HOF | JP | 1st → Finals **+** HOF playoffs |
+
+**Batch-counting rule:** wheel drafts COUNT toward the 100 (`FilledLeaguesCount`++), but their base wheel-level does NOT consume the guaranteed 1+5 — the guarantees always ride the SLOT reveal across the 100. When the slot-special lands on a wheel draft, that IS one of the guaranteed (→ combo). Net: never more than 1 JP + 5 HOF *guaranteed* per 100; combos just concentrate them.
+
+**Fill-order — Richard asked, NOT a problem:** a special can finish filling after a later-started draft. Since batch position + slot reveal are assigned at FILL time (fill order) inside `CreateLeagueDraftStateUponFilling`, the wheel special just takes its fill-order position whenever it completes, and the combo resolves right there (read pre-set wheel level + compute slot level). No start-order bookkeeping needed.
+
+**What it touches (Go):**
+1. **Two level fields** on the league — today there's a single `Level` and the slot reveal would clobber the wheel level. Need `WheelLevel` (base) + `SlotLevel` (reveal); combine for perks.
+2. `CreateLeagueDraftStateUponFilling` applies the slot reveal ON TOP of an existing wheel level (don't skip/overwrite for specials).
+3. Batch counter: wheel drafts increment count but don't pre-consume a guaranteed slot.
+4. Playoff/finals seeding (weeks 15–17, likely not built yet): resolve the 4 combos.
+
+**⚠️ OPEN DECISION — confirm with Richard:** above assumes the guaranteed slot-special is **consumed/concentrated** by a combo (a JP+JP used the batch's 1 guaranteed Jackpot). The alternative is **combos are bonus on top of the 1+5** (you'd pay out more guaranteed specials per 100). Richard's wording leaned toward "consumed," but he hasn't explicitly locked it — confirm before you build the counter math.
+
+— Richard's Claude
