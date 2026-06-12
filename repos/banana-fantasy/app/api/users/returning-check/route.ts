@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       await createNotification(wallet, {
         type: 'base_guide',
         title: "We're on Base & USDC now",
-        message: 'New to Base? Learn how to buy, swap, or bridge USDC — quick and easy. Tap to learn more.',
+        message: 'New to Base? Learn how to buy, swap, or bridge USDC. Tap to learn more.',
         link: '/get-usdc',
         dedupeKey: 'base-usdc-guide',
         icon: 'zap',
