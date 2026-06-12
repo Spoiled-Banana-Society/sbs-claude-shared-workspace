@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -15,12 +15,20 @@ const BASE_NETWORK: { label: string; value: string; copy?: boolean }[] = [
   { label: 'Block explorer', value: 'https://basescan.org' },
 ];
 
-const METAMASK_BASE_STEPS: React.ReactNode[] = [
-  <>Open MetaMask and tap the <span className="text-text-primary font-semibold">network dropdown</span> at the top-left (it usually says &ldquo;Ethereum Mainnet&rdquo;).</>,
-  <>If you see <span className="text-banana font-semibold">Base</span> in the list, just tap it — you&apos;re done.</>,
-  <>Not there? Tap <span className="text-text-primary font-semibold">Add network</span>, find <span className="text-banana font-semibold">Base</span> in the popular networks, and tap <span className="text-text-primary font-semibold">Add</span>.</>,
-  <>Still not listed? Tap <span className="text-text-primary font-semibold">Add a network manually</span> and enter the details below.</>,
-];
+// MetaMask network-switch steps differ between the browser extension and the
+// phone app — keep them separate so neither audience gets the wrong UI labels.
+const METAMASK_STEPS: Record<'desktop' | 'mobile', React.ReactNode[]> = {
+  desktop: [
+    <>Open the MetaMask extension and click the <span className="text-text-primary font-semibold">network selector</span> in the top-left corner.</>,
+    <>Pick <span className="text-banana font-semibold">Base</span> from the list — recent MetaMask versions include it by default.</>,
+    <>Don&apos;t see it? Click <span className="text-text-primary font-semibold">Add a custom network</span> and enter the details below.</>,
+  ],
+  mobile: [
+    <>Open the MetaMask app and tap the <span className="text-text-primary font-semibold">network selector</span> at the top of the screen.</>,
+    <>Tap <span className="text-banana font-semibold">Base</span> if it&apos;s listed. If not, tap <span className="text-text-primary font-semibold">Add network</span> — Base is in the popular list.</>,
+    <>To use SBS on your phone with MetaMask, open this site inside <span className="text-text-primary font-semibold">MetaMask&apos;s built-in browser</span> (menu → Browser). Or skip all of this and log in here with email — that wallet is already on Base.</>,
+  ],
+};
 
 // Inline icons keep this page dependency-free (no icon-name typos can break the build).
 function CopyIcon() {
@@ -71,6 +79,21 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
+function StepList({ steps }: { steps: React.ReactNode[] }) {
+  return (
+    <ol className="space-y-3">
+      {steps.map((step, idx) => (
+        <li key={idx} className="flex gap-3 text-sm text-text-secondary leading-relaxed">
+          <span className="flex-shrink-0 w-6 h-6 rounded-full bg-banana/10 text-banana font-semibold text-xs flex items-center justify-center mt-0.5">
+            {idx + 1}
+          </span>
+          <span className="flex-1">{step}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 interface Method {
   emoji: string;
   tag: string;
@@ -83,15 +106,15 @@ interface Method {
 const METHODS: Method[] = [
   {
     emoji: '⚡',
-    tag: 'Fastest',
-    title: 'Swap to USDC on Base with Relay',
-    best: 'Best if you already hold ETH or other crypto in your own wallet (MetaMask, Coinbase Wallet, etc.).',
+    tag: 'Fastest · Recommended',
+    title: 'Swap your ETH to USDC on Base with Relay',
+    best: 'Best if you hold ETH (or any crypto) in your own wallet — Mainnet ETH converts in one step, no separate bridge needed.',
     steps: [
       <>Open <span className="text-banana font-semibold">relay.link</span> and connect the wallet that holds your crypto.</>,
-      <>Set <span className="text-text-primary font-semibold">From</span> to the coin and network you have (for example ETH on Ethereum, Arbitrum, or Optimism).</>,
-      <>Set <span className="text-text-primary font-semibold">To</span> to <span className="text-text-primary font-semibold">USDC on Base</span>.</>,
-      <>Enter the amount, review the quote, and confirm the swap.</>,
-      <>Your USDC lands in your wallet on Base — usually within seconds. You&apos;re ready to buy a pass.</>,
+      <>Set <span className="text-text-primary font-semibold">From</span> to what you have — for example <span className="text-text-primary font-semibold">ETH on Ethereum</span>.</>,
+      <>Set <span className="text-text-primary font-semibold">To</span> to <span className="text-banana font-semibold">USDC on Base</span>.</>,
+      <>Enter the amount, review the quote, confirm.</>,
+      <>Your USDC lands on Base in seconds. You&apos;re ready to draft.</>,
     ],
     link: { label: 'Open Relay', href: 'https://relay.link' },
   },
@@ -99,117 +122,213 @@ const METHODS: Method[] = [
     emoji: '🏦',
     tag: 'Using an exchange',
     title: 'Go through Coinbase',
-    best: 'Best if you keep your funds on Coinbase, or want to sell other crypto for USDC first.',
+    best: 'Best if your funds sit on Coinbase, or you want to buy USDC with a bank transfer first.',
     steps: [
-      <>Already have crypto on Coinbase? <span className="text-text-primary font-semibold">Sell or convert it to USDC.</span> Don&apos;t have any? <span className="text-text-primary font-semibold">Buy USDC</span> with a card or bank transfer.</>,
+      <>Have crypto on Coinbase? <span className="text-text-primary font-semibold">Convert it to USDC.</span> Starting from zero? <span className="text-text-primary font-semibold">Buy USDC</span> with a card or bank transfer.</>,
       <>Choose <span className="text-text-primary font-semibold">Send / Withdraw</span> and select <span className="text-text-primary font-semibold">USDC</span>.</>,
-      <>For the network, pick <span className="text-banana font-semibold">Base</span> — this is the important part.</>,
-      <>Paste <span className="text-text-primary font-semibold">your Base wallet address</span> (shown above) as the destination and confirm.</>,
-      <>USDC arrives in your wallet on Base, ready to use.</>,
+      <>For the network, pick <span className="text-banana font-semibold">Base</span> — this is the part that matters.</>,
+      <>Paste <span className="text-text-primary font-semibold">your wallet address</span> (shown above — same address you use on Ethereum) and confirm.</>,
+      <>USDC arrives on Base, usually within a minute.</>,
     ],
   },
   {
     emoji: '💳',
     tag: 'Simplest',
     title: 'Buy USDC directly with a card',
-    best: 'Best if you just want to buy USDC outright, no other crypto needed.',
+    best: 'Best if you just want USDC outright, no other crypto involved.',
     steps: [
-      <><span className="text-text-primary font-semibold">In MetaMask:</span> tap <span className="text-text-primary font-semibold">Buy</span>, choose <span className="text-text-primary font-semibold">USDC</span> on the <span className="text-banana font-semibold">Base</span> network, and pay with a card. It lands straight in your MetaMask wallet.</>,
-      <><span className="text-text-primary font-semibold">On Coinbase:</span> tap <span className="text-text-primary font-semibold">Buy</span>, choose <span className="text-text-primary font-semibold">USDC</span>, pay with a card or bank, then withdraw it to <span className="text-banana font-semibold">Base</span> using your address above.</>,
-      <>Either way you end up with USDC on Base — that&apos;s all you need to enter a draft.</>,
+      <><span className="text-text-primary font-semibold">In MetaMask:</span> tap <span className="text-text-primary font-semibold">Buy</span>, choose <span className="text-text-primary font-semibold">USDC</span> on the <span className="text-banana font-semibold">Base</span> network, pay with a card.</>,
+      <><span className="text-text-primary font-semibold">In Coinbase Wallet:</span> tap <span className="text-text-primary font-semibold">Buy</span>, choose <span className="text-text-primary font-semibold">USDC on Base</span>, pay with a card.</>,
+      <>Either way, the USDC lands straight in your wallet on Base.</>,
     ],
   },
 ];
 
+// "What changed" comparison — last season on Mainnet vs this season on Base.
+const CHANGES: { label: string; before: string; after: string }[] = [
+  { label: 'Network', before: 'Ethereum Mainnet', after: 'Base' },
+  { label: 'You pay with', before: 'ETH', after: 'USDC' },
+  { label: 'Gas fees on SBS', before: 'You paid them', after: 'On us' },
+];
+
 export default function GetUsdcPage() {
   const { walletAddress } = useAuth();
+  const [device, setDevice] = useState<'desktop' | 'mobile'>('desktop');
+
+  // Default the MetaMask instructions to the device the user is actually on.
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && /iPhone|iPad|Android|Mobi/i.test(navigator.userAgent)) {
+      setDevice('mobile');
+    }
+  }, []);
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       <div className="max-w-3xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-10">
-          <p className="text-banana font-semibold text-sm uppercase tracking-widest mb-2">Funding Your Wallet</p>
-          <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-3">How to get USDC on Base</h1>
+        <div className="text-center mb-8">
+          <p className="text-banana font-semibold text-sm uppercase tracking-widest mb-2">New this season</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-text-primary mb-3">We&apos;ve moved to Base</h1>
           <p className="text-text-secondary leading-relaxed max-w-xl mx-auto">
-            Drafts cost <span className="text-text-primary font-semibold">$25 in USDC</span> on the{' '}
-            <span className="text-text-primary font-semibold">Base</span> network. If you&apos;re holding ETH or
-            other crypto, here are three easy ways to get USDC into your wallet.
+            Drafts are now <span className="text-text-primary font-semibold">$25 USDC</span> on the{' '}
+            <span className="text-text-primary font-semibold">Base</span> network — same game, way smoother.
+            Everything you need is on this page, and it takes about two minutes.
           </p>
         </div>
 
-        {/* No-gas reassurance */}
-        <div className="rounded-xl border border-banana/30 bg-banana/[0.06] p-4 mb-8 text-sm text-text-secondary leading-relaxed">
-          <span className="text-banana font-semibold">Good news:</span> we cover the network &ldquo;gas&rdquo; fees
-          for you, so you don&apos;t need any ETH to play. You only ever need <span className="text-text-primary font-semibold">USDC on Base</span>.
-        </div>
-
-        {/* Your wallet address */}
-        <div className="glass-card p-6 mb-10">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xl">👛</span>
-            <h2 className="text-lg font-semibold text-text-primary">Your Base wallet address</h2>
-          </div>
-          {walletAddress ? (
-            <>
-              <p className="text-text-secondary text-sm mb-3 leading-relaxed">
-                This is where you send USDC. Always send on the <span className="text-banana font-semibold">Base</span> network.
-              </p>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-tertiary/60 border border-bg-tertiary rounded-lg p-3">
-                <code className="text-text-primary text-sm break-all font-mono flex-1">{walletAddress}</code>
-                <CopyButton value={walletAddress} label="wallet address" />
+        {/* What changed — returning player comparison */}
+        <div className="glass-card p-5 sm:p-6 mb-8">
+          <p className="text-xs font-mono text-text-muted uppercase tracking-wider mb-4">Played with us on Mainnet? Here&apos;s what changed</p>
+          <div className="grid grid-cols-3 gap-3">
+            {CHANGES.map((c) => (
+              <div key={c.label} className="text-center">
+                <p className="text-[11px] text-text-muted uppercase tracking-wider mb-1.5">{c.label}</p>
+                <p className="text-text-muted text-xs sm:text-sm line-through decoration-text-muted/50">{c.before}</p>
+                <p className="text-banana font-semibold text-sm sm:text-base mt-0.5">{c.after}</p>
               </div>
-            </>
-          ) : (
-            <p className="text-text-secondary text-sm leading-relaxed">
-              <Link href="/" className="text-banana font-semibold hover:brightness-110">Log in</Link>{' '}
-              to see your personal Base wallet address here — it&apos;s the address you&apos;ll send USDC to.
-            </p>
-          )}
+            ))}
+          </div>
         </div>
 
-        {/* Switch MetaMask to Base — sits right under the wallet address */}
-        <div className="glass-card p-6 sm:p-7 mb-10">
-          <div className="flex items-start gap-4 mb-4">
-            <span className="text-3xl leading-none flex-shrink-0">🦊</span>
-            <div className="min-w-0">
-              <span className="text-xs font-mono text-text-muted uppercase tracking-wider">Quick setup</span>
-              <h3 className="text-xl font-bold text-text-primary mt-1">Switching MetaMask to the Base network</h3>
-              <p className="text-text-muted text-sm mt-1 leading-relaxed">
-                MetaMask opens on Ethereum Mainnet by default. Switch it to Base so you can see your USDC and use your wallet here.
-              </p>
+        {/* No-crypto escape hatch */}
+        <div className="rounded-xl border border-banana/30 bg-banana/[0.06] p-4 mb-10 text-sm text-text-secondary leading-relaxed">
+          <span className="text-banana font-semibold">Want zero setup?</span> Pay with a debit card
+          right at checkout — no USDC needed at all. Card purchases carry a processing fee, but{' '}
+          <span className="text-text-primary font-semibold">every dollar of it is credited back to you</span> — at $25
+          in credit you get a draft pass, same as one you bought (it counts as paid for promos). You can watch it fill live at checkout.{' '}
+          <Link href="/buy-drafts" className="text-banana font-semibold hover:brightness-110">Buy a pass →</Link>
+        </div>
+
+        {/* STEP 1 — wallet on Base */}
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-banana text-black font-bold text-sm flex items-center justify-center">1</span>
+            <h2 className="text-2xl font-bold text-text-primary">Get your wallet on Base</h2>
+          </div>
+          <p className="text-text-secondary text-sm leading-relaxed mb-5">
+            Base uses the same address as Ethereum — your wallet just needs to point at the right network. Find yours below.
+          </p>
+
+          <div className="space-y-4">
+            {/* Email / social login */}
+            <div className="glass-card p-5 sm:p-6">
+              <div className="flex items-start gap-4">
+                <span className="text-3xl leading-none flex-shrink-0">✉️</span>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-text-primary">I log in with email or social</h3>
+                  <p className="text-text-secondary text-sm mt-1 leading-relaxed">
+                    <span className="text-banana font-semibold">You&apos;re already done.</span> Your SBS wallet lives on
+                    Base automatically — nothing to switch, nothing to add. Grab your address in
+                    Step&nbsp;2 if you want to send USDC to it.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Coinbase Wallet */}
+            <div className="glass-card p-5 sm:p-6">
+              <div className="flex items-start gap-4">
+                <span className="text-3xl leading-none flex-shrink-0">🔵</span>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-text-primary">I use Coinbase Wallet</h3>
+                  <p className="text-text-secondary text-sm mt-1 leading-relaxed">
+                    Base is <span className="text-text-primary font-semibold">built in</span> — Coinbase created the
+                    network. On desktop or phone, just make sure Base is the selected network when you connect. No setup.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* MetaMask — device-aware */}
+            <div className="glass-card p-5 sm:p-6">
+              <div className="flex items-start gap-4 mb-4">
+                <span className="text-3xl leading-none flex-shrink-0">🦊</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <h3 className="text-lg font-bold text-text-primary">I use MetaMask</h3>
+                    {/* Desktop / Mobile toggle */}
+                    <div className="flex rounded-lg bg-bg-tertiary/60 border border-bg-tertiary p-0.5">
+                      {(['desktop', 'mobile'] as const).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => setDevice(d)}
+                          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                            device === d ? 'bg-banana text-black' : 'text-text-muted hover:text-text-secondary'
+                          }`}
+                        >
+                          {d === 'desktop' ? '🖥 Desktop' : '📱 Mobile'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-text-muted text-sm mt-1 leading-relaxed">
+                    MetaMask opens on Ethereum Mainnet by default — switch it to Base (about 30 seconds).
+                  </p>
+                </div>
+              </div>
+
+              <StepList steps={METAMASK_STEPS[device]} />
+
+              {/* Manual network details */}
+              <div className="mt-5 rounded-lg border border-bg-tertiary bg-bg-tertiary/40 p-4">
+                <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Add Base manually</p>
+                <dl className="space-y-2.5 text-sm">
+                  {BASE_NETWORK.map((row) => (
+                    <div key={row.label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+                      <dt className="text-text-muted w-36 flex-shrink-0">{row.label}</dt>
+                      <dd className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-text-primary font-mono break-all">{row.value}</span>
+                        {row.copy && <CopyButton value={row.value} label={row.label} />}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
             </div>
           </div>
+        </div>
 
-          <ol className="space-y-3">
-            {METAMASK_BASE_STEPS.map((step, idx) => (
-              <li key={idx} className="flex gap-3 text-sm text-text-secondary leading-relaxed">
-                <span className="flex-shrink-0 w-6 h-6 rounded-full bg-banana/10 text-banana font-semibold text-xs flex items-center justify-center mt-0.5">
-                  {idx + 1}
-                </span>
-                <span className="flex-1">{step}</span>
-              </li>
-            ))}
-          </ol>
-
-          {/* Manual network details */}
-          <div className="mt-5 rounded-lg border border-bg-tertiary bg-bg-tertiary/40 p-4">
-            <p className="text-xs text-text-muted uppercase tracking-wider mb-3">Add Base manually</p>
-            <dl className="space-y-2.5 text-sm">
-              {BASE_NETWORK.map((row) => (
-                <div key={row.label} className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                  <dt className="text-text-muted w-36 flex-shrink-0">{row.label}</dt>
-                  <dd className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="text-text-primary font-mono break-all">{row.value}</span>
-                    {row.copy && <CopyButton value={row.value} label={row.label} />}
-                  </dd>
+        {/* STEP 2 — your address */}
+        <div className="mb-10">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="flex-shrink-0 w-8 h-8 rounded-full bg-banana text-black font-bold text-sm flex items-center justify-center">2</span>
+            <h2 className="text-2xl font-bold text-text-primary">Know your Base address</h2>
+          </div>
+          <div className="glass-card p-6">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xl">👛</span>
+              <h3 className="text-lg font-semibold text-text-primary">Your Base wallet address</h3>
+            </div>
+            {walletAddress ? (
+              <>
+                <p className="text-text-secondary text-sm mb-3 leading-relaxed">
+                  This is where you send USDC. It&apos;s the same address on every network — what matters is
+                  picking <span className="text-banana font-semibold">Base</span> as the network when you send.
+                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-bg-tertiary/60 border border-bg-tertiary rounded-lg p-3">
+                  <code className="text-text-primary text-sm break-all font-mono flex-1">{walletAddress}</code>
+                  <CopyButton value={walletAddress} label="wallet address" />
                 </div>
-              ))}
-            </dl>
+              </>
+            ) : (
+              <p className="text-text-secondary text-sm leading-relaxed">
+                <Link href="/" className="text-banana font-semibold hover:brightness-110">Log in</Link>{' '}
+                to see your personal Base wallet address here — it&apos;s the address you&apos;ll send USDC to.
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Methods */}
+        {/* STEP 3 — get USDC */}
+        <div className="flex items-center gap-3 mb-4">
+          <span className="flex-shrink-0 w-8 h-8 rounded-full bg-banana text-black font-bold text-sm flex items-center justify-center">3</span>
+          <h2 className="text-2xl font-bold text-text-primary">Get USDC on Base</h2>
+        </div>
+        <p className="text-text-secondary text-sm leading-relaxed mb-5">
+          Pick whichever fits where your money is today. Everything you do <span className="text-text-primary font-semibold">on SBS</span> is
+          gas-free — we cover it. Outside swaps and bridges (Relay, Coinbase) charge their own small network fee, shown in their quote.
+        </p>
+
         <div className="space-y-6">
           {METHODS.map((m, i) => (
             <div key={m.title} className="glass-card p-6 sm:p-7">
@@ -225,16 +344,7 @@ export default function GetUsdcPage() {
                 </div>
               </div>
 
-              <ol className="space-y-3">
-                {m.steps.map((step, idx) => (
-                  <li key={idx} className="flex gap-3 text-sm text-text-secondary leading-relaxed">
-                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-banana/10 text-banana font-semibold text-xs flex items-center justify-center mt-0.5">
-                      {idx + 1}
-                    </span>
-                    <span className="flex-1">{step}</span>
-                  </li>
-                ))}
-              </ol>
+              <StepList steps={m.steps} />
 
               {m.link && (
                 <a
@@ -259,7 +369,7 @@ export default function GetUsdcPage() {
           <ul className="space-y-2 text-sm text-yellow-100/90 leading-relaxed">
             <li>• Always send USDC on the <span className="font-semibold">Base</span> network. Sending on the wrong network can lose your funds.</li>
             <li>• If you&apos;re unsure, send a small test amount first, confirm it arrives, then send the rest.</li>
-            <li>• You don&apos;t need ETH for gas — we cover it. You only need USDC.</li>
+            <li>• You never need ETH to play — every transaction on SBS (minting, marketplace) is gas-free. Only outside swaps and bridges carry their own small fees.</li>
             <li>
               • To add USDC manually in your wallet, the contract on Base is:
               <span className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2 bg-black/20 rounded-lg p-2">
@@ -279,10 +389,10 @@ export default function GetUsdcPage() {
             Buy Draft Passes →
           </Link>
           <Link
-            href="/faq"
+            href="/faq#base-usdc"
             className="px-8 py-3.5 border border-bg-tertiary text-text-secondary font-semibold rounded-xl hover:text-text-primary hover:border-text-muted transition-all w-full sm:w-auto text-center"
           >
-            Back to FAQ
+            Base &amp; USDC FAQ
           </Link>
         </div>
       </div>

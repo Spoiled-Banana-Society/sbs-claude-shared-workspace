@@ -38,7 +38,7 @@ const initialState: PurchaseFlowState = {
   flowError: null,
   phase: 'purchase',
   mintedCount: 0,
-  quantity: 10,
+  quantity: 1,
   joinError: null,
   isJoiningDraft: false,
   waitingForUsdcStartedAt: null,

@@ -56,6 +56,27 @@ export async function POST(req: Request) {
     // Server-derived identities from Privy (email, google, twitter).
     const privyUser = await fetchPrivyUser(did);
     const accounts = privyUser?.linked_accounts ?? [];
+
+    // New-season Base ping (Boris 2026-06-12): users who log in with an
+    // EXTERNAL wallet (MetaMask/Coinbase — the web3 crowd coming from our
+    // Mainnet seasons) get a one-time bell noti pointing at the Base/USDC
+    // setup guide. Email/social users never touch a network picker, so
+    // they're excluded. Login method is derived server-side from Privy
+    // linked_accounts; the dedupeKey makes this once-per-wallet forever.
+    const hasExternalWallet = (accounts as Array<{ type: string; wallet_client_type?: string; connector_type?: string }>)
+      .some((a) => a.type === 'wallet' && a.wallet_client_type !== 'privy' && a.connector_type !== 'embedded');
+    if (hasExternalWallet) {
+      const { createNotification } = await import('@/lib/queueNotifications');
+      await createNotification(wallet, {
+        type: 'base_guide',
+        title: 'New season, new network',
+        message: "We've moved from Ethereum to Base — drafts are $25 USDC now, and every transaction on SBS is gas-free. Get set up in 2 minutes.",
+        link: '/get-usdc',
+        dedupeKey: 'base-usdc-guide',
+        icon: 'zap',
+      });
+    }
+
     const keys: string[] = [];
     for (const a of accounts as Array<{ type: string; address?: string; email?: string; username?: string }>) {
       if (a.type === 'email' && a.address) keys.push(`email:${a.address.trim().toLowerCase()}`);

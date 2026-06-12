@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
 import { useFundWallet, usePrivy } from '@privy-io/react-auth';
@@ -676,8 +677,8 @@ export function BuyPassesModal({
                   <span className="text-sm">🎁</span>
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
-                      ? 'This purchase earns you a FREE draft!'
-                      : "Your card fee is credited forward — at $25 it's a free draft"
+                      ? 'This purchase earns you a draft pass!'
+                      : "Your card fee is credited forward — at $25 it's a draft pass"
                     }
                   </p>
                 </div>
@@ -685,7 +686,7 @@ export function BuyPassesModal({
                   <div className="absolute inset-y-0 left-0 bg-banana rounded-full transition-all" style={{ width: `${curPct}%` }} />
                 </div>
                 <p className="text-white/30 text-[10px] mt-1.5">
-                  {`${usd(current)} of ${usd(threshold)} toward your next free draft${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
+                  {`${usd(current)} of ${usd(threshold)} toward your next draft pass${remaining > 0 ? ` — ${usd(remaining)} to go` : ''}`}
                 </p>
               </div>
               );
@@ -782,6 +783,18 @@ export function BuyPassesModal({
                   Wallet balance: {user.usdcBalance.toFixed(2)} USDC
                   {user.usdcBalance < totalPrice && ' (insufficient)'}
                 </p>
+              )}
+              {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
+                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3 text-left">
+                  <p className="text-text-secondary text-xs leading-relaxed">
+                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>.
+                    <br />
+                    It&apos;s quick and easy.{' '}
+                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">
+                      Learn how →
+                    </Link>
+                  </p>
+                </div>
               )}
             </div>
 

@@ -200,6 +200,48 @@ export const mockFAQSections: FAQSection[] = [
     ],
   },
   {
+    id: 'base-usdc',
+    title: 'New: Base & USDC',
+    items: [
+      {
+        question: 'What changed from previous seasons?',
+        answer: 'We moved from Ethereum Mainnet to Base, and entries are now paid in USDC instead of ETH. Same game, much smoother experience: transactions confirm in seconds, and every transaction on SBS is gas-free - we cover it, so you never need ETH to play.',
+        link: {
+          label: 'Base setup guide (2 min)',
+          href: '/get-usdc',
+        },
+      },
+      {
+        question: 'What is Base?',
+        answer: 'Base is an Ethereum Layer 2 network built by Coinbase. It uses the same wallets and the same addresses as Ethereum - your MetaMask or Coinbase Wallet works as-is, you just switch networks. Transactions are near-instant and cost a fraction of a cent.',
+      },
+      {
+        question: 'Do I need ETH for gas?',
+        answer: 'Not to play. Every transaction on SBS - minting passes, buying and selling on the marketplace - is gas-free, we cover it. The only fees you might ever pay are outside SBS: if you swap or bridge on another site (like Relay or Coinbase), their small network fee applies and is shown in their quote. You can also skip crypto entirely and pay with a debit card at checkout - card purchases carry a processing fee, but it\'s credited back to you, and at $25 in credit you get a draft pass (a real paid pass - it counts for promos).',
+      },
+      {
+        question: 'I have ETH on Ethereum Mainnet - how do I play?',
+        answer: 'Easiest path: swap it straight to USDC on Base with Relay - one transaction, no separate bridging, lands in seconds. Or go through Coinbase: deposit your ETH, convert to USDC, withdraw on the Base network. Our guide walks through both step by step.',
+        link: {
+          label: 'How to get USDC on Base',
+          href: '/get-usdc',
+        },
+      },
+      {
+        question: 'How do I switch my wallet to Base?',
+        answer: 'Depends on the wallet. Log in with email or social? Nothing to do - your SBS wallet is already on Base. Coinbase Wallet has Base built in. MetaMask takes about 30 seconds to switch - our guide has separate steps for desktop and mobile, since the apps differ.',
+        link: {
+          label: 'Wallet setup steps',
+          href: '/get-usdc',
+        },
+      },
+      {
+        question: 'What if I send funds on the wrong network?',
+        answer: 'Always pick Base as the network when sending USDC - sending on the wrong network can lose your funds. If you\'re unsure, send a small test amount first and confirm it arrives. If something looks off, stop and message us in Discord before sending more.',
+      },
+    ],
+  },
+  {
     id: 'purchasing',
     title: 'How To Purchase',
     items: [
@@ -213,7 +255,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What payment methods are accepted?',
-        answer: 'Debit card or Apple Pay (powered by Coinbase), or pay directly with USDC on Base.',
+        answer: 'Debit card, or pay directly with USDC on Base.',
       },
       {
         question: 'How do I get USDC on Base to pay with crypto?',
