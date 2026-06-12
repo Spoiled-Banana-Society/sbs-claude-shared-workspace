@@ -15,6 +15,21 @@ export function MobileTabBar() {
   if (pathname?.startsWith('/draft-room')) return null;
 
   const wheelSpins = isLoggedIn && user ? user.wheelSpins : 0;
+  // Scalars only — the memoized inner bar re-renders ONLY when something
+  // visible changed. The auth user object churns identity every few seconds;
+  // re-rendering the nav mid-touch is what ate first taps (Boris 2026-06-11).
+  return <MobileTabBarInner pathname={pathname ?? ''} wheelSpins={wheelSpins} unreadCount={unreadCount} />;
+}
+
+const MobileTabBarInner = React.memo(function MobileTabBarInner({
+  pathname,
+  wheelSpins,
+  unreadCount,
+}: {
+  pathname: string;
+  wheelSpins: number;
+  unreadCount: number;
+}) {
 
   const tabs = [
     {
@@ -79,17 +94,18 @@ export function MobileTabBar() {
   ];
 
   const isActive = (tab: typeof tabs[0]) =>
-    tab.matchPaths.some(p => pathname === p || (pathname ?? '').startsWith(p + '/'));
+    tab.matchPaths.some(p => pathname === p || pathname.startsWith(p + '/'));
 
   return (
     <nav
       aria-label="Mobile navigation"
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#0a0a0f]/95 backdrop-blur-xl border-t border-white/[0.06]"
-      // max() guarantees clearance even where safe-area reports 0 (older
-      // iOS / in-app browsers); taller row = bigger tap targets.
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}
+      // Tiny lift only: most of the safe-area inset is subtracted so the bar
+      // sits just a hair above its original spot (Boris: full inset pushed
+      // the icons way too high). Floor of 10px keeps clearance everywhere.
+      style={{ paddingBottom: 'max(calc(env(safe-area-inset-bottom, 0px) - 20px), 10px)' }}
     >
-      <div className="flex items-center justify-around h-16">
+      <div className="flex items-center justify-around h-14">
         {tabs.map(tab => {
           const active = isActive(tab);
           return (
@@ -117,4 +133,4 @@ export function MobileTabBar() {
       </div>
     </nav>
   );
-}
+});
