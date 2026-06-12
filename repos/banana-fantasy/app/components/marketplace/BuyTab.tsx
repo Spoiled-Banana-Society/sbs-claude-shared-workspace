@@ -352,8 +352,10 @@ export function BuyTab({
                   {team.fillingWheelLevel ? (
                     // Wheel-won pass still filling: its NFT metadata isn't stamped
                     // JP/HOF yet, so drive the badge off the known wheel level.
+                    // The X/10 is live (5s poll) — buyers see exactly how close
+                    // the draft is to locking.
                     <span className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}>
-                      {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · Filling
+                      {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
                     </span>
                   ) : team.isJackpot ? (
                     <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
@@ -619,7 +621,22 @@ export function BuyTab({
                     </div>
                   )}
 
-                  {(selectedTeam.isJackpot || selectedTeam.isHof) && (
+                  {selectedTeam.fillingWheelLevel ? (
+                    <div className={`p-4 rounded-xl mb-4 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'bg-error/10 border border-error/30' : 'bg-hof/10 border border-hof/30'}`}>
+                      <p className={`text-sm font-medium mb-1.5 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof'}`}>
+                        {selectedTeam.fillingWheelLevel === 'jackpot'
+                          ? '🎰 Guaranteed seat in a special Jackpot draft'
+                          : '🏛️ Guaranteed seat in a special HOF draft'}
+                      </p>
+                      <p className="text-text-secondary text-xs leading-relaxed">
+                        {typeof selectedTeam.lobbyCount === 'number' ? `${selectedTeam.lobbyCount}/10 in the draft lobby — starts automatically at 10. ` : 'Starts automatically when 10 wheel winners join. '}
+                        Slow draft, 8 hours per pick. The seat is yours the moment you buy; it locks for good when the draft fills.
+                        {selectedTeam.fillingWheelLevel === 'jackpot'
+                          ? ' Win the league and skip straight to the Finals.'
+                          : ' Compete for added prizes on top of the regular ones.'}
+                      </p>
+                    </div>
+                  ) : (selectedTeam.isJackpot || selectedTeam.isHof) && (
                     <div className={`p-4 rounded-xl mb-4 ${selectedTeam.isJackpot ? 'bg-error/10 border border-error/30' : 'bg-hof/10 border border-hof/30'}`}>
                       <p className={`text-sm font-medium ${selectedTeam.isJackpot ? 'text-error' : 'text-hof'}`}>
                         {selectedTeam.isJackpot

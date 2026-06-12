@@ -32,6 +32,10 @@ const PAGES: PageUnderTest[] = [
   { name: 'draft room (filling)', path: '/draft-room?name=BBB+%23200&players=1&speed=fast' },
   { name: 'coming soon', path: '/coming-soon' },
   { name: 'lobby world', path: '/lobby-world' },
+  // Marketplace polls wheel-passes every 5s; banana-wheel polls the queue
+  // after JP/HOF wins — both must stay interval-driven, never render-coupled.
+  { name: 'marketplace', path: '/marketplace' },
+  { name: 'banana wheel', path: '/banana-wheel' },
 ];
 
 for (const target of PAGES) {

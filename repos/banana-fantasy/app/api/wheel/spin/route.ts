@@ -453,14 +453,21 @@ export async function POST(req: Request) {
           } catch (e) {
             logger.warn('wheel.spin.jphof_register_go_api_failed', { spinId, userId, err: (e as Error).message });
           }
-          // Queue the pass by its tokenId so it enters a filling JP/HOF round.
-          // create-draft resolves the current owner at fill, so a sale-while-
-          // filling hands the slot to the buyer.
+          // Queue the pass by its tokenId so it enters a filling JP/HOF round,
+          // then seat the winner in the round's REAL Go league right away —
+          // the first winner's win creates the league (the lobby exists from
+          // minute one), later winners join it, and the 10th join starts the
+          // draft exactly like a regular draft filling. A sale-while-filling
+          // hands the seat to the buyer via the swap endpoint.
           const jphofTokenId = res.tokenIds[0];
           if (jphofTokenId) {
             try {
               const { joinQueueWithToken } = await import('@/lib/db');
-              await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+              const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+              if (joinedRoundId !== null) {
+                const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+                await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);
+              }
             } catch (qErr) {
               logger.warn('wheel.spin.jphof_queue_failed', { spinId, userId, err: (qErr as Error).message });
             }
@@ -549,8 +556,12 @@ export async function POST(req: Request) {
       if (jphofKind && !mintJpHof) {
         try {
           const { joinQueue } = await import('@/lib/db');
-          await joinQueue(userId, jphofKind);
+          const { joinedRoundIds } = await joinQueue(userId, jphofKind);
           logger.debug(`[wheel/spin] Auto-queued ${userId} for ${jphofKind}`);
+          const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+          for (const rid of joinedRoundIds) {
+            await ensureSpecialDraftSeat(jphofKind, rid, userId);
+          }
         } catch (qErr) {
           logger.warn('wheel.spin.auto_queue_failed', { userId, err: (qErr as Error).message });
         }

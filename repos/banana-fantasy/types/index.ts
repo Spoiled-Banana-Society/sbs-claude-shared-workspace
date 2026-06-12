@@ -460,6 +460,10 @@ export interface QueueRound {
   members: QueueMember[];
   status: RoundStatus;
   draftId: string | null;
+  /** Set (epoch ms) while one server request holds the right to create the Go
+   *  league for this round — prevents two simultaneous wheel winners creating
+   *  two leagues. Stale claims (>60s, create crashed) are taken over. */
+  creatingAt?: number | null;
 }
 
 export interface DraftQueue {

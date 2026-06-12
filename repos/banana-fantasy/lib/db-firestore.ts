@@ -1841,7 +1841,7 @@ export async function getQueueStatus(): Promise<Record<string, DraftQueue>> {
 export async function joinQueue(
   userId: string,
   type: 'jackpot' | 'hof',
-): Promise<DraftQueue> {
+): Promise<{ queue: DraftQueue; joinedRoundIds: number[] }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
@@ -1861,6 +1861,7 @@ export async function joinQueue(
     tx.set(userRef, { [entryField]: 0 }, { merge: true });
 
     // Add new entries to next available rounds (don't touch existing rounds)
+    const joinedRoundIds: number[] = [];
     for (let i = 0; i < entries; i++) {
       let round = queue.rounds.find(
         r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
@@ -1870,13 +1871,14 @@ export async function joinQueue(
         queue.rounds.push(round);
       }
       round.members.push({ wallet: userId, joinedAt: Date.now() });
+      joinedRoundIds.push(round.roundId);
 
-      // Note: status stays 'filling' — the Firebase trigger handles creating the draft
-      // on the 1st member and setting status to 'drafting' at 10/10.
+      // Note: status stays 'filling' — the caller (ensureSpecialDraftSeat)
+      // creates/joins the Go league and flips status to 'drafting' at 10/10.
     }
 
     tx.set(queueRef, queue);
-    return queue;
+    return { queue, joinedRoundIds };
   });
 }
 
@@ -1890,7 +1892,7 @@ export async function joinQueueWithToken(
   userId: string,
   type: 'jackpot' | 'hof',
   tokenId: string,
-): Promise<DraftQueue> {
+): Promise<{ queue: DraftQueue; joinedRoundId: number | null }> {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
   const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
@@ -1900,8 +1902,10 @@ export async function joinQueueWithToken(
     const queue: DraftQueue = queueSnap.exists ? (queueSnap.data() as DraftQueue) : emptyQueueDoc(type);
     if (!queue.rounds) queue.rounds = [];
 
-    // Idempotent: never queue the same token twice.
-    if (queue.rounds.some(r => r.members.some(m => m.tokenId === tokenId))) return queue;
+    // Idempotent: never queue the same token twice. Still report which round
+    // holds it so the caller can ensure its Go league exists.
+    const existing = queue.rounds.find(r => r.members.some(m => m.tokenId === tokenId));
+    if (existing) return { queue, joinedRoundId: existing.roundId };
 
     let round = queue.rounds.find(
       r => r.status === 'filling' && r.members.length < QUEUE_MAX && !r.members.some(m => m.wallet === userId),
@@ -1913,7 +1917,80 @@ export async function joinQueueWithToken(
     round.members.push({ wallet: userId, joinedAt: Date.now(), tokenId });
 
     tx.set(queueRef, queue);
-    return queue;
+    return { queue, joinedRoundId: round.roundId };
+  });
+}
+
+/**
+ * Atomically decide who creates the Go league for a round. Exactly one caller
+ * gets `claimed: true` and must then create the league + store its draftId
+ * (updateQueueRoundDraftId clears the claim) or release via
+ * clearQueueRoundCreating on failure. Everyone else either gets the existing
+ * draftId or `wait: true` (someone is mid-create — poll again shortly).
+ * Claims older than 60s are treated as crashed and taken over.
+ */
+export async function claimSpecialDraftCreation(
+  type: 'jackpot' | 'hof',
+  roundId: number,
+): Promise<{ draftId: string | null; claimed: boolean; wait: boolean }> {
+  const db = getAdminFirestore();
+  const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(queueRef);
+    if (!snap.exists) throw new ApiError(404, 'Queue not found');
+    const queue = snap.data() as DraftQueue;
+    const round = (queue.rounds || []).find(r => r.roundId === roundId);
+    if (!round) throw new ApiError(404, `Round ${roundId} not found`);
+    if (round.draftId) return { draftId: round.draftId, claimed: false, wait: false };
+    const now = Date.now();
+    if (round.creatingAt && now - round.creatingAt < 60_000) {
+      return { draftId: null, claimed: false, wait: true };
+    }
+    round.creatingAt = now;
+    tx.set(queueRef, queue);
+    return { draftId: null, claimed: true, wait: false };
+  });
+}
+
+/** Release a creation claim after a failed league create so another request can retry. */
+export async function clearQueueRoundCreating(type: 'jackpot' | 'hof', roundId: number): Promise<void> {
+  const db = getAdminFirestore();
+  const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(queueRef);
+    if (!snap.exists) return;
+    const queue = snap.data() as DraftQueue;
+    const round = (queue.rounds || []).find(r => r.roundId === roundId);
+    if (!round || !round.creatingAt) return;
+    round.creatingAt = null;
+    tx.set(queueRef, queue);
+  });
+}
+
+/**
+ * Flip a round to 'drafting' the moment its league hits 10/10 — this CLOSES the
+ * sell window (listing eligibility, wheel-pass browse, purchase guard and seat
+ * reassign all gate on status === 'filling'). Returns the round's members so
+ * the caller can cancel cached listings and notify. Idempotent: returns
+ * `changed: false` if the round already left 'filling'.
+ */
+export async function markQueueRoundDrafting(
+  type: 'jackpot' | 'hof',
+  roundId: number,
+): Promise<{ changed: boolean; members: Array<{ wallet: string; tokenId?: string }> }> {
+  const db = getAdminFirestore();
+  const queueRef = db.collection(QUEUES_COLLECTION).doc(type);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(queueRef);
+    if (!snap.exists) return { changed: false, members: [] };
+    const queue = snap.data() as DraftQueue;
+    const round = (queue.rounds || []).find(r => r.roundId === roundId);
+    if (!round) return { changed: false, members: [] };
+    const members = (round.members || []).map(m => ({ wallet: m.wallet, tokenId: m.tokenId }));
+    if (round.status !== 'filling') return { changed: false, members };
+    round.status = 'drafting';
+    tx.set(queueRef, queue);
+    return { changed: true, members };
   });
 }
 
@@ -1940,7 +2017,10 @@ export async function getFillingWheelPassLevels(
       // Go-API draftId assigned up front (the slot follows the NFT while filling),
       // so draftId presence does NOT mean "already drafted" — gate on status only.
       // The pass stops being sellable when status leaves 'filling' (draft starts).
+      // The member-count check covers the instant between the 10th seat landing
+      // and the status flip — a full round is never sellable.
       if (round.status !== 'filling') continue;
+      if ((round.members || []).length >= QUEUE_MAX) continue;
       for (const m of round.members) {
         if (m.tokenId && want.has(String(m.tokenId))) result[String(m.tokenId)] = type;
       }
@@ -1979,6 +2059,8 @@ export async function reassignQueuePassWallet(tokenId: string, newWallet: string
       let mutated = false;
       for (const round of queue.rounds || []) {
         if (round.status !== 'filling') continue;
+        // A full round is locked even if its status hasn't flipped yet.
+        if ((round.members || []).length >= QUEUE_MAX) continue;
         const member = round.members.find(m => m.tokenId && String(m.tokenId) === String(tokenId));
         if (!member || member.wallet === newWallet) continue;
         result.prevWallet = member.wallet;
@@ -2021,6 +2103,8 @@ export async function updateQueueRoundDraftId(
     if (!round.draftId) {
       round.draftId = draftId;
     }
+    // Storing the draftId completes any in-flight creation claim.
+    round.creatingAt = null;
 
     tx.set(queueRef, queue);
   });

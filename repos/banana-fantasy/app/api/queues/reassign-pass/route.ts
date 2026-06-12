@@ -10,10 +10,13 @@ const STAGING_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1
  * Body: { tokenId, wallet }
  *
  * After a wheel-won JP/HOF pass is bought on the marketplace while its draft is
- * still filling, the queue still records the seller — so the buyer wouldn't see
- * the filling draft on their drafting page. This moves the queue slot to the
- * buyer. Guarded by on-chain ownership: we only reassign to the wallet that
- * actually owns the token RIGHT NOW (ownerOf), so nobody can hijack a slot.
+ * still filling, this hands the seat to the buyer:
+ *   1. Go league seat swap (authoritative — seller's special token destroyed,
+ *      buyer seated in the same league; atomic, rejected once the draft fills).
+ *   2. Firestore queue member rewrite (bookkeeping — the lobby/drafting page
+ *      read this; the on-chain owner overlay self-heals it regardless).
+ * Guarded by on-chain ownership: we only reassign to the wallet that actually
+ * owns the token RIGHT NOW (ownerOf), so nobody can hijack a seat.
  */
 export async function POST(req: Request) {
   try {
@@ -29,27 +32,59 @@ export async function POST(req: Request) {
       return jsonError('That wallet does not own this token', 403);
     }
 
-    const { reassignQueuePassWallet } = await import('@/lib/db');
-    const res = await reassignQueuePassWallet(String(tokenId), wallet);
+    // Locate the pass's still-filling round (the only state a seat can move in).
+    const { getQueueStatus, reassignQueuePassWallet } = await import('@/lib/db');
+    const queues = await getQueueStatus();
+    let found: { draftId: string | null; seller: string; full: boolean } | null = null;
+    for (const type of ['jackpot', 'hof'] as const) {
+      for (const round of queues[type]?.rounds || []) {
+        const member = (round.members || []).find(m => m.tokenId && String(m.tokenId) === String(tokenId));
+        if (!member) continue;
+        found = {
+          draftId: round.draftId || null,
+          seller: member.wallet.toLowerCase(),
+          full: round.status !== 'filling' || (round.members || []).length >= 10,
+        };
+        break;
+      }
+      if (found) break;
+    }
 
-    // The seller created the Go draft; clearing the queue draftId above means the
-    // buyer's next Enter re-creates a fresh draft for THEM. Make the seller leave
-    // the old Go draft so it's freed and stops showing as theirs. Best-effort —
-    // the queue handoff already succeeded regardless.
-    if (res.changed && res.prevDraftId && res.prevWallet) {
-      try {
-        await fetch(`${STAGING_API_URL}/league/${res.prevDraftId}/actions/leave`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ownerId: res.prevWallet, tokenId: String(tokenId) }),
-        });
-      } catch (e) {
-        logger.warn('queues.reassign_pass.seller_leave_failed', { tokenId: String(tokenId), prevDraftId: res.prevDraftId, err: (e as Error).message });
+    if (!found) {
+      // Not a queued wheel pass (or round already completed) — nothing to move.
+      return json({ reassigned: false });
+    }
+    if (found.full) {
+      return jsonError('This draft already filled — the pass is locked to its owner at fill', 409);
+    }
+    if (found.seller === wallet) {
+      return json({ reassigned: false, alreadyOwner: true });
+    }
+
+    // 1. Go seat swap — the real handoff. Atomic on the league doc; a filled
+    //    league rejects with 409, so a sale can never displace a started draft.
+    if (found.draftId) {
+      const swapRes = await fetch(`${STAGING_API_URL}/staging/swap-special-draft-member`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draftId: found.draftId, fromWallet: found.seller, toWallet: wallet }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!swapRes.ok && swapRes.status !== 409) {
+        const text = await swapRes.text().catch(() => '');
+        logger.error('queues.reassign_pass.swap_failed', { tokenId: String(tokenId), draftId: found.draftId, status: swapRes.status, text });
+        return jsonError('Seat transfer failed — try again', 502);
+      }
+      if (swapRes.status === 409) {
+        return jsonError('This draft already filled — the pass is locked to its owner at fill', 409);
       }
     }
 
-    logger.info('queues.reassign_pass', { tokenId: String(tokenId), wallet, reassigned: res.changed, prevDraftId: res.prevDraftId });
-    return json({ reassigned: res.changed });
+    // 2. Firestore queue bookkeeping (display path; owner overlay self-heals it).
+    const res = await reassignQueuePassWallet(String(tokenId), wallet);
+
+    logger.info('queues.reassign_pass', { tokenId: String(tokenId), wallet, reassigned: res.changed, prevDraftId: found.draftId });
+    return json({ reassigned: true });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error('queues.reassign_pass_failed', { err });

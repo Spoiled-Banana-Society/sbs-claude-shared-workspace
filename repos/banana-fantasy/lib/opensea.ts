@@ -153,6 +153,9 @@ export interface MarketplaceTeam {
    *  free pass (the normal free-pass listing block is waived); once its draft
    *  fills this clears and the standard "listable after the season" rule applies. */
   fillingWheelLevel?: 'jackpot' | 'hof';
+  /** Live lobby fill for a wheel-won pass's special draft (members in its
+   *  queue round, out of 10). Lets cards show "In draft lobby — 6/10". */
+  lobbyCount?: number;
   /** USD price the current owner paid for this team on the marketplace, if we
    *  have a purchase record. Shown as "You paid $X" on the owner's own teams. */
   pricePaid?: number | null;

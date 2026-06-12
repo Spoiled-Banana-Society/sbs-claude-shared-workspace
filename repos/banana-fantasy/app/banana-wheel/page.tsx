@@ -27,6 +27,76 @@ export default function BananaWheelPage() {
   const promosQuery = usePromos({ userId: user?.id });
   const [queuedJP, setQueuedJP] = React.useState(0);
   const [queuedHOF, setQueuedHOF] = React.useState(0);
+
+  // A JP/HOF spin win just landed: poll the live queue until the winner's seat
+  // appears, then feed the win modal a live "X/10" + a Join-the-Lobby URL and
+  // fire the bell notification with the real remaining count. The seat is
+  // created server-side AFTER the spin response (waitUntil), so it typically
+  // resolves a few seconds after the wheel stops.
+  const [specialWin, setSpecialWin] = React.useState<{ kind: 'jackpot' | 'hof'; spinId: string | null; startedAt: number } | null>(null);
+  const [specialDraftStatus, setSpecialDraftStatus] = React.useState<{ count: number; draftRoomUrl: string | null } | null>(null);
+  const specialWalletAddr = (user?.walletAddress || user?.id || '').toLowerCase();
+  React.useEffect(() => {
+    if (!specialWin || !specialWalletAddr) return;
+    let cancelled = false;
+    let notified = false;
+    const { kind, spinId, startedAt } = specialWin;
+    const label = kind === 'jackpot' ? 'Jackpot' : 'HOF';
+    const notify = (count: number | null) => {
+      if (notified || cancelled) return;
+      notified = true;
+      const remaining = count !== null ? Math.max(0, 10 - count) : null;
+      pushNotification({
+        type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+        title: `Congrats — You Won a ${label} Draft!`,
+        message: remaining === null
+          ? `You've been added to the lobby. Once 10 Banana Wheel winners are in, the draft starts. Slow Draft — 8 hours per pick.`
+          : remaining === 0
+            ? `Your ${label} draft lobby is full (10/10) — the draft is starting now! Slow Draft — 8 hours per pick.`
+            : `You've been added to the lobby (${count}/10). Once ${remaining} more ${remaining === 1 ? 'person wins' : 'people win'} a ${label} draft on the Banana Wheel, the draft starts. Slow Draft — 8 hours per pick.`,
+        link: '/drafting',
+        ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
+      });
+    };
+    const poll = () => {
+      fetchJson<Record<string, { rounds?: Array<{ roundId: number; status: string; draftId?: string | null; members: Array<{ wallet: string }> }> }>>('/api/queues')
+        .then(queues => {
+          if (cancelled) return;
+          const rounds = (queues[kind]?.rounds || [])
+            .filter(r => (r.status === 'filling' || r.status === 'drafting')
+              && r.members.some(m => (m.wallet || '').toLowerCase() === specialWalletAddr))
+            .sort((a, b) => b.roundId - a.roundId);
+          const round = rounds[0];
+          if (!round) return;
+          const count = round.members.length;
+          const params = new URLSearchParams({
+            id: round.draftId || `queue-${kind}-${round.roundId}`,
+            name: 'Draft Room',
+            speed: 'slow',
+            players: String(count),
+          });
+          if (user?.walletAddress) {
+            params.set('mode', 'live');
+            params.set('wallet', user.walletAddress);
+          }
+          params.set('specialType', kind);
+          setSpecialDraftStatus({ count, draftRoomUrl: `/draft-room?${params.toString()}` });
+          notify(count);
+        })
+        .catch(() => { /* next tick retries; the 20s fallback noti covers a dead poll */ });
+    };
+    poll();
+    const iv = setInterval(() => {
+      if (Date.now() - startedAt > 120_000) { clearInterval(iv); return; }
+      poll();
+    }, 2_500);
+    // The win must ALWAYS ring the bell — if the seat hasn't resolved in 20s
+    // (slow mint), fire the generic copy; dedupeKey keeps it single.
+    const fallback = setTimeout(() => notify(null), 20_000);
+    return () => { cancelled = true; clearInterval(iv); clearTimeout(fallback); };
+    // user?.walletAddress intentionally read via specialWalletAddr (stable scalar) — Rule #0.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [specialWin, specialWalletAddr]);
   React.useEffect(() => {
     if (!user?.id) return;
     fetchJson<Record<string, { rounds?: Array<{ status: string; members: Array<{ wallet: string }> }> }>>('/api/queues')
@@ -99,6 +169,9 @@ export default function BananaWheelPage() {
     // slow network could let the balance tick before the wheel stops and
     // spoil the prize.
     freezeSpinReveal(SPIN_DURATION_MS + 800);
+    // A fresh spin invalidates any previous JP/HOF seat poll/modal state.
+    setSpecialWin(null);
+    setSpecialDraftStatus(null);
     const outcome = await spinMutation.mutateAsync();
     freezeSpinReveal(SPIN_DURATION_MS + 800);
     return outcome;
@@ -183,22 +256,14 @@ export default function BananaWheelPage() {
         });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'jackpot') {
         updateUser({ jackpotEntries: (user.jackpotEntries || 0) + 1 });
-        pushNotification({
-          type: 'jackpot_queue',
-          title: 'Jackpot Draft Won!',
-          message: 'You won a Jackpot draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
-          link: '/drafting',
-          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
-        });
+        // Bell noti fires from the seat poll (with the live X/10 count) — see
+        // the specialWin effect; a 20s fallback guarantees it always rings.
+        setSpecialDraftStatus(null);
+        setSpecialWin({ kind: 'jackpot', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
       } else if (segment.prizeType === 'custom' && segment.prizeValue === 'hof') {
         updateUser({ hofEntries: (user.hofEntries || 0) + 1 });
-        pushNotification({
-          type: 'hof_queue',
-          title: 'HOF Draft Won!',
-          message: 'You won a HOF draft! You\'re in the queue (8-hour picks) — it starts as soon as 10 winners join.',
-          link: '/drafting',
-          ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
-        });
+        setSpecialDraftStatus(null);
+        setSpecialWin({ kind: 'hof', spinId: _outcome?.spinId ?? null, startedAt: Date.now() });
       }
     },
     [updateUser, user, refreshBalance, refreshBalanceUntil, queryClient],
@@ -349,19 +414,25 @@ export default function BananaWheelPage() {
               <div>
                 <span className="text-[#ff6b6b] font-bold text-[15px]">Jackpot</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on Jackpot and you&apos;re placed into a Jackpot league. Win that league and skip straight to the finals!
+                  Land on Jackpot and you&apos;re placed into a special Jackpot draft lobby — it starts when 10 wheel winners join. Win that league and skip straight to the finals!
+                </p>
+                <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#ffd60a] font-bold text-[15px]">HOF</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on HOF and you&apos;re placed into a HOF league. Compete for bonus prizes on top of regular rewards!
+                  Land on HOF and you&apos;re placed into a special HOF draft lobby — it starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards!
+                </p>
+                <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#32d74b] font-bold text-[15px]">Free Drafts</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Free drafts can only be used to draft. They cannot be used for promos.
+                  Free drafts can only be used to draft. They cannot be used for promos — that includes special Jackpot/HOF drafts.
                 </p>
               </div>
             </div>
@@ -374,6 +445,7 @@ export default function BananaWheelPage() {
             spinsAvailable={spinsAvailable}
             onSpin={handleSpin}
             onSpinComplete={handleSpinComplete}
+            specialDraftStatus={specialDraftStatus}
           />
         </div>
 

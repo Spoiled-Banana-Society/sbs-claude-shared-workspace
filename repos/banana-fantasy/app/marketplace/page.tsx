@@ -192,7 +192,8 @@ export default function MarketplacePage() {
 
   // Live wheel-won JP/HOF passes in filling rounds — appear in Buy views the
   // moment the wheel mints them, listed or not. Plain fetch, scalar-free deps
-  // (Rule #0), 60s refresh keeps browsers current without a reload.
+  // (Rule #0). 5s poll (same cadence as the drafting page queue poll) so the
+  // "In draft lobby — X/10" count is live and a fill delists within seconds.
   const [wheelPasses, setWheelPasses] = useState<MarketplaceTeam[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -203,9 +204,20 @@ export default function MarketplacePage() {
         .catch(() => {});
     };
     load();
-    const id = setInterval(load, 60_000);
+    const id = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(id); };
   }, []);
+
+  // Keep an OPEN buy modal's wheel-pass lobby count live: each 5s poll grafts
+  // the fresh X/10 onto selectedTeam (functional update — no extra deps).
+  useEffect(() => {
+    setSelectedTeam(prev => {
+      if (!prev?.fillingWheelLevel) return prev;
+      const wp = wheelPasses.find(p => p.tokenId === prev.tokenId);
+      if (!wp || wp.lobbyCount === prev.lobbyCount) return prev;
+      return { ...prev, lobbyCount: wp.lobbyCount };
+    });
+  }, [wheelPasses]);
 
   // Live tab counts (drafted teams / Jackpot / HOF) from the backend index.
   const [marketplaceStats, setMarketplaceStats] = useState<{ all?: number; pro?: number; jackpot?: number; hof?: number } | undefined>(undefined);
@@ -265,10 +277,16 @@ export default function MarketplacePage() {
     // active listings; on other tabs show the filtered set as-is.
     if (teamFilter != null || leagueFilter != null) return viewFilter === 'listed' ? allNfts.filter(team => !!team.orderHash) : allNfts;
     // Wheel passes merge into browse views; a LISTED copy (price/orderHash)
-    // always wins over the queue-sourced one.
+    // always wins over the queue-sourced one — but the queue copy carries the
+    // LIVE lobby count (5s poll), so graft that onto the listed copy too.
     const withWheel = (teams: MarketplaceTeam[]) => {
+      const byId = new Map(wheelPasses.map(p => [p.tokenId, p]));
+      const merged = teams.map(t => {
+        const wp = byId.get(t.tokenId);
+        return wp ? { ...t, fillingWheelLevel: t.fillingWheelLevel ?? wp.fillingWheelLevel, lobbyCount: wp.lobbyCount } : t;
+      });
       const have = new Set(teams.map(t => t.tokenId));
-      return teams.concat(wheelPasses.filter(p => !have.has(p.tokenId)));
+      return merged.concat(wheelPasses.filter(p => !have.has(p.tokenId)));
     };
     // 'pro' reuses the fast paged full collection (like 'all') and filters out
     // JP/HOF client-side — no heavy per-level scan (Pro is 1200+ teams).

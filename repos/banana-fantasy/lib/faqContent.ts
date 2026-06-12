@@ -83,11 +83,27 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How do I get into a Jackpot Draft?',
-        answer: 'Every draft has a chance to become a Jackpot. When your draft room fills to 10/10 players, the slot machine reveals your draft type. You can also win guaranteed Jackpot entries on the Banana Wheel.',
+        answer: 'Two ways. 1) The reveal: every draft has a chance to become a Jackpot — when your draft room fills to 10/10 players, the slot machine reveals your draft type. 2) The Banana Wheel: land on Jackpot and you win a guaranteed seat in a special Jackpot draft, free.',
       },
       {
         question: 'How does the guaranteed distribution work?',
         answer: 'This is NOT random odds - it\'s a guaranteed distribution system. Every 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro drafts. The order is randomized, but the distribution is guaranteed. You\'re not gambling on luck - fair distribution is ensured for all players.',
+      },
+      {
+        question: 'I hit Jackpot on the Banana Wheel — what happens now?',
+        answer: 'You\'re automatically seated in a special Jackpot draft, free. It waits in your lobby until 10 wheel winners have joined, then starts on its own. It\'s a slow draft — 8 hours per pick, and the clock pauses overnight (10pm–5am PT). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
+      },
+      {
+        question: 'Can I leave a wheel-won Jackpot or HOF draft?',
+        answer: 'No — your seat is locked from the moment you win it. What you CAN do is sell the pass on the SBS Marketplace while the draft is still filling. The buyer takes over your seat, name and all. Once the draft fills to 10, it can\'t be sold — it\'s your team.',
+      },
+      {
+        question: 'Why is this the only sellable draft pass?',
+        answer: 'A wheel-won Jackpot or HOF pass is a guaranteed seat in a special draft — that\'s real value you might not be able to use, so we let you trade it before the draft starts. Every other free pass can only be used to enter drafts. The moment the special draft fills, the trade window closes.',
+      },
+      {
+        question: 'Do special wheel-won drafts earn promos?',
+        answer: 'No. Special Jackpot/HOF drafts are free drafts and never earn promos — hitting a Slot 10 in one doesn\'t award a free spin, and the draft doesn\'t count toward the 4-drafts-in-a-day promo.',
       },
       {
         question: 'What exactly happens if I win a Jackpot league?',
@@ -133,6 +149,10 @@ export const mockFAQSections: FAQSection[] = [
         question: 'What are the odds of getting a HOF draft?',
         answer: 'HOF drafts make up 5% of all drafts. With the guaranteed distribution system, every 100 drafts contains exactly 5 HOF drafts. The order is randomized, but you\'re guaranteed fair distribution.',
       },
+      {
+        question: 'I hit HOF on the Banana Wheel — what happens now?',
+        answer: 'Same flow as a wheel Jackpot: you\'re seated in a special HOF draft instantly, it starts automatically when 10 wheel winners are in, and it runs as a slow draft (8 hours per pick, paused overnight). Your seat is locked, but the pass is sellable on the Marketplace until the draft fills. Special drafts never earn promos.',
+      },
     ],
   },
   {
@@ -164,6 +184,10 @@ export const mockFAQSections: FAQSection[] = [
       {
         question: 'What prizes can I win on the Banana Wheel?',
         answer: 'Every spin wins! Prizes include: 1, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, and guaranteed HOF draft entries. The wheel is weighted but every outcome is a winner.',
+      },
+      {
+        question: 'What is a "special draft"?',
+        answer: 'A draft made up entirely of Banana Wheel winners. Hit Jackpot or HOF on a spin and you get a free seat — the draft starts automatically once 10 winners have joined. Special drafts are always slow drafts (8 hours per pick), every seat is locked, and the pass is the only one on SBS that can be sold on the Marketplace (until the draft fills). They\'re free drafts, so they never earn promos.',
       },
       {
         question: 'Where can I spin the wheel?',

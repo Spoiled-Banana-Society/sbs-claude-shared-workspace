@@ -30,6 +30,8 @@ export async function GET(req: Request) {
       const queue = snap.data() as { rounds?: Array<{ status: string; members: Array<{ wallet: string; tokenId?: string }> }> };
       for (const round of queue.rounds || []) {
         if (round.status !== 'filling') continue; // sellable window only
+        if ((round.members || []).length >= 10) continue; // full = locked, even pre-status-flip
+        const lobbyCount = (round.members || []).length;
         for (const m of round.members || []) {
           if (!m.tokenId) continue; // only wheel-minted NFT slots
           const wallet = (m.wallet || '').toLowerCase();
@@ -55,6 +57,7 @@ export async function GET(req: Request) {
             protocolAddress: null,
             leagueNumber: null,
             fillingWheelLevel: type,
+            lobbyCount,
           });
         }
       }

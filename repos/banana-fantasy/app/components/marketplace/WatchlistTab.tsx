@@ -132,7 +132,7 @@ export function WatchlistTab({
             <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
               {team.fillingWheelLevel ? (
                 <span className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}>
-                  {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · Filling
+                  {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
                 </span>
               ) : team.isJackpot ? (
                 <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>

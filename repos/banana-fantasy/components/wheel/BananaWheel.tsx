@@ -12,6 +12,10 @@ interface BananaWheelProps {
   onSpin: () => Promise<WheelSpinOutcome | null>;
   onSpinComplete?: (outcome: WheelSpinOutcome, segment: WheelSegment | null) => void;
   onSpecialDraftWin?: (type: 'jackpot' | 'hof') => void;
+  /** Live seat state for a just-won JP/HOF special draft (fed by the page's
+   *  queue poll): lobby fill count + a direct Join-the-Lobby URL. Null until
+   *  the seat resolves server-side (a few seconds after the wheel stops). */
+  specialDraftStatus?: { count: number; draftRoomUrl: string | null } | null;
 }
 
 function fireCelebration(segment: WheelSegment) {
@@ -74,7 +78,7 @@ function getPrizeEmoji(segment: WheelSegment): string {
 
 function getPrizeMessage(segment: WheelSegment): string {
   if (segment.id === 'jackpot') return 'You hit the JACKPOT! 🎰';
-  if (segment.id === 'hof') return 'Hall of Fame entry unlocked!';
+  if (segment.id === 'hof') return 'You won a Hall of Fame draft! 🏛️';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win! 🍌';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'Big win!';
   return 'Added to your balance';
@@ -153,7 +157,7 @@ interface PendingSpin {
   rotation: number;
 }
 
-export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin }: BananaWheelProps) {
+export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialDraftWin: _onSpecialDraftWin, specialDraftStatus }: BananaWheelProps) {
   const [isSpinning, setIsSpinning] = useState(false);
   // 'free' = constant-speed spin while waiting on RNG; 'landing' = decel onto
   // the result; 'idle' = stopped (no transition). Drives the CSS transition.
@@ -627,18 +631,45 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 </div>
               )}
 
-              {/* Info for Jackpot/HOF wins — auto-queued */}
-              {(wonSegment.id === 'jackpot' || wonSegment.id === 'hof') && (
-                <div className="bg-white/5 rounded-xl p-4 text-center space-y-2" style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}>
-                  <p className="text-white/70 text-sm font-medium">You&apos;ve been added to the {wonSegment.id === 'jackpot' ? 'Jackpot' : 'HOF'} draft queue!</p>
-                  <p className="text-white/40 text-xs">
-                    8-hour picks · Draft starts as soon as 10 winners fill the queue · We&apos;ll notify you!
-                  </p>
-                  <a href="/drafting" className="inline-block mt-2 text-banana text-xs font-semibold hover:underline">
-                    View My Drafts →
-                  </a>
-                </div>
-              )}
+              {/* Info for Jackpot/HOF wins — winner is auto-seated in a special
+                  draft lobby. Count is LIVE (page polls the queue); until the
+                  seat resolves we show the generic 10-winners line. */}
+              {(wonSegment.id === 'jackpot' || wonSegment.id === 'hof') && (() => {
+                const isJp = wonSegment.id === 'jackpot';
+                const label = isJp ? 'Jackpot' : 'HOF';
+                const count = specialDraftStatus?.count ?? null;
+                const remaining = count !== null ? Math.max(0, 10 - count) : null;
+                return (
+                  <div className="bg-white/5 rounded-xl p-4 text-left space-y-2.5" style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}>
+                    <p className="text-white text-sm font-semibold text-center">
+                      Congrats on winning a {label} Draft!
+                    </p>
+                    <p className="text-white/60 text-xs leading-relaxed">
+                      You&apos;re automatically in the draft lobby.{' '}
+                      {remaining === null
+                        ? 'It starts as soon as 10 wheel winners are in.'
+                        : remaining === 0
+                          ? <>The lobby is full (10/10) — <span className="text-white/90 font-semibold">your draft is starting now!</span></>
+                          : <>It starts as soon as <span className="text-white/90 font-semibold">{remaining} more</span> {label} spin winner{remaining !== 1 ? 's' : ''} join{remaining === 1 ? 's' : ''} the draft <span className="text-white/90 font-semibold">({count}/10)</span>.</>}
+                    </p>
+                    <div className="space-y-1.5 text-white/45 text-xs leading-relaxed">
+                      <p>• {isJp ? 'Win your Jackpot league and skip straight to the Finals' : 'Compete for added prizes on top of the regular ones'}</p>
+                      <p>• Slow Draft: 8 hours per pick</p>
+                      <p>• Your seat is locked, but you can sell this pass on the Marketplace until the draft fills</p>
+                    </div>
+                    <a
+                      href={specialDraftStatus?.draftRoomUrl || '/drafting'}
+                      className="block w-full mt-1 py-2.5 rounded-xl bg-banana text-black text-sm font-bold text-center hover:brightness-110 transition"
+                    >
+                      Join the Lobby
+                    </a>
+                    <p className="text-white/35 text-[11px] text-center">
+                      Draft Alerts on? We&apos;ll ping you at draft start and every pick.{' '}
+                      <a href="/profile?tab=notifications" className="text-banana/80 font-semibold hover:underline">Manage Draft Alerts →</a>
+                    </p>
+                  </div>
+                );
+              })()}
 
             </div>
           </div>

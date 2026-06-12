@@ -78,7 +78,16 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
-    const queue = await joinQueue(userId, queueType);
+    const { queue, joinedRoundIds } = await joinQueue(userId, queueType);
+
+    // Seat the user in each joined round's REAL Go league (creating it for the
+    // round's first member) — survives the response via waitUntil.
+    runInBackground('queue.ensure-seats', (async () => {
+      const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+      for (const rid of joinedRoundIds) {
+        await ensureSpecialDraftSeat(queueType, rid, userId);
+      }
+    })());
 
     // Notifications — waitUntil-backed so they SURVIVE the response (a bare
     // .catch() detaches the promise, which dies with the frozen lambda; queue

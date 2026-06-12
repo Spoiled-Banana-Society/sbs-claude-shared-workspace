@@ -209,9 +209,9 @@ export function SellTab({
                         // level so it never wrongly falls back to "PRO".
                         <span
                           className={`px-3 py-1 text-[10px] font-bold uppercase rounded-full text-white ${team.fillingWheelLevel === 'jackpot' ? 'bg-error' : 'bg-hof'}`}
-                          title="Wheel-won pass — sellable until your draft fills. Once it fills it becomes your team (listable after the season)."
+                          title="Wheel-won pass — the only sellable draft pass on SBS. Sell it any time before the draft fills; once it fills, the seat is yours for good (team listable after the season)."
                         >
-                          {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · Filling
+                          {team.fillingWheelLevel === 'jackpot' ? 'JACKPOT' : 'HOF'} · In Lobby{typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}
                         </span>
                       ) : team.isJackpot ? (
                         <span className="px-3 py-1 bg-error text-white text-[10px] font-bold uppercase rounded-full">JACKPOT</span>
@@ -235,7 +235,7 @@ export function SellTab({
                         </p>
                         <p className={`font-mono text-[10.5px] ${team.fillingWheelLevel ? (team.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof') : 'text-text-muted'}`}>
                           {team.fillingWheelLevel
-                            ? `Won on the wheel · ${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} draft filling`
+                            ? `Won on the wheel · Draft lobby filling${typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''} · Sellable until full`
                             : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
                         </p>
                       </div>
