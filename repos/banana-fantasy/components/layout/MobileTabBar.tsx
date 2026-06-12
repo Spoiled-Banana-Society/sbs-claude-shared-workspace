@@ -1,8 +1,7 @@
 'use client';
 
-import React from 'react';
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import React, { useEffect, useRef } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotifications } from '@/components/NotificationCenter';
 
@@ -30,6 +29,26 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   wheelSpins: number;
   unreadCount: number;
 }) {
+  const router = useRouter();
+  // Navigate on pointerdown — the moment the finger lands — instead of
+  // waiting for iOS to bless a full click (its gesture heuristics near the
+  // home indicator were eating first taps, Boris 2026-06-11). The click
+  // handler stays as a fallback for non-pointer environments; the ref
+  // dedupes so a tap never fires twice.
+  const lastNavRef = useRef(0);
+  const go = (href: string) => {
+    const now = Date.now();
+    if (now - lastNavRef.current < 500) return;
+    lastNavRef.current = now;
+    router.push(href);
+  };
+  useEffect(() => {
+    // Keep targets warm so the page swap is instant.
+    ['/drafting', '/banana-wheel', '/my-teams', '/notifications'].forEach((h) => {
+      try { router.prefetch(h); } catch { /* best-effort */ }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tabs = [
     {
@@ -109,10 +128,12 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
         {tabs.map(tab => {
           const active = isActive(tab);
           return (
-            <Link
+            <button
               key={tab.href}
-              href={tab.href}
-              className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-colors touch-manipulation select-none ${
+              type="button"
+              onPointerDown={() => go(tab.href)}
+              onClick={() => go(tab.href)}
+              className={`relative flex flex-col items-center justify-center gap-0.5 flex-1 h-full transition-all touch-manipulation select-none active:scale-90 active:opacity-70 ${
                 active ? 'text-banana' : 'text-white/35'
               }`}
             >
@@ -127,7 +148,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
               <span className={`text-[10px] font-medium ${active ? 'text-banana' : 'text-white/35'}`}>
                 {tab.label}
               </span>
-            </Link>
+            </button>
           );
         })}
       </div>
