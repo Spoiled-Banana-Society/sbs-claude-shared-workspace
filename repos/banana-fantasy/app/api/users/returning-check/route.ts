@@ -69,8 +69,8 @@ export async function POST(req: Request) {
       const { createNotification } = await import('@/lib/queueNotifications');
       await createNotification(wallet, {
         type: 'base_guide',
-        title: 'New season, new network',
-        message: "We've moved from Ethereum to Base — drafts are $25 USDC now, and every transaction on SBS is gas-free. Get set up in 2 minutes.",
+        title: "We're on Base & USDC now",
+        message: 'New to Base? Learn how to buy, swap, or bridge USDC — quick and easy. Tap to learn more.',
         link: '/get-usdc',
         dedupeKey: 'base-usdc-guide',
         icon: 'zap',
