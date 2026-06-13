@@ -58,13 +58,21 @@ const TEAMS = Object.values(FULL_TO_ABBREV);
 const POSITIONS = ["QB", "RB1", "RB2", "TE", "WR1", "WR2", "DST"];
 const BASE_OF = { RB1: "RB", RB2: "RB", WR1: "WR", WR2: "WR" };
 
+// Strip a trailing roman-numeral suffix (the RI feed sometimes appends a bad
+// one, e.g. "James Cook Iii"). Removed per product request.
+const ROMAN_SUFFIX = /\s+(?:ii|iii|iv|v|vi|vii|viii|ix|x)$/i;
+function cleanName(n) {
+  return String(n).replace(ROMAN_SUFFIX, "").trim();
+}
+
 // "1": {player}, "2": {player} -> ["..", ".."] in numeric depth order.
 function flatten(m) {
   if (!m) return [];
   return Object.keys(m)
       .sort((a, b) => Number(a) - Number(b))
       .map((k) => m[k].player)
-      .filter(Boolean);
+      .filter(Boolean)
+      .map(cleanName);
 }
 
 function norm(n) {
