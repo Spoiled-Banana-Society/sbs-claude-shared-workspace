@@ -214,18 +214,33 @@ export async function loadPeriodLeaves(periodNumber: number): Promise<Hex[]> {
  * the leaf hash + proof path; the browser combines them and compares
  * against the on-chain root to verify.
  */
+// A period's leaves are fixed at creation (the whole tree is committed up
+// front), so the rebuilt tree is immutable and safe to cache for the life of
+// the (warm) lambda. Without this, every proof request reloads ~7MB of leaves
+// and rebuilds a 100k-leaf tree (~3s). Cached → subsequent proofs are a tree
+// walk (sub-ms). Keyed by period number; bounded (only a handful of periods).
+const periodTreeCache = new Map<number, MerkleTree>();
+
+async function getPeriodTree(periodNumber: number): Promise<MerkleTree> {
+  const cached = periodTreeCache.get(periodNumber);
+  if (cached) return cached;
+  const leaves = await loadPeriodLeaves(periodNumber);
+  const tree = buildMerkleTree(leaves);
+  periodTreeCache.set(periodNumber, tree);
+  return tree;
+}
+
 export async function generateSpinProof(periodNumber: number, spinIndex: number): Promise<{
   leaf: Hex;
   proof: Hex[];
   root: Hex;
 }> {
-  const leaves = await loadPeriodLeaves(periodNumber);
-  if (spinIndex < 0 || spinIndex >= leaves.length) {
+  const tree = await getPeriodTree(periodNumber);
+  if (spinIndex < 0 || spinIndex >= tree.leaves.length) {
     throw new Error(`spinIndex ${spinIndex} out of range for period ${periodNumber}`);
   }
-  const tree = buildMerkleTree(leaves);
   const proof = getMerkleProof(tree, spinIndex);
-  return { leaf: leaves[spinIndex], proof, root: tree.root };
+  return { leaf: tree.leaves[spinIndex], proof, root: tree.root };
 }
 
 /**
