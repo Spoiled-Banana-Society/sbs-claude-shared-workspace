@@ -201,7 +201,7 @@ export function DraftRoomReveal({
         </div>
       )}
 
-      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: visibleDraftType === 'hof' ? '#C9A227' : visibleDraftType === 'jackpot' ? '#C0282D' : '#000' }}>
+      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: visibleDraftType === 'hof' ? '#C9A227' : visibleDraftType === 'jackpot' ? '#C0282D' : '#000', paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
@@ -342,7 +342,7 @@ export function DraftRoomReveal({
       {/* Extra height for colored (jackpot/HOF) banners so the red/gold bar
           doesn't visually touch the content/tab menu below. See the matching
           spacer in DraftRoomDrafting. */}
-      <div style={{ height: (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px', flexShrink: 0, backgroundColor: '#000' }} />
+      <div style={{ height: `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`, flexShrink: 0, backgroundColor: '#000' }} />
 
       {showSlotMachine && (
         <SlotMachineOverlay

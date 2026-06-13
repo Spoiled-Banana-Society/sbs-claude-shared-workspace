@@ -2365,8 +2365,17 @@ function DraftRoomContent() {
           gentle pulse keeps it alive without being distracting. */}
       {visibleDraftType && (
         <div
-          className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
+          className="fixed pointer-events-none z-[65] animate-hof-edge"
+          // Inset the colored type frame by the safe areas so it hugs the
+          // VISIBLE screen edges. With viewportFit:'cover' a plain inset-0 ran
+          // the top/bottom of the ring under the notch/home-indicator, so the
+          // visible line looked pushed in on mobile (Boris 2026-06-13). Now it
+          // lines up flush with the inset header + bands.
           style={{
+            top: 'env(safe-area-inset-top)',
+            right: 'env(safe-area-inset-right)',
+            bottom: 'env(safe-area-inset-bottom)',
+            left: 'env(safe-area-inset-left)',
             boxShadow: visibleDraftType === 'jackpot'
               ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
               : visibleDraftType === 'hof'
@@ -2406,7 +2415,13 @@ function DraftRoomContent() {
       )}
 
       {(phase === 'filling' || phase === 'countdown' || phase === 'loading' || engine.draftStatus === 'completed') && (
-        <div className="h-14 bg-black/30 border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0">
+        <div
+          className="h-14 bg-black/30 border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0"
+          // Drop below the notch on iOS (viewportFit:'cover'). Keep the 3.5rem
+          // bar height and add the inset on top so the contest name / type pill
+          // aren't hidden under the status bar (Boris 2026-06-13).
+          style={{ height: 'calc(3.5rem + env(safe-area-inset-top))', paddingTop: 'env(safe-area-inset-top)' }}
+        >
           <div className="flex items-center gap-4">
             <span className="font-bold">{contestName}</span>
             {visibleDraftType && (phase !== 'filling' || specialTypeParam) && (

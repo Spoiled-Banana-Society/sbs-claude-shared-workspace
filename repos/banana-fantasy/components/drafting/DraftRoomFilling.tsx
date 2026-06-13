@@ -61,6 +61,10 @@ export function DraftRoomFilling({
           ? 'linear-gradient(180deg, #C92B30 0%, #9E1F24 100%)'
           : '#000',
         boxShadow: (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') ? 'inset 0 -1px 0 rgba(0,0,0,0.45)' : undefined,
+        // Match DraftRoomDrafting — drop the strip below the notch on iOS
+        // (viewportFit:'cover'), else the top of the lobby hides under the
+        // status bar on mobile (Boris 2026-06-13).
+        paddingTop: 'env(safe-area-inset-top)',
       }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
@@ -234,7 +238,7 @@ export function DraftRoomFilling({
         {controls}
       </div>
 
-      <div style={{ height: '290px', flexShrink: 0, backgroundColor: '#000' }} />
+      <div style={{ height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, backgroundColor: '#000' }} />
     </>
   );
 }

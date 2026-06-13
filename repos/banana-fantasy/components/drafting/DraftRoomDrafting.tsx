@@ -159,6 +159,10 @@ export function DraftRoomDrafting({
           ? 'linear-gradient(180deg, #C92B30 0%, #9E1F24 100%)'
           : '#000',
         boxShadow: (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') ? 'inset 0 -1px 0 rgba(0,0,0,0.45)' : undefined,
+        // Drop the type-colored band + player strip below the notch on iOS
+        // (viewportFit:'cover'). Without this the colored top + PRO/HOF word
+        // hide under the status bar — looked "unsynced" on mobile (Boris 2026-06-13).
+        paddingTop: 'env(safe-area-inset-top)',
       }}>
             <div
               ref={bannerRef}
@@ -417,7 +421,7 @@ export function DraftRoomDrafting({
               background, so a flush edge makes the colored bar visually touch
               the tab menu below it — add a little extra height so a clean black
               gap separates them. Black drafts need no gap (black-on-black). */}
-          <div style={{ height: (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px', flexShrink: 0, backgroundColor: '#000' }} />
+          <div style={{ height: `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`, flexShrink: 0, backgroundColor: '#000' }} />
         </>
       )}
 
