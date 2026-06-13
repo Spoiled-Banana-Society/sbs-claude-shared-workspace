@@ -4,6 +4,7 @@ import React from 'react';
 import { SlotMachineOverlay } from '@/components/drafting/SlotMachineOverlay';
 import { DRAFT_PLAYERS, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { draftBandBackground, draftBandShadow } from '@/lib/draftBandStyle';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { getTruncatedAccountName } from '@/utils/helpers';
@@ -201,7 +202,7 @@ export function DraftRoomReveal({
         </div>
       )}
 
-      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ backgroundColor: visibleDraftType === 'hof' ? '#C9A227' : visibleDraftType === 'jackpot' ? '#C0282D' : '#000', paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{ background: draftBandBackground(visibleDraftType), boxShadow: draftBandShadow(visibleDraftType), paddingTop: 'env(safe-area-inset-top)' }}>
         <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];

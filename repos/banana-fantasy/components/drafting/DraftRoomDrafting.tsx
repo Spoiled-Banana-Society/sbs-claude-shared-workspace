@@ -18,6 +18,7 @@ import {
   ALL_POSITIONS,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { draftBandBackground, draftBandShadow, draftStatusColor } from '@/lib/draftBandStyle';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
@@ -153,12 +154,8 @@ export function DraftRoomDrafting({
       {showBanner && engine.draftStatus !== 'completed' && (
         <>
           <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
-        background: visibleDraftType === 'hof'
-          ? 'linear-gradient(180deg, #D2AB2C 0%, #B08F1F 100%)'
-          : visibleDraftType === 'jackpot'
-          ? 'linear-gradient(180deg, #C92B30 0%, #9E1F24 100%)'
-          : '#000',
-        boxShadow: (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') ? 'inset 0 -1px 0 rgba(0,0,0,0.45)' : undefined,
+        background: draftBandBackground(visibleDraftType),
+        boxShadow: draftBandShadow(visibleDraftType),
         // Drop the type-colored band + player strip below the notch on iOS
         // (viewportFit:'cover'). Without this the colored top + PRO/HOF word
         // hide under the status bar — looked "unsynced" on mobile (Boris 2026-06-13).
@@ -356,7 +353,7 @@ export function DraftRoomDrafting({
               })}
             </div>
 
-            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: visibleDraftType === 'hof' ? '#1a1400' : '#fff' }}>
+            <div className="grow text-center uppercase text-sm font-bold px-3 pt-2 mt-3 font-primary" style={{ color: draftStatusColor(visibleDraftType) }}>
               {spectator ? (
                 (() => {
                   const onClockIdx = engine.draftSummary.find(s => s.pickNum === engine.currentPickNumber)?.ownerIndex;

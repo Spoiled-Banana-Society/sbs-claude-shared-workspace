@@ -4,6 +4,7 @@ import React from 'react';
 import { DRAFT_PLAYERS } from '@/lib/draftRoomConstants';
 import { shouldShowPlayerCount } from '@/lib/draftRoomLobby';
 import type { DraftType } from '@/lib/draftRoomConstants';
+import { draftBandBackground, draftBandShadow } from '@/lib/draftBandStyle';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { bananaDefaultName } from '@/utils/helpers';
@@ -55,12 +56,8 @@ export function DraftRoomFilling({
           band), so wheel-won JP/HOF drafts looked stale while filling
           (caught by Boris on 2025-slow-draft-62, 2026-06-10). */}
       <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
-        background: visibleDraftType === 'hof'
-          ? 'linear-gradient(180deg, #D2AB2C 0%, #B08F1F 100%)'
-          : visibleDraftType === 'jackpot'
-          ? 'linear-gradient(180deg, #C92B30 0%, #9E1F24 100%)'
-          : '#000',
-        boxShadow: (visibleDraftType === 'hof' || visibleDraftType === 'jackpot') ? 'inset 0 -1px 0 rgba(0,0,0,0.45)' : undefined,
+        background: draftBandBackground(visibleDraftType),
+        boxShadow: draftBandShadow(visibleDraftType),
         // Match DraftRoomDrafting — drop the strip below the notch on iOS
         // (viewportFit:'cover'), else the top of the lobby hides under the
         // status bar on mobile (Boris 2026-06-13).
