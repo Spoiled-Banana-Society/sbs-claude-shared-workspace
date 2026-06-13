@@ -121,6 +121,12 @@ export async function GET(req: Request) {
       // If we catch the doc mid-write we'd render a phantom league
       // ahead of the counter. Filter anything above the counter.
       if (globalNumber > filled) continue;
+      // Type not yet resolved: the `Level` field is written at the slot-machine
+      // REVEAL, a beat after the fill counter ticks. If we render in that gap,
+      // normalizeLevel defaults to 'Pro' and a HOF/Jackpot briefly shows as PRO
+      // in a feed branded "provably fair" — worse than not showing it yet. Skip
+      // until the type is actually written; it reappears (correct) next read.
+      if (!data?.Level || !data.Level.trim()) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       // updateTime is when the doc was last written — for a filled

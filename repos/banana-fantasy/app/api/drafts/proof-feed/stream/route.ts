@@ -133,6 +133,9 @@ export async function GET(req: Request) {
       // the doc mid-write, filter anything above the counter so phantom
       // future leagues don't render.
       if (globalNumber > filled) continue;
+      // Skip until the type is written at reveal — never flash a default 'Pro'
+      // for a HOF/Jackpot in a "provably fair" feed (see proof-feed/route.ts).
+      if (!data?.Level || !data.Level.trim()) continue;
       if (seen.has(globalNumber)) continue;
       seen.add(globalNumber);
       // updateTime = last write to the doc = slot machine reveal moment.
