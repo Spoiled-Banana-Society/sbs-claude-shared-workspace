@@ -39,7 +39,19 @@ export async function GET(req: Request) {
     // for totalSupply (remove after diagnosing the League-4 hidden-teams issue).
     if (getSearchParam(req, 'debugmax')) {
       const maxId = await currentMaxTokenId();
-      return json({ debug: true, maxId });
+      const { BASE_RPC_URL, BBB4_CONTRACT_ADDRESS } = await import('@/lib/contracts/bbb4');
+      let rawSupply: string | number = 'n/a';
+      try {
+        const r = await fetch(BASE_RPC_URL, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: BBB4_CONTRACT_ADDRESS, data: '0x18160ddd' }, 'latest'] }),
+          signal: AbortSignal.timeout(4000),
+        });
+        const j = await r.json();
+        rawSupply = j?.result ?? JSON.stringify(j).slice(0, 120);
+      } catch (e) { rawSupply = `ERR:${String(e).slice(0, 80)}`; }
+      const rpcHost = (() => { try { return new URL(BASE_RPC_URL).host; } catch { return 'invalid:' + String(BASE_RPC_URL).slice(0, 30); } })();
+      return json({ debug: true, maxId, contract: BBB4_CONTRACT_ADDRESS, rpcHost, rawSupply });
     }
     const level = (getSearchParam(req, 'level') || '').toLowerCase();
     const leagueParam = getSearchParam(req, 'league');
