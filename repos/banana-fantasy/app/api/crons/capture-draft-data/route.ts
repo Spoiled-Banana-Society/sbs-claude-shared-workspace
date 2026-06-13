@@ -6,7 +6,7 @@ import { runInBackground } from '@/lib/serverBackground';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { logger } from '@/lib/logger';
 import { recordCronHeartbeat } from '@/lib/cronHeartbeat';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 import { siteBaseUrl } from '@/lib/nftCard';
 
@@ -50,6 +50,10 @@ interface DraftCheck {
   draftId: string;
   realTokenCount: number;
   captured: boolean;
+  // True once the Go close routine has finalized the draft (rosters + summary
+  // written). Until then the draft is NOT capturable — refresh-draft can't build
+  // a team from an in-progress draft — so we must NOT spend an attempt on it.
+  closed: boolean;
 }
 
 async function recentDraftIds(db: Firestore): Promise<string[]> {
@@ -78,8 +82,9 @@ async function recentDraftIds(db: Firestore): Promise<string[]> {
 }
 
 async function checkDraft(db: Firestore, draftId: string, maxTokenId: number): Promise<DraftCheck | null> {
-  // The draft's team tokens — written to drafts/{id}/cards at close. No cards =
-  // not closed / never made teams → nothing to capture.
+  // The draft's team tokens — card docs are created INCREMENTALLY as picks land
+  // during the draft (not in one shot at close), so a non-empty cards collection
+  // does NOT mean the draft is finished. No cards at all = nothing to capture.
   const cards = await db.collection('drafts').doc(draftId).collection('cards').get();
   if (cards.empty) return null;
 
@@ -90,7 +95,14 @@ async function checkDraft(db: Firestore, draftId: string, maxTokenId: number): P
       .map((d) => String((d.data() as Record<string, unknown>)?.CardId ?? d.id))
       .filter((id) => /^\d+$/.test(id) && isRealToken(id, maxTokenId)),
   ));
-  if (realTokenIds.length === 0) return { draftId, realTokenCount: 0, captured: true }; // bot/synthetic — nothing to capture
+  if (realTokenIds.length === 0) return { draftId, realTokenCount: 0, captured: true, closed: true }; // bot/synthetic — nothing to capture
+
+  // Is the draft actually CLOSED? The Go close routine sets isDraftClosed=true
+  // (and writes the final rosters + summary that refresh-draft needs) only when
+  // the draft finishes. The cron must gate its attempt budget on this — see the
+  // main loop. RTDB node absent (old draft, node cleaned up) → assume closed so
+  // we don't strand a genuinely-finished draft.
+  const closed = await isDraftClosed(draftId);
 
   // Captured = every real token has an index doc: status 'team' + players[] >= 10.
   const refs = realTokenIds.map((id) => db.collection('marketplace_index').doc(id));
@@ -100,7 +112,24 @@ async function checkDraft(db: Firestore, draftId: string, maxTokenId: number): P
     const x = d.data() as Record<string, unknown>;
     return x.status === 'team' && Array.isArray(x.players) && (x.players as unknown[]).length >= 10;
   });
-  return { draftId, realTokenCount: realTokenIds.length, captured };
+  return { draftId, realTokenCount: realTokenIds.length, captured, closed };
+}
+
+// Canonical "draft finished" signal: RTDB drafts/{id}/realTimeDraftInfo.isDraftClosed,
+// set true by the Go close routine (and read by the draft-room client trigger).
+// Absent node → true (an old draft whose RTDB was cleaned up is certainly done;
+// never strand it). Read error → true for the same safety reason.
+async function isDraftClosed(draftId: string): Promise<boolean> {
+  try {
+    const snap = await getAdminDatabase()
+      .ref(`drafts/${draftId}/realTimeDraftInfo`)
+      .once('value');
+    const v = snap.val();
+    if (!v) return true; // node absent → assume closed (don't strand finished drafts)
+    return v.isDraftClosed === true || v.isDraftComplete === true;
+  } catch {
+    return true;
+  }
 }
 
 export async function GET(req: Request) {
@@ -130,9 +159,17 @@ export async function GET(req: Request) {
     const uncaptured = checks.filter((c) => !c.captured);
     const fired: string[] = [];
     const skippedMaxAttempts: string[] = [];
+    // In-progress drafts (cards exist but not yet closed) are uncaptured by
+    // definition — refresh-draft can't build a team from a live draft. We must
+    // NOT spend an attempt on them, or a long draft burns its whole 8-attempt
+    // budget BEFORE it closes and then gives up the instant it's finally
+    // capturable (the League #3 / 2026-06-13 failure). Skip silently so the
+    // full budget applies to the post-close window.
+    const skippedInProgress: string[] = [];
 
     for (const c of uncaptured) {
       if (fired.length >= MAX_CAPTURES_PER_RUN) break;
+      if (!c.closed) { skippedInProgress.push(c.draftId); continue; }
       const guardRef = db.collection('cron_capture_sweep').doc(c.draftId);
       const guard = await guardRef.get();
       const attempts = guard.exists ? Number(guard.get('attempts') || 0) : 0;
@@ -162,6 +199,7 @@ export async function GET(req: Request) {
       uncaptured: uncaptured.length,
       fired,
       skippedMaxAttempts,
+      skippedInProgress,
     };
     if (fired.length > 0 || skippedMaxAttempts.length > 0) {
       logger.info('cron.capture_draft_data', summary);
