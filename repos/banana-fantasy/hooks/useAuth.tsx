@@ -8,6 +8,7 @@ import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/cl
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
+import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
@@ -704,7 +705,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (MOCK_AUTH) return; // Skip on-chain reads in mock mode
     if (!walletAddress || !user) return;
 
-    const BBB4_ADDRESS = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
+    const BBB4_ADDRESS = BBB4_CONTRACT_ADDRESS;
     const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
     const balanceOfSig = '0x70a08231'; // balanceOf(address)
     const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');

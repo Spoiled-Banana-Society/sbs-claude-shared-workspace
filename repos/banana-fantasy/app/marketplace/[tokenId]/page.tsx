@@ -15,7 +15,7 @@ import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
-import { resolveLeagueNumber } from '@/lib/opensea';
+import { BBB4_CONTRACT, resolveLeagueNumber } from '@/lib/opensea';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { reportClientError } from '@/lib/clientErrors';
@@ -1167,7 +1167,7 @@ export default function NftDetailPage() {
               </span>
             )}
             <a
-              href={`https://opensea.io/assets/base/0x14065412b3A431a660e6E576A14b104F1b3E463b/${tokenId}`}
+              href={`https://opensea.io/assets/base/${BBB4_CONTRACT}/${tokenId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-text-secondary hover:text-text-primary hover:border-white/20 transition-colors text-xs font-medium"

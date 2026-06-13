@@ -2,8 +2,12 @@
  * OpenSea types, constants, and mapping helpers for the BBB4 marketplace.
  */
 
+import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
+
 // ── Constants ───────────────────────────────────────────────────────
-export const BBB4_CONTRACT = '0x14065412b3A431a660e6E576A14b104F1b3E463b';
+// Single source of truth for the collection address is lib/contracts/bbb4.ts —
+// re-exported here so the many opensea.ts consumers stay unchanged.
+export const BBB4_CONTRACT: string = BBB4_CONTRACT_ADDRESS;
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 export const OPENSEA_API_BASE = 'https://api.opensea.io';
 export const COLLECTION_SLUG = 'sbs-draft-pass-bbb4';
