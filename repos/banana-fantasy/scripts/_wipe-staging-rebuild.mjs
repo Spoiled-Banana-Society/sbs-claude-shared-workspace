@@ -46,6 +46,25 @@ async function wipeCollection(name, { skipDocId } = {}) {
   return n;
 }
 
+// RECURSIVE wipe of a collection that has SUBCOLLECTIONS (e.g. drafts, whose
+// docs hold cards/state/scores/smsNotificationClaims). A plain `.delete(docRef)`
+// does NOT cascade in Firestore — it orphans every subcollection, leaving
+// thousands of ghost subtrees behind (the 2026-06-13 incident: 2,507 orphans
+// after a "wipe"). listDocuments() returns ALL refs INCLUDING missing parents
+// that still have subcollections, and recursiveDelete() removes the doc + every
+// nested subcollection. Use this for any collection with subcollections.
+async function wipeCollectionRecursive(name, { skipDocId } = {}) {
+  const refs = await db.collection(name).listDocuments();
+  let n = 0;
+  for (const ref of refs) {
+    if (skipDocId && ref.id === skipDocId) continue;
+    n++;
+    if (GO) await db.recursiveDelete(ref);
+  }
+  console.log(`  ${name} (recursive, incl. subcollections): ${GO ? 'deleted' : 'would delete'} ${n} docs${skipDocId ? ` (kept ${skipDocId})` : ''}`);
+  return n;
+}
+
 // Wipe an ENTIRE subcollection name across ALL parents in one streaming pass
 // (collectionGroup), instead of iterating 17k owners one at a time. Counts in
 // dry-run; batch-deletes in --go. Paginated so memory stays flat.
@@ -73,8 +92,11 @@ async function wipeCollectionGroup(name) {
 }
 
 // 1. Drafts (history + live) — keep the draftTracker doc, we reset it below.
+//    MUST be recursive: draft docs carry cards/state/scores/smsNotificationClaims
+//    subcollections that a plain doc-delete would orphan (see the 2,507-ghost
+//    incident). wipeCollectionRecursive uses listDocuments + recursiveDelete.
 console.log('DRAFTS + LIVE STATE');
-await wipeCollection('drafts', { skipDocId: 'draftTracker' });
+await wipeCollectionRecursive('drafts', { skipDocId: 'draftTracker' });
 const rtdbSnap = await rtdb.ref('drafts').once('value');
 const rtdbN = rtdbSnap.exists() ? Object.keys(rtdbSnap.val()).length : 0;
 if (GO && rtdbN) await rtdb.ref('drafts').remove();

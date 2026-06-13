@@ -69,15 +69,8 @@ export default function ExposurePage() {
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState<string[]>([]);
-  const [teamSearch, setTeamSearch] = useState<string[]>([]);
+  const [teamLookup, setTeamLookup] = useState('');
   const [sortBy, setSortBy] = useState<SortField>('exposure');
-
-  // Every NFL team the user actually has exposure to — powers the team search
-  // suggestions (same chip pattern as My Teams / Marketplace). Sorted A→Z.
-  const teamOptions = useMemo(
-    () => [...new Set(exposures.map(e => e.team).filter(Boolean))].sort(),
-    [exposures],
-  );
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
   const [modalLeague, setModalLeague] = useState<League | null>(null);
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
@@ -166,11 +159,6 @@ export default function ExposurePage() {
       );
     }
 
-    // Team search (OR across team chips) — narrows to the selected NFL teams.
-    const teamQueries = teamSearch.map(c => c.trim().toLowerCase()).filter(Boolean);
-    if (teamQueries.length) {
-      data = data.filter(e => teamQueries.some(q => e.team.toLowerCase() === q || e.team.toLowerCase().includes(q)));
-    }
 
     // Enrich with real ADP for sorting + display. avgPick is the
     // actual average pick number we drafted this team-position at (computed
@@ -191,7 +179,19 @@ export default function ExposurePage() {
         if (sortBy === 'adp') return a.adp - b.adp;
         return b.exposure - a.exposure;
       });
-  }, [exposures, posFilter, search, teamSearch, sortBy]);
+  }, [exposures, posFilter, search, sortBy]);
+
+  // "Team #" lookup — type your team/league number and open that team's card
+  // (same idea as My Teams / Marketplace). Matches the league number shown on
+  // your teams (League #N) and opens the card view in the detail modal.
+  const openTeamByNumber = (raw: string) => {
+    const q = raw.trim().replace(/^#/, '');
+    if (!q) return;
+    const hit =
+      leagues.find(l => (l.name.match(/#\s*(\d+)/)?.[1] ?? '') === q) ||
+      leagues.find(l => (l.name.match(/#\s*(\d+)/)?.[1] ?? '').includes(q));
+    if (hit) openLeague(hit, 'team');
+  };
 
   // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
   // permutations don't count because in best ball, "stacking" only has
@@ -373,11 +373,12 @@ export default function ExposurePage() {
 
       {/* ── Section 2: Position Exposure Table ─────────────────────────── */}
       <div className={exposureTab === 'positions' ? 'mb-10' : 'hidden'}>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6 mb-6">
           {/* Left: position pills + sort. Sort sits next to the position pills
               (moved left, away from the search group) so the two searches can
-              live together on the right (Boris 2026-06-13). */}
-          <div className="flex items-center gap-2 min-w-0">
+              live together on the right (Boris 2026-06-13). gap-4 keeps the
+              sort pills from crowding the position pills. */}
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <div className="flex gap-1.5 overflow-x-auto pb-1">
               <button
                 onClick={() => setPosFilter('all')}
@@ -421,22 +422,27 @@ export default function ExposurePage() {
             </div>
           </div>
 
-          {/* Right: team search + slot search, side by side. Team search is the
-              same chip pattern used on My Teams / Marketplace. */}
+          {/* Right: "Team #" lookup + slot search. Both kept compact so the
+              position pills get more room on the left (Boris 2026-06-13). The
+              Team # input opens that team's card via the detail modal — same
+              "search your team" idea as My Teams / Marketplace. */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <MultiChipSearch
-              chips={teamSearch}
-              onChange={setTeamSearch}
-              options={teamOptions}
-              placeholder="Team — CHI, KC…"
-              className="w-32 sm:w-44"
+            <input
+              type="number"
+              inputMode="numeric"
+              value={teamLookup}
+              onChange={(e) => setTeamLookup(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') openTeamByNumber(teamLookup); }}
+              placeholder="Team #"
+              aria-label="Open one of your teams by number"
+              className="w-[74px] sm:w-[88px] px-3 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
             <MultiChipSearch
               chips={search}
               onChange={setSearch}
               options={slotOptions}
-              placeholder="IND RB, MIN WR…"
-              className="w-40 sm:w-56"
+              placeholder="IND RB…"
+              className="w-28 sm:w-40"
             />
           </div>
         </div>
