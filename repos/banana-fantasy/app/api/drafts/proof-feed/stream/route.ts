@@ -98,7 +98,10 @@ export async function GET(req: Request) {
     const candidates: Array<{ draftId: string; draftNumber: number; speed: 'fast' | 'slow' }> = [];
     for (let i = -SLOT_BUFFER; i < FEED_LIMIT * 2; i++) {
       const num = filled - i;
-      if (num < Math.max(1, earliestMerkleDraft - SLOT_BUFFER)) break;
+      // Floor at 0, not 1: after a clean-slate reset the slot counter
+      // starts at 0, so the very first draft is `…-draft-0`. A floor of 1
+      // skipped it and the newest league never appeared in the feed.
+      if (num < Math.max(0, earliestMerkleDraft - SLOT_BUFFER)) break;
       for (const speed of SPEEDS) {
         for (const year of yearPrefixes) {
           candidates.push({ draftId: `${year}-${speed}-draft-${num}`, draftNumber: num, speed });
