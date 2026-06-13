@@ -18,7 +18,7 @@ import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
-import { claimSpinIndex, generateSpinProof, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { claimSpinIndex, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
@@ -573,34 +573,22 @@ export async function POST(req: Request) {
       }
     })());
 
-    // V2 verification payload: if this spin was assigned by an active
-    // wheel-proof period, attach the Merkle proof so the client can verify
-    // it against the on-chain root immediately. Generation rebuilds the
-    // tree from stored leaves (~10-20ms for 10k leaves) — cheap enough to
-    // do per-spin without caching.
-    let proof: { periodNumber: number; spinIndex: number; leaf: string; path: string[]; root: string } | null = null;
-    if (periodNumber !== null && spinIndexInPeriod !== null) {
-      try {
-        const p = await generateSpinProof(periodNumber, spinIndexInPeriod);
-        proof = {
-          periodNumber,
-          spinIndex: spinIndexInPeriod,
-          leaf: p.leaf,
-          path: p.proof,
-          root: p.root,
-        };
-      } catch (proofErr) {
-        logger.warn('wheel.spin.proof_generation_failed', {
-          spinId,
-          periodNumber,
-          spinIndex: spinIndexInPeriod,
-          err: (proofErr as Error).message,
-        });
-      }
-    }
-
+    // The RESULT is already fully determined (claimSpinIndex derived it from the
+    // period's salt+VRF+spinIndex — one small doc read + one hash). That's all
+    // the wheel needs to spin to the right segment, so we return IMMEDIATELY.
+    //
+    // We deliberately do NOT build the Merkle proof here: generateSpinProof
+    // loads EVERY leaf in the period and rebuilds the whole tree. At 10k leaves
+    // that was ~15ms (invisible); at a 100k-spin season period it's a ~7MB read
+    // + 100k-leaf rebuild ≈ 3s — on EVERY spin, blocking the response. The wheel
+    // free-spins until this returns, so it dragged the spin out to ~5s AND let
+    // the balance-reveal freeze expire mid-spin (counter updating before the
+    // wheel landed). The proof is only needed for the "Verified ✓" badge, which
+    // the client now fetches lazily AFTER the wheel lands via
+    // GET /api/wheel/proof/{spinId} — off the critical path. periodNumber +
+    // spinIndex are returned so the client knows the spin is verifiable.
     return json(
-      { spinId, result: segment.id, prize, angle, mintOnChain, proof },
+      { spinId, result: segment.id, prize, angle, mintOnChain, periodNumber, spinIndex: spinIndexInPeriod },
       200,
     );
   } catch (err) {

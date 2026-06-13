@@ -2397,26 +2397,11 @@ function DraftRoomContent() {
 
   return (
     <div className={`min-h-screen text-white overflow-hidden flex flex-col transition-colors duration-1000 bg-black ${screenShake ? 'animate-shake' : ''}`}>
-      {/* Persistent edge treatment — gold for HOF, red for Jackpot, purple
-          for PRO (Boris's pick 2026-06-10: purple outside line + flat purple
-          word, nothing else). Pointer-events-none so clicks pass through; a
-          gentle pulse keeps it alive without being distracting. */}
-      {visibleDraftType && (
-        <div
-          className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
-          // A thin colored frame at the absolute outer edges of the screen
-          // (Boris 2026-06-13: must hug the outer edge, NOT be inset — an
-          // earlier safe-area inset pushed the bottom/right line ~34px inward
-          // on iOS, which read as a stray line floating inside the draft).
-          style={{
-            boxShadow: visibleDraftType === 'jackpot'
-              ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
-              : visibleDraftType === 'hof'
-              ? 'inset 0 0 0 2px rgba(255,215,0,0.85)'
-              : 'inset 0 0 0 2px rgba(168,85,247,0.85)',
-          }}
-        />
-      )}
+      {/* No full-screen edge frame. A screen-edge line fights the desktop
+          scrollbar and the iOS notch/home-indicator/rounded corners, so it
+          never sat cleanly on the outer edge (Boris 2026-06-13). The draft
+          type is signaled by the top BAND color (red Jackpot / gold HOF) and
+          the type WORD (PRO / JACKPOT / HOF) in the banner — no outer line. */}
 
       {/* Login gate — dims draft and blocks interaction when logged out.
           Guard on !authLoading so it never flashes during Privy hydration:

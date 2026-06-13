@@ -14,9 +14,14 @@ export type WheelSpinOutcome = {
     value?: number | string;
   };
   angle: number;
-  // Present when the spin was assigned by an active wheel-proof period.
-  // The browser verifies `path` against the on-chain `root` for instant
-  // "Verified ✓" status.
+  // Present when the spin was assigned by an active wheel-proof period. The spin
+  // response NO LONGER carries the full Merkle proof — building it loads every
+  // leaf in the period (~3s at 100k spins) and was blocking the wheel from
+  // landing. The client fetches the proof lazily AFTER the wheel stops, via
+  // GET /api/wheel/proof/{spinId}, using these identifiers to know it's
+  // verifiable. (`proof` kept optional for backward-compat with old responses.)
+  periodNumber?: number | null;
+  spinIndex?: number | null;
   proof?: {
     periodNumber: number;
     spinIndex: number;

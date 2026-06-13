@@ -27,7 +27,25 @@ const MAX_LEN = 20;
 // Letters, numbers, underscore, dot, hyphen. No spaces — keeps names @-able.
 const ALLOWED = /^[a-zA-Z0-9_.-]+$/;
 
-export type UsernameError = 'too_short' | 'too_long' | 'invalid_chars' | 'looks_like_wallet' | 'taken';
+// Founder names — reserved so no one but Boris/Richard can claim them. Matched
+// case-insensitively with separators (space/_/.-/) stripped, so "Boris Vagner",
+// "boris.vagner", and "BorisVagner" all resolve to the same reserved key.
+const FOUNDER_WALLETS = new Set([
+  '0x438bbe98eed1dd2df244b007dab0583cc9be72e0', // Boris (admin/drafting)
+  '0xd3301bc039faf4223da98bceb5fb81abc9399362', // Boris (old Privy login)
+  '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
+]);
+const RESERVED_NAME_KEYS = new Set([
+  'boris', 'borisvagner',
+  'richard', 'richvagner', 'richardvagner', 'rich',
+]);
+// Strip everything but letters+digits, lowercase — collapses separators so a
+// reserved name can't be slipped through with a dot/underscore/hyphen.
+function reservedKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export type UsernameError = 'too_short' | 'too_long' | 'invalid_chars' | 'looks_like_wallet' | 'reserved' | 'taken';
 
 export interface UsernameCheck {
   available: boolean;
@@ -56,6 +74,11 @@ export async function checkUsername(name: string, selfWallet: string): Promise<U
 
   const lower = name.trim().toLowerCase();
   const self = selfWallet.toLowerCase();
+
+  // Founder names are off-limits to everyone except Boris/Richard's own wallets.
+  if (RESERVED_NAME_KEYS.has(reservedKey(name)) && !FOUNDER_WALLETS.has(self)) {
+    return { available: false, reason: 'reserved' };
+  }
   const db = getAdminFirestore();
 
   const resSnap = await db.collection(RESERVATIONS).doc(lower).get();
@@ -89,6 +112,12 @@ export async function claimUsername(name: string, selfWallet: string): Promise<U
   const cleanName = name.trim();
   const lower = cleanName.toLowerCase();
   const self = selfWallet.toLowerCase();
+
+  // Hard gate: founder names can only be claimed by Boris/Richard's own wallets.
+  if (RESERVED_NAME_KEYS.has(reservedKey(name)) && !FOUNDER_WALLETS.has(self)) {
+    return { available: false, reason: 'reserved' };
+  }
+
   const db = getAdminFirestore();
 
   const resRef = db.collection(RESERVATIONS).doc(lower);

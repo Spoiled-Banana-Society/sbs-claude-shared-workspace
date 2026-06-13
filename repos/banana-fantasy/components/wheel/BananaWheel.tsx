@@ -169,7 +169,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
   // Value binding dropped — it was only read by the removed "Share on X" button.
   // The setter stays so the surrounding spin logic is untouched.
   const [, setWonSpinId] = useState<string | null>(null);
-  const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verified' | 'failed'>('unverified');
+  // 'verifying' = proof is being fetched in the background after landing (the
+  // spin response no longer carries it — see the lazy fetch below).
+  const [wonProofStatus, setWonProofStatus] = useState<'unverified' | 'verifying' | 'verified' | 'failed'>('unverified');
   const [wonProofMeta, setWonProofMeta] = useState<{ periodNumber: number; spinIndex: number; root: string } | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [spinError, setSpinError] = useState<string | null>(null);
@@ -208,6 +210,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
             if (isBigWin(segment)) rainPrizes(segment);
           }
           if (onSpinComplete) onSpinComplete(pending.outcome, segment);
+          if (typeof pending.outcome.periodNumber === 'number' && typeof pending.outcome.spinIndex === 'number') {
+            void fetchAndVerifyProof(pending.outcome.spinId, pending.outcome.result);
+          }
         }, remaining);
       } else {
         // Spin already finished — show result immediately
@@ -220,6 +225,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
           fireCelebration(segment);
         }
         if (onSpinComplete) onSpinComplete(pending.outcome, segment);
+        if (typeof pending.outcome.periodNumber === 'number' && typeof pending.outcome.spinIndex === 'number') {
+          void fetchAndVerifyProof(pending.outcome.spinId, pending.outcome.result);
+        }
       }
     } catch { /* ignore corrupt localStorage */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -229,6 +237,41 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     setWonSegment(null);
     setShowResult(false);
     localStorage.removeItem(PENDING_SPIN_KEY);
+  }, []);
+
+  // Fetch + verify the Merkle proof AFTER the wheel lands. The spin response is
+  // kept fast by NOT building the proof server-side (it loads every leaf in the
+  // period — ~3s at 100k spins). The result is already provably derived from the
+  // committed VRF; this just lights up the "Verified ✓" badge a moment later by
+  // checking the proof path against the on-chain root, exactly as before — only
+  // off the critical path so the spin lands instantly.
+  const fetchAndVerifyProof = useCallback(async (spinId: string, segmentId: string) => {
+    setWonProofStatus('verifying');
+    try {
+      const res = await fetch(`/api/wheel/proof/${spinId}`);
+      if (!res.ok) { setWonProofStatus('unverified'); return; }
+      const data = await res.json() as {
+        verifiable?: boolean;
+        periodNumber?: number;
+        spinIndex?: number;
+        proof?: { leaf: string; path: Array<`0x${string}`>; root: `0x${string}` } | null;
+      };
+      if (!data?.verifiable || !data.proof || typeof data.spinIndex !== 'number' || typeof data.periodNumber !== 'number') {
+        setWonProofStatus('unverified');
+        setWonProofMeta(null);
+        return;
+      }
+      const ok = verifySpinProof({
+        spinIndex: data.spinIndex,
+        segmentId,
+        proof: data.proof.path,
+        root: data.proof.root,
+      });
+      setWonProofStatus(ok ? 'verified' : 'failed');
+      setWonProofMeta({ periodNumber: data.periodNumber, spinIndex: data.spinIndex, root: data.proof.root });
+    } catch {
+      setWonProofStatus('unverified');
+    }
   }, []);
 
   // Estimate the wheel's live angle mid-free-spin (the free spin is linear,
@@ -307,9 +350,10 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       localStorage.setItem(PENDING_SPIN_KEY, JSON.stringify(pending));
     } catch { /* ignore */ }
 
-    // Verify the Merkle proof now (before the result modal shows) so the
-    // "Verified ✓" badge can render alongside the prize. Pure crypto in
-    // the browser, no network — runs in <1ms.
+    // Proof verification is deferred to AFTER the wheel lands (fired in the
+    // landing setTimeout below) so it never delays the spin. Reset the badge
+    // here; mark it 'verifying' only for period-assigned spins. Backward-compat:
+    // if an old response still inlines the proof, verify it instantly.
     if (outcome.proof) {
       const ok = verifySpinProof({
         spinIndex: outcome.proof.spinIndex,
@@ -324,7 +368,8 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
         root: outcome.proof.root,
       });
     } else {
-      setWonProofStatus('unverified');
+      const verifiable = typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number';
+      setWonProofStatus(verifiable ? 'verifying' : 'unverified');
       setWonProofMeta(null);
     }
 
@@ -346,6 +391,12 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       // going crazy for several seconds.
       stopSpinSound(segment ? getWinTier(segment) : undefined);
       if (onSpinComplete) onSpinComplete(outcome, segment);
+      // Now that the wheel has landed and the prize is showing, fetch + verify
+      // the Merkle proof in the background to light up the "Verified ✓" badge.
+      // Skipped if an old response already inlined the proof (verified above).
+      if (!outcome.proof && typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number') {
+        void fetchAndVerifyProof(outcome.spinId, outcome.result);
+      }
     }, SPIN_DURATION_MS);
   };
 
@@ -623,6 +674,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   Verified by Chainlink VRF · spin #{wonProofMeta.spinIndex}
+                </div>
+              )}
+              {wonProofStatus === 'verifying' && (
+                <div
+                  className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[#86868b] text-[12px] font-semibold"
+                  style={{ animation: 'fadeIn 0.6s ease-out 0.5s both' }}
+                  title="Fetching the Chainlink VRF Merkle proof for this spin"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Verifying proof…
                 </div>
               )}
               {wonProofStatus === 'failed' && (
