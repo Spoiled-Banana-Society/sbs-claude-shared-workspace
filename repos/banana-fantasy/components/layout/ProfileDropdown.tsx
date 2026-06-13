@@ -28,20 +28,24 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
   const [walletCopied, setWalletCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Name-based referral link (…/r/BorisV) — fetched once when the dropdown
-  // first opens (not on mount: no point hitting the API for a closed menu).
+  // Name-based referral link (…/r/BorisV) — fetched when the dropdown opens
+  // (not on mount: no point hitting the API for a closed menu) AND re-synced
+  // whenever the display name changes, so a rename updates the link live
+  // instead of staying stale until a page refresh.
   const [refCode, setRefCode] = useState<string | null>(null);
   const [refLink, setRefLink] = useState<string | null>(null);
   const [copiedRef, setCopiedRef] = useState(false);
   const refWallet = user?.walletAddress ?? user?.id ?? null;
   const refName = user?.username || '';
   useEffect(() => {
-    if (!isOpen || !refWallet || refCode) return;
+    if (!isOpen || !refWallet) return;
+    let cancelled = false;
     fetch(`/api/referrals?userId=${encodeURIComponent(refWallet)}${refName ? `&username=${encodeURIComponent(refName)}` : ''}`)
       .then((r) => r.json())
-      .then((d) => { if (d.code) { setRefCode(d.code); setRefLink(d.link); } })
+      .then((d) => { if (!cancelled && d.code) { setRefCode(d.code); setRefLink(d.link); } })
       .catch(() => {});
-  }, [isOpen, refWallet, refName, refCode]);
+    return () => { cancelled = true; };
+  }, [isOpen, refWallet, refName]);
   const handleCopyReferral = () => {
     if (!refLink) return;
     navigator.clipboard.writeText(refLink).catch(() => {});

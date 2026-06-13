@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       const { createNotification } = await import('@/lib/queueNotifications');
       await createNotification(wallet, {
         type: 'base_guide',
-        title: "We're on Base & USDC now",
+        title: "We're now on Base using USDC",
         message: 'New to Base? Learn how to buy, swap, or bridge USDC. Tap to learn more.',
         link: '/get-usdc',
         dedupeKey: 'base-usdc-guide',
