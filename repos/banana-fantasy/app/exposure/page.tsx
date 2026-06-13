@@ -454,7 +454,7 @@ export default function ExposurePage() {
                     <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(e.exposure, 100)}%`, backgroundColor: exposureColor(e.exposure) }}
+                        style={{ width: `${Math.min(e.exposure, 100)}%`, backgroundColor: posColor(e.position) }}
                       />
                     </div>
                   </div>
