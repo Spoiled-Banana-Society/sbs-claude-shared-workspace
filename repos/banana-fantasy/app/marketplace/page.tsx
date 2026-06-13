@@ -320,11 +320,18 @@ export default function MarketplacePage() {
     // lets wheel passes list, so "listed + no roster" is always a valid wheel
     // pass that buyers must be able to see and purchase.
     if (team.roster.length === 0 && !team.orderHash && !team.fillingWheelLevel) return false;
-    // A filling wheel pass IS its wheel tier — the NFT's JP/HOF stamp only
-    // lands when the draft fills, so tier views must also honor fillingWheelLevel.
+    // Passes (anything without a drafted roster — wheel JP/HOF passes mid-fill,
+    // listed passes) live ONLY in the Passes tab. Every other view (Listed, All,
+    // Pro, Jackpot, HOF, Top) shows drafted TEAMS only. A pass becomes a team
+    // (gets a roster) when its draft fills, and then it shows in the tier views.
+    const isPass = team.roster.length === 0;
+    if (viewFilter === 'passes') {
+      if (!isPass) return false;
+    } else if (isPass) {
+      return false;
+    }
     const isJp = team.isJackpot || team.fillingWheelLevel === 'jackpot';
     const isHof = team.isHof || team.fillingWheelLevel === 'hof';
-    if (viewFilter === 'passes' && team.roster.length > 0) return false;
     if (viewFilter === 'jackpot' && !isJp) return false;
     if (viewFilter === 'hof' && !isHof) return false;
     if (viewFilter === 'pro' && (isJp || isHof)) return false;
