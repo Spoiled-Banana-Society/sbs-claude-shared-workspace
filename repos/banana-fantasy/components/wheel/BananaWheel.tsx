@@ -642,20 +642,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 return (
                   <div className="bg-white/5 rounded-xl p-4 text-left space-y-2.5" style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}>
                     <p className="text-white text-sm font-semibold text-center">
-                      Congrats on winning a {label} Draft!
+                      You won a {label} Draft (from the Wheel)! Here&apos;s what happens next:
                     </p>
-                    <p className="text-white/60 text-xs leading-relaxed">
-                      You&apos;re automatically in the draft lobby.{' '}
-                      {remaining === null
-                        ? 'It starts as soon as 10 wheel winners are in.'
-                        : remaining === 0
-                          ? <>The lobby is full (10/10) — <span className="text-white/90 font-semibold">your draft is starting now!</span></>
-                          : <>It starts as soon as <span className="text-white/90 font-semibold">{remaining} more</span> {label} spin winner{remaining !== 1 ? 's' : ''} join{remaining === 1 ? 's' : ''} the draft <span className="text-white/90 font-semibold">({count}/10)</span>.</>}
-                    </p>
-                    <div className="space-y-1.5 text-white/45 text-xs leading-relaxed">
-                      <p>• {isJp ? 'Win your Jackpot league and skip straight to the Finals' : 'Compete for added prizes on top of the regular ones'}</p>
-                      <p>• Slow Draft: 8 hours per pick</p>
-                      <p>• Your seat is locked, but you can sell this pass on the Marketplace until the draft fills</p>
+                    <div className="space-y-1.5 text-white/55 text-xs leading-relaxed">
+                      <p><span className="text-white/90 font-semibold">1.</span> You&apos;re in a {label}-only lobby with other wheel winners.{' '}
+                        {remaining === null
+                          ? 'It drafts as soon as 10 are in.'
+                          : remaining === 0
+                            ? <span className="text-white/90 font-semibold">It&apos;s full (10/10) — your draft is starting now!</span>
+                            : <><span className="text-white/90 font-semibold">{remaining} more</span> {label} winner{remaining !== 1 ? 's' : ''} to go <span className="text-white/90 font-semibold">({count}/10)</span>.</>}</p>
+                      <p><span className="text-white/90 font-semibold">2.</span> When it fills, you draft your team (Slow Draft — 8 hours per pick).</p>
+                      <p><span className="text-white/90 font-semibold">3.</span> Win your league and {isJp ? 'you skip straight to the season Finals' : 'you enter the Hall of Fame playoff bracket for bonus prizes'}.</p>
+                      <p className="text-white/40 pt-1">Your seat is locked — but until the draft fills, you can sell this pass on the Marketplace and the buyer takes your spot.</p>
                     </div>
                     <a
                       href={specialDraftStatus?.draftRoomUrl || '/drafting'}

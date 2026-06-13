@@ -53,9 +53,9 @@ export function SpecialDraftBanner() {
             <div>
               <p className="text-white font-semibold text-sm sm:text-base">
                 {liveDraftCount > 0
-                  ? <><span className="text-green-400">{liveDraftCount}</span> special draft{liveDraftCount !== 1 ? 's' : ''} LIVE — join now!</>
+                  ? <><span className="text-green-400">{liveDraftCount}</span> Wheel draft{liveDraftCount !== 1 ? 's' : ''} LIVE — join now!</>
                   : hasQueues
-                  ? <>You have <span className="text-banana">{queuedCount}</span> special draft{queuedCount !== 1 ? 's' : ''} queued</>
+                  ? <>You have <span className="text-banana">{queuedCount}</span> Wheel draft{queuedCount !== 1 ? 's' : ''} queued</>
                   : <>You have {jpEntries > 0 && <span className="text-red-400">{jpEntries} Jackpot</span>}
                     {jpEntries > 0 && hofEntries > 0 && ' & '}
                     {hofEntries > 0 && <span className="text-yellow-400">{hofEntries} HOF</span>}
@@ -64,7 +64,7 @@ export function SpecialDraftBanner() {
               </p>
               <p className="text-white/40 text-xs sm:text-sm">
                 {liveDraftCount > 0
-                  ? 'Your special draft is ready — tap to enter'
+                  ? 'Your Wheel draft is ready — tap to enter'
                   : hasQueues
                   ? 'Waiting for 10 winners · Draft starts immediately when full'
                   : 'Spin the wheel to queue up'}

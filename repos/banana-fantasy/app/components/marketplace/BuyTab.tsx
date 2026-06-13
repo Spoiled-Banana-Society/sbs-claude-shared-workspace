@@ -379,8 +379,8 @@ export function BuyTab({
                       </>
                     ) : (
                       <>
-                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.name}</p>
-                        <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
+                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass #${team.tokenId} (from Wheel)` : team.name}</p>
+                        <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'Won on the wheel · lobby filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
                       </>
                     )}
                     {myMadeOffers?.[team.tokenId] != null && (

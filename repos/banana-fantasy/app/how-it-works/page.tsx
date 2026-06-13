@@ -83,12 +83,12 @@ const FAQS = [
     a: 'Fast drafts have a 30-second pick timer — the whole draft finishes in about 30 minutes. Slow drafts give you 8 hours per pick, so you can draft on your own schedule over a few days.',
   },
   {
-    q: 'What is a Jackpot draft?',
-    a: 'Every batch of 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro. The position of the Jackpot within the batch is derived from a server seed whose hash is committed on Base mainnet before any draft in the batch fills. Anyone can verify the assignment after the seed is revealed at batch close — see the Verified badge on any drafted league. You can also win a Jackpot entry on the Banana Wheel.',
+    q: 'How do I get a Jackpot or HOF draft? (Two ways)',
+    a: 'There are two completely separate ways to land a Jackpot or Hall of Fame draft:\n🎰 The slot machine — when ANY draft fills (paid OR free entry), a slot reveal decides its tier. Every batch of 100 drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The positions are derived from a server seed committed on Base mainnet before any draft fills, so it is provably fair (see the Verified badge on a drafted league).\n⚡ The Banana Wheel — you can win a Jackpot or HOF entry directly on the wheel. You KNOW it is a Jackpot/HOF before you draft: it goes into a Jackpot- or HOF-only lobby, and once 10 winners fill it you draft your team. Wheel-won drafts are labeled "(from Wheel)".\nEither way the prize is the same — a Jackpot or HOF draft with the same perks.',
   },
   {
-    q: 'What are Hall of Fame (HOF) entries?',
-    a: 'The same batch commit that decides Jackpot placement also fixes the 5 HOF positions. Winners of HOF leagues compete in an end-of-season tournament for bonus prizes. You can also win an HOF entry on the Banana Wheel.',
+    q: 'What do Jackpot and HOF drafts actually win me?',
+    a: 'Jackpot: win your league (1st place) and you skip straight to the season Finals. HOF: win your league and you enter the Hall of Fame playoff bracket — an end-of-season tournament for bonus prizes. These perks are identical whether the draft came from the slot machine or the Banana Wheel.',
   },
   {
     q: 'How does scoring work?',
@@ -376,7 +376,7 @@ export default function HowItWorksPage() {
                         transition={{ duration: 0.25 }}
                         className="px-5 pb-4"
                       >
-                        <p className="text-gray-400 text-sm leading-relaxed">{faq.a}</p>
+                        <p className="text-gray-400 text-sm leading-relaxed whitespace-pre-line">{faq.a}</p>
                       </motion.div>
                     )}
                   </div>

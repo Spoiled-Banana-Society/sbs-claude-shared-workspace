@@ -48,12 +48,13 @@ export default function BananaWheelPage() {
       const remaining = count !== null ? Math.max(0, 10 - count) : null;
       pushNotification({
         type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
-        title: `Congrats — You Won a ${label} Draft!`,
-        message: remaining === null
-          ? `You've been added to the lobby. Once 10 Banana Wheel winners are in, the draft starts. Slow Draft — 8 hours per pick.`
+        title: `You won a ${label} Draft (from the Wheel)!`,
+        message: (remaining === null
+          ? `You're in a ${label}-only lobby. It drafts as soon as 10 wheel winners are in (Slow Draft, 8 hrs/pick).`
           : remaining === 0
-            ? `Your ${label} draft lobby is full (10/10) — the draft is starting now! Slow Draft — 8 hours per pick.`
-            : `You've been added to the lobby (${count}/10). Once ${remaining} more ${remaining === 1 ? 'person wins' : 'people win'} a ${label} draft on the Banana Wheel, the draft starts. Slow Draft — 8 hours per pick.`,
+            ? `Your ${label} lobby is full (10/10) — your draft is starting now! (Slow Draft, 8 hrs/pick).`
+            : `You're in a ${label}-only lobby (${count}/10) — ${remaining} more wheel winner${remaining === 1 ? '' : 's'} to go, then you draft (Slow Draft, 8 hrs/pick).`)
+          + (kind === 'jackpot' ? ' Win your league → skip to the Finals.' : ' Win your league → enter the HOF playoffs.'),
         link: '/drafting',
         ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
       });

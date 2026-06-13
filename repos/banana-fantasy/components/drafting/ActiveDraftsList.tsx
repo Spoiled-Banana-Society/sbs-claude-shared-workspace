@@ -45,7 +45,7 @@ export function ActiveDraftsList({
 
       {specialDrafts.length > 0 && (
         <div className="mt-16 mb-4">
-          <h2 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3 px-2">Special Drafts</h2>
+          <h2 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3 px-2">From the Wheel</h2>
           <div className="space-y-2">
             {specialDrafts.map((draft) => (
               <DraftRow

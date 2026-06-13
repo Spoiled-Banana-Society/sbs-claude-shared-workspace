@@ -231,7 +231,7 @@ export function SellTab({
                     <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
                       <div className="min-w-0">
                         <p className="font-mono font-semibold text-[15px] text-text-primary truncate">
-                          {team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : `Team #${team.tokenId}`}
+                          {team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass #${team.tokenId} (from Wheel)` : `Team #${team.tokenId}`}
                         </p>
                         <p className={`font-mono text-[10.5px] ${team.fillingWheelLevel ? (team.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof') : 'text-text-muted'}`}>
                           {team.fillingWheelLevel
