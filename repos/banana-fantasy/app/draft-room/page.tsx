@@ -1862,6 +1862,44 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverPollResult]);
 
+  // Recover the revealed draft type when ENTERING a draft that's already in
+  // the drafting phase — e.g. opening/rejoining it on a second device or your
+  // phone. The normal filling→reveal flow sets draftType and caches it in
+  // draftStore, but that store is localStorage (per-device). A fresh device
+  // that lands straight into an in-progress draft has no cached type, and the
+  // token-level recovery above only runs while phase === 'filling'. The result
+  // was a null draftType during drafting → the band fell back to black with NO
+  // PRO/HOF word and no HOF/JP color (Boris 2026-06-13: "didn't say PRO/HOF, no
+  // HOF color on mobile"). Resolve it from the owner's token level — the same
+  // device-independent source the drafting list uses — so it's consistent
+  // across devices. Skipped for specialType (already known) and spectators
+  // (no owned token → level null → left as-is).
+  useEffect(() => {
+    if (!isLiveMode || specialTypeParam || draftType) return;
+    if (phase !== 'drafting') return;
+    const id = draftId || urlDraftId;
+    if (!id || !walletParam) return;
+    let cancelled = false;
+    getDraftTokenLevel(walletParam, id).then(level => {
+      if (cancelled || !level) return;
+      const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+      const mapped = typeMap[level] || 'pro';
+      setDraftType(mapped);
+      draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+    }).catch((err) => {
+      reportClientError({
+        source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId: id, recovery: 'drafting-entry' },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, draftType, isLiveMode, walletParam, draftId, urlDraftId, specialTypeParam]);
+
   // Jackpot-hit promo POST. Fires whenever the resolved draftType is
   // 'jackpot' for a paid draft — independent of whether the user was on
   // the page during the slot-machine animation. Idempotent via
