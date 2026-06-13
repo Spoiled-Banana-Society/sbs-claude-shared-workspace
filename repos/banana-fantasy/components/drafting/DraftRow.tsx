@@ -80,6 +80,14 @@ export function DraftRow({
   }, [draft.id, liveLeagueNumber, draft.contestName, looksLikeSlotFallback, displayedLeagueName]);
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
+  // Wheel-won drafts know their tier up front, so label them clearly instead of
+  // the generic "Draft Room" (filling) / "League #N" (filled). Regular drafts
+  // keep "Draft Room" while filling — their tier is hidden until the slot reveal.
+  const wheelLabel = draft.specialType === 'jackpot'
+    ? 'Jackpot (from Wheel)'
+    : draft.specialType === 'hof'
+      ? 'HOF (from Wheel)'
+      : null;
   const effectiveLive = isSpecial && live.displayPhase === 'pre-spin-countdown'
     ? { ...live, displayPhase: 'draft-starting' as const, countdown: live.countdown != null ? live.countdown + 45 : null }
     : live;
@@ -95,10 +103,10 @@ export function DraftRow({
         <div className="sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName)}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName)}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
