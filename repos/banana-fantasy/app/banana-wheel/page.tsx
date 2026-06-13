@@ -415,25 +415,25 @@ export default function BananaWheelPage() {
               <div>
                 <span className="text-[#ff6b6b] font-bold text-[15px]">Jackpot</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Win a Jackpot on the wheel and you enter a Jackpot-only draft — a lobby that fills with 10 players who all won a Jackpot spin. It starts the moment the 10th winner joins. Win your league and skip straight to the finals.
+                  Land on Jackpot and you&apos;re placed into a Jackpot draft lobby (from the Wheel) — it starts when 10 wheel winners join. Win that league and skip straight to the finals!
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8 hours per pick) · Your seat is locked in · Sellable on the Marketplace until the draft fills
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#ffd60a] font-bold text-[15px]">HOF</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Win a HOF on the wheel and you enter a HOF-only draft — a lobby that fills with 10 players who all won a HOF spin. It starts the moment the 10th winner joins. Compete for bonus prizes on top of the usual rewards.
+                  Land on HOF and you&apos;re placed into a HOF draft lobby (from the Wheel) — it starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards!
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
-                  Slow draft (8 hours per pick) · Your seat is locked in · Sellable on the Marketplace until the draft fills
+                  Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
                 </p>
               </div>
               <div>
                 <span className="text-[#32d74b] font-bold text-[15px]">Free Drafts</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Free drafts are for regular drafting only. They do not count toward promos — including the Jackpot and HOF drafts won on the wheel.
+                  Free drafts can only be used to draft. They cannot be used for promos — that includes Jackpot/HOF drafts won on the Wheel.
                 </p>
               </div>
             </div>
