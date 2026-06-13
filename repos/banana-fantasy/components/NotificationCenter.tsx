@@ -104,7 +104,7 @@ export const CATEGORY_LABELS: Record<NotificationCategory, { label: string; emoj
   drafts: { label: 'Drafts', emoji: '🏈' },
   promos: { label: 'Promos & Rewards', emoji: '🎁' },
   marketplace: { label: 'Marketplace', emoji: '💰' },
-  special: { label: 'Special Drafts', emoji: '🔥' },
+  special: { label: 'Jackpot & HOF', emoji: '🔥' },
   system: { label: 'System & Referrals', emoji: '📢' },
   friends: { label: 'Friend Requests', emoji: '👋' },
   messages: { label: 'Messages', emoji: '💬' },

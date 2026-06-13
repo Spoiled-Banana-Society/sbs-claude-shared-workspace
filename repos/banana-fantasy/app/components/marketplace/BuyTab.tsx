@@ -274,7 +274,7 @@ export function BuyTab({
           </h3>
           <p className="text-text-secondary text-sm">
             {viewFilter === 'passes'
-              ? 'No Jackpot or HOF draft passes are listed right now. Wheel winners can sell their special-draft passes here while the draft fills.'
+              ? 'No Jackpot or HOF draft passes are listed right now. Wheel winners can sell their wheel draft passes here while the draft fills.'
               : viewFilter === 'jackpot'
               ? 'No Jackpot teams found. These are rare — 1 in 100 paid drafts, plus wheel wins.'
               : viewFilter === 'hof'
@@ -625,8 +625,8 @@ export function BuyTab({
                     <div className={`p-4 rounded-xl mb-4 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'bg-error/10 border border-error/30' : 'bg-hof/10 border border-hof/30'}`}>
                       <p className={`text-sm font-medium mb-1.5 ${selectedTeam.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof'}`}>
                         {selectedTeam.fillingWheelLevel === 'jackpot'
-                          ? '🎰 Guaranteed seat in a special Jackpot draft'
-                          : '🏛️ Guaranteed seat in a special HOF draft'}
+                          ? '🎰 Guaranteed seat in a Jackpot draft (from the Wheel)'
+                          : '🏛️ Guaranteed seat in a HOF draft (from the Wheel)'}
                       </p>
                       <p className="text-text-secondary text-xs leading-relaxed">
                         {typeof selectedTeam.lobbyCount === 'number' ? `${selectedTeam.lobbyCount}/10 in the draft lobby — starts automatically at 10. ` : 'Starts automatically when 10 wheel winners join. '}
