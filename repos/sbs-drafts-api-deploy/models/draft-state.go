@@ -624,7 +624,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		if specialLevel == "Hall of Fame" {
 			tierName = "HOF"
 		}
-		leagueInfo.DisplayName = fmt.Sprintf("Special Draft %s #%d", tierName, counts.SpecialDraftCount)
+		leagueInfo.DisplayName = fmt.Sprintf("%s #%d (from Wheel)", tierName, counts.SpecialDraftCount)
 		leagueInfo.Level = specialLevel
 		isJackpot = specialLevel == "Jackpot"
 		isHOF = specialLevel == "Hall of Fame"
