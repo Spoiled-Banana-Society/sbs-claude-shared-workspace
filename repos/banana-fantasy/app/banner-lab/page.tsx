@@ -17,6 +17,9 @@ type Variant = {
   wordColor: string;
   topAccent?: string;      // optional thin top accent line color (premium/minimal looks)
   statusColor?: string;    // status-line text color
+  topHighlight?: boolean;  // subtle glassy white highlight along the top edge
+  wordShadow?: string;     // soft glow on the type word
+  shadow?: string;         // full boxShadow override for depth
 };
 
 // One draft "box" — matches the real band box styling.
@@ -72,7 +75,9 @@ function Band({ v }: { v: Variant }) {
       <div style={{
         width: '100%', overflow: 'hidden', fontFamily: 'Montserrat, Arial, sans-serif',
         background: v.band,
-        boxShadow: 'inset 0 -1px 0 rgba(0,0,0,0.45)',
+        boxShadow: v.shadow ?? (v.topHighlight
+          ? 'inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.55), 0 8px 30px rgba(0,0,0,0.45)'
+          : 'inset 0 -1px 0 rgba(0,0,0,0.45)'),
         borderTop: v.topAccent ? `2px solid ${v.topAccent}` : undefined,
         borderRadius: 6,
       }}>
@@ -90,7 +95,7 @@ function Band({ v }: { v: Variant }) {
           1 turn until your pick!
         </div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, paddingBottom: 10 }}>
-          <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.14em', color: v.wordColor }}>{v.word}</span>
+          <span style={{ fontWeight: 900, fontSize: 18, letterSpacing: '0.18em', color: v.wordColor, textShadow: v.wordShadow }}>{v.word}</span>
           {['← EXIT', 'MUTE 🎵', '✈ OFF'].map(b => (
             <span key={b} style={{ fontSize: 12, border: '1px solid #888', padding: '1px 4px', color: v.statusColor ?? '#fff' }}>{b}</span>
           ))}
@@ -101,19 +106,27 @@ function Band({ v }: { v: Variant }) {
 }
 
 const JACKPOT: Variant[] = [
-  { name: 'JP 1 · Current (live now)', band: 'linear-gradient(180deg,#C92B30 0%,#9E1F24 100%)', word: 'JACKPOT', wordColor: '#fff' },
-  { name: 'JP 2 · Deep Crimson (darker, richer)', band: 'linear-gradient(180deg,#7E1419 0%,#4A0C10 100%)', word: 'JACKPOT', wordColor: '#FFD9DB' },
-  { name: 'JP 3 · Clean Apple Red', band: 'linear-gradient(180deg,#C42833 0%,#9B1B22 100%)', word: 'JACKPOT', wordColor: '#fff' },
-  { name: 'JP 4 · Ember (premium, near-black + red accent)', band: 'linear-gradient(180deg,#360D10 0%,#160506 100%)', topAccent: '#E0303A', word: 'JACKPOT', wordColor: '#FF5A60', statusColor: '#E9C9CB' },
-  { name: 'JP 5 · Matte Oxblood', band: 'linear-gradient(180deg,#5E1115 0%,#360A0D 100%)', word: 'JACKPOT', wordColor: '#FF6B70' },
+  { name: 'JP 1 · Current (live now — for reference)', band: 'linear-gradient(180deg,#C92B30 0%,#9E1F24 100%)', word: 'JACKPOT', wordColor: '#fff' },
+  // ---- premium ----
+  { name: 'JP 2 · Crimson Glass (radial spotlight + glass top)', band: 'radial-gradient(135% 130% at 50% -25%, #B22631 0%, #6F1620 52%, #3A0C12 100%)', word: 'JACKPOT', wordColor: '#fff', topHighlight: true, wordShadow: '0 1px 8px rgba(255,90,96,0.45)' },
+  { name: 'JP 3 · Onyx Ruby (near-black, ruby glow behind word)', band: 'radial-gradient(120% 150% at 50% 120%, #7A1620 0%, #2A0A0E 45%, #0C0506 100%)', word: 'JACKPOT', wordColor: '#FF5A60', topHighlight: true, statusColor: '#E5C7C9', wordShadow: '0 0 14px rgba(255,60,70,0.6)' },
+  { name: 'JP 4 · Bordeaux (desaturated wine, matte)', band: 'linear-gradient(180deg,#5A1C24 0%,#34111A 55%,#220A11 100%)', word: 'JACKPOT', wordColor: '#F4D2D6', topHighlight: true, wordShadow: '0 1px 6px rgba(0,0,0,0.5)' },
+  { name: 'JP 5 · Carbon + Ruby accent (minimal, premium)', band: 'linear-gradient(180deg,#1A1416 0%,#0E0A0C 100%)', topAccent: '#D2303C', word: 'JACKPOT', wordColor: '#FF4E57', statusColor: '#CBB7B9', wordShadow: '0 0 12px rgba(210,48,60,0.55)' },
+  { name: 'JP 6 · Sunset Ember (warm depth)', band: 'radial-gradient(120% 130% at 50% -10%, #C33A2E 0%, #8A1F1C 50%, #2C0A0A 100%)', word: 'JACKPOT', wordColor: '#FFE3DC', topHighlight: true, wordShadow: '0 1px 8px rgba(0,0,0,0.45)' },
+  { name: 'JP 7 · Velvet (deep, soft, luxurious)', band: 'linear-gradient(180deg,#4E1218 0%,#2A0A0F 60%,#180609 100%)', word: 'JACKPOT', wordColor: '#FF6B70', topHighlight: true, wordShadow: '0 0 10px rgba(255,80,86,0.4)' },
+  { name: 'JP 8 · Obsidian Glass (almost black, red sheen)', band: 'linear-gradient(180deg,#241015 0%,#140A0D 45%,#0A0608 100%)', topAccent: 'rgba(226,72,82,0.55)', word: 'JACKPOT', wordColor: '#FF565E', statusColor: '#C9B6B8', topHighlight: true, wordShadow: '0 0 16px rgba(226,72,82,0.5)' },
 ];
 
 const HOF: Variant[] = [
-  { name: 'HOF 1 · Current (live now)', band: 'linear-gradient(180deg,#D2AB2C 0%,#B08F1F 100%)', word: 'HOF', wordColor: '#1a1400' },
-  { name: 'HOF 2 · Rich Gold (deeper)', band: 'linear-gradient(180deg,#B8902A 0%,#7E6212 100%)', word: 'HOF', wordColor: '#211900' },
-  { name: 'HOF 3 · Champagne (clean, lighter premium)', band: 'linear-gradient(180deg,#E3C66E 0%,#C29A3C 100%)', word: 'HOF', wordColor: '#2A1F00' },
-  { name: 'HOF 4 · Black Gold (premium, near-black + gold accent)', band: 'linear-gradient(180deg,#1E1808 0%,#0E0A02 100%)', topAccent: '#E8C766', word: 'HOF', wordColor: '#F0CE73', statusColor: '#D8C79A' },
-  { name: 'HOF 5 · Metallic Gold (sheen)', band: 'linear-gradient(180deg,#E8CE7A 0%,#C5A24A 45%,#A07E2E 100%)', word: 'HOF', wordColor: '#2A1F00' },
+  { name: 'HOF 1 · Current (live now — for reference)', band: 'linear-gradient(180deg,#D2AB2C 0%,#B08F1F 100%)', word: 'HOF', wordColor: '#1a1400' },
+  // ---- premium ----
+  { name: 'HOF 2 · Champagne Glass (radial spotlight + glass top)', band: 'radial-gradient(135% 130% at 50% -25%, #E7CF87 0%, #C2A04E 52%, #8C6E2C 100%)', word: 'HOF', wordColor: '#2A1F00', topHighlight: true, wordShadow: '0 1px 6px rgba(255,255,255,0.25)' },
+  { name: 'HOF 3 · Onyx Gold (near-black, gold glow behind word)', band: 'radial-gradient(120% 150% at 50% 120%, #8A6E28 0%, #2A2208 45%, #0C0A03 100%)', word: 'HOF', wordColor: '#F0CE73', topHighlight: true, statusColor: '#D8C79A', wordShadow: '0 0 14px rgba(232,199,102,0.55)' },
+  { name: 'HOF 4 · Antique Gold (desaturated, matte heritage)', band: 'linear-gradient(180deg,#A8852F 0%,#7A5E1E 55%,#574214 100%)', word: 'HOF', wordColor: '#241B00', topHighlight: true, wordShadow: '0 1px 6px rgba(0,0,0,0.35)' },
+  { name: 'HOF 5 · Carbon + Gold accent (minimal, premium)', band: 'linear-gradient(180deg,#17150E 0%,#0C0A06 100%)', topAccent: '#E8C766', word: 'HOF', wordColor: '#F0CE73', statusColor: '#CBC09A', wordShadow: '0 0 12px rgba(232,199,102,0.5)' },
+  { name: 'HOF 6 · Brushed Gold (metallic, multi-stop sheen)', band: 'linear-gradient(180deg,#E0C06A 0%,#C6A24C 40%,#9E7C2E 75%,#7E6020 100%)', word: 'HOF', wordColor: '#2A1F00', topHighlight: true, wordShadow: '0 1px 6px rgba(255,255,255,0.3)' },
+  { name: 'HOF 7 · Royal (warm radial depth)', band: 'radial-gradient(120% 130% at 50% -10%, #E6C56E 0%, #B8902A 50%, #4A380E 100%)', word: 'HOF', wordColor: '#2A1F00', topHighlight: true, wordShadow: '0 1px 8px rgba(255,255,255,0.2)' },
+  { name: 'HOF 8 · Obsidian Glass (almost black, gold sheen)', band: 'linear-gradient(180deg,#1E1A0E 0%,#120F08 45%,#0A0804 100%)', topAccent: 'rgba(232,199,102,0.55)', word: 'HOF', wordColor: '#F0CE73', statusColor: '#CBC09A', topHighlight: true, wordShadow: '0 0 16px rgba(232,199,102,0.5)' },
 ];
 
 export default function BannerLab() {
