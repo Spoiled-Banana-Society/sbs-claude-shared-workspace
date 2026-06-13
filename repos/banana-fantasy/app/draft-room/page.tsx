@@ -3,6 +3,7 @@
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { usePushSubscription } from '@/hooks/usePushSubscription';
 import { usePrivy } from '@privy-io/react-auth';
 import { useDraftAudio } from '@/hooks/useDraftAudio';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
@@ -136,6 +137,11 @@ function DraftRoomContent() {
 
   const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
   const { getAccessToken } = usePrivy();
+  // Draft notification (push) toggle — lets users turn turn-alerts on/off
+  // without leaving the draft room. Reuses the same OneSignal push subscription
+  // the notification-settings page uses.
+  const pushNotif = usePushSubscription();
+  const [notifMsg, setNotifMsg] = useState<string | null>(null);
   const {
     playSpinningSound,
     playReelStop,
@@ -980,6 +986,21 @@ function DraftRoomContent() {
     if (id) localStorage.setItem(`mute:${id}`, newValue ? '1' : '0');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMuted, draftId, urlDraftId]);
+
+  // Turn draft turn-alerts (push) on/off from inside the room. ON connects the
+  // OneSignal push subscription (browser permission + opt-in); OFF disconnects.
+  // Errors (e.g. browser-blocked) surface as a brief toast.
+  const handleToggleNotify = useCallback(async () => {
+    setNotifMsg(null);
+    if (pushNotif.state === 'connected') {
+      const r = await pushNotif.disconnect();
+      setNotifMsg(r.ok ? 'Draft alerts off' : (r.error || 'Could not turn off alerts'));
+    } else {
+      const r = await pushNotif.connect();
+      setNotifMsg(r.ok ? 'Draft alerts on — we’ll ping you on your pick' : (r.error || 'Could not turn on alerts'));
+    }
+    setTimeout(() => setNotifMsg(null), 4000);
+  }, [pushNotif]);
 
   useEffect(() => {
     const id = getPersistId();
@@ -2376,6 +2397,20 @@ function DraftRoomContent() {
           {isMuted ? 'UNMUTE' : 'MUTE'} <span className="ml-1">🎵</span>
         </button>
       </div>
+      <div>
+        <button
+          onClick={handleToggleNotify}
+          disabled={pushNotif.busy || pushNotif.state === 'loading'}
+          title={pushNotif.state === 'connected'
+            ? 'Draft alerts ON — click to stop push notifications'
+            : 'Draft alerts OFF — click to get notified when it’s your pick'}
+          className={`cursor-pointer text-[12px] flex items-center justify-center border px-1 font-primary transition-all ${
+            pushNotif.state === 'connected' ? 'border-emerald-500 text-emerald-400' : 'border-gray-500 text-white/60'
+          } ${pushNotif.busy || pushNotif.state === 'loading' ? 'opacity-50 cursor-wait' : ''}`}
+        >
+          🔔 {pushNotif.state === 'connected' ? 'ON' : 'OFF'}
+        </button>
+      </div>
       {(() => {
         const isOn = (isLiveMode && phase === 'drafting') ? autoDraft : engine.airplaneMode;
         const handler = (isLiveMode && phase === 'drafting') ? handleToggleAutoDraft : handleToggleAirplane;
@@ -2429,6 +2464,11 @@ function DraftRoomContent() {
             <span className="text-emerald-400 font-bold text-sm">Auto-draft enabled</span>
             <span className="text-white/60 text-xs">You missed {missedPicksCount}+ picks in a row</span>
           </div>
+        </div>
+      )}
+      {notifMsg && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-xl bg-black/90 border border-white/15 shadow-2xl backdrop-blur-sm animate-fade-in-down max-w-[90vw]">
+          <span className="text-white text-sm">🔔 {notifMsg}</span>
         </div>
       )}
 
