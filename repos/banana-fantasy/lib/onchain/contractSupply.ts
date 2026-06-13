@@ -36,24 +36,28 @@ async function readTotalSupply(rpc: string): Promise<number> {
 export async function currentMaxTokenId(): Promise<number> {
   if (cache && Date.now() - cache.ts < TTL_MS) return cache.max;
 
-  // Try the configured RPC, then the public mainnet RPC. A zero/failed read on
-  // the primary must NOT be trusted (it would cap the supply low and hide real
-  // teams) — fall back before giving up.
+  // Read totalSupply from BOTH RPCs and take the MAX. The configured Alchemy
+  // endpoint has been observed returning a STALE value (1 — the supply right
+  // after deploy) from a lagging backend node, non-deterministically per
+  // request, while the chain is really at ~78. totalSupply only ever GROWS, so
+  // the truth is the highest value any source reports. A single stale-low node
+  // can then never cap the supply low and hide real teams (League-4 bug,
+  // 2026-06-13). Both run concurrently; failures resolve to 0 and are ignored.
+  const rpcs = BASE_RPC_URL === FALLBACK_RPC ? [BASE_RPC_URL] : [BASE_RPC_URL, FALLBACK_RPC];
+  const reads = await Promise.allSettled(rpcs.map((u) => readTotalSupply(u)));
   let supply = 0;
-  try { supply = await readTotalSupply(BASE_RPC_URL); } catch { /* try fallback */ }
-  if (supply <= 0 && BASE_RPC_URL !== FALLBACK_RPC) {
-    try { supply = await readTotalSupply(FALLBACK_RPC); } catch { /* fall through */ }
-  }
+  for (const r of reads) if (r.status === 'fulfilled' && r.value > supply) supply = r.value;
 
   if (supply > 0) {
-    const max = supply + MARGIN;
+    // Monotonic: supply never shrinks, so never accept a cap below one we've
+    // already established — bulletproofs against any future stale-low read.
+    const max = Math.max(supply + MARGIN, cache?.max ?? 0);
     cache = { ts: Date.now(), max };
     return max;
   }
-  // Could not read supply from any RPC — NEVER wrongly hide real teams: return a
-  // high bound (better to briefly show a ghost than drop a real token). Note we
-  // do NOT fall back to a possibly-stale-low cache here, for the same reason.
-  return Number.MAX_SAFE_INTEGER;
+  // Both reads failed — keep a prior cap if we have one, else show everything
+  // (better to briefly show a ghost than drop a real token).
+  return cache?.max ?? Number.MAX_SAFE_INTEGER;
 }
 
 /**
