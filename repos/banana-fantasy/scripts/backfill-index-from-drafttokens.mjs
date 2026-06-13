@@ -6,7 +6,7 @@ const fs = admin.firestore();
 const { FieldValue } = admin.firestore;
 
 // --- on-chain supply cutoff ---
-const RPC='https://mainnet.base.org', C='0x14065412b3A431a660e6E576A14b104F1b3E463b';
+const RPC='https://mainnet.base.org', C='0x781B2E6fE9A615C2680A51Ef88f309ddC2e0D73F';
 const sup = await (await fetch(RPC,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'eth_call',params:[{to:C,data:'0x18160ddd'},'latest']})})).json();
 const maxId = (sup.result && sup.result!=='0x' ? Number(BigInt(sup.result)) : 1454) + 50;
 console.log(`totalSupply cutoff maxId=${maxId}`);

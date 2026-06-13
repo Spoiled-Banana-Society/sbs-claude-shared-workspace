@@ -204,7 +204,7 @@ Not random odds — guaranteed distribution per 100 drafts. Users don't know typ
 - Product should feel like a polished web2 fantasy app with web3 superpowers under the hood.
 
 ## Smart Contract
-- **BBB4 draft pass NFT:** `0x14065412b3A431a660e6E576A14b104F1b3E463b` on Base.
+- **BBB4 draft pass NFT:** `0x781B2E6fE9A615C2680A51Ef88f309ddC2e0D73F` on Base.
 - **USDC on Base:** `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`.
 - Public `mint(numberOfTokens)` — user pays $25 USDC per pass.
 - `reserveTokens(address, numberOfTokens)` — `onlyOwner` admin mint, no USDC. Used for admin grants + wheel prize + promo rewards.
