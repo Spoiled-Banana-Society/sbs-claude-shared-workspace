@@ -201,7 +201,7 @@ export const mockFAQSections: FAQSection[] = [
   },
   {
     id: 'base-usdc',
-    title: 'New: Base & USDC',
+    title: 'New: Base using USDC',
     items: [
       {
         question: 'What changed from previous seasons?',
@@ -212,7 +212,7 @@ export const mockFAQSections: FAQSection[] = [
         },
       },
       {
-        question: 'Why did SBS move to Base & USDC?',
+        question: 'Why did SBS move to Base using USDC?',
         answer: '• $25 is $25 - entries are priced in dollars, not ETH. No price swings.\n• Prize pools hold their value - $100K in USDC stays $100K, all season.\n• Transactions confirm in seconds on Base.\n• Everything on SBS is gas-free - we cover it.\n• Even swapping or bridging into Base costs cents.\nThe game, made better for you.',
       },
       {

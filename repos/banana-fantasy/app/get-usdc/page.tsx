@@ -407,7 +407,7 @@ export default function GetUsdcPage() {
             href="/faq#base-usdc"
             className="px-8 py-3.5 border border-bg-tertiary text-text-secondary font-semibold rounded-xl hover:text-text-primary hover:border-text-muted transition-all w-full sm:w-auto text-center"
           >
-            Base &amp; USDC FAQ
+            Base using USDC FAQ
           </Link>
         </div>
       </div>
