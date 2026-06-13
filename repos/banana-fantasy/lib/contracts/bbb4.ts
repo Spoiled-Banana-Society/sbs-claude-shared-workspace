@@ -34,7 +34,9 @@ export const BASE_SEPOLIA_CHAIN_ID = BASE_CHAIN_ID;
 export const BASE_SEPOLIA_RPC_URL = BASE_RPC_URL;
 export const BASE_SEPOLIA = BASE;
 
-export const DEFAULT_BBB4_CONTRACT_ADDRESS = '0x14065412b3A431a660e6E576A14b104F1b3E463b' as Address;
+// V2 "BBB4 Staging" (OpenSea-conduit auto-approval baked in) — deployed 2026-06-12.
+// Previous V1 contract: 0x14065412b3A431a660e6E576A14b104F1b3E463b.
+export const DEFAULT_BBB4_CONTRACT_ADDRESS = '0x781B2E6fE9A615C2680A51Ef88f309ddC2e0D73F' as Address;
 
 export const BBB4_CONTRACT_ADDRESS =
   (process.env.NEXT_PUBLIC_BBB4_CONTRACT as Address | undefined) ?? DEFAULT_BBB4_CONTRACT_ADDRESS;
