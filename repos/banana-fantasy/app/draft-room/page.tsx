@@ -2403,17 +2403,12 @@ function DraftRoomContent() {
           gentle pulse keeps it alive without being distracting. */}
       {visibleDraftType && (
         <div
-          className="fixed pointer-events-none z-[65] animate-hof-edge"
-          // Inset the colored type frame by the safe areas so it hugs the
-          // VISIBLE screen edges. With viewportFit:'cover' a plain inset-0 ran
-          // the top/bottom of the ring under the notch/home-indicator, so the
-          // visible line looked pushed in on mobile (Boris 2026-06-13). Now it
-          // lines up flush with the inset header + bands.
+          className="fixed inset-0 pointer-events-none z-[65] animate-hof-edge"
+          // A thin colored frame at the absolute outer edges of the screen
+          // (Boris 2026-06-13: must hug the outer edge, NOT be inset — an
+          // earlier safe-area inset pushed the bottom/right line ~34px inward
+          // on iOS, which read as a stray line floating inside the draft).
           style={{
-            top: 'env(safe-area-inset-top)',
-            right: 'env(safe-area-inset-right)',
-            bottom: 'env(safe-area-inset-bottom)',
-            left: 'env(safe-area-inset-left)',
             boxShadow: visibleDraftType === 'jackpot'
               ? 'inset 0 0 0 2px rgba(239,68,68,0.85)'
               : visibleDraftType === 'hof'
