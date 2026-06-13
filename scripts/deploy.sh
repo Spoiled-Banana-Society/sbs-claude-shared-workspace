@@ -93,6 +93,10 @@ if [ -f "$DEPLOY_MARKER" ]; then
         STALE_FILES=""
         while IFS= read -r f; do
           [ -z "$f" ] && continue
+          # A file the new commits DELETED that the workspace also doesn't
+          # have is already in sync — diff -q on two missing paths errors,
+          # which read as "stale" and blocked deploys for no reason.
+          if [ ! -e "$DEPLOY_REPO/$f" ] && [ ! -e "$WORKSPACE/$f" ]; then continue; fi
           if ! diff -q "$DEPLOY_REPO/$f" "$WORKSPACE/$f" >/dev/null 2>&1; then
             STALE_FILES="${STALE_FILES}${f}\n"
           fi
