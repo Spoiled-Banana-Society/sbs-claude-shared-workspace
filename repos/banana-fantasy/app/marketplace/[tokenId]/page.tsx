@@ -1385,13 +1385,13 @@ export default function NftDetailPage() {
                 </h3>
               </div>
               <p className="text-text-secondary text-xs leading-relaxed mb-3">
-                This isn&apos;t a drafted team — it&apos;s a <span className="text-text-primary font-semibold">{fillingLevel === 'jackpot' ? 'Jackpot' : 'Hall of Fame'} entry someone won on the Banana Wheel</span>. Its draft lobby is still filling, which is the only window it can be bought or sold.
+                This isn&apos;t a drafted team — it&apos;s a <span className="text-text-primary font-semibold">{fillingLevel === 'jackpot' ? 'Jackpot' : 'Hall of Fame'} entry someone won on the Banana Wheel</span>, and its draft lobby is still filling — so right now it trades as a pass to that seat.
               </p>
               <div className="space-y-1.5 text-text-secondary text-xs leading-relaxed">
                 <p><span className="text-text-primary font-semibold">Buy it →</span> the seat is transferred to you and you take their spot in the {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'}-only lobby.</p>
                 <p><span className="text-text-primary font-semibold">When the lobby fills (10 winners) →</span> you draft your team. Slow Draft, 8 hours per pick.</p>
                 <p><span className="text-text-primary font-semibold">Win your league →</span> {fillingLevel === 'jackpot' ? 'you skip straight to the season Finals.' : 'you enter the Hall of Fame playoff bracket for bonus prizes.'}</p>
-                <p className="text-text-muted pt-1">Once the draft fills, this window closes — it becomes a normal team and can no longer be traded mid-season.</p>
+                <p className="text-text-muted pt-1">Once it fills, the pass becomes your drafted team.</p>
               </div>
             </div>
           )}
