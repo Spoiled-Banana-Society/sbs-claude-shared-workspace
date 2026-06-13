@@ -3,7 +3,7 @@
 import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { usePushSubscription } from '@/hooks/usePushSubscription';
+import { useDraftNotifyPref } from '@/hooks/useDraftNotifyPref';
 import { usePrivy } from '@privy-io/react-auth';
 import { useDraftAudio } from '@/hooks/useDraftAudio';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
@@ -138,10 +138,11 @@ function DraftRoomContent() {
 
   const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
   const { getAccessToken } = usePrivy();
-  // Draft notification (push) toggle — lets users turn turn-alerts on/off
-  // without leaving the draft room. Reuses the same OneSignal push subscription
-  // the notification-settings page uses.
-  const pushNotif = usePushSubscription();
+  // In-draft-room turn-alert toggle. Per-speed (fast vs slow) and saved
+  // per-wallet, so it persists across drafts and the two speeds are
+  // independent. speedParam drives which speed's pref this bell controls.
+  const draftSpeed: 'fast' | 'slow' = speedParam === 'slow' ? 'slow' : 'fast';
+  const notifyPref = useDraftNotifyPref(draftSpeed);
   const [notifMsg, setNotifMsg] = useState<string | null>(null);
   const {
     playSpinningSound,
@@ -988,20 +989,23 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMuted, draftId, urlDraftId]);
 
-  // Turn draft turn-alerts (push) on/off from inside the room. ON connects the
-  // OneSignal push subscription (browser permission + opt-in); OFF disconnects.
-  // Errors (e.g. browser-blocked) surface as a brief toast.
+  // Toggle this draft speed's saved turn-alert pref. Enabling connects push if
+  // needed; the pref persists per-wallet so it carries across drafts, and fast
+  // vs slow stay independent. Errors (e.g. browser-blocked) surface as a toast.
   const handleToggleNotify = useCallback(async () => {
     setNotifMsg(null);
-    if (pushNotif.state === 'connected') {
-      const r = await pushNotif.disconnect();
-      setNotifMsg(r.ok ? 'Draft alerts off' : (r.error || 'Could not turn off alerts'));
+    const wasOn = notifyPref.enabled;
+    const r = await notifyPref.toggle();
+    const speedLabel = draftSpeed === 'slow' ? 'slow' : 'fast';
+    if (r.ok) {
+      setNotifMsg(wasOn
+        ? `Alerts off for ${speedLabel} drafts`
+        : `Alerts on for ${speedLabel} drafts — we’ll ping you on your pick`);
     } else {
-      const r = await pushNotif.connect();
-      setNotifMsg(r.ok ? 'Draft alerts on — we’ll ping you on your pick' : (r.error || 'Could not turn on alerts'));
+      setNotifMsg(r.error || 'Could not update alerts');
     }
     setTimeout(() => setNotifMsg(null), 4000);
-  }, [pushNotif]);
+  }, [notifyPref, draftSpeed]);
 
   useEffect(() => {
     const id = getPersistId();
@@ -2402,15 +2406,15 @@ function DraftRoomContent() {
       <div>
         <button
           onClick={handleToggleNotify}
-          disabled={pushNotif.busy || pushNotif.state === 'loading'}
-          title={pushNotif.state === 'connected'
-            ? 'Draft alerts ON — click to stop push notifications'
-            : 'Draft alerts OFF — click to get notified when it’s your pick'}
+          disabled={notifyPref.busy || notifyPref.loading}
+          title={notifyPref.enabled
+            ? `Turn-alerts ON for ${draftSpeed} drafts — click to turn off (fast & slow are separate, saved to your account)`
+            : `Turn-alerts OFF for ${draftSpeed} drafts — click to get notified on your pick (fast & slow are separate, saved to your account)`}
           className={`cursor-pointer text-[12px] flex items-center justify-center border px-1 font-primary transition-all ${
-            pushNotif.state === 'connected' ? 'border-emerald-500 text-emerald-400' : 'border-gray-500 text-white/60'
-          } ${pushNotif.busy || pushNotif.state === 'loading' ? 'opacity-50 cursor-wait' : ''}`}
+            notifyPref.enabled ? 'border-emerald-500 text-emerald-400' : 'border-gray-500 text-white/60'
+          } ${notifyPref.busy || notifyPref.loading ? 'opacity-50 cursor-wait' : ''}`}
         >
-          🔔 {pushNotif.state === 'connected' ? 'ON' : 'OFF'}
+          🔔 {notifyPref.loading ? '…' : notifyPref.enabled ? 'ON' : 'OFF'}
         </button>
       </div>
       {(() => {
