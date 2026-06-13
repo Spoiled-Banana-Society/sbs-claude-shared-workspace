@@ -118,6 +118,23 @@ export async function GET(req: Request) {
     const seen = new Set<number>();
     const drafts: FeedDraft[] = [];
     const jackpotSlotIds = new Map<number, string>(); // globalNumber → slot doc id (jackpot_draws key)
+    // VRF-committed type per draft (provably-fair source of truth). Gate display
+    // so a sealed HOF/Jackpot only shows once its written Level matches — never
+    // the 'Pro' creation-default before the slot machine determines it.
+    const { locateDraft } = await import('@/lib/batchProof');
+    const batchCache = new Map<number, { jackpotPositions?: number[]; hofPositions?: number[] } | null>();
+    const committedTypeOf = async (globalNumber: number): Promise<FeedDraft['level'] | null> => {
+      const loc = locateDraft(globalNumber);
+      if (!batchCache.has(loc.batchNumber)) {
+        const s = await db.collection('batch_proofs').doc(String(loc.batchNumber)).get();
+        batchCache.set(loc.batchNumber, s.exists ? (s.data() as { jackpotPositions?: number[]; hofPositions?: number[] }) : null);
+      }
+      const b = batchCache.get(loc.batchNumber);
+      if (!b) return null;
+      if ((b.jackpotPositions ?? []).includes(loc.positionInBatch)) return 'Jackpot';
+      if ((b.hofPositions ?? []).includes(loc.positionInBatch)) return 'Hall of Fame';
+      return 'Pro';
+    };
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const snap = snaps[i];
@@ -133,14 +150,15 @@ export async function GET(req: Request) {
       // the doc mid-write, filter anything above the counter so phantom
       // future leagues don't render.
       if (globalNumber > filled) continue;
-      // Skip until the type is written at reveal — never flash a default 'Pro'
-      // for a HOF/Jackpot in a "provably fair" feed (see proof-feed/route.ts).
-      if (!data?.Level || !data.Level.trim()) continue;
       if (seen.has(globalNumber)) continue;
+      const level = normalizeLevel(data?.Level);
+      // Only show once the written Level matches the VRF-committed type — a sealed
+      // HOF/Jackpot stays hidden until the slot machine determines it (real-time).
+      const committed = await committedTypeOf(globalNumber);
+      if (committed && committed !== level) continue;
       seen.add(globalNumber);
       // updateTime = last write to the doc = slot machine reveal moment.
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
-      const level = normalizeLevel(data?.Level);
       if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber),

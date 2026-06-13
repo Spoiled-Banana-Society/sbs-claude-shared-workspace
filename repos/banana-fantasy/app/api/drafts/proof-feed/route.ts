@@ -105,6 +105,25 @@ export async function GET(req: Request) {
     const seen = new Set<number>();
     const drafts: FeedDraft[] = [];
     const jackpotSlotIds = new Map<number, string>(); // globalNumber → slot doc id (jackpot_draws key)
+    // On-chain committed type per draft (the provably-fair source of truth).
+    // Used to GATE display: we only show a draft once the written Level matches
+    // this committed type — so a sealed HOF/Jackpot never flashes as 'Pro'
+    // during the brief fill→reveal gap. Batch docs cached (drafts cluster in
+    // the same batch). batchData absent (e.g. pre-merkle) → no gate, show Level.
+    const { locateDraft } = await import('@/lib/batchProof');
+    const batchCache = new Map<number, { jackpotPositions?: number[]; hofPositions?: number[] } | null>();
+    const committedTypeOf = async (globalNumber: number): Promise<FeedDraft['level'] | null> => {
+      const loc = locateDraft(globalNumber);
+      if (!batchCache.has(loc.batchNumber)) {
+        const s = await db.collection('batch_proofs').doc(String(loc.batchNumber)).get();
+        batchCache.set(loc.batchNumber, s.exists ? (s.data() as { jackpotPositions?: number[]; hofPositions?: number[] }) : null);
+      }
+      const b = batchCache.get(loc.batchNumber);
+      if (!b) return null;
+      if ((b.jackpotPositions ?? []).includes(loc.positionInBatch)) return 'Jackpot';
+      if ((b.hofPositions ?? []).includes(loc.positionInBatch)) return 'Hall of Fame';
+      return 'Pro';
+    };
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const snap = snaps[i];
@@ -121,20 +140,21 @@ export async function GET(req: Request) {
       // If we catch the doc mid-write we'd render a phantom league
       // ahead of the counter. Filter anything above the counter.
       if (globalNumber > filled) continue;
-      // Type not yet resolved: the `Level` field is written at the slot-machine
-      // REVEAL, a beat after the fill counter ticks. If we render in that gap,
-      // normalizeLevel defaults to 'Pro' and a HOF/Jackpot briefly shows as PRO
-      // in a feed branded "provably fair" — worse than not showing it yet. Skip
-      // until the type is actually written; it reappears (correct) next read.
-      if (!data?.Level || !data.Level.trim()) continue;
       if (seen.has(globalNumber)) continue;
+      const level = normalizeLevel(data?.Level);
+      // Gate on the on-chain truth: only show once the written Level matches the
+      // committed type. During the fill→reveal gap a sealed HOF/Jackpot reads
+      // Level='Pro' (the creation default) → mismatch → skip, so it never flashes
+      // the wrong type. The instant the reveal writes the real Level it matches
+      // and shows (real-time). No committed type on file → show Level as-is.
+      const committed = await committedTypeOf(globalNumber);
+      if (committed && committed !== level) continue;
       seen.add(globalNumber);
       // updateTime is when the doc was last written — for a filled
       // draft, that's the slot-machine reveal moment (Level field
       // written). Better than StartDate (season kickoff, identical for
       // every draft) or createTime (lobby open, well before fill).
       const filledAt = snap.updateTime ? snap.updateTime.toDate().toISOString() : null;
-      const level = normalizeLevel(data?.Level);
       if (level === 'Jackpot') jackpotSlotIds.set(globalNumber, c.draftId);
       drafts.push({
         draftId: String(globalNumber), // proof URL = /proof/{globalNum}
