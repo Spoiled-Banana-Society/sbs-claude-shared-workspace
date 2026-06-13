@@ -35,6 +35,12 @@ export async function GET(req: Request) {
   if (!isFirestoreConfigured()) return jsonError('Index not configured', 503);
 
   try {
+    // TEMP DEBUG: expose the computed maxId so we can see what the lambda reads
+    // for totalSupply (remove after diagnosing the League-4 hidden-teams issue).
+    if (getSearchParam(req, 'debugmax')) {
+      const maxId = await currentMaxTokenId();
+      return json({ debug: true, maxId });
+    }
     const level = (getSearchParam(req, 'level') || '').toLowerCase();
     const leagueParam = getSearchParam(req, 'league');
     const teamParam = getSearchParam(req, 'team');
