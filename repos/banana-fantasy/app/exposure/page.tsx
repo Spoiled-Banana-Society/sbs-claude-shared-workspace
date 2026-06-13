@@ -425,8 +425,8 @@ export default function ExposurePage() {
               <div>Exposure</div>
               <div className="hidden sm:block text-right">Drafts</div>
               <div className="text-right">%</div>
-              <div className="hidden sm:block text-right">ADP</div>
-              <div className="hidden sm:block text-right" title="Your average actual pick vs ADP">Actual</div>
+              <div className="hidden sm:block text-right" title="Consensus ADP — where this slot is typically drafted across all drafts (the market price)">ADP</div>
+              <div className="hidden sm:block text-right" title="Where YOU drafted it on average. Green = value (you got it later than ADP), red = reach (earlier than ADP)">Your Pick</div>
               <div className="hidden sm:block text-right">Bye</div>
             </div>
 
@@ -454,7 +454,7 @@ export default function ExposurePage() {
                     <div className="flex-1 h-2 bg-white/[0.06] rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
-                        style={{ width: `${Math.min(e.exposure, 100)}%`, backgroundColor: exposureColor(e.exposure) }}
+                        style={{ width: `${Math.min(e.exposure, 100)}%`, backgroundColor: posColor(e.position) }}
                       />
                     </div>
                   </div>

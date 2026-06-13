@@ -32,6 +32,7 @@ import {
   generateReelItemsForReel,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
+import { draftWordColor, draftWordShadow } from '@/lib/draftBandStyle';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -2341,7 +2342,8 @@ function DraftRoomContent() {
             fontSize: '18px',
             lineHeight: 1,
             letterSpacing: '0.14em',
-            color: visibleDraftType === 'hof' ? '#111' : visibleDraftType === 'jackpot' ? '#fff' : '#a855f7',
+            color: draftWordColor(visibleDraftType),
+            textShadow: draftWordShadow(visibleDraftType),
           }}
         >
           {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
