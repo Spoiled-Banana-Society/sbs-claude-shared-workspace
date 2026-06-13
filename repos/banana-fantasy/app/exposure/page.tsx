@@ -69,7 +69,15 @@ export default function ExposurePage() {
 
   const [posFilter, setPosFilter] = useState('all');
   const [search, setSearch] = useState<string[]>([]);
+  const [teamSearch, setTeamSearch] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<SortField>('exposure');
+
+  // Every NFL team the user actually has exposure to — powers the team search
+  // suggestions (same chip pattern as My Teams / Marketplace). Sorted A→Z.
+  const teamOptions = useMemo(
+    () => [...new Set(exposures.map(e => e.team).filter(Boolean))].sort(),
+    [exposures],
+  );
   const [selectedExposure, setSelectedExposure] = useState<ExposureEntry | null>(null);
   const [modalLeague, setModalLeague] = useState<League | null>(null);
   const [modalTab, setModalTab] = useState<ModalTab>('roster');
@@ -158,6 +166,12 @@ export default function ExposurePage() {
       );
     }
 
+    // Team search (OR across team chips) — narrows to the selected NFL teams.
+    const teamQueries = teamSearch.map(c => c.trim().toLowerCase()).filter(Boolean);
+    if (teamQueries.length) {
+      data = data.filter(e => teamQueries.some(q => e.team.toLowerCase() === q || e.team.toLowerCase().includes(q)));
+    }
+
     // Enrich with real ADP for sorting + display. avgPick is the
     // actual average pick number we drafted this team-position at (computed
     // server-side in recomputeUserExposure). vsAdp = avgPick − adp:
@@ -177,7 +191,7 @@ export default function ExposurePage() {
         if (sortBy === 'adp') return a.adp - b.adp;
         return b.exposure - a.exposure;
       });
-  }, [exposures, posFilter, search, sortBy]);
+  }, [exposures, posFilter, search, teamSearch, sortBy]);
 
   // Real stacks = QB + at least one skill (WR / TE / RB). DST and other
   // permutations don't count because in best ball, "stacking" only has
@@ -360,39 +374,39 @@ export default function ExposurePage() {
       {/* ── Section 2: Position Exposure Table ─────────────────────────── */}
       <div className={exposureTab === 'positions' ? 'mb-10' : 'hidden'}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          {/* Position filter pills */}
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
-            <button
-              onClick={() => setPosFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                posFilter === 'all' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
-              }`}
-            >
-              All
-            </button>
-            {positions.map(pos => {
-              const color = posColor(pos);
-              const active = posFilter === pos;
-              return (
-                <button
-                  key={pos}
-                  onClick={() => setPosFilter(pos)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
-                  style={{
-                    color,
-                    backgroundColor: active ? `${color}26` : 'transparent',
-                    opacity: active ? 1 : 0.75,
-                  }}
-                >
-                  {pos}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Sort + Search */}
-          <div className="flex items-center gap-2">
-            <div className="flex bg-white/[0.04] rounded-lg p-0.5">
+          {/* Left: position pills + sort. Sort sits next to the position pills
+              (moved left, away from the search group) so the two searches can
+              live together on the right (Boris 2026-06-13). */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              <button
+                onClick={() => setPosFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
+                  posFilter === 'all' ? 'bg-white/15 text-white' : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                All
+              </button>
+              {positions.map(pos => {
+                const color = posColor(pos);
+                const active = posFilter === pos;
+                return (
+                  <button
+                    key={pos}
+                    onClick={() => setPosFilter(pos)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
+                    style={{
+                      color,
+                      backgroundColor: active ? `${color}26` : 'transparent',
+                      opacity: active ? 1 : 0.75,
+                    }}
+                  >
+                    {pos}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex bg-white/[0.04] rounded-lg p-0.5 flex-shrink-0">
               {([['exposure', 'Exp%'], ['adp', 'ADP']] as [SortField, string][]).map(([key, label]) => (
                 <button
                   key={key}
@@ -405,12 +419,24 @@ export default function ExposurePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Right: team search + slot search, side by side. Team search is the
+              same chip pattern used on My Teams / Marketplace. */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <MultiChipSearch
+              chips={teamSearch}
+              onChange={setTeamSearch}
+              options={teamOptions}
+              placeholder="Team — CHI, KC…"
+              className="w-32 sm:w-44"
+            />
             <MultiChipSearch
               chips={search}
               onChange={setSearch}
               options={slotOptions}
               placeholder="IND RB, MIN WR…"
-              className="w-44 sm:w-64"
+              className="w-40 sm:w-56"
             />
           </div>
         </div>

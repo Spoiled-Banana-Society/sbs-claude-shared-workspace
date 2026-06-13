@@ -19,6 +19,12 @@ export interface UseSWRLikeOptions<T> {
    *  snapshot (then revalidates live), instead of showing a skeleton while the
    *  network round-trips. Opt-in per hook (data must be JSON-serializable). */
   persist?: boolean;
+  /** Refetch when the tab regains focus / becomes visible. Opt-in. Makes a
+   *  view feel live without a websocket — you come back and it's fresh. */
+  revalidateOnFocus?: boolean;
+  /** Poll every N ms while mounted (0/undefined = off). Skips ticks while the
+   *  tab is hidden so we don't hammer the server in the background. Opt-in. */
+  refreshInterval?: number;
 }
 
 function lsKey(key: string): string { return `swr:${key}`; }
@@ -121,6 +127,32 @@ export function useSWRLike<T>(
       controllerRef.current = null;
     };
   }, [key, enabled, runFetch]);
+
+  // Live-feel revalidation (opt-in). runFetch is stable (deps: enabled/key/
+  // persist) and carries no Privy-derived identity, so listing it here can't
+  // trigger the render-loop fetch storm the CLAUDE.md rule warns about.
+  const revalidateOnFocus = options.revalidateOnFocus ?? false;
+  const refreshInterval = options.refreshInterval ?? 0;
+
+  useEffect(() => {
+    if (!enabled || !revalidateOnFocus || typeof window === 'undefined') return;
+    const onFocus = () => { if (document.visibilityState !== 'hidden') void runFetch(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [enabled, revalidateOnFocus, runFetch]);
+
+  useEffect(() => {
+    if (!enabled || refreshInterval <= 0 || typeof window === 'undefined') return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return; // pause in background
+      void runFetch();
+    }, refreshInterval);
+    return () => window.clearInterval(id);
+  }, [enabled, refreshInterval, runFetch]);
 
   const isLoading = useMemo(() => {
     if (!enabled) return false;
