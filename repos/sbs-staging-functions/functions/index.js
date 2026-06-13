@@ -7,6 +7,7 @@ admin.initializeApp();
 const DRAFTS_API_URL = "https://sbs-drafts-api-staging-652484219017.us-central1.run.app";
 
 const { updateADP } = require("./updateADP");
+const { updateRosters } = require("./updateRosters");
 
 /**
  * Firestore trigger: watches v2_queues/{type} for changes.
@@ -242,5 +243,22 @@ exports.scheduledUpdateADP = functions
   .onRun(async () => {
     const res = await updateADP({ db: admin.firestore() });
     console.log("[scheduledUpdateADP] complete", JSON.stringify(res));
+    return null;
+  });
+
+/**
+ * scheduledUpdateRosters — daily roster/depth-chart refresh from Rolling
+ * Insights, so trades, signings, and depth moves flow into the draft board
+ * automatically. Replaces the dead-SportsData prod path (stat.js analyzeData).
+ * Updates PlayersFromTeam + 2026 byes in playerStats2026/playerMap; leaves ADP
+ * to scheduledUpdateADP. See updateRosters.js.
+ */
+exports.scheduledUpdateRosters = functions
+  .runWith({ timeoutSeconds: 300, memory: "512MB" })
+  .pubsub.schedule("every 24 hours")
+  .timeZone("America/New_York")
+  .onRun(async () => {
+    const res = await updateRosters({ db: admin.firestore() });
+    console.log("[scheduledUpdateRosters] complete", JSON.stringify(res));
     return null;
   });

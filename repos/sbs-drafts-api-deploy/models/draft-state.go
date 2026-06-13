@@ -357,7 +357,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 	stats := StatsMap{
 		Players: make(map[string]StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 func GetDefaultPlayerState() (map[string]PlayerStateInfo, error) {
 	data := make(map[string]PlayerStateInfo)
 
-	err := utils.Db.ReadDocument("playerStats2024", "defaultPlayerDraftState", &data)
+	err := utils.Db.ReadDocument("playerStats2026", "defaultPlayerDraftState", &data)
 	if err != nil {
 		return nil, err
 	}

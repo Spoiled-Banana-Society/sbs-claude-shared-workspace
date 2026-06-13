@@ -23,7 +23,7 @@ const admin = require("firebase-admin");
  * Wired to an hourly schedule in index.js (scheduledUpdateADP).
  */
 
-const SEASON_COLLECTION = "playerStats2024";
+const SEASON_COLLECTION = "playerStats2026";
 const PLAYER_MAP_DOC = "playerMap";
 
 // A standard draft is 10 players x 15 rounds = 150 picks. We treat a draft as

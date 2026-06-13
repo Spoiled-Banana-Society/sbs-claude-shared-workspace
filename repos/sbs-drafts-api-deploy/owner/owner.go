@@ -339,7 +339,7 @@ func (or *OwnerResources) ReturnUserRankings(w http.ResponseWriter, r *http.Requ
 	stats := models.StatsMap{
 		Players: make(map[string]models.StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
