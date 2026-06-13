@@ -402,11 +402,12 @@ async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<
     // or genuinely abandoned (no badge needed, admin can scan manually).
     const LOOKBACK = 20;
     const ids: string[] = [];
-    for (let n = Math.max(1, liveCount - LOOKBACK); n <= liveCount; n++) {
+    // Floor at 0: after a clean-slate reset the first draft is slot 0.
+    for (let n = Math.max(0, liveCount - LOOKBACK); n <= liveCount; n++) {
       ids.push(`2024-fast-draft-${n}`);
       ids.push(`2025-fast-draft-${n}`);
     }
-    for (let n = Math.max(1, slowCount - LOOKBACK); n <= slowCount; n++) {
+    for (let n = Math.max(0, slowCount - LOOKBACK); n <= slowCount; n++) {
       ids.push(`2024-slow-draft-${n}`);
       ids.push(`2025-slow-draft-${n}`);
     }

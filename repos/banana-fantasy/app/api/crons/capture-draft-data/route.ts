@@ -61,10 +61,13 @@ async function recentDraftIds(db: Firestore): Promise<string[]> {
   const ids: string[] = [];
   // Era prefixes drift (2024-/2025-) — enumerate both. Non-existent ids simply
   // have no cards subcollection and are skipped.
-  for (let n = Math.max(1, live - LOOKBACK); n <= live; n++) {
+  // Floor at 0, not 1: after a clean-slate reset the slot counter starts at 0,
+  // so the very first draft is `…-draft-0`. A floor of 1 skipped it forever and
+  // the first team after a reset never got its card auto-captured.
+  for (let n = Math.max(0, live - LOOKBACK); n <= live; n++) {
     ids.push(`2024-fast-draft-${n}`, `2025-fast-draft-${n}`);
   }
-  for (let n = Math.max(1, slow - LOOKBACK); n <= slow; n++) {
+  for (let n = Math.max(0, slow - LOOKBACK); n <= slow; n++) {
     ids.push(`2024-slow-draft-${n}`, `2025-slow-draft-${n}`);
   }
   return ids;
