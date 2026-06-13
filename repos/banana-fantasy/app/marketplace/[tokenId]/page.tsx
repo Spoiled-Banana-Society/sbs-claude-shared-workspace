@@ -453,17 +453,32 @@ export default function NftDetailPage() {
       ? Number(nft.listing.price.current.value) / Math.pow(10, nft.listing.price.current.decimals ?? 18)
       : null;
 
-    const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
-    const tx = await getFulfillmentTx(
-      nft.listing.order_hash,
-      walletAddress,
-      nft.listing.protocol_address,
-    );
-    const receipt = await sendTx(
-      { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { description: 'Purchase NFT — gas fees covered by SBS' },
-    );
-    const txHashResult = receipt.hash;
+    let txHashResult: string;
+    if (selectedWallet && selectedWallet.walletClientType !== 'privy' && nft.listing?.price?.current?.value) {
+      // External wallet (MetaMask, Coinbase, …): gasless relay. One free
+      // permit signature; the server pulls the USDC and fulfills the Seaport
+      // order with the NFT delivered straight to this wallet. No ETH needed.
+      const { relayBuyExternal } = await import('@/lib/marketplace/relay');
+      const receipt = await relayBuyExternal({
+        wallet: selectedWallet,
+        orderHash: nft.listing.order_hash,
+        protocolAddress: nft.listing.protocol_address,
+        priceWei: BigInt(nft.listing.price.current.value),
+      });
+      txHashResult = receipt.hash;
+    } else {
+      const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+      const tx = await getFulfillmentTx(
+        nft.listing.order_hash,
+        walletAddress,
+        nft.listing.protocol_address,
+      );
+      const receipt = await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Purchase NFT — gas fees covered by SBS' },
+      );
+      txHashResult = receipt.hash;
+    }
 
     const sellerAddr = nft.listing?.protocol_data?.parameters?.offerer || nft.owner;
 
@@ -516,7 +531,7 @@ export default function NftDetailPage() {
     });
 
     return txHashResult;
-  }, [nft, walletAddress, sendTx, tokenId, addNotification]);
+  }, [nft, walletAddress, sendTx, tokenId, addNotification, selectedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
@@ -630,36 +645,44 @@ export default function NftDetailPage() {
       const baseNet = await ensureBaseNetwork(ethereum);
       if (!baseNet.ok) throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
 
-      // Sponsor USDC approval for the conduit if needed
-      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
-      const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-      const iface = new ethers.Interface([
-        'function allowance(address owner, address spender) view returns (uint256)',
-        'function approve(address spender, uint256 amount) returns (bool)',
-      ]);
-
-      // Check current allowance
-      const checkData = iface.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
-      const checkRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0', id: 1, method: 'eth_call',
-          params: [{ to: USDC_BASE, data: checkData }, 'latest'],
-        }),
-      });
-      const checkResult = await checkRes.json();
-      const currentAllowance = BigInt(checkResult?.result || '0x0');
       const requiredAmount = ethers.parseUnits(amount.toString(), 6);
 
-      if (currentAllowance < requiredAmount) {
-        // Approve max USDC for the conduit (sponsored)
-        const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
-        const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
-        await sendTx(
-          { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true },
-        );
+      if (selectedWallet.walletClientType !== 'privy') {
+        // External wallet: gasless USDC approval — free permit signature,
+        // the server submits it on-chain and pays the gas.
+        const { ensureConduitAllowanceGasless } = await import('@/lib/marketplace/relay');
+        await ensureConduitAllowanceGasless({ wallet: selectedWallet, requiredWei: BigInt(requiredAmount) });
+      } else {
+        // Embedded wallet: sponsored approve tx, as before.
+        const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+        const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
+        const iface = new ethers.Interface([
+          'function allowance(address owner, address spender) view returns (uint256)',
+          'function approve(address spender, uint256 amount) returns (bool)',
+        ]);
+
+        // Check current allowance
+        const checkData = iface.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+        const checkRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0', id: 1, method: 'eth_call',
+            params: [{ to: USDC_BASE, data: checkData }, 'latest'],
+          }),
+        });
+        const checkResult = await checkRes.json();
+        const currentAllowance = BigInt(checkResult?.result || '0x0');
+
+        if (currentAllowance < requiredAmount) {
+          // Approve max USDC for the conduit (sponsored)
+          const maxApproval = BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+          const approvalData = iface.encodeFunctionData('approve', [OPENSEA_CONDUIT, maxApproval]);
+          await sendTx(
+            { to: USDC_BASE as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
+            { description: 'Approve USDC for offers — no cost to you', waitForReceipt: true },
+          );
+        }
       }
 
       const provider = new ethers.BrowserProvider(ethereum);
@@ -743,7 +766,15 @@ export default function NftDetailPage() {
       const checkResult = await checkRes.json();
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
+      const isExternal = selectedWallet.walletClientType !== 'privy';
+
       if (!isApproved) {
+        if (isExternal) {
+          // We pay the gas: fund the wallet's exact shortfall before it
+          // sends the approval tx (can't be signature-relayed on ERC-721).
+          const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+          await topUpGasIfNeeded('approve-nft');
+        }
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
@@ -758,6 +789,10 @@ export default function NftDetailPage() {
         tokenId,
       );
 
+      if (isExternal) {
+        const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+        await topUpGasIfNeeded('accept-offer');
+      }
       const acceptReceipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
         { description: 'Accept offer — gas fees covered by SBS' },

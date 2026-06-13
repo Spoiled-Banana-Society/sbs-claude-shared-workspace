@@ -455,41 +455,59 @@ export default function MarketplacePage() {
   const executeBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
 
-    // USDC-denominated Seaport orders pull the buyer's USDC THROUGH the OpenSea
-    // conduit, so the buyer must approve USDC for it before fulfilling. A
-    // first-time buyer has zero allowance → the fulfillment reverts. Check the
-    // allowance and approve once if it's short.
-    const { ethers } = await import('ethers');
-    const { USDC_BASE } = await import('@/lib/opensea');
-    const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
-    const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6));
-    const erc20 = new ethers.Interface([
-      'function allowance(address owner, address spender) view returns (uint256)',
-      'function approve(address spender, uint256 amount) returns (bool)',
-    ]);
-    const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
-    const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
-    });
-    const allowanceJson = await allowanceRes.json();
-    const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
-    if (currentAllowance < priceUsdcWei) {
-      const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
-      await sendTx(
-        { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
-        { description: 'Approve USDC for your purchase', waitForReceipt: true },
-      );
-    }
+    let txHash: string;
+    if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+      // External wallet (MetaMask, Coinbase, …): gasless relay. One free
+      // permit signature; the server pulls the USDC and fulfills the Seaport
+      // order with the NFT delivered straight to this wallet. No conduit
+      // approval and no ETH needed. The float price rounds UP a cent of
+      // headroom — the server only pulls the exact order total.
+      const { relayBuyExternal } = await import('@/lib/marketplace/relay');
+      const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6)) + 10_000n;
+      const receipt = await relayBuyExternal({
+        wallet: selectedWallet,
+        orderHash: selectedTeam.orderHash,
+        protocolAddress: selectedTeam.protocolAddress,
+        priceWei: priceUsdcWei,
+      });
+      txHash = receipt.hash;
+    } else {
+      // USDC-denominated Seaport orders pull the buyer's USDC THROUGH the OpenSea
+      // conduit, so the buyer must approve USDC for it before fulfilling. A
+      // first-time buyer has zero allowance → the fulfillment reverts. Check the
+      // allowance and approve once if it's short.
+      const { ethers } = await import('ethers');
+      const { USDC_BASE } = await import('@/lib/opensea');
+      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+      const priceUsdcWei = BigInt(Math.ceil((selectedTeam.price || 0) * 1e6));
+      const erc20 = new ethers.Interface([
+        'function allowance(address owner, address spender) view returns (uint256)',
+        'function approve(address spender, uint256 amount) returns (bool)',
+      ]);
+      const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+      const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
+      });
+      const allowanceJson = await allowanceRes.json();
+      const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
+      if (currentAllowance < priceUsdcWei) {
+        const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
+        await sendTx(
+          { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
+          { description: 'Approve USDC for your purchase', waitForReceipt: true },
+        );
+      }
 
-    const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
-    const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
-    const receipt = await sendTx(
-      { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-      { description: 'Purchase NFT — gas fees covered by SBS' },
-    );
-    const txHash = receipt.hash;
+      const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+      const tx = await getFulfillmentTx(selectedTeam.orderHash, walletAddress, selectedTeam.protocolAddress);
+      const receipt = await sendTx(
+        { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+        { description: 'Purchase NFT — gas fees covered by SBS' },
+      );
+      txHash = receipt.hash;
+    }
     logger.debug('[Marketplace] Buy tx:', txHash);
 
     if (selectedTeam.ownerAddress) {
@@ -516,7 +534,7 @@ export default function MarketplacePage() {
     });
 
     return txHash;
-  }, [addNotification, selectedTeam, sendTx, walletAddress]);
+  }, [addNotification, selectedTeam, sendTx, walletAddress, selectedWallet]);
 
   const handleBuy = useCallback(async () => {
     if (!selectedTeam?.orderHash || !selectedTeam.protocolAddress || !walletAddress) return;
@@ -687,6 +705,12 @@ export default function MarketplacePage() {
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
       if (!isApproved) {
+        if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+          // External wallet: we pay the gas — fund the exact shortfall
+          // before the approval tx (can't be signature-relayed on ERC-721).
+          const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+          await topUpGasIfNeeded('approve-nft');
+        }
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         const receipt = await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
@@ -746,6 +770,12 @@ export default function MarketplacePage() {
       }
 
       const tx = await response.json();
+      if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+        // External wallet: Seaport cancel must come from the lister, so we
+        // pay the gas by funding the exact shortfall first.
+        const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+        await topUpGasIfNeeded('cancel');
+      }
       // Wait for the on-chain receipt before claiming success — a non-owner's
       // cancel (or a stale order) reverts, and without waiting the UI would
       // falsely log/show "cancelled" and refetch a still-active listing.
@@ -781,7 +811,7 @@ export default function MarketplacePage() {
       setCancellingTokenId(null);
       setCancelConfirmTeam(null);
     }
-  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress]);
+  }, [patchMyNftListing, refetchActivity, refetchListings, refetchMyNfts, sendTx, walletAddress, selectedWallet]);
 
   const executeSweep = useCallback(async () => {
     if (sweepTeams.length === 0 || !walletAddress) return;
@@ -862,50 +892,70 @@ export default function MarketplacePage() {
 
     // One-time USDC approval for the Seaport conduit, covering the whole sweep.
     // On a fresh wallet the conduit has zero USDC allowance, so every buy below
+    // External wallets sweep through the gasless relay instead: one free
+    // permit signature per team, the server pays every drop of gas, and no
+    // conduit approval is ever needed.
+    const externalWallet = selectedWallet && selectedWallet.walletClientType !== 'privy' ? selectedWallet : null;
+
     // would revert. Approve max once up front (gas-sponsored + invisible for
     // embedded web2 wallets); after this it never re-prompts.
-    try {
-      const { ethers } = await import('ethers');
-      const { USDC_BASE } = await import('@/lib/opensea');
-      const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
-      const requiredUsdcWei = BigInt(Math.ceil(sweepTotal * 1e6));
-      const erc20 = new ethers.Interface([
-        'function allowance(address owner, address spender) view returns (uint256)',
-        'function approve(address spender, uint256 amount) returns (bool)',
-      ]);
-      const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
-      const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
-      });
-      const allowanceJson = await allowanceRes.json();
-      const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
-      if (currentAllowance < requiredUsdcWei) {
-        const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
-        await sendTx(
-          { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
-          { description: 'Approve USDC for your purchases', waitForReceipt: true },
-        );
+    if (!externalWallet) {
+      try {
+        const { ethers } = await import('ethers');
+        const { USDC_BASE } = await import('@/lib/opensea');
+        const OPENSEA_CONDUIT = '0x1e0049783f008a0085193e00003d00cd54003c71';
+        const requiredUsdcWei = BigInt(Math.ceil(sweepTotal * 1e6));
+        const erc20 = new ethers.Interface([
+          'function allowance(address owner, address spender) view returns (uint256)',
+          'function approve(address spender, uint256 amount) returns (bool)',
+        ]);
+        const allowanceData = erc20.encodeFunctionData('allowance', [walletAddress, OPENSEA_CONDUIT]);
+        const allowanceRes = await fetch(process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_call', params: [{ to: USDC_BASE, data: allowanceData }, 'latest'] }),
+        });
+        const allowanceJson = await allowanceRes.json();
+        const currentAllowance = allowanceJson?.result ? BigInt(allowanceJson.result) : 0n;
+        if (currentAllowance < requiredUsdcWei) {
+          const approveData = erc20.encodeFunctionData('approve', [OPENSEA_CONDUIT, (2n ** 256n - 1n)]);
+          await sendTx(
+            { to: USDC_BASE as `0x${string}`, data: approveData as `0x${string}`, chainId: 8453 },
+            { description: 'Approve USDC for your purchases', waitForReceipt: true },
+          );
+        }
+      } catch (approveError) {
+        setTxError(friendlyTxError(approveError, 'Could not approve USDC for the purchase. Please try again.'));
+        setSweepStep('confirm');
+        return;
       }
-    } catch (approveError) {
-      setTxError(friendlyTxError(approveError, 'Could not approve USDC for the purchase. Please try again.'));
-      setSweepStep('confirm');
-      return;
     }
 
     const { getFulfillmentTx } = await import('@/lib/marketplace/buy');
+    const { relayBuyExternal } = await import('@/lib/marketplace/relay');
     for (const team of sweepTeams) {
       progress[team.tokenId] = 'processing';
       setSweepProgress({ ...progress });
 
       try {
         if (!team.orderHash || !team.protocolAddress) throw new Error('Missing order data');
-        const tx = await getFulfillmentTx(team.orderHash, walletAddress, team.protocolAddress);
-        const receipt = await sendTx(
-          { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-          { description: `Purchase ${team.name}` },
-        );
-        const txHash = receipt.hash;
+        let txHash: string;
+        if (externalWallet) {
+          const priceWei = BigInt(Math.ceil((team.price || 0) * 1e6)) + 10_000n;
+          const receipt = await relayBuyExternal({
+            wallet: externalWallet,
+            orderHash: team.orderHash,
+            protocolAddress: team.protocolAddress,
+            priceWei,
+          });
+          txHash = receipt.hash;
+        } else {
+          const tx = await getFulfillmentTx(team.orderHash, walletAddress, team.protocolAddress);
+          const receipt = await sendTx(
+            { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
+            { description: `Purchase ${team.name}` },
+          );
+          txHash = receipt.hash;
+        }
 
         if (team.ownerAddress) {
           notifySeller({ sellerWallet: team.ownerAddress, tokenId: team.tokenId, teamName: team.name, price: team.price || 0, buyerWallet: walletAddress, txHash: txHash ? String(txHash) : undefined });
@@ -942,7 +992,7 @@ export default function MarketplacePage() {
     refetchListings();
     refetchMyNfts();
     refetchActivity();
-  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress]);
+  }, [fundWallet, refetchActivity, refetchListings, refetchMyNfts, sendTx, sweepPaymentMethod, sweepTeams, sweepTotal, walletAddress, selectedWallet]);
 
   const handleCancel = useCallback((team: MarketplaceTeam | null) => setCancelConfirmTeam(team), []);
 

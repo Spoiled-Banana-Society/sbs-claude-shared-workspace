@@ -118,6 +118,11 @@ export const LOG_SOURCES = {
     REWARD_GRANT_FAILED: 'payment.card.reward_grant_failed',
     REWARD_DUPLICATE_SKIPPED: 'payment.card.reward_duplicate_skipped',
     CHECKOUT_CANCELLED: 'payment.card.checkout_cancelled',
+    // Gasless marketplace relay (external wallets). Successes are info-level;
+    // RELAY_REFUND_FAILED means a buyer is owed USDC → error → critical feed.
+    RELAY_BUY_COMPLETED: 'payment.marketplace.relay_buy_completed',
+    RELAY_REFUND_FAILED: 'payment.marketplace.relay_refund_failed',
+    GAS_TOPUP_SENT: 'payment.marketplace.gas_topup_sent',
   },
   promo: {
     CLAIM_BATCH_PARTIAL_FAILED: 'promo.claim.batch_partial_failed',

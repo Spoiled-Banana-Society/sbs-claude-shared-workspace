@@ -319,6 +319,98 @@ export async function submitUsdcPermit(opts: {
 }
 
 /**
+ * Hex private key of the admin wallet, for callers that need a raw signer
+ * (the seaport-js marketplace relay). Server-side only.
+ */
+export function getAdminPrivateKeyHex(): Hex | null {
+  return loadPrivateKey();
+}
+
+/**
+ * Send USDC from the admin wallet to `to`. Used to refund a buyer when a
+ * relayed marketplace purchase fails after their USDC was already pulled.
+ */
+export async function transferUsdcFromAdmin(opts: {
+  to: Address;
+  amount: bigint;
+}): Promise<Hex> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'usdcTransfer', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'transfer',
+      args: [opts.to, opts.amount],
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `USDC transfer reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.usdcTransfer.ok', { to: opts.to, amount: opts.amount.toString(), txHash });
+  return txHash;
+}
+
+/**
+ * Ensure the admin wallet has at least `min` USDC allowance toward `spender`
+ * (the OpenSea conduit for relayed marketplace buys). Approves max once when
+ * short — a one-time setup tx, then a no-op read forever after.
+ */
+export async function ensureAdminUsdcAllowance(opts: {
+  spender: Address;
+  min: bigint;
+}): Promise<void> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const current = (await publicClient.readContract({
+    address: BASE_SEPOLIA_USDC_ADDRESS,
+    abi: USDC_ABI,
+    functionName: 'allowance',
+    args: [account.address, opts.spender],
+  })) as bigint;
+  if (current >= opts.min) return;
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'usdcApprove', (ov) =>
+    walletClient.writeContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'approve',
+      args: [opts.spender, 2n ** 256n - 1n],
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `USDC approve reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.usdcApprove.ok', { spender: opts.spender, txHash });
+}
+
+/**
+ * Send a small amount of ETH from the admin wallet — the marketplace gas
+ * top-up that makes external-wallet txs (NFT approval, cancel, accept-offer)
+ * effectively free for the user. Amounts are capped by the calling route.
+ */
+export async function sendEthFromAdmin(opts: {
+  to: Address;
+  amountWei: bigint;
+}): Promise<Hex> {
+  const { account, walletClient, publicClient } = buildWalletClients();
+  const txHash = await sendAdminWriteWithRetry(publicClient, account, 'ethTopup', (ov) =>
+    walletClient.sendTransaction({
+      to: opts.to,
+      value: opts.amountWei,
+      ...ov,
+    }),
+  );
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: RECEIPT_TIMEOUT_MS });
+  if (receipt.status !== 'success') {
+    throw new ApiError(500, `ETH top-up reverted (tx ${txHash})`);
+  }
+  logger.info('adminMint.ethTopup.ok', { to: opts.to, amountWei: opts.amountWei.toString(), txHash });
+  return txHash;
+}
+
+/**
  * Pull USDC from `owner` to `to` via ERC-20 transferFrom. Requires the
  * admin wallet to already have allowance (via a prior `submitUsdcPermit`
  * or an on-chain approve). Admin wallet pays gas.

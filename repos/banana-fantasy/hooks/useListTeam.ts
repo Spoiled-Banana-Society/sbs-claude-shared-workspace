@@ -97,6 +97,12 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
       const isApproved = checkResult?.result && parseInt(checkResult.result, 16) === 1;
 
       if (!isApproved) {
+        if (selectedWallet.walletClientType !== 'privy') {
+          // External wallet: we pay the gas — fund the exact shortfall
+          // before the approval tx (can't be signature-relayed on ERC-721).
+          const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+          await topUpGasIfNeeded('approve-nft');
+        }
         const approvalData = iface.encodeFunctionData('setApprovalForAll', [OPENSEA_CONDUIT, true]);
         await sendTx(
           { to: BBB4_CONTRACT as `0x${string}`, data: approvalData as `0x${string}`, chainId: 8453 },
@@ -129,6 +135,12 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         throw new Error(errorData.error || `Cancel failed: ${response.status}`);
       }
       const tx = await response.json();
+      if (selectedWallet && selectedWallet.walletClientType !== 'privy') {
+        // External wallet: Seaport cancel must come from the lister, so we
+        // pay the gas by funding the exact shortfall first.
+        const { topUpGasIfNeeded } = await import('@/lib/marketplace/relay');
+        await topUpGasIfNeeded('cancel');
+      }
       await sendTx(
         { to: tx.to as `0x${string}`, data: tx.data as `0x${string}`, chainId: 8453 },
         { description: 'Cancel your listing', waitForReceipt: true },
@@ -157,7 +169,7 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
     } finally {
       setBusy(false);
     }
-  }, [sendTx, walletAddress]);
+  }, [sendTx, walletAddress, selectedWallet]);
 
   return { listTeam, cancelTeam, busy, error, clearError: () => setError(null) };
 }
