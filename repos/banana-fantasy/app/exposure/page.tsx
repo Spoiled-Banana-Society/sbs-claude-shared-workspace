@@ -319,7 +319,7 @@ export default function ExposurePage() {
                       color: posColor(summary.topExposure.position),
                     }}
                   >
-                    {summary.topExposure.team} {summary.topExposure.position}
+                    {summary.topExposure.position} {summary.topExposure.team}
                   </span>
                   <span className="text-white font-bold text-lg">{summary.topExposure.exposure}%</span>
                 </div>
@@ -741,7 +741,7 @@ export default function ExposurePage() {
               >
                 {selectedExposure.position}
               </span>
-              <h3 className="text-white font-bold text-lg">{selectedExposure.team} {selectedExposure.position}</h3>
+              <h3 className="text-white font-bold text-lg">{selectedExposure.position} {selectedExposure.team}</h3>
             </div>
 
             {/* Stats grid */}
