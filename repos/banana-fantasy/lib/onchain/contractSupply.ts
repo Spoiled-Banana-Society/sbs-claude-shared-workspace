@@ -12,30 +12,48 @@ import { BASE_RPC_URL, BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 let cache: { ts: number; max: number } | null = null;
 const TTL_MS = 5 * 60_000;
 const MARGIN = 50;
+// Public Base mainnet RPC — always-on fallback. The configured RPC
+// (NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL) can fail, be rate-limited, or point at the
+// wrong network, in which case totalSupply reads as 0 and the marketplace
+// wrongly HIDES the newest teams (their on-chain id exceeds the stale-low cap).
+// Seen 2026-06-13: League 4 teams 53/61/69 vanished while supply was really 77.
+const FALLBACK_RPC = 'https://mainnet.base.org';
+
+async function readTotalSupply(rpc: string): Promise<number> {
+  const res = await fetch(rpc, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0', id: 1, method: 'eth_call',
+      params: [{ to: BBB4_CONTRACT_ADDRESS, data: '0x18160ddd' }, 'latest'], // totalSupply()
+    }),
+    signal: AbortSignal.timeout(3000),
+  });
+  const j = await res.json();
+  return j?.result && j.result !== '0x' ? Number(BigInt(j.result)) : 0;
+}
 
 export async function currentMaxTokenId(): Promise<number> {
   if (cache && Date.now() - cache.ts < TTL_MS) return cache.max;
-  try {
-    const res = await fetch(BASE_RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1, method: 'eth_call',
-        params: [{ to: BBB4_CONTRACT_ADDRESS, data: '0x18160ddd' }, 'latest'], // totalSupply()
-      }),
-      signal: AbortSignal.timeout(3000),
-    });
-    const j = await res.json();
-    const supply = j?.result && j.result !== '0x' ? Number(BigInt(j.result)) : 0;
-    if (supply > 0) {
-      const max = supply + MARGIN;
-      cache = { ts: Date.now(), max };
-      return max;
-    }
-  } catch { /* fall through */ }
-  // On RPC failure, return a high number so we NEVER wrongly hide real teams
-  // (better to briefly show a ghost than drop a real token).
-  return cache?.max ?? Number.MAX_SAFE_INTEGER;
+
+  // Try the configured RPC, then the public mainnet RPC. A zero/failed read on
+  // the primary must NOT be trusted (it would cap the supply low and hide real
+  // teams) — fall back before giving up.
+  let supply = 0;
+  try { supply = await readTotalSupply(BASE_RPC_URL); } catch { /* try fallback */ }
+  if (supply <= 0 && BASE_RPC_URL !== FALLBACK_RPC) {
+    try { supply = await readTotalSupply(FALLBACK_RPC); } catch { /* fall through */ }
+  }
+
+  if (supply > 0) {
+    const max = supply + MARGIN;
+    cache = { ts: Date.now(), max };
+    return max;
+  }
+  // Could not read supply from any RPC — NEVER wrongly hide real teams: return a
+  // high bound (better to briefly show a ghost than drop a real token). Note we
+  // do NOT fall back to a possibly-stale-low cache here, for the same reason.
+  return Number.MAX_SAFE_INTEGER;
 }
 
 /**
