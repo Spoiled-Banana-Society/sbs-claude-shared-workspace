@@ -1375,6 +1375,27 @@ export default function NftDetailPage() {
             </div>
           )}
 
+          {/* Wheel-pass explainer — what you're buying, how it was won, what it gives. */}
+          {fillingLevel && (
+            <div className={`rounded-2xl p-5 mb-6 border ${fillingLevel === 'jackpot' ? 'border-error/30 bg-error/[0.04]' : 'border-hof/30 bg-hof/[0.04]'}`}>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">⚡</span>
+                <h3 className="text-text-primary font-semibold text-sm">
+                  {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass — won on the Banana Wheel
+                </h3>
+              </div>
+              <p className="text-text-secondary text-xs leading-relaxed mb-3">
+                This isn&apos;t a drafted team — it&apos;s a <span className="text-text-primary font-semibold">{fillingLevel === 'jackpot' ? 'Jackpot' : 'Hall of Fame'} entry someone won on the Banana Wheel</span>. Its draft lobby is still filling, which is the only window it can be bought or sold.
+              </p>
+              <div className="space-y-1.5 text-text-secondary text-xs leading-relaxed">
+                <p><span className="text-text-primary font-semibold">Buy it →</span> the seat is transferred to you and you take their spot in the {fillingLevel === 'jackpot' ? 'Jackpot' : 'HOF'}-only lobby.</p>
+                <p><span className="text-text-primary font-semibold">When the lobby fills (10 winners) →</span> you draft your team. Slow Draft, 8 hours per pick.</p>
+                <p><span className="text-text-primary font-semibold">Win your league →</span> {fillingLevel === 'jackpot' ? 'you skip straight to the season Finals.' : 'you enter the Hall of Fame playoff bracket for bonus prizes.'}</p>
+                <p className="text-text-muted pt-1">Once the draft fills, this window closes — it becomes a normal team and can no longer be traded mid-season.</p>
+              </div>
+            </div>
+          )}
+
           {/* Full Roster */}
           {roster.length > 0 && (
             <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 mb-6">
