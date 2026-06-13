@@ -61,14 +61,18 @@ async function recentDraftIds(db: Firestore): Promise<string[]> {
   const ids: string[] = [];
   // Era prefixes drift (2024-/2025-) — enumerate both. Non-existent ids simply
   // have no cards subcollection and are skipped.
+  // Year prefix is the NFL SEASON year and can lag/lead the calendar — enumerate
+  // a rolling window of real years (NOT hardcoded 2024/2025, which would go stale
+  // and miss e.g. 2026 drafts). Same approach as the proof feed.
   // Floor at 0, not 1: after a clean-slate reset the slot counter starts at 0,
-  // so the very first draft is `…-draft-0`. A floor of 1 skipped it forever and
-  // the first team after a reset never got its card auto-captured.
+  // so the very first draft is `…-draft-0`. A floor of 1 skipped it forever.
+  const cy = new Date().getUTCFullYear();
+  const years = [cy + 1, cy, cy - 1, cy - 2].map(String);
   for (let n = Math.max(0, live - LOOKBACK); n <= live; n++) {
-    ids.push(`2024-fast-draft-${n}`, `2025-fast-draft-${n}`);
+    for (const y of years) ids.push(`${y}-fast-draft-${n}`);
   }
   for (let n = Math.max(0, slow - LOOKBACK); n <= slow; n++) {
-    ids.push(`2024-slow-draft-${n}`, `2025-slow-draft-${n}`);
+    for (const y of years) ids.push(`${y}-slow-draft-${n}`);
   }
   return ids;
 }

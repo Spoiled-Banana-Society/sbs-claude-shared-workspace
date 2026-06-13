@@ -403,13 +403,14 @@ async function countStuckDrafts(db: Firestore, stuckBeforeIso: string): Promise<
     const LOOKBACK = 20;
     const ids: string[] = [];
     // Floor at 0: after a clean-slate reset the first draft is slot 0.
+    // Dynamic year window (not hardcoded 2024/2025 — would go stale).
+    const cy = new Date().getUTCFullYear();
+    const years = [cy + 1, cy, cy - 1, cy - 2].map(String);
     for (let n = Math.max(0, liveCount - LOOKBACK); n <= liveCount; n++) {
-      ids.push(`2024-fast-draft-${n}`);
-      ids.push(`2025-fast-draft-${n}`);
+      for (const y of years) ids.push(`${y}-fast-draft-${n}`);
     }
     for (let n = Math.max(0, slowCount - LOOKBACK); n <= slowCount; n++) {
-      ids.push(`2024-slow-draft-${n}`);
-      ids.push(`2025-slow-draft-${n}`);
+      for (const y of years) ids.push(`${y}-slow-draft-${n}`);
     }
 
     // Use RTDB realTimeDraftInfo as the freshness check. We hit
