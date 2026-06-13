@@ -201,8 +201,18 @@ export async function GET(req: Request) {
       skippedMaxAttempts,
       skippedInProgress,
     };
-    if (fired.length > 0 || skippedMaxAttempts.length > 0) {
+    if (fired.length > 0 || skippedMaxAttempts.length > 0 || skippedInProgress.length > 0) {
       logger.info('cron.capture_draft_data', summary);
+    }
+    // A give-up now means a genuinely CLOSED draft we retried 8× over ~40 min and
+    // still couldn't capture — a real failure (user's team never generated). Raise
+    // it as an ERROR so it surfaces in the admin Server Errors feed, instead of
+    // silently abandoning the draft the way League #3 was (2026-06-13).
+    if (skippedMaxAttempts.length > 0) {
+      logger.error('cron.capture_draft_data.gave_up', {
+        draftIds: skippedMaxAttempts,
+        note: 'closed draft uncaptured after MAX_ATTEMPTS — heal with POST /api/marketplace/refresh-draft/{id}',
+      });
     }
     return json(summary);
   } catch (err) {
