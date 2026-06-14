@@ -237,7 +237,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
-              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6, 9 & 10 → FREE SPIN' : promo.title;
+              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;

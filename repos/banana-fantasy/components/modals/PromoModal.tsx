@@ -47,7 +47,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // When the bonus is live, the Pick-10 modal title + explainer speak to all
   // three winning slots (6, 9 & 10), not just 10.
   const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
-  const modalTitle = isPickBonus ? 'Get Pick 6, 9 & 10 → SPIN' : (promo?.modalContent.title ?? '');
+  const modalTitle = isPickBonus ? 'Get Pick 6 9 10 → SPIN' : (promo?.modalContent.title ?? '');
   const pickExplanation = isPickBonus
     ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.'
     : (promo?.modalContent.explanation ?? '');
