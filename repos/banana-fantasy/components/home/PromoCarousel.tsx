@@ -6,6 +6,7 @@ import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 
 interface PromoCarouselProps {
   /** Section title — wheel page says 'Promos to Earn Spins', everywhere else plain 'Promos'. */
@@ -36,6 +37,9 @@ function useVisibleCount() {
 
 export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateReferralCode, heading = 'Promos' }: PromoCarouselProps) {
   const { user, updateUser, isLoggedIn, setShowLoginModal, newUserPromoClaimed, isTwitterVerified, isBB3Holder, isBalanceLoaded } = useAuth();
+  // Pick 10 expands to 6, 9 & 10 while the batch's specials are all hit.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
   const VISIBLE_COUNT = useVisibleCount();
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -233,6 +237,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
           >
             {extendedPromos.map((promo, index) => {
               const isHovered = index === hoveredIndex;
+              const promoTitle = promo.type === 'pick-10' && pickExpanded ? 'Pick 6, 9 & 10 → FREE SPIN' : promo.title;
               const isClaimed = claimedPromos.has(promo.id) || (promo.type === 'new-user' && newUserPromoClaimed);
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
@@ -276,19 +281,19 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
-                      {promo.title.includes('→') ? (
+                      {promoTitle.includes('→') ? (
                         <>
-                          <span>{promo.title.split('→')[0].trim()}</span>
+                          <span>{promoTitle.split('→')[0].trim()}</span>
                           <br/>
                           <span className="text-[#4a4a4a] text-sm mt-1 inline-block font-semibold">
-                            → {promo.title.split('→')[1].trim()}
+                            → {promoTitle.split('→')[1].trim()}
                           </span>
                         </>
                       ) : (
-                        <span className="text-sm whitespace-nowrap">{promo.title}</span>
+                        <span className="text-sm whitespace-nowrap">{promoTitle}</span>
                       )}
                     </h4>
-                    <SpinExplainer promoTitle={promo.title} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
+                    <SpinExplainer promoTitle={promoTitle} className="mt-1.5 block px-2 text-center text-[10px] leading-snug text-[#4a4a4a]" />
 
                     <div className="mt-auto w-full flex flex-col justify-end">
                       {/* Daily drafts - show progress + timer + claim if available */}

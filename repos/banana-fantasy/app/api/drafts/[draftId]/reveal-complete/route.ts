@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { awardJackpotDraw, recordPick10, unlockBadge } from '@/lib/db';
+import { awardJackpotDraw, recordPick10, allBatchSpecialsHit, unlockBadge } from '@/lib/db';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
 
@@ -49,9 +49,18 @@ export async function POST(req: Request, { params }: { params: { draftId: string
     // (refresh-draft) guarantees it regardless.
     try {
       const info = await getDraftInfo(draftId);
-      const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
-      if (slot10 && !slot10.startsWith('bot-')) {
-        await recordPick10(slot10, draftId, String(draftSnap.get('DisplayName') ?? draftId));
+      const order = info?.draftOrder ?? [];
+      const draftName = String(draftSnap.get('DisplayName') ?? draftId);
+      // Normally only slot 10 earns a spin. BUT once the current 100-batch has
+      // had all its specials hit (1 Jackpot + 5 HOF), Pick 10 expands to also
+      // reward slots 6 and 9 — reverting to slot-10-only when the next batch
+      // starts. recordPick10 is idempotent per (user, draft) and paid-gated.
+      const slots = (await allBatchSpecialsHit()) ? [6, 9, 10] : [10];
+      for (const slot of slots) {
+        const owner = order[slot - 1]?.ownerId?.toLowerCase();
+        if (owner && !owner.startsWith('bot-')) {
+          await recordPick10(owner, draftId, draftName, undefined, slot);
+        }
       }
     } catch { /* state not initialized yet — close backstop covers it */ }
 

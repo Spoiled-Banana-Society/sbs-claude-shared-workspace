@@ -11,6 +11,7 @@ import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -39,6 +40,17 @@ function fmtWhen(d: string | undefined): string {
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
+  // Pick 10 expands to slots 6 & 9 (on top of 10) while the current 100-batch
+  // has all its specials (1 JP + 5 HOF) hit — surface that live in the modal.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
+  // When the bonus is live, the Pick-10 modal title + explainer speak to all
+  // three winning slots (6, 9 & 10), not just 10.
+  const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
+  const modalTitle = isPickBonus ? 'Get Pick 6, 9 & 10 → SPIN' : (promo?.modalContent.title ?? '');
+  const pickExplanation = isPickBonus
+    ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.'
+    : (promo?.modalContent.explanation ?? '');
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
@@ -359,15 +371,33 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
     return (
       <>
+        {/* Expanded-window banner — live when the current 100-batch has had all
+            its specials (1 Jackpot + 5 HOF) hit. Until the next batch, slots 6
+            and 9 also win, on top of the usual slot 10. */}
+        {pickExpanded ? (
+          <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
+            <p className="text-banana font-semibold text-sm">🔥 Bonus active — this batch&apos;s Jackpot &amp; HOFs are all gone</p>
+            <p className="text-text-secondary text-sm mt-1">
+              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin, not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl p-4 bg-bg-tertiary">
+            <p className="text-text-secondary text-sm">
+              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin. Once the Jackpot and all 5 HOF drafts in a batch of 100 have been hit, it expands so slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> all win — until the next batch of 100 starts.
+            </p>
+          </div>
+        )}
+
         {/* Total Pick 10s */}
         {promo.modalContent.totalPick10s !== undefined && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <div className="flex justify-between items-center">
-              <span className="text-text-primary font-medium">Total Pick 10s Hit</span>
+              <span className="text-text-primary font-medium">{isPickBonus ? 'Total Picks Hit' : 'Total Pick 10s Hit'}</span>
               <span className="text-2xl font-bold text-banana">{promo.modalContent.totalPick10s}</span>
             </div>
             <p className="text-text-muted text-sm mt-2">
-              You&apos;ve earned {promo.modalContent.totalPick10s} spins from Pick 10s!
+              You&apos;ve earned {promo.modalContent.totalPick10s} spins from {isPickBonus ? 'Picks' : 'Pick 10s'}!
             </p>
           </div>
         )}
@@ -375,21 +405,23 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {/* Pick 10 History — always rendered with an empty state, matching
             every other promo's History section. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
-          <h4 className="font-semibold mb-3 text-text-primary">Pick 10 History</h4>
+          <h4 className="font-semibold mb-3 text-text-primary">{isPickBonus ? 'Pick History' : 'Pick 10 History'}</h4>
           {promo.modalContent.pick10History && promo.modalContent.pick10History.length > 0 ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {promo.modalContent.pick10History.map((entry, index) => (
                 <div key={index} className="flex items-center justify-between py-2 border-b border-bg-elevated last:border-0">
                   <div>
                     <p className="text-text-secondary text-sm">{entry.draftName}</p>
-                    <p className="text-text-muted text-xs">{fmtWhen(entry.date)}</p>
+                    <p className="text-text-muted text-xs">
+                      {entry.slot ? `Slot ${entry.slot} · ` : ''}{fmtWhen(entry.date)}
+                    </p>
                   </div>
                   {getPick10Badge(entry.status, entry.draftName)}
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-text-muted text-sm">Every 10th slot pick you land in a paid draft lands here with the draft and date.</p>
+            <p className="text-text-muted text-sm">{isPickBonus ? 'Every slot 6, 9 & 10 you land in a draft lands here with the draft and date.' : 'Every 10th slot pick you land in a paid draft lands here with the draft and date.'}</p>
           )}
         </div>
       </>
@@ -1090,7 +1122,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={promo.modalContent.title} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
       <div className="space-y-5">
         {/* Explanation */}
         <div className="text-text-secondary leading-relaxed">
@@ -1113,7 +1145,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                   ))}
                 </>
               ) : (
-                promo.modalContent.explanation
+                pickExplanation
               )}
             </p>
           </div>

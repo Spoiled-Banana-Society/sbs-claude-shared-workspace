@@ -51,6 +51,17 @@ export function BatchProgressIndicator() {
               1 Jackpot &amp; 5 HOF guaranteed every 100 drafts
             </p>
           </div>
+          <div className="border-t border-bg-elevated pt-2">
+            {jackpotHit && allHofHit ? (
+              <p className="text-banana text-xs font-semibold">
+                🔥 All specials hit! Pick 6, 9 &amp; 10 all win a free spin now
+              </p>
+            ) : (
+              <p className="text-text-muted text-xs">
+                Once all specials are hit, Pick 10 expands to slots 6, 9 &amp; 10 (until next batch)
+              </p>
+            )}
+          </div>
         </div>
       }
     >

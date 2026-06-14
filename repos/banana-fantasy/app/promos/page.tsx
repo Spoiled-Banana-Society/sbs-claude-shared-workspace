@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -58,6 +59,10 @@ export default function PromosPage() {
 
   const { user, updateUser, isLoggedIn, setShowLoginModal, isTwitterVerified, isBB3Holder, newUserPromoClaimed, isBalanceLoaded } = useAuth();
   const promosQuery = usePromos({ userId: user?.id });
+  // Pick 10 expands to slots 6/9/10 while the current 100-batch's specials are
+  // all hit — surface that live on the card.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
   const promos = promosQuery.promos;
 
   const [filter, setFilter] = useState<FilterKey>('all');
@@ -320,6 +325,7 @@ export default function PromosPage() {
               hasVisibleClaim={hasVisibleClaim(promo)}
               onClick={() => setSelectedPromo(promo)}
               onClaim={() => void handleClaim(promo)}
+              pickExpanded={pickExpanded}
             />
           ))}
         </div>
@@ -385,9 +391,10 @@ interface PromoCardProps {
   hasVisibleClaim: boolean;
   onClick: () => void;
   onClaim: () => void;
+  pickExpanded?: boolean;
 }
 
-function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: PromoCardProps) {
+function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickExpanded }: PromoCardProps) {
   const style = TYPE_STYLES[promo.type];
   const progressMax = promo.progressMax || 0;
   const progressCurrent = isClaimed ? progressMax : (promo.progressCurrent || 0);
@@ -430,12 +437,17 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim }: Prom
 
         {/* Title + description — Apple-style typographic hierarchy */}
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
-          {promo.title}
+          {promo.type === 'pick-10' && pickExpanded ? 'Pick 6, 9 & 10 → FREE SPIN' : promo.title}
         </h3>
         <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
           {promo.description}
         </p>
+        {promo.type === 'pick-10' && pickExpanded && (
+          <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">
+            🔥 Bonus: this batch&apos;s Jackpot + all 5 HOFs are gone, so slots 6, 9 &amp; 10 all win now
+          </p>
+        )}
 
         {/* Progress — hairline, banana fill on claimable, neutral otherwise */}
         {showProgress && (
