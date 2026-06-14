@@ -63,7 +63,7 @@ export function DraftRoomFilling({
   // "N/10 waiting" line + EXIT/MUTE/OFF controls). Matching drafting's reserve
   // exactly gives the tabs the same breathing room in both phases on desktop
   // and mobile (safe-area included on both sides, so it cancels).
-  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`;
+  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} - 1.5rem + env(safe-area-inset-top))`;
 
   return (
     <>
