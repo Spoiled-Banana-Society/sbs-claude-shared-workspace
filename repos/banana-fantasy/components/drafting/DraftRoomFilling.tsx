@@ -288,8 +288,18 @@ export function DraftRoomFilling({
           no-ResizeObserver before the measurement lands. */}
       <div
         className="shrink-0 bg-black"
-        style={{ height: headerHeight != null ? `${headerHeight}px` : 'calc(250px + env(safe-area-inset-top))' }}
+        style={{
+          height: headerHeight != null ? `${headerHeight}px` : 'calc(250px + env(safe-area-inset-top))',
+          // TEMP DIAGNOSTIC: red line marks the bottom of the reserved space
+          // (= where the tabs should start). Remove after we read it.
+          borderBottom: '2px solid red',
+          boxSizing: 'border-box',
+        }}
       />
+      {/* TEMP DIAGNOSTIC badge — shows the measured header height. Remove after. */}
+      <div className="fixed bottom-1 left-1 z-[300] text-[11px] font-mono text-red-400 bg-black/90 px-2 py-0.5 rounded border border-red-500/40">
+        hdr={headerHeight ?? 'null'} · vh={typeof window !== 'undefined' ? window.innerHeight : '?'}
+      </div>
     </>
   );
 }
