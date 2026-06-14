@@ -202,12 +202,16 @@ export async function POST(
   const { draftId } = params;
 
   try {
-    if (!OPENSEA_API_KEY) {
-      return jsonError('OpenSea API key not configured', 503);
-    }
     if (!draftId) {
       return jsonError('Missing draftId', 400);
     }
+    // NOTE: do NOT gate the whole route on OPENSEA_API_KEY. The critical work
+    // here — writing the team card image to OUR marketplace_index + firing the
+    // per-owner real-time refetch ping — is driven entirely by OUR Firestore
+    // and is what makes a freshly-generated team appear live on every page
+    // (Sell, Teams, marketplace). It must run on day-one of a NEW prod contract,
+    // before OpenSea has indexed anything. Only the OpenSea re-index call below
+    // needs the key, and it's already best-effort.
 
     const db = getAdminFirestore();
     const cardsSnap = await db.collection('drafts').doc(draftId).collection('cards').get();
@@ -268,11 +272,17 @@ export async function POST(
       logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });
     }
 
-    const results = await Promise.allSettled(tokenIds.map((id) => refreshToken(id)));
+    // OpenSea re-index — best-effort, and only if the key is configured. Our
+    // own index + the real-time ping above already made the team live; this
+    // just nudges OpenSea's copy. Skipped (not failed) when no key, so a new
+    // prod contract without OpenSea wiring still completes successfully.
+    const results = OPENSEA_API_KEY
+      ? await Promise.allSettled(tokenIds.map((id) => refreshToken(id)))
+      : [];
     const ok = (i: number) =>
-      results[i].status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value;
-    const refreshed = tokenIds.filter((_, i) => ok(i)).length;
-    const failed = tokenIds.filter((_, i) => !ok(i));
+      results[i]?.status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value;
+    const refreshed = OPENSEA_API_KEY ? tokenIds.filter((_, i) => ok(i)).length : 0;
+    const failed = OPENSEA_API_KEY ? tokenIds.filter((_, i) => !ok(i)) : [];
 
     if (failed.length > 0) {
       // Partial is expected on staging (synthetic test tokens aren't on-chain).

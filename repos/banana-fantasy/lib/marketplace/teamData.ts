@@ -340,6 +340,39 @@ export async function getTeamForToken(tokenId: string, owner: string | null): Pr
  * Bulk resolve team data for a list of (tokenId, owner) pairs. Groups by
  * owner so we hit `/owner/{wallet}/draftToken/all` at most once per owner.
  */
+/**
+ * Every on-chain BBB4 token id the owner holds per OUR draftTokens — the SAME
+ * authoritative source the Teams page uses (getOwnerLeaguesFromDraftTokens).
+ *
+ * The Sell tab enumerates ownership from Alchemy's getNFTsForOwner, which lags
+ * fresh mints — so a team that was just generated when a draft finished is
+ * missing from Sell for minutes even though it's already in our backend and
+ * already shows on the Teams page. Unioning these ids into the Sell list closes
+ * that gap so the two pages match. Best-effort: returns [] on any failure, so
+ * the Alchemy list still stands.
+ */
+export async function getOwnerOnchainTokenIds(owner: string): Promise<string[]> {
+  try {
+    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const tokens: BackendDraftToken[] = [
+      ...(Array.isArray(data?.active) ? data.active : []),
+      ...(Array.isArray(data?.available) ? data.available : []),
+    ];
+    const ids: string[] = [];
+    for (const t of tokens) {
+      const s = t.realTokenId != null ? String(t.realTokenId) : '';
+      if (/^\d+$/.test(s)) ids.push(s); // minted on-chain NFT (team or pass)
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
 export async function getTeamsForTokens(
   pairs: Array<{ tokenId: string; owner: string | null }>,
 ): Promise<Map<string, TeamData>> {

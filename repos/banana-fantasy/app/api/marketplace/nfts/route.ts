@@ -9,7 +9,7 @@ import {
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
-import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits, getOwnerOnchainTokenIds } from '@/lib/marketplace/teamData';
 import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
 import { buildDraftPassUrl } from '@/lib/nftCard';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
@@ -110,6 +110,23 @@ export async function GET(req: Request) {
       // Cache only a fully-successful fetch (don't pin a partial/failed list).
       if (!nftFetchFailed) ownedCache.set(cacheKey, { ts: Date.now(), nfts: [...rawNfts] });
     }
+
+    // Authoritative backstop: union our own draftTokens (the SAME source the
+    // Teams page trusts) so a team that was just generated when a draft
+    // finished shows on Sell IMMEDIATELY, instead of waiting for Alchemy's
+    // owner index to catch up (the "my teams don't all show / aren't real-time"
+    // bug — nothing was sold; Alchemy was just behind on fresh mints). Runs
+    // every request (outside the Alchemy cache) so freshness isn't pinned.
+    // Best-effort + deduped, so it can only ADD missing teams, never remove.
+    try {
+      const ourTokenIds = await getOwnerOnchainTokenIds(owner);
+      const haveIds = new Set(rawNfts.map(n => n.identifier));
+      for (const tid of ourTokenIds) {
+        if (haveIds.has(tid)) continue;
+        haveIds.add(tid);
+        rawNfts.push({ identifier: tid, contract: BBB4_CONTRACT, traits: [], name: null, image_url: '', display_image_url: '' } as unknown as OpenSeaNft);
+      }
+    } catch { /* backstop is best-effort — Alchemy list still stands */ }
 
     const listingsRes = await listingsPromise;
 
