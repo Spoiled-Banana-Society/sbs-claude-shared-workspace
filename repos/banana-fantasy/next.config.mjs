@@ -38,9 +38,14 @@ const nextConfig = {
   },
   async redirects() {
     return [
-      // The My Teams page moved from /standings → /my-teams. Keep the old URL
-      // working for bookmarks / shared links (query string is preserved).
-      { source: '/standings', destination: '/my-teams', permanent: false },
+      // Route renames — keep old URLs working for bookmarks / shared links and
+      // existing notification deep-links (query strings are preserved).
+      // /drafting → /draft and /my-teams → /teams (shorter, match the nav).
+      { source: '/drafting', destination: '/draft', permanent: false },
+      { source: '/my-teams', destination: '/teams', permanent: false },
+      // The Teams page was /standings → /my-teams → now /teams. Point the
+      // oldest alias straight at /teams so there's no double redirect.
+      { source: '/standings', destination: '/teams', permanent: false },
       // The Prizes page moved from /prizes → /winnings (same reasoning).
       { source: '/prizes', destination: '/winnings', permanent: false },
     ];

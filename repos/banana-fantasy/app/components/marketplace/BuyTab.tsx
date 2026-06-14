@@ -461,7 +461,7 @@ export function BuyTab({
               <span className="text-2xl">🏆</span>
               Top Performing Teams for Sale
             </h2>
-            <Link href="/my-teams" className="text-banana hover:underline text-sm font-medium transition-colors">
+            <Link href="/teams" className="text-banana hover:underline text-sm font-medium transition-colors">
               View Full Standings
             </Link>
           </div>

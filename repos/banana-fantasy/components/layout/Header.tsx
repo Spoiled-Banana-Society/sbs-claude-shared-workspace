@@ -34,8 +34,8 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
   // Nav items — desktop only
   const navItems = [
-    { href: '/drafting', label: 'Draft', tooltip: 'View active drafts', auth: false },
-    { href: '/my-teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
+    { href: '/draft', label: 'Draft', tooltip: 'View active drafts', auth: false },
+    { href: '/teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
     // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in

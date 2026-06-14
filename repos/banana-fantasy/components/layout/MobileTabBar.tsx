@@ -44,7 +44,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   };
   useEffect(() => {
     // Keep targets warm so the page swap is instant.
-    ['/drafting', '/my-teams', '/promos', '/banana-wheel', '/notifications'].forEach((h) => {
+    ['/draft', '/teams', '/promos', '/banana-wheel', '/notifications'].forEach((h) => {
       try { router.prefetch(h); } catch { /* best-effort */ }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,9 +52,9 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
 
   const tabs = [
     {
-      href: '/drafting',
+      href: '/draft',
       label: 'Draft',
-      matchPaths: ['/drafting', '/draft-room', '/buy-drafts'],
+      matchPaths: ['/draft', '/draft-room', '/buy-drafts'],
       badge: 0,
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -65,9 +65,9 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       ),
     },
     {
-      href: '/my-teams',
+      href: '/teams',
       label: 'Teams',
-      matchPaths: ['/my-teams', '/exposure'],
+      matchPaths: ['/teams', '/exposure'],
       badge: 0,
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
