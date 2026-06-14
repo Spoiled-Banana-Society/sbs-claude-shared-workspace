@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { TeamCard } from '@/components/standings/TeamCard';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import { LeaderboardView } from '@/components/standings/LeaderboardView';
@@ -319,6 +320,27 @@ export default function StandingsPage() {
           {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
         </p>
       </div>
+
+      {/* Teams ⇄ Exposure sub-nav. Exposure is a view of your roster, so it
+          lives under Teams (the mobile Teams tab already treats /exposure as
+          part of this section). Links, not in-page state — /exposure is its
+          own route. */}
+      {viewMode === 'myteams' && (
+        <div className="flex gap-2 mb-6">
+          <Link
+            href="/my-teams"
+            className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/10 border-white/20 text-white"
+          >
+            My Teams
+          </Link>
+          <Link
+            href="/exposure"
+            className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06] transition-all"
+          >
+            Exposure
+          </Link>
+        </div>
+      )}
 
       {/* MY TEAMS VIEW — also render while auth is still rehydrating on refresh
           (authLoading), so the page keeps the My Teams layout instead of briefly

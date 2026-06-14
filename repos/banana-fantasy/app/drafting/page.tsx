@@ -146,6 +146,23 @@ export default function DraftingPage() {
           <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
         </div>
         <div className="flex items-center gap-2">
+          {/* Rankings is a pre-draft tool — set your player order / auto-draft
+              limits — so it lives here on the draft page (not a top-level nav
+              item). Always visible so a first-timer can pre-rank before their
+              first draft. */}
+          <button
+            onClick={() => router.push('/rankings')}
+            aria-label="Pre-rank players and set auto-draft limits"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all flex items-center gap-1.5"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+              <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+              <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+              <line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" />
+            </svg>
+            Rankings
+          </button>
           {activeDrafts.length > 0 && (
             <>
               <button

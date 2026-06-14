@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   getTopExposures,
   getExposureByPosition,
@@ -289,6 +290,23 @@ export default function ExposurePage() {
             ? `${totalDrafts} drafts · Portfolio breakdown across all your teams`
             : 'Draft to start tracking your portfolio exposure'}
         </p>
+      </div>
+
+      {/* Teams ⇄ Exposure sub-nav — mirror of the toggle on /my-teams so the
+          two views feel like one section. */}
+      <div className="flex gap-2 mb-6">
+        <Link
+          href="/my-teams"
+          className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06] transition-all"
+        >
+          My Teams
+        </Link>
+        <Link
+          href="/exposure"
+          className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/10 border-white/20 text-white"
+        >
+          Exposure
+        </Link>
       </div>
 
       {/* ── Section 1: Portfolio Summary ────────────────────────────────── */}
