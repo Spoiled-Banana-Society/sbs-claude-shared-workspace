@@ -312,35 +312,35 @@ export default function StandingsPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
       {/* Page header — pure My Teams for now. The Week selector + My Teams /
           Leaderboard toggle return when the season starts (scores exist). */}
-      <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-          {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
-        </h1>
-        <p className="text-white/40 text-sm">
-          {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
-        </p>
-      </div>
-
-      {/* Teams ⇄ Exposure sub-nav. Exposure is a view of your roster, so it
-          lives under Teams (the mobile Teams tab already treats /exposure as
-          part of this section). Links, not in-page state — /exposure is its
-          own route. */}
-      {viewMode === 'myteams' && (
-        <div className="flex gap-2 mb-6">
-          <Link
-            href="/my-teams"
-            className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/10 border-white/20 text-white"
-          >
-            My Teams
-          </Link>
-          <Link
-            href="/exposure"
-            className="px-4 py-2 rounded-[10px] text-[13px] font-medium border bg-white/[0.03] border-white/[0.06] text-white/40 hover:text-white/60 hover:bg-white/[0.06] transition-all"
-          >
-            Exposure
-          </Link>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
+            {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
+          </h1>
+          <p className="text-white/40 text-sm">
+            {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
+          </p>
         </div>
-      )}
+        {/* Exposure + Marketplace — on the right of the Teams header, same spot
+            and treatment as Rankings on the drafting page. Exposure is a view
+            of this same roster; Marketplace is where you buy/sell these teams. */}
+        {viewMode === 'myteams' && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href="/exposure"
+              className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+            >
+              Exposure
+            </Link>
+            <Link
+              href="/marketplace"
+              className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+            >
+              Marketplace
+            </Link>
+          </div>
+        )}
+      </div>
 
       {/* MY TEAMS VIEW — also render while auth is still rehydrating on refresh
           (authLoading), so the page keeps the My Teams layout instead of briefly

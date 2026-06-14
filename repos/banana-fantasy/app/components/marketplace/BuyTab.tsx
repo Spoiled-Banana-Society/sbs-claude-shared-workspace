@@ -187,29 +187,33 @@ export function BuyTab({
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
-            {([
-              { key: 'listed', label: 'Listed', count: undefined },
-              { key: 'all', label: 'All Teams', count: viewCounts?.all },
-              { key: 'top', label: 'Top Teams', count: undefined },
-              { key: 'pro', label: 'Pro', count: viewCounts?.pro },
-              { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
-              { key: 'hof', label: 'HOF', count: viewCounts?.hof },
-              { key: 'passes', label: 'Passes', count: viewCounts?.passes },
-            ] as const).map(filter => (
-              <button
-                key={filter.key}
-                onClick={() => onSetViewFilter(filter.key)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                {filter.label}
-                {typeof filter.count === 'number' && filter.count > 0 && (
-                  <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
-                    {filter.count.toLocaleString()}
-                  </sup>
-                )}
-              </button>
-            ))}
+          {/* Type filters scroll horizontally on mobile — 7 chips won't fit a
+              phone width, so they slide instead of overflowing off-screen. */}
+          <div className="w-full lg:w-auto overflow-x-auto [&::-webkit-scrollbar]:hidden">
+            <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-max">
+              {([
+                { key: 'listed', label: 'Listed', count: undefined },
+                { key: 'all', label: 'All Teams', count: viewCounts?.all },
+                { key: 'top', label: 'Top Teams', count: undefined },
+                { key: 'pro', label: 'Pro', count: viewCounts?.pro },
+                { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
+                { key: 'hof', label: 'HOF', count: viewCounts?.hof },
+                { key: 'passes', label: 'Passes', count: viewCounts?.passes },
+              ] as const).map(filter => (
+                <button
+                  key={filter.key}
+                  onClick={() => onSetViewFilter(filter.key)}
+                  className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {filter.label}
+                  {typeof filter.count === 'number' && filter.count > 0 && (
+                    <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
+                      {filter.count.toLocaleString()}
+                    </sup>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
           <MultiChipSearch
@@ -217,7 +221,7 @@ export function BuyTab({
             onChange={onSetRosterFilter}
             options={rosterFilterOptions}
             placeholder="Type a roster slot (e.g. KC QB)"
-            className="w-72"
+            className="w-full sm:w-72"
           />
 
           {/* League # / Team # filters — backend-sourced (instant) via the on-chain-id index. */}

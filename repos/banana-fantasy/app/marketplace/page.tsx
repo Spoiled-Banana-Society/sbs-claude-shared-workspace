@@ -1210,15 +1210,17 @@ function Header({
         <h1 className="text-2xl font-bold text-text-primary mb-2">Team Marketplace</h1>
         <p className="text-text-secondary text-sm">Buy and sell BBB teams instantly. No external accounts needed.</p>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
+      {/* Scrollable on mobile — 5 tabs don't fit a phone width, so let them
+          scroll horizontally instead of running off the right edge. */}
+      <div className="flex items-center gap-3 overflow-x-auto [&::-webkit-scrollbar]:hidden">
+        <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-max">
           <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} />
           <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} />
           <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} />
           <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} />
           <button
             onClick={() => onChangeTab('watchlist')}
-            className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+            className={`px-3 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
           >
             <svg className="w-3.5 h-3.5" fill={activeTab === 'watchlist' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -1238,7 +1240,7 @@ function TabButton({ active, label, onClick }: { active: boolean; label: string;
   return (
     <button
       onClick={onClick}
-      className={`px-5 py-2 rounded-lg text-sm font-medium transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+      className={`px-3 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
     >
       {label}
     </button>
