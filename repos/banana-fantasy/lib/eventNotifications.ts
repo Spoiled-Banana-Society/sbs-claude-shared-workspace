@@ -44,15 +44,17 @@ export function eventNotificationContent(
         dedupeKey: `promo-new-user-${userId}`,
         icon: 'gift',
       };
-    case 'promo-pick-10':
+    case 'promo-pick-10': {
+      const pickSlot = payload.slot ?? 10;
       return {
         type: 'promo',
-        title: 'Pick 10 → Free Spin',
-        message: 'You drew slot 10 in a draft — your free spin is ready to claim.',
+        title: `Pick ${pickSlot} → Free Spin`,
+        message: `You drew slot ${pickSlot} in a draft. Your free spin is ready to claim.`,
         link: '/promos',
         dedupeKey: `promo-pick-10-${draftId}`,
         icon: 'target',
       };
+    }
     case 'promo-jackpot-hit': {
       const count = payload.awardedCount ?? 1;
       return {

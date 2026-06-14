@@ -296,6 +296,32 @@ export default function DraftingPage() {
             </>
           ) : null}
 
+          {/* Mobile-only: promos live in the desktop sidebar (hidden < lg).
+              On phones there's no room for a rail, so surface them at the
+              bottom of the main column — same cards, same handlers, same
+              data (no refetch). Only when there's something to show. */}
+          {promoCount > 0 && (
+            <div className="lg:hidden mt-10 max-w-sm mx-auto w-full">
+              <PromosSidebar
+                promos={promos}
+                promoIndex={promoIndex}
+                promoCount={promoCount}
+                claimedPromos={claimedPromos}
+                onSelectPromo={setSelectedPromo}
+                onClaim={handleClaim}
+                onSelectIndex={setPromoIndex}
+                onPrev={() => {
+                  if (promoCount === 0) return;
+                  setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
+                }}
+                onNext={() => {
+                  if (promoCount === 0) return;
+                  setPromoIndex((promoIndex + 1) % promoCount);
+                }}
+              />
+            </div>
+          )}
+
           {/* Mobile-only: the proof banner lives in the desktop sidebar
               (hidden < lg). On small screens surface it as a quiet footer
               trust seal at the bottom of the main column — not a big card. */}

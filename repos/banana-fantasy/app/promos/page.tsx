@@ -437,11 +437,11 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
 
         {/* Title + description — Apple-style typographic hierarchy */}
         <h3 className="text-white font-semibold text-lg sm:text-xl leading-snug tracking-tight mb-2">
-          {promo.type === 'pick-10' && pickExpanded ? 'Pick 6, 9 & 10 → FREE SPIN' : promo.title}
+          {promo.type === 'pick-10' && pickExpanded ? 'Pick 6 9 10 → FREE SPIN' : promo.title}
         </h3>
         <SpinExplainer promoTitle={promo.title} className="block text-xs leading-relaxed text-banana/80 mb-2" />
         <p className="text-white/45 text-sm leading-relaxed line-clamp-2 mb-4">
-          {promo.description}
+          {promo.type === 'pick-10' && pickExpanded ? 'Get pick 6, 9 or 10 for a spin' : promo.description}
         </p>
         {promo.type === 'pick-10' && pickExpanded && (
           <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">

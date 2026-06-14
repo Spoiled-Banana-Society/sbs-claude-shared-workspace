@@ -123,6 +123,25 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                 {/* Batch Progress — visible on all sizes */}
                 <BatchProgressIndicator />
 
+                {/* Draft passes — mobile only (desktop shows the gold ticket
+                    in the icon row below). Sits next to the JP/HOF batch
+                    counter so the user's "ammo" is always one glance away.
+                    Total only; the paid/free split lives in the profile menu. */}
+                {isLoggedIn && user && (
+                  <Link
+                    href="/buy-drafts"
+                    aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
+                    className="md:hidden flex items-center mr-1 px-1.5 py-1 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                  >
+                    <svg width="34" height="22" viewBox="0 0 88 56" className="w-[34px] h-[22px]">
+                      <rect x="0" y="0" width="88" height="56" rx="6" fill="#FBBF24" />
+                      <circle cx="0" cy="28" r="6" fill="#12121a" />
+                      <circle cx="88" cy="28" r="6" fill="#12121a" />
+                      <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{user.draftPasses + user.freeDrafts}</text>
+                    </svg>
+                  </Link>
+                )}
+
                 {/* ── Desktop-only icons ── */}
                 <div className="hidden md:contents">
                   {/* Draft Passes */}
