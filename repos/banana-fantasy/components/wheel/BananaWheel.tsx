@@ -703,12 +703,13 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
 
               {/* Free-draft win — gentle nudge to the page where they pick a draft
                   to enter (NOT an instant join; /draft just lists active drafts).
-                  Modest, on-brand, optional — closing the modal is still fine. */}
+                  Its own full-width row under the proof badge so it reads as the
+                  clean primary action, not crammed beside the badge. */}
               {wonSegment.prizeType === 'draft_pass' && (
                 <a
                   href="/draft"
                   onClick={dismissResult}
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-banana/40 text-banana text-sm font-semibold hover:bg-banana hover:text-black transition-colors"
+                  className="flex w-full items-center justify-center gap-1.5 py-3 rounded-xl bg-banana text-black text-sm font-bold hover:brightness-110 transition-all"
                   style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}
                 >
                   Draft
