@@ -2513,7 +2513,7 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
     // idempotent on duplicate draftId, so this fires exactly once per
     // actual Pick 10 occurrence).
     if (justAdded) {
-      pushStreamEventBg(userId, 'promo-pick-10', { draftId });
+      pushStreamEventBg(userId, 'promo-pick-10', { draftId, slot });
     }
     return promo;
   });

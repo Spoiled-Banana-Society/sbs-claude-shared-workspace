@@ -55,6 +55,8 @@ export type StreamEventType =
 export interface StreamEventPayload {
   /** Draft id (Pick 10, Jackpot Hit). */
   draftId?: string;
+  /** Draft slot that earned the Pick promo (6, 9 or 10). */
+  slot?: number;
   /** Badge id (badge-unlock only). */
   badgeId?: string;
   /** Referral milestone name. */
