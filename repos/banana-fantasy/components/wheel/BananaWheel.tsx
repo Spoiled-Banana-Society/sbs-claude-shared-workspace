@@ -701,6 +701,23 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 </div>
               )}
 
+              {/* Free-draft win — gentle nudge to the page where they pick a draft
+                  to enter (NOT an instant join; /draft just lists active drafts).
+                  Modest, on-brand, optional — closing the modal is still fine. */}
+              {wonSegment.prizeType === 'draft_pass' && (
+                <a
+                  href="/draft"
+                  onClick={dismissResult}
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl border border-banana/40 text-banana text-sm font-semibold hover:bg-banana hover:text-black transition-colors"
+                  style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}
+                >
+                  Find a Draft
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                </a>
+              )}
+
               {/* Info for Jackpot/HOF wins — winner is auto-seated in a special
                   draft lobby. Count is LIVE (page polls the queue); until the
                   seat resolves we show the generic 10-winners line. */}
