@@ -369,8 +369,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       });
     } else {
       const verifiable = typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number';
-      setWonProofStatus(verifiable ? 'verifying' : 'unverified');
       setWonProofMeta(null);
+      if (verifiable) {
+        // Kick the proof fetch+verify off NOW — in parallel with the ~2s landing
+        // animation — instead of waiting until the wheel lands. The spin is
+        // already recorded server-side (we have the spinId), so by the time the
+        // result popup appears the badge is usually already "Verified ✓" rather
+        // than making the user watch a "verifying…" spinner for a few seconds.
+        // fetchAndVerifyProof sets 'verifying' itself while it runs.
+        void fetchAndVerifyProof(outcome.spinId, outcome.result);
+      } else {
+        setWonProofStatus('unverified');
+      }
     }
 
     setTimeout(() => {
@@ -391,12 +401,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       // going crazy for several seconds.
       stopSpinSound(segment ? getWinTier(segment) : undefined);
       if (onSpinComplete) onSpinComplete(outcome, segment);
-      // Now that the wheel has landed and the prize is showing, fetch + verify
-      // the Merkle proof in the background to light up the "Verified ✓" badge.
-      // Skipped if an old response already inlined the proof (verified above).
-      if (!outcome.proof && typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number') {
-        void fetchAndVerifyProof(outcome.spinId, outcome.result);
-      }
+      // Proof fetch+verify was already kicked off above (in parallel with this
+      // landing animation), so the "Verified ✓" badge is typically lit by the
+      // time this result popup shows — no post-landing fetch needed here.
     }, SPIN_DURATION_MS);
   };
 
