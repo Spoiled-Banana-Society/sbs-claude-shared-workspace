@@ -34,13 +34,12 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
   // Nav items — desktop only
   const navItems = [
-    { href: '/drafting', label: 'Drafting', tooltip: 'View active drafts', auth: false },
+    { href: '/drafting', label: 'Draft', tooltip: 'View active drafts', auth: false },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
     { href: '/my-teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
-    { href: '/rankings', label: 'Rankings', tooltip: 'Custom rankings & auto-draft limits', auth: false },
-    { href: '/exposure', label: 'Exposure', tooltip: 'Player & team exposure', auth: true },
-    { href: '/marketplace', label: 'Marketplace', tooltip: 'Buy & sell teams', auth: false },
-    { href: '/faq', label: 'FAQ', tooltip: 'Frequently asked questions', auth: false },
+    // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
+    // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in
+    // the profile menu — so they no longer clutter the top nav.
     // Leaderboard intentionally hidden until the season starts (no scores yet).
     ...(isAdminWallet ? [{ href: '/admin', label: 'Admin', tooltip: 'Admin dashboard', auth: true }] : []),
   ].filter((item) => !item.auth || isLoading || isLoggedIn);
@@ -127,30 +126,23 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                     in the icon row below). Sits next to the JP/HOF batch
                     counter so the user's "ammo" is always one glance away.
                     Total only; the paid/free split lives in the profile menu. */}
+                {/* Mobile pass total — no tooltip: a tap navigates to Buy, so a
+                    hover-card just flashes for a beat before the modal. Tapping
+                    goes straight to Buy; the paid/free split lives in the
+                    profile menu's "Your Passes" card. */}
                 {isLoggedIn && user && (
-                  <Tooltip
-                    content={
-                      <div className="text-center">
-                        <p className="font-semibold">Draft Passes</p>
-                        <p className="text-text-secondary text-xs mt-1">
-                          Paid: {user.draftPasses} | Free: {user.freeDrafts}
-                        </p>
-                      </div>
-                    }
+                  <Link
+                    href="/buy-drafts"
+                    aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
+                    className="md:hidden flex items-center mr-1 px-1.5 py-1 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                   >
-                    <Link
-                      href="/buy-drafts"
-                      aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available (Paid: ${user.draftPasses}, Free: ${user.freeDrafts})`}
-                      className="md:hidden flex items-center mr-1 px-1.5 py-1 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
-                    >
-                      <svg width="34" height="22" viewBox="0 0 88 56" className="w-[34px] h-[22px]">
-                        <rect x="0" y="0" width="88" height="56" rx="6" fill="#FBBF24" />
-                        <circle cx="0" cy="28" r="6" fill="#12121a" />
-                        <circle cx="88" cy="28" r="6" fill="#12121a" />
-                        <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{user.draftPasses + user.freeDrafts}</text>
-                      </svg>
-                    </Link>
-                  </Tooltip>
+                    <svg width="34" height="22" viewBox="0 0 88 56" className="w-[34px] h-[22px]">
+                      <rect x="0" y="0" width="88" height="56" rx="6" fill="#FBBF24" />
+                      <circle cx="0" cy="28" r="6" fill="#12121a" />
+                      <circle cx="88" cy="28" r="6" fill="#12121a" />
+                      <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{user.draftPasses + user.freeDrafts}</text>
+                    </svg>
+                  </Link>
                 )}
 
                 {/* ── Desktop-only icons ── */}

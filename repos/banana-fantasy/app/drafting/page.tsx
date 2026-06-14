@@ -8,6 +8,7 @@ import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
 import { PromosSidebar } from '@/components/drafting/PromosSidebar';
+import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
@@ -141,42 +142,37 @@ export default function DraftingPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
+        <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Rankings is a pre-draft tool — set your player order / auto-draft
-              limits — so it lives here on the draft page (not a top-level nav
-              item). Always visible so a first-timer can pre-rank before their
-              first draft. */}
+          {/* Rankings = pre-draft tool. Kept as a quiet text link beside the
+              title so it doesn't clump with the primary New Draft / Buy
+              actions. Always available, even before a first draft. */}
           <button
             onClick={() => router.push('/rankings')}
             aria-label="Pre-rank players and set auto-draft limits"
-            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+            className="text-sm font-medium text-white/45 hover:text-banana transition-colors"
           >
             Rankings
           </button>
-          {activeDrafts.length > 0 && (
-            <>
-              <button
-                onClick={handleEnterDraft}
-                className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
-              >
-                New Draft
-              </button>
-              <button
-                onClick={() => router.push('/buy-drafts')}
-                className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
-              >
-                Buy Drafts
-              </button>
-            </>
-          )}
         </div>
+        {activeDrafts.length > 0 && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleEnterDraft}
+              className="px-5 py-2 text-sm font-semibold text-white border border-white/15 rounded-xl hover:border-white/30 hover:bg-white/[0.05] transition-all"
+            >
+              New Draft
+            </button>
+            <button
+              onClick={() => router.push('/buy-drafts')}
+              className="px-5 py-2 text-sm font-semibold bg-banana text-black rounded-xl hover:scale-[1.03] transition-transform shadow-[0_4px_16px_-4px_rgba(251,191,36,0.55)]"
+            >
+              Buy Drafts
+            </button>
+          </div>
+        )}
       </div>
-
-      <div className="mb-6" />
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
@@ -308,35 +304,25 @@ export default function DraftingPage() {
           ) : null}
 
           {/* Mobile-only: promos live in the desktop sidebar (hidden < lg).
-              On phones there's no room for a rail, so surface them at the
-              bottom of the main column — same cards, same handlers, same
-              data (no refetch). Only when there's something to show. */}
-          {promoCount > 0 && (
-            <div className="lg:hidden mt-10 max-w-sm mx-auto w-full">
-              <PromosSidebar
-                promos={promos}
-                promoIndex={promoIndex}
-                promoCount={promoCount}
-                claimedPromos={claimedPromos}
-                onSelectPromo={setSelectedPromo}
-                onClaim={handleClaim}
-                onSelectIndex={setPromoIndex}
-                onPrev={() => {
-                  if (promoCount === 0) return;
-                  setPromoIndex((promoIndex - 1 + promoCount) % promoCount);
-                }}
-                onNext={() => {
-                  if (promoCount === 0) return;
-                  setPromoIndex((promoIndex + 1) % promoCount);
-                }}
+              On phones, use the SAME square promo carousel as the Spin page
+              (not the sidebar's tall card). Pushed well down the page so the
+              live drafts stay up top. SWR-deduped — no refetch. */}
+          {(promosQuery.promos?.length ?? 0) > 0 && (
+            <div className="lg:hidden mt-16">
+              <PromoCarousel
+                heading="Promos"
+                promos={promosQuery.promos ?? []}
+                claimPromo={promosQuery.claimPromo}
+                onVerifyTweet={promosQuery.verifyTweetEngagement}
+                onGenerateReferralCode={promosQuery.generateReferralCode}
               />
             </div>
           )}
 
           {/* Mobile-only: the proof banner lives in the desktop sidebar
               (hidden < lg). On small screens surface it as a quiet footer
-              trust seal at the bottom of the main column — not a big card. */}
-          <div className="lg:hidden mt-10 mb-2">
+              trust seal — kept low, below the promos. */}
+          <div className="lg:hidden mt-12 mb-2">
             <BatchProofBanner display="seal" />
           </div>
         </div>
