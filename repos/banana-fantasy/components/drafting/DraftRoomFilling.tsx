@@ -56,12 +56,14 @@ export function DraftRoomFilling({
   const rowMarginTop = 15;
 
   // Spacer below the position:fixed lobby header. It must land the tabs at the
-  // SAME spot as the drafting phase (DraftRoomDrafting), which reserves
-  // 290px (310 for JP/HOF) and has NO top bar. The filling phase DOES render
-  // the h-14 (3.5rem) contest top bar above this spacer, so subtract 3.5rem to
-  // match drafting exactly — deterministic, identical on mobile and desktop.
-  // (safe-area cancels: the top bar already includes it.)
-  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} - 3.5rem)`;
+  // SAME spot as the drafting phase, which reserves 290px (310 for JP/HOF) via
+  // the IDENTICAL calc in DraftRoomDrafting. The earlier `- 3.5rem` made this
+  // spacer SMALLER than drafting's, so the tabs crowded up against the lobby
+  // header (which is actually TALLER than the drafting banner — it carries the
+  // "N/10 waiting" line + EXIT/MUTE/OFF controls). Matching drafting's reserve
+  // exactly gives the tabs the same breathing room in both phases on desktop
+  // and mobile (safe-area included on both sides, so it cancels).
+  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} + env(safe-area-inset-top))`;
 
   return (
     <>
