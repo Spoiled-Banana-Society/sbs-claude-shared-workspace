@@ -135,7 +135,13 @@ const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   },
 };
 const EVENT_ORDER: EventId[] = ['draftFilled', 'pickFast', 'pickSlow'];
-const CHANNEL_ORDER: ChannelId[] = ['push', 'email', 'telegram', 'discord'];
+// Web push intentionally removed as a draft-alert channel (Boris 2026-06-14):
+// for time-sensitive draft alerts it's unreliable — iOS only delivers to an
+// installed PWA and even then drops/delays, and Safari/macOS web push needs the
+// browser running and is flaky vs. native delivery. Telegram / Discord / Email
+// all push to a real app and are far more dependable, so we steer users there.
+// (Push plumbing below is left intact so re-adding 'push' here restores it.)
+const CHANNEL_ORDER: ChannelId[] = ['email', 'telegram', 'discord'];
 
 // Discord @mentions only reach a user who is in the SBS Discord server —
 // OAuth links the account but doesn't add them. Surface a join link.
@@ -558,7 +564,7 @@ export function NotificationSettings() {
 
       {loading ? (
         <div className="space-y-7">
-          {[3, 4].map((n) => (
+          {[3, 3].map((n) => (
             <div key={n}>
               <div className="mb-2.5 ml-1 h-3 w-32 animate-pulse rounded bg-white/[0.06]" />
               <div className="glass-card overflow-hidden">

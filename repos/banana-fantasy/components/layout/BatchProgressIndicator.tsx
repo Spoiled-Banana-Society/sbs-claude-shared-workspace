@@ -20,48 +20,37 @@ export function BatchProgressIndicator() {
   return (
     <Tooltip
       content={
-        <div className="text-center space-y-2 py-1">
-          <p className="font-semibold text-text-primary">Draft {currentDraft} of {batchEnd}</p>
-          {!jackpotHit && (
-            <p className="text-red-400 text-xs">
-              Jackpot must hit in next {draftsLeft} draft{draftsLeft !== 1 ? 's' : ''}!
-            </p>
-          )}
-          {jackpotHit && (
-            <p className="text-green-400 text-xs">Jackpot hit this batch!</p>
-          )}
-          {!allHofHit && (
-            <p className="text-banana text-xs">
-              {hofRemaining} HOF remaining this batch
-            </p>
-          )}
-          {allHofHit && (
-            <p className="text-green-400 text-xs">All 5 HOF hit this batch!</p>
-          )}
-          <div className="border-t border-bg-elevated pt-2 space-y-1">
-            <p className="text-xs">
-              <span className="text-red-400 font-semibold">Jackpot</span>{' '}
-              <span className="text-text-secondary">&mdash; Win your league &amp; skip to finals</span>
-            </p>
-            <p className="text-xs">
-              <span className="text-banana font-semibold">HOF</span>{' '}
-              <span className="text-text-secondary">&mdash; Compete for bonus prizes</span>
-            </p>
-            <p className="text-text-muted text-xs mt-1">
-              1 Jackpot &amp; 5 HOF guaranteed every 100 drafts
-            </p>
+        <div className="w-[240px] py-0.5">
+          {/* Where this batch is */}
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="text-sm font-semibold text-text-primary">Draft {currentDraft} of {batchEnd}</span>
+            <span className="text-[11px] tabular-nums text-text-muted">{draftsLeft} left</span>
           </div>
-          <div className="border-t border-bg-elevated pt-2">
-            {jackpotHit && allHofHit ? (
-              <p className="text-banana text-xs font-semibold">
-                🔥 All specials hit! Pick 6, 9 &amp; 10 all win a free spin now
-              </p>
-            ) : (
-              <p className="text-text-muted text-xs">
-                Once all specials are hit, Pick 10 expands to slots 6, 9 &amp; 10 (until next batch)
-              </p>
-            )}
+          <div className="mb-3 h-1 overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full bg-white/45"
+              style={{ width: `${Math.min(100, Math.max(0, ((currentDraft - (batchEnd - 100)) / 100) * 100))}%` }}
+            />
           </div>
+
+          {/* Specials still to drop this batch (the live hook) */}
+          <div className="mb-3 flex items-center justify-center gap-6">
+            <span className="flex items-center gap-1.5">
+              <span className={`text-base font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>{jackpotHit ? '✓' : jackpotRemaining}</span>
+              <span className="text-[11px] font-medium text-text-secondary">{jackpotHit ? 'Jackpot hit' : 'Jackpot left'}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className={`text-base font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>{allHofHit ? '✓' : hofRemaining}</span>
+              <span className="text-[11px] font-medium text-text-secondary">{allHofHit ? 'HOF hit' : 'HOF left'}</span>
+            </span>
+          </div>
+
+          {/* What they are — one line each */}
+          <div className="space-y-1 border-t border-white/[0.08] pt-2.5 text-center">
+            <p className="text-[11.5px]"><span className="font-semibold text-red-400">Jackpot</span><span className="text-text-secondary"> · win your league, skip to finals</span></p>
+            <p className="text-[11.5px]"><span className="font-semibold text-banana">HOF</span><span className="text-text-secondary"> · compete for bonus prizes</span></p>
+          </div>
+          <p className="mt-2 text-center text-[10.5px] text-text-muted">1 Jackpot + 5 HOF guaranteed every 100 drafts</p>
         </div>
       }
     >
