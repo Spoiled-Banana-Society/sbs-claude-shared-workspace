@@ -27,6 +27,13 @@ type RealTimeDraftInfo struct {
 	LastPick          PlayerStateInfo `json:"lastPick"`
 	IsDraftComplete   bool            `json:"isDraftComplete"`
 	IsDraftClosed     bool            `json:"isDraftClosed"`
+	// Draft type ("Pro"/"Hall of Fame"/"Jackpot"), set once at fill so both
+	// mobile and desktop read the SAME value live off this node instead of
+	// each device deriving it from its own owner-token lookup (the source of
+	// the HOF-shows-as-PRO desync). It's a struct field — not a sibling write —
+	// so the per-pick Update() below re-serializes it every pick and it never
+	// gets wiped. omitempty keeps it out of any theoretical fresh-struct write.
+	Type string `json:"type,omitempty"`
 }
 
 func GetRealTimeDraftInfoForDraft(draftId string) (*RealTimeDraftInfo, error) {

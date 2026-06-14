@@ -74,7 +74,7 @@ func GetUserRankingsFromDrafts(ownerId string) (*UserRankings, error) {
 	if err != nil {
 		if ok := strings.Contains(strings.ToLower(err.Error()), "notfound"); ok {
 
-			err := utils.Db.ReadDocument("playerStats2024", "rankings", &r)
+			err := utils.Db.ReadDocument("playerStats2026", "rankings", &r)
 			if err != nil {
 				return nil, err
 			}
@@ -89,7 +89,7 @@ func GetUserRankingsFromDrafts(ownerId string) (*UserRankings, error) {
 
 	} else if len(r.Ranking) == 0 {
 		fmt.Println("made it into the second if statement")
-		err := utils.Db.ReadDocument("playerStats2024", "rankings", &r)
+		err := utils.Db.ReadDocument("playerStats2026", "rankings", &r)
 		if err != nil {
 			return nil, err
 		}
@@ -127,7 +127,7 @@ func ReturnPlayerStateWithRankings(ownerId string, draftId string) ([]DraftPlaye
 	stats := StatsMap{
 		Players: make(map[string]StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		return nil, err
 	}

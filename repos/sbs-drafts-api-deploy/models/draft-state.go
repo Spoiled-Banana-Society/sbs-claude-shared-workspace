@@ -357,7 +357,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 	stats := StatsMap{
 		Players: make(map[string]StatsObject),
 	}
-	err = utils.Db.ReadDocument("playerStats2024", "playerMap", &stats)
+	err = utils.Db.ReadDocument("playerStats2026", "playerMap", &stats)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +422,7 @@ func ReturnRostersForDraft(draftId string) (*map[string]FullInfoRoster, error) {
 func GetDefaultPlayerState() (map[string]PlayerStateInfo, error) {
 	data := make(map[string]PlayerStateInfo)
 
-	err := utils.Db.ReadDocument("playerStats2024", "defaultPlayerDraftState", &data)
+	err := utils.Db.ReadDocument("playerStats2026", "defaultPlayerDraftState", &data)
 	if err != nil {
 		return nil, err
 	}
@@ -794,6 +794,17 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		PickStartTime:     info.DraftStartTime,
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
+	}
+	// Stamp the resolved type onto the live node so both devices read the same
+	// Pro/HOF/Jackpot the instant the slot reveal lands — no per-device owner
+	// lookup, no desync. Derived from the same isJackpot/isHOF decision above
+	// (which already folds in wheel-won special drafts via specialLevel).
+	if isJackpot {
+		firstPickInfo.Type = "Jackpot"
+	} else if isHOF {
+		firstPickInfo.Type = "Hall of Fame"
+	} else {
+		firstPickInfo.Type = "Pro"
 	}
 	if strings.ToLower(leagueInfo.DraftType) == "slow" {
 		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
