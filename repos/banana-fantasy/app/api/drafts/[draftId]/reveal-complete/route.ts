@@ -59,7 +59,7 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       for (const slot of slots) {
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
-          await recordPick10(owner, draftId, draftName);
+          await recordPick10(owner, draftId, draftName, undefined, slot);
         }
       }
     } catch { /* state not initialized yet — close backstop covers it */ }

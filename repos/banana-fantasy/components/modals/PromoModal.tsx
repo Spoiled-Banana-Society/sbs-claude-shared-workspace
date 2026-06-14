@@ -11,6 +11,7 @@ import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -39,6 +40,10 @@ function fmtWhen(d: string | undefined): string {
 export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = false, onVerifyTweet, onGenerateReferralCode, drawDraftId = null }: PromoModalProps) {
   const router = useRouter();
   const { user, isLoggedIn, setShowLoginModal, isTwitterVerified, isTwitterLinking, twitterError, linkTwitter, newUserPromoClaimed, claimNewUserPromo } = useAuth();
+  // Pick 10 expands to slots 6 & 9 (on top of 10) while the current 100-batch
+  // has all its specials (1 JP + 5 HOF) hit — surface that live in the modal.
+  const { data: batchData } = useBatchProgress();
+  const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
@@ -359,6 +364,24 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
     return (
       <>
+        {/* Expanded-window banner — live when the current 100-batch has had all
+            its specials (1 Jackpot + 5 HOF) hit. Until the next batch, slots 6
+            and 9 also win, on top of the usual slot 10. */}
+        {pickExpanded ? (
+          <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
+            <p className="text-banana font-semibold text-sm">🔥 Bonus active — all specials cleared this batch</p>
+            <p className="text-text-secondary text-sm mt-1">
+              Right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin in paid drafts. Reverts to slot 10 only when the next batch of 100 starts.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl p-4 bg-bg-tertiary">
+            <p className="text-text-secondary text-sm">
+              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin. When a batch&apos;s Jackpot + HOFs are all hit, this expands to slots 6, 9 &amp; 10 until the next batch.
+            </p>
+          </div>
+        )}
+
         {/* Total Pick 10s */}
         {promo.modalContent.totalPick10s !== undefined && (
           <div className="bg-bg-tertiary rounded-xl p-4">
@@ -382,7 +405,9 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 <div key={index} className="flex items-center justify-between py-2 border-b border-bg-elevated last:border-0">
                   <div>
                     <p className="text-text-secondary text-sm">{entry.draftName}</p>
-                    <p className="text-text-muted text-xs">{fmtWhen(entry.date)}</p>
+                    <p className="text-text-muted text-xs">
+                      {entry.slot ? `Slot ${entry.slot} · ` : ''}{fmtWhen(entry.date)}
+                    </p>
                   </div>
                   {getPick10Badge(entry.status, entry.draftName)}
                 </div>

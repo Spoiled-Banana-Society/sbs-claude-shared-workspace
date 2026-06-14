@@ -423,7 +423,7 @@ export interface Promo {
     referralRewards?: ReferralReward[];
     referralHistory?: ReferralEntry[];
     twitterConnected?: boolean;
-    pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed' }[];
+    pick10History?: { date: string; draftName: string; status: 'pending' | 'claim' | 'claimed'; slot?: number }[];
     totalPick10s?: number;
     jackpotHistory?: { date: string; draftName: string; amount: number }[];
     founderHistory?: { date: string; draftName: string; amount: number }[];

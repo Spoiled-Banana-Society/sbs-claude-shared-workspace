@@ -2452,7 +2452,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
 const PICK10_PROMO_ID = '2';
 
-export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string): Promise<Promo | null> {
+export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string, slot = 10): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
   // Pick 10. The draft token is stamped with the chosen pass type (source of
   // truth) — use it, falling back to the client value only when the stamp can't
@@ -2490,6 +2490,9 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
       // Human name ("BBB #1374") when the caller has it; raw id as fallback.
       draftName: draftName && draftName !== draftId ? draftName : draftId,
       status: 'claim' as const,
+      // Which draft slot earned it (10 normally; 6 or 9 during the expanded
+      // window after a batch's specials are all hit).
+      slot,
     } as (typeof history)[number]);
     promo.modalContent.pick10History = history;
     promo.modalContent.totalPick10s = (promo.modalContent.totalPick10s || 0) + 1;
