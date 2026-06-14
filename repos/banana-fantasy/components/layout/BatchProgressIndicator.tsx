@@ -54,7 +54,7 @@ export function BatchProgressIndicator() {
           <div className="border-t border-bg-elevated pt-2">
             {jackpotHit && allHofHit ? (
               <p className="text-banana text-xs font-semibold">
-                🔥 All specials hit &mdash; Pick 10 now pays slots 6, 9 &amp; 10!
+                🔥 All specials hit! Pick 6, 9 &amp; 10 all win a free spin now
               </p>
             ) : (
               <p className="text-text-muted text-xs">

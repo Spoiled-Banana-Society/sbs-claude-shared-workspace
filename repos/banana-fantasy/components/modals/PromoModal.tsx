@@ -44,6 +44,13 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   // has all its specials (1 JP + 5 HOF) hit — surface that live in the modal.
   const { data: batchData } = useBatchProgress();
   const pickExpanded = !!batchData && batchData.jackpotRemaining <= 0 && batchData.hofRemaining <= 0;
+  // When the bonus is live, the Pick-10 modal title + explainer speak to all
+  // three winning slots (6, 9 & 10), not just 10.
+  const isPickBonus = promo?.type === 'pick-10' && pickExpanded;
+  const modalTitle = isPickBonus ? 'Get Pick 6, 9 & 10 → SPIN' : (promo?.modalContent.title ?? '');
+  const pickExplanation = isPickBonus
+    ? '• Land slot 6, 9 or 10 in a draft and you get a Free Banana Spin.\n• Paid Drafts Only.'
+    : (promo?.modalContent.explanation ?? '');
   const [copied, setCopied] = useState(false);
   const [claimedRewards, setClaimedRewards] = useState<Set<string>>(new Set());
   const [claimSuccess, setClaimSuccess] = useState<{ show: boolean; count: number }>({ show: false, count: 0 });
@@ -371,7 +378,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
           <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
             <p className="text-banana font-semibold text-sm">🔥 Bonus active — this batch&apos;s Jackpot &amp; HOFs are all gone</p>
             <p className="text-text-secondary text-sm mt-1">
-              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin in paid drafts — not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
+              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin, not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
             </p>
           </div>
         ) : (
@@ -414,7 +421,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
               ))}
             </div>
           ) : (
-            <p className="text-text-muted text-sm">Every 10th slot pick you land in a paid draft lands here with the draft and date.</p>
+            <p className="text-text-muted text-sm">{isPickBonus ? 'Every slot 6, 9 & 10 you land in a draft lands here with the draft and date.' : 'Every 10th slot pick you land in a paid draft lands here with the draft and date.'}</p>
           )}
         </div>
       </>
@@ -1115,7 +1122,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title={promo.modalContent.title} size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
       <div className="space-y-5">
         {/* Explanation */}
         <div className="text-text-secondary leading-relaxed">
@@ -1138,7 +1145,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                   ))}
                 </>
               ) : (
-                promo.modalContent.explanation
+                pickExplanation
               )}
             </p>
           </div>
