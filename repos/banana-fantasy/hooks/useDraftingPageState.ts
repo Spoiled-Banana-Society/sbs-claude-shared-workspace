@@ -19,7 +19,7 @@ import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
@@ -764,75 +764,16 @@ export function useDraftingPageState() {
     };
   }, [liveDraftIdsKey]);
 
-  // Live PICK PROGRESS on /draft rows — instant RTDB push off the SAME
-  // realTimeDraftInfo node the draft room reads. Gives the list instant
-  // "we're on pick X", whose-turn, the pick countdown, and completion —
-  // in lockstep with the room and identical across devices, no 3s poll.
-  // The ~3s syncLiveDrafts poll remains as a safety net and still owns the
-  // heavier work (reveal-animation timing, exact "N picks away", promos).
-  // While the user's draft-room tab is live (fresh heartbeat) we defer to it
-  // so the two don't fight over the same store row.
-  useEffect(() => {
-    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
-    if (ids.length === 0) return;
-    const wallet = user?.walletAddress?.toLowerCase();
-    const unsubs = ids.map((draftId) =>
-      subscribeRealTimeDraftInfo(draftId, (info) => {
-        if (!info) return; // still filling — no live pick state yet
-        const pickNumber = typeof info.pickNumber === 'number' ? info.pickNumber : 0;
-        if (pickNumber < 1) return; // not drafting yet — the reveal flow owns the row
-        const existing = draftStore.getDraft(draftId);
-        if (!existing) return;
-
-        // Completion → clear the row the instant the server flips it complete,
-        // and persist the hidden id so a later token-list reload can't re-add it.
-        const totalPicks = 150;
-        if (info.isDraftComplete || pickNumber >= totalPicks) {
-          draftStore.removeDraft(draftId);
-          setHiddenDraftIds((prev) => {
-            if (prev.has(draftId)) return prev;
-            const next = new Set(prev);
-            next.add(draftId);
-            try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
-            return next;
-          });
-          return;
-        }
-
-        // If the draft-room tab is actively driving this draft, let it own the
-        // store writes (it has the full engine state) — avoid a write tug-of-war.
-        const hb = localStorage.getItem(`draft-room-ws:${draftId}`);
-        if (hb && Date.now() - Number(hb) < 10_000) return;
-
-        const isYourTurn = !!wallet
-          && typeof info.currentDrafter === 'string'
-          && info.currentDrafter.toLowerCase() === wallet;
-        const patch: Partial<DraftState> = {
-          enginePickNumber: pickNumber,
-          isYourTurn,
-          status: 'drafting',
-          phase: 'drafting',
-          players: 10,
-          // Past the reveal — clear any lingering animation anchors so the row
-          // renders the live drafting state, never replays the slot machine.
-          randomizingStartedAt: undefined,
-          preSpinStartedAt: undefined,
-        };
-        if (typeof info.pickEndTime === 'number' && info.pickEndTime > 0) {
-          patch.pickEndTimestamp = info.pickEndTime;
-          patch.timeRemaining = isYourTurn
-            ? Math.max(0, Math.ceil(info.pickEndTime - Date.now() / 1000))
-            : undefined;
-        }
-        draftStore.updateDraft(draftId, patch);
-      }),
-    );
-    return () => {
-      for (const unsub of unsubs) {
-        try { unsub(); } catch { /* ignore */ }
-      }
-    };
-  }, [liveDraftIdsKey, user?.walletAddress]);
+  // NOTE: pick-progress on /draft rows (pick #, round, whose-turn, completion)
+  // is owned EXCLUSIVELY by the ~3s syncLiveDrafts poll below, which reads the
+  // draft's fresh Firestore state. An earlier "instant" RTDB push that also
+  // wrote those fields was REMOVED 2026-06-14 — having two writers fight made
+  // the row flicker between states (e.g. "last round / all picks done" ⇄ "round
+  // 12") because the shared realTimeDraftInfo node can briefly hold stale data
+  // (staging reuses draft ids). One stable source = accurate + no glitching.
+  // The draft ROOM itself stays instant (it reads realTimeDraftInfo live). The
+  // type/count/displayName pushes elsewhere in this hook are single-value and
+  // don't conflict, so they stay.
 
   useEffect(() => {
     const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
