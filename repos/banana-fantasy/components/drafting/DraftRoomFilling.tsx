@@ -55,51 +55,13 @@ export function DraftRoomFilling({
   const boxPadTop = 10;
   const rowMarginTop = 15;
 
-  // The lobby header (boxes + "x/10 waiting" + controls) is position:fixed, so
-  // a spacer below it reserves its room in flow. A hard-coded height (290px)
-  // over-reserved on mobile — the filling header is shorter there — leaving a
-  // big gap above the tabs. Measure the real header height and match the spacer
-  // to it exactly, so the only gap left is the tabs' own spacing (same as
-  // desktop) on every device.
-  const headerRef = React.useRef<HTMLDivElement>(null);
-  const spacerRef = React.useRef<HTMLDivElement>(null);
-  const [spacerHeight, setSpacerHeight] = React.useState<number | null>(null);
-  React.useEffect(() => {
-    const header = headerRef.current;
-    const spacer = spacerRef.current;
-    if (!header || !spacer) return;
-    const measure = () => {
-      // The fixed lobby header sits at top:0. The spacer (normal flow) can
-      // START lower than the viewport top because of flow content above it
-      // that's hidden behind the fixed header (the draft-room h-14 top bar).
-      // Sizing the spacer to its full header height then over-reserved by that
-      // offset and pushed the tabs down (the gap Boris saw). Instead size the
-      // spacer to the GAP between its own top and the header's bottom, so the
-      // tabs land flush under the header regardless of what's above.
-      const headerBottom = header.getBoundingClientRect().bottom;
-      const spacerTop = spacer.getBoundingClientRect().top;
-      const h = headerBottom - spacerTop;
-      if (h > 0) setSpacerHeight(h);
-    };
-    measure();
-    const raf = requestAnimationFrame(measure);
-    const t1 = setTimeout(measure, 150);
-    const t2 = setTimeout(measure, 600);
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure);
-      ro.observe(header);
-    }
-    window.addEventListener('resize', measure);
-    try { (document as Document).fonts?.ready?.then(measure); } catch { /* no-op */ }
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(t1);
-      clearTimeout(t2);
-      ro?.disconnect();
-      window.removeEventListener('resize', measure);
-    };
-  }, []);
+  // Spacer below the position:fixed lobby header. It must land the tabs at the
+  // SAME spot as the drafting phase (DraftRoomDrafting), which reserves
+  // 290px (310 for JP/HOF) and has NO top bar. The filling phase DOES render
+  // the h-14 (3.5rem) contest top bar above this spacer, so subtract 3.5rem to
+  // match drafting exactly — deterministic, identical on mobile and desktop.
+  // (safe-area cancels: the top bar already includes it.)
+  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} - 3.5rem)`;
 
   return (
     <>
@@ -108,7 +70,7 @@ export function DraftRoomFilling({
           The lobby used to keep the old design (solid-color user box, no
           band), so wheel-won JP/HOF drafts looked stale while filling
           (caught by Boris on 2025-slow-draft-62, 2026-06-10). */}
-      <div ref={headerRef} className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
+      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
         background: draftBandBackground(visibleDraftType),
         boxShadow: draftBandShadow(visibleDraftType),
         // Match DraftRoomDrafting — drop the strip below the notch on iOS
@@ -292,11 +254,7 @@ export function DraftRoomFilling({
           includes its safe-area padding), so the tabs sit flush below it with
           no over-reserved gap. Falls back to ~250px for the first paint /
           no-ResizeObserver before the measurement lands. */}
-      <div
-        ref={spacerRef}
-        className="shrink-0 bg-black"
-        style={{ height: spacerHeight != null ? `${spacerHeight}px` : 'calc(250px + env(safe-area-inset-top))' }}
-      />
+      <div className="shrink-0 bg-black" style={{ height: fillingSpacer }} />
     </>
   );
 }
