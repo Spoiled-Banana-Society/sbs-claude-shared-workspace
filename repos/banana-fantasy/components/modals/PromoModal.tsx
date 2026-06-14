@@ -369,15 +369,15 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             and 9 also win, on top of the usual slot 10. */}
         {pickExpanded ? (
           <div className="rounded-xl p-4 border border-banana/40 bg-banana/10">
-            <p className="text-banana font-semibold text-sm">🔥 Bonus active — all specials cleared this batch</p>
+            <p className="text-banana font-semibold text-sm">🔥 Bonus active — this batch&apos;s Jackpot &amp; HOFs are all gone</p>
             <p className="text-text-secondary text-sm mt-1">
-              Right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin in paid drafts. Reverts to slot 10 only when the next batch of 100 starts.
+              The Jackpot and all 5 HOF drafts in this batch of 100 have been hit, so right now slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> each win a free spin in paid drafts — not just slot 10. It goes back to slot 10 only when the next batch of 100 begins.
             </p>
           </div>
         ) : (
           <div className="rounded-xl p-4 bg-bg-tertiary">
             <p className="text-text-secondary text-sm">
-              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin. When a batch&apos;s Jackpot + HOFs are all hit, this expands to slots 6, 9 &amp; 10 until the next batch.
+              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin. Once the Jackpot and all 5 HOF drafts in a batch of 100 have been hit, it expands so slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> all win — until the next batch of 100 starts.
             </p>
           </div>
         )}

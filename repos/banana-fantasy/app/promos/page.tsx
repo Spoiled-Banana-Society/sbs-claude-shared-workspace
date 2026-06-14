@@ -445,7 +445,7 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
         </p>
         {promo.type === 'pick-10' && pickExpanded && (
           <p className="text-banana text-xs font-semibold leading-relaxed -mt-2 mb-4">
-            🔥 Bonus active — specials cleared this batch: slots 6, 9 &amp; 10 all win now
+            🔥 Bonus: this batch&apos;s Jackpot + all 5 HOFs are gone — so slots 6, 9 &amp; 10 all win now
           </p>
         )}
 
