@@ -25,6 +25,11 @@ export interface DraftState {
   phase?: 'filling' | 'pre-spin' | 'spinning' | 'result' | 'countdown' | 'drafting';
   preSpinStartedAt?: number;
   randomizingStartedAt?: number;  // Timestamp when "Randomizing Draft Order" began (10/10 reached)
+  // Server's authoritative draft-start time (epoch MS). Set from the live
+  // realTimeDraftInfo.draftStartTime so the reveal animation runs off ONE clock
+  // on every device (no per-device "saw it fill" drift). When set + the draft
+  // is full, getLiveState derives filling→reveal→drafting purely from this.
+  draftStartTimeMs?: number;
   draftType?: 'pro' | 'hof' | 'jackpot' | null;
   draftOrder?: Array<{ id: string; name: string; displayName: string; isYou: boolean; avatar: string }>;
   userDraftPosition?: number;

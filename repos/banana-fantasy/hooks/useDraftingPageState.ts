@@ -486,13 +486,18 @@ export function useDraftingPageState() {
         // numPlayers === 10 means the backend has created the draft state
         // (via /state/info fallback), so the draft has actually started.
         const stateResults = await Promise.all(
-          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean }> => {
+          activeTokens.map(async (t): Promise<{ players: number; isDrafting: boolean; draftStartTimeMs?: number }> => {
             try {
               const res = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(t.leagueId)}`);
               if (!res.ok) return { players: 1, isDrafting: false };
               const data = await res.json();
               const numPlayers = Number(data.numPlayers) || 0;
-              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10 };
+              // Server draft-start time (Unix s → ms) — present once the draft
+              // fills. Lets the row run the reveal off the server clock from the
+              // very first load, even on a device that never witnessed the fill.
+              const dst = typeof data.draftStartTime === 'number' && data.draftStartTime > 0
+                ? data.draftStartTime * 1000 : undefined;
+              return { players: Math.max(1, numPlayers), isDrafting: numPlayers >= 10, draftStartTimeMs: dst };
             } catch {
               return { players: 1, isDrafting: false };
             }
@@ -501,18 +506,20 @@ export function useDraftingPageState() {
         if (cancelled) return;
 
         const mapped: Draft[] = activeTokens.map((t, i) => {
-          const { players, isDrafting } = stateResults[i];
+          const { players, isDrafting, draftStartTimeMs } = stateResults[i];
           const draftSpeed: 'fast' | 'slow' = t.leagueId.includes('-slow-') ? 'slow' : 'fast';
-          // Type is only known after the draft fills and the backend classifies
-          // it (slot-machine reveal). While filling, the token still reports
-          // level: "Pro" by default — use null to mark unrevealed so the UI
-          // shows "Unrevealed" instead of lying "PRO ✓ Verified".
+          // Type value is set once the draft is full; the DISPLAY gating ("show
+          // the type vs 'Revealing…'") is owned by getLiveState's phase + DraftRow
+          // (which keeps "Revealing…" until the reveal countdown drops below 37s).
+          // So we don't null the type here — that would wrongly hide it during the
+          // final reveal seconds.
           let type: Draft['type'];
           if (t.level === 'Jackpot') type = 'jackpot';
           else if (t.level === 'Hall of Fame') type = 'hof';
           else type = isDrafting ? 'pro' : null;
           return {
             id: t.leagueId || t.cardId,
+            draftStartTimeMs,
             // Trust the backend's displayName (sourced from doc.DisplayName).
             // Never fall back to slot-id-derived "League #N" — the slot
             // counter drifts from the global league number, so that fallback
@@ -599,6 +606,10 @@ export function useDraftingPageState() {
               draftSpeed: d.draftSpeed,
               players: d.players,
               draftType: d.type,
+              // Server reveal clock — refresh it so a row that just filled starts
+              // running the reveal off draftStartTime immediately (drives the
+              // server-clock branch in getLiveState).
+              ...(d.draftStartTimeMs != null ? { draftStartTimeMs: d.draftStartTimeMs } : {}),
               ...(needsWalletStamp ? { liveWalletAddress: currentWallet } : {}),
               ...(needsCardId ? { cardId: d.cardId } : {}),
             });
@@ -997,6 +1008,8 @@ export function useDraftingPageState() {
             const patch: Partial<DraftState> = { players: 10 };
 
             if (info.draftStartTime) {
+              // Authoritative reveal clock for getLiveState's server-clock branch.
+              patch.draftStartTimeMs = info.draftStartTime * 1000;
               const serverPreSpin = info.draftStartTime * 1000 - 60000;
               if (!fresh.preSpinStartedAt) {
                 if (fresh.randomizingStartedAt) {
@@ -1391,6 +1404,31 @@ export function useDraftingPageState() {
     const now = Date.now();
     const timers = getBarTimers();
     const timerStart = timers.get(draft.id);
+
+    // ── Server-clock reveal (authoritative + cross-device) ──────────────
+    // When the server's draftStartTime is known, derive the ENTIRE
+    // fill→reveal→drafting sequence from it, so every device (and a fresh
+    // page load) shows the SAME phase at the SAME wall-clock second — instead
+    // of each browser timing the reveal from its own local "saw it fill"
+    // anchor (which made mobile jump straight to PRO/drafting while desktop was
+    // still revealing). draftStartTime = fill + 60s, so the 60s before it is:
+    // 3s randomize bar → 15s slot-reveal countdown → draft-starting countdown
+    // (DraftRow flips "Revealing…" → the type once that countdown drops < 37s).
+    // Wheel specials keep their own pre-spin flow (handled below).
+    if (!draft.specialType && draft.draftStartTimeMs && (draft.players ?? 0) >= 10) {
+      const secs = (draft.draftStartTimeMs - now) / 1000; // seconds until drafting
+      if (secs <= 0) {
+        return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
+      }
+      const sinceFill = 60 - secs;
+      if (sinceFill < 3) {
+        return { displayPhase: 'randomizing', playerCount: 10, countdown: null, randomizingProgress: 0.99 * Math.pow(Math.max(0, sinceFill) / 3, 0.6), isFilling: false };
+      }
+      if (secs > 45) {
+        return { displayPhase: 'pre-spin-countdown', playerCount: 10, countdown: Math.max(0, Math.ceil(secs - 45)), randomizingProgress: null, isFilling: false };
+      }
+      return { displayPhase: 'draft-starting', playerCount: 10, countdown: Math.max(0, Math.ceil(secs)), randomizingProgress: null, isFilling: false };
+    }
 
     if (timerStart && !draft.preSpinStartedAt) {
       const elapsed = now - timerStart;

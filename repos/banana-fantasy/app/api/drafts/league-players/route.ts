@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
   let pickLength: number | undefined;
   let currentDrafter: string | undefined;
   let currentPickNumber: number | undefined;
+  let draftStartTime: number | undefined;
   let draftType: 'pro' | 'hof' | 'jackpot' | undefined;
 
   // Step 1 — read realTimeDraftInfo from RTDB for the rich timer + drafter
@@ -67,6 +68,11 @@ export async function GET(req: NextRequest) {
         pickLength = typeof val.pickLength === 'number' ? val.pickLength : undefined;
         currentDrafter = typeof val.currentDrafter === 'string' ? val.currentDrafter : undefined;
         currentPickNumber = typeof val.currentPickNumber === 'number' ? val.currentPickNumber : undefined;
+        // Server's authoritative draft-start time (Unix seconds), set at fill.
+        // Drives the reveal animation off ONE clock so every device shows the
+        // same fill→reveal→type→drafting at the same wall-clock second — instead
+        // of each device timing the reveal from its own local "saw it fill" anchor.
+        draftStartTime = typeof val.draftStartTime === 'number' ? val.draftStartTime : undefined;
         // Draft type, stamped onto realTimeDraftInfo at fill by the Go API.
         // Normalize the server's human strings / short codes → pro|hof|jackpot
         // so the drafting-page list reads the SAME authoritative type the draft
@@ -135,6 +141,7 @@ export async function GET(req: NextRequest) {
     pickLength,
     currentDrafter,
     currentPickNumber,
+    draftStartTime,
     type: draftType,
   });
 }
