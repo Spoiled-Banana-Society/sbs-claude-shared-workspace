@@ -146,54 +146,56 @@ export function WatchlistTab({
               )}
             </div>
 
-            {/* bottom overlay: price/name + action — mirrors the Buy grid card */}
-            <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
-              <div className="min-w-0">
-                {team.price != null ? (
-                  <>
-                    <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                    <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass #${team.tokenId} (from Wheel)` : team.name}</p>
-                    <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'Won on the wheel · lobby filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
-                  </>
-                )}
-                {myMadeOffers?.[team.tokenId] != null && (
-                  <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
-                    Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </p>
-                )}
-              </div>
-              <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                {walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
-                  team.price != null ? (
-                    <span className="text-text-muted text-xs font-bold px-3 py-2.5">You</span>
-                  ) : (
-                    <button
-                      onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
-                      className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
-                    >
-                      List
-                    </button>
-                  )
-                ) : team.price != null ? (
-                  <button
-                    onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
-                  >
-                    Buy Now
-                  </button>
+          </div>
+
+          {/* Footer below the card — price/name + action on their own row so the
+              button never covers the card's roster numbers (matches Buy/Sell). */}
+          <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+            <div className="min-w-0">
+              {team.price != null ? (
+                <>
+                  <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                  <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : team.name}</p>
+                  <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'From wheel · filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
+                </>
+              )}
+              {myMadeOffers?.[team.tokenId] != null && (
+                <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
+                  Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </p>
+              )}
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+              {walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
+                team.price != null ? (
+                  <span className="text-text-muted text-xs font-bold px-3 py-2">You</span>
                 ) : (
                   <button
-                    onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
-                    className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
+                    onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
                   >
-                    Make Offer
+                    List
                   </button>
-                )}
-              </div>
+                )
+              ) : team.price != null ? (
+                <button
+                  onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                >
+                  Buy Now
+                </button>
+              ) : (
+                <button
+                  onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                >
+                  Make Offer
+                </button>
+              )}
             </div>
           </div>
         </div>

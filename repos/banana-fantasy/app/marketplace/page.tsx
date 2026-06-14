@@ -1210,18 +1210,18 @@ function Header({
         <h1 className="text-2xl font-bold text-text-primary mb-2">Team Marketplace</h1>
         <p className="text-text-secondary text-sm">Buy and sell BBB teams instantly. No external accounts needed.</p>
       </div>
-      {/* Mobile: a tight 2-col grid (Watchlist spans the full last row) so the
-          tabs fill the box edge to edge with no dead black space. Desktop keeps
-          the inline segmented row. */}
+      {/* Mobile: 2 tabs on top (Buy / Sell), 3 on the second line (My Offers /
+          Activity / Watchlist). A 6-col grid makes both rows fill edge to edge
+          (top = 2×3 cols, bottom = 3×2 cols). Desktop keeps the inline row. */}
       <div className="flex items-center gap-3 w-full lg:w-auto">
-        <div className="grid grid-cols-2 gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:flex lg:flex-wrap lg:w-auto">
-          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} />
-          <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} />
-          <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} />
-          <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} />
+        <div className="grid grid-cols-6 gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:flex lg:flex-wrap lg:w-auto">
+          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} className="col-span-3" />
+          <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} className="col-span-3" />
+          <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} className="col-span-2" />
+          <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} className="col-span-2" />
           <button
             onClick={() => onChangeTab('watchlist')}
-            className={`col-span-2 lg:col-auto px-3 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+            className={`col-span-2 lg:col-auto px-2 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center justify-center gap-1.5 ${activeTab === 'watchlist' ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
           >
             <svg className="w-3.5 h-3.5" fill={activeTab === 'watchlist' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -1237,11 +1237,11 @@ function Header({
   );
 }
 
-function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function TabButton({ active, label, onClick, className = '' }: { active: boolean; label: string; onClick: () => void; className?: string }) {
   return (
     <button
       onClick={onClick}
-      className={`px-3 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+      className={`${className} px-2 sm:px-5 py-2 rounded-lg text-sm font-medium whitespace-nowrap text-center transition-colors ${active ? 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
     >
       {label}
     </button>
