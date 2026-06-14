@@ -6,7 +6,7 @@ import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
-import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10 } from '@/lib/db';
+import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, allBatchSpecialsHit } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import type { CardPlayer, CardTier } from '@/components/draft/TeamCardObsidian';
@@ -252,9 +252,17 @@ export async function POST(
     // watched the reveal; idempotent per draft + paid-gated internally).
     try {
       const info = await getDraftInfo(draftId);
-      const slot10 = info?.draftOrder?.[9]?.ownerId?.toLowerCase();
-      if (slot10 && !slot10.startsWith('bot-')) {
-        await recordPick10(slot10, draftId, info?.displayName ?? draftId);
+      const order = info?.draftOrder ?? [];
+      const draftName = info?.displayName ?? draftId;
+      // Slot 10 always; once the current 100-batch's specials (1 JP + 5 HOF)
+      // are all hit, Pick 10 expands to also reward slots 6 and 9 (reverts at
+      // the next batch). recordPick10 is idempotent per (user, draft) + paid-gated.
+      const slots = (await allBatchSpecialsHit()) ? [6, 9, 10] : [10];
+      for (const slot of slots) {
+        const owner = order[slot - 1]?.ownerId?.toLowerCase();
+        if (owner && !owner.startsWith('bot-')) {
+          await recordPick10(owner, draftId, draftName);
+        }
       }
     } catch (err) {
       logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });

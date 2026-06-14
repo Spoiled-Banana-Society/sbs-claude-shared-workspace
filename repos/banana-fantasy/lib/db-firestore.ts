@@ -2516,6 +2516,36 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
   });
 }
 
+/**
+ * True when the CURRENT 100-draft batch has had ALL its specials hit — the 1
+ * Jackpot AND all 5 HOF designated drafts for this batch have filled. Mirrors
+ * the per-100 distribution math in the Go API (models/leagues.go
+ * ReturnBatchProgress) and the batchProgress SSE route (1 JP + 5 HOF per 100).
+ *
+ * Used to EXPAND the Pick-10 promo: while this is true, the promo also rewards
+ * draft slots 6 and 9 (not just slot 10). It flips back to false automatically
+ * when the next batch starts (FilledLeaguesCount crosses the next multiple of
+ * 100 and the specials reset), so the promo reverts to slot-10-only.
+ */
+export async function allBatchSpecialsHit(): Promise<boolean> {
+  if (!isFirestoreConfigured()) return false;
+  const db = getAdminFirestore();
+  const snap = await db.collection('drafts').doc('draftTracker').get();
+  if (!snap.exists) return false;
+  const d = snap.data() as Record<string, unknown>;
+  const filled = Number(d.FilledLeaguesCount ?? 0) || 0;
+  if (filled <= 0) return false;
+  const jpIds = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
+  const hofIds = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
+  const current = filled % 100;
+  let batchStart = filled - current;
+  if (current === 0 && filled > 0) batchStart = filled - 100;
+  const hitInBatch = (ids: number[]) => ids.filter((id) => id > batchStart && id <= filled).length;
+  const jackpotRemaining = Math.max(0, 1 - hitInBatch(jpIds));
+  const hofRemaining = Math.max(0, 5 - hitInBatch(hofIds));
+  return jackpotRemaining === 0 && hofRemaining === 0;
+}
+
 // ==================== JACKPOT-HIT PROMO: RECORD WHEN USER LANDS IN A JACKPOT DRAFT ====================
 
 const JACKPOT_HIT_PROMO_ID = '4';
