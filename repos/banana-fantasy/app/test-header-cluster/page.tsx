@@ -67,6 +67,30 @@ function DuotoneWheel({ size = 30 }: { size?: number }) {
     </svg>
   );
 }
+// EXACT logo-wheel geometry, but the 8 color segments go grey/clear so it
+// still reads as our wheel without the rainbow. Center keeps the SBS mark.
+function LogoMonoWheel({ size = 30 }: { size?: number }) {
+  const A = 'rgba(255,255,255,0.12)';
+  const B = 'rgba(255,255,255,0.045)';
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
+      <circle cx="50" cy="50" r="48" fill="#14151b" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
+      <path d="M50,50 L50,8 A42,42 0 0,1 79.7,20.3 Z" fill={A} />
+      <path d="M50,50 L79.7,20.3 A42,42 0 0,1 92,50 Z" fill={B} />
+      <path d="M50,50 L92,50 A42,42 0 0,1 79.7,79.7 Z" fill={A} />
+      <path d="M50,50 L79.7,79.7 A42,42 0 0,1 50,92 Z" fill={B} />
+      <path d="M50,50 L50,92 A42,42 0 0,1 20.3,79.7 Z" fill={A} />
+      <path d="M50,50 L20.3,79.7 A42,42 0 0,1 8,50 Z" fill={B} />
+      <path d="M50,50 L8,50 A42,42 0 0,1 20.3,20.3 Z" fill={A} />
+      <path d="M50,50 L20.3,20.3 A42,42 0 0,1 50,8 Z" fill={B} />
+      <circle cx="50" cy="50" r="13.5" fill="#0c0d11" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <image href="/sbs-logo.png" x="40.5" y="40.5" width="19" height="19" opacity="0.92" />
+      <path d="M50,1.5 L44.5,13 L55.5,13 Z" fill="rgba(255,255,255,0.55)" />
+    </svg>
+  );
+}
+
 // The current colorful wheel (for the "keep as-is" comparison).
 function ColorfulWheel({ size = 30 }: { size?: number }) {
   return (
@@ -208,25 +232,31 @@ function CircleBtn({ children }: { children: React.ReactNode }) {
     </button>
   );
 }
-function OptionC({ wheel = 'duotone' }: { wheel?: 'duotone' | 'colorful' | 'mono' }) {
+type WheelStyle = 'logo' | 'duotone' | 'colorful' | 'mono';
+function WheelIcon({ wheel, size = 26 }: { wheel: WheelStyle; size?: number }) {
+  if (wheel === 'logo') return <LogoMonoWheel size={size} />;
+  if (wheel === 'duotone') return <DuotoneWheel size={size} />;
+  if (wheel === 'colorful') return <ColorfulWheel size={size} />;
+  return <SpinGlyph className="w-[19px] h-[19px]" />;
+}
+function OptionC({ wheel = 'logo' }: { wheel?: WheelStyle }) {
+  // Equal breathing room: one consistent gap between every control.
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-4">
       <Counter />
-      <div className="flex items-center gap-2 ml-1">
-        <CircleBtn>
-          <TicketGlyph className="w-[18px] h-[18px]" />
-          <CountBadge n={DATA.passes} />
-        </CircleBtn>
-        <CircleBtn>
-          {wheel === 'duotone' ? <DuotoneWheel size={26} /> : wheel === 'colorful' ? <ColorfulWheel size={26} /> : <SpinGlyph className="w-[19px] h-[19px]" />}
-          <CountBadge n={DATA.spins} />
-        </CircleBtn>
-        <CircleBtn>
-          <BellGlyph className="w-[18px] h-[18px]" />
-          <CountBadge n={DATA.notis} tone="dot" />
-        </CircleBtn>
-      </div>
-      <button className="flex items-center gap-1 ml-1 pl-0.5 pr-1 py-0.5 rounded-full hover:bg-white/[0.06]">
+      <CircleBtn>
+        <TicketGlyph className="w-[18px] h-[18px]" />
+        <CountBadge n={DATA.passes} />
+      </CircleBtn>
+      <CircleBtn>
+        <WheelIcon wheel={wheel} />
+        <CountBadge n={DATA.spins} />
+      </CircleBtn>
+      <CircleBtn>
+        <BellGlyph className="w-[18px] h-[18px]" />
+        <CountBadge n={DATA.notis} tone="dot" />
+      </CircleBtn>
+      <button className="flex items-center gap-1 pl-0.5 pr-1 py-0.5 rounded-full hover:bg-white/[0.06]">
         <Avatar size={36} />
         <ChevronGlyph className="w-3.5 h-3.5 text-white/40" />
       </button>
@@ -266,7 +296,7 @@ function Section({ title, blurb, children }: { title: string; blurb: string; chi
 }
 
 export default function TestHeaderCluster() {
-  const [wheel, setWheel] = useState<'duotone' | 'colorful' | 'mono'>('duotone');
+  const [wheel, setWheel] = useState<WheelStyle>('logo');
   return (
     <div className="min-h-screen bg-[#08090c] px-4 sm:px-8 py-10">
       <div className="max-w-3xl mx-auto">
@@ -291,30 +321,46 @@ export default function TestHeaderCluster() {
         </Section>
 
         <Section
-          title="Option C — Spacious Circular"
-          blurb="Each control is its own round button with airy spacing — the most 'premium' feel. The wheel stays a wheel (toggle its style below)."
+          title="Option C — Spacious Circular  ⭐ (your pick)"
+          blurb="Each control is its own round button with equal breathing room between every item. Default wheel is the EXACT logo wheel, just greyed out in the segments so it still reads as our wheel without the rainbow. Toggle the wheel style below to compare."
         >
           <HeaderBar><OptionC wheel={wheel} /></HeaderBar>
-          <div className="flex items-center gap-2 mt-4">
+          <div className="flex flex-wrap items-center gap-2 mt-4">
             <span className="text-white/40 text-xs mr-1">Wheel icon:</span>
-            {(['duotone', 'colorful', 'mono'] as const).map(w => (
+            {(['logo', 'duotone', 'colorful', 'mono'] as const).map(w => (
               <button
                 key={w}
                 onClick={() => setWheel(w)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${wheel === w ? 'bg-banana text-black' : 'bg-white/[0.05] text-white/60 hover:text-white'}`}
               >
-                {w === 'duotone' ? 'Duotone (calm)' : w === 'colorful' ? 'Current (colorful)' : 'Monochrome'}
+                {w === 'logo' ? 'Logo wheel (grey) ⭐' : w === 'duotone' ? 'Duotone' : w === 'colorful' ? 'Current (colorful)' : 'Plain spin glyph'}
               </button>
             ))}
           </div>
         </Section>
 
         <Section
-          title="Mobile widths"
-          blurb="How the compact (phone) cluster reads — counter + passes + spins + avatar. Bell/wheel collapse into the profile menu on the smallest sizes."
+          title="Option C — mobile widths"
+          blurb="Same Option C language scaled to phone widths with equal spacing. On the smallest screens the bell collapses into the profile menu; counter + passes + wheel + avatar stay one glance away."
         >
           <div className="space-y-4">
-            <HeaderBar width="390px"><div className="flex items-center gap-2"><Counter compact /><Divider /><button className="relative flex items-center gap-1 text-white/70"><TicketGlyph className="w-[17px] h-[17px]" /><span className="text-[12px] font-semibold text-white/85">{DATA.passes}</span></button><button className="relative flex items-center justify-center w-7 h-7 text-white/70"><SpinGlyph className="w-[18px] h-[18px]" /><CountBadge n={DATA.spins} /></button><Avatar size={30} /></div></HeaderBar>
+            {/* 430px (large phone) — full set */}
+            <HeaderBar width="430px">
+              <div className="flex items-center gap-3">
+                <Counter compact />
+                <CircleBtn><TicketGlyph className="w-[16px] h-[16px]" /><CountBadge n={DATA.passes} /></CircleBtn>
+                <CircleBtn><WheelIcon wheel={wheel} size={24} /><CountBadge n={DATA.spins} /></CircleBtn>
+                <Avatar size={32} />
+              </div>
+            </HeaderBar>
+            {/* 360px (small phone) — bell folds away, tighter but still equal gaps */}
+            <HeaderBar width="360px">
+              <div className="flex items-center gap-2.5">
+                <Counter compact />
+                <CircleBtn><WheelIcon wheel={wheel} size={22} /><CountBadge n={DATA.spins} /></CircleBtn>
+                <Avatar size={30} />
+              </div>
+            </HeaderBar>
           </div>
         </Section>
 

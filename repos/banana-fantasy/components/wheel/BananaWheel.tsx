@@ -701,22 +701,22 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
                 </div>
               )}
 
-              {/* Free-draft win — gentle nudge to the page where they pick a draft
-                  to enter (NOT an instant join; /draft just lists active drafts).
-                  Its own full-width row under the proof badge so it reads as the
-                  clean primary action, not crammed beside the badge. */}
+              {/* Free-draft win — small, centered nudge to the page where they pick
+                  a draft to enter (NOT an instant join; /draft just lists active
+                  drafts). Its own line under the proof badge, kept compact. */}
               {wonSegment.prizeType === 'draft_pass' && (
-                <a
-                  href="/draft"
-                  onClick={dismissResult}
-                  className="flex w-full items-center justify-center gap-1.5 py-3 rounded-xl bg-banana text-black text-sm font-bold hover:brightness-110 transition-all"
-                  style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}
-                >
-                  Draft
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12h14M13 6l6 6-6 6" />
-                  </svg>
-                </a>
+                <div className="flex justify-center" style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}>
+                  <a
+                    href="/draft"
+                    onClick={dismissResult}
+                    className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg bg-banana text-black text-[13px] font-bold hover:brightness-110 transition-all"
+                  >
+                    Draft
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </a>
+                </div>
               )}
 
               {/* Info for Jackpot/HOF wins — winner is auto-seated in a special
