@@ -99,7 +99,6 @@ export function SellTab({
   onExecuteCancel,
   onCloseSuccessModal,
 }: SellTabProps) {
-  const [showUnsellable, setShowUnsellable] = useState(false);
   // Team # / League # search (Boris 2026-06-10) — same instant client-side
   // filter style as the Buy tab's inputs. Team # = token id; league # comes
   // from the marketplace index overlay.
@@ -128,7 +127,9 @@ export function SellTab({
     (sellTierRank(a) - sellTierRank(b)) || ((Number(b.tokenId) || 0) - (Number(a.tokenId) || 0));
   const sellable = inView.filter(canSellTeam).sort(byTierThenNewest);
   const unsellable = inView.filter(t => !canSellTeam(t)).sort(byTierThenNewest);
-  const fullList = showUnsellable ? [...sellable, ...unsellable] : sellable;
+  // Unsellable teams (free entries pre-season) are never listed here — they're
+  // not actionable on the Sell tab. The empty-state line below explains why.
+  const fullList = sellable;
   // Cap rendered rows so a whale's hundreds of identical passes don't jank the
   // page. Teams are few so they're effectively never capped.
   const RENDER_CAP = 60;
@@ -141,14 +142,16 @@ export function SellTab({
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <h3 className="text-lg font-semibold text-text-primary">Sell Your Teams</h3>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Equal-width inputs that stay inside the card on mobile (2-col
+                grid), fixed compact widths on desktop. */}
+            <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:w-auto">
               <input
                 type="number"
                 inputMode="numeric"
                 value={teamSearch}
                 onChange={(e) => setTeamSearch(e.target.value)}
                 placeholder="Team #"
-                className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
               <input
                 type="number"
@@ -156,7 +159,7 @@ export function SellTab({
                 value={leagueSearch}
                 onChange={(e) => setLeagueSearch(e.target.value)}
                 placeholder="League #"
-                className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="w-full sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           </div>
@@ -226,49 +229,48 @@ export function SellTab({
                     {team.orderHash && (
                       <div className="absolute top-3 right-3 z-10"><SellTabOfferBadge tokenId={team.tokenId} /></div>
                     )}
+                  </div>
 
-                    {/* bottom overlay: info + action (no separate footer = no dead space) */}
-                    <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
-                      <div className="min-w-0">
-                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">
-                          {team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass #${team.tokenId} (from Wheel)` : `Team #${team.tokenId}`}
-                        </p>
-                        <p className={`font-mono text-[10.5px] ${team.fillingWheelLevel ? (team.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof') : 'text-text-muted'}`}>
-                          {team.fillingWheelLevel
-                            ? `Won on the wheel · Draft lobby filling${typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''} · Sellable until full`
-                            : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
-                        </p>
-                      </div>
-                      <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
-                        {team.orderHash ? (
-                          <button
-                            onClick={e => { e.preventDefault(); onHandleCancel(team); }}
-                            disabled={cancellingTokenId === team.tokenId}
-                            className="px-5 py-2.5 rounded-xl text-sm font-bold border border-red-500/50 text-red-400 bg-[#08090c]/50 backdrop-blur-sm hover:bg-red-500/15 transition-all disabled:opacity-50"
-                          >
-                            {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
-                          </button>
-                        ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel ? (
-                          // Free passes are normally blocked mid-season — EXCEPT a
-                          // wheel-won JP/HOF pass that's still filling, which falls
-                          // through to "List for Sale" below (matches the detail page).
-                          <button
-                            onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
-                            className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/15 text-white/50 bg-[#08090c]/50 backdrop-blur-sm transition-all"
-                          >
-                            Season Soon
-                          </button>
-                        ) : draftInProgress(team) ? (
-                          <span className="px-4 py-2.5 rounded-xl text-xs font-bold border border-white/15 text-white/45 bg-[#08090c]/50 cursor-default">Drafting…</span>
-                        ) : (
-                          <button
-                            onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
-                            className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
-                          >
-                            List for Sale
-                          </button>
-                        )}
-                      </div>
+                  {/* Footer below the card — info + action sit on their own row so
+                      the action button never covers the roster numbers on the card
+                      art (gives the card breathing room). */}
+                  <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+                    <div className="min-w-0">
+                      <p className="font-mono font-semibold text-sm text-text-primary truncate">
+                        {team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : `Team #${team.tokenId}`}
+                      </p>
+                      <p className={`font-mono text-[10.5px] truncate ${team.fillingWheelLevel ? (team.fillingWheelLevel === 'jackpot' ? 'text-error' : 'text-hof') : 'text-text-muted'}`}>
+                        {team.fillingWheelLevel
+                          ? `From wheel · Filling${typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}`
+                          : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
+                      </p>
+                    </div>
+                    <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+                      {team.orderHash ? (
+                        <button
+                          onClick={e => { e.preventDefault(); onHandleCancel(team); }}
+                          disabled={cancellingTokenId === team.tokenId}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-red-500/50 text-red-400 hover:bg-red-500/15 transition-all disabled:opacity-50"
+                        >
+                          {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
+                        </button>
+                      ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel ? (
+                        <button
+                          onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-white/15 text-white/50 transition-all"
+                        >
+                          Season Soon
+                        </button>
+                      ) : draftInProgress(team) ? (
+                        <span className="px-4 py-2 rounded-xl text-xs font-bold border border-white/15 text-white/45 cursor-default">Drafting…</span>
+                      ) : (
+                        <button
+                          onClick={e => { e.preventDefault(); onOpenSellModal(team); }}
+                          className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                        >
+                          List for Sale
+                        </button>
+                      )}
                     </div>
                   </div>
                 </Link>
@@ -282,21 +284,10 @@ export function SellTab({
             </p>
           )}
 
-          {!myNftsLoading && !(teamSearch || leagueSearch) && sellable.length === 0 && unsellable.length > 0 && !showUnsellable && (
+          {!myNftsLoading && !(teamSearch || leagueSearch) && sellable.length === 0 && unsellable.length > 0 && (
             <p className="text-text-muted text-sm text-center py-6">
               Nothing you can list right now — your teams/passes are free entries, listable once the season starts.
             </p>
-          )}
-
-          {!myNftsLoading && unsellable.length > 0 && (
-            <button
-              onClick={() => setShowUnsellable(v => !v)}
-              className="mt-4 w-full py-2.5 rounded-xl text-sm font-medium text-text-secondary hover:text-text-primary border border-bg-tertiary hover:border-bg-elevated transition-all"
-            >
-              {showUnsellable
-                ? 'Hide unsellable teams'
-                : `Show ${unsellable.length} unsellable ${unsellable.length === 1 ? 'team' : 'teams'} (free entries — listable once the season starts)`}
-            </button>
           )}
 
           {!myNftsLoading && hiddenCount > 0 && (

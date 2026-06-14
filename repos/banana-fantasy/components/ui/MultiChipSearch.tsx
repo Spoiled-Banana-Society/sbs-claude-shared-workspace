@@ -81,7 +81,7 @@ export function MultiChipSearch({
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
-      <div className="flex items-center gap-1.5 flex-wrap bg-bg-secondary border border-bg-tertiary rounded-full pl-3 pr-1.5 py-1 focus-within:border-banana transition-colors">
+      <div className="flex items-center gap-1.5 flex-wrap bg-bg-secondary border border-bg-tertiary rounded-xl pl-3 pr-1.5 py-1.5 focus-within:border-banana transition-colors">
         <svg className="w-3.5 h-3.5 text-text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <circle cx="11" cy="11" r="8" />
           <path d="m21 21-4.3-4.3" />

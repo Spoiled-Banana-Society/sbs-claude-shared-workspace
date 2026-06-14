@@ -65,8 +65,6 @@ interface BuyTabProps {
 }
 
 export function BuyTab({
-  collectionStats,
-  statsLoading,
   viewFilter,
   rosterFilter,
   rosterFilterOptions,
@@ -120,78 +118,15 @@ export function BuyTab({
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {statsLoading || !collectionStats ? (
-          <>
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-          </>
-        ) : (
-          <>
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Total Volume"
-              value={collectionStats.totalVolume > 0 ? `$${collectionStats.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '$0'}
-              detail={collectionStats.weeklyVolumeChange != null ? `${Math.abs(collectionStats.weeklyVolumeChange).toFixed(1)}% this week` : null}
-              detailClassName={collectionStats.weeklyVolumeChange != null && collectionStats.weeklyVolumeChange >= 0 ? 'text-success' : 'text-error'}
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-success/20"
-              label="Teams Listed"
-              value={collectionStats.totalListed.toLocaleString()}
-              detail={null}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Floor Price"
-              value={collectionStats.floorPrice > 0 ? `$${collectionStats.floorPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--'}
-              detail={collectionStats.floorPriceSymbol}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-hof/20"
-              label="Total Sales"
-              value={collectionStats.totalSales.toLocaleString()}
-              detail={`Avg $${collectionStats.averagePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-hof" fill="currentColor" viewBox="0 0 24 24">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
-              )}
-            />
-          </>
-        )}
-      </div>
-
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
           {/* Type filters wrap to rows on mobile (no horizontal scrolling). On
               phones we drop the enclosing pill so the half-empty second row
               doesn't read as a big empty box — just clean wrapping chips. The
               desktop segmented pill returns at lg. */}
-          <div className="flex flex-wrap gap-2 lg:gap-1 lg:bg-bg-secondary lg:p-1 lg:rounded-xl lg:border lg:border-bg-tertiary w-full lg:w-auto">
+          {/* Mobile: even 4-top / 3-bottom grid (12-col so both rows fill edge
+              to edge — no half-empty trailing row). Desktop: the segmented pill. */}
+          <div className="grid grid-cols-12 gap-1.5 lg:flex lg:flex-wrap lg:gap-1 lg:bg-bg-secondary lg:p-1 lg:rounded-xl lg:border lg:border-bg-tertiary w-full lg:w-auto">
             {([
                 { key: 'listed', label: 'Listed', count: undefined },
                 { key: 'all', label: 'All Teams', count: viewCounts?.all },
@@ -200,11 +135,11 @@ export function BuyTab({
                 { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
                 { key: 'hof', label: 'HOF', count: viewCounts?.hof },
                 { key: 'passes', label: 'Passes', count: viewCounts?.passes },
-              ] as const).map(filter => (
+              ] as const).map((filter, idx) => (
                 <button
                   key={filter.key}
                   onClick={() => onSetViewFilter(filter.key)}
-                  className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                  className={`${idx < 4 ? 'col-span-3' : 'col-span-4'} px-2 sm:px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap text-center transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
                 >
                   {filter.label}
                   {typeof filter.count === 'number' && filter.count > 0 && (
@@ -833,46 +768,6 @@ function CardSkeleton() {
           <div className="h-10 bg-bg-tertiary rounded w-24" />
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatSkeleton() {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 animate-pulse">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-bg-tertiary" />
-        <div className="h-3 bg-bg-tertiary rounded w-20" />
-      </div>
-      <div className="h-7 bg-bg-tertiary rounded w-24 mb-1" />
-      <div className="h-3 bg-bg-tertiary rounded w-32" />
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  iconClassName,
-  label,
-  value,
-  detail,
-  detailClassName,
-}: {
-  icon: React.ReactNode;
-  iconClassName: string;
-  label: string;
-  value: string;
-  detail: string | null;
-  detailClassName: string;
-}) {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
-      <div className="flex items-center gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconClassName}`}>{icon}</div>
-        <span className="text-text-muted text-xs uppercase tracking-wider">{label}</span>
-      </div>
-      <div className="text-2xl font-bold text-text-primary font-mono">{value}</div>
-      {detail && <div className={`text-xs mt-1 ${detailClassName}`}>{detail}</div>}
     </div>
   );
 }
