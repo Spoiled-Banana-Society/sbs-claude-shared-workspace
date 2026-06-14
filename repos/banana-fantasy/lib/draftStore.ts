@@ -30,6 +30,10 @@ export interface DraftState {
   // on every device (no per-device "saw it fill" drift). When set + the draft
   // is full, getLiveState derives filling→reveal→drafting purely from this.
   draftStartTimeMs?: number;
+  // The user's 0-based seat in the draft order (static once drafting). Cached
+  // from the poll so the realtime RTDB push can compute "N picks away" instantly
+  // (snake math from the live pickNumber) without re-fetching the draft order.
+  userSeat?: number;
   draftType?: 'pro' | 'hof' | 'jackpot' | null;
   draftOrder?: Array<{ id: string; name: string; displayName: string; isYou: boolean; avatar: string }>;
   userDraftPosition?: number;

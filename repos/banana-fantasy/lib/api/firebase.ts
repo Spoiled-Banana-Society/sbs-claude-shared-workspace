@@ -198,6 +198,10 @@ export interface DraftRealTimeInfoLite {
   roundNum?: number;
   pickEndTime?: number;
   isDraftComplete?: boolean;
+  // Set at fill. Used to reject a STALE reused-id node (staging reuses draft
+  // ids): only trust this snapshot if its draftStartTime matches the draft's
+  // known start, so a previous draft's leftover state can't drive the row.
+  draftStartTime?: number;
 }
 
 /**

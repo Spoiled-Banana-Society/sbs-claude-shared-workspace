@@ -19,7 +19,7 @@ import { fetchJson } from '@/lib/appApiClient';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType } from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
@@ -47,10 +47,22 @@ function getSnakeDrafterIndex(pickNumber: number): number {
   return round % 2 === 1 ? posInRound : 9 - posInRound;
 }
 
+// Snake-draft "picks away": how many picks until the seat at `userIndex` is up,
+// given the current pick number. Shared by the poll and the realtime push so
+// both compute it identically. Returns 0 if it's the seat's turn now or unknown.
+function picksAwayForSeat(pickNumber: number, userIndex: number, drafterCount = 10): number {
+  if (userIndex < 0 || !Number.isFinite(pickNumber)) return 0;
+  const totalPicks = drafterCount * 15;
+  for (let i = 1; i <= totalPicks - pickNumber + 1; i++) {
+    if (getSnakeDrafterIndex(pickNumber + i) === userIndex) return i;
+  }
+  return 0;
+}
+
 function computeTurnsFromServer(
   info: draftApi.DraftInfoResponse,
   walletAddress: string,
-): { turnsUntilUserPick: number; isUserTurn: boolean; pickEndTimestamp: number | undefined } {
+): { turnsUntilUserPick: number; isUserTurn: boolean; pickEndTimestamp: number | undefined; userIndex: number } {
   const wallet = walletAddress.toLowerCase();
   const currentDrafter = (info.currentDrafter || '').toLowerCase();
   const isUserTurn = wallet !== '' && wallet === currentDrafter;
@@ -59,21 +71,15 @@ function computeTurnsFromServer(
     entry => entry.ownerId.toLowerCase() === wallet,
   );
 
-  let turnsUntilUserPick = 0;
-  if (!isUserTurn && userIndex >= 0) {
-    const totalPicks = (info.draftOrder.length || 10) * 15;
-    for (let i = 1; i <= totalPicks - info.pickNumber + 1; i++) {
-      if (getSnakeDrafterIndex(info.pickNumber + i) === userIndex) {
-        turnsUntilUserPick = i;
-        break;
-      }
-    }
-  }
+  const turnsUntilUserPick = isUserTurn
+    ? 0
+    : picksAwayForSeat(info.pickNumber, userIndex, info.draftOrder.length || 10);
 
   return {
     turnsUntilUserPick,
     isUserTurn,
     pickEndTimestamp: info.currentPickEndTime || undefined,
+    userIndex,
   };
 }
 
@@ -775,16 +781,72 @@ export function useDraftingPageState() {
     };
   }, [liveDraftIdsKey]);
 
-  // NOTE: pick-progress on /draft rows (pick #, round, whose-turn, completion)
-  // is owned EXCLUSIVELY by the ~3s syncLiveDrafts poll below, which reads the
-  // draft's fresh Firestore state. An earlier "instant" RTDB push that also
-  // wrote those fields was REMOVED 2026-06-14 — having two writers fight made
-  // the row flicker between states (e.g. "last round / all picks done" ⇄ "round
-  // 12") because the shared realTimeDraftInfo node can briefly hold stale data
-  // (staging reuses draft ids). One stable source = accurate + no glitching.
-  // The draft ROOM itself stays instant (it reads realTimeDraftInfo live). The
-  // type/count/displayName pushes elsewhere in this hook are single-value and
-  // don't conflict, so they stay.
+  // Live PICK PROGRESS on /draft rows — instant RTDB push (pick #, whose-turn,
+  // countdown, "N picks away") off the SAME realTimeDraftInfo node the draft
+  // room reads. A first attempt at this flickered because it dual-wrote with the
+  // 3s poll and could read a stale reused-id node. This version is SAFE:
+  //   • Stale-node reject: only trust a snapshot whose draftStartTime matches the
+  //     row's known start (≤5s) — a reused-id's leftover state can't drive it.
+  //   • Monotonic: the pick number can only move FORWARD; a snapshot behind the
+  //     stored pick is ignored. So push + poll can never fight backward → no
+  //     flicker (the poll above has the matching forward-only guard).
+  //   • No completion-removal / phase writes here — the poll owns completion and
+  //     getLiveState owns the reveal phase; this only refreshes the live pick
+  //     fields, computing "N picks away" from the cached userSeat (snake math).
+  useEffect(() => {
+    const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
+    if (ids.length === 0) return;
+    const wallet = user?.walletAddress?.toLowerCase();
+    const unsubs = ids.map((draftId) =>
+      subscribeRealTimeDraftInfo(draftId, (info) => {
+        if (!info) return;
+        const pickNumber = typeof info.pickNumber === 'number' ? info.pickNumber : 0;
+        if (pickNumber < 1) return; // not drafting yet — reveal flow owns the row
+        const existing = draftStore.getDraft(draftId);
+        if (!existing) return;
+
+        // Reject a STALE reused-id node: trust this snapshot only if its start
+        // time matches the row's known draftStartTime. Without a known start we
+        // can't verify it, so skip (the poll still drives the row).
+        const snapStartMs = typeof info.draftStartTime === 'number' ? info.draftStartTime * 1000 : 0;
+        if (!existing.draftStartTimeMs || !snapStartMs || Math.abs(snapStartMs - existing.draftStartTimeMs) > 5000) return;
+
+        // Monotonic: ignore a snapshot that's behind what we already show.
+        if (typeof existing.enginePickNumber === 'number' && pickNumber < existing.enginePickNumber) return;
+
+        // Let the draft-room tab own writes while it's live (it has full engine
+        // state) — avoid a tug-of-war with the in-room flow.
+        const hb = localStorage.getItem(`draft-room-ws:${draftId}`);
+        if (hb && Date.now() - Number(hb) < 10_000) return;
+
+        const isYourTurn = !!wallet
+          && typeof info.currentDrafter === 'string'
+          && info.currentDrafter.toLowerCase() === wallet;
+        const seat = typeof existing.userSeat === 'number' ? existing.userSeat : -1;
+        const patch: Partial<DraftState> = {
+          enginePickNumber: pickNumber,
+          isYourTurn,
+        };
+        // Only set "N picks away" when we can compute it (your turn → 0, or a
+        // known seat). If the seat hasn't been cached by the poll yet, leave
+        // currentPick to the poll so we never flash a wrong "Picks complete".
+        if (isYourTurn) patch.currentPick = 0;
+        else if (seat >= 0) patch.currentPick = picksAwayForSeat(pickNumber, seat);
+        if (typeof info.pickEndTime === 'number' && info.pickEndTime > 0) {
+          patch.pickEndTimestamp = info.pickEndTime;
+          patch.timeRemaining = isYourTurn
+            ? Math.max(0, Math.ceil(info.pickEndTime - Date.now() / 1000))
+            : undefined;
+        }
+        draftStore.updateDraft(draftId, patch);
+      }),
+    );
+    return () => {
+      for (const unsub of unsubs) {
+        try { unsub(); } catch { /* ignore */ }
+      }
+    };
+  }, [liveDraftIdsKey, user?.walletAddress]);
 
   useEffect(() => {
     const ids = liveDraftIdsKey ? liveDraftIdsKey.split(',') : [];
@@ -923,7 +985,7 @@ export function useDraftingPageState() {
           }
 
           if (hasDraftStarted) {
-            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp } =
+            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
               computeTurnsFromServer(info, draft.liveWalletAddress!);
 
             const totalPicks = (info.draftOrder?.length || 10) * 15;
@@ -969,14 +1031,27 @@ export function useDraftingPageState() {
               return false;
             })();
 
+            // Monotonic guard: the realtime RTDB push (below) is the primary,
+            // instant source for pick #/turn/countdown. The pick number only ever
+            // moves FORWARD, so if this 3s-poll snapshot is BEHIND what the push
+            // already wrote, its pick fields are stale — don't let them overwrite
+            // the live ones (that dual-writer fight is what made the row flicker
+            // between rounds before). userSeat (static) + status/type still write.
+            const pollPickStale = typeof fresh.enginePickNumber === 'number'
+              && info.pickNumber < fresh.enginePickNumber;
             const patch: Partial<DraftState> = {
-              currentPick: turnsUntilUserPick,
-              isYourTurn: isUserTurn,
-              pickEndTimestamp: effectivePickEnd,
-              timeRemaining: isUserTurn && effectivePickEnd
-                ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
-                : undefined,
-              enginePickNumber: info.pickNumber,
+              // Cache the user's seat so the realtime push can compute "N picks
+              // away" instantly without re-fetching the draft order.
+              ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
+              ...(pollPickStale ? {} : {
+                currentPick: turnsUntilUserPick,
+                isYourTurn: isUserTurn,
+                pickEndTimestamp: effectivePickEnd,
+                timeRemaining: isUserTurn && effectivePickEnd
+                  ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
+                  : undefined,
+                enginePickNumber: info.pickNumber,
+              }),
             };
 
             if (animStillRunning) {
