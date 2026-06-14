@@ -2180,6 +2180,12 @@ export async function resetQueue(type: 'jackpot' | 'hof'): Promise<void> {
 const DAILY_DRAFTS_PROMO_ID = '1';
 const FIRST_PURCHASE_PROMO_ID = '11';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+// Dedup ledger of already-credited draftIds. Kept ACROSS cycle resets so a
+// duplicate fill-event for a just-completed draft can't re-credit into the
+// next cycle (the "4/4 → claim → 1/4" bug: the 4th draft's second fire landed
+// in the ~½s window after the ledger was wiped). Capped so it can't grow
+// unbounded — far larger than any realistic burst of duplicate fire events.
+const DAILY_DEDUP_LEDGER_MAX = 50;
 
 /**
  * New-user first-purchase popup gate. A wheel-won draft just completed — count
@@ -2401,7 +2407,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
     const prevProgress = promo.progressCurrent || 0;
     promo.progressCurrent = prevProgress + 1;
-    promo.completedDraftIds = [...(promo.completedDraftIds || []), draftId];
+    promo.completedDraftIds = [...(promo.completedDraftIds || []), draftId].slice(-DAILY_DEDUP_LEDGER_MAX);
 
     if (prevProgress === 0) {
       promo.timerEndTime = new Date(Date.now() + TWENTY_FOUR_HOURS_MS).toISOString();
@@ -2422,7 +2428,11 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
         ...(promo.modalContent.dailyHistory || []),
       ].slice(0, 50);
       promo.timerEndTime = undefined;
-      promo.completedDraftIds = [];
+      // Do NOT clear completedDraftIds here. Wiping the dedup ledger at the
+      // instant the cycle completes is exactly what let a duplicate fill-event
+      // for THIS draft re-credit into the next cycle (4/4 → claim → phantom
+      // 1/4). Keep the ledger (capped above) so the same draftId can never be
+      // counted twice. It clears legitimately on genuine 24h expiry below.
       needsTimerDelete = true;
       justBecameClaimable = true;
     }
