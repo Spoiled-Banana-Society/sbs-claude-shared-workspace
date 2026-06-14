@@ -2531,7 +2531,6 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
  * 100 and the specials reset), so the promo reverts to slot-10-only.
  */
 export async function allBatchSpecialsHit(): Promise<boolean> {
-  if (!isFirestoreConfigured()) return false;
   const db = getAdminFirestore();
   const snap = await db.collection('drafts').doc('draftTracker').get();
   if (!snap.exists) return false;
