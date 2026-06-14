@@ -889,12 +889,21 @@ export function useDraftingPageState() {
             // RTDB `realTimeDraftInfo.pickEndTime`. Authoritative source —
             // overrides any stale value from a previous draft-room write.
             let rtdbPickEnd: number | undefined;
+            let rtdbType: 'pro' | 'hof' | 'jackpot' | undefined;
             try {
               const lpRes = await fetch(`/api/drafts/league-players?draftId=${encodeURIComponent(draft.id)}`);
               if (lpRes.ok) {
                 const lpData = await lpRes.json();
                 if (typeof lpData.pickEndTime === 'number' && lpData.pickEndTime > 0) {
                   rtdbPickEnd = lpData.pickEndTime;
+                }
+                // Authoritative draft type off the SAME RTDB node the draft room
+                // reads. Stamped synchronously at fill, so it's correct even if
+                // the deferred per-card Level write lagged/failed — this is what
+                // keeps the list row's PRO/HOF/JACKPOT in lockstep with the room
+                // and identical across devices.
+                if (lpData.type === 'pro' || lpData.type === 'hof' || lpData.type === 'jackpot') {
+                  rtdbType = lpData.type;
                 }
               }
             } catch { /* ignore — fall back to prior computation */ }
@@ -937,8 +946,11 @@ export function useDraftingPageState() {
                 status: 'drafting',
                 phase: 'drafting',
                 players: 10,
-                type: fresh.type || fresh.draftType || null,
-                draftType: fresh.draftType || fresh.type || null,
+                // Prefer the authoritative RTDB type (same source as the room);
+                // fall back to whatever's already stored so a transient RTDB
+                // miss never blanks a known type.
+                type: rtdbType || fresh.type || fresh.draftType || null,
+                draftType: rtdbType || fresh.draftType || fresh.type || null,
                 randomizingStartedAt: undefined,
                 preSpinStartedAt: undefined,
               });
