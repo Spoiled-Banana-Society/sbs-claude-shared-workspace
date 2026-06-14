@@ -173,6 +173,52 @@ export function subscribeDraftNumPlayers(draftId: string, cb: (numPlayers: numbe
 }
 
 /**
+ * Subscribe to the draft TYPE (pro|hof|jackpot) the Go API stamps onto
+ * /drafts/{draftId}/realTimeDraftInfo/type at fill. This is the SAME node the
+ * draft room reads, so a direct onValue subscription here gives the My Drafts
+ * list instant (push) type updates — identical to the room and across devices,
+ * no 3s poll. The server may write the human strings or the short codes; both
+ * are normalized. Unrecognized/absent values invoke nothing (caller keeps its
+ * current type). The realTimeDraftInfo `.read` rule cascades to this child.
+ */
+export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | 'jackpot') => void): Unsubscribe {
+  return subscribeValue<unknown>(`/drafts/${draftId}/realTimeDraftInfo/type`, (v) => {
+    if (typeof v !== 'string') return;
+    const s = v.trim().toLowerCase();
+    if (s === 'jackpot') cb('jackpot');
+    else if (s === 'hof' || s === 'hall of fame') cb('hof');
+    else if (s === 'pro') cb('pro');
+  });
+}
+
+/** The fast-changing live fields the My Drafts list needs per drafting row. */
+export interface DraftRealTimeInfoLite {
+  currentDrafter?: string;
+  pickNumber?: number;
+  roundNum?: number;
+  pickEndTime?: number;
+  isDraftComplete?: boolean;
+}
+
+/**
+ * Subscribe to the whole /drafts/{draftId}/realTimeDraftInfo node — the SAME
+ * node the draft room reads — so the My Drafts list gets instant (push) pick
+ * progress: current pick number, whose turn it is, the pick countdown, and
+ * completion. This is what makes the list's "we're on pick X / your turn"
+ * update in lockstep with the room and across devices instead of on a 3s poll.
+ * The node only exists once the draft has started (10/10), so it stays null
+ * during filling — callers treat null as "no live pick state yet".
+ */
+export function subscribeRealTimeDraftInfo(
+  draftId: string,
+  cb: (info: DraftRealTimeInfoLite | null) => void,
+): Unsubscribe {
+  return subscribeValue<DraftRealTimeInfoLite>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
+    cb(v && typeof v === 'object' ? v : null);
+  });
+}
+
+/**
  * Subscribe to the shared randomize-bar anchor (epoch ms) the Go API writes at
  * fill-time. Lets every client run the "randomizing" bar on the same clock so
  * the bar + reveal line up across windows.
