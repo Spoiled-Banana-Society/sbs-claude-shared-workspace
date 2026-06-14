@@ -70,23 +70,28 @@ function DuotoneWheel({ size = 30 }: { size?: number }) {
 // EXACT logo-wheel geometry, but the 8 color segments go grey/clear so it
 // still reads as our wheel without the rainbow. Center keeps the SBS mark.
 function LogoMonoWheel({ size = 30 }: { size?: number }) {
-  const A = 'rgba(255,255,255,0.12)';
-  const B = 'rgba(255,255,255,0.045)';
+  // Exact 8-wedge geometry of the real logo wheel, but greyscale. Alternating
+  // greys are now strong enough to clearly read as 8 segments, with crisp spoke
+  // dividers — same shape as the colorful wheel, just no rainbow.
+  const A = 'rgba(255,255,255,0.24)';
+  const B = 'rgba(255,255,255,0.085)';
   return (
     <svg viewBox="0 0 100 100" width={size} height={size}>
-      <circle cx="50" cy="50" r="48" fill="#14151b" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
-      <path d="M50,50 L50,8 A42,42 0 0,1 79.7,20.3 Z" fill={A} />
-      <path d="M50,50 L79.7,20.3 A42,42 0 0,1 92,50 Z" fill={B} />
-      <path d="M50,50 L92,50 A42,42 0 0,1 79.7,79.7 Z" fill={A} />
-      <path d="M50,50 L79.7,79.7 A42,42 0 0,1 50,92 Z" fill={B} />
-      <path d="M50,50 L50,92 A42,42 0 0,1 20.3,79.7 Z" fill={A} />
-      <path d="M50,50 L20.3,79.7 A42,42 0 0,1 8,50 Z" fill={B} />
-      <path d="M50,50 L8,50 A42,42 0 0,1 20.3,20.3 Z" fill={A} />
-      <path d="M50,50 L20.3,20.3 A42,42 0 0,1 50,8 Z" fill={B} />
-      <circle cx="50" cy="50" r="13.5" fill="#0c0d11" stroke="rgba(255,255,255,0.18)" strokeWidth="1.5" />
+      <circle cx="50" cy="50" r="48" fill="#0f1016" stroke="rgba(255,255,255,0.24)" strokeWidth="2" />
+      <g stroke="rgba(255,255,255,0.30)" strokeWidth="0.7" strokeLinejoin="round">
+        <path d="M50,50 L50,8 A42,42 0 0,1 79.7,20.3 Z" fill={A} />
+        <path d="M50,50 L79.7,20.3 A42,42 0 0,1 92,50 Z" fill={B} />
+        <path d="M50,50 L92,50 A42,42 0 0,1 79.7,79.7 Z" fill={A} />
+        <path d="M50,50 L79.7,79.7 A42,42 0 0,1 50,92 Z" fill={B} />
+        <path d="M50,50 L50,92 A42,42 0 0,1 20.3,79.7 Z" fill={A} />
+        <path d="M50,50 L20.3,79.7 A42,42 0 0,1 8,50 Z" fill={B} />
+        <path d="M50,50 L8,50 A42,42 0 0,1 20.3,20.3 Z" fill={A} />
+        <path d="M50,50 L20.3,20.3 A42,42 0 0,1 50,8 Z" fill={B} />
+      </g>
+      <circle cx="50" cy="50" r="14" fill="#0b0c10" stroke="rgba(255,255,255,0.28)" strokeWidth="1.5" />
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <image href="/sbs-logo.png" x="40.5" y="40.5" width="19" height="19" opacity="0.92" />
-      <path d="M50,1.5 L44.5,13 L55.5,13 Z" fill="rgba(255,255,255,0.55)" />
+      <image href="/sbs-banana-logo.png" x="40" y="40" width="20" height="20" opacity="0.9" />
+      <path d="M50,1 L43.5,13 L56.5,13 Z" fill="rgba(255,255,255,0.6)" />
     </svg>
   );
 }

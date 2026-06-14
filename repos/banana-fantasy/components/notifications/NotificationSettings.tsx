@@ -563,27 +563,10 @@ export function NotificationSettings() {
       )}
 
       {loading ? (
-        <div className="space-y-7">
-          {[3, 3].map((n) => (
-            <div key={n}>
-              <div className="mb-2.5 ml-1 h-3 w-32 animate-pulse rounded bg-white/[0.06]" />
-              <div className="glass-card overflow-hidden">
-                {Array.from({ length: n }).map((_, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i > 0 ? 'border-t border-white/[0.05]' : ''}`}
-                  >
-                    <div className="h-[30px] w-[30px] animate-pulse rounded-[8px] bg-white/[0.06]" />
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-3.5 w-40 animate-pulse rounded bg-white/[0.06]" />
-                      <div className="h-2.5 w-52 animate-pulse rounded bg-white/[0.04]" />
-                    </div>
-                    <div className="h-[31px] w-[51px] animate-pulse rounded-full bg-white/[0.06]" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
+        // Quiet, minimal loader — no big empty skeleton cards (they read as a
+        // broken grey box while the profile API loads). Content flows in.
+        <div className="flex justify-center py-12">
+          <span className="h-5 w-5 rounded-full border-2 border-white/15 border-t-white/55 animate-spin" />
         </div>
       ) : (
         <div className="space-y-7">
