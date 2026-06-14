@@ -141,14 +141,14 @@ export function SellTab({
         <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6 mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
             <h3 className="text-lg font-semibold text-text-primary">Sell Your Teams</h3>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <input
                 type="number"
                 inputMode="numeric"
                 value={teamSearch}
                 onChange={(e) => setTeamSearch(e.target.value)}
                 placeholder="Team #"
-                className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
               <input
                 type="number"
@@ -156,7 +156,7 @@ export function SellTab({
                 value={leagueSearch}
                 onChange={(e) => setLeagueSearch(e.target.value)}
                 placeholder="League #"
-                className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           </div>

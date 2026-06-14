@@ -235,7 +235,11 @@ export function DraftRoomFilling({
         {controls}
       </div>
 
-      <div style={{ height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, backgroundColor: '#000' }} />
+      {/* Spacer reserves room for the fixed lobby header above. The FILLING
+          header (boxes + "x/10 waiting" + controls) is shorter than the
+          DRAFTING header (290px), so on mobile the old 290px over-reserved and
+          pushed the tabs/list way down. Smaller on phones, flush on desktop. */}
+      <div className="shrink-0 bg-black h-[calc(250px_+_env(safe-area-inset-top))] lg:h-[calc(290px_+_env(safe-area-inset-top))]" />
     </>
   );
 }
