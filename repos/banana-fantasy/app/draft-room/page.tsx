@@ -1889,30 +1889,68 @@ function DraftRoomContent() {
     const id = draftId || urlDraftId;
     if (!id || !walletParam) return;
     let cancelled = false;
-    getDraftTokenLevel(walletParam, id).then(level => {
-      if (cancelled || !level) return;
-      const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
-      const mapped = typeMap[level] || 'pro';
-      setDraftType(prev => {
-        if (prev === mapped) return prev;
-        draftStore.updateDraft(id, { type: mapped, draftType: mapped });
-        return mapped;
+    const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+    let attempt = 0;
+    // Retry until the owner-token level resolves. Right after the spin reveals
+    // the type, the backend may not have stamped the token's level for a beat,
+    // so a single fetch can come back null and leave the phone on a stale 'pro'
+    // (the desync Boris saw). Poll a few times (1.5s apart) so both devices
+    // reliably land on the SAME real Pro/HOF/Jackpot within a couple seconds.
+    const resolveType = () => {
+      if (cancelled) return;
+      getDraftTokenLevel(walletParam, id).then(level => {
+        if (cancelled) return;
+        if (!level) {
+          if (attempt++ < 6) setTimeout(resolveType, 1500);
+          return;
+        }
+        const mapped = typeMap[level] || 'pro';
+        setDraftType(prev => {
+          if (prev === mapped) return prev;
+          draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+          return mapped;
+        });
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id, recovery: 'drafting-entry', attempt },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        if (!cancelled && attempt++ < 6) setTimeout(resolveType, 1500);
       });
-    }).catch((err) => {
-      reportClientError({
-        source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'draft-room',
-        actor: walletParam,
-        context: { draftId: id, recovery: 'drafting-entry' },
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-    });
+    };
+    resolveType();
     return () => { cancelled = true; };
   // draftType kept in deps so a later stale 'pro' re-applied by the fill flow
   // gets re-corrected; the prev===mapped check makes it converge (no loop).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, draftType, isLiveMode, walletParam, draftId, urlDraftId, specialTypeParam]);
+
+  // Real-time draft type from the shared RTDB draft node. When the server
+  // writes the revealed type onto realTimeDraftInfo.type (after the spin), BOTH
+  // devices read the exact same value live — true real-time sync, no per-device
+  // derivation. Harmless until the server build writes it (field is optional);
+  // until then the owner-token recovery above keeps the two devices in sync.
+  // DISPLAY is still gated by visibleDraftType, so this never spoils the spin.
+  useEffect(() => {
+    const rt = firebaseRtdb.data?.type;
+    if (!rt || specialTypeParam) return;
+    const norm: Record<string, DraftType> = {
+      pro: 'pro', hof: 'hof', jackpot: 'jackpot',
+      Pro: 'pro', 'Hall of Fame': 'hof', Jackpot: 'jackpot',
+    };
+    const mapped = norm[rt as string];
+    if (!mapped) return;
+    setDraftType(prev => {
+      if (prev === mapped) return prev;
+      const id = draftId || urlDraftId;
+      if (id) draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+      return mapped;
+    });
+  }, [firebaseRtdb.data?.type, specialTypeParam, draftId, urlDraftId]);
 
   // Jackpot-hit promo POST. Fires whenever the resolved draftType is
   // 'jackpot' for a paid draft — independent of whether the user was on
