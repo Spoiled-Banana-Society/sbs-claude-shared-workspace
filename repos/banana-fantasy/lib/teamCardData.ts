@@ -30,3 +30,31 @@ export interface RawPick {
 export function toCardPlayers(picks: RawPick[]): CardPlayer[] {
   return picks.map((p) => toCardPlayer(p.playerId, p.position, p.pick));
 }
+
+/**
+ * Resolve the "Team #" — the BBB4 NFT token id — from an owner draft token,
+ * the SAME way the desktop roster page does it (app/draft-results), so the
+ * generating screen, roster, and card all show the identical number.
+ *
+ * Source of truth, in order:
+ *  1. `realTokenId` — the real on-chain token id (preferred once minted).
+ *  2. `cardId` — `staging-X-N` style ids keep just the numeric suffix.
+ * Legacy ms-timestamp ids (>100k) are rejected → '' (showing a 13-digit
+ * number is worse than showing nothing). Never parses an image URL — that
+ * was the bug: a pre-reveal pass URL has no token id, so the card lost TEAM #.
+ */
+export function teamNoFromToken(token: { realTokenId?: string | null; cardId?: string | null } | null | undefined): string {
+  if (!token) return '';
+  const rtid = token.realTokenId != null ? String(token.realTokenId) : '';
+  if (/^\d+$/.test(rtid)) {
+    const n = Number(rtid);
+    if (Number.isFinite(n) && n > 0 && n <= 100_000) return String(n);
+  }
+  const cardId = token.cardId != null ? String(token.cardId) : '';
+  if (!cardId) return '';
+  const candidate = cardId.includes('-') ? (cardId.split('-').pop() ?? '') : cardId;
+  if (!candidate || !/^\d+$/.test(candidate)) return '';
+  const n = Number(candidate);
+  if (!Number.isFinite(n) || n <= 0 || n > 100_000) return '';
+  return String(n);
+}

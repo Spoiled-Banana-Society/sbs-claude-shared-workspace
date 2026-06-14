@@ -8,7 +8,7 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
-import { toCardPlayers } from '@/lib/teamCardData';
+import { toCardPlayers, teamNoFromToken } from '@/lib/teamCardData';
 
 interface RosterEntry {
   playerId: string;
@@ -110,7 +110,7 @@ export function DraftComplete({
   // FIRST time the card URL is known is our authoritative "generation done"
   // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; setPassNumber(extractPassNo(initialCardUrl)); preloadCard(initialCardUrl); setCardReady(true); }
+    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; setPassNumber(prev => prev || extractPassNo(initialCardUrl)); preloadCard(initialCardUrl); setCardReady(true); }
   }, [initialCardUrl]);
 
   useEffect(() => {
@@ -133,10 +133,19 @@ export function DraftComplete({
           const data = await res.json();
           if (cancelled) return;
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
+          // Team # = on-chain token id, read straight off the card object
+          // (realTokenId, else cardId) — same source the desktop roster uses.
+          // Never parse it out of the image URL: a pre-reveal pass URL has no
+          // token id, which is what dropped TEAM # from the card.
+          const card = data?.card;
+          if (card) {
+            const teamNo = teamNoFromToken({ realTokenId: card.realTokenId ?? card._realTokenId, cardId: card.cardId ?? card._cardId });
+            if (teamNo) setPassNumber(teamNo);
+          }
           if (imageUrl) {
             logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
             cardUrlRef.current = imageUrl;
-            setPassNumber(extractPassNo(imageUrl));
+            setPassNumber(prev => prev || extractPassNo(imageUrl));
             preloadCard(imageUrl);
             setCardReady(true);
             return;
@@ -158,6 +167,33 @@ export function DraftComplete({
     pollCardReady();
     return () => { cancelled = true; };
   }, [draftId, walletAddress, cardReady, type]);
+
+  // ── Team # (NFT token id) resolver ─────────────────────────────────
+  // The card + roster show "Team #N" where N is the on-chain token id. Resolve
+  // it from the owner's token for THIS league — the SAME device-independent
+  // source the desktop roster page uses — so mobile shows the identical number,
+  // not a URL-parsed guess. The token may still be minting the instant the
+  // draft closes, so retry briefly until realTokenId/cardId lands. Runs even
+  // when the card URL was passed in (cardReady true), which the poll skips.
+  useEffect(() => {
+    if (!draftId || !walletAddress) return;
+    let cancelled = false;
+    let attempt = 0;
+    const resolve = async () => {
+      try {
+        const { getOwnerDraftTokens } = await import('@/lib/api/owner');
+        const tokens = await getOwnerDraftTokens(walletAddress);
+        if (cancelled) return;
+        const match = tokens.find(t => String(t.leagueId || '').toLowerCase() === draftId.toLowerCase());
+        const teamNo = teamNoFromToken(match);
+        if (teamNo) { setPassNumber(teamNo); return; }
+      } catch { /* ignore — retry below */ }
+      if (cancelled) return;
+      if (attempt++ < 8) setTimeout(resolve, 1500);
+    };
+    resolve();
+    return () => { cancelled = true; };
+  }, [draftId, walletAddress]);
 
   // Start the minimum-animation timer once on mount.
   useEffect(() => {
