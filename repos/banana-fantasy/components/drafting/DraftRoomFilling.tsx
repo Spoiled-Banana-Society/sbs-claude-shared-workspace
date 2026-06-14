@@ -62,27 +62,33 @@ export function DraftRoomFilling({
   // to it exactly, so the only gap left is the tabs' own spacing (same as
   // desktop) on every device.
   const headerRef = React.useRef<HTMLDivElement>(null);
-  const [headerHeight, setHeaderHeight] = React.useState<number | null>(null);
+  const spacerRef = React.useRef<HTMLDivElement>(null);
+  const [spacerHeight, setSpacerHeight] = React.useState<number | null>(null);
   React.useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
+    const header = headerRef.current;
+    const spacer = spacerRef.current;
+    if (!header || !spacer) return;
     const measure = () => {
-      const h = el.offsetHeight;
-      if (h > 0) setHeaderHeight(h);
+      // The fixed lobby header sits at top:0. The spacer (normal flow) can
+      // START lower than the viewport top because of flow content above it
+      // that's hidden behind the fixed header (the draft-room h-14 top bar).
+      // Sizing the spacer to its full header height then over-reserved by that
+      // offset and pushed the tabs down (the gap Boris saw). Instead size the
+      // spacer to the GAP between its own top and the header's bottom, so the
+      // tabs land flush under the header regardless of what's above.
+      const headerBottom = header.getBoundingClientRect().bottom;
+      const spacerTop = spacer.getBoundingClientRect().top;
+      const h = headerBottom - spacerTop;
+      if (h > 0) setSpacerHeight(h);
     };
     measure();
-    // Re-measure after first paint, after fonts/images settle, and on resize.
-    // A single synchronous measure on mount can land before the band/boxes
-    // have their final height — which left the spacer stuck on its oversized
-    // fallback, pushing the tabs way down (the empty gap Boris saw). These
-    // extra passes guarantee the spacer ends up hugging the real header.
     const raf = requestAnimationFrame(measure);
     const t1 = setTimeout(measure, 150);
     const t2 = setTimeout(measure, 600);
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(measure);
-      ro.observe(el);
+      ro.observe(header);
     }
     window.addEventListener('resize', measure);
     try { (document as Document).fonts?.ready?.then(measure); } catch { /* no-op */ }
@@ -287,19 +293,10 @@ export function DraftRoomFilling({
           no over-reserved gap. Falls back to ~250px for the first paint /
           no-ResizeObserver before the measurement lands. */}
       <div
+        ref={spacerRef}
         className="shrink-0 bg-black"
-        style={{
-          height: headerHeight != null ? `${headerHeight}px` : 'calc(250px + env(safe-area-inset-top))',
-          // TEMP DIAGNOSTIC: red line marks the bottom of the reserved space
-          // (= where the tabs should start). Remove after we read it.
-          borderBottom: '2px solid red',
-          boxSizing: 'border-box',
-        }}
+        style={{ height: spacerHeight != null ? `${spacerHeight}px` : 'calc(250px + env(safe-area-inset-top))' }}
       />
-      {/* TEMP DIAGNOSTIC badge — shows the measured header height. Remove after. */}
-      <div className="fixed bottom-1 left-1 z-[300] text-[11px] font-mono text-red-400 bg-black/90 px-2 py-0.5 rounded border border-red-500/40">
-        hdr={headerHeight ?? 'null'} · vh={typeof window !== 'undefined' ? window.innerHeight : '?'}
-      </div>
     </>
   );
 }
