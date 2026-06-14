@@ -364,7 +364,16 @@ export async function getOwnerOnchainTokenIds(owner: string): Promise<string[]> 
     ];
     const ids: string[] = [];
     for (const t of tokens) {
-      const s = t.realTokenId != null ? String(t.realTokenId) : '';
+      // Prefer the explicit realTokenId. When it's absent (common — the field
+      // isn't always stamped back onto the token record even though the NFT is
+      // minted), the numeric cardId IS the on-chain token id (e.g. cardId 110).
+      // Same fallback refresh-draft + teamNoFromToken use. Without this, a real
+      // minted team with no realTokenId never makes it into the Sell list.
+      let s = t.realTokenId != null ? String(t.realTokenId) : '';
+      if (!/^\d+$/.test(s)) {
+        const cid = t._cardId != null ? String(t._cardId) : '';
+        if (/^\d+$/.test(cid)) s = cid;
+      }
       if (/^\d+$/.test(s)) ids.push(s); // minted on-chain NFT (team or pass)
     }
     return ids;
