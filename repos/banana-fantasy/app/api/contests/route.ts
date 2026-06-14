@@ -3,23 +3,36 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getContests } from '@/lib/db';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
-const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+// Coalesce the draftTracker read so the client's live poll (every ~10s, many
+// users) doesn't hammer Firestore — one small doc read shared for a few seconds.
+let entryCache: { ts: number; count: number } | null = null;
+const ENTRY_CACHE_MS = 5_000;
 
-interface LeagueSummary {
-  numPlayers: number;
-}
-
+/**
+ * Total entries THIS SEASON (BBB4), paid + free combined and live.
+ *
+ * A filled BBB4 league is exactly 10 seats regardless of how each player entered
+ * (paid pass or free draft), so the authoritative cumulative entry count is
+ * `draftTracker.FilledLeaguesCount × 10` — read from OUR Firestore, not the Go
+ * `/league/` endpoint, which is gone (404) and was making this always return 0.
+ * Ticks up as each league fills; the client polls so the number stays live.
+ *
+ * NOTE (staging): the currently-FILLING league's partial seats aren't summed —
+ * there's no global league-list endpoint on staging to source a per-seat live
+ * count. For prod this swaps to the real lobby/league feed for per-entry ticking.
+ */
 async function getLiveEntryCount(): Promise<number> {
+  if (entryCache && Date.now() - entryCache.ts < ENTRY_CACHE_MS) return entryCache.count;
   try {
-    const res = await fetch(`${DRAFTS_API_URL}/league/`, { next: { revalidate: 30 } });
-    if (!res.ok) return 0;
-    const leagues: LeagueSummary[] = await res.json();
-    if (!Array.isArray(leagues)) return 0;
-    return leagues.reduce((sum, l) => sum + (l.numPlayers || 0), 0);
+    const snap = await getAdminFirestore().collection('drafts').doc('draftTracker').get();
+    const filled = Math.max(0, Number(snap.data()?.FilledLeaguesCount ?? 0));
+    const count = filled * 10;
+    entryCache = { ts: Date.now(), count };
+    return count;
   } catch {
-    return 0;
+    return entryCache?.count ?? 0;
   }
 }
 
