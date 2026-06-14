@@ -1876,7 +1876,15 @@ function DraftRoomContent() {
   // across devices. Skipped for specialType (already known) and spectators
   // (no owned token → level null → left as-is).
   useEffect(() => {
-    if (!isLiveMode || specialTypeParam || draftType) return;
+    // Run EVEN IF draftType is already set. The fill→draft transition can fall
+    // back to 'pro' before the real type is known (e.g. a 2nd device / phone
+    // that didn't run the reveal). The old `|| draftType` guard then skipped
+    // this, so that wrong 'pro' stuck — desktop showed HOF, phone showed PRO
+    // (Boris 2026-06-14). The owner's token level is the device-independent
+    // truth, so we reconcile draftType to it and override any stale fallback.
+    // specialType is already authoritative; spectators have no token (level
+    // null → left as-is).
+    if (!isLiveMode || specialTypeParam) return;
     if (phase !== 'drafting') return;
     const id = draftId || urlDraftId;
     if (!id || !walletParam) return;
@@ -1885,8 +1893,11 @@ function DraftRoomContent() {
       if (cancelled || !level) return;
       const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
       const mapped = typeMap[level] || 'pro';
-      setDraftType(mapped);
-      draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+      setDraftType(prev => {
+        if (prev === mapped) return prev;
+        draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+        return mapped;
+      });
     }).catch((err) => {
       reportClientError({
         source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
@@ -1898,6 +1909,8 @@ function DraftRoomContent() {
       });
     });
     return () => { cancelled = true; };
+  // draftType kept in deps so a later stale 'pro' re-applied by the fill flow
+  // gets re-corrected; the prev===mapped check makes it converge (no loop).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, draftType, isLiveMode, walletParam, draftId, urlDraftId, specialTypeParam]);
 
