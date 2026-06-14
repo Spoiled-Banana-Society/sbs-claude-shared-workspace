@@ -384,7 +384,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         ) : (
           <div className="rounded-xl p-4 bg-bg-tertiary">
             <p className="text-text-secondary text-sm">
-              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin. Once the Jackpot and all 5 HOF drafts in a batch of 100 have been hit, it expands so slots <span className="text-text-primary font-semibold">6, 9 &amp; 10</span> all win — until the next batch of 100 starts.
+              Land <span className="text-text-primary font-semibold">slot 10</span> in a paid draft for a free spin.
             </p>
           </div>
         )}
@@ -393,11 +393,11 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {promo.modalContent.totalPick10s !== undefined && (
           <div className="bg-bg-tertiary rounded-xl p-4">
             <div className="flex justify-between items-center">
-              <span className="text-text-primary font-medium">{isPickBonus ? 'Total Picks Hit' : 'Total Pick 10s Hit'}</span>
+              <span className="text-text-primary font-medium">Total Picks Hit</span>
               <span className="text-2xl font-bold text-banana">{promo.modalContent.totalPick10s}</span>
             </div>
             <p className="text-text-muted text-sm mt-2">
-              You&apos;ve earned {promo.modalContent.totalPick10s} spins from {isPickBonus ? 'Picks' : 'Pick 10s'}!
+              You&apos;ve earned {promo.modalContent.totalPick10s} spins from Picks!
             </p>
           </div>
         )}
@@ -405,7 +405,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
         {/* Pick 10 History — always rendered with an empty state, matching
             every other promo's History section. */}
         <div className="bg-bg-tertiary rounded-xl p-4">
-          <h4 className="font-semibold mb-3 text-text-primary">{isPickBonus ? 'Pick History' : 'Pick 10 History'}</h4>
+          <h4 className="font-semibold mb-3 text-text-primary">Pick History</h4>
           {promo.modalContent.pick10History && promo.modalContent.pick10History.length > 0 ? (
             <div className="space-y-2 max-h-32 overflow-y-auto scrollbar-hover pr-3">
               {promo.modalContent.pick10History.map((entry, index) => (
