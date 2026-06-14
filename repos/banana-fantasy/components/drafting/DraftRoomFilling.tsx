@@ -48,6 +48,13 @@ export function DraftRoomFilling({
   const randomizingProgress = Math.max(serverWaitProgress, randomizingProgressFromStore);
   const myName = user?.username && !user.username.startsWith('0x') ? user.username : 'You';
 
+  // Original lobby box sizing (kept as named constants; the boxes are fine —
+  // the gap below them is a spacer issue, fixed by the measurement below).
+  const avatarSize = 48;
+  const statMinH = 54;
+  const boxPadTop = 10;
+  const rowMarginTop = 15;
+
   // The lobby header (boxes + "x/10 waiting" + controls) is position:fixed, so
   // a spacer below it reserves its room in flow. A hard-coded height (290px)
   // over-reserved on mobile — the filling header is shorter there — leaving a
@@ -56,14 +63,36 @@ export function DraftRoomFilling({
   // desktop) on every device.
   const headerRef = React.useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = React.useState<number | null>(null);
-  React.useLayoutEffect(() => {
+  React.useEffect(() => {
     const el = headerRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const measure = () => setHeaderHeight(el.offsetHeight);
+    if (!el) return;
+    const measure = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setHeaderHeight(h);
+    };
     measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    // Re-measure after first paint, after fonts/images settle, and on resize.
+    // A single synchronous measure on mount can land before the band/boxes
+    // have their final height — which left the spacer stuck on its oversized
+    // fallback, pushing the tabs way down (the empty gap Boris saw). These
+    // extra passes guarantee the spacer ends up hugging the real header.
+    const raf = requestAnimationFrame(measure);
+    const t1 = setTimeout(measure, 150);
+    const t2 = setTimeout(measure, 600);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+      ro.observe(el);
+    }
+    window.addEventListener('resize', measure);
+    try { (document as Document).fonts?.ready?.then(measure); } catch { /* no-op */ }
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      ro?.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   return (
@@ -81,7 +110,7 @@ export function DraftRoomFilling({
         // status bar on mobile (Boris 2026-06-13).
         paddingTop: 'env(safe-area-inset-top)',
       }}>
-        <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
+        <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: `${rowMarginTop}px` }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
@@ -133,7 +162,7 @@ export function DraftRoomFilling({
                 style={{
                   minWidth: 'clamp(100px, 12vw, 140px)',
                   flex: 1,
-                  padding: '10px 0 0 0',
+                  padding: `${boxPadTop}px 0 0 0`,
                   borderRadius: '5px',
                   borderWidth: 1,
                   borderStyle: 'solid',
@@ -148,7 +177,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
                         alt="You"
-                        size={48}
+                        size={avatarSize}
                         equippedBadge={user?.equippedBadge}
                         ripeness={user?.ripeness}
                         useNextImage={false}
@@ -160,7 +189,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={otherPfp}
                         alt={otherDisplayName || 'Player'}
-                        size={48}
+                        size={avatarSize}
                         equippedBadge={otherBadge}
                         ripeness={otherRipeness}
                         useNextImage={false}
@@ -168,14 +197,14 @@ export function DraftRoomFilling({
                       />
                     </div>
                   ) : showSkeleton ? (
-                    <div className="animate-shimmer rounded-full w-[48px] h-[48px] mx-auto border border-white/10" />
+                    <div className="animate-shimmer rounded-full mx-auto border border-white/10" style={{ width: avatarSize, height: avatarSize }} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src="/banana-profile.png"
                       alt="Banana"
-                      className="rounded-full w-[48px] mx-auto h-[48px] border border-gray-500 animate-pulse"
-                      style={{ opacity: 0.4 }}
+                      className="rounded-full mx-auto border border-gray-500 animate-pulse"
+                      style={{ opacity: 0.4, width: avatarSize, height: avatarSize }}
                     />
                   )}
 
@@ -192,15 +221,15 @@ export function DraftRoomFilling({
                   </div>
 
                   {showSkeleton ? (
-                    <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ minHeight: `${statMinH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div className="animate-shimmer rounded h-[10px] w-[70%]" />
                     </div>
                   ) : !isFilled ? (
-                    <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ minHeight: `${statMinH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span className="animate-pulse" style={{ fontSize: '12px', color: '#444' }}>Waiting...</span>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
+                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: `${statMinH}px`, color: textColor }}>
                       {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
                         <div
                           key={pos}
