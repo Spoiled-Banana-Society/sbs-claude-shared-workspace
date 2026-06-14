@@ -24,7 +24,10 @@ function sellTierRank(team: MarketplaceTeam): number {
   // (the slot follows the NFT, so a sale hands the draft to the buyer). It waives
   // the normal free-pass listing block until its draft fills.
   const fillingWheelPass = !!team.fillingWheelLevel;
-  const blocked = !fillingWheelPass && team.passType === 'free' && isDraftingOpen();
+  // The free-entry lock applies ONLY to an undrafted free PASS. A DRAFTED team
+  // (hasBackendRecord === true) is a real team — sellable regardless of whether
+  // it was entered with a free or paid pass. So a drafted team is never blocked.
+  const blocked = !fillingWheelPass && !isTeam && team.passType === 'free' && isDraftingOpen();
   if (isTeam && !blocked) return 0;
   if (isTeam && blocked) return 1;
   if (!isTeam && !blocked) return 2;
@@ -35,6 +38,11 @@ function sellTierRank(team: MarketplaceTeam): number {
  *  starts — EXCEPT a wheel-won JP/HOF pass while its draft is still filling.) */
 function canSellTeam(team: MarketplaceTeam): boolean {
   if (team.fillingWheelLevel) return true;
+  // A DRAFTED team (has a backend roster record) is a real team, not a pass —
+  // always sellable, even one entered with a FREE pass. Only an UNDRAFTED free
+  // PASS is locked (you can't sell a free draft pass). This is why a free-draft
+  // team like League #11 must show + be listable on My Teams.
+  if (team.hasBackendRecord === true) return true;
   return !(team.passType === 'free' && isDraftingOpen());
 }
 
@@ -254,7 +262,10 @@ export function SellTab({
                         >
                           {cancellingTokenId === team.tokenId ? 'Cancelling…' : 'Delist'}
                         </button>
-                      ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel ? (
+                      ) : team.passType === 'free' && isDraftingOpen() && !team.fillingWheelLevel && team.hasBackendRecord !== true ? (
+                        // Only an UNDRAFTED free PASS is locked until the season.
+                        // A drafted free TEAM (hasBackendRecord) falls through to
+                        // "List for Sale" — it's a real, sellable team.
                         <button
                           onClick={e => { e.preventDefault(); onShowFreePassInfo('team'); }}
                           className="px-4 py-2 rounded-xl text-xs font-bold border border-white/15 text-white/50 transition-all"
