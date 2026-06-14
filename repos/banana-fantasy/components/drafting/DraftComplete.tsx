@@ -87,7 +87,18 @@ export function DraftComplete({
   // do the waiting here on the generating screen, not on the roster).
   const [imageLoaded, setImageLoaded] = useState(false);
   // Draft-pass number shown on the card (derived from the card URL once known).
-  const [passNumber, setPassNumber] = useState<string | null>(extractPassNo(initialCardUrl));
+  // TEAM # = the on-chain token id of the draft pass you entered with — which
+  // you already own BEFORE the draft starts, so it's known from join time (in
+  // the draft store as cardId), not something to wait on. Seed it instantly so
+  // it shows from frame one like the league # + roster. The async resolver
+  // below confirms it against the authoritative realTokenId.
+  const [passNumber, setPassNumber] = useState<string | null>(() => {
+    if (draftId) {
+      const seed = teamNoFromToken({ cardId: draftStore.getDraft(draftId)?.cardId });
+      if (seed) return seed;
+    }
+    return extractPassNo(initialCardUrl);
+  });
   const mountedAtRef = useRef(Date.now());
   // The actual generated card URL — handed to the roster page via sessionStorage
   // so it renders the image instantly instead of waiting on its own fetch.
