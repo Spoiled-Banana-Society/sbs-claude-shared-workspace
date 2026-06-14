@@ -9,6 +9,7 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
 import { toCardPlayers, teamNoFromToken } from '@/lib/teamCardData';
+import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface RosterEntry {
   playerId: string;
@@ -304,8 +305,20 @@ export function DraftComplete({
     roster.map((r) => ({ playerId: r.playerId, position: r.position, pick: r.pick ?? '' })),
   );
   // Team card identity line: TEAM # = on-chain token id (the draft-pass #),
-  // LEAGUE # = the numeric league id from the draftId.
-  const leagueNumber = (draftId || '').replace(/\D/g, '');
+  // LEAGUE # = the GLOBAL league number from the draft's DisplayName ("BBB #8"),
+  // resolved via the same cache/hook DraftRow + the roster page use.
+  // BUG this fixes: the old `draftId.replace(/\D/g,'')` mashed every digit in the
+  // slot id together — "2024-fast-draft-8" → "20248" (year+slot) — so a wild
+  // wrong league # flashed for a second before the real data corrected it. We
+  // now seed instantly from the already-resolved store contestName so the
+  // correct number shows from the FIRST frame, with the live hook confirming.
+  const liveLeagueNumber = useLeagueNumberForSlot(draftId);
+  const storedLeagueNo = (() => {
+    if (!draftId) return '';
+    const m = /#\s*(\d+)/.exec(draftStore.getDraft(draftId)?.contestName || '');
+    return m ? m[1] : '';
+  })();
+  const leagueNumber = liveLeagueNumber != null ? String(liveLeagueNumber) : storedLeagueNo;
 
   return (
     <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>
