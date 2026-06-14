@@ -187,11 +187,10 @@ export function BuyTab({
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Type filters scroll horizontally on mobile — 7 chips won't fit a
-              phone width, so they slide instead of overflowing off-screen. */}
-          <div className="w-full lg:w-auto overflow-x-auto [&::-webkit-scrollbar]:hidden">
-            <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-max">
-              {([
+          {/* Type filters wrap to two rows on mobile (no horizontal scrolling)
+              — 7 chips don't fit one phone row, so they stack. */}
+          <div className="flex flex-wrap gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:w-auto">
+            {([
                 { key: 'listed', label: 'Listed', count: undefined },
                 { key: 'all', label: 'All Teams', count: viewCounts?.all },
                 { key: 'top', label: 'Top Teams', count: undefined },
@@ -213,7 +212,6 @@ export function BuyTab({
                   )}
                 </button>
               ))}
-            </div>
           </div>
 
           <MultiChipSearch
@@ -231,7 +229,7 @@ export function BuyTab({
             value={leagueFilter ?? ''}
             onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
             placeholder="League #"
-            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            className="flex-1 min-w-[8rem] sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
           <input
             type="number"
@@ -239,7 +237,7 @@ export function BuyTab({
             value={teamFilter ?? ''}
             onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
             placeholder="Team #"
-            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            className="flex-1 min-w-[8rem] sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
         </div>
 

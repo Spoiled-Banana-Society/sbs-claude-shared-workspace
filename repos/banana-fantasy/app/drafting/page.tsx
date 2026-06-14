@@ -143,11 +143,11 @@ export default function DraftingPage() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
-          {/* Rankings = pre-draft tool. Kept as a quiet text link beside the
-              title so it doesn't clump with the primary New Draft / Buy
-              actions. Always available, even before a first draft. */}
+        <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
+        <div className="flex items-center gap-3">
+          {/* Rankings = pre-draft tool. Quiet text link on the right, set apart
+              from the primary New Draft / Buy actions by a divider so it
+              doesn't clump with them or crowd the title. */}
           <button
             onClick={() => router.push('/rankings')}
             aria-label="Pre-rank players and set auto-draft limits"
@@ -155,23 +155,24 @@ export default function DraftingPage() {
           >
             Rankings
           </button>
+          {activeDrafts.length > 0 && (
+            <>
+              <span className="h-5 w-px bg-white/10" aria-hidden="true" />
+              <button
+                onClick={handleEnterDraft}
+                className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
+              >
+                New Draft
+              </button>
+              <button
+                onClick={() => router.push('/buy-drafts')}
+                className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
+              >
+                Buy Drafts
+              </button>
+            </>
+          )}
         </div>
-        {activeDrafts.length > 0 && (
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={handleEnterDraft}
-              className="px-5 py-2 text-sm font-semibold text-white border border-white/15 rounded-xl hover:border-white/30 hover:bg-white/[0.05] transition-all"
-            >
-              New Draft
-            </button>
-            <button
-              onClick={() => router.push('/buy-drafts')}
-              className="px-5 py-2 text-sm font-semibold bg-banana text-black rounded-xl hover:scale-[1.03] transition-transform shadow-[0_4px_16px_-4px_rgba(251,191,36,0.55)]"
-            >
-              Buy Drafts
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="flex gap-6">
@@ -327,7 +328,7 @@ export default function DraftingPage() {
           </div>
         </div>
 
-        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4">
+        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4 mt-14">
           <PromosSidebar
             promos={promos}
             promoIndex={promoIndex}

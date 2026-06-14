@@ -58,9 +58,9 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       badge: 0,
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
-          <rect x="8" y="2" width="8" height="4" rx="1" />
-          <path d="M9 12h6M9 16h4" />
+          <path d="M20 4 Q4 4 4 20 Q20 20 20 4 Z" />
+          <path d="M8 16 L16 8" />
+          <path d="M9.5 13.5 L11 15 M11.5 11.5 L13 13 M13.5 9.5 L15 11" />
         </svg>
       ),
     },
