@@ -48,6 +48,24 @@ export function DraftRoomFilling({
   const randomizingProgress = Math.max(serverWaitProgress, randomizingProgressFromStore);
   const myName = user?.username && !user.username.startsWith('0x') ? user.username : 'You';
 
+  // The lobby header (boxes + "x/10 waiting" + controls) is position:fixed, so
+  // a spacer below it reserves its room in flow. A hard-coded height (290px)
+  // over-reserved on mobile — the filling header is shorter there — leaving a
+  // big gap above the tabs. Measure the real header height and match the spacer
+  // to it exactly, so the only gap left is the tabs' own spacing (same as
+  // desktop) on every device.
+  const headerRef = React.useRef<HTMLDivElement>(null);
+  const [headerHeight, setHeaderHeight] = React.useState<number | null>(null);
+  React.useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => setHeaderHeight(el.offsetHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <>
       {/* Type-colored band behind the box strip — SAME treatment as the
@@ -55,7 +73,7 @@ export function DraftRoomFilling({
           The lobby used to keep the old design (solid-color user box, no
           band), so wheel-won JP/HOF drafts looked stale while filling
           (caught by Boris on 2025-slow-draft-62, 2026-06-10). */}
-      <div className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
+      <div ref={headerRef} className="fixed top-0 left-0 z-[55] w-full overflow-hidden font-primary" style={{
         background: draftBandBackground(visibleDraftType),
         boxShadow: draftBandShadow(visibleDraftType),
         // Match DraftRoomDrafting — drop the strip below the notch on iOS
@@ -235,11 +253,14 @@ export function DraftRoomFilling({
         {controls}
       </div>
 
-      {/* Spacer reserves room for the fixed lobby header above. The FILLING
-          header (boxes + "x/10 waiting" + controls) is shorter than the
-          DRAFTING header (290px), so on mobile the old 290px over-reserved and
-          pushed the tabs/list way down. Smaller on phones, flush on desktop. */}
-      <div className="shrink-0 bg-black h-[calc(250px_+_env(safe-area-inset-top))] lg:h-[calc(290px_+_env(safe-area-inset-top))]" />
+      {/* Spacer = the fixed header's measured height (offsetHeight already
+          includes its safe-area padding), so the tabs sit flush below it with
+          no over-reserved gap. Falls back to ~250px for the first paint /
+          no-ResizeObserver before the measurement lands. */}
+      <div
+        className="shrink-0 bg-black"
+        style={{ height: headerHeight != null ? `${headerHeight}px` : 'calc(250px + env(safe-area-inset-top))' }}
+      />
     </>
   );
 }
