@@ -179,9 +179,17 @@ export function useEligibility(opts?: { userId?: string }) {
   const { user } = useAuth();
   const userId = opts?.userId ?? user?.walletAddress ?? user?.id;
 
-  return useSWRLike<EligibilityStatus>(
+  const query = useSWRLike<EligibilityStatus>(
     userId ? `eligibility:${userId}` : null,
     ({ signal }) => fetchJson<EligibilityStatus>('/api/eligibility', { signal, query: { userId } }),
     { enabled: !!userId, fallbackData: { isVerified: false, season: 0, w9Completed: false, tier1Verified: false, tier2Verified: false, cumulativeWithdrawals: 0 } },
   );
+
+  // Real-time: the Didit verify webhook pings the user's event stream (keyed on
+  // the same Privy userId used here) the moment verification is Approved, so
+  // the /verify status flips live instead of only on reload. Additive — the
+  // mount fetch + focus-revalidate stay as the baseline.
+  useStreamRefetch(userId, () => { void query.mutate(); });
+
+  return query;
 }

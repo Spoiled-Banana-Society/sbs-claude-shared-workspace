@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 import crypto from 'crypto';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { savePersonaVerification } from '@/lib/db-firestore';
+import { pushStreamEventBg } from '@/lib/userEventStream';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -181,6 +182,13 @@ export async function POST(req: Request) {
         'country:',
         identity.address.country,
       );
+
+      // Real-time: ping the user's event stream so any open /verify (or a
+      // gated checkout step waiting on KYC) refetches eligibility within
+      // ~300ms and flips to verified live — no manual reload. Keyed on the
+      // same Privy userId (vendor_data) the client subscribes with. Survives
+      // the response via the bg variant (Vercel lambda would drop a bare void).
+      pushStreamEventBg(vendorData, 'notification', { source: 'kyc-verified' });
     } else if (status === 'Declined') {
       console.log('[Didit Webhook] Verification declined for user:', vendorData);
     } else if (status === 'Expired') {
