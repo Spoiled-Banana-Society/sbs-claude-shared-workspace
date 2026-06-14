@@ -143,11 +143,10 @@ export default function DraftingPage() {
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
-        <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
-        <div className="flex items-center gap-3">
-          {/* Rankings = pre-draft tool. Quiet text link on the right, set apart
-              from the primary New Draft / Buy actions by a divider so it
-              doesn't clump with them or crowd the title. */}
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
+          {/* Rankings = pre-draft tool, kept as a quiet text link beside the
+              title. */}
           <button
             onClick={() => router.push('/rankings')}
             aria-label="Pre-rank players and set auto-draft limits"
@@ -155,24 +154,23 @@ export default function DraftingPage() {
           >
             Rankings
           </button>
-          {activeDrafts.length > 0 && (
-            <>
-              <span className="h-5 w-px bg-white/10" aria-hidden="true" />
-              <button
-                onClick={handleEnterDraft}
-                className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
-              >
-                New Draft
-              </button>
-              <button
-                onClick={() => router.push('/buy-drafts')}
-                className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
-              >
-                Buy Drafts
-              </button>
-            </>
-          )}
         </div>
+        {activeDrafts.length > 0 && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleEnterDraft}
+              className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
+            >
+              New Draft
+            </button>
+            <button
+              onClick={() => router.push('/buy-drafts')}
+              className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
+            >
+              Buy Drafts
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-6">
@@ -309,7 +307,7 @@ export default function DraftingPage() {
               (not the sidebar's tall card). Pushed well down the page so the
               live drafts stay up top. SWR-deduped — no refetch. */}
           {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className="lg:hidden mt-16">
+            <div className="lg:hidden mt-24">
               <PromoCarousel
                 heading="Promos"
                 promos={promosQuery.promos ?? []}

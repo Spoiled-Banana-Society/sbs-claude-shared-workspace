@@ -187,9 +187,11 @@ export function BuyTab({
 
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          {/* Type filters wrap to two rows on mobile (no horizontal scrolling)
-              — 7 chips don't fit one phone row, so they stack. */}
-          <div className="flex flex-wrap gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:w-auto">
+          {/* Type filters wrap to rows on mobile (no horizontal scrolling). On
+              phones we drop the enclosing pill so the half-empty second row
+              doesn't read as a big empty box — just clean wrapping chips. The
+              desktop segmented pill returns at lg. */}
+          <div className="flex flex-wrap gap-2 lg:gap-1 lg:bg-bg-secondary lg:p-1 lg:rounded-xl lg:border lg:border-bg-tertiary w-full lg:w-auto">
             {([
                 { key: 'listed', label: 'Listed', count: undefined },
                 { key: 'all', label: 'All Teams', count: viewCounts?.all },
@@ -222,23 +224,27 @@ export function BuyTab({
             className="w-full sm:w-72"
           />
 
-          {/* League # / Team # filters — backend-sourced (instant) via the on-chain-id index. */}
-          <input
-            type="number"
-            inputMode="numeric"
-            value={leagueFilter ?? ''}
-            onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
-            placeholder="League #"
-            className="flex-1 min-w-[8rem] sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <input
-            type="number"
-            inputMode="numeric"
-            value={teamFilter ?? ''}
-            onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
-            placeholder="Team #"
-            className="flex-1 min-w-[8rem] sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
+          {/* League # / Team # filters — side by side in their own row so each
+              shows its full placeholder (the "#" was clipping at w-28) without
+              stretching into empty space. Fixed widths on desktop. */}
+          <div className="flex gap-2 w-full sm:w-auto">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={leagueFilter ?? ''}
+              onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="League #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <input
+              type="number"
+              inputMode="numeric"
+              value={teamFilter ?? ''}
+              onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Team #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
