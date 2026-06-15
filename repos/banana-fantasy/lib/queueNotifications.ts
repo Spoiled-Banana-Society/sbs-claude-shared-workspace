@@ -103,59 +103,6 @@ export async function createNotification(userId: string, n: CreateNotificationIn
   }
 }
 
-/**
- * Broadcast ONE notification to MANY wallets efficiently.
- *
- * For one-shot announcements (e.g. a promo turning on) a per-user
- * `createNotification` fan-out would be thousands of round-trips — each its
- * own write PLUS its own real-time RTDB ping. Instead this writes every bell
- * doc with a single BulkWriter (auto-batched, ~500 ops/commit) and skips the
- * per-user ping: online bells reconcile on their next poll and the companion
- * push (sent separately by the caller) carries the instant nudge.
- *
- * `dedupeKey` is REQUIRED — a broadcast is re-fired by every observer of the
- * same event (the 10 watching draft clients + the close backstop), so each
- * wallet's doc is written exactly once via `.create()` (ALREADY_EXISTS → no-op).
- * Returns the count of docs newly written.
- */
-export async function createNotificationForWallets(
-  wallets: string[],
-  n: CreateNotificationInput & { dedupeKey: string },
-): Promise<number> {
-  if (!isFirestoreConfigured() || wallets.length === 0) return 0;
-  const db = getAdminFirestore();
-  const col = db.collection(COLLECTION);
-  const writer = db.bulkWriter();
-  // ALREADY_EXISTS (gRPC code 6) is the expected idempotent case — never retry
-  // it. Retry genuinely transient failures a couple of times, then give up.
-  writer.onWriteError((err) => err.code !== 6 && err.failedAttempts < 3);
-
-  let written = 0;
-  const seen = new Set<string>();
-  for (const raw of wallets) {
-    const wallet = String(raw).toLowerCase();
-    if (!/^0x[0-9a-f]{40}$/.test(wallet) || seen.has(wallet)) continue;
-    seen.add(wallet);
-    const docId = dedupeDocId(wallet, n.dedupeKey);
-    void writer
-      .create(col.doc(docId), {
-        wallet,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        link: n.link || null,
-        read: false,
-        dedupeKey: n.dedupeKey,
-        icon: n.icon ?? null,
-        createdAt: FieldValue.serverTimestamp(),
-      })
-      .then(() => { written += 1; })
-      .catch(() => { /* ALREADY_EXISTS (deduped) or retries exhausted */ });
-  }
-  await writer.close();
-  return written;
-}
-
 /** Notify user they've been queued */
 export async function notifyQueueJoined(wallet: string, type: 'jackpot' | 'hof', draftCount: number) {
   const label = type === 'jackpot' ? 'Jackpot' : 'HOF';

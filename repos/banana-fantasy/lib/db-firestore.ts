@@ -2547,22 +2547,13 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
  * when the next batch starts (FilledLeaguesCount crosses the next multiple of
  * 100 and the specials reset), so the promo reverts to slot-10-only.
  */
-interface BatchSpecialsState {
-  /** True when this batch's 1 Jackpot + 5 HOF have all filled. */
-  allHit: boolean;
-  /** Filled-count index where the current 100-batch began (the dedupe key for
-   *  the "promo just expanded" announcement — one announcement per batch). */
-  batchStart: number;
-  filled: number;
-}
-
-async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
+export async function allBatchSpecialsHit(): Promise<boolean> {
   const db = getAdminFirestore();
   const snap = await db.collection('drafts').doc('draftTracker').get();
-  if (!snap.exists) return { allHit: false, batchStart: 0, filled: 0 };
+  if (!snap.exists) return false;
   const d = snap.data() as Record<string, unknown>;
   const filled = Number(d.FilledLeaguesCount ?? 0) || 0;
-  if (filled <= 0) return { allHit: false, batchStart: 0, filled };
+  if (filled <= 0) return false;
   const jpIds = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
   const hofIds = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
   const current = filled % 100;
@@ -2571,85 +2562,7 @@ async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
   const hitInBatch = (ids: number[]) => ids.filter((id) => id > batchStart && id <= filled).length;
   const jackpotRemaining = Math.max(0, 1 - hitInBatch(jpIds));
   const hofRemaining = Math.max(0, 5 - hitInBatch(hofIds));
-  return { allHit: jackpotRemaining === 0 && hofRemaining === 0, batchStart, filled };
-}
-
-export async function allBatchSpecialsHit(): Promise<boolean> {
-  return (await getBatchSpecialsState()).allHit;
-}
-
-// Bound the bell fan-out so a misread tracker can never broadcast to an
-// unbounded user set. Comfortably above the live staging/early-prod userbase.
-const PICK10_EXPANSION_MAX_FANOUT = 10000;
-
-/**
- * Announce — ONCE per 100-batch — that the Pick-10 promo just EXPANDED to also
- * reward draft slots 6 and 9 (because this batch's specials — 1 Jackpot + 5
- * HOF — are now all hit). The expansion reverts when the next batch starts, so
- * this is timely "draft now" messaging. Sends an in-app bell to every account
- * plus a single OneSignal push for users who are off-site.
- *
- * Idempotent at the BATCH level via a create-once guard doc keyed by the
- * batch's start index: the first draft-completion that observes the fully-hit
- * batch wins and broadcasts; every later completion in the same batch (the
- * other watching reveal clients + the close backstop) no-ops. Best-effort —
- * never throws into the promo-credit path that calls it.
- */
-export async function announcePick10ExpansionIfActivated(): Promise<void> {
-  try {
-    const { allHit, batchStart } = await getBatchSpecialsState();
-    if (!allHit) return;
-
-    const db = getAdminFirestore();
-    // Create-once guard: .create() throws ALREADY_EXISTS if a prior observer of
-    // this same batch already announced, so exactly one broadcast goes out.
-    const guardRef = db.collection('promo_announcements').doc(`pick10-expansion-${batchStart}`);
-    try {
-      await guardRef.create({
-        kind: 'pick10-expansion',
-        batchStart,
-        announcedAt: FieldValue.serverTimestamp(),
-      });
-    } catch {
-      return; // already announced for this batch
-    }
-
-    const title = 'Pick 6, 9 & 10 → Free Spins! 🎰';
-    const message =
-      'Every special draft in this batch has been claimed — so for a limited time, landing slot 6, 9, OR 10 in a paid draft earns a free wheel spin (normally just slot 10). Draft now before the next batch begins!';
-    const link = '/promos';
-    // Batch-scoped dedupeKey → each user gets exactly one bell per expansion.
-    const dedupeKey = `pick10-expansion-${batchStart}`;
-
-    // In-app bell → every account. ids-only read (the doc id IS the wallet),
-    // bounded, and a single bulk write rather than a per-user fan-out.
-    const usersSnap = await db
-      .collection(USERS_COLLECTION)
-      .select()
-      .limit(PICK10_EXPANSION_MAX_FANOUT)
-      .get();
-    const wallets = usersSnap.docs.map((doc) => doc.id);
-    const { createNotificationForWallets } = await import('@/lib/queueNotifications');
-    const bells = await createNotificationForWallets(wallets, {
-      type: 'promo',
-      title,
-      message,
-      link,
-      dedupeKey,
-      icon: 'sparkles',
-    });
-
-    // Push → all opted-in devices, one OneSignal API call (off-site users).
-    const { sendBroadcastPushToAll } = await import('@/lib/notifications/broadcast');
-    const push = await sendBroadcastPushToAll({ title, body: message, url: link });
-
-    logger.info('promo.pick10_expansion.announced', {
-      batchStart, candidates: wallets.length, bells, push: push.status, pushRecipients: push.recipients,
-    });
-  } catch (err) {
-    // Best-effort: an announcement failure must never break promo crediting.
-    logger.error('promo.pick10_expansion.failed', { err: err instanceof Error ? err : String(err) });
-  }
+  return jackpotRemaining === 0 && hofRemaining === 0;
 }
 
 // ==================== JACKPOT-HIT PROMO: RECORD WHEN USER LANDS IN A JACKPOT DRAFT ====================

@@ -3,8 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { awardJackpotDraw, recordPick10, allBatchSpecialsHit, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
-import { waitUntil } from '@vercel/functions';
+import { awardJackpotDraw, recordPick10, allBatchSpecialsHit, unlockBadge } from '@/lib/db';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
 
@@ -56,18 +55,13 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       // had all its specials hit (1 Jackpot + 5 HOF), Pick 10 expands to also
       // reward slots 6 and 9 — reverting to slot-10-only when the next batch
       // starts. recordPick10 is idempotent per (user, draft) and paid-gated.
-      const expanded = await allBatchSpecialsHit();
-      const slots = expanded ? [6, 9, 10] : [10];
+      const slots = (await allBatchSpecialsHit()) ? [6, 9, 10] : [10];
       for (const slot of slots) {
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
           await recordPick10(owner, draftId, draftName, undefined, slot);
         }
       }
-      // The promo is now live this batch — tell everyone (bell + push), once
-      // per batch. Backgrounded so the broadcast fan-out never delays the
-      // reveal response; idempotent guard inside makes a re-fire a no-op.
-      if (expanded) waitUntil(announcePick10ExpansionIfActivated());
     } catch { /* state not initialized yet — close backstop covers it */ }
 
     if (!isJackpot && !isHof) {

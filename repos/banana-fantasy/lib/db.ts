@@ -40,7 +40,6 @@ export const recordDraftCompletion = db.recordDraftCompletion;
 export const recordFirstPurchaseDraftFinished = db.recordFirstPurchaseDraftFinished;
 export const recordPick10 = db.recordPick10;
 export const allBatchSpecialsHit = db.allBatchSpecialsHit;
-export const announcePick10ExpansionIfActivated = db.announcePick10ExpansionIfActivated;
 export const recordJackpotHit = db.recordJackpotHit;
 export const awardJackpotDraw = db.awardJackpotDraw;
 export const recordFounderDraftJoin = db.recordFounderDraftJoin;
