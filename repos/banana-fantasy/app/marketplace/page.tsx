@@ -1209,6 +1209,22 @@ function Header({
       <div>
         <h1 className="text-2xl font-bold text-text-primary mb-2">Marketplace</h1>
         <p className="text-text-secondary text-sm">Buy and Sell teams all season.</p>
+        {/* Teams + Exposure — mirrors the Teams/Exposure page headers so the
+            three views feel like one section and you can hop back. */}
+        <div className="flex items-center gap-2 mt-3">
+          <Link
+            href="/teams"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Teams
+          </Link>
+          <Link
+            href="/exposure"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Exposure
+          </Link>
+        </div>
       </div>
       {/* Mobile: 2 tabs on top (Buy / Sell), 3 on the second line (My Offers /
           Activity / Watchlist). A 6-col grid makes both rows fill edge to edge
