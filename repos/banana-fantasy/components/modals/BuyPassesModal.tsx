@@ -562,13 +562,7 @@ export function BuyPassesModal({
                   <button
                     key={qty}
                     onClick={() => setQuantity(qty)}
-                    className={`
-                      py-3 rounded-xl font-semibold text-lg transition-all duration-200
-                      ${quantity === qty
-                        ? 'bg-banana text-bg-primary shadow-lg shadow-banana/25 scale-[1.02]'
-                        : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'
-                      }
-                    `}
+                    className={`py-2.5 rounded-xl font-bold text-[15px] transition-colors ${quantity === qty ? 'bg-banana text-bg-primary' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'}`}
                   >
                     {qty}
                   </button>
@@ -629,41 +623,31 @@ export function BuyPassesModal({
               )}
             </div>
 
-            {/* Payment Method */}
+            {/* Payment Method — clean segmented toggle (Option 2) */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated">
                 <button
                   onClick={() => setPaymentMethod('usdc')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'usdc' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg viewBox="0 0 24 24" className={`w-5 h-5 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <text x="12" y="16" textAnchor="middle" fill="currentColor" stroke="none" fontSize="12" fontWeight="bold">$</text>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC on Base</p>
-                  </div>
+                  <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
+                  </svg>
+                  <span className="text-sm font-semibold">USDC on Base</span>
                 </button>
-
                 <button
                   onClick={() => setPaymentMethod('card')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'card' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'card' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                      <line x1="1" y1="10" x2="23" y2="10"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</p>
-                  </div>
+                  <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
+                    <path d="M3 9.5h18M6.5 14.5h4"/>
+                  </svg>
+                  <span className="text-sm font-semibold">Card</span>
                 </button>
               </div>
-
             </div>
 
             {/* Card-fee credit → free draft banner (live $ progress) */}
