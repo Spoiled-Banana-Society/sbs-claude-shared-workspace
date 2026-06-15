@@ -510,14 +510,6 @@ export default function PrizesPage() {
           );
         })()}
 
-        {/* Empty state only when fetch fully settled (not loading + not
-            validating + no error) AND prizes truly empty. */}
-        {!prizesQuery.error && !prizesQuery.isLoading && !prizesQuery.isValidating && prizes.length === 0 && (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-3">🎯</div>
-            <p className="text-text-muted text-sm">No prizes yet. Start drafting to win.</p>
-          </div>
-        )}
       </section>
 
       <WithdrawModal
