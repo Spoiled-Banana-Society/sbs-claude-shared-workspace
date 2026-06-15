@@ -40,6 +40,8 @@ const ICON_PATHS: Record<string, string> = {
   party: '<path d="M5.8 11.3 2 22l10.7-3.79"/><path d="M4 3h.01"/><path d="M22 8h.01"/><path d="M15 2h.01"/><path d="M22 20h.01"/><path d="m22 2-2.24.75a2.9 2.9 0 0 0-1.96 3.12c.1.86-.57 1.63-1.45 1.63h-.38c-.86 0-1.6.6-1.76 1.44L14 10"/><path d="m22 13-.82-.33c-.86-.34-1.82.2-1.98 1.11-.11.7-.72 1.22-1.43 1.22H17"/><path d="m11 2 .33.82c.34.86-.2 1.82-1.11 1.98C9.52 4.9 9 5.52 9 6.23V7"/><path d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"/>',
   alert: '<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
   award: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
+  phone: '<rect x="5" y="2" width="14" height="20" rx="2.6"/><path d="M11 18.5h2"/>',
+  crown: '<path d="M2 19h20"/><path d="m3 7 4.5 4L12 4l4.5 7L21 7l-1.7 9.5H4.7z"/>',
 };
 
 /** Default icon per type — used when a notification carries no explicit icon key. */
@@ -66,6 +68,8 @@ const TYPE_ICON_KEY: Partial<Record<NotificationType, string>> = {
   prize_won: 'trophy',
   withdrawal_paid: 'banknote',
   withdrawal_denied: 'alert',
+  app_download: 'phone',
+  founder_draft: 'crown',
 };
 
 export function NotificationIcon({

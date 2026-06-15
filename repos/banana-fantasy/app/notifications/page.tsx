@@ -29,6 +29,8 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   withdrawal_paid: { emoji: '✅', color: '#22c55e', label: 'Cash Out' },
   withdrawal_denied: { emoji: '⚠️', color: '#ef4444', label: 'Cash Out' },
   base_guide: { emoji: '⚡', color: '#fbbf24', label: 'Base' },
+  app_download: { emoji: '📱', color: '#fbbf24', label: 'App' },
+  founder_draft: { emoji: '👑', color: '#06b6d4', label: 'Founder' },
 };
 
 const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280', label: 'Notification' };

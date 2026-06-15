@@ -190,6 +190,15 @@ function useAppInstallBanner() {
       const qs = params.toString();
       window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
     }
+    // Deep-link from the "Get the SBS app" bell (/?install=1) → open the
+    // browser-specific how-to modal directly so the bell shows them how.
+    if (params.get('install') === '1') {
+      const desktop = !/iphone|ipad|ipod|android/i.test(navigator.userAgent);
+      setModalBrowser(desktop ? 'both' : (isIOS() ? (isIOSSafari() ? 'safari' : 'chrome') : 'both'));
+      params.delete('install');
+      const qs = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    }
     let forced = false;
     try { forced = sessionStorage.getItem('sbs-force-install-banner') === '1'; } catch {}
     setShow(forced || (!isStandaloneNow() && !isA2hsDismissed()));

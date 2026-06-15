@@ -34,6 +34,57 @@ export async function POST(req: Request) {
     const wallet = walletAddress.toLowerCase();
     const db = getAdminFirestore();
 
+    // ── On-login bells (every session; dedupeKeys make them idempotent so a
+    //    user never gets the same one twice). Runs BEFORE the cached early-returns
+    //    below so it fires for returning users too. Replaces the old top banners
+    //    (Boris 2026-06-14). Server-backed → real-time + synced across devices. ──
+    try {
+      const { createNotification } = await import('@/lib/queueNotifications');
+
+      // 1) Get-the-App — one-time, every user. Deep-links home → install how-to.
+      await createNotification(wallet, {
+        type: 'app_download',
+        title: 'Get the SBS app',
+        message: 'Add SBS to your phone to use it like a real app. Tap for how.',
+        link: '/?install=1',
+        dedupeKey: 'app-download',
+        icon: 'phone',
+      });
+
+      // 2) Founder Draft — day-before + day-of bells, once each, when a schedule
+      //    is active. Driven off the founder schedule singleton (PT dates).
+      const fsSnap = await db.collection('founderSchedule').doc('next').get();
+      const fs = fsSnap.exists ? (fsSnap.data() as { at?: string; active?: boolean }) : null;
+      const eventMs = fs?.active && typeof fs.at === 'string' ? Date.parse(fs.at) : NaN;
+      if (Number.isFinite(eventMs)) {
+        const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+        const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' }) + ' PT';
+        const todayPT = ptDate(Date.now());
+        const eventDayPT = ptDate(eventMs);
+        const dayBeforePT = ptDate(eventMs - 86_400_000);
+        const key = new Date(eventMs).toISOString().slice(0, 10);
+        if (todayPT === eventDayPT && Date.now() < eventMs) {
+          await createNotification(wallet, {
+            type: 'founder_draft',
+            title: `Founder Draft today — ${timePT}`,
+            message: 'The Founder Draft drops today. Tap to learn how Founder Drafts work.',
+            link: '/faq#founder-draft',
+            dedupeKey: `founder-today-${key}`,
+            icon: 'crown',
+          });
+        } else if (todayPT === dayBeforePT) {
+          await createNotification(wallet, {
+            type: 'founder_draft',
+            title: `Founder Draft tomorrow — ${timePT}`,
+            message: 'A Founder Draft drops tomorrow. Tap to learn how Founder Drafts work.',
+            link: '/faq#founder-draft',
+            dedupeKey: `founder-tomorrow-${key}`,
+            icon: 'crown',
+          });
+        }
+      }
+    } catch { /* non-fatal — never block the returning check on a bell write */ }
+
     // Already decided for this account → cheap idempotent answer.
     const userRef = db.collection('v2_users').doc(wallet);
     const userSnap = await userRef.get();
