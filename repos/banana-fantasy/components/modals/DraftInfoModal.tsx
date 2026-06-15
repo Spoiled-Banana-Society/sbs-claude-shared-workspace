@@ -9,12 +9,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { mockFAQSections } from '@/lib/faqContent';
+import { ContestDetailsBody } from './ContestDetailsBody';
 import type { Contest } from '@/types';
 
 type Tab = 'how' | 'contest' | 'faq' | 'vrf';
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 
 const HOW = [
   { t: '10 Players', d: 'Join a lobby — the draft starts instantly when it fills.' },
@@ -87,75 +85,9 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
           )}
 
           {tab === 'contest' && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider">Prize pool</p>
-                  <p className="text-banana text-2xl font-bold mt-1">{fmt(contest?.prizePool ?? 100000)} <span className="text-white/30 text-[12px] font-medium">GTD</span></p>
-                  <p className="text-white/30 text-[10px] mt-1 leading-snug">Example pool — grows with entries</p>
-                </div>
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider">1st place</p>
-                  <p className="text-success text-2xl font-bold mt-1">{fmt(contest?.topPrize ?? 25000)}</p>
-                </div>
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider">Entry</p>
-                  <p className="text-white text-2xl font-bold mt-1">{fmt(contest?.entryFee ?? 25)}</p>
-                </div>
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-                  <p className="text-white/40 text-[11px] uppercase tracking-wider">Entries</p>
-                  <p className="text-white text-2xl font-bold mt-1 tabular-nums">{(contest?.currentEntries ?? 0).toLocaleString()}</p>
-                </div>
-              </div>
-              <p className="text-white/45 text-[12.5px] leading-relaxed">
-                <span className="text-banana font-medium">{fmt(contest?.prizePool ?? 100000)} guaranteed minimum.</span> The pool shown is an example — it grows as more teams enter, so it only goes up from here. Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
-              </p>
-              {contest?.rosterFormat && contest.rosterFormat.length > 0 && (
-                <div>
-                  <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">Roster</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {contest.rosterFormat.map((s, i) => (
-                      <span key={i} className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-1 text-[12px] text-white/70 font-medium">{s.count}× {s.position}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {contest?.prizeBreakdown && contest.prizeBreakdown.length > 0 && (
-                <div>
-                  <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">Prize breakdown</p>
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-                    {contest.prizeBreakdown.map((p, i) => {
-                      const prevSection = i > 0 ? contest.prizeBreakdown[i - 1].section : undefined;
-                      const showSection = p.section && p.section !== prevSection;
-                      return (
-                        <div key={i}>
-                          {showSection && <div className="px-4 pt-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/35">{p.section}</div>}
-                          <div className={`flex items-center justify-between px-4 py-2 text-[12.5px] ${i > 0 && !showSection ? 'border-t border-white/[0.04]' : ''}`}>
-                            <span className="text-white/60">{p.place}</span>
-                            <span className="text-white/90 font-medium tabular-nums">{fmt(p.amount)}{p.note ? <span className="text-white/35 text-[11px] font-normal ml-1">{p.note}</span> : null}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {contest?.scoringRules && contest.scoringRules.length > 0 && (
-                <div>
-                  <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">Scoring</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {contest.scoringRules.slice(0, 6).map((r, i) => (
-                      <div key={i} className="flex items-center justify-between rounded-lg bg-white/[0.03] border border-white/[0.06] px-2.5 py-1.5 text-[12px]">
-                        <span className="text-white/55">{r.action}</span>
-                        <span className={`font-medium tabular-nums ${r.points >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{r.points >= 0 ? '+' : ''}{r.points}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+            contest
+              ? <ContestDetailsBody contest={contest} />
+              : <p className="text-white/50 text-[13px]">Contest details are loading…</p>
           )}
 
           {tab === 'faq' && (
