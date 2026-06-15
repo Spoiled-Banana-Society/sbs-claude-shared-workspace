@@ -40,6 +40,8 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (autoHideRef.current) clearTimeout(autoHideRef.current);
     setIsVisible(true);
+    // Auto-dismiss fallback (scroll / tapping elsewhere also dismisses). Tuning
+    // this — 2s for now to feel it (Boris 2026-06-15).
     autoHideRef.current = setTimeout(() => hideTooltip(), 2000);
   };
 
