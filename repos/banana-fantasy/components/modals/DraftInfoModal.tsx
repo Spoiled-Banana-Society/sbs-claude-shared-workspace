@@ -92,6 +92,7 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
                   <p className="text-white/40 text-[11px] uppercase tracking-wider">Prize pool</p>
                   <p className="text-banana text-2xl font-bold mt-1">{fmt(contest?.prizePool ?? 100000)} <span className="text-white/30 text-[12px] font-medium">GTD</span></p>
+                  <p className="text-white/30 text-[10px] mt-1 leading-snug">Example pool — grows with entries</p>
                 </div>
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
                   <p className="text-white/40 text-[11px] uppercase tracking-wider">1st place</p>
@@ -107,7 +108,7 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
                 </div>
               </div>
               <p className="text-white/45 text-[12.5px] leading-relaxed">
-                <span className="text-banana font-medium">{fmt(contest?.prizePool ?? 100000)} guaranteed minimum.</span> Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through playoffs for the grand prize.
+                <span className="text-banana font-medium">{fmt(contest?.prizePool ?? 100000)} guaranteed minimum.</span> The pool shown is an example — it grows as more teams enter, so it only goes up from here. Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
               </p>
               {contest?.rosterFormat && contest.rosterFormat.length > 0 && (
                 <div>
