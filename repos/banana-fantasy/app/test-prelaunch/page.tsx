@@ -33,10 +33,10 @@ function Seg({ value, label }: { value: number; label: string }) {
   const v = String(value).padStart(2, '0');
   return (
     <div className="flex flex-col items-center">
-      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 sm:px-6 sm:py-4 min-w-[60px] sm:min-w-[88px]">
-        <span key={v} className="block text-3xl sm:text-5xl font-bold tabular-nums text-white animate-fade-in">{v}</span>
+      <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] px-2.5 py-2.5 sm:px-6 sm:py-4 min-w-[50px] sm:min-w-[88px]">
+        <span key={v} className="block text-2xl sm:text-5xl font-bold tabular-nums text-white animate-fade-in">{v}</span>
       </div>
-      <span className="mt-2 text-[10px] sm:text-xs uppercase tracking-[0.18em] text-white/40">{label}</span>
+      <span className="mt-2 text-[9px] sm:text-xs uppercase tracking-[0.16em] text-white/40">{label}</span>
     </div>
   );
 }
@@ -48,15 +48,15 @@ export default function TestPrelaunch() {
       {/* header — logo top-left only, no nav / no right-side icons. Static
           (no hover scale) so it never shifts. */}
       <header className="px-5 sm:px-8 lg:px-12 py-5">
-        <div className="inline-flex items-center gap-2.5 select-none">
-          <img src="/sbs-logo.png" alt="SBS Fantasy" className="w-11 h-11" />
-          <span className="text-3xl font-bold tracking-tight leading-none text-white">SBS</span>
+        <div className="inline-flex items-center gap-1.5 select-none">
+          <img src="/sbs-logo.png" alt="SBS Fantasy" className="w-12 h-12 sm:w-14 sm:h-14" />
+          <span className="text-2xl font-bold tracking-tight leading-none text-white">SBS</span>
         </div>
       </header>
 
       {/* contest box + countdown, centered in the page */}
       <main className="flex-1 flex items-center justify-center px-4 pb-16">
-        <div className="relative glass-card rounded-3xl p-8 sm:p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana">
+        <div className="relative glass-card rounded-3xl p-6 sm:p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana">
           <div className="text-center space-y-4">
             <h3 className="text-2xl sm:text-3xl font-bold text-white">Banana Best Ball IV</h3>
             <div className="flex items-center justify-center gap-2">
@@ -78,13 +78,13 @@ export default function TestPrelaunch() {
 
           <div className="mt-9">
             <p className="text-center text-[11px] uppercase tracking-[0.2em] text-white/35 mb-4">Contest drops in</p>
-            <div className="flex items-start justify-center gap-2.5 sm:gap-4">
+            <div className="flex items-start justify-center gap-1.5 sm:gap-4">
               <Seg value={days} label="Days" />
-              <span className="text-3xl sm:text-5xl font-bold text-white/20 pt-2 sm:pt-3">:</span>
+              <span className="text-2xl sm:text-5xl font-bold text-white/20 pt-1.5 sm:pt-3">:</span>
               <Seg value={hours} label="Hours" />
-              <span className="text-3xl sm:text-5xl font-bold text-white/20 pt-2 sm:pt-3">:</span>
+              <span className="text-2xl sm:text-5xl font-bold text-white/20 pt-1.5 sm:pt-3">:</span>
               <Seg value={mins} label="Mins" />
-              <span className="text-3xl sm:text-5xl font-bold text-white/20 pt-2 sm:pt-3">:</span>
+              <span className="text-2xl sm:text-5xl font-bold text-white/20 pt-1.5 sm:pt-3">:</span>
               <Seg value={secs} label="Secs" />
             </div>
           </div>
