@@ -66,7 +66,8 @@ export function ContestDetailsModal({
             </div>
           </div>
           <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated leading-relaxed">
-            This is an example prize pool — it can go up as more players enter.
+            <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
+            This is an example prize pool, it can go up as more players enter.
           </p>
         </div>
 
