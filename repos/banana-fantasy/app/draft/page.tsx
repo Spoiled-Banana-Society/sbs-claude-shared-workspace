@@ -336,7 +336,7 @@ export default function DraftingPage() {
               (hidden < lg). On small screens surface it as a quiet trust seal
               ABOVE the promos (Boris 2026-06-15) — sits right under the drafts
               so the provably-fair marker reads before the promo carousel. */}
-          <div className="lg:hidden mt-9 mb-2">
+          <div className={`lg:hidden mb-2 ${activeDrafts.length > 0 ? 'mt-24' : 'mt-9'}`}>
             <BatchProofBanner display="seal" />
           </div>
 
