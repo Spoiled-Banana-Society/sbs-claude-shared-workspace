@@ -1,14 +1,15 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { Contest } from '@/types';
 
 /**
- * Shared contest body — the prize pool, draft-type odds, scoring, roster, and
- * prize breakdown. Rendered BOTH in the standalone ContestDetailsModal (from
- * contest cards) and in the DraftInfoModal "Contest" tab (the ⓘ button), so
- * the two always show the exact same thing. The card-style visual is the one
- * we standardized on (colored Pro/HOF/Jackpot tiles, prize-pool tiles).
+ * Shared contest body — prize pool, prize breakdown, scoring, roster, and the
+ * draft-type odds. Rendered in BOTH the ContestDetailsModal (contest cards)
+ * and the DraftInfoModal "Contest" tab (ⓘ button) so the two never drift.
+ *
+ * Order (Richard 2026-06-15): prize pool → prize breakdown → scoring → roster
+ * → draft-type odds + guaranteed distribution at the very bottom.
  */
 
 const formatCurrency = (amount: number) =>
@@ -19,14 +20,14 @@ const formatCurrency = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-// Official SBS Best Ball scoring — sourced from the live scorer
-// (sbs-cloud-functions / sportsDataScore.js). Full PPR, with yardage bonuses
-// and the complete DST table. Same for every contest, so it lives here as a
-// fixed reference rather than per-contest data.
+// Official SBS Best Ball scoring — from the live scorer (sportsDataScore.js).
+// Full PPR, with yardage bonuses and the complete DST table. Same for every
+// contest, so it's a fixed reference here rather than per-contest data.
 interface ScoreRow { label: string; value: string; bonus?: boolean }
 interface ScoreGroup { title: string; rows: ScoreRow[] }
 
-const SCORING: ScoreGroup[] = [
+// Shown by default — the everyday offensive scoring (TDs, yards, PPR, bonuses).
+const MAIN_SCORING: ScoreGroup[] = [
   {
     title: 'Passing',
     rows: [
@@ -50,9 +51,13 @@ const SCORING: ScoreGroup[] = [
       { label: 'Receiving TD', value: '+6' },
       { label: 'Receiving yards', value: '+1 per 10' },
       { label: '100+ receiving yards', value: '+3', bonus: true },
-      { label: 'Reception', value: '+1' },
+      { label: 'Reception (full PPR)', value: '+1' },
     ],
   },
+];
+
+// Revealed by "Show all scoring" — misc + the full defense/special-teams rules.
+const MORE_SCORING: ScoreGroup[] = [
   {
     title: 'Misc',
     rows: [
@@ -88,13 +93,39 @@ const SCORING: ScoreGroup[] = [
 ];
 
 // No kicker is scored (QB/RB/WR/TE/DST), so drop any stray "K" the contest
-// data still lists. Also strip the "· N leagues" example count from per-league
-// prize notes — the count is illustrative and reads as confusing precision.
+// data still lists. Also strip the illustrative "· N leagues" count from
+// per-league prize notes — it reads as confusing precision.
 const isKicker = (position: string) => /^k$/i.test(position.trim());
 const cleanNote = (note?: string) =>
   (note ?? '').replace(/\s*·\s*[\d,]+\s*leagues?/i, '').trim();
 
+function ScoreGroupCard({ group }: { group: ScoreGroup }) {
+  return (
+    <div className="bg-bg-tertiary rounded-xl overflow-hidden">
+      <div className="px-4 py-2 bg-bg-elevated/40 text-xs font-semibold uppercase tracking-wide text-text-muted">
+        {group.title}
+      </div>
+      {group.rows.map((row, i) => {
+        const negative = row.value.startsWith('−');
+        return (
+          <div
+            key={row.label}
+            className={`flex items-center justify-between px-4 py-2 text-sm ${i > 0 ? 'border-t border-bg-elevated' : ''}`}
+          >
+            <span className={row.bonus ? 'text-banana' : 'text-text-secondary'}>
+              {row.label}
+              {row.bonus && <span className="text-banana/60 text-[10px] font-semibold uppercase ml-1.5">bonus</span>}
+            </span>
+            <span className={`font-medium tabular-nums ${negative ? 'text-error' : 'text-success'}`}>{row.value}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ContestDetailsBody({ contest }: { contest: Contest }) {
+  const [showAllScoring, setShowAllScoring] = useState(false);
   const roster = (contest.rosterFormat ?? []).filter((s) => !isKicker(s.position));
 
   return (
@@ -118,74 +149,6 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
           The pool shown is an example — it grows as more teams enter, so it only goes up from here. Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
         </p>
       </div>
-
-      {/* Draft Type Odds */}
-      <div className="flex gap-4">
-        <div className="flex-1 bg-pro/10 rounded-xl p-4 border border-pro/20">
-          <p className="text-sm text-pro">Pro</p>
-          <p className="text-3xl font-bold text-pro">94%</p>
-        </div>
-        <div className="flex-1 bg-hof/10 rounded-xl p-4 border border-hof/20">
-          <p className="text-sm text-hof">Hall of Fame</p>
-          <p className="text-3xl font-bold text-hof">5%</p>
-        </div>
-        <div className="flex-1 bg-jackpot/10 rounded-xl p-4 border border-jackpot/20">
-          <p className="text-sm text-jackpot">Jackpot</p>
-          <p className="text-3xl font-bold text-jackpot">1%</p>
-        </div>
-      </div>
-
-      {/* Guaranteed Distribution */}
-      <div className="bg-bg-tertiary/50 rounded-xl p-3 border border-bg-tertiary">
-        <p className="text-text-secondary text-xs text-center">
-          <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel.
-        </p>
-      </div>
-
-      {/* Scoring — full official rules, grouped, with bonuses + defense */}
-      <div>
-        <h4 className="font-semibold text-text-primary mb-1">Scoring</h4>
-        <p className="text-text-muted text-xs mb-3">Full PPR · highest scorer at each team-position counts every week.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {SCORING.map((group) => (
-            <div key={group.title} className="bg-bg-tertiary rounded-xl overflow-hidden">
-              <div className="px-4 py-2 bg-bg-elevated/40 text-xs font-semibold uppercase tracking-wide text-text-muted">
-                {group.title}
-              </div>
-              {group.rows.map((row, i) => {
-                const negative = row.value.startsWith('−');
-                return (
-                  <div
-                    key={row.label}
-                    className={`flex items-center justify-between px-4 py-2 text-sm ${i > 0 ? 'border-t border-bg-elevated' : ''}`}
-                  >
-                    <span className={row.bonus ? 'text-banana' : 'text-text-secondary'}>
-                      {row.label}
-                      {row.bonus && <span className="text-banana/60 text-[10px] font-semibold uppercase ml-1.5">bonus</span>}
-                    </span>
-                    <span className={`font-medium tabular-nums ${negative ? 'text-error' : 'text-success'}`}>{row.value}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Roster Format */}
-      {roster.length > 0 && (
-        <div>
-          <h4 className="font-semibold text-text-primary mb-3">Roster Format</h4>
-          <div className="flex flex-wrap gap-2">
-            {roster.map((slot, index) => (
-              <div key={index} className="px-3 py-1.5 bg-bg-tertiary rounded-lg text-sm">
-                <span className="text-banana font-medium">{slot.count}x</span>
-                <span className="text-text-secondary ml-1">{slot.position}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Prize Breakdown */}
       {contest.prizeBreakdown && contest.prizeBreakdown.length > 0 && (
@@ -228,6 +191,60 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
           </div>
         </div>
       )}
+
+      {/* Scoring — main rules shown, full ruleset behind "Show all" */}
+      <div>
+        <h4 className="font-semibold text-text-primary mb-1">Scoring</h4>
+        <p className="text-text-muted text-xs mb-3">Full PPR · highest scorer at each team-position counts every week.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {MAIN_SCORING.map((group) => <ScoreGroupCard key={group.title} group={group} />)}
+          {showAllScoring && MORE_SCORING.map((group) => <ScoreGroupCard key={group.title} group={group} />)}
+        </div>
+        <button
+          onClick={() => setShowAllScoring((v) => !v)}
+          className="mt-3 text-sm font-medium text-banana hover:text-banana/80 transition-colors"
+        >
+          {showAllScoring ? 'Show less' : 'Show all scoring (defense, bonuses & more)'}
+        </button>
+      </div>
+
+      {/* Roster Format */}
+      {roster.length > 0 && (
+        <div>
+          <h4 className="font-semibold text-text-primary mb-3">Roster Format</h4>
+          <div className="flex flex-wrap gap-2">
+            {roster.map((slot, index) => (
+              <div key={index} className="px-3 py-1.5 bg-bg-tertiary rounded-lg text-sm">
+                <span className="text-banana font-medium">{slot.count}x</span>
+                <span className="text-text-secondary ml-1">{slot.position}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Draft Type Odds + Guaranteed Distribution — at the bottom */}
+      <div className="space-y-3">
+        <div className="flex gap-4">
+          <div className="flex-1 bg-pro/10 rounded-xl p-4 border border-pro/20">
+            <p className="text-sm text-pro">Pro</p>
+            <p className="text-3xl font-bold text-pro">94%</p>
+          </div>
+          <div className="flex-1 bg-hof/10 rounded-xl p-4 border border-hof/20">
+            <p className="text-sm text-hof">Hall of Fame</p>
+            <p className="text-3xl font-bold text-hof">5%</p>
+          </div>
+          <div className="flex-1 bg-jackpot/10 rounded-xl p-4 border border-jackpot/20">
+            <p className="text-sm text-jackpot">Jackpot</p>
+            <p className="text-3xl font-bold text-jackpot">1%</p>
+          </div>
+        </div>
+        <div className="bg-bg-tertiary/50 rounded-xl p-3 border border-bg-tertiary">
+          <p className="text-text-secondary text-xs text-center">
+            <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

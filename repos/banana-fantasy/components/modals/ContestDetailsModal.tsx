@@ -4,7 +4,7 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { Contest } from '@/types';
-import { ContestDetailsBody } from './ContestDetailsBody';
+import { ContestInfoTabs } from './ContestInfoTabs';
 
 interface ContestDetailsModalProps {
   isOpen: boolean;
@@ -50,8 +50,8 @@ export function ContestDetailsModal({
           </div>
         </div>
 
-        {/* Shared contest body (prize pool, odds, scoring, roster, breakdown) */}
-        <ContestDetailsBody contest={contest} />
+        {/* Shared tabbed info — How it Works / Contest / FAQ / Provably Fair */}
+        <ContestInfoTabs contest={contest} onClose={onClose} />
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-bg-tertiary">
