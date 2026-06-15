@@ -67,7 +67,7 @@ export function ContestDetailsModal({
           </div>
           <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated leading-relaxed">
             <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
-            This is an example prize pool, it can go up as more players enter.
+            The pool shown is an example — it grows as more teams enter, so it only goes up from here. Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
           </p>
         </div>
 
