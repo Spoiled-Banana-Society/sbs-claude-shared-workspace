@@ -9,7 +9,6 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Logo } from '@/components/layout/Logo';
 
 // Placeholder target — swap for the real launch date/time when set.
 const LAUNCH_AT = (() => {
@@ -46,9 +45,13 @@ export default function TestPrelaunch() {
   const { days, hours, mins, secs } = useCountdown(LAUNCH_AT);
   return (
     <div className="min-h-screen bg-[#08090c] flex flex-col">
-      {/* header — logo top-left only, no nav / no right-side icons */}
-      <header className="px-4 sm:px-8 lg:px-12 py-4">
-        <Logo size="md" />
+      {/* header — logo top-left only, no nav / no right-side icons. Static
+          (no hover scale) so it never shifts. */}
+      <header className="px-5 sm:px-8 lg:px-12 py-5">
+        <div className="inline-flex items-center gap-2.5 select-none">
+          <img src="/sbs-logo.png" alt="SBS Fantasy" className="w-11 h-11" />
+          <span className="text-3xl font-bold tracking-tight leading-none text-white">SBS</span>
+        </div>
       </header>
 
       {/* contest box + countdown, centered in the page */}
