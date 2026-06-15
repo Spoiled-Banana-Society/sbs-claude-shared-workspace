@@ -38,38 +38,6 @@ function openSupportChat() {
   try { window.dispatchEvent(new Event('sbs:open-support')); } catch { /* no-op */ }
 }
 
-const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string }> = {
-  draft_starting: { emoji: '🏈', color: '#22c55e' },
-  draft_results: { emoji: '📊', color: '#3b82f6' },
-  promo: { emoji: '🎁', color: '#f59e0b' },
-  referral: { emoji: '🔗', color: '#a855f7' },
-  jackpot: { emoji: '🎰', color: '#ef4444' },
-  hof: { emoji: '🏆', color: '#d4af37' },
-  jackpot_queue: { emoji: '🔥', color: '#ef4444' },
-  hof_queue: { emoji: '🏆', color: '#d4af37' },
-  system: { emoji: '📢', color: '#6b7280' },
-  offer_received: { emoji: '💰', color: '#22c55e' },
-  offer_accepted: { emoji: '✅', color: '#3b82f6' },
-  purchase_complete: { emoji: '🛒', color: '#22c55e' },
-  sale_complete: { emoji: '💵', color: '#3b82f6' },
-  listing_created: { emoji: '📋', color: '#a855f7' },
-  friend_request: { emoji: '👋', color: '#3b82f6' },
-  message_received: { emoji: '💬', color: '#22c55e' },
-  welcome: { emoji: '🎉', color: '#fbbf24' },
-  prize: { emoji: '💰', color: '#22c55e' },
-  prize_won: { emoji: '💰', color: '#22c55e' },
-  withdrawal_paid: { emoji: '✅', color: '#22c55e' },
-  withdrawal_denied: { emoji: '⚠️', color: '#ef4444' },
-  base_guide: { emoji: '⚡', color: '#fbbf24' },
-  app_download: { emoji: '📱', color: '#fbbf24' },
-  founder_draft: { emoji: '👑', color: '#06b6d4' },
-};
-
-// Server-created notis can carry types this client bundle doesn't know yet
-// (old tab + new deploy). An unmapped type must NEVER crash the bell —
-// 'undefined is not an object (r.color)' took down the whole app shell
-// (caught live by Boris, 2026-06-10).
-const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280' };
 
 const PREFS_KEY = 'sbs-notification-prefs';
 
@@ -669,7 +637,6 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
               </div>
             ) : (
               notifications.slice(0, 15).map((notif, i) => {
-                const config = TYPE_CONFIG[notif.type] ?? FALLBACK_TYPE_CONFIG;
                 const content = (
                   <motion.div
                     initial={i < 5 ? { opacity: 0, x: -8 } : false}
@@ -683,12 +650,9 @@ export function NotificationPanel({ isOpen, onClose, notifications, unreadCount,
                       !notif.read ? 'bg-banana/[0.03]' : ''
                     }`}
                   >
-                    {/* Icon */}
-                    <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base"
-                      style={{ backgroundColor: `${config.color}15` }}
-                    >
-                      <NotificationIcon icon={notif.icon} type={notif.type} color={config.color} size={20} />
+                    {/* Icon — quiet grey, no tile, so the message text leads */}
+                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                      <NotificationIcon icon={notif.icon} type={notif.type} color="rgba(255,255,255,0.5)" size={20} />
                     </div>
 
                     {/* Content */}
