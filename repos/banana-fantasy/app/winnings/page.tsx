@@ -378,12 +378,6 @@ export default function PrizesPage() {
           </div>
         )}
 
-        {!hasPrizeError && prizes.length === 0 && (prizesQuery.isLoading || prizesQuery.isValidating) && (
-          <div className="text-center py-12">
-            <p className="text-text-muted text-sm">Loading…</p>
-          </div>
-        )}
-
         {!hasPrizeError && prizes.length > 0 && (() => {
           // Three buckets so users see what they need to do, what's
           // mid-flight, and what's already settled — instead of a single
