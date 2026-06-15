@@ -24,7 +24,7 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
           </div>
         </div>
         <div className="px-5 py-5 max-h-[70vh] overflow-y-auto">
-          <ContestInfoTabs contest={contest} onClose={onClose} />
+          <ContestInfoTabs contest={contest} />
         </div>
       </div>
     </div>

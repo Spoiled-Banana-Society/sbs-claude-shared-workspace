@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import type { Contest } from '@/types';
 
 /**
@@ -125,7 +125,6 @@ function ScoreGroupCard({ group }: { group: ScoreGroup }) {
 }
 
 export function ContestDetailsBody({ contest }: { contest: Contest }) {
-  const [showAllScoring, setShowAllScoring] = useState(false);
   const roster = (contest.rosterFormat ?? []).filter((s) => !isKicker(s.position));
 
   return (
@@ -146,7 +145,7 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
         </div>
         <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated leading-relaxed">
           <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
-          The pool shown is an example — it grows as more teams enter, so it only goes up from here. Enter as many drafts as you want — more teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
+          The pool shown is an example. It grows as more teams enter. Enter as many drafts as you want. More teams, more paths to the playoffs. Top finishers advance through the playoffs for the grand prize.
         </p>
       </div>
 
@@ -192,20 +191,14 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
         </div>
       )}
 
-      {/* Scoring — main rules shown, full ruleset behind "Show all" */}
+      {/* Scoring — full official ruleset, grouped */}
       <div>
         <h4 className="font-semibold text-text-primary mb-1">Scoring</h4>
         <p className="text-text-muted text-xs mb-3">Full PPR · highest scorer at each team-position counts every week.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {MAIN_SCORING.map((group) => <ScoreGroupCard key={group.title} group={group} />)}
-          {showAllScoring && MORE_SCORING.map((group) => <ScoreGroupCard key={group.title} group={group} />)}
+          {MORE_SCORING.map((group) => <ScoreGroupCard key={group.title} group={group} />)}
         </div>
-        <button
-          onClick={() => setShowAllScoring((v) => !v)}
-          className="mt-3 text-sm font-medium text-banana hover:text-banana/80 transition-colors"
-        >
-          {showAllScoring ? 'Show less' : 'Show all scoring (defense, bonuses & more)'}
-        </button>
       </div>
 
       {/* Roster Format */}

@@ -50,8 +50,8 @@ export function ContestDetailsModal({
           </div>
         </div>
 
-        {/* Shared tabbed info — How it Works / Contest / FAQ / Provably Fair */}
-        <ContestInfoTabs contest={contest} onClose={onClose} />
+        {/* Shared tabbed info — How it Works / Contest / FAQ */}
+        <ContestInfoTabs contest={contest} />
 
         {/* Actions */}
         <div className="flex gap-3 pt-4 border-t border-bg-tertiary">
