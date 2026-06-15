@@ -164,9 +164,9 @@ export default function PrizesPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
         <div className="text-center py-12">
           <div className="text-6xl mb-4">🏆</div>
-          <h1 className="text-3xl font-bold text-text-primary mb-4">Prizes</h1>
+          <h1 className="text-3xl font-bold text-text-primary mb-4">Winnings</h1>
           <p className="text-text-secondary mb-6">
-            View your prize history and eligibility status
+            Win drafts and your prizes will land here.
           </p>
           <button onClick={() => setShowLoginModal(true)} className="btn-primary">
             Log In to View
@@ -179,7 +179,7 @@ export default function PrizesPage() {
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Prizes</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Winnings</h1>
 
         {/* Balance hero — always renders, even at $0. Apple-clean:
             generous padding, soft gradient, big tracked-tight number,
@@ -272,12 +272,6 @@ export default function PrizesPage() {
                     </div>
                   )}
 
-                  {!hasBalance && !hasPrizeError && (
-                    <p className="text-sm text-text-muted">
-                      Win drafts and your prizes will land here.
-                    </p>
-                  )}
-
                   {hasPrizeError && (
                     <p className="text-sm text-warning">
                       We couldn&apos;t load your balance. Refresh to try again — your winnings are safe.
@@ -289,7 +283,7 @@ export default function PrizesPage() {
                     instant once they win. Hidden during fetch errors;
                     the warning line above owns that state. */}
                 {!hasBalance && !hasPrizeError && (
-                  <div className="mt-5">
+                  <div>
                     {isEligible ? (
                       <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-success" />
@@ -381,12 +375,6 @@ export default function PrizesPage() {
           <div className="text-center py-12 rounded-2xl border border-error/20 bg-error/5">
             <p className="text-error font-medium">Unable to load prize activity</p>
             <p className="text-text-muted text-sm mt-1">Please refresh the page to try again.</p>
-          </div>
-        )}
-
-        {!hasPrizeError && prizes.length === 0 && (prizesQuery.isLoading || prizesQuery.isValidating) && (
-          <div className="text-center py-12">
-            <p className="text-text-muted text-sm">Loading…</p>
           </div>
         )}
 
@@ -516,14 +504,6 @@ export default function PrizesPage() {
           );
         })()}
 
-        {/* Empty state only when fetch fully settled (not loading + not
-            validating + no error) AND prizes truly empty. */}
-        {!prizesQuery.error && !prizesQuery.isLoading && !prizesQuery.isValidating && prizes.length === 0 && (
-          <div className="text-center py-16">
-            <div className="text-4xl mb-3">🎯</div>
-            <p className="text-text-muted text-sm">No prizes yet. Start drafting to win.</p>
-          </div>
-        )}
       </section>
 
       <WithdrawModal

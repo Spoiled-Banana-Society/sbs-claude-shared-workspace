@@ -44,7 +44,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
   };
   useEffect(() => {
     // Keep targets warm so the page swap is instant.
-    ['/drafting', '/banana-wheel', '/my-teams', '/notifications'].forEach((h) => {
+    ['/draft', '/teams', '/promos', '/banana-wheel', '/notifications'].forEach((h) => {
       try { router.prefetch(h); } catch { /* best-effort */ }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,16 +52,44 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
 
   const tabs = [
     {
-      href: '/drafting',
+      href: '/draft',
       label: 'Draft',
-      matchPaths: ['/drafting', '/draft-room', '/buy-drafts'],
+      matchPaths: ['/draft', '/draft-room', '/buy-drafts'],
       badge: 0,
       icon: (active: boolean) => (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill={active ? '#fbbf24' : 'none'} stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z" />
-          <path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z" />
-          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M20 4 Q4 4 4 20 Q20 20 20 4 Z" />
+          <path d="M8 16 L16 8" />
+          <path d="M9.5 13.5 L11 15 M11.5 11.5 L13 13 M13.5 9.5 L15 11" />
+        </svg>
+      ),
+    },
+    {
+      href: '/teams',
+      label: 'Teams',
+      matchPaths: ['/teams', '/exposure'],
+      badge: 0,
+      icon: (active: boolean) => (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      ),
+    },
+    {
+      href: '/promos',
+      label: 'Promos',
+      matchPaths: ['/promos'],
+      badge: 0,
+      icon: (active: boolean) => (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 12 20 22 4 22 4 12" />
+          <rect x="2" y="7" width="20" height="5" />
+          <line x1="12" y1="22" x2="12" y2="7" />
+          <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
+          <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
         </svg>
       ),
     },
@@ -70,6 +98,8 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       label: 'Spin',
       matchPaths: ['/banana-wheel'],
       badge: wheelSpins,
+      exactBadge: true, // wheel spins always show the real count, never "9+"
+      badgeYellow: true, // spins = a reward you hold (banana), not a red alert
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -82,19 +112,6 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
           <path d="M16.24 16.24l2.83 2.83" />
           <path d="M4.93 19.07l2.83-2.83" />
           <path d="M16.24 7.76l2.83-2.83" />
-        </svg>
-      ),
-    },
-    {
-      href: '/my-teams',
-      label: 'Teams',
-      matchPaths: ['/my-teams', '/exposure'],
-      badge: 0,
-      icon: (active: boolean) => (
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M18 20V10" />
-          <path d="M12 20V4" />
-          <path d="M6 20v-6" />
         </svg>
       ),
     },
@@ -140,8 +157,10 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
               <div className="relative">
                 {tab.icon(active)}
                 {tab.badge > 0 && (
-                  <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
-                    {tab.badge > 9 ? '9+' : tab.badge}
+                  <span className={`absolute -top-1.5 -right-2 min-w-[16px] h-[16px] text-[9px] font-bold rounded-full flex items-center justify-center px-0.5 ${
+                    (tab as { badgeYellow?: boolean }).badgeYellow ? 'bg-banana text-black' : 'bg-red-500 text-white'
+                  }`}>
+                    {tab.badge > 9 && !(tab as { exactBadge?: boolean }).exactBadge ? '9+' : tab.badge}
                   </span>
                 )}
               </div>

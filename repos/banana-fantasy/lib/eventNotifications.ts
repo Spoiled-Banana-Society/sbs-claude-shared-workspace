@@ -32,18 +32,14 @@ export function eventNotificationContent(
         message: badge.description,
         link: '/profile?tab=badges',
         dedupeKey: `badge-${payload.badgeId}`,
-        icon: badge.glyph,
+        icon: 'award',
       };
     }
     case 'promo-new-user':
-      return {
-        type: 'promo',
-        title: 'Welcome bonus ready!',
-        message: 'Your new-user free spin is waiting on the promos page.',
-        link: '/promos',
-        dedupeKey: `promo-new-user-${userId}`,
-        icon: 'gift',
-      };
+      // No bell — the single welcome bell is already created once on signup
+      // (type 'welcome', dedupeKey 'welcome-new-user' in createUser). Firing
+      // another here on X-verify would be a duplicate welcome (Boris 2026-06-14).
+      return null;
     case 'promo-pick-10': {
       const pickSlot = payload.slot ?? 10;
       return {

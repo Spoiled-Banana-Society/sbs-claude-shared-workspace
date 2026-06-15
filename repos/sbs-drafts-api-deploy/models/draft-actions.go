@@ -27,6 +27,13 @@ type RealTimeDraftInfo struct {
 	LastPick          PlayerStateInfo `json:"lastPick"`
 	IsDraftComplete   bool            `json:"isDraftComplete"`
 	IsDraftClosed     bool            `json:"isDraftClosed"`
+	// Draft type ("Pro"/"Hall of Fame"/"Jackpot"), set once at fill so both
+	// mobile and desktop read the SAME value live off this node instead of
+	// each device deriving it from its own owner-token lookup (the source of
+	// the HOF-shows-as-PRO desync). It's a struct field — not a sibling write —
+	// so the per-pick Update() below re-serializes it every pick and it never
+	// gets wiped. omitempty keeps it out of any theoretical fresh-struct write.
+	Type string `json:"type,omitempty"`
 }
 
 func GetRealTimeDraftInfoForDraft(draftId string) (*RealTimeDraftInfo, error) {
@@ -113,36 +120,55 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		return err
 	}
 
-	// Update Draft State in database
-	err = pickInfo.UpdateDraftSummary(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdateDraftSummary): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		logCriticalDraftError("pick_summary_write_failed", draftId, pickInfo.PickNum, err)
-		return err
-	}
+	// Persist the pick to its three INDEPENDENT state docs (summary, rosters,
+	// playerState) CONCURRENTLY instead of one-after-another, and read draftInfo
+	// + league (needed for the advance) alongside them. Each write touches a
+	// separate document and none reads another's write, so this is safe — it
+	// just shrinks the time before we write realTimeDraftInfo (the signal the
+	// draft page + the other device read) from ~3 sequential round-trips to ~1,
+	// so they keep up near-instantly instead of lagging 1-2s.
+	//
+	// SAFETY UNCHANGED: we still wait for ALL saves to succeed BEFORE advancing
+	// realTimeDraftInfo below. Any save error returns here (no advance), and the
+	// Cloud-Tasks retry re-runs every step — each is replay-idempotent (summary
+	// replay guard, roster rosterHasPlayer guard, playerState overwrite). So the
+	// freeze/lost-pick protection (save-then-advance) is preserved exactly.
+	var (
+		summaryErr, rosterErr, playerErr, draftInfoErr, leagueReadErr error
+		draftInfo                                                     *DraftInfo
+		league                                                        League
+	)
+	var pickWg sync.WaitGroup
+	pickWg.Add(5)
+	go func() { defer pickWg.Done(); summaryErr = pickInfo.UpdateDraftSummary(draftId) }()
+	go func() {
+		defer pickWg.Done()
+		rosterErr = UpdateRosterFromPick(draftId, pickInfo.OwnerAddress, pickInfo.Team, pickInfo.Position, pickInfo.PlayerId, pickInfo.DisplayName, pickInfo.Round)
+	}()
+	go func() { defer pickWg.Done(); playerErr = pickInfo.UpdatePlayerInDraft(draftId) }()
+	go func() { defer pickWg.Done(); draftInfo, draftInfoErr = ReturnDraftInfoForDraft(draftId) }()
+	go func() { defer pickWg.Done(); leagueReadErr = utils.Db.ReadDocument("drafts", draftId, &league) }()
+	pickWg.Wait()
 
-	err = UpdateRosterFromPick(draftId, pickInfo.OwnerAddress, pickInfo.Team, pickInfo.Position, pickInfo.PlayerId, pickInfo.DisplayName, pickInfo.Round)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdateRosterFromPick): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		logCriticalDraftError("pick_roster_write_failed", draftId, pickInfo.PickNum, err)
-		return err
+	if summaryErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdateDraftSummary): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, summaryErr)
+		logCriticalDraftError("pick_summary_write_failed", draftId, pickInfo.PickNum, summaryErr)
+		return summaryErr
 	}
-
-	err = pickInfo.UpdatePlayerInDraft(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (UpdatePlayerInDraft): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, err)
-		logCriticalDraftError("pick_player_state_write_failed", draftId, pickInfo.PickNum, err)
-		return err
+	if rosterErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdateRosterFromPick): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, rosterErr)
+		logCriticalDraftError("pick_roster_write_failed", draftId, pickInfo.PickNum, rosterErr)
+		return rosterErr
 	}
-
-	draftInfo, err := ReturnDraftInfoForDraft(draftId)
-	if err != nil {
-		fmt.Printf("ProcessNewPick error (ReturnDraftInfoForDraft): draftId=%s err=%v\n", draftId, err)
-		return err
+	if playerErr != nil {
+		fmt.Printf("ProcessNewPick error (UpdatePlayerInDraft): draftId=%s pickInfo=%+v err=%v\n", draftId, pickInfo, playerErr)
+		logCriticalDraftError("pick_player_state_write_failed", draftId, pickInfo.PickNum, playerErr)
+		return playerErr
 	}
-
-	var league League
-	leagueReadErr := utils.Db.ReadDocument("drafts", draftId, &league)
+	if draftInfoErr != nil {
+		fmt.Printf("ProcessNewPick error (ReturnDraftInfoForDraft): draftId=%s err=%v\n", draftId, draftInfoErr)
+		return draftInfoErr
+	}
 	if leagueReadErr != nil {
 		fmt.Printf("ProcessNewPick warning (ReadDocument league): draftId=%s err=%v — using non-slow pick end semantics\n", draftId, leagueReadErr)
 	}

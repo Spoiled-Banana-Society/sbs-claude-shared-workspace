@@ -14,6 +14,34 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications } from '@/hooks/admin/useAdminNotifications';
 
+// ── Clean "Option C" header glyphs — bare, monochrome, gold accent only ──
+const HEADER_SPOKES: [number, number][] = [
+  [50, 4], [82.5, 17.5], [96, 50], [82.5, 82.5], [50, 96], [17.5, 82.5], [4, 50], [17.5, 17.5],
+];
+// The logo wheel drawn purely in lines (no shading), monochrome.
+function HeaderWheel({ size = 28 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} className="transition-transform group-hover:scale-110">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.62)" strokeWidth="3" />
+      <g stroke="rgba(255,255,255,0.55)" strokeWidth="2.4" strokeLinecap="round">
+        {HEADER_SPOKES.map(([x, y], i) => <line key={i} x1="50" y1="50" x2={x} y2={y} />)}
+      </g>
+      <circle cx="50" cy="50" r="11.5" fill="#0c0d11" stroke="rgba(255,255,255,0.62)" strokeWidth="2.6" />
+    </svg>
+  );
+}
+// Draft pass: a gold ticket with the count INSIDE it (no floating badge).
+function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: number }) {
+  return (
+    <span className="relative inline-flex items-center justify-center transition-transform group-hover:scale-110" style={{ width: w, height: h }}>
+      <svg viewBox="0 0 48 30" width={w} height={h} fill="none" stroke="rgba(255,255,255,0.48)" strokeWidth="1.8" strokeLinejoin="round">
+        <path d="M4 9A3 3 0 0 1 7 6h34a3 3 0 0 1 3 3v2.5a3.5 3.5 0 0 0 0 7V21a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-2.5a3.5 3.5 0 0 0 0-7z" />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center font-bold text-banana tabular-nums" style={{ fontSize: h >= 24 ? 12 : 11 }}>{count}</span>
+    </span>
+  );
+}
+
 interface HeaderProps {
   onEditProfile: () => void;
   onShowTutorial?: () => void;
@@ -34,13 +62,12 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
   // Nav items — desktop only
   const navItems = [
-    { href: '/drafting', label: 'Drafting', tooltip: 'View active drafts', auth: false },
+    { href: '/draft', label: 'Draft', tooltip: 'View active drafts', auth: false },
+    { href: '/teams', label: 'Teams', tooltip: 'Your drafted teams', auth: true },
     { href: '/promos', label: 'Promos', tooltip: 'Claim free spins & rewards', auth: false },
-    { href: '/my-teams', label: 'My Teams', tooltip: 'Your drafted teams', auth: true },
-    { href: '/rankings', label: 'Rankings', tooltip: 'Custom rankings & auto-draft limits', auth: false },
-    { href: '/exposure', label: 'Exposure', tooltip: 'Player & team exposure', auth: true },
-    { href: '/marketplace', label: 'Marketplace', tooltip: 'Buy & sell teams', auth: false },
-    { href: '/faq', label: 'FAQ', tooltip: 'Frequently asked questions', auth: false },
+    // Rankings, Exposure, Marketplace, FAQ moved to where they're used —
+    // Rankings on the draft page; Exposure & Marketplace under Teams; FAQ in
+    // the profile menu — so they no longer clutter the top nav.
     // Leaderboard intentionally hidden until the season starts (no scores yet).
     ...(isAdminWallet ? [{ href: '/admin', label: 'Admin', tooltip: 'Admin dashboard', auth: true }] : []),
   ].filter((item) => !item.auth || isLoading || isLoggedIn);
@@ -123,6 +150,24 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                 {/* Batch Progress — visible on all sizes */}
                 <BatchProgressIndicator />
 
+                {/* Draft passes — mobile only (desktop shows the gold ticket
+                    in the icon row below). Sits next to the JP/HOF batch
+                    counter so the user's "ammo" is always one glance away.
+                    Total only; the paid/free split lives in the profile menu. */}
+                {/* Mobile pass total — no tooltip: a tap navigates to Buy, so a
+                    hover-card just flashes for a beat before the modal. Tapping
+                    goes straight to Buy; the paid/free split lives in the
+                    profile menu's "Your Passes" card. */}
+                {isLoggedIn && user && (
+                  <Link
+                    href="/buy-drafts"
+                    aria-label={`Draft passes: ${user.draftPasses + user.freeDrafts} available`}
+                    className="group md:hidden flex items-center mr-1 px-1.5 py-1 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+                  >
+                    <PassTicket count={user.draftPasses + user.freeDrafts} w={34} h={22} />
+                  </Link>
+                )}
+
                 {/* ── Desktop-only icons ── */}
                 <div className="hidden md:contents">
                   {/* Draft Passes */}
@@ -143,18 +188,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       aria-label={`Draft passes: ${isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0} available`}
                       className="flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
-                      <svg width="41" height="26" viewBox="0 0 88 56" className="transition-transform group-hover:scale-110 w-[41px] h-[26px]">
-                        <defs>
-                          <linearGradient id="goldGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                            <stop offset="0%" stopColor="#FBBF24"/>
-                            <stop offset="100%" stopColor="#D97706"/>
-                          </linearGradient>
-                        </defs>
-                        <rect x="0" y="0" width="88" height="56" rx="6" fill="url(#goldGradient)"/>
-                        <circle cx="0" cy="28" r="6" fill="#1a1a2e"/>
-                        <circle cx="88" cy="28" r="6" fill="#1a1a2e"/>
-                        <text x="44" y="40" textAnchor="middle" fill="#1C1C1E" fontSize="32" fontWeight="bold" fontFamily="system-ui">{isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0}</text>
-                      </svg>
+                      <PassTicket count={isLoggedIn && user ? user.draftPasses + user.freeDrafts : 0} w={40} h={25} />
                     </Link>
                   </Tooltip>
 
@@ -178,20 +212,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
                       aria-label={`Banana Wheel${isLoggedIn && user && user.wheelSpins > 0 ? `: ${user.wheelSpins} spins available` : ''}`}
                       className="relative flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-all group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
                     >
-                      <svg width="36" height="36" viewBox="0 0 100 100" className="transition-transform group-hover:scale-110 w-[36px] h-[36px]">
-                        <circle cx="50" cy="50" r="48" fill="#2D3A6D" stroke="#1E2A5E" strokeWidth="2"/>
-                        <path d="M50,50 L50,8 A42,42 0 0,1 79.7,20.3 Z" fill="#F59E0B"/>
-                        <path d="M50,50 L79.7,20.3 A42,42 0 0,1 92,50 Z" fill="#EC4899"/>
-                        <path d="M50,50 L92,50 A42,42 0 0,1 79.7,79.7 Z" fill="#8B5CF6"/>
-                        <path d="M50,50 L79.7,79.7 A42,42 0 0,1 50,92 Z" fill="#F97316"/>
-                        <path d="M50,50 L50,92 A42,42 0 0,1 20.3,79.7 Z" fill="#EF4444"/>
-                        <path d="M50,50 L20.3,79.7 A42,42 0 0,1 8,50 Z" fill="#22C55E"/>
-                        <path d="M50,50 L8,50 A42,42 0 0,1 20.3,20.3 Z" fill="#FBBF24"/>
-                        <path d="M50,50 L20.3,20.3 A42,42 0 0,1 50,8 Z" fill="#06B6D4"/>
-                        <circle cx="50" cy="50" r="14" fill="#1E2A5E"/>
-                        <image href="/sbs-logo.png" x="40" y="40" width="20" height="20" />
-                        <path d="M50,0 L44,14 L56,14 Z" fill="#F59E0B"/>
-                      </svg>
+                      <HeaderWheel size={28} />
                       {isLoggedIn && user && user.wheelSpins > 0 && (
                         <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-banana text-black text-[10px] font-bold rounded-full flex items-center justify-center px-1">
                           {user.wheelSpins}

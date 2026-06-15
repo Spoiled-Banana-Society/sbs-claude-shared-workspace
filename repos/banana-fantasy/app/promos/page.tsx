@@ -153,6 +153,21 @@ export default function PromosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
 
+  // Promos you're actively working toward right now — has a progress bar or a
+  // live timer, not yet claimable or claimed. Answers "what's cooking" at a
+  // glance on the stat row.
+  const activeCount = useMemo(() => visiblePromos.filter(p =>
+    !hasVisibleClaim(p) && !isClaimed(p) && (p.progressMax || p.timerEndTime)).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visiblePromos, isTwitterVerified, claimedLocally, newUserPromoClaimed]);
+
+  // Spendable balances for the stat row.
+  const freeSpins = user?.wheelSpins ?? 0;
+  const freeDrafts = user?.freeDrafts ?? 0;
+  const jpEntries = user?.jackpotEntries ?? 0;
+  const hofEntries = user?.hofEntries ?? 0;
+  const specialEntries = jpEntries + hofEntries;
+
   const handleClaim = async (promo: Promo): Promise<boolean> => {
     if (!isLoggedIn) {
       setShowLoginModal(true);
@@ -234,7 +249,7 @@ export default function PromosPage() {
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-10 sm:mb-14 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
-          <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">Promos</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Promos</h1>
           <p className="text-white/40 text-sm sm:text-base mt-2">
             Earn free spins, drafts, and entries.
           </p>
@@ -251,20 +266,31 @@ export default function PromosPage() {
         )}
       </div>
 
-      {/* ── Stat tiles — minimal, single rounded card with internal dividers ─── */}
+      {/* ── Stat tiles — a clean TLDR: what's ready, what's cooking, and what
+          you've got to spend. Minimal single card with internal dividers. ─── */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] mb-10 grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-white/[0.06]">
         <StatTile
           label="Claimable"
           value={totalClaimableRewards}
-          sublabel={claimableCount > 0 ? `from ${claimableCount} promo${claimableCount === 1 ? '' : 's'}` : undefined}
+          sublabel={claimableCount > 0 ? 'ready to claim now' : 'all caught up'}
           highlight={totalClaimableRewards > 0}
         />
-        <StatTile label="Free spins" value={user?.wheelSpins ?? 0} />
-        <StatTile label="Free drafts" value={user?.freeDrafts ?? 0} />
         <StatTile
-          label="Special entries"
-          value={(user?.jackpotEntries ?? 0) + (user?.hofEntries ?? 0)}
-          sublabel={`${user?.jackpotEntries ?? 0} JP · ${user?.hofEntries ?? 0} HOF`}
+          label="In progress"
+          value={activeCount}
+          sublabel={activeCount > 0 ? 'promos still earning' : 'nothing active'}
+        />
+        <StatTile
+          label="Free spins"
+          value={freeSpins}
+          sublabel={freeSpins > 0 ? 'use on the Banana Wheel' : 'none right now'}
+        />
+        <StatTile
+          label="Free drafts"
+          value={freeDrafts}
+          sublabel={specialEntries > 0
+            ? `+ ${jpEntries} JP · ${hofEntries} HOF entries`
+            : (freeDrafts > 0 ? 'enter a draft free' : 'none right now')}
         />
       </div>
 

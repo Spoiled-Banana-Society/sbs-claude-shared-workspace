@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description:
     'View your Banana Fantasy teams, roster performance, and public leaderboards across contests.',
   alternates: {
-    canonical: '/my-teams',
+    canonical: '/teams',
   },
 };
 

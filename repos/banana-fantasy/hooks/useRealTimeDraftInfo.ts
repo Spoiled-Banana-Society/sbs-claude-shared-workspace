@@ -19,6 +19,12 @@ export interface RealTimeDraftInfo {
   lastPick: LastPickInfo | null;
   isDraftComplete: boolean;
   isDraftClosed: boolean;
+  // Draft type, synced LIVE from the server when the draft fills so every
+  // device shows the same Pro/HOF/Jackpot (no per-device derivation drift).
+  // Optional: older server builds don't write it yet — frontend falls back to
+  // the owner-token-level resolution until the backend write + RTDB read-rule
+  // ship. Server writes the human strings OR the short codes; both accepted.
+  type?: 'pro' | 'hof' | 'jackpot' | 'Pro' | 'Hall of Fame' | 'Jackpot' | null;
 }
 
 export interface LastPickInfo {

@@ -104,7 +104,18 @@ async function checkDraft(db: Firestore, draftId: string, maxTokenId: number): P
   // we don't strand a genuinely-finished draft.
   const closed = await isDraftClosed(draftId);
 
-  // Captured = every real token has an index doc: status 'team' + players[] >= 10.
+  // AUTHORITATIVE capture signal: refresh-draft stamps marketplace_capture/{id}
+  // once every REAL team is indexed (written >= eligible). Trust it directly —
+  // it's immune to the cardId-vs-realId index-key mismatch and to bot/short
+  // tokens that the per-token scan below required forever but refresh-draft
+  // never writes (the permanent `gave_up` root cause). The per-token scan stays
+  // ONLY as a fallback for drafts captured before this marker existed.
+  const marker = await db.collection('marketplace_capture').doc(draftId).get();
+  if (marker.exists && marker.get('capturedAt')) {
+    return { draftId, realTokenCount: realTokenIds.length, captured: true, closed };
+  }
+
+  // Fallback (legacy): every real token has an index doc: status 'team' + players[] >= 10.
   const refs = realTokenIds.map((id) => db.collection('marketplace_index').doc(id));
   const docs = await db.getAll(...refs);
   const captured = docs.every((d) => {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import {
   getTopExposures,
   getExposureByPosition,
@@ -282,13 +283,31 @@ export default function ExposurePage() {
     <div className="w-full min-h-screen px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
 
       {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Exposure</h1>
-        <p className="text-white/40 text-sm">
-          {totalDrafts > 0
-            ? `${totalDrafts} drafts · Portfolio breakdown across all your teams`
-            : 'Draft to start tracking your portfolio exposure'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">Exposure</h1>
+          <p className="text-white/40 text-sm">
+            {totalDrafts > 0
+              ? `${totalDrafts} drafts · Portfolio breakdown across all your teams`
+              : 'Draft to start tracking your portfolio exposure'}
+          </p>
+        </div>
+        {/* Back to Teams + Marketplace — mirrors the Teams-page header so the
+            two views feel like one section. */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Link
+            href="/teams"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Teams
+          </Link>
+          <Link
+            href="/marketplace"
+            className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+          >
+            Marketplace
+          </Link>
+        </div>
       </div>
 
       {/* ── Section 1: Portfolio Summary ────────────────────────────────── */}
@@ -374,12 +393,11 @@ export default function ExposurePage() {
       {/* ── Section 2: Position Exposure Table ─────────────────────────── */}
       <div className={exposureTab === 'positions' ? 'mb-10' : 'hidden'}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6 mb-6">
-          {/* Left: position pills + sort. Sort sits next to the position pills
-              (moved left, away from the search group) so the two searches can
-              live together on the right (Boris 2026-06-13). gap-4 keeps the
-              sort pills from crowding the position pills. */}
+          {/* Left: position pills. They WRAP on mobile so every position
+              (including DST) is visible without horizontal scrolling; on desktop
+              they stay a single scrollable row beside the sort toggle. */}
           <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <div className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:overflow-x-auto pb-1">
               <button
                 onClick={() => setPosFilter('all')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
@@ -407,7 +425,10 @@ export default function ExposurePage() {
                 );
               })}
             </div>
-            <div className="flex bg-white/[0.04] rounded-lg p-0.5 flex-shrink-0">
+            {/* Sort — desktop only, beside the pills. On mobile it drops to the
+                second line below (with the searches) so the pills get the full
+                width and never push DST off-screen. */}
+            <div className="hidden sm:flex bg-white/[0.04] rounded-lg p-0.5 flex-shrink-0">
               {([['exposure', 'Exp%'], ['adp', 'ADP']] as [SortField, string][]).map(([key, label]) => (
                 <button
                   key={key}
@@ -422,11 +443,23 @@ export default function ExposurePage() {
             </div>
           </div>
 
-          {/* Right: "Team #" lookup + slot search. Both kept compact so the
-              position pills get more room on the left (Boris 2026-06-13). The
-              Team # input opens that team's card via the detail modal — same
-              "search your team" idea as My Teams / Marketplace. */}
+          {/* Right (second line on mobile): sort (mobile only) + "Team #" lookup
+              + slot search. The Team # input opens that team's card via the detail
+              modal — same "search your team" idea as My Teams / Marketplace. */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex sm:hidden bg-white/[0.04] rounded-lg p-0.5 flex-shrink-0">
+              {([['exposure', 'Exp%'], ['adp', 'ADP']] as [SortField, string][]).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setSortBy(key)}
+                  className={`text-[11px] px-2.5 py-1 rounded-md transition-colors ${
+                    sortBy === key ? 'bg-banana text-black font-semibold' : 'text-white/50 hover:text-white/70'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <input
               type="number"
               inputMode="numeric"

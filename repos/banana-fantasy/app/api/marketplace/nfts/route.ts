@@ -9,7 +9,7 @@ import {
   type OpenSeaNft,
   type OpenSeaListing,
 } from '@/lib/opensea';
-import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
+import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits, getOwnerOnchainTokenIds } from '@/lib/marketplace/teamData';
 import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
 import { buildDraftPassUrl } from '@/lib/nftCard';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
@@ -18,6 +18,15 @@ import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 
 export const dynamic = 'force-dynamic';
+
+// A token only counts as a drafted TEAM once its roster is complete. Joining a
+// lobby assigns a _leagueId immediately (empty roster), so without this gate an
+// undrafted pass in a filling lobby flips hasBackendRecord true and wrongly
+// shows on the Teams page + Sell tab before the draft finishes. Matches the
+// Teams page bar (leagues filtered at roster.length >= 15). Wheel-won JP/HOF
+// passes mid-fill are the intended exception, surfaced via fillingWheelLevel.
+// (Boris 2026-06-15)
+const DRAFTED_ROSTER_MIN = 15;
 
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
@@ -110,6 +119,23 @@ export async function GET(req: Request) {
       // Cache only a fully-successful fetch (don't pin a partial/failed list).
       if (!nftFetchFailed) ownedCache.set(cacheKey, { ts: Date.now(), nfts: [...rawNfts] });
     }
+
+    // Authoritative backstop: union our own draftTokens (the SAME source the
+    // Teams page trusts) so a team that was just generated when a draft
+    // finished shows on Sell IMMEDIATELY, instead of waiting for Alchemy's
+    // owner index to catch up (the "my teams don't all show / aren't real-time"
+    // bug — nothing was sold; Alchemy was just behind on fresh mints). Runs
+    // every request (outside the Alchemy cache) so freshness isn't pinned.
+    // Best-effort + deduped, so it can only ADD missing teams, never remove.
+    try {
+      const ourTokenIds = await getOwnerOnchainTokenIds(owner);
+      const haveIds = new Set(rawNfts.map(n => n.identifier));
+      for (const tid of ourTokenIds) {
+        if (haveIds.has(tid)) continue;
+        haveIds.add(tid);
+        rawNfts.push({ identifier: tid, contract: BBB4_CONTRACT, traits: [], name: null, image_url: '', display_image_url: '' } as unknown as OpenSeaNft);
+      }
+    } catch { /* backstop is best-effort — Alchemy list still stands */ }
 
     const listingsRes = await listingsPromise;
 
@@ -210,8 +236,9 @@ export async function GET(req: Request) {
 
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);
-      const hasBackendRecord = teamsByToken.has(nft.identifier);
-      const leagueId = teamsByToken.get(nft.identifier)?.leagueId ?? null;
+      const teamRec = teamsByToken.get(nft.identifier);
+      const hasBackendRecord = !!teamRec && teamRec.roster.length >= DRAFTED_ROSTER_MIN;
+      const leagueId = teamRec?.leagueId ?? null;
       const pricePaid = trades.paidByToken.get(nft.identifier) ?? null;
       // Merge listing data if this token is actively listed
       const listing = listingMap.get(nft.identifier);
@@ -251,7 +278,7 @@ export async function GET(req: Request) {
         const listing = listingMap.get(b.tokenId);
         return {
           ...rest,
-          hasBackendRecord: !!team,
+          hasBackendRecord: !!team && team.roster.length >= DRAFTED_ROSTER_MIN,
           leagueId: team?.leagueId ?? null,
           pricePaid: trades.paidByToken.get(b.tokenId) ?? null,
           ...(listing ? { orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime } : {}),

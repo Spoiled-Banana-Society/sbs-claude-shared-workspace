@@ -26,7 +26,7 @@ export const wheelSegments: WheelSegment[] = [
   { id: 'jackpot', label: 'Jackpot', probability: JACKPOT, prizeType: 'custom', prizeValue: 'jackpot', color: '#ef4444' },
   { id: 'draft-1-c', label: '1 Draft', probability: DRAFT_ONE / 5, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
   { id: 'draft-10', label: '10 Drafts', probability: DRAFT_TEN, prizeType: 'draft_pass', prizeValue: 10, color: '#a78bfa' },
-  { id: 'draft-2', label: '2 Drafts', probability: DRAFT_TWO, prizeType: 'draft_pass', prizeValue: 2, color: '#a3e635' },
+  { id: 'draft-2', label: '2 Drafts', probability: DRAFT_TWO, prizeType: 'draft_pass', prizeValue: 2, color: '#14b8a6' },
   { id: 'hof', label: 'HOF', probability: HOF, prizeType: 'custom', prizeValue: 'hof', color: '#d4af37' },
   { id: 'draft-1-d', label: '1 Draft', probability: DRAFT_ONE / 5, prizeType: 'draft_pass', prizeValue: 1, color: '#94a3b8' },
   { id: 'draft-5-b', label: '5 Drafts', probability: DRAFT_FIVE / 2, prizeType: 'draft_pass', prizeValue: 5, color: '#22c55e' },

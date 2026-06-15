@@ -158,9 +158,14 @@ export async function PUT(req: NextRequest) {
   const unlink: 'telegram' | 'discord' | null =
     body.unlink === 'telegram' || body.unlink === 'discord' ? body.unlink : null;
 
+  // Any real toggle (channel / event / unlink) marks alerts as "configured"
+  // so the draft page can drop the "Draft Alerts" prompt — they've set it up
+  // and know where it lives now (Boris 2026-06-15).
+  const touchedToggle = !!patch.channels || !!patch.events || !!unlink;
+
   try {
     if (unlink) await unlinkChannel(wallet, unlink);
-    await setUserNotifPrefs(wallet, patch);
+    await setUserNotifPrefs(wallet, touchedToggle ? { ...patch, configured: true } : patch);
     const prefs = await getUserNotifPrefs(wallet);
     logger.debug(
       `[notifications/profile] saved wallet=${wallet} keys=${Object.keys(patch).join(',') || 'none'}${unlink ? ` unlink=${unlink}` : ''}`,

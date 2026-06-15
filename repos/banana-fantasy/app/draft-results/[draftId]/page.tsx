@@ -11,6 +11,7 @@ import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
+import { teamNoFromToken } from '@/lib/teamCardData';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { saveImageToDevice } from '@/lib/saveImage';
 
@@ -269,20 +270,15 @@ export default function DraftResultsPage() {
   // for future UI (e.g. "Pick #5" alongside the team identity).
   void pickPositionByOwner[selectedPlayer.toLowerCase()];
 
-  // "Team #N" is the user's BBB4 NFT token ID (sequential 1-800 per
-  // season). For legacy cards minted via test paths that used a Unix-ms
-  // timestamp as the id, render nothing — there is no meaningful "team
-  // number" for those, and showing a 13-digit number is worse than
-  // showing nothing. Real onchain tokenIds won't exceed ~100k for years.
-  const teamNumber = (() => {
-    if (!cardId) return '';
-    // Legacy `staging-X-N` ids: keep just the suffix.
-    const candidate = cardId.includes('-') ? (cardId.split('-').pop() ?? '') : cardId;
-    if (!candidate || !/^\d+$/.test(candidate)) return '';
-    const n = Number(candidate);
-    if (!Number.isFinite(n) || n <= 0 || n > 100_000) return '';
-    return String(n);
-  })();
+  // "Team #N" is the user's BBB4 NFT token ID. Resolve it the ONE canonical way
+  // (realTokenId preferred, else the cardId suffix) via the shared helper so the
+  // header, the card, and the downloadable image all show the IDENTICAL number —
+  // previously the header used the cardId suffix while the card used realTokenId,
+  // which could be two different numbers. Legacy ms-timestamp ids (>100k) → ''.
+  const teamNumber = teamNoFromToken({
+    realTokenId: realTokenIds[selectedPlayer.toLowerCase()],
+    cardId,
+  });
 
   // Fetch card image for selected player on demand
   useEffect(() => {
@@ -656,10 +652,10 @@ export default function DraftResultsPage() {
       const [tm, ps] = p.playerId.split('-');
       return { team: tm || p.team, pos: ps || p.position, bye: p.byeWeek, adp: p.adp || '-', pick: p.pickNum };
     });
-  // Team identity for the card: TEAM # = on-chain token id (fallback to the
-  // cardId-derived number), LEAGUE # = the numeric league id from the title.
-  const selectedRealTokenId = realTokenIds[selectedPlayer.toLowerCase()] || '';
-  const cardTeamNo = (/^\d+$/.test(selectedRealTokenId) ? selectedRealTokenId : teamNumber) || '';
+  // Team identity for the card: TEAM # = the SAME unified teamNumber the header
+  // uses (realTokenId preferred, else cardId suffix), LEAGUE # = numeric league
+  // id from the title. One source → header, card, and download never disagree.
+  const cardTeamNo = teamNumber;
   const leagueNumber = title.replace(/\D/g, '');
   // The 1080x1350 (X-safe) NFT image for download/share (team card has no pass #).
   const ogImageUrl = cardPlayers.length > 0

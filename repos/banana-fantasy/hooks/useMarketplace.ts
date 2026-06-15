@@ -605,25 +605,29 @@ export function useMyNftOffers(
 export function useMyMadeOffers(walletAddress: string | null): Record<string, number> {
   const [byToken, setByToken] = useState<Record<string, number>>({});
 
-  useEffect(() => {
+  // Stable refetch so the stream subscription (deps: wallet only) never churns.
+  const load = useCallback(async () => {
     if (!walletAddress) { setByToken({}); return; }
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch(`/api/marketplace/offers/mine?address=${walletAddress}`);
-        if (!res.ok || cancelled) return;
-        const json = await res.json();
-        const map: Record<string, number> = {};
-        for (const o of (json.offers ?? []) as Array<{ tokenId: string; priceUsd: number }>) {
-          // Keep the highest live offer per token for display.
-          if (!(o.tokenId in map) || o.priceUsd > map[o.tokenId]) map[o.tokenId] = o.priceUsd;
-        }
-        if (!cancelled) setByToken(map);
-      } catch { /* chip is best-effort */ }
-    };
-    void load();
-    return () => { cancelled = true; };
+    try {
+      const res = await fetch(`/api/marketplace/offers/mine?address=${walletAddress}`);
+      if (!res.ok) return;
+      const json = await res.json();
+      const map: Record<string, number> = {};
+      for (const o of (json.offers ?? []) as Array<{ tokenId: string; priceUsd: number }>) {
+        // Keep the highest live offer per token for display.
+        if (!(o.tokenId in map) || o.priceUsd > map[o.tokenId]) map[o.tokenId] = o.priceUsd;
+      }
+      setByToken(map);
+    } catch { /* chip is best-effort */ }
   }, [walletAddress]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // Real-time: the server pings the user's event stream on every offer action
+  // (the stream covers purchase/sale/offer), so the chip reflects a just-made
+  // or cancelled offer within ~300ms — and across devices — instead of being
+  // frozen at the mount value. Additive; the mount fetch above is the baseline.
+  useStreamRefetch(walletAddress, () => { void load(); });
 
   return byToken;
 }

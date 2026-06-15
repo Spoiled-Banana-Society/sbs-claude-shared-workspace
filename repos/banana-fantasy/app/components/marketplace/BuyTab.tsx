@@ -65,8 +65,6 @@ interface BuyTabProps {
 }
 
 export function BuyTab({
-  collectionStats,
-  statsLoading,
   viewFilter,
   rosterFilter,
   rosterFilterOptions,
@@ -120,123 +118,69 @@ export function BuyTab({
 
   return (
     <>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {statsLoading || !collectionStats ? (
-          <>
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-            <StatSkeleton />
-          </>
-        ) : (
-          <>
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Total Volume"
-              value={collectionStats.totalVolume > 0 ? `$${collectionStats.totalVolume.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '$0'}
-              detail={collectionStats.weeklyVolumeChange != null ? `${Math.abs(collectionStats.weeklyVolumeChange).toFixed(1)}% this week` : null}
-              detailClassName={collectionStats.weeklyVolumeChange != null && collectionStats.weeklyVolumeChange >= 0 ? 'text-success' : 'text-error'}
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-success/20"
-              label="Teams Listed"
-              value={collectionStats.totalListed.toLocaleString()}
-              detail={null}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-banana/20"
-              label="Floor Price"
-              value={collectionStats.floorPrice > 0 ? `$${collectionStats.floorPrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '--'}
-              detail={collectionStats.floorPriceSymbol}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-banana" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              )}
-            />
-            <StatCard
-              iconClassName="bg-hof/20"
-              label="Total Sales"
-              value={collectionStats.totalSales.toLocaleString()}
-              detail={`Avg $${collectionStats.averagePrice.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-              detailClassName="text-text-secondary"
-              icon={(
-                <svg className="w-5 h-5 text-hof" fill="currentColor" viewBox="0 0 24 24">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
-              )}
-            />
-          </>
-        )}
-      </div>
-
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary">
+          {/* Type filters wrap to rows on mobile (no horizontal scrolling). On
+              phones we drop the enclosing pill so the half-empty second row
+              doesn't read as a big empty box — just clean wrapping chips. The
+              desktop segmented pill returns at lg. */}
+          {/* Mobile: even 4-top / 3-bottom grid (12-col so both rows fill edge
+              to edge — no half-empty trailing row). Desktop: the segmented pill. */}
+          <div className="grid grid-cols-12 gap-1.5 lg:flex lg:flex-wrap lg:gap-1 lg:bg-bg-secondary lg:p-1 lg:rounded-xl lg:border lg:border-bg-tertiary w-full lg:w-auto">
             {([
-              { key: 'listed', label: 'Listed', count: undefined },
-              { key: 'all', label: 'All Teams', count: viewCounts?.all },
-              { key: 'top', label: 'Top Teams', count: undefined },
-              { key: 'pro', label: 'Pro', count: viewCounts?.pro },
-              { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
-              { key: 'hof', label: 'HOF', count: viewCounts?.hof },
-              { key: 'passes', label: 'Passes', count: viewCounts?.passes },
-            ] as const).map(filter => (
-              <button
-                key={filter.key}
-                onClick={() => onSetViewFilter(filter.key)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                {filter.label}
-                {typeof filter.count === 'number' && filter.count > 0 && (
-                  <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
-                    {filter.count.toLocaleString()}
-                  </sup>
-                )}
-              </button>
-            ))}
+                { key: 'listed', label: 'Listed', count: undefined },
+                { key: 'all', label: 'All Teams', count: viewCounts?.all },
+                { key: 'top', label: 'Top Teams', count: undefined },
+                { key: 'pro', label: 'Pro', count: viewCounts?.pro },
+                { key: 'jackpot', label: 'Jackpot', count: viewCounts?.jackpot },
+                { key: 'hof', label: 'HOF', count: viewCounts?.hof },
+                { key: 'passes', label: 'Passes', count: viewCounts?.passes },
+              ] as const).map((filter, idx) => (
+                <button
+                  key={filter.key}
+                  onClick={() => onSetViewFilter(filter.key)}
+                  className={`${idx < 4 ? 'col-span-3' : 'col-span-4'} px-2 sm:px-4 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap text-center transition-colors ${viewFilter === filter.key ? filter.key === 'jackpot' ? 'bg-error text-white' : filter.key === 'hof' ? 'bg-hof text-white' : filter.key === 'pro' ? 'bg-pro text-white' : filter.key === 'top' ? 'bg-success text-white' : 'bg-banana text-black' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {filter.label}
+                  {typeof filter.count === 'number' && filter.count > 0 && (
+                    <sup className={`ml-1 text-[9px] font-bold tabular-nums ${viewFilter === filter.key ? 'opacity-80' : 'opacity-50'}`}>
+                      {filter.count.toLocaleString()}
+                    </sup>
+                  )}
+                </button>
+              ))}
           </div>
 
+          {/* Roster search + League#/Team# grouped together, with the roster box
+              kept compact so they all sit on one tidy row with room to breathe
+              before the filter tabs. */}
           <MultiChipSearch
             chips={rosterFilter}
             onChange={onSetRosterFilter}
             options={rosterFilterOptions}
-            placeholder="Type a roster slot (e.g. KC QB)"
-            className="w-72"
+            placeholder="Roster slot (e.g. KC QB)"
+            className="w-full sm:w-52"
           />
 
-          {/* League # / Team # filters — backend-sourced (instant) via the on-chain-id index. */}
-          <input
-            type="number"
-            inputMode="numeric"
-            value={leagueFilter ?? ''}
-            onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
-            placeholder="League #"
-            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
-          <input
-            type="number"
-            inputMode="numeric"
-            value={teamFilter ?? ''}
-            onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
-            placeholder="Team #"
-            className="w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-          />
+          {/* League # / Team # filters — sit right next to the roster search. */}
+          <div className="flex gap-2 w-full sm:w-auto">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={leagueFilter ?? ''}
+              onChange={(e) => onSetLeagueFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="League #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <input
+              type="number"
+              inputMode="numeric"
+              value={teamFilter ?? ''}
+              onChange={(e) => onSetTeamFilter(e.target.value ? Number(e.target.value) : null)}
+              placeholder="Team #"
+              className="flex-1 sm:flex-none sm:w-28 px-3 py-1.5 rounded-lg bg-bg-primary border border-bg-tertiary text-sm font-mono text-text-primary placeholder:text-text-muted focus:border-banana outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -369,63 +313,66 @@ export function BuyTab({
                   )}
                 </div>
 
-                {/* bottom overlay: price/name + action (no separate footer = no dead space) */}
-                <div className="absolute inset-x-0 bottom-0 z-10 flex items-end justify-between gap-2.5 px-3.5 pt-10 pb-3.5 bg-gradient-to-t from-[#07080b] via-[#07080b]/60 to-transparent">
-                  <div className="min-w-0">
-                    {team.price != null ? (
-                      <>
-                        <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                        <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Draft Pass #${team.tokenId} (from Wheel)` : team.name}</p>
-                        <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'Won on the wheel · lobby filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
-                      </>
-                    )}
-                    {myMadeOffers?.[team.tokenId] != null && (
-                      <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
-                        Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    {sweepMode && team.price != null ? (
-                      <button
-                        onClick={event => { event.stopPropagation(); event.preventDefault(); onToggleSweepSelect(team.tokenId); }}
-                        className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-white/30 bg-[#08090c]/50 hover:border-white'}`}
-                      >
-                        {sweepSelected.has(team.tokenId) && (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
-                        )}
-                      </button>
-                    ) : walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
-                      team.price != null ? (
-                        <span className="text-text-muted text-xs font-bold px-3 py-2.5">You</span>
-                      ) : (
-                        <button
-                          onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
-                          className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
-                        >
-                          List
-                        </button>
-                      )
-                    ) : team.price != null ? (
-                      <button
-                        onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
-                        className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
-                      >
-                        Buy Now
-                      </button>
+              </div>
+
+              {/* Footer below the card — price/name + action on their own row so
+                  the button never covers the card's roster numbers (matches the
+                  Sell tab). */}
+              <div className="flex items-center justify-between gap-2.5 px-3.5 py-3 border-t border-bg-tertiary">
+                <div className="min-w-0">
+                  {team.price != null ? (
+                    <>
+                      <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
+                      <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-mono font-semibold text-[15px] text-text-primary truncate">{team.fillingWheelLevel ? `${team.fillingWheelLevel === 'jackpot' ? 'Jackpot' : 'HOF'} Pass #${team.tokenId}` : team.name}</p>
+                      <p className="font-mono text-[10.5px] text-text-muted truncate">{team.fillingWheelLevel ? 'From wheel · filling' : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}</p>
+                    </>
+                  )}
+                  {myMadeOffers?.[team.tokenId] != null && (
+                    <p className="font-mono text-[10.5px] text-banana font-semibold truncate">
+                      Your offer ${myMadeOffers[team.tokenId].toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  )}
+                </div>
+                <div className="flex-shrink-0 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                  {sweepMode && team.price != null ? (
+                    <button
+                      onClick={event => { event.stopPropagation(); event.preventDefault(); onToggleSweepSelect(team.tokenId); }}
+                      className={`w-9 h-9 rounded-lg border-2 flex items-center justify-center transition-all ${sweepSelected.has(team.tokenId) ? 'border-banana bg-banana text-black' : 'border-white/30 hover:border-white'}`}
+                    >
+                      {sweepSelected.has(team.tokenId) && (
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7" /></svg>
+                      )}
+                    </button>
+                  ) : walletAddress && team.ownerAddress?.toLowerCase() === walletAddress.toLowerCase() ? (
+                    team.price != null ? (
+                      <span className="text-text-muted text-xs font-bold px-3 py-2">You</span>
                     ) : (
                       <button
-                        onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
-                        className="px-5 py-2.5 rounded-xl text-sm font-bold border border-banana text-banana bg-[#08090c]/50 backdrop-blur-sm hover:bg-banana hover:text-black transition-all"
+                        onClick={event => { event.stopPropagation(); event.preventDefault(); onGoToSellTab(); }}
+                        className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
                       >
-                        Make Offer
+                        List
                       </button>
-                    )}
-                  </div>
+                    )
+                  ) : team.price != null ? (
+                    <button
+                      onClick={event => { event.stopPropagation(); onOpenBuyModal(team); }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                    >
+                      Buy Now
+                    </button>
+                  ) : (
+                    <button
+                      onClick={event => { event.stopPropagation(); event.preventDefault(); onMakeOffer(team.tokenId); }}
+                      className="px-4 py-2 rounded-xl text-xs font-bold border border-banana text-banana hover:bg-banana hover:text-black transition-all"
+                    >
+                      Make Offer
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -453,7 +400,7 @@ export function BuyTab({
               <span className="text-2xl">🏆</span>
               Top Performing Teams for Sale
             </h2>
-            <Link href="/my-teams" className="text-banana hover:underline text-sm font-medium transition-colors">
+            <Link href="/teams" className="text-banana hover:underline text-sm font-medium transition-colors">
               View Full Standings
             </Link>
           </div>
@@ -825,46 +772,6 @@ function CardSkeleton() {
           <div className="h-10 bg-bg-tertiary rounded w-24" />
         </div>
       </div>
-    </div>
-  );
-}
-
-function StatSkeleton() {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 animate-pulse">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="w-10 h-10 rounded-xl bg-bg-tertiary" />
-        <div className="h-3 bg-bg-tertiary rounded w-20" />
-      </div>
-      <div className="h-7 bg-bg-tertiary rounded w-24 mb-1" />
-      <div className="h-3 bg-bg-tertiary rounded w-32" />
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  iconClassName,
-  label,
-  value,
-  detail,
-  detailClassName,
-}: {
-  icon: React.ReactNode;
-  iconClassName: string;
-  label: string;
-  value: string;
-  detail: string | null;
-  detailClassName: string;
-}) {
-  return (
-    <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
-      <div className="flex items-center gap-3 mb-3">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconClassName}`}>{icon}</div>
-        <span className="text-text-muted text-xs uppercase tracking-wider">{label}</span>
-      </div>
-      <div className="text-2xl font-bold text-text-primary font-mono">{value}</div>
-      {detail && <div className={`text-xs mt-1 ${detailClassName}`}>{detail}</div>}
     </div>
   );
 }

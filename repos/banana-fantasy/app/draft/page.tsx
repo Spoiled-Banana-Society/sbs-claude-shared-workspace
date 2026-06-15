@@ -1,18 +1,19 @@
 'use client';
 
 import React from 'react';
-import { FounderDraftCard } from '@/components/home/TopBanners';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
 import { BatchProofBanner } from '@/components/drafting/BatchProofBanner';
 // CompletedDraftsList moved to Standings page
 import { PromosSidebar } from '@/components/drafting/PromosSidebar';
+import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
+import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
 
 const BuyPassesModal = dynamic(
   () => import('@/components/modals/BuyPassesModal').then(m => m.BuyPassesModal),
@@ -21,6 +22,7 @@ const BuyPassesModal = dynamic(
 // useHistory moved to Standings page
 import { logger } from '@/lib/logger';
 import { formatCountdown, formatRelativeTime, useDraftingPageState } from '@/hooks/useDraftingPageState';
+import { useDraftAlertsConfigured } from '@/hooks/useDraftAlertsConfigured';
 
 const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string }[] }> = {
   '10-players': {
@@ -122,7 +124,9 @@ export default function DraftingPage() {
     setShowContestDetails,
     setInfoTopic,
   } = useDraftingPageState();
+  const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
+  const [showDraftInfo, setShowDraftInfo] = React.useState(false);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live
@@ -133,7 +137,6 @@ export default function DraftingPage() {
 
   return (
     <>
-    <FounderDraftCard standalone />
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       {claimSuccess.show && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-banana text-black px-6 py-3 rounded-xl font-semibold shadow-lg animate-bounce">
@@ -141,31 +144,60 @@ export default function DraftingPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {activeDrafts.length > 0 && (
-            <>
-              <button
-                onClick={handleEnterDraft}
-                className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
-              >
-                New Draft
-              </button>
-              <button
-                onClick={() => router.push('/buy-drafts')}
-                className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
-              >
-                Buy Drafts
-              </button>
-            </>
+      <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
+        <div className="flex items-baseline gap-3">
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">Drafts</h1>
+            <button
+              onClick={() => setShowDraftInfo(true)}
+              aria-label="How drafts work, contest details & FAQ"
+              className="self-center -translate-y-[3px] text-white/30 hover:text-white/60 transition-colors"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </button>
+          </div>
+          {/* Rankings = pre-draft tool, kept as a quiet text link beside the
+              title. */}
+          <button
+            onClick={() => router.push('/rankings')}
+            aria-label="Pre-rank players and set auto-draft limits"
+            className="text-sm font-medium text-white/45 hover:text-banana transition-colors"
+          >
+            Rankings
+          </button>
+          {/* Draft Alerts — same quiet link, right of Rankings. Disappears once
+              the user has set alerts up (any toggle change), since they then
+              know where it lives (Boris 2026-06-15). Real-time via the focus
+              re-check in useDraftAlertsConfigured. */}
+          {draftAlertsConfigured !== true && (
+            <button
+              onClick={() => router.push('/notifications/settings')}
+              aria-label="Set up draft alerts — get notified when your draft starts and when it's your pick"
+              className="text-sm font-medium text-white/45 hover:text-banana transition-colors"
+            >
+              Draft Alerts
+            </button>
           )}
         </div>
+        {activeDrafts.length > 0 && (
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={handleEnterDraft}
+              className="w-28 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-lg hover:bg-banana hover:text-black hover:scale-105 transition-all"
+            >
+              New Draft
+            </button>
+            <button
+              onClick={() => router.push('/buy-drafts')}
+              className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
+            >
+              Buy Drafts
+            </button>
+          </div>
+        )}
       </div>
-
-      <div className="mb-6" />
 
       <div className="flex gap-6">
         <div className="flex-1 min-w-0">
@@ -241,7 +273,7 @@ export default function DraftingPage() {
                       </button>
                       <button onClick={() => setInfoTopic('team-positions')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Team Positions</h4>
-                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">KC QB</span> or <span className="text-white/50 font-medium">DAL WR1</span> — not individual players. You get the top scorer at that position each week.</p>
+                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">DAL WR1</span> and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.</p>
                       </button>
                       <button onClick={() => setInfoTopic('best-ball')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Best Ball</h4>
@@ -263,7 +295,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-pro">94%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for your share of the prize pool.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100K GTD Prize Pool.</p>
                       </button>
                       <button
                         onClick={() => setInfoTopic('hof')}
@@ -287,7 +319,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-jackpot">1%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals. The rarest draft type.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals.</p>
                       </button>
                     </div>
                   </div>
@@ -296,15 +328,25 @@ export default function DraftingPage() {
             </>
           ) : null}
 
-          {/* Mobile-only: the proof banner lives in the desktop sidebar
-              (hidden < lg). On small screens surface it as a quiet footer
-              trust seal at the bottom of the main column — not a big card. */}
-          <div className="lg:hidden mt-10 mb-2">
-            <BatchProofBanner display="seal" />
-          </div>
+          {/* Mobile-only: promos live in the desktop sidebar (hidden < lg).
+              On phones, use the SAME square promo carousel as the Spin page.
+              The VRF/proof seal moved into the draft-info modal's VRF tab
+              (Boris 2026-06-15), so promos own the spacing now — pushed well
+              down when there's an active draft so the lobby stays the focus. */}
+          {(promosQuery.promos?.length ?? 0) > 0 && (
+            <div className={`lg:hidden ${activeDrafts.length > 0 ? 'mt-48' : 'mt-9'}`}>
+              <PromoCarousel
+                heading="Promos"
+                promos={promosQuery.promos ?? []}
+                claimPromo={promosQuery.claimPromo}
+                onVerifyTweet={promosQuery.verifyTweetEngagement}
+                onGenerateReferralCode={promosQuery.generateReferralCode}
+              />
+            </div>
+          )}
         </div>
 
-        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4">
+        <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4 mt-14">
           <PromosSidebar
             promos={promos}
             promoIndex={promoIndex}
@@ -417,6 +459,8 @@ export default function DraftingPage() {
           }}
         />
       )}
+
+      <DraftInfoModal isOpen={showDraftInfo} onClose={() => setShowDraftInfo(false)} contest={contest ?? null} />
 
       <PromoModal
         isOpen={!!selectedPromo}

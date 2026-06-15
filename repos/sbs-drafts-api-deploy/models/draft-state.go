@@ -795,6 +795,17 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
 	}
+	// Stamp the resolved type onto the live node so both devices read the same
+	// Pro/HOF/Jackpot the instant the slot reveal lands — no per-device owner
+	// lookup, no desync. Derived from the same isJackpot/isHOF decision above
+	// (which already folds in wheel-won special drafts via specialLevel).
+	if isJackpot {
+		firstPickInfo.Type = "Jackpot"
+	} else if isHOF {
+		firstPickInfo.Type = "Hall of Fame"
+	} else {
+		firstPickInfo.Type = "Pro"
+	}
 	if strings.ToLower(leagueInfo.DraftType) == "slow" {
 		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
 	} else {

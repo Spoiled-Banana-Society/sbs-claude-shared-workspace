@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { TeamCard } from '@/components/standings/TeamCard';
 import { LeagueDetailModal, type ModalTab } from '@/components/standings/LeagueDetailModal';
 import { LeaderboardView } from '@/components/standings/LeaderboardView';
@@ -311,13 +312,34 @@ export default function StandingsPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
       {/* Page header — pure My Teams for now. The Week selector + My Teams /
           Leaderboard toggle return when the season starts (scores exist). */}
-      <div className="mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-          {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
-        </h1>
-        <p className="text-white/40 text-sm">
-          {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            {viewMode === 'myteams' ? 'Teams' : 'Standings'}
+          </h1>
+          {viewMode !== 'myteams' && (
+            <p className="text-white/40 text-sm mt-1">View the global leaderboard</p>
+          )}
+        </div>
+        {/* Exposure + Marketplace — on the right of the Teams header, same spot
+            and treatment as Rankings on the drafting page. Exposure is a view
+            of this same roster; Marketplace is where you buy/sell these teams. */}
+        {viewMode === 'myteams' && (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Link
+              href="/exposure"
+              className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+            >
+              Exposure
+            </Link>
+            <Link
+              href="/marketplace"
+              className="px-3 py-2 text-sm font-medium text-white/60 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all"
+            >
+              Marketplace
+            </Link>
+          </div>
+        )}
       </div>
 
       {/* MY TEAMS VIEW — also render while auth is still rehydrating on refresh
@@ -368,7 +390,7 @@ export default function StandingsPage() {
                     value={leagueQuery}
                     onChange={(e) => setLeagueQuery(e.target.value)}
                     placeholder="League #"
-                    className="w-[88px] sm:w-[110px] flex-shrink-0 px-4 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-[96px] sm:w-[110px] flex-shrink-0 px-3 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <input
                     type="number"
@@ -376,7 +398,7 @@ export default function StandingsPage() {
                     value={teamQuery}
                     onChange={(e) => setTeamQuery(e.target.value)}
                     placeholder="Team #"
-                    className="w-[80px] sm:w-[110px] flex-shrink-0 px-4 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    className="w-[88px] sm:w-[110px] flex-shrink-0 px-3 py-2 rounded-[10px] bg-white/[0.03] border border-white/[0.06] text-[13px] font-medium text-white placeholder:text-white/40 focus:border-banana/50 hover:bg-white/[0.06] outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                 </div>
               </div>
@@ -484,7 +506,7 @@ export default function StandingsPage() {
               <p className="text-white/50 font-medium mb-2">No teams yet</p>
               <p className="text-white/30 text-sm mb-6">Your drafted teams will show here.</p>
               <a
-                href="/"
+                href="/draft"
                 className="inline-block px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:bg-banana-dark transition-colors"
               >
                 Start Drafting

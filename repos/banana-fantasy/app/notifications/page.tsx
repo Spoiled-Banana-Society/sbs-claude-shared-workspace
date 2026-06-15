@@ -29,6 +29,9 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   withdrawal_paid: { emoji: '✅', color: '#22c55e', label: 'Cash Out' },
   withdrawal_denied: { emoji: '⚠️', color: '#ef4444', label: 'Cash Out' },
   base_guide: { emoji: '⚡', color: '#fbbf24', label: 'Base' },
+  app_download: { emoji: '📱', color: '#fbbf24', label: 'App' },
+  founder_draft: { emoji: '👑', color: '#06b6d4', label: 'Founder' },
+  draft_alerts: { emoji: '🔔', color: '#fbbf24', label: 'Draft Alerts' },
 };
 
 const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280', label: 'Notification' };
@@ -203,12 +206,9 @@ export default function NotificationsPage() {
                         : 'bg-white/[0.02] border-white/[0.04] hover:bg-white/[0.04]'
                     }`}
                   >
-                    {/* Icon */}
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg"
-                      style={{ backgroundColor: `${config.color}15` }}
-                    >
-                      <NotificationIcon icon={notif.icon} type={notif.type} color={config.color} size={20} />
+                    {/* Icon — quiet grey, no tile, so the message text leads */}
+                    <div className="w-9 h-9 flex items-center justify-center flex-shrink-0">
+                      <NotificationIcon icon={notif.icon} type={notif.type} color="rgba(255,255,255,0.5)" size={20} />
                     </div>
 
                     {/* Content */}

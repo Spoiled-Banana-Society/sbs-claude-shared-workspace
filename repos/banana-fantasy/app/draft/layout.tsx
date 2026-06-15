@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   description:
     'Join active Banana Fantasy best ball drafts, track live draft progress, and manage your current entries.',
   alternates: {
-    canonical: '/drafting',
+    canonical: '/draft',
   },
 };
 

@@ -48,6 +48,23 @@ export function DraftRoomFilling({
   const randomizingProgress = Math.max(serverWaitProgress, randomizingProgressFromStore);
   const myName = user?.username && !user.username.startsWith('0x') ? user.username : 'You';
 
+  // Original lobby box sizing (kept as named constants; the boxes are fine —
+  // the gap below them is a spacer issue, fixed by the measurement below).
+  const avatarSize = 48;
+  const statMinH = 54;
+  const boxPadTop = 10;
+  const rowMarginTop = 15;
+
+  // Spacer below the position:fixed lobby header. It must land the tabs at the
+  // SAME spot as the drafting phase, which reserves 290px (310 for JP/HOF) via
+  // the IDENTICAL calc in DraftRoomDrafting. The earlier `- 3.5rem` made this
+  // spacer SMALLER than drafting's, so the tabs crowded up against the lobby
+  // header (which is actually TALLER than the drafting banner — it carries the
+  // "N/10 waiting" line + EXIT/MUTE/OFF controls). Matching drafting's reserve
+  // exactly gives the tabs the same breathing room in both phases on desktop
+  // and mobile (safe-area included on both sides, so it cancels).
+  const fillingSpacer = `calc(${(visibleDraftType === 'jackpot' || visibleDraftType === 'hof') ? '310px' : '290px'} - 2.5rem + env(safe-area-inset-top))`;
+
   return (
     <>
       {/* Type-colored band behind the box strip — SAME treatment as the
@@ -63,7 +80,7 @@ export function DraftRoomFilling({
         // status bar on mobile (Boris 2026-06-13).
         paddingTop: 'env(safe-area-inset-top)',
       }}>
-        <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: '15px' }}>
+        <div className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar" style={{ marginTop: `${rowMarginTop}px` }}>
           {Array.from({ length: 10 }, (_, i) => {
             const player = draftOrder[i];
             const isUser = player?.isYou ?? false;
@@ -115,7 +132,7 @@ export function DraftRoomFilling({
                 style={{
                   minWidth: 'clamp(100px, 12vw, 140px)',
                   flex: 1,
-                  padding: '10px 0 0 0',
+                  padding: `${boxPadTop}px 0 0 0`,
                   borderRadius: '5px',
                   borderWidth: 1,
                   borderStyle: 'solid',
@@ -130,7 +147,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={user?.profilePicture || '/banana-profile.png'}
                         alt="You"
-                        size={48}
+                        size={avatarSize}
                         equippedBadge={user?.equippedBadge}
                         ripeness={user?.ripeness}
                         useNextImage={false}
@@ -142,7 +159,7 @@ export function DraftRoomFilling({
                       <AvatarWithBadge
                         imageUrl={otherPfp}
                         alt={otherDisplayName || 'Player'}
-                        size={48}
+                        size={avatarSize}
                         equippedBadge={otherBadge}
                         ripeness={otherRipeness}
                         useNextImage={false}
@@ -150,14 +167,14 @@ export function DraftRoomFilling({
                       />
                     </div>
                   ) : showSkeleton ? (
-                    <div className="animate-shimmer rounded-full w-[48px] h-[48px] mx-auto border border-white/10" />
+                    <div className="animate-shimmer rounded-full mx-auto border border-white/10" style={{ width: avatarSize, height: avatarSize }} />
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src="/banana-profile.png"
                       alt="Banana"
-                      className="rounded-full w-[48px] mx-auto h-[48px] border border-gray-500 animate-pulse"
-                      style={{ opacity: 0.4 }}
+                      className="rounded-full mx-auto border border-gray-500 animate-pulse"
+                      style={{ opacity: 0.4, width: avatarSize, height: avatarSize }}
                     />
                   )}
 
@@ -174,15 +191,15 @@ export function DraftRoomFilling({
                   </div>
 
                   {showSkeleton ? (
-                    <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ minHeight: `${statMinH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <div className="animate-shimmer rounded h-[10px] w-[70%]" />
                     </div>
                   ) : !isFilled ? (
-                    <div style={{ minHeight: '54px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ minHeight: `${statMinH}px`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span className="animate-pulse" style={{ fontSize: '12px', color: '#444' }}>Waiting...</span>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: '54px', color: textColor }}>
+                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', minHeight: `${statMinH}px`, color: textColor }}>
                       {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map(pos => (
                         <div
                           key={pos}
@@ -235,7 +252,11 @@ export function DraftRoomFilling({
         {controls}
       </div>
 
-      <div style={{ height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, backgroundColor: '#000' }} />
+      {/* Spacer = the fixed header's measured height (offsetHeight already
+          includes its safe-area padding), so the tabs sit flush below it with
+          no over-reserved gap. Falls back to ~250px for the first paint /
+          no-ResizeObserver before the measurement lands. */}
+      <div className="shrink-0 bg-black" style={{ height: fillingSpacer }} />
     </>
   );
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/hooks/useAuth';
+import { useStreamRefetch } from '@/hooks/useStreamRefetch';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -71,7 +72,7 @@ export default function ReferralsPage() {
 
   // Fetch referral data. Passing the display name keeps the name-based code
   // (/r/BorisV) in sync if they renamed since the code was minted.
-  useEffect(() => {
+  const loadReferralData = useCallback(() => {
     if (!userId) return;
     setLoading(true);
     fetch(`/api/referrals?userId=${encodeURIComponent(userId)}${username ? `&username=${encodeURIComponent(username)}` : ''}`)
@@ -88,6 +89,14 @@ export default function ReferralsPage() {
       })
       .finally(() => setLoading(false));
   }, [userId, username]);
+
+  useEffect(() => { loadReferralData(); }, [loadReferralData]);
+
+  // Real-time: the server pings the user's event stream when a referral
+  // milestone lands (someone signed up with their code) — refetch the stats
+  // within ~300ms instead of only on reload. Additive; the mount fetch above
+  // stays as the baseline. Keyed on the wallet (the stream node key).
+  useStreamRefetch(userId, loadReferralData);
 
   // Generate code
   const handleGenerate = useCallback(async () => {

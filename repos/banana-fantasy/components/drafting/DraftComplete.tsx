@@ -8,7 +8,8 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
-import { toCardPlayers } from '@/lib/teamCardData';
+import { toCardPlayers, teamNoFromToken } from '@/lib/teamCardData';
+import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface RosterEntry {
   playerId: string;
@@ -86,7 +87,18 @@ export function DraftComplete({
   // do the waiting here on the generating screen, not on the roster).
   const [imageLoaded, setImageLoaded] = useState(false);
   // Draft-pass number shown on the card (derived from the card URL once known).
-  const [passNumber, setPassNumber] = useState<string | null>(extractPassNo(initialCardUrl));
+  // TEAM # = the on-chain token id of the draft pass you entered with — which
+  // you already own BEFORE the draft starts, so it's known from join time (in
+  // the draft store as cardId), not something to wait on. Seed it instantly so
+  // it shows from frame one like the league # + roster. The async resolver
+  // below confirms it against the authoritative realTokenId.
+  const [passNumber, setPassNumber] = useState<string | null>(() => {
+    if (draftId) {
+      const seed = teamNoFromToken({ cardId: draftStore.getDraft(draftId)?.cardId });
+      if (seed) return seed;
+    }
+    return extractPassNo(initialCardUrl);
+  });
   const mountedAtRef = useRef(Date.now());
   // The actual generated card URL — handed to the roster page via sessionStorage
   // so it renders the image instantly instead of waiting on its own fetch.
@@ -110,7 +122,7 @@ export function DraftComplete({
   // FIRST time the card URL is known is our authoritative "generation done"
   // signal — it snaps the bar to 100% and routes to the roster.
   useEffect(() => {
-    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; setPassNumber(extractPassNo(initialCardUrl)); preloadCard(initialCardUrl); setCardReady(true); }
+    if (initialCardUrl) { cardUrlRef.current = initialCardUrl; setPassNumber(prev => prev || extractPassNo(initialCardUrl)); preloadCard(initialCardUrl); setCardReady(true); }
   }, [initialCardUrl]);
 
   useEffect(() => {
@@ -133,10 +145,19 @@ export function DraftComplete({
           const data = await res.json();
           if (cancelled) return;
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
+          // Team # = on-chain token id, read straight off the card object
+          // (realTokenId, else cardId) — same source the desktop roster uses.
+          // Never parse it out of the image URL: a pre-reveal pass URL has no
+          // token id, which is what dropped TEAM # from the card.
+          const card = data?.card;
+          if (card) {
+            const teamNo = teamNoFromToken({ realTokenId: card.realTokenId ?? card._realTokenId, cardId: card.cardId ?? card._cardId });
+            if (teamNo) setPassNumber(teamNo);
+          }
           if (imageUrl) {
             logger.info('[DraftComplete] Card ready — team generated', { draftId, attempt });
             cardUrlRef.current = imageUrl;
-            setPassNumber(extractPassNo(imageUrl));
+            setPassNumber(prev => prev || extractPassNo(imageUrl));
             preloadCard(imageUrl);
             setCardReady(true);
             return;
@@ -158,6 +179,33 @@ export function DraftComplete({
     pollCardReady();
     return () => { cancelled = true; };
   }, [draftId, walletAddress, cardReady, type]);
+
+  // ── Team # (NFT token id) resolver ─────────────────────────────────
+  // The card + roster show "Team #N" where N is the on-chain token id. Resolve
+  // it from the owner's token for THIS league — the SAME device-independent
+  // source the desktop roster page uses — so mobile shows the identical number,
+  // not a URL-parsed guess. The token may still be minting the instant the
+  // draft closes, so retry briefly until realTokenId/cardId lands. Runs even
+  // when the card URL was passed in (cardReady true), which the poll skips.
+  useEffect(() => {
+    if (!draftId || !walletAddress) return;
+    let cancelled = false;
+    let attempt = 0;
+    const resolve = async () => {
+      try {
+        const { getOwnerDraftTokens } = await import('@/lib/api/owner');
+        const tokens = await getOwnerDraftTokens(walletAddress);
+        if (cancelled) return;
+        const match = tokens.find(t => String(t.leagueId || '').toLowerCase() === draftId.toLowerCase());
+        const teamNo = teamNoFromToken(match);
+        if (teamNo) { setPassNumber(teamNo); return; }
+      } catch { /* ignore — retry below */ }
+      if (cancelled) return;
+      if (attempt++ < 8) setTimeout(resolve, 1500);
+    };
+    resolve();
+    return () => { cancelled = true; };
+  }, [draftId, walletAddress]);
 
   // Start the minimum-animation timer once on mount.
   useEffect(() => {
@@ -268,8 +316,20 @@ export function DraftComplete({
     roster.map((r) => ({ playerId: r.playerId, position: r.position, pick: r.pick ?? '' })),
   );
   // Team card identity line: TEAM # = on-chain token id (the draft-pass #),
-  // LEAGUE # = the numeric league id from the draftId.
-  const leagueNumber = (draftId || '').replace(/\D/g, '');
+  // LEAGUE # = the GLOBAL league number from the draft's DisplayName ("BBB #8"),
+  // resolved via the same cache/hook DraftRow + the roster page use.
+  // BUG this fixes: the old `draftId.replace(/\D/g,'')` mashed every digit in the
+  // slot id together — "2024-fast-draft-8" → "20248" (year+slot) — so a wild
+  // wrong league # flashed for a second before the real data corrected it. We
+  // now seed instantly from the already-resolved store contestName so the
+  // correct number shows from the FIRST frame, with the live hook confirming.
+  const liveLeagueNumber = useLeagueNumberForSlot(draftId);
+  const storedLeagueNo = (() => {
+    if (!draftId) return '';
+    const m = /#\s*(\d+)/.exec(draftStore.getDraft(draftId)?.contestName || '');
+    return m ? m[1] : '';
+  })();
+  const leagueNumber = liveLeagueNumber != null ? String(liveLeagueNumber) : storedLeagueNo;
 
   return (
     <div className="dc-wrap" style={{ '--c': accent } as React.CSSProperties}>

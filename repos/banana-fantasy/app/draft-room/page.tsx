@@ -33,6 +33,7 @@ import {
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { draftWordColor, draftWordShadow } from '@/lib/draftBandStyle';
+import { Tooltip } from '@/components/ui/Tooltip';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -335,6 +336,30 @@ function DraftRoomContent() {
     clientLog('pcdiag', 'playerCount.change', { playerCount, phase, draftId });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerCount]);
+
+  // Draft Alerts bell (Boris 2026-06-15): the FIRST time a user is in a draft
+  // lobby, fire the one-time "Set up Draft Alerts" bell — real-time, server-
+  // backed, deduped once-ever. Fires on lobby entry (filling phase), not on
+  // login. getAccessToken lives in a ref so this effect's deps stay stable
+  // scalars (render-loop rule).
+  const getAccessTokenRef = useRef(getAccessToken);
+  getAccessTokenRef.current = getAccessToken;
+  const draftAlertsFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isLiveMode || phase !== 'filling') return;
+    if (draftAlertsFiredRef.current) return;
+    draftAlertsFiredRef.current = true;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current?.();
+        if (!token) return;
+        await fetch('/api/users/draft-alerts-prompt', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch { /* best-effort — server dedupe makes it once-ever anyway */ }
+    })();
+  }, [isLiveMode, phase]);
   const [preSpinCountdown, setPreSpinCountdown] = useState(() => {
     if (stored?.preSpinStartedAt) return Math.max(0, Math.floor(15 - (Date.now() - stored.preSpinStartedAt) / 1000));
     return 15;
@@ -1876,30 +1901,81 @@ function DraftRoomContent() {
   // across devices. Skipped for specialType (already known) and spectators
   // (no owned token → level null → left as-is).
   useEffect(() => {
-    if (!isLiveMode || specialTypeParam || draftType) return;
+    // Run EVEN IF draftType is already set. The fill→draft transition can fall
+    // back to 'pro' before the real type is known (e.g. a 2nd device / phone
+    // that didn't run the reveal). The old `|| draftType` guard then skipped
+    // this, so that wrong 'pro' stuck — desktop showed HOF, phone showed PRO
+    // (Boris 2026-06-14). The owner's token level is the device-independent
+    // truth, so we reconcile draftType to it and override any stale fallback.
+    // specialType is already authoritative; spectators have no token (level
+    // null → left as-is).
+    if (!isLiveMode || specialTypeParam) return;
     if (phase !== 'drafting') return;
     const id = draftId || urlDraftId;
     if (!id || !walletParam) return;
     let cancelled = false;
-    getDraftTokenLevel(walletParam, id).then(level => {
-      if (cancelled || !level) return;
-      const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
-      const mapped = typeMap[level] || 'pro';
-      setDraftType(mapped);
-      draftStore.updateDraft(id, { type: mapped, draftType: mapped });
-    }).catch((err) => {
-      reportClientError({
-        source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'draft-room',
-        actor: walletParam,
-        context: { draftId: id, recovery: 'drafting-entry' },
-        stack: err instanceof Error ? err.stack : undefined,
+    const typeMap: Record<string, DraftType> = { 'Jackpot': 'jackpot', 'Hall of Fame': 'hof', 'Pro': 'pro' };
+    let attempt = 0;
+    // Retry until the owner-token level resolves. Right after the spin reveals
+    // the type, the backend may not have stamped the token's level for a beat,
+    // so a single fetch can come back null and leave the phone on a stale 'pro'
+    // (the desync Boris saw). Poll a few times (1.5s apart) so both devices
+    // reliably land on the SAME real Pro/HOF/Jackpot within a couple seconds.
+    const resolveType = () => {
+      if (cancelled) return;
+      getDraftTokenLevel(walletParam, id).then(level => {
+        if (cancelled) return;
+        if (!level) {
+          if (attempt++ < 6) setTimeout(resolveType, 1500);
+          return;
+        }
+        const mapped = typeMap[level] || 'pro';
+        setDraftType(prev => {
+          if (prev === mapped) return prev;
+          draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+          return mapped;
+        });
+      }).catch((err) => {
+        reportClientError({
+          source: LOG_SOURCES.draft.TOKEN_LEVEL_LOOKUP_FAILED,
+          message: err instanceof Error ? err.message : String(err),
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId: id, recovery: 'drafting-entry', attempt },
+          stack: err instanceof Error ? err.stack : undefined,
+        });
+        if (!cancelled && attempt++ < 6) setTimeout(resolveType, 1500);
       });
-    });
+    };
+    resolveType();
     return () => { cancelled = true; };
+  // draftType kept in deps so a later stale 'pro' re-applied by the fill flow
+  // gets re-corrected; the prev===mapped check makes it converge (no loop).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, draftType, isLiveMode, walletParam, draftId, urlDraftId, specialTypeParam]);
+
+  // Real-time draft type from the shared RTDB draft node. When the server
+  // writes the revealed type onto realTimeDraftInfo.type (after the spin), BOTH
+  // devices read the exact same value live — true real-time sync, no per-device
+  // derivation. Harmless until the server build writes it (field is optional);
+  // until then the owner-token recovery above keeps the two devices in sync.
+  // DISPLAY is still gated by visibleDraftType, so this never spoils the spin.
+  useEffect(() => {
+    const rt = firebaseRtdb.data?.type;
+    if (!rt || specialTypeParam) return;
+    const norm: Record<string, DraftType> = {
+      pro: 'pro', hof: 'hof', jackpot: 'jackpot',
+      Pro: 'pro', 'Hall of Fame': 'hof', Jackpot: 'jackpot',
+    };
+    const mapped = norm[rt as string];
+    if (!mapped) return;
+    setDraftType(prev => {
+      if (prev === mapped) return prev;
+      const id = draftId || urlDraftId;
+      if (id) draftStore.updateDraft(id, { type: mapped, draftType: mapped });
+      return mapped;
+    });
+  }, [firebaseRtdb.data?.type, specialTypeParam, draftId, urlDraftId]);
 
   // Jackpot-hit promo POST. Fires whenever the resolved draftType is
   // 'jackpot' for a paid draft — independent of whether the user was on
@@ -2335,20 +2411,31 @@ function DraftRoomContent() {
           image was ~60px tall and bloated the red band vs the pro room).
           White JACKPOT on the red band, black HOF on the gold band, purple
           PRO on black (Boris's pick 2026-06-10: clean flat word, no glow). */}
-      {visibleDraftType && (
-        <span
-          className="font-black uppercase mr-2"
-          style={{
-            fontSize: '18px',
-            lineHeight: 1,
-            letterSpacing: '0.14em',
-            color: draftWordColor(visibleDraftType),
-            textShadow: draftWordShadow(visibleDraftType),
-          }}
-        >
-          {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
-        </span>
-      )}
+      {visibleDraftType && (() => {
+        const wordEl = (
+          <span
+            className={`font-black uppercase mr-2 ${visibleDraftType !== 'pro' ? 'cursor-default' : ''}`}
+            style={{
+              fontSize: '18px',
+              lineHeight: 1,
+              letterSpacing: '0.14em',
+              color: draftWordColor(visibleDraftType),
+              textShadow: draftWordShadow(visibleDraftType),
+            }}
+          >
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
+          </span>
+        );
+        // Hover the JP/HOF word for a clean one-line explainer of the perk.
+        if (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') {
+          return (
+            <Tooltip content={<span className="text-xs whitespace-nowrap">{visibleDraftType === 'jackpot' ? 'Win your league, skip to finals' : 'Compete for bonus prizes'}</span>}>
+              {wordEl}
+            </Tooltip>
+          );
+        }
+        return wordEl;
+      })()}
       {/* Founder pill — sits inline with the JP/HOF logo (when present) and
           the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
           premium tag alongside the larger JP/HOF artwork rather than a plain

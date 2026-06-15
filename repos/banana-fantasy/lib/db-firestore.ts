@@ -129,8 +129,15 @@ function recalcPromoClaimable(promo: Promo) {
  * — same wallet always maps to the same code.
  */
 function buildPerUserReferralCode(userId: string): string {
-  const hash = crypto.createHash('sha256').update(userId.toLowerCase()).digest('hex').toUpperCase();
-  return `BANANA-${hash.slice(0, 4)}-${hash.slice(4, 8)}`;
+  // Clean default referral code = the user's default Banana##### handle with
+  // non-alphanumerics stripped (e.g. "Banana24789"). Matches the default that
+  // ensureNamedReferralCode mints, so the seed/heal path and the name-based
+  // path produce the SAME clean code — no more hash placeholder
+  // (BANANA-XXXX-XXXX). Because this contains no hyphen, the heal condition
+  // below (`startsWith('BANANA-')`) only ever matches OLD hash codes, so it
+  // migrates them once to this clean code and then leaves it alone — and never
+  // touches a user's edited name code. (Boris 2026-06-15)
+  return sanitizeRefName(bananaDefaultName(userId.toLowerCase()));
 }
 
 function buildSeedUser(userId: string): {
@@ -328,7 +335,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // name-based code from ensureNamedReferralCode must never be overwritten
   // (sanitized names contain no hyphen, so the prefix check can't collide).
   const expectedCode = buildPerUserReferralCode(userId);
-  const expectedLink = `https://banana-fantasy-sbs.vercel.app?ref=${expectedCode}`;
+  const expectedLink = `${REFERRAL_SITE_URL}/r/${expectedCode}`;
   const referralPromoToFix = allDocs.find(
     (p) => p.type === 'referral'
       && (!p.modalContent.inviteCode || p.modalContent.inviteCode.startsWith('BANANA-'))
@@ -343,7 +350,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       try {
         const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(referralPromoToFix.id);
         const referralMetaRef = userRef.collection('metadata').doc(REFERRAL_DOC);
-        const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(expectedCode);
+        const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(expectedCode.toUpperCase());
         const codeSnap = await codeRef.get();
         const batch = db.batch();
         batch.set(
@@ -351,7 +358,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
           { modalContent: { inviteCode: expectedCode, referralLink: expectedLink } },
           { merge: true },
         );
-        batch.set(referralMetaRef, { code: expectedCode }, { merge: true });
+        batch.set(referralMetaRef, { code: expectedCode, base: expectedCode.toUpperCase() }, { merge: true });
         if (!codeSnap.exists) {
           batch.set(codeRef, { userId, code: expectedCode });
         }
@@ -2180,6 +2187,12 @@ export async function resetQueue(type: 'jackpot' | 'hof'): Promise<void> {
 const DAILY_DRAFTS_PROMO_ID = '1';
 const FIRST_PURCHASE_PROMO_ID = '11';
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+// Dedup ledger of already-credited draftIds. Kept ACROSS cycle resets so a
+// duplicate fill-event for a just-completed draft can't re-credit into the
+// next cycle (the "4/4 → claim → 1/4" bug: the 4th draft's second fire landed
+// in the ~½s window after the ledger was wiped). Capped so it can't grow
+// unbounded — far larger than any realistic burst of duplicate fire events.
+const DAILY_DEDUP_LEDGER_MAX = 50;
 
 /**
  * New-user first-purchase popup gate. A wheel-won draft just completed — count
@@ -2401,7 +2414,7 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
     const prevProgress = promo.progressCurrent || 0;
     promo.progressCurrent = prevProgress + 1;
-    promo.completedDraftIds = [...(promo.completedDraftIds || []), draftId];
+    promo.completedDraftIds = [...(promo.completedDraftIds || []), draftId].slice(-DAILY_DEDUP_LEDGER_MAX);
 
     if (prevProgress === 0) {
       promo.timerEndTime = new Date(Date.now() + TWENTY_FOUR_HOURS_MS).toISOString();
@@ -2422,7 +2435,11 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
         ...(promo.modalContent.dailyHistory || []),
       ].slice(0, 50);
       promo.timerEndTime = undefined;
-      promo.completedDraftIds = [];
+      // Do NOT clear completedDraftIds here. Wiping the dedup ledger at the
+      // instant the cycle completes is exactly what let a duplicate fill-event
+      // for THIS draft re-credit into the next cycle (4/4 → claim → phantom
+      // 1/4). Keep the ledger (capped above) so the same draftId can never be
+      // counted twice. It clears legitimately on genuine 24h expiry below.
       needsTimerDelete = true;
       justBecameClaimable = true;
     }

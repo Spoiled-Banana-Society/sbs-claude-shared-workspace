@@ -174,9 +174,9 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-5 rounded-full bg-[#2775CA] flex items-center justify-center">
-                  <span className="text-white text-[10px] font-bold">$</span>
-                </div>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-text-muted">
+                  <rect width="20" height="12" x="2" y="6" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" />
+                </svg>
                 <span className="text-text-muted text-xs uppercase tracking-wider">Winnings</span>
               </div>
               <span className={`font-bold text-sm tabular-nums ${availableBalance > 0 ? 'text-banana' : 'text-text-primary'}`}>
@@ -301,6 +301,18 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
               </svg>
               Badges
+            </Link>
+
+            <Link
+              href="/faq"
+              onClick={() => setIsOpen(false)}
+              className="w-full px-4 py-2 text-left text-text-secondary hover:bg-bg-tertiary hover:text-text-primary transition-colors flex items-center gap-3 text-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+              </svg>
+              FAQ
             </Link>
 
             <Link

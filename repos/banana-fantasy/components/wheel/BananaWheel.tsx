@@ -369,8 +369,18 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       });
     } else {
       const verifiable = typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number';
-      setWonProofStatus(verifiable ? 'verifying' : 'unverified');
       setWonProofMeta(null);
+      if (verifiable) {
+        // Kick the proof fetch+verify off NOW — in parallel with the ~2s landing
+        // animation — instead of waiting until the wheel lands. The spin is
+        // already recorded server-side (we have the spinId), so by the time the
+        // result popup appears the badge is usually already "Verified ✓" rather
+        // than making the user watch a "verifying…" spinner for a few seconds.
+        // fetchAndVerifyProof sets 'verifying' itself while it runs.
+        void fetchAndVerifyProof(outcome.spinId, outcome.result);
+      } else {
+        setWonProofStatus('unverified');
+      }
     }
 
     setTimeout(() => {
@@ -391,12 +401,9 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
       // going crazy for several seconds.
       stopSpinSound(segment ? getWinTier(segment) : undefined);
       if (onSpinComplete) onSpinComplete(outcome, segment);
-      // Now that the wheel has landed and the prize is showing, fetch + verify
-      // the Merkle proof in the background to light up the "Verified ✓" badge.
-      // Skipped if an old response already inlined the proof (verified above).
-      if (!outcome.proof && typeof outcome.periodNumber === 'number' && typeof outcome.spinIndex === 'number') {
-        void fetchAndVerifyProof(outcome.spinId, outcome.result);
-      }
+      // Proof fetch+verify was already kicked off above (in parallel with this
+      // landing animation), so the "Verified ✓" badge is typically lit by the
+      // time this result popup shows — no post-landing fetch needed here.
     }, SPIN_DURATION_MS);
   };
 
@@ -691,6 +698,24 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               {wonProofStatus === 'failed' && (
                 <div className="mb-6 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-300 text-[12px] font-semibold">
                   ⚠ Proof verification failed
+                </div>
+              )}
+
+              {/* Free-draft win — small, centered nudge to the page where they pick
+                  a draft to enter (NOT an instant join; /draft just lists active
+                  drafts). Its own line under the proof badge, kept compact. */}
+              {wonSegment.prizeType === 'draft_pass' && (
+                <div className="flex justify-center" style={{ animation: 'fadeIn 0.6s ease-out 0.6s both' }}>
+                  <a
+                    href="/draft"
+                    onClick={dismissResult}
+                    className="inline-flex items-center gap-1 px-4 py-1.5 rounded-lg bg-banana text-black text-[13px] font-bold hover:brightness-110 transition-all"
+                  >
+                    Draft
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12h14M13 6l6 6-6 6" />
+                    </svg>
+                  </a>
                 </div>
               )}
 

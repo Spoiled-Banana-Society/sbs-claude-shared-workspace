@@ -56,7 +56,9 @@ function AppContent({ children }: { children: React.ReactNode }) {
   }, []);
   const { showOnboarding } = useOnboarding();
   const pathname = usePathname();
-  const isDraftRoom = pathname === '/draft-room';
+  // Full-bleed routes that render their own chrome (no global app header):
+  // the draft room, and the pre-launch / countdown landing.
+  const isDraftRoom = pathname === '/draft-room' || pathname === '/test-prelaunch';
   // App-wide "where did I just come from" recorder. Runs as a parent effect
   // (after the page's own effects), so any page can read getLastPath() on mount
   // to see the route it arrived from. Powers the marketplace scroll-restore.

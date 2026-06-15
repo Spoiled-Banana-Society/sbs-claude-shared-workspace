@@ -13,8 +13,6 @@ import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pric
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { pushNotification } from '@/components/NotificationCenter';
-import { useToast } from '@/components/ui/Toast';
-import { surfacePurchasePromoAwards } from '@/lib/promoAwardToasts';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -42,7 +40,6 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { show: showToast } = useToast();
   const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
   const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
@@ -562,13 +559,7 @@ export function BuyPassesModal({
                   <button
                     key={qty}
                     onClick={() => setQuantity(qty)}
-                    className={`
-                      py-3 rounded-xl font-semibold text-lg transition-all duration-200
-                      ${quantity === qty
-                        ? 'bg-banana text-bg-primary shadow-lg shadow-banana/25 scale-[1.02]'
-                        : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'
-                      }
-                    `}
+                    className={`py-2.5 rounded-xl font-bold text-[15px] transition-colors ${quantity === qty ? 'bg-banana text-bg-primary' : 'bg-bg-tertiary text-text-secondary hover:bg-bg-elevated hover:text-text-primary'}`}
                   >
                     {qty}
                   </button>
@@ -629,43 +620,31 @@ export function BuyPassesModal({
               )}
             </div>
 
-            {/* Payment Method */}
+            {/* Payment Method — clean segmented toggle (Option 2) */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated">
                 <button
                   onClick={() => setPaymentMethod('usdc')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'usdc' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg viewBox="0 0 24 24" className={`w-5 h-5 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <text x="12" y="16" textAnchor="middle" fill="currentColor" stroke="none" fontSize="12" fontWeight="bold">$</text>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</p>
-                    <p className="text-text-muted text-xs">USDC on Base</p>
-                  </div>
+                  <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
+                  </svg>
+                  <span className="text-sm font-semibold">USDC on Base</span>
                 </button>
-
                 <button
                   onClick={() => setPaymentMethod('card')}
-                  className={`p-3 rounded-xl border-2 text-left flex items-center gap-3 transition-all ${paymentMethod === 'card' ? 'border-banana bg-banana/5' : 'border-bg-elevated bg-bg-tertiary hover:border-bg-elevated/80'}`}
+                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                 >
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${paymentMethod === 'card' ? 'bg-banana/20' : 'bg-bg-elevated'}`}>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`w-5 h-5 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="1" y="4" width="22" height="16" rx="2" ry="2"/>
-                      <line x1="1" y1="10" x2="23" y2="10"/>
-                    </svg>
-                  </div>
-                  <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</p>
-                    <p className="text-text-muted text-xs">Instant checkout</p>
-                  </div>
+                  <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
+                    <path d="M3 9.5h18M6.5 14.5h4"/>
+                  </svg>
+                  <span className="text-sm font-semibold">Card</span>
                 </button>
               </div>
-
             </div>
 
             {/* Card-fee credit → free draft banner (live $ progress) */}
@@ -681,7 +660,9 @@ export function BuyPassesModal({
               return (
               <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm">🎁</span>
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+                    <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+                  </svg>
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
                       ? 'This purchase earns you a draft pass!'
@@ -777,29 +758,34 @@ export function BuyPassesModal({
               <p className="text-red-400 text-center text-xs">Mint is currently inactive</p>
             )}
 
-            {/* Price + Total */}
-            <div className="text-center space-y-1">
-              <p className="text-text-muted text-sm">$25 per draft pass</p>
-              {paymentMethod === 'usdc' && usdcTotal ? (
-                <p className="text-3xl font-bold text-banana">{formatUnits(usdcTotal, 6)} USDC</p>
-              ) : (
-                <p className="text-3xl font-bold text-banana">${totalPrice}</p>
-              )}
-              {paymentMethod === 'usdc' && user?.usdcBalance != null && (
-                <p className={`text-xs ${user.usdcBalance >= totalPrice ? 'text-success' : 'text-error'}`}>
-                  Wallet balance: {user.usdcBalance.toFixed(2)} USDC
-                  {user.usdcBalance < totalPrice && ' (insufficient)'}
-                </p>
-              )}
+            {/* Order summary (Option 2) — line item + balance + total in one
+                clean card. Works full-width on mobile and desktop. */}
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-bg-primary/60 border border-bg-tertiary p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text-secondary">{quantity} draft pass{quantity !== 1 ? 'es' : ''} × $25</span>
+                  <span className="text-text-primary font-mono tabular-nums">${totalPrice}</span>
+                </div>
+                {paymentMethod === 'usdc' && user?.usdcBalance != null && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Wallet balance</span>
+                    <span className={`font-mono tabular-nums ${user.usdcBalance >= totalPrice ? 'text-text-secondary' : 'text-error'}`}>
+                      {user.usdcBalance.toFixed(2)} USDC{user.usdcBalance < totalPrice ? ' (insufficient)' : ''}
+                    </span>
+                  </div>
+                )}
+                <div className="border-t border-bg-tertiary pt-2.5 flex items-center justify-between">
+                  <span className="text-text-primary font-semibold">Total</span>
+                  <span className="text-banana text-2xl font-bold tabular-nums">
+                    {paymentMethod === 'usdc' && usdcTotal ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
+                  </span>
+                </div>
+              </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
-                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3 text-left">
+                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                   <p className="text-text-secondary text-xs leading-relaxed">
-                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>.
-                    <br />
-                    It&apos;s quick and easy.{' '}
-                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">
-                      Learn how →
-                    </Link>
+                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>. It&apos;s quick and easy.{' '}
+                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">Learn how →</Link>
                   </p>
                 </div>
               )}
@@ -843,39 +829,6 @@ export function BuyPassesModal({
                 className="w-full py-3 rounded-2xl border border-bg-elevated text-text-secondary hover:text-text-primary hover:border-text-muted text-sm font-semibold transition-all"
               >
                 ✕ Cancel / change order
-              </button>
-            )}
-
-            {/* Staging: Free Entry button */}
-            {isStagingMode() && (
-              <button
-                onClick={async () => {
-                  try {
-                    const userId = walletAddress || user?.id || 'staging-user';
-                    // Use staging-mint API which does: Go mint + Firestore purchase + verify (promo updates)
-                    const res = await fetch('/api/purchases/staging-mint', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ userId, quantity }),
-                    });
-                    const data = await res.json();
-                    if (res.ok) {
-                      if (data.user) updateUser(data.user as Partial<import('@/types').User>);
-                      // Instant milestone toasts + bell refresh on THIS device
-                      // (stream copy is deduped; mobile's socket may be dead).
-                      surfacePurchasePromoAwards(data.promoAwards, showToast);
-                      await refreshBalance();
-                      goToPickSpeed(quantity);
-                    } else {
-                      alert('Staging mint failed: ' + (data.error || JSON.stringify(data)));
-                    }
-                  } catch (err) {
-                    alert('Staging mint error: ' + (err instanceof Error ? err.message : 'Unknown'));
-                  }
-                }}
-                className="w-full py-4 rounded-2xl font-bold text-lg bg-orange-500 text-black hover:brightness-110 transition-all"
-              >
-                🧪 Free Entry (Staging) — {quantity} Pass{quantity !== 1 ? 'es' : ''}
               </button>
             )}
 
