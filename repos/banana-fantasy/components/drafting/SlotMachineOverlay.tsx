@@ -100,13 +100,13 @@ export function SlotMachineOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-[65] flex items-start justify-center pt-8 sm:pt-16 bg-black/80 backdrop-blur-sm overflow-hidden"
+      className="fixed inset-0 z-[65] flex items-start justify-center pt-[calc(5rem+env(safe-area-inset-top))] sm:pt-16 bg-black/80 backdrop-blur-sm overflow-hidden"
       onClick={handleCloseSlotMachine}
     >
       {slotAnimationDone && (
         <button
           onClick={handleCloseSlotMachine}
-          className="absolute top-6 right-6 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group"
+          className="absolute right-6 top-[calc(1.5rem+env(safe-area-inset-top))] w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all group z-[70]"
         >
           <svg className="w-6 h-6 text-white/60 group-hover:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
