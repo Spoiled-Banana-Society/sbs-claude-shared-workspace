@@ -51,11 +51,14 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
         <div className="px-5 py-5 max-h-[70vh] overflow-y-auto">
           {tab === 'how' && (
             <div className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {HOW.map(c => (
-                  <div key={c.t} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3.5">
-                    <h4 className="text-white text-[13.5px] font-semibold tracking-tight">{c.t}</h4>
-                    <p className="text-white/50 text-[12px] mt-1 leading-relaxed">{c.d}</p>
+              <div className="space-y-2">
+                {HOW.map((c, i) => (
+                  <div key={c.t} className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3.5">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-banana/15 text-banana text-[11px] font-bold tabular-nums">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-white text-[13.5px] font-semibold tracking-tight">{c.t}</h4>
+                      <p className="text-white/50 text-[12px] mt-0.5 leading-relaxed">{c.d}</p>
+                    </div>
                   </div>
                 ))}
               </div>

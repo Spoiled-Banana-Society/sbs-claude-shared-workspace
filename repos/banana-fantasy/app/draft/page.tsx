@@ -317,8 +317,16 @@ export default function DraftingPage() {
               On phones, use the SAME square promo carousel as the Spin page
               (not the sidebar's tall card). Pushed well down the page so the
               live drafts stay up top. SWR-deduped — no refetch. */}
+          {/* Mobile-only: the proof banner lives in the desktop sidebar
+              (hidden < lg). On small screens surface it as a quiet trust seal
+              ABOVE the promos (Boris 2026-06-15) — sits right under the drafts
+              so the provably-fair marker reads before the promo carousel. */}
+          <div className="lg:hidden mt-14 mb-2">
+            <BatchProofBanner display="seal" />
+          </div>
+
           {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className="lg:hidden mt-24">
+            <div className="lg:hidden mt-8">
               <PromoCarousel
                 heading="Promos"
                 promos={promosQuery.promos ?? []}
@@ -328,13 +336,6 @@ export default function DraftingPage() {
               />
             </div>
           )}
-
-          {/* Mobile-only: the proof banner lives in the desktop sidebar
-              (hidden < lg). On small screens surface it as a quiet footer
-              trust seal — kept low, below the promos. */}
-          <div className="lg:hidden mt-12 mb-2">
-            <BatchProofBanner display="seal" />
-          </div>
         </div>
 
         <aside className="w-56 shrink-0 hidden lg:flex flex-col gap-4 mt-14">
