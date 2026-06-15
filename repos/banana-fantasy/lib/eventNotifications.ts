@@ -32,7 +32,7 @@ export function eventNotificationContent(
         message: badge.description,
         link: '/profile?tab=badges',
         dedupeKey: `badge-${payload.badgeId}`,
-        icon: badge.glyph,
+        icon: 'award',
       };
     }
     case 'promo-new-user':
