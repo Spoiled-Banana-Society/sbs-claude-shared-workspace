@@ -129,8 +129,15 @@ function recalcPromoClaimable(promo: Promo) {
  * — same wallet always maps to the same code.
  */
 function buildPerUserReferralCode(userId: string): string {
-  const hash = crypto.createHash('sha256').update(userId.toLowerCase()).digest('hex').toUpperCase();
-  return `BANANA-${hash.slice(0, 4)}-${hash.slice(4, 8)}`;
+  // Clean default referral code = the user's default Banana##### handle with
+  // non-alphanumerics stripped (e.g. "Banana24789"). Matches the default that
+  // ensureNamedReferralCode mints, so the seed/heal path and the name-based
+  // path produce the SAME clean code — no more hash placeholder
+  // (BANANA-XXXX-XXXX). Because this contains no hyphen, the heal condition
+  // below (`startsWith('BANANA-')`) only ever matches OLD hash codes, so it
+  // migrates them once to this clean code and then leaves it alone — and never
+  // touches a user's edited name code. (Boris 2026-06-15)
+  return sanitizeRefName(bananaDefaultName(userId.toLowerCase()));
 }
 
 function buildSeedUser(userId: string): {
@@ -328,7 +335,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // name-based code from ensureNamedReferralCode must never be overwritten
   // (sanitized names contain no hyphen, so the prefix check can't collide).
   const expectedCode = buildPerUserReferralCode(userId);
-  const expectedLink = `https://banana-fantasy-sbs.vercel.app?ref=${expectedCode}`;
+  const expectedLink = `${REFERRAL_SITE_URL}/r/${expectedCode}`;
   const referralPromoToFix = allDocs.find(
     (p) => p.type === 'referral'
       && (!p.modalContent.inviteCode || p.modalContent.inviteCode.startsWith('BANANA-'))
@@ -343,7 +350,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       try {
         const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(referralPromoToFix.id);
         const referralMetaRef = userRef.collection('metadata').doc(REFERRAL_DOC);
-        const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(expectedCode);
+        const codeRef = db.collection(REFERRAL_CODES_COLLECTION).doc(expectedCode.toUpperCase());
         const codeSnap = await codeRef.get();
         const batch = db.batch();
         batch.set(
@@ -351,7 +358,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
           { modalContent: { inviteCode: expectedCode, referralLink: expectedLink } },
           { merge: true },
         );
-        batch.set(referralMetaRef, { code: expectedCode }, { merge: true });
+        batch.set(referralMetaRef, { code: expectedCode, base: expectedCode.toUpperCase() }, { merge: true });
         if (!codeSnap.exists) {
           batch.set(codeRef, { userId, code: expectedCode });
         }
