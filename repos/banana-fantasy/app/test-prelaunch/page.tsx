@@ -48,9 +48,9 @@ export default function TestPrelaunch() {
       {/* header — logo top-left only, no nav / no right-side icons. Static
           (no hover scale) so it never shifts. */}
       <header className="px-5 sm:px-8 lg:px-12 py-5">
-        <div className="inline-flex items-center gap-1.5 select-none">
+        <div className="inline-flex items-center select-none">
           <img src="/sbs-logo.png" alt="SBS Fantasy" className="w-12 h-12 sm:w-14 sm:h-14" />
-          <span className="text-2xl font-bold tracking-tight leading-none text-white">SBS</span>
+          <span className="-ml-1 text-2xl font-bold tracking-tight leading-none text-white">SBS</span>
         </div>
       </header>
 
