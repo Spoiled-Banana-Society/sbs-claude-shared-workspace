@@ -224,9 +224,11 @@ function OptionB() {
    OPTION C — "Spacious Circular": each control is its own 36px circle, airy
    spacing, duotone wheel kept (calmer), dot-style unread. Most "premium".
    ════════════════════════════════════════════════════════════════════════ */
+// Bare icon button — no circle background; just a hit area. Icons sit at one
+// uniform size. (The avatar keeps its own circle; everything else is bare.)
 function CircleBtn({ children }: { children: React.ReactNode }) {
   return (
-    <button className="relative flex items-center justify-center w-9 h-9 rounded-full bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.07] transition-colors text-white/75">
+    <button className="relative flex items-center justify-center w-[26px] h-[26px] text-white/75 hover:text-white transition-colors">
       {children}
     </button>
   );
@@ -243,15 +245,15 @@ function OptionC({ wheel = 'lines' }: { wheel?: WheelStyle }) {
     <div className="flex items-center gap-4">
       <Counter />
       <CircleBtn>
-        <TicketGlyph className="w-[18px] h-[18px]" />
+        <TicketGlyph className="w-[22px] h-[22px]" />
         <CountBadge n={DATA.passes} />
       </CircleBtn>
       <CircleBtn>
-        <WheelIcon wheel={wheel} />
+        <WheelIcon wheel={wheel} size={22} />
         <CountBadge n={DATA.spins} />
       </CircleBtn>
       <CircleBtn>
-        <BellGlyph className="w-[18px] h-[18px]" />
+        <BellGlyph className="w-[22px] h-[22px]" />
         <CountBadge n={DATA.notis} tone="dot" />
       </CircleBtn>
       <button className="flex items-center gap-1 pl-0.5 pr-1 py-0.5 rounded-full hover:bg-white/[0.06]">
@@ -338,8 +340,9 @@ export default function TestHeaderCluster() {
             <HeaderBar width="430px">
               <div className="flex items-center gap-3">
                 <Counter compact />
-                <CircleBtn><TicketGlyph className="w-[16px] h-[16px]" /><CountBadge n={DATA.passes} /></CircleBtn>
-                <CircleBtn><WheelIcon wheel={wheel} size={24} /><CountBadge n={DATA.spins} /></CircleBtn>
+                <CircleBtn><TicketGlyph className="w-[20px] h-[20px]" /><CountBadge n={DATA.passes} /></CircleBtn>
+                <CircleBtn><WheelIcon wheel={wheel} size={20} /><CountBadge n={DATA.spins} /></CircleBtn>
+                <CircleBtn><BellGlyph className="w-[20px] h-[20px]" /><CountBadge n={DATA.notis} tone="dot" /></CircleBtn>
                 <Avatar size={32} />
               </div>
             </HeaderBar>
@@ -347,7 +350,8 @@ export default function TestHeaderCluster() {
             <HeaderBar width="360px">
               <div className="flex items-center gap-2.5">
                 <Counter compact />
-                <CircleBtn><WheelIcon wheel={wheel} size={22} /><CountBadge n={DATA.spins} /></CircleBtn>
+                <CircleBtn><TicketGlyph className="w-[20px] h-[20px]" /><CountBadge n={DATA.passes} /></CircleBtn>
+                <CircleBtn><WheelIcon wheel={wheel} size={20} /><CountBadge n={DATA.spins} /></CircleBtn>
                 <Avatar size={30} />
               </div>
             </HeaderBar>
