@@ -644,8 +644,7 @@ export function BuyPassesModal({
                     </svg>
                   </div>
                   <div>
-                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</p>
-                    <p className="text-text-muted text-xs">USDC on Base</p>
+                    <p className={`font-semibold text-sm ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC on Base</p>
                   </div>
                 </button>
 
@@ -661,7 +660,6 @@ export function BuyPassesModal({
                   </div>
                   <div>
                     <p className={`font-semibold text-sm ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</p>
-                    <p className="text-text-muted text-xs">Instant checkout</p>
                   </div>
                 </button>
               </div>
@@ -681,7 +679,9 @@ export function BuyPassesModal({
               return (
               <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-sm">🎁</span>
+                  <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0 text-banana" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round">
+                    <rect x="3.5" y="9" width="17" height="11" rx="1.5" /><path d="M3.5 13h17M12 9v11M12 9S10.5 5 8 5a2 2 0 0 0 0 4zM12 9s1.5-4 4-4a2 2 0 0 1 0 4z" />
+                  </svg>
                   <p className="text-white/70 text-[12px] font-medium">
                     {earnsNow
                       ? 'This purchase earns you a draft pass!'
@@ -777,29 +777,34 @@ export function BuyPassesModal({
               <p className="text-red-400 text-center text-xs">Mint is currently inactive</p>
             )}
 
-            {/* Price + Total */}
-            <div className="text-center space-y-1">
-              <p className="text-text-muted text-sm">$25 per draft pass</p>
-              {paymentMethod === 'usdc' && usdcTotal ? (
-                <p className="text-3xl font-bold text-banana">{formatUnits(usdcTotal, 6)} USDC</p>
-              ) : (
-                <p className="text-3xl font-bold text-banana">${totalPrice}</p>
-              )}
-              {paymentMethod === 'usdc' && user?.usdcBalance != null && (
-                <p className={`text-xs ${user.usdcBalance >= totalPrice ? 'text-success' : 'text-error'}`}>
-                  Wallet balance: {user.usdcBalance.toFixed(2)} USDC
-                  {user.usdcBalance < totalPrice && ' (insufficient)'}
-                </p>
-              )}
+            {/* Order summary (Option 2) — line item + balance + total in one
+                clean card. Works full-width on mobile and desktop. */}
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-bg-primary/60 border border-bg-tertiary p-4 space-y-2.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-text-secondary">{quantity} draft pass{quantity !== 1 ? 'es' : ''} × $25</span>
+                  <span className="text-text-primary font-mono tabular-nums">${totalPrice}</span>
+                </div>
+                {paymentMethod === 'usdc' && user?.usdcBalance != null && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-text-secondary">Wallet balance</span>
+                    <span className={`font-mono tabular-nums ${user.usdcBalance >= totalPrice ? 'text-text-secondary' : 'text-error'}`}>
+                      {user.usdcBalance.toFixed(2)} USDC{user.usdcBalance < totalPrice ? ' (insufficient)' : ''}
+                    </span>
+                  </div>
+                )}
+                <div className="border-t border-bg-tertiary pt-2.5 flex items-center justify-between">
+                  <span className="text-text-primary font-semibold">Total</span>
+                  <span className="text-banana text-2xl font-bold tabular-nums">
+                    {paymentMethod === 'usdc' && usdcTotal ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
+                  </span>
+                </div>
+              </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
-                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3 text-left">
+                <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
                   <p className="text-text-secondary text-xs leading-relaxed">
-                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>.
-                    <br />
-                    It&apos;s quick and easy.{' '}
-                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">
-                      Learn how →
-                    </Link>
+                    Learn how to buy, swap, or bridge <span className="text-text-primary font-semibold">USDC on Base</span>. It&apos;s quick and easy.{' '}
+                    <Link href="/get-usdc" className="text-banana font-semibold hover:brightness-110 whitespace-nowrap">Learn how →</Link>
                   </p>
                 </div>
               )}
@@ -873,7 +878,7 @@ export function BuyPassesModal({
                     alert('Staging mint error: ' + (err instanceof Error ? err.message : 'Unknown'));
                   }
                 }}
-                className="w-full py-4 rounded-2xl font-bold text-lg bg-orange-500 text-black hover:brightness-110 transition-all"
+                className="w-full py-1 text-center text-[12px] text-text-muted hover:text-text-secondary transition-colors"
               >
                 🧪 Free Entry (Staging) — {quantity} Pass{quantity !== 1 ? 'es' : ''}
               </button>
