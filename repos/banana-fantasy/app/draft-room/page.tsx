@@ -33,6 +33,7 @@ import {
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { draftWordColor, draftWordShadow } from '@/lib/draftBandStyle';
+import { Tooltip } from '@/components/ui/Tooltip';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -2386,20 +2387,31 @@ function DraftRoomContent() {
           image was ~60px tall and bloated the red band vs the pro room).
           White JACKPOT on the red band, black HOF on the gold band, purple
           PRO on black (Boris's pick 2026-06-10: clean flat word, no glow). */}
-      {visibleDraftType && (
-        <span
-          className="font-black uppercase mr-2"
-          style={{
-            fontSize: '18px',
-            lineHeight: 1,
-            letterSpacing: '0.14em',
-            color: draftWordColor(visibleDraftType),
-            textShadow: draftWordShadow(visibleDraftType),
-          }}
-        >
-          {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
-        </span>
-      )}
+      {visibleDraftType && (() => {
+        const wordEl = (
+          <span
+            className={`font-black uppercase mr-2 ${visibleDraftType !== 'pro' ? 'cursor-default' : ''}`}
+            style={{
+              fontSize: '18px',
+              lineHeight: 1,
+              letterSpacing: '0.14em',
+              color: draftWordColor(visibleDraftType),
+              textShadow: draftWordShadow(visibleDraftType),
+            }}
+          >
+            {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
+          </span>
+        );
+        // Hover the JP/HOF word for a clean one-line explainer of the perk.
+        if (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') {
+          return (
+            <Tooltip content={<span className="text-xs whitespace-nowrap">{visibleDraftType === 'jackpot' ? 'Win your league, skip to finals' : 'Compete for bonus prizes'}</span>}>
+              {wordEl}
+            </Tooltip>
+          );
+        }
+        return wordEl;
+      })()}
       {/* Founder pill — sits inline with the JP/HOF logo (when present) and
           the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
           premium tag alongside the larger JP/HOF artwork rather than a plain
