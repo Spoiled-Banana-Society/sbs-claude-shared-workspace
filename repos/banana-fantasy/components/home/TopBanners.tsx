@@ -47,16 +47,6 @@ function DismissX({ onClick }: { onClick: () => void }) {
   );
 }
 
-const GiftIcon = (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
-    <polyline points="20 12 20 22 4 22 4 12" />
-    <rect x="2" y="7" width="20" height="5" />
-    <line x1="12" y1="22" x2="12" y2="7" />
-    <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z" />
-    <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z" />
-  </svg>
-);
-
 const PhoneIcon = (
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
     <rect x="6" y="2" width="12" height="20" rx="3" />
@@ -64,143 +54,8 @@ const PhoneIcon = (
   </svg>
 );
 
-/* ───────────────────── First Purchase banner ───────────────────── */
-
-const fpDismissKey = (wallet?: string) => `sbs-first-purchase-banner-dismissed-${wallet ?? 'anon'}`;
-
-function useFirstPurchaseBanner() {
-  const { user, isBB3Holder, isLoggedIn } = useAuth();
-  const router = useRouter();
-  const wallet = user?.walletAddress;
-  const [dismissed, setDismissed] = useState(true); // hidden until storage checked
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !wallet) { setDismissed(true); return; }
-    setDismissed(!!window.localStorage.getItem(fpDismissKey(wallet)));
-  }, [wallet]);
-
-  useEffect(() => {
-    const onUnlock = () => {
-      if (wallet && !window.localStorage.getItem(fpDismissKey(wallet))) setDismissed(false);
-    };
-    window.addEventListener('sbs-first-purchase-unlocked', onUnlock);
-    return () => window.removeEventListener('sbs-first-purchase-unlocked', onUnlock);
-  }, [wallet]);
-
-  const dismiss = useCallback(() => {
-    if (typeof window !== 'undefined' && wallet) window.localStorage.setItem(fpDismissKey(wallet), '1');
-    setDismissed(true);
-  }, [wallet]);
-
-  const goBuy = useCallback(() => router.push('/buy-drafts'), [router]);
-
-  // Returning (BB3) players see it right away; brand-new users once they've
-  // finished their welcome-wheel free drafts (firstPurchasePromoUnlocked).
-  const inWindow = isBB3Holder || !!user?.firstPurchasePromoUnlocked;
-  // IMPORTANT: require firstPurchaseBonusGranted to be KNOWN-false. It loads a
-  // moment after the user object (via the balance stream), so it's `undefined`
-  // on first paint. Using `!granted` there would flash the banner for ~1s for a
-  // user who has already purchased. `=== false` keeps it hidden until we're sure.
-  const show = isLoggedIn && !!wallet && user?.firstPurchaseBonusGranted === false && inWindow && !dismissed;
-
-  return { show, dismiss, goBuy };
-}
-
-function FirstPurchaseCard({ goBuy, dismiss }: { goBuy: () => void; dismiss: () => void }) {
-  return (
-    <CardShell>
-      {GiftIcon}
-      <div className="flex-1 min-w-0" onClick={goBuy} role="button" tabIndex={0}>
-        <p className="text-text-primary font-semibold text-[14px] leading-tight">First Purchase Bonus</p>
-        <p className="text-text-secondary text-xs mt-0.5">Every 4 passes = 1 free spin</p>
-      </div>
-      <button
-        onClick={goBuy}
-        className="flex-none rounded-full bg-banana text-[#1d1d1f] font-bold text-[13px] px-5 py-2.5 transition-transform hover:scale-[1.03]"
-      >
-        Buy Drafts
-      </button>
-      <DismissX onClick={dismiss} />
-    </CardShell>
-  );
-}
-
-/* ───────────────────── New-user Free Spin banner ───────────────────── */
-
-const SpinIcon = (
-  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
-    <circle cx="12" cy="12" r="9" />
-    <circle cx="12" cy="12" r="2.5" />
-    <path d="M12 3v6.5M12 14.5V21M3 12h6.5M14.5 12H21" />
-  </svg>
-);
-
-const nuDismissKey = (wallet?: string) => `sbs-new-user-spin-banner-dismissed-${wallet ?? 'anon'}`;
-
-function useNewUserSpinBanner() {
-  const { user, isLoggedIn, newUserPromoClaimed, isBB3Holder } = useAuth();
-  const router = useRouter();
-  const wallet = user?.walletAddress;
-  const [dismissed, setDismissed] = useState(true); // hidden until storage checked
-  const [settled, setSettled] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !wallet) { setDismissed(true); return; }
-    setDismissed(!!window.localStorage.getItem(nuDismissKey(wallet)));
-    // Brief settle delay: claimed users' state arrives via the X-link check a
-    // moment after login — waiting ~1.2s prevents a show-then-vanish flash.
-    const t = setTimeout(() => setSettled(true), 1200);
-    return () => clearTimeout(t);
-  }, [wallet]);
-
-  const dismiss = useCallback(() => {
-    if (typeof window !== 'undefined' && wallet) window.localStorage.setItem(nuDismissKey(wallet), '1');
-    setDismissed(true);
-  }, [wallet]);
-
-  // Straight to the new-user promo modal (seed id 6) — no hunting.
-  const goEarn = useCallback(() => router.push('/promos?promo=6'), [router]);
-
-  // NEW USERS ONLY (Boris 2026-06-10): account created within the last 7
-  // days. "Hasn't claimed" alone was too loose — it showed for any long-time
-  // account that simply never did the X-verify (caught on Boris's admin
-  // wallet, whose claim lives on his old wallet).
-  const createdMs = user?.createdAt ? new Date(user.createdAt).getTime() : 0;
-  // Belt + suspenders: anyone already holding PAID passes isn't "new",
-  // whatever their doc-creation date says.
-  const isNewAccount = createdMs > 0
-    && Date.now() - createdMs < 7 * 24 * 60 * 60 * 1000
-    && (user?.draftPasses ?? 0) === 0;
-
-  // Gone the INSTANT the spin is claimed (newUserPromoClaimed is server-backed,
-  // so it stays gone on every device) — or when ×-dismissed.
-  // Returning players (held BBB3 / played past seasons) are never "new",
-  // whatever this wallet's account age on the new site.
-  const show = isLoggedIn && !!wallet && settled && !dismissed && isNewAccount && !isBB3Holder && !newUserPromoClaimed;
-
-  return { show, dismiss, goEarn };
-}
-
-function NewUserSpinCard({ goEarn, dismiss }: { goEarn: () => void; dismiss: () => void }) {
-  return (
-    <CardShell>
-      {SpinIcon}
-      <div className="flex-1 min-w-0 cursor-pointer" onClick={goEarn} role="button" tabIndex={0}>
-        <p className="text-text-primary font-semibold text-[14px] leading-tight">New User Promo — Free Spin Waiting</p>
-        <p className="text-text-secondary text-xs mt-0.5">Win up to 20 free drafts — at least 1 guaranteed</p>
-      </div>
-      <button
-        onClick={goEarn}
-        className="flex-none rounded-full bg-banana text-[#1d1d1f] font-bold text-[13px] px-5 py-2.5 transition-transform hover:scale-[1.03]"
-      >
-        Earn Spin
-      </button>
-      <DismissX onClick={dismiss} />
-    </CardShell>
-  );
-}
-
-/* ───────────────────── Founder Draft banner ───────────────────── */
+/* ───────────────────── Founder Draft banner (kept for /test-banners only;
+   not rendered in the app — founder moved to a bell notification) ──────── */
 
 const KeyIcon = (
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="text-banana flex-none">
@@ -388,9 +243,8 @@ function AppInstallCard({ onClick, dismiss }: { onClick: () => void; dismiss: ()
 
 export function TopBanners() {
   const { user } = useAuth();
-  const fd = useFounderDraftCard();
-  const nu = useNewUserSpinBanner();
-  const fp = useFirstPurchaseBanner();
+  // The ONLY top banner now is Get-the-App (Boris 2026-06-14). New-user welcome,
+  // first-purchase, and founder-draft moved to bell notifications instead.
   const app = useAppInstallBanner();
 
   // Render only after mount: visibility is computed from window/localStorage, so
@@ -410,10 +264,6 @@ export function TopBanners() {
   if (!mounted) return null;
 
   const slots: React.ReactNode[] = [];
-  // Founder card first — it's the time-sensitive one.
-  if (fd.show || preview) slots.push(<FounderDraftCard key="fd" fd={fd} />);
-  if (nu.show || preview) slots.push(<NewUserSpinCard key="nu" goEarn={nu.goEarn} dismiss={nu.dismiss} />);
-  if (fp.show || preview) slots.push(<FirstPurchaseCard key="fp" goBuy={fp.goBuy} dismiss={fp.dismiss} />);
   if (app.show || preview) slots.push(<AppInstallCard key="app" onClick={app.onClick} dismiss={app.dismiss} />);
 
   const two = slots.length >= 2;

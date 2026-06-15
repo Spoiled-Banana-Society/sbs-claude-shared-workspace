@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { FounderDraftCard } from '@/components/home/TopBanners';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { ActiveDraftsList } from '@/components/drafting/ActiveDraftsList';
@@ -136,7 +135,6 @@ export default function DraftingPage() {
 
   return (
     <>
-    <FounderDraftCard standalone />
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       {claimSuccess.show && (
         <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 bg-banana text-black px-6 py-3 rounded-xl font-semibold shadow-lg animate-bounce">
