@@ -29,7 +29,7 @@ const OPT_A: Palette = { one: '#64748b', two: '#14b8a6', five: '#22c55e', ten: '
 // OPTION B — Jewel: cooler/deeper, every prize a distinct hue family.
 const OPT_B: Palette = { one: '#475569', two: '#0ea5e9', five: '#10b981', ten: '#6366f1', twenty: '#f97316', jackpot: '#ef4444', hof: '#d4af37' };
 
-function Wheel({ palette }: { palette: Palette }) {
+function Wheel({ palette, uid }: { palette: Palette; uid: string }) {
   const segAngle = 360 / ORDER.length;
   return (
     <div className="relative w-full max-w-[260px] mx-auto aspect-square">
@@ -42,7 +42,7 @@ function Wheel({ palette }: { palette: Palette }) {
         <svg viewBox="0 0 100 100" className="w-full h-full">
           <defs>
             {ORDER.map((k, i) => (
-              <linearGradient key={i} id={`g-${i}`} x1="50%" y1="0%" x2="50%" y2="100%">
+              <linearGradient key={i} id={`${uid}-g-${i}`} x1="50%" y1="0%" x2="50%" y2="100%">
                 <stop offset="0%" stopColor={palette[k]} stopOpacity="0.95" />
                 <stop offset="50%" stopColor={palette[k]} stopOpacity="1" />
                 <stop offset="100%" stopColor={palette[k]} stopOpacity="0.85" />
@@ -66,7 +66,7 @@ function Wheel({ palette }: { palette: Palette }) {
             const fs = label.length > 8 ? 2.6 : 3.2;
             return (
               <g key={i}>
-                <path d={path} fill={`url(#g-${i})`} stroke="rgba(255,255,255,0.08)" strokeWidth="0.3" />
+                <path d={path} fill={`url(#${uid}-g-${i})`} stroke="rgba(255,255,255,0.08)" strokeWidth="0.3" />
                 <text x={tx} y={ty} fill="white" fontSize={fs} fontWeight="600" textAnchor="middle"
                   dominantBaseline="middle" transform={`rotate(${mid + 90}, ${tx}, ${ty})`} filter="url(#ts)"
                   style={{ letterSpacing: '0.02em' }}>{label}</text>
@@ -91,7 +91,7 @@ function Card({ title, sub, palette, rec }: { title: string; sub: string; palett
         {rec && <span className="text-[10px] font-bold uppercase tracking-wide text-banana bg-banana/15 px-1.5 py-0.5 rounded">Rec</span>}
       </div>
       <p className="text-white/40 text-xs mb-4">{sub}</p>
-      <Wheel palette={palette} />
+      <Wheel palette={palette} uid={title.toLowerCase().replace(/[^a-z]/g, '')} />
       <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-4 justify-center">
         {PRIZES.map(k => (
           <span key={k} className="inline-flex items-center gap-1 text-[10px] text-white/55">
