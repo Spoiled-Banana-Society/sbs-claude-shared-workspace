@@ -27,12 +27,12 @@ const TYPES: { word: string; pct: string; color: string; d: string }[] = [
 ];
 
 export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
-  const [tab, setTab] = useState<Tab>('how');
+  const [tab, setTab] = useState<Tab>('contest');
   return (
     <div>
       {/* tab bar */}
       <div className="inline-flex max-w-full overflow-x-auto banner-no-scrollbar items-center gap-1 rounded-full bg-white/[0.05] p-1 mb-5">
-        {([['how', 'How it Works'], ['contest', 'Contest'], ['faq', 'FAQ']] as [Tab, string][]).map(([k, label]) => (
+        {([['contest', 'Contest'], ['how', 'How it Works'], ['faq', 'FAQ']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`shrink-0 px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold transition-colors ${tab === k ? 'bg-white text-black' : 'text-white/55 hover:text-white/85'}`}>{label}</button>
         ))}
       </div>
