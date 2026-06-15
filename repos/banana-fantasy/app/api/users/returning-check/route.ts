@@ -53,16 +53,6 @@ export async function POST(req: Request) {
         icon: 'phone',
       });
 
-      // 1b) Draft Alerts — one-time, every user. Push them to set up alerts so
-      //     they're notified when a draft starts + when it's their pick.
-      await createNotification(wallet, {
-        type: 'draft_alerts',
-        title: 'Set up Draft Alerts',
-        message: "Get notified when your draft starts and when it's your pick. Tap to set it up.",
-        link: '/notifications/settings',
-        dedupeKey: 'draft-alerts-setup',
-        icon: 'bellring',
-      });
 
       // 2) Founder Draft — day-before + day-of bells, once each, when a schedule
       //    is active. Driven off the founder schedule singleton (PT dates).

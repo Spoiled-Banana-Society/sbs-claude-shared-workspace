@@ -336,6 +336,30 @@ function DraftRoomContent() {
     clientLog('pcdiag', 'playerCount.change', { playerCount, phase, draftId });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerCount]);
+
+  // Draft Alerts bell (Boris 2026-06-15): the FIRST time a user is in a draft
+  // lobby, fire the one-time "Set up Draft Alerts" bell — real-time, server-
+  // backed, deduped once-ever. Fires on lobby entry (filling phase), not on
+  // login. getAccessToken lives in a ref so this effect's deps stay stable
+  // scalars (render-loop rule).
+  const getAccessTokenRef = useRef(getAccessToken);
+  getAccessTokenRef.current = getAccessToken;
+  const draftAlertsFiredRef = useRef(false);
+  useEffect(() => {
+    if (!isLiveMode || phase !== 'filling') return;
+    if (draftAlertsFiredRef.current) return;
+    draftAlertsFiredRef.current = true;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current?.();
+        if (!token) return;
+        await fetch('/api/users/draft-alerts-prompt', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch { /* best-effort — server dedupe makes it once-ever anyway */ }
+    })();
+  }, [isLiveMode, phase]);
   const [preSpinCountdown, setPreSpinCountdown] = useState(() => {
     if (stored?.preSpinStartedAt) return Math.max(0, Math.floor(15 - (Date.now() - stored.preSpinStartedAt) / 1000));
     return 15;
