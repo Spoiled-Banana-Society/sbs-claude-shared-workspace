@@ -2,10 +2,12 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { OPENSEA_API_BASE, OPENSEA_CHAIN, BBB4_CONTRACT } from '@/lib/opensea';
+import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
+import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, allBatchSpecialsHit } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
@@ -35,8 +37,16 @@ function tierFromLevel(level: string): CardTier {
  * full pick list (getDraftSummary, has ownerAddress + pickNum + playerId).
  * Best-effort per token; only sets the `Image` field (merge), never throws.
  */
-async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise<number> {
+async function writeFullDataImages(
+  draftId: string,
+  tokenIds: string[],
+): Promise<{ written: number; eligible: number }> {
   const db = getAdminFirestore();
+  // The current on-chain supply cap — a token can only ever get a marketplace_index
+  // doc if its REAL id is at/below this (upsertMarketplaceIndex rejects the rest).
+  // We count only those toward capture completeness so bot/synthetic tokens that
+  // never get indexed can't make the draft look permanently uncaptured.
+  const maxId = await currentMaxTokenId();
 
   // Full pick list, grouped by owner wallet.
   let byOwner = new Map<string, Array<{ playerId: string; pickNum: number }>>();
@@ -53,7 +63,7 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
     logger.warn('marketplace.refresh_draft_summary_failed', { draftId, error: String(err) });
     byOwner = new Map();
   }
-  if (byOwner.size === 0) return 0;
+  if (byOwner.size === 0) return { written: 0, eligible: 0 };
 
   // Numeric league id (matches the Go-written LEAGUE-NAME "BBB #N" → N).
   let leagueNo = draftId.replace(/\D/g, '');
@@ -63,6 +73,7 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
   } catch { /* keep draftId-derived */ }
 
   let written = 0;
+  let eligible = 0;
   await Promise.all(
     tokenIds.map(async (tokenId) => {
       try {
@@ -96,6 +107,14 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
           await db.collection('draftTokenMetadata').doc(realId).set({ Image: image }, { merge: true });
         }
 
+        // Only a REAL on-chain id can get a marketplace_index doc — count those
+        // toward "eligible" BEFORE the upsert so a thrown (transient) upsert
+        // leaves written < eligible and the capture cron retries. Bot/synthetic
+        // tokens (realId not on-chain) are neither eligible nor written, so they
+        // never make the draft look permanently uncaptured.
+        const indexable = isRealToken(realId, maxId);
+        if (indexable) eligible += 1;
+
         // Stamp the marketplace index DIRECTLY at draft close — so this team is
         // in the JP/HOF/League filters the instant the draft ends, instead of
         // waiting for OpenSea to (maybe) call our metadata endpoint back. Same
@@ -111,11 +130,11 @@ async function writeFullDataImages(draftId: string, tokenIds: string[]): Promise
           // from OUR Firestore, even after the Go draft summary expires.
           players: players.map((p) => ({ team: p.team, pos: p.pos, pick: p.pick, bye: p.bye, adp: p.adp })),
         });
-        written += 1;
+        if (indexable) written += 1;
       } catch { /* skip this token, keep the rest */ }
     }),
   );
-  return written;
+  return { written, eligible };
 }
 
 /**
@@ -239,8 +258,25 @@ export async function POST(
 
     // Write the full-data team image for ALL tokens FIRST, so the OpenSea
     // refresh below pulls the new card art (not the old Go GCS image).
-    const imagesWritten = await writeFullDataImages(draftId, tokenIds);
-    logger.info('marketplace.refresh_draft_images', { draftId, imagesWritten, total: tokenIds.length });
+    const { written: imagesWritten, eligible } = await writeFullDataImages(draftId, tokenIds);
+    logger.info('marketplace.refresh_draft_images', { draftId, imagesWritten, eligible, total: tokenIds.length });
+
+    // Stamp the AUTHORITATIVE capture-complete marker once every REAL team is
+    // indexed. The capture-draft-data cron reads this (not a per-token index
+    // scan) as "done" — immune to the cardId-vs-realId key mismatch and to bot/
+    // short tokens that made the old per-token check false-negative forever
+    // (the permanent `gave_up` bug). Only stamp on a COMPLETE capture
+    // (written >= eligible) so a genuine partial failure is still retried.
+    if (eligible > 0 && imagesWritten >= eligible) {
+      try {
+        await db.collection('marketplace_capture').doc(draftId).set(
+          { capturedAt: FieldValue.serverTimestamp(), count: imagesWritten, eligible },
+          { merge: true },
+        );
+      } catch (err) {
+        logger.warn('marketplace.refresh_draft_capture_marker_failed', { draftId, error: String(err) });
+      }
+    }
 
     // Draft closed → per-owner credits: banana ripeness (tier badge + bell/
     // toast), the first-purchase gate, jackpot-hit spins when this draft
