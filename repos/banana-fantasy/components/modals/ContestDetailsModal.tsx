@@ -66,8 +66,7 @@ export function ContestDetailsModal({
             </div>
           </div>
           <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated leading-relaxed">
-            You&apos;re guaranteed at least <span className="text-banana font-medium">{formatCurrency(contest.prizePool)}</span> in prizes.
-            The more people enter, the bigger the pool — so every payout below can go up. The amounts shown are just an example.
+            This is an example prize pool — it can go up as more players enter.
           </p>
         </div>
 
@@ -89,8 +88,8 @@ export function ContestDetailsModal({
 
         {/* Guaranteed Distribution */}
         <div className="bg-bg-tertiary/50 rounded-xl p-3 border border-bg-tertiary">
-          <p className="text-text-secondary text-xs text-center leading-relaxed">
-            <span className="text-text-primary font-medium">Every 100 drafts:</span> 94 Pro, 5 Hall of Fame, 1 Jackpot. You won&apos;t know your draft&apos;s type until it fills — but the mix is always guaranteed. You can also win Hall of Fame and Jackpot drafts on the Banana Wheel.
+          <p className="text-text-secondary text-xs text-center">
+            <span className="text-text-primary font-medium">Guaranteed distribution:</span> Every 100 paid drafts contains exactly 1 Jackpot, 5 HOF, and 94 Pro. The order is randomized, but the distribution is guaranteed. Players can also win Jackpot and HOF entries on the Banana Wheel.
           </p>
         </div>
 
