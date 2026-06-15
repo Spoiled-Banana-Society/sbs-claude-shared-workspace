@@ -6,6 +6,7 @@ import { Modal } from '@/components/ui/Modal';
 import { TeamPosition } from '@/types';
 import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
 import { DefaultSortToggle } from '@/components/rankings/DefaultSortToggle';
+import { DraftSectionLinks } from '@/components/layout/DraftSectionLinks';
 import { useAuth } from '@/hooks/useAuth';
 import { Rankings } from '@/utils/api';
 
@@ -250,7 +251,10 @@ export default function RankingsPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       {/* Page Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">Rankings</h1>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
+          <h1 className="text-3xl font-bold text-text-primary">Rankings</h1>
+          <DraftSectionLinks active="rankings" />
+        </div>
         <p className="text-text-secondary">Draft team positions, not players. Each week you score the highest-scoring player at that position.</p>
       </div>
 
