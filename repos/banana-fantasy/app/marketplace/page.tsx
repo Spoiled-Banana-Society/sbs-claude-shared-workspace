@@ -120,7 +120,7 @@ export default function MarketplacePage() {
     }
   }, [walletAddress, sendTx, addNotification]);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('buy');
+  const [activeTab, setActiveTab] = useState<TabKey>('sell');
   const [viewFilter, setViewFilter] = useState<ViewFilter>('listed');
   const [hofFilter] = useState(false);
   const [jackpotFilter] = useState(false);
@@ -1207,16 +1207,16 @@ function Header({
   return (
     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary mb-2">Team Marketplace</h1>
-        <p className="text-text-secondary text-sm">Buy and sell BBB teams instantly. No external accounts needed.</p>
+        <h1 className="text-2xl font-bold text-text-primary mb-2">Marketplace</h1>
+        <p className="text-text-secondary text-sm">Buy and Sell teams all season.</p>
       </div>
       {/* Mobile: 2 tabs on top (Buy / Sell), 3 on the second line (My Offers /
           Activity / Watchlist). A 6-col grid makes both rows fill edge to edge
           (top = 2×3 cols, bottom = 3×2 cols). Desktop keeps the inline row. */}
       <div className="flex items-center gap-3 w-full lg:w-auto">
         <div className="grid grid-cols-6 gap-1 bg-bg-secondary p-1 rounded-xl border border-bg-tertiary w-full lg:flex lg:flex-wrap lg:w-auto">
-          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} className="col-span-3" />
           <TabButton active={activeTab === 'sell'} label="Sell My Teams" onClick={() => onChangeTab('sell')} className="col-span-3" />
+          <TabButton active={activeTab === 'buy'} label="Buy Teams" onClick={() => onChangeTab('buy')} className="col-span-3" />
           <TabButton active={activeTab === 'offers'} label="My Offers" onClick={() => onChangeTab('offers')} className="col-span-2" />
           <TabButton active={activeTab === 'activity'} label="Activity" onClick={() => onChangeTab('activity')} className="col-span-2" />
           <button

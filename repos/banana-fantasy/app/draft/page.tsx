@@ -14,6 +14,7 @@ import { PromoModal } from '@/components/modals/PromoModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
+import { DraftInfoModal } from '@/components/modals/DraftInfoModal';
 
 const BuyPassesModal = dynamic(
   () => import('@/components/modals/BuyPassesModal').then(m => m.BuyPassesModal),
@@ -124,6 +125,7 @@ export default function DraftingPage() {
     setInfoTopic,
   } = useDraftingPageState();
 
+  const [showDraftInfo, setShowDraftInfo] = React.useState(false);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
   // Render localStorage-cached drafts instantly. Only show the empty-state
   // hero once we're sure the user has nothing — both auth done and the live
@@ -144,7 +146,18 @@ export default function DraftingPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
         <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-semibold text-white">My Drafts</h1>
+          <div className="flex items-center gap-1.5">
+            <h1 className="text-2xl font-semibold text-white">Drafts</h1>
+            <button
+              onClick={() => setShowDraftInfo(true)}
+              aria-label="How drafts work, contest details & FAQ"
+              className="self-center text-white/30 hover:text-white/60 transition-colors"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </button>
+          </div>
           {/* Rankings = pre-draft tool, kept as a quiet text link beside the
               title. */}
           <button
@@ -247,7 +260,7 @@ export default function DraftingPage() {
                       </button>
                       <button onClick={() => setInfoTopic('team-positions')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Team Positions</h4>
-                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">KC QB</span> or <span className="text-white/50 font-medium">DAL WR1</span> — not individual players. You get the top scorer at that position each week.</p>
+                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">KC QB</span>, not players. You get that position&apos;s top scorer every week.</p>
                       </button>
                       <button onClick={() => setInfoTopic('best-ball')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Best Ball</h4>
@@ -269,7 +282,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-pro">94%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for your share of the prize pool.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Standard draft. Compete for the $100K GTD Prize Pool.</p>
                       </button>
                       <button
                         onClick={() => setInfoTopic('hof')}
@@ -293,7 +306,7 @@ export default function DraftingPage() {
                           <span className="text-white/15">&middot;</span>
                           <span className="text-[15px] font-bold tracking-tight text-jackpot">1%</span>
                         </div>
-                        <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals. The rarest draft type.</p>
+                        <p className="text-white/50 text-[12px] leading-[1.6]">Win your league and skip straight to the finals.</p>
                       </button>
                     </div>
                   </div>
@@ -439,6 +452,8 @@ export default function DraftingPage() {
           }}
         />
       )}
+
+      <DraftInfoModal isOpen={showDraftInfo} onClose={() => setShowDraftInfo(false)} contest={contest ?? null} />
 
       <PromoModal
         isOpen={!!selectedPromo}

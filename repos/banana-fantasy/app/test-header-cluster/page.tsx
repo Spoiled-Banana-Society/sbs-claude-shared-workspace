@@ -239,15 +239,30 @@ function WheelIcon({ wheel, size = 26 }: { wheel: WheelStyle; size?: number }) {
   if (wheel === 'grey') return <WheelGrey size={size} />;
   return <ColorfulWheel size={size} />;
 }
-function OptionC({ wheel = 'lines' }: { wheel?: WheelStyle }) {
+// Pass with the count INSIDE the ticket (gold), vs a bare ticket + corner badge.
+function TicketInside({ n }: { n: number }) {
+  return (
+    <span className="relative inline-flex items-center justify-center" style={{ width: 34, height: 22 }}>
+      <svg viewBox="0 0 24 16" className="w-[34px] h-[22px]" fill="none" stroke="#fbbf24" strokeWidth={1.4} strokeLinejoin="round">
+        <path d="M2.5 4.5A1.5 1.5 0 0 1 4 3h16a1.5 1.5 0 0 1 1.5 1.5v1.6a1.6 1.6 0 0 0 0 3.2v1.7A1.5 1.5 0 0 1 20 12H4a1.5 1.5 0 0 1-1.5-1.5V8.9a1.6 1.6 0 0 0 0-3.2z" />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-banana tabular-nums">{n}</span>
+    </span>
+  );
+}
+function OptionC({ wheel = 'lines', passStyle = 'inside' }: { wheel?: WheelStyle; passStyle?: 'inside' | 'badge' }) {
   // Equal breathing room: one consistent gap between every control.
   return (
     <div className="flex items-center gap-4">
       <Counter />
-      <CircleBtn>
-        <TicketGlyph className="w-[22px] h-[22px]" />
-        <CountBadge n={DATA.passes} />
-      </CircleBtn>
+      {passStyle === 'inside' ? (
+        <button className="relative flex items-center justify-center hover:opacity-80 transition-opacity"><TicketInside n={DATA.passes} /></button>
+      ) : (
+        <CircleBtn>
+          <TicketGlyph className="w-[22px] h-[22px]" />
+          <CountBadge n={DATA.passes} />
+        </CircleBtn>
+      )}
       <CircleBtn>
         <WheelIcon wheel={wheel} size={22} />
         <CountBadge n={DATA.spins} />
@@ -297,6 +312,7 @@ function Section({ title, blurb, children }: { title: string; blurb: string; chi
 
 export default function TestHeaderCluster() {
   const [wheel, setWheel] = useState<WheelStyle>('lines');
+  const [passStyle, setPassStyle] = useState<'inside' | 'badge'>('inside');
   return (
     <div className="min-h-screen bg-[#08090c] px-4 sm:px-8 py-10">
       <div className="max-w-3xl mx-auto">
@@ -310,8 +326,16 @@ export default function TestHeaderCluster() {
           title="Option C — Spacious Circular  ⭐ (the one you're shipping)"
           blurb="Each control is its own round button with equal breathing room. Two wheel versions below: 'Lines only' (the wheel drawn purely in lines, nothing shaded) and 'All grey' (every segment shaded grey). Toggle to compare — pick one and I'll ship it."
         >
-          <HeaderBar><OptionC wheel={wheel} /></HeaderBar>
+          <HeaderBar><OptionC wheel={wheel} passStyle={passStyle} /></HeaderBar>
           <div className="flex flex-wrap items-center gap-2 mt-4">
+            <span className="text-white/40 text-xs mr-1">Pass:</span>
+            {(['inside', 'badge'] as const).map(p => (
+              <button key={p} onClick={() => setPassStyle(p)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${passStyle === p ? 'bg-banana text-black' : 'bg-white/[0.05] text-white/60 hover:text-white'}`}>
+                {p === 'inside' ? 'Number inside pass' : 'Badge on top'}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
             <span className="text-white/40 text-xs mr-1">Wheel:</span>
             {(['lines', 'grey', 'colorful'] as const).map(w => (
               <button

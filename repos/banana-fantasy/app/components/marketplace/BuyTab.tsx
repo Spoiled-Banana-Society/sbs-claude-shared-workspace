@@ -151,17 +151,18 @@ export function BuyTab({
               ))}
           </div>
 
+          {/* Roster search + League#/Team# grouped together, with the roster box
+              kept compact so they all sit on one tidy row with room to breathe
+              before the filter tabs. */}
           <MultiChipSearch
             chips={rosterFilter}
             onChange={onSetRosterFilter}
             options={rosterFilterOptions}
-            placeholder="Type a roster slot (e.g. KC QB)"
-            className="w-full sm:w-72"
+            placeholder="Roster slot (e.g. KC QB)"
+            className="w-full sm:w-52"
           />
 
-          {/* League # / Team # filters — side by side in their own row so each
-              shows its full placeholder (the "#" was clipping at w-28) without
-              stretching into empty space. Fixed widths on desktop. */}
+          {/* League # / Team # filters — sit right next to the roster search. */}
           <div className="flex gap-2 w-full sm:w-auto">
             <input
               type="number"

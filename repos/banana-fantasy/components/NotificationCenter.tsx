@@ -560,9 +560,13 @@ export function NotificationBell({ unreadCount, onClick }: { unreadCount: number
     <button
       onClick={onClick}
       aria-label={`Notifications${unreadCount > 0 ? `: ${unreadCount} unread` : ''}`}
-      className="relative flex items-center px-3 py-2 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
+      className="group relative flex items-center px-2 py-1.5 rounded-lg hover:bg-bg-tertiary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F3E216]"
     >
-      <span className="text-[26px] leading-none" aria-hidden="true">🔔</span>
+      {/* Clean line bell (Option C) — replaces the 🔔 emoji */}
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="text-white/75 group-hover:text-white transition-colors" aria-hidden="true">
+        <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+      </svg>
       {unreadCount > 0 && (
         <motion.span
           initial={{ scale: 0 }}
