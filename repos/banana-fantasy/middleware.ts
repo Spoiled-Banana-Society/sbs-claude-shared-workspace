@@ -3,7 +3,8 @@ import type { NextRequest } from 'next/server';
 
 /**
  * Next.js Edge Middleware — runs before every request.
- * Handles: CORS preflight, origin validation, request size limits for API routes.
+ * Handles: pre-launch gate (countdown wall), CORS preflight, origin
+ * validation, request size limits for API routes.
  */
 
 const ALLOWED_ORIGINS = [
@@ -21,6 +22,62 @@ const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1MB — default for typical JSON paylo
 // 5 MB matches Vercel's serverless function request limit, gives headroom.
 const FILE_UPLOAD_MAX_BODY_SIZE = 5 * 1024 * 1024; // 5MB
 const FILE_UPLOAD_PATHS = ['/api/verify/submit'];
+
+// ── Pre-launch gate ─────────────────────────────────────────────────────
+// When PRELAUNCH_MODE === 'true', the public sees ONLY the countdown
+// (/coming-soon) no matter what URL they hit; the API is fully sealed.
+// The team gets in via /enter?key=<PRELAUNCH_BYPASS_KEY>, which drops a
+// preview cookie and bounces back to a clean URL showing the real app.
+// /exit clears it. When the flag is off (default), this is a no-op and the
+// app behaves exactly as before.
+const PRELAUNCH_COOKIE = 'sbs_preview';
+const COMING_SOON_PATH = '/coming-soon';
+
+function handlePrelaunch(req: NextRequest): NextResponse | null {
+  if (process.env.PRELAUNCH_MODE !== 'true') return null; // gate off → no-op
+
+  const { pathname } = req.nextUrl;
+  const bypassKey = process.env.PRELAUNCH_BYPASS_KEY;
+
+  // Secret entry: correct key → set preview cookie, bounce to clean root.
+  // Wrong/missing key reveals nothing — just the countdown.
+  if (pathname === '/enter') {
+    const key = req.nextUrl.searchParams.get('key');
+    if (bypassKey && key === bypassKey) {
+      const res = NextResponse.redirect(new URL('/', req.url));
+      res.cookies.set(PRELAUNCH_COOKIE, '1', {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30, // 30 days
+      });
+      return res;
+    }
+    return NextResponse.rewrite(new URL(COMING_SOON_PATH, req.url));
+  }
+
+  // Secret exit: clear preview, bounce to clean root (now showing countdown).
+  if (pathname === '/exit') {
+    const res = NextResponse.redirect(new URL('/', req.url));
+    res.cookies.delete(PRELAUNCH_COOKIE);
+    return res;
+  }
+
+  // Team preview holders → let everything through to the real app.
+  if (req.cookies.get(PRELAUNCH_COOKIE)?.value === '1') return null;
+
+  // Public: the API is fully sealed (nothing to probe).
+  if (pathname.startsWith('/api/')) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+
+  // Public: the countdown route renders normally...
+  if (pathname === COMING_SOON_PATH) return NextResponse.next();
+
+  // ...and every other path shows the countdown, URL kept clean (rewrite).
+  return NextResponse.rewrite(new URL(COMING_SOON_PATH, req.url));
+}
 
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true;
@@ -42,9 +99,13 @@ function corsHeaders(origin: string | null): Record<string, string> {
 }
 
 export function middleware(req: NextRequest) {
+  // Pre-launch gate runs first, for every path.
+  const gated = handlePrelaunch(req);
+  if (gated) return gated;
+
   const { pathname } = req.nextUrl;
 
-  // Only apply to API routes
+  // Beyond the gate, the rest only applies to API routes.
   if (!pathname.startsWith('/api/')) {
     return NextResponse.next();
   }
@@ -87,5 +148,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: '/api/:path*',
+  // Match every route (so the gate can cover pages + API) EXCEPT Next.js
+  // internals and static files (anything with a "." — e.g. /sbs-logo.png),
+  // so the countdown's own assets always load.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\..*).*)'],
 };
