@@ -34,7 +34,7 @@ function HeaderWheel({ size = 28 }: { size?: number }) {
 function PassTicket({ count, w = 40, h = 25 }: { count: number; w?: number; h?: number }) {
   return (
     <span className="relative inline-flex items-center justify-center transition-transform group-hover:scale-110" style={{ width: w, height: h }}>
-      <svg viewBox="0 0 48 30" width={w} height={h} fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth="2" strokeLinejoin="round">
+      <svg viewBox="0 0 48 30" width={w} height={h} fill="none" stroke="rgba(255,255,255,0.48)" strokeWidth="1.8" strokeLinejoin="round">
         <path d="M4 9A3 3 0 0 1 7 6h34a3 3 0 0 1 3 3v2.5a3.5 3.5 0 0 0 0 7V21a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-2.5a3.5 3.5 0 0 0 0-7z" />
       </svg>
       <span className="absolute inset-0 flex items-center justify-center font-bold text-banana tabular-nums" style={{ fontSize: h >= 24 ? 12 : 11 }}>{count}</span>
