@@ -1,9 +1,14 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export function Footer() {
   const year = new Date().getFullYear();
+  const pathname = usePathname();
+  // Full-bleed routes that render their own chrome: the draft room and the
+  // pre-launch / countdown landing get no footer (no terms/faq/support/©).
+  if (pathname === '/draft-room' || pathname === '/test-prelaunch') return null;
 
   // Support → open the Crisp chat (same as the profile menu's "Chat with us"),
   // on desktop and mobile. Replaces the old Discord-invite link.
