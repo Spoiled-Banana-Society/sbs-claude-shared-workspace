@@ -7,10 +7,11 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { mockFAQSections } from '@/lib/faqContent';
 import type { Contest } from '@/types';
 
-type Tab = 'how' | 'contest' | 'faq';
+type Tab = 'how' | 'contest' | 'faq' | 'vrf';
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
@@ -41,10 +42,12 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
               <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
             </button>
           </div>
-          <div className="mt-4 inline-flex items-center gap-1 rounded-full bg-white/[0.05] p-1">
+          <div className="mt-4 inline-flex max-w-full overflow-x-auto banner-no-scrollbar items-center gap-1 rounded-full bg-white/[0.05] p-1">
             {([['how', 'How it Works'], ['contest', 'Contest'], ['faq', 'FAQ']] as [Tab, string][]).map(([k, label]) => (
-              <button key={k} onClick={() => setTab(k)} className={`px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold transition-colors ${tab === k ? 'bg-white text-black' : 'text-white/55 hover:text-white/85'}`}>{label}</button>
+              <button key={k} onClick={() => setTab(k)} className={`shrink-0 px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold transition-colors ${tab === k ? 'bg-white text-black' : 'text-white/55 hover:text-white/85'}`}>{label}</button>
             ))}
+            {/* VRF — mobile only (desktop shows the proof banner in the sidebar). */}
+            <button onClick={() => setTab('vrf')} className={`sm:hidden shrink-0 px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold transition-colors ${tab === 'vrf' ? 'bg-white text-black' : 'text-white/55 hover:text-white/85'}`}>VRF</button>
           </div>
         </div>
 
@@ -164,6 +167,29 @@ export function DraftInfoModal({ isOpen, onClose, contest }: { isOpen: boolean; 
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {tab === 'vrf' && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <span className="mt-1.5 inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <div>
+                  <h4 className="text-white text-[14px] font-semibold tracking-tight">Provably fair</h4>
+                  <p className="text-white/55 text-[12.5px] mt-1 leading-relaxed">
+                    Draft types (Pro / HOF / Jackpot) are randomized by <span className="text-white/80">Chainlink VRF</span> before
+                    each batch of 100 drafts — nobody can pick or predict them. Every draft is instantly verifiable on-chain.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href="/proof-feed"
+                onClick={onClose}
+                className="flex items-center justify-between rounded-2xl border border-banana/30 bg-banana/[0.06] px-4 py-3.5 hover:bg-banana/[0.10] transition-colors"
+              >
+                <span className="text-banana text-[13px] font-semibold">View live feed</span>
+                <span className="text-banana">&rarr;</span>
+              </Link>
             </div>
           )}
         </div>

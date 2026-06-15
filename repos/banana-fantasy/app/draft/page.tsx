@@ -329,19 +329,12 @@ export default function DraftingPage() {
           ) : null}
 
           {/* Mobile-only: promos live in the desktop sidebar (hidden < lg).
-              On phones, use the SAME square promo carousel as the Spin page
-              (not the sidebar's tall card). Pushed well down the page so the
-              live drafts stay up top. SWR-deduped — no refetch. */}
-          {/* Mobile-only: the proof banner lives in the desktop sidebar
-              (hidden < lg). On small screens surface it as a quiet trust seal
-              ABOVE the promos (Boris 2026-06-15) — sits right under the drafts
-              so the provably-fair marker reads before the promo carousel. */}
-          <div className={`lg:hidden mb-2 ${activeDrafts.length > 0 ? 'mt-24' : 'mt-9'}`}>
-            <BatchProofBanner display="seal" />
-          </div>
-
+              On phones, use the SAME square promo carousel as the Spin page.
+              The VRF/proof seal moved into the draft-info modal's VRF tab
+              (Boris 2026-06-15), so promos own the spacing now — pushed well
+              down when there's an active draft so the lobby stays the focus. */}
           {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className="lg:hidden mt-6">
+            <div className={`lg:hidden ${activeDrafts.length > 0 ? 'mt-24' : 'mt-9'}`}>
               <PromoCarousel
                 heading="Promos"
                 promos={promosQuery.promos ?? []}
