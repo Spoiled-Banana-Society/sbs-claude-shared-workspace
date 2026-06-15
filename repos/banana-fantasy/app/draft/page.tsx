@@ -145,7 +145,7 @@ export default function DraftingPage() {
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-8">
         <div className="flex items-baseline gap-3">
           <div className="flex items-center gap-1.5">
-            <h1 className="text-2xl font-semibold text-white">Drafts</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">Drafts</h1>
             <button
               onClick={() => setShowDraftInfo(true)}
               aria-label="How drafts work, contest details & FAQ"

@@ -314,12 +314,12 @@ export default function StandingsPage() {
           Leaderboard toggle return when the season starts (scores exist). */}
       <div className="flex flex-wrap items-start justify-between gap-3 mb-8">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white mb-1">
-            {viewMode === 'myteams' ? 'My Teams' : 'Standings'}
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            {viewMode === 'myteams' ? 'Teams' : 'Standings'}
           </h1>
-          <p className="text-white/40 text-sm">
-            {viewMode === 'myteams' ? 'Track your teams' : 'View the global leaderboard'}
-          </p>
+          {viewMode !== 'myteams' && (
+            <p className="text-white/40 text-sm mt-1">View the global leaderboard</p>
+          )}
         </div>
         {/* Exposure + Marketplace — on the right of the Teams header, same spot
             and treatment as Rankings on the drafting page. Exposure is a view

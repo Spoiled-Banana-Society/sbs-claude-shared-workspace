@@ -249,7 +249,7 @@ export default function PromosPage() {
       {/* ── Hero ──────────────────────────────────────────────────────── */}
       <div className="mb-10 sm:mb-14 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-5">
         <div>
-          <h1 className="text-3xl sm:text-5xl font-bold text-white tracking-tight">Promos</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Promos</h1>
           <p className="text-white/40 text-sm sm:text-base mt-2">
             Earn free spins, drafts, and entries.
           </p>
@@ -272,25 +272,25 @@ export default function PromosPage() {
         <StatTile
           label="Claimable"
           value={totalClaimableRewards}
-          sublabel={claimableCount > 0 ? `ready from ${claimableCount} promo${claimableCount === 1 ? '' : 's'}` : 'all caught up'}
+          sublabel={claimableCount > 0 ? 'ready to claim now' : 'all caught up'}
           highlight={totalClaimableRewards > 0}
         />
         <StatTile
           label="In progress"
           value={activeCount}
-          sublabel={activeCount > 0 ? 'earning rewards' : 'nothing active'}
+          sublabel={activeCount > 0 ? 'promos still earning' : 'nothing active'}
         />
         <StatTile
           label="Free spins"
           value={freeSpins}
-          sublabel={freeSpins > 0 ? 'spin to win' : undefined}
+          sublabel={freeSpins > 0 ? 'use on the Banana Wheel' : 'none right now'}
         />
         <StatTile
           label="Free drafts"
           value={freeDrafts}
           sublabel={specialEntries > 0
-            ? `+${specialEntries} special · ${jpEntries} JP · ${hofEntries} HOF`
-            : (freeDrafts > 0 ? 'ready to play' : undefined)}
+            ? `+ ${jpEntries} JP · ${hofEntries} HOF entries`
+            : (freeDrafts > 0 ? 'enter a draft free' : 'none right now')}
         />
       </div>
 
