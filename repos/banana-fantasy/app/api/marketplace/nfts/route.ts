@@ -19,6 +19,15 @@ import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 
 export const dynamic = 'force-dynamic';
 
+// A token only counts as a drafted TEAM once its roster is complete. Joining a
+// lobby assigns a _leagueId immediately (empty roster), so without this gate an
+// undrafted pass in a filling lobby flips hasBackendRecord true and wrongly
+// shows on the Teams page + Sell tab before the draft finishes. Matches the
+// Teams page bar (leagues filtered at roster.length >= 15). Wheel-won JP/HOF
+// passes mid-fill are the intended exception, surfaced via fillingWheelLevel.
+// (Boris 2026-06-15)
+const DRAFTED_ROSTER_MIN = 15;
+
 const OPENSEA_API_KEY = process.env.OPENSEA_API_KEY || '';
 
 // Short-lived cache of a wallet's raw owned-NFT list. Paginating a whale's
@@ -227,8 +236,9 @@ export async function GET(req: Request) {
 
     const nfts = bbb4Nfts.map(nft => {
       const { ownerAddress: _ownerAddress, ...rest } = mapOpenSeaNftToTeam(nft, owner);
-      const hasBackendRecord = teamsByToken.has(nft.identifier);
-      const leagueId = teamsByToken.get(nft.identifier)?.leagueId ?? null;
+      const teamRec = teamsByToken.get(nft.identifier);
+      const hasBackendRecord = !!teamRec && teamRec.roster.length >= DRAFTED_ROSTER_MIN;
+      const leagueId = teamRec?.leagueId ?? null;
       const pricePaid = trades.paidByToken.get(nft.identifier) ?? null;
       // Merge listing data if this token is actively listed
       const listing = listingMap.get(nft.identifier);
@@ -268,7 +278,7 @@ export async function GET(req: Request) {
         const listing = listingMap.get(b.tokenId);
         return {
           ...rest,
-          hasBackendRecord: !!team,
+          hasBackendRecord: !!team && team.roster.length >= DRAFTED_ROSTER_MIN,
           leagueId: team?.leagueId ?? null,
           pricePaid: trades.paidByToken.get(b.tokenId) ?? null,
           ...(listing ? { orderHash: listing.orderHash, price: listing.price, protocolAddress: listing.protocolAddress, listingEndTime: listing.endTime } : {}),
