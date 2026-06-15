@@ -22,6 +22,7 @@ const BuyPassesModal = dynamic(
 // useHistory moved to Standings page
 import { logger } from '@/lib/logger';
 import { formatCountdown, formatRelativeTime, useDraftingPageState } from '@/hooks/useDraftingPageState';
+import { useDraftAlertsConfigured } from '@/hooks/useDraftAlertsConfigured';
 
 const INFO_TOPICS: Record<string, { title: string; items: { q: string; a: string }[] }> = {
   '10-players': {
@@ -123,6 +124,7 @@ export default function DraftingPage() {
     setShowContestDetails,
     setInfoTopic,
   } = useDraftingPageState();
+  const { configured: draftAlertsConfigured } = useDraftAlertsConfigured();
 
   const [showDraftInfo, setShowDraftInfo] = React.useState(false);
   const topic = infoTopic ? INFO_TOPICS[infoTopic] : null;
@@ -165,6 +167,19 @@ export default function DraftingPage() {
           >
             Rankings
           </button>
+          {/* Draft Alerts — same quiet link, right of Rankings. Disappears once
+              the user has set alerts up (any toggle change), since they then
+              know where it lives (Boris 2026-06-15). Real-time via the focus
+              re-check in useDraftAlertsConfigured. */}
+          {draftAlertsConfigured !== true && (
+            <button
+              onClick={() => router.push('/notifications/settings')}
+              aria-label="Set up draft alerts — get notified when your draft starts and when it's your pick"
+              className="text-sm font-medium text-white/45 hover:text-banana transition-colors"
+            >
+              Draft Alerts
+            </button>
+          )}
         </div>
         {activeDrafts.length > 0 && (
           <div className="flex items-center gap-2.5">

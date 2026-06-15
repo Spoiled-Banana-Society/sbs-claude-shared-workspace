@@ -60,6 +60,12 @@ export interface UserNotifPrefs {
   channels: Partial<Record<ChannelId, boolean>>;
   /** Which events the user wants. Missing/undefined === on. */
   events?: EventPrefs;
+  /**
+   * True once the user has visited the alerts page and changed any toggle.
+   * Used to hide the "Draft Alerts" prompt on the draft page after they've
+   * set things up (Boris 2026-06-15).
+   */
+  configured?: boolean;
 }
 
 /**
