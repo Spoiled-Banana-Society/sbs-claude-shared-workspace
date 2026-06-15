@@ -260,7 +260,7 @@ export default function DraftingPage() {
                       </button>
                       <button onClick={() => setInfoTopic('team-positions')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Team Positions</h4>
-                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">You draft a team&apos;s position — like <span className="text-white/50 font-medium">KC QB</span>, the Kansas City quarterback — not one player. Each week you automatically get the points of whoever scores the most there.</p>
+                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">DAL WR1</span> and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.</p>
                       </button>
                       <button onClick={() => setInfoTopic('best-ball')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Best Ball</h4>

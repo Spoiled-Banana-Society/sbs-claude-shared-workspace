@@ -18,7 +18,7 @@ const fmt = (n: number) =>
 const HOW = [
   { t: '10 Players', d: 'Join a lobby — the draft starts instantly when it fills.' },
   { t: 'Snake Draft', d: 'Fast (30s) or slow (8hr) picks — your choice.' },
-  { t: 'Team Positions', d: 'You draft a team’s position — like KC QB, the Kansas City quarterback — not one player. Each week you automatically get the points of whoever scores the most there.' },
+  { t: 'Team Positions', d: 'Draft “DAL WR1” and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.' },
   { t: 'Best Ball', d: 'No managing needed. Draft once, best scorers auto-selected weekly.' },
 ];
 const TYPES: { word: string; pct: string; color: string; d: string }[] = [
