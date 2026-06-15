@@ -164,9 +164,9 @@ export default function PrizesPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
         <div className="text-center py-12">
           <div className="text-6xl mb-4">🏆</div>
-          <h1 className="text-3xl font-bold text-text-primary mb-4">Prizes</h1>
+          <h1 className="text-3xl font-bold text-text-primary mb-4">Winnings</h1>
           <p className="text-text-secondary mb-6">
-            View your prize history and eligibility status
+            Win drafts and your prizes will land here.
           </p>
           <button onClick={() => setShowLoginModal(true)} className="btn-primary">
             Log In to View
@@ -179,7 +179,7 @@ export default function PrizesPage() {
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Prizes</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Winnings</h1>
 
         {/* Balance hero — always renders, even at $0. Apple-clean:
             generous padding, soft gradient, big tracked-tight number,

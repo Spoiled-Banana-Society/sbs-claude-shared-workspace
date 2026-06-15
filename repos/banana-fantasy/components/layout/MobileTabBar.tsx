@@ -98,6 +98,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
       label: 'Spin',
       matchPaths: ['/banana-wheel'],
       badge: wheelSpins,
+      exactBadge: true, // wheel spins always show the real count, never "9+"
       icon: (active: boolean) => (
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={active ? '#fbbf24' : 'currentColor'} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
@@ -156,7 +157,7 @@ const MobileTabBarInner = React.memo(function MobileTabBarInner({
                 {tab.icon(active)}
                 {tab.badge > 0 && (
                   <span className="absolute -top-1.5 -right-2 min-w-[16px] h-[16px] bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
-                    {tab.badge > 9 ? '9+' : tab.badge}
+                    {tab.badge > 9 && !(tab as { exactBadge?: boolean }).exactBadge ? '9+' : tab.badge}
                   </span>
                 )}
               </div>

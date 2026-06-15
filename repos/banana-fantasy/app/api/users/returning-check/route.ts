@@ -4,6 +4,8 @@ import { ApiError } from '@/lib/api/errors';
 import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser } from '@/lib/privyServer';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { ensureNamedReferralCode } from '@/lib/db';
+import { bananaDefaultName } from '@/utils/helpers';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +51,17 @@ export async function POST(req: Request) {
         link: '/?install=1',
         dedupeKey: 'app-download',
         icon: 'phone',
+      });
+
+      // 1b) Draft Alerts — one-time, every user. Push them to set up alerts so
+      //     they're notified when a draft starts + when it's their pick.
+      await createNotification(wallet, {
+        type: 'draft_alerts',
+        title: 'Set up Draft Alerts',
+        message: "Get notified when your draft starts and when it's your pick. Tap to set it up.",
+        link: '/notifications/settings',
+        dedupeKey: 'draft-alerts-setup',
+        icon: 'bellring',
       });
 
       // 2) Founder Draft — day-before + day-of bells, once each, when a schedule
@@ -97,6 +110,17 @@ export async function POST(req: Request) {
       await userRef.set({ firstLoginAt: new Date().toISOString() }, { merge: true }).catch(() => {});
       await db.collection('system_cache').doc('userRoster').delete().catch(() => {});
     }
+    // Referral code (Boris 2026-06-15): mint/refresh the clean NAME-based code
+    // for EVERY user on login so it always exists and matches their display
+    // name — never the legacy hash placeholder (BANANA-XXXX-XXXX). Idempotent:
+    // ensureNamedReferralCode reuses the existing code when the name is
+    // unchanged, so this never reverts an edited code. Best-effort.
+    try {
+      const uname = (userSnap.get('username') as string | undefined)?.trim();
+      const displayName = uname && !/^0x/i.test(uname) ? uname : bananaDefaultName(wallet);
+      await ensureNamedReferralCode(wallet, displayName);
+    } catch { /* non-fatal — referrals page also mints on demand */ }
+
     if (userSnap.get('isReturningPlayer') === true) {
       return json({ returning: true, via: userSnap.get('returningVia') ?? 'unknown' });
     }

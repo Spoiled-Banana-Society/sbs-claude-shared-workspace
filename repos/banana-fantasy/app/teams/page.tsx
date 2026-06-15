@@ -506,7 +506,7 @@ export default function StandingsPage() {
               <p className="text-white/50 font-medium mb-2">No teams yet</p>
               <p className="text-white/30 text-sm mb-6">Your drafted teams will show here.</p>
               <a
-                href="/"
+                href="/draft"
                 className="inline-block px-6 py-2.5 bg-banana text-black font-semibold rounded-xl hover:bg-banana-dark transition-colors"
               >
                 Start Drafting

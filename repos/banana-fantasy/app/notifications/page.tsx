@@ -31,6 +31,7 @@ const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; labe
   base_guide: { emoji: '⚡', color: '#fbbf24', label: 'Base' },
   app_download: { emoji: '📱', color: '#fbbf24', label: 'App' },
   founder_draft: { emoji: '👑', color: '#06b6d4', label: 'Founder' },
+  draft_alerts: { emoji: '🔔', color: '#fbbf24', label: 'Draft Alerts' },
 };
 
 const FALLBACK_TYPE_CONFIG = { emoji: '🔔', color: '#6b7280', label: 'Notification' };

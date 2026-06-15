@@ -11,7 +11,7 @@ import { NotificationIcon } from '@/components/NotificationIcons';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received' | 'welcome' | 'prize' | 'prize_won' | 'withdrawal_paid' | 'withdrawal_denied' | 'base_guide' | 'app_download' | 'founder_draft';
+export type NotificationType = 'draft_starting' | 'draft_results' | 'promo' | 'referral' | 'jackpot' | 'hof' | 'jackpot_queue' | 'hof_queue' | 'system' | 'offer_received' | 'offer_accepted' | 'purchase_complete' | 'sale_complete' | 'listing_created' | 'friend_request' | 'message_received' | 'welcome' | 'prize' | 'prize_won' | 'withdrawal_paid' | 'withdrawal_denied' | 'base_guide' | 'app_download' | 'founder_draft' | 'draft_alerts';
 
 export interface Notification {
   id: string;
@@ -70,6 +70,7 @@ const CATEGORY_MAP: Record<NotificationType, NotificationCategory> = {
   base_guide: 'system',
   app_download: 'system',
   founder_draft: 'drafts',
+  draft_alerts: 'drafts',
 };
 
 export const CATEGORY_LABELS: Record<NotificationCategory, { label: string; emoji: string }> = {

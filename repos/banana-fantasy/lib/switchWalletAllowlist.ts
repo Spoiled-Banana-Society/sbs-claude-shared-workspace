@@ -23,6 +23,7 @@ const FALLBACK_SWITCH_WALLETS = [
   '0x77aae124683a75013df8ab7f0fde5193b0034f42', // Boris (BananaKing99)
   '0x014a3bc94c1c753adf14b1ead8758a8bb55dc191', // Boris (BananaKing99)
   '0x7095fc9ff349559763b7abbaad7732baa7eca4e9', // Boris
+  '0x9a74bc5c793f9d0197635f6d83ef0fdbf325e17b', // Boris
 ];
 
 function normalizeWallet(value: string): string {
