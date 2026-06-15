@@ -272,12 +272,6 @@ export default function PrizesPage() {
                     </div>
                   )}
 
-                  {!hasBalance && !hasPrizeError && (
-                    <p className="text-sm text-text-muted">
-                      Win drafts and your prizes will land here.
-                    </p>
-                  )}
-
                   {hasPrizeError && (
                     <p className="text-sm text-warning">
                       We couldn&apos;t load your balance. Refresh to try again — your winnings are safe.
@@ -289,7 +283,7 @@ export default function PrizesPage() {
                     instant once they win. Hidden during fetch errors;
                     the warning line above owns that state. */}
                 {!hasBalance && !hasPrizeError && (
-                  <div className="mt-5">
+                  <div>
                     {isEligible ? (
                       <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
                         <span className="w-1.5 h-1.5 rounded-full bg-success" />
