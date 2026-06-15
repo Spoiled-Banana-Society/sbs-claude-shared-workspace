@@ -13,17 +13,42 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 
+// Launch target: env override (NEXT_PUBLIC_LAUNCH_AT) wins; otherwise the
+// fallback is next Tuesday — 2026-06-23, noon PT placeholder until Boris
+// confirms the final time.
 const LAUNCH_AT = (() => {
   const fromEnv = process.env.NEXT_PUBLIC_LAUNCH_AT;
   if (fromEnv) {
     const t = new Date(fromEnv).getTime();
     if (!Number.isNaN(t)) return t;
   }
-  const d = new Date();
-  d.setDate(d.getDate() + 7);
-  return d.getTime();
+  return new Date('2026-06-23T12:00:00-07:00').getTime();
 })();
+
+// Deterministic banana field (no Math.random → no hydration mismatch).
+const BANANAS = Array.from({ length: 10 }, (_, i) => ({
+  id: i,
+  x: (i * 9.7 + 4) % 100,        // spread across the width
+  size: 16 + (i % 4) * 7,        // 16–37px
+  duration: 14 + (i % 5) * 2.5,  // slow, varied drift
+  delay: i * 1.7,
+}));
+
+function FloatingBanana({ x, size, duration, delay }: { x: number; size: number; duration: number; delay: number }) {
+  return (
+    <motion.span
+      className="pointer-events-none absolute bottom-[-60px] select-none"
+      style={{ left: `${x}%`, fontSize: size, zIndex: 0 }}
+      initial={{ y: 0, rotate: 0, opacity: 0 }}
+      animate={{ y: '-112vh', rotate: 360, opacity: [0, 0.35, 0.35, 0] }}
+      transition={{ duration, delay, repeat: Infinity, ease: 'linear' }}
+    >
+      🍌
+    </motion.span>
+  );
+}
 
 const usd = (n: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -62,9 +87,14 @@ export default function ComingSoon() {
   return (
     // Fixed full-screen overlay — covers any app chrome behind it, so the
     // public sees nothing but this even if other layout renders underneath.
-    <div className="fixed inset-0 z-[100] bg-[#08090c] flex flex-col overflow-y-auto">
+    <div className="fixed inset-0 z-[100] bg-[#08090c] flex flex-col overflow-hidden">
+      {/* subtle floating bananas drifting up behind everything */}
+      {BANANAS.map((b) => (
+        <FloatingBanana key={b.id} x={b.x} size={b.size} duration={b.duration} delay={b.delay} />
+      ))}
+
       {/* header — logo top-left only, static (no hover shift) */}
-      <header className="px-5 sm:px-8 lg:px-12 py-5 shrink-0">
+      <header className="relative z-10 px-5 sm:px-8 lg:px-12 py-5 shrink-0">
         <div className="inline-flex items-center select-none">
           <img src="/sbs-logo.png" alt="SBS Fantasy" className="w-12 h-12 sm:w-14 sm:h-14" />
           <span className="-ml-1.5 text-2xl font-bold tracking-tight leading-none text-white">SBS</span>
@@ -72,7 +102,7 @@ export default function ComingSoon() {
       </header>
 
       {/* contest box + countdown, centered */}
-      <main className="flex-1 flex items-center justify-center px-4 pb-16">
+      <main className="relative z-10 flex-1 flex items-center justify-center px-4 pb-16">
         <div className="relative glass-card rounded-3xl p-6 sm:p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana">
           <div className="text-center space-y-4">
             <h3 className="text-2xl sm:text-3xl font-bold text-white">Banana Best Ball IV</h3>
