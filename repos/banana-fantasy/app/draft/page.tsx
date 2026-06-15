@@ -151,7 +151,7 @@ export default function DraftingPage() {
             <button
               onClick={() => setShowDraftInfo(true)}
               aria-label="How drafts work, contest details & FAQ"
-              className="self-center text-white/30 hover:text-white/60 transition-colors"
+              className="self-center -translate-y-[3px] text-white/30 hover:text-white/60 transition-colors"
             >
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
@@ -260,7 +260,7 @@ export default function DraftingPage() {
                       </button>
                       <button onClick={() => setInfoTopic('team-positions')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Team Positions</h4>
-                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft <span className="text-white/50 font-medium">KC QB</span>, not players. You get that position&apos;s top scorer every week.</p>
+                        <p className="text-white/50 text-[12px] mt-1 leading-[1.6]">Draft a team position like <span className="text-white/50 font-medium">KC QB</span>, not a player. You get its top scorer every week — injury-proof.</p>
                       </button>
                       <button onClick={() => setInfoTopic('best-ball')} className="rounded-2xl p-4 bg-white/[0.03] hover:bg-white/[0.05] transition-colors text-left cursor-pointer">
                         <h4 className="text-white text-[14px] font-semibold tracking-tight">Best Ball</h4>
