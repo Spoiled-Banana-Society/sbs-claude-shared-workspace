@@ -321,12 +321,12 @@ export default function DraftingPage() {
               (hidden < lg). On small screens surface it as a quiet trust seal
               ABOVE the promos (Boris 2026-06-15) — sits right under the drafts
               so the provably-fair marker reads before the promo carousel. */}
-          <div className="lg:hidden mt-14 mb-2">
+          <div className="lg:hidden mt-9 mb-2">
             <BatchProofBanner display="seal" />
           </div>
 
           {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className="lg:hidden mt-8">
+            <div className="lg:hidden mt-6">
               <PromoCarousel
                 heading="Promos"
                 promos={promosQuery.promos ?? []}

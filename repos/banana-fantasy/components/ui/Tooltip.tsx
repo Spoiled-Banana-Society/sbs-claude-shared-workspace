@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
 
 interface TooltipProps {
   content: React.ReactNode;
@@ -18,6 +18,7 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
   const triggerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const autoHideRef = useRef<NodeJS.Timeout | null>(null);
 
   const showTooltip = () => {
     timeoutRef.current = setTimeout(() => {
@@ -26,12 +27,30 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
   };
 
   const hideTooltip = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (autoHideRef.current) clearTimeout(autoHideRef.current);
     setIsVisible(false);
     setCoords(null);
   };
+
+  // Mobile/touch: there's no mouseleave, so a tap used to leave the tooltip
+  // stuck on screen while you scrolled. Show it instantly on touch, then
+  // auto-dismiss after ~2s so it behaves like a quick peek (Boris 2026-06-15).
+  const showOnTouch = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (autoHideRef.current) clearTimeout(autoHideRef.current);
+    setIsVisible(true);
+    autoHideRef.current = setTimeout(() => hideTooltip(), 2000);
+  };
+
+  // Any scroll dismisses an open tooltip (covers the mobile "stuck while
+  // scrolling" case, and is harmless on desktop).
+  useEffect(() => {
+    if (!isVisible) return;
+    const onScroll = () => hideTooltip();
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    return () => window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
+  }, [isVisible]);
 
   useLayoutEffect(() => {
     if (isVisible && triggerRef.current && tooltipRef.current) {
@@ -81,6 +100,7 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
         ref={triggerRef}
         onMouseEnter={showTooltip}
         onMouseLeave={hideTooltip}
+        onTouchStart={showOnTouch}
         className="inline-block"
       >
         {children}
