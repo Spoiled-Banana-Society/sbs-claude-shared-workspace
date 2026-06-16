@@ -164,7 +164,10 @@ export function EntryFlowModal({
                 disabled={isSubmitting}
                 className="w-full p-4 rounded-xl border-2 border-banana/30 bg-banana/5 text-left hover:border-banana hover:bg-banana/10 hover:scale-[1.02] transition-all"
               >
-                <p className="font-semibold text-white">Buy Drafts</p>
+                <div className="flex items-center justify-between">
+                  <p className="font-semibold text-white">Buy Drafts</p>
+                  <span className="text-3xl font-bold text-banana leading-none">+</span>
+                </div>
               </button>
             )}
 
