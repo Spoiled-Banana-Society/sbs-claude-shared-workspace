@@ -250,12 +250,18 @@ export default function DraftingPage() {
                       <span className="font-semibold text-white/70">$25K</span>
                       <span className="text-white/30 font-medium"> 1st Place</span>
                     </p>
-                    <div className="mt-6">
+                    <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                       <button
                         onClick={handleEnterDraft}
                         className="px-10 py-3.5 bg-banana text-black font-bold text-[15px] rounded-full hover:brightness-110 active:scale-[0.98] transition-all"
                       >
                         Enter Draft
+                      </button>
+                      <button
+                        onClick={() => router.push('/buy-drafts')}
+                        className="px-10 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
+                      >
+                        Buy Draft
                       </button>
                     </div>
                   </div>
