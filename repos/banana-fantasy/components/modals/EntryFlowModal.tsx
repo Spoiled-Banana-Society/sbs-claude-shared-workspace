@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -9,6 +10,9 @@ interface EntryFlowModalProps {
   paidPasses: number;
   freePasses: number;
   isSubmitting?: boolean;
+  /** Optional — wired by the parent to switch into the buy/mint flow in place.
+   *  When omitted, the "Buy more drafts" button navigates to /buy-drafts?buy=1. */
+  onBuyMore?: () => void;
 }
 
 type Step = 'pass-type' | 'speed';
@@ -20,7 +24,9 @@ export function EntryFlowModal({
   paidPasses,
   freePasses,
   isSubmitting = false,
+  onBuyMore,
 }: EntryFlowModalProps) {
+  const router = useRouter();
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | null>(null);
 
@@ -126,10 +132,7 @@ export function EntryFlowModal({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-semibold ${hasPaid ? 'text-white' : 'text-white/40'}`}>Draft Pass</p>
-                    <p className="text-white/40 text-sm">Purchased</p>
-                  </div>
+                  <p className={`font-semibold ${hasPaid ? 'text-white' : 'text-white/40'}`}>Paid Draft Pass</p>
                   <p className={`text-3xl font-bold ${hasPaid ? 'text-banana' : 'text-white/40'}`}>
                     {paidPasses}
                   </p>
@@ -146,14 +149,27 @@ export function EntryFlowModal({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className={`font-semibold ${hasFree ? 'text-white' : 'text-white/40'}`}>Free Draft Pass</p>
-                    <p className="text-white/40 text-sm">Promos</p>
-                  </div>
+                  <p className={`font-semibold ${hasFree ? 'text-white' : 'text-white/40'}`}>Free Draft Pass</p>
                   <p className={`text-3xl font-bold ${hasFree ? 'text-green-500' : 'text-white/40'}`}>
                     {freePasses}
                   </p>
                 </div>
+              </button>
+            </div>
+
+            {/* Buy more — intentionally smaller than the pass cards above */}
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  if (isSubmitting) return;
+                  if (onBuyMore) { onBuyMore(); return; }
+                  onClose();
+                  router.push('/buy-drafts?buy=1');
+                }}
+                disabled={isSubmitting}
+                className="px-4 py-1.5 text-sm font-medium text-banana/90 border border-banana/40 rounded-lg hover:border-banana hover:bg-banana/10 transition-all"
+              >
+                Buy more drafts
               </button>
             </div>
 
@@ -176,7 +192,7 @@ export function EntryFlowModal({
               <h2 className="text-2xl font-bold text-white mb-2">Choose Draft Speed</h2>
               {hasBoth && (
                 <p className="text-white/50 text-sm">
-                  Using <span className="text-banana font-semibold">{selectedPassType === 'paid' ? 'Draft Pass' : 'Free Draft Pass'}</span>
+                  Using <span className="text-banana font-semibold">{selectedPassType === 'paid' ? 'Paid Draft Pass' : 'Free Draft Pass'}</span>
                 </p>
               )}
             </div>

@@ -98,6 +98,10 @@ export default function BuyDraftsPage() {
         paidPasses={user?.draftPasses || 0}
         freePasses={user?.freeDrafts || 0}
         isSubmitting={joiningLobby}
+        onBuyMore={() => {
+          if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
+          setMode('buy');
+        }}
       />
 
       <JoiningLobbyOverlay show={joiningLobby} />
