@@ -64,28 +64,34 @@ export function getStagingWsUrl(): string {
   return STAGING_DRAFT_SERVER_URL;
 }
 
+function requireUrl(url: string, envVar: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    throw new Error(`Missing ${envVar}. Configure the drafts API URL in your environment.`);
+  }
+  return trimmed;
+}
+
 /**
  * Returns the appropriate API base URL based on staging mode.
+ * Throws when unset — never falls back to a hardcoded production URL.
  */
 export function getDraftsApiUrl(): string {
   if (isStagingMode()) {
     const url = getStagingApiUrl();
-    if (url) return url;
+    if (url) return requireUrl(url, 'NEXT_PUBLIC_STAGING_DRAFTS_API_URL');
   }
-  // Unreachable (isStagingMode() is always true, getStagingApiUrl() always
-  // resolves) — but NEVER fall back to NEXT_PUBLIC_DRAFTS_API_URL here: it
-  // points at the OLD PROD Go API.
-  return DEFAULT_STAGING_DRAFTS_API_URL;
+  return requireUrl(process.env.NEXT_PUBLIC_DRAFTS_API_URL || '', 'NEXT_PUBLIC_DRAFTS_API_URL');
 }
 
 /**
  * Returns the appropriate WebSocket URL based on staging mode.
+ * Throws when unset — never falls back to a hardcoded production URL.
  */
 export function getDraftServerUrl(): string {
   if (isStagingMode()) {
     const url = getStagingWsUrl();
-    if (url) return url;
+    if (url) return requireUrl(url, 'NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL');
   }
-  // Unreachable — same reasoning as getDraftsApiUrl(); never prod.
-  return DEFAULT_STAGING_DRAFT_SERVER_URL;
+  return requireUrl(process.env.NEXT_PUBLIC_DRAFT_SERVER_URL || '', 'NEXT_PUBLIC_DRAFT_SERVER_URL');
 }

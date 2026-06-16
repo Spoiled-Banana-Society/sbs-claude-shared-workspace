@@ -107,7 +107,6 @@ export interface UseDraftWebSocketReturn {
 
 // ==================== CONSTANTS ====================
 
-const DEFAULT_SERVER_URL = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app'; // staging WS — never prod
 const MAX_BACKOFF_MS = 30_000;
 const INITIAL_BACKOFF_MS = 1_000;
 const PING_INTERVAL_MS = 30_000;
@@ -194,7 +193,20 @@ export function useDraftWebSocket(options: UseDraftWebSocketOptions): UseDraftWe
     clearTimers();
     intentionalCloseRef.current = false;
 
-    const serverUrl = getDraftServerUrl() || DEFAULT_SERVER_URL;
+    let serverUrl: string;
+    try {
+      serverUrl = getDraftServerUrl();
+    } catch (err) {
+      console.error('[ws] missing server URL:', err);
+      reportClientError({
+        source: LOG_SOURCES.draft.WS_RECONNECT_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletAddress,
+        context: { draftName },
+      });
+      return;
+    }
     // Normalize wallet address to lowercase — matches production DraftWebSocketClient.buildWsUrl()
     // which calls normalizeWalletAddress(). The Go server does case-sensitive comparison
     // between c.address (from URL) and newPick.OwnerAddress (from payload), so they MUST match.

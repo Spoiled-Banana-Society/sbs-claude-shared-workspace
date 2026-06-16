@@ -6,6 +6,15 @@ admin.initializeApp();
 
 const DRAFTS_API_URL = "https://sbs-drafts-api-staging-652484219017.us-central1.run.app";
 
+function stagingApiHeaders() {
+  const headers = { "Content-Type": "application/json" };
+  const adminKey =
+    process.env.ADMIN_API_KEY ||
+    (functions.config().admin && functions.config().admin.api_key);
+  if (adminKey) headers["X-Admin-Key"] = adminKey;
+  return headers;
+}
+
 const { updateADP } = require("./updateADP");
 const { updateRosters } = require("./updateRosters");
 
@@ -58,7 +67,7 @@ exports.onQueueUpdate = functions
             `${DRAFTS_API_URL}/staging/create-special-draft`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: stagingApiHeaders(),
               body: JSON.stringify({ type: queueType, wallets }),
             }
           );
@@ -103,7 +112,7 @@ exports.onQueueUpdate = functions
               `${DRAFTS_API_URL}/staging/join-special-draft`,
               {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: stagingApiHeaders(),
                 body: JSON.stringify({
                   draftId: round.draftId,
                   wallet: member.wallet,

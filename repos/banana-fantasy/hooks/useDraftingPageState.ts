@@ -16,15 +16,20 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
+import { authedAppFetch } from '@/lib/authedAppFetch';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeRealTimeDraftInfo, type RealTimeDraftInfoSnapshot, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
+import {
+  capDisplayTimeRemaining,
+  expectedPickLengthFromSpeed,
+} from '@/utils/draftTimer';
 import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
 
 type DraftingPageSocketMessage =
@@ -107,7 +112,7 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 export function formatCountdown(totalSeconds: number): string {
-  const s = Math.max(0, Math.ceil(totalSeconds));
+  const s = Math.max(0, Math.round(totalSeconds));
   if (s < 60) return `${s}s`;
   const hrs = Math.floor(s / 3600);
   const mins = Math.floor((s % 3600) / 60);
@@ -119,6 +124,9 @@ export function formatCountdown(totalSeconds: number): string {
 export function useDraftingPageState() {
   const router = useRouter();
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified, isBalanceLoaded } = useAuth();
+  const { getAccessToken } = usePrivy();
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
@@ -383,15 +391,15 @@ export function useDraftingPageState() {
         const parts = draft.id.split('-');
         const queueType = parts[1];
         const roundId = parseInt(parts[2] || '1', 10) || 1;
-        const res = await fetchJson<{ draftId: string }>('/api/queues/create-draft', {
+        const fetchRes = await authedAppFetch('/api/queues/create-draft', getAccessTokenRef.current, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user?.id || user?.walletAddress || '',
-            queueType,
-            roundId,
-          }),
+          body: JSON.stringify({ queueType, roundId }),
         });
+        const res = (await fetchRes.json().catch(() => ({}))) as { draftId?: string; error?: string };
+        if (!fetchRes.ok) {
+          throw new Error(typeof res.error === 'string' ? res.error : `Request failed (${fetchRes.status})`);
+        }
 
         if (res.draftId) {
           let finalDraftId = res.draftId;
@@ -872,121 +880,132 @@ export function useDraftingPageState() {
     };
   }, [liveDraftIdsKey]);
 
+  const draftOrderCacheRef = useRef(new Map<string, draftApi.DraftOrderEntry[]>());
+
+  const liveDraftIdsForRtdbSync = useMemo(() => {
+    const currentWallet = user?.walletAddress?.toLowerCase();
+    if (!currentWallet) return [] as string[];
+    return localDrafts
+      .filter(d =>
+        d.liveWalletAddress
+        && d.liveWalletAddress.toLowerCase() === currentWallet
+        && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
+      )
+      .map(d => d.id);
+  }, [localDrafts, user?.walletAddress]);
+
+  const liveDraftIdsForRtdbKey = liveDraftIdsForRtdbSync.join(',');
+
+  // Live draft state on /drafting cards — Firebase RTDB push updates replace
+  // the previous 3s getDraftInfo polling loop. draftOrder is fetched once per
+  // draft (stable for the draft lifetime); timer/pick state comes from RTDB.
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;
 
-    let cancelled = false;
-    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const currentWallet = user.walletAddress.toLowerCase();
+    const ids = liveDraftIdsForRtdbKey ? liveDraftIdsForRtdbKey.split(',') : [];
+    if (ids.length === 0) return;
 
-    const syncLiveDrafts = async () => {
-      // Wallet-scope every iteration of this loop. Using the auth context's
-      // wallet (not the stale `banana-last-wallet` localStorage the useActiveDrafts
-      // hook reads) so the filter tracks auth state directly. Legacy rows with
-      // no liveWalletAddress are skipped: their promo attribution would be
-      // guessing, and misattributing promo credit across wallets is a real
-      // data-corruption risk, not cosmetic.
-      const currentWallet = user?.walletAddress?.toLowerCase();
-      if (!currentWallet) return;
+    const ensureDraftOrder = async (draftId: string) => {
+      const cached = draftOrderCacheRef.current.get(draftId);
+      if (cached) return cached;
+      try {
+        const restInfo = await draftApi.getDraftInfo(draftId);
+        const order = restInfo.draftOrder ?? [];
+        draftOrderCacheRef.current.set(draftId, order);
+        return order;
+      } catch (err) {
+        console.warn(`[Drafting] Failed to fetch draft order for ${draftId}:`, err);
+        return [] as draftApi.DraftOrderEntry[];
+      }
+    };
 
-      const allDrafts = draftStore.getActiveDrafts();
-      const liveDraftsToSync = allDrafts.filter(
-        d => d.liveWalletAddress
-          && d.liveWalletAddress.toLowerCase() === currentWallet
-          && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
-      );
+    const markDraftCompleted = (draftId: string) => {
+      draftStore.removeDraft(draftId);
+      setHiddenDraftIds((prev) => {
+        if (prev.has(draftId)) return prev;
+        const next = new Set(prev);
+        next.add(draftId);
+        try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+        return next;
+      });
+    };
 
-      for (const draft of liveDraftsToSync) {
-        if (cancelled) return;
+    const applyRtdbUpdate = async (draftId: string, rtdb: RealTimeDraftInfoSnapshot) => {
+      const draft = draftStore.getDraft(draftId);
+      if (!draft?.liveWalletAddress || draft.liveWalletAddress.toLowerCase() !== currentWallet) return;
 
-        // Always fetch state — completion detection must NEVER be skipped.
-        // The heartbeat guard below only opts out of mid-draft *state*
-        // updates (so we don't fight the active WS connection), but a
-        // completed draft must always be removed from My Drafts so the
-        // next league shows up live.
-        let info;
-        try {
-          info = await draftApi.getDraftInfo(draft.id);
-        } catch (err) {
-          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
-          continue;
-        }
-        if (cancelled) return;
+      const totalPicks = 150;
+      if (rtdb.isDraftComplete || rtdb.pickNumber >= totalPicks) {
+        markDraftCompleted(draftId);
+        return;
+      }
 
-        // Early completion exit — bypasses the heartbeat skip so a
-        // freshly-completed draft disappears the instant the next 3s
-        // sync runs, not after the WS heartbeat goes stale.
-        // ALSO adds the id to hiddenDraftIds (persisted in localStorage)
-        // so the next loadLiveDrafts() can't re-add it via the user's
-        // active-token list — completed drafts stay completed.
-        {
-          const totalPicks = (info.draftOrder?.length || 10) * 15;
-          if ((info.pickNumber ?? 0) >= totalPicks) {
-            draftStore.removeDraft(draft.id);
-            setHiddenDraftIds((prev) => {
-              if (prev.has(draft.id)) return prev;
-              const next = new Set(prev);
-              next.add(draft.id);
-              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
-              return next;
-            });
-            continue;
-          }
-        }
+      const heartbeat = localStorage.getItem(`draft-room-ws:${draftId}`);
+      if (heartbeat && Date.now() - Number(heartbeat) < 10_000) return;
 
-        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+      try {
+        const draftOrder = await ensureDraftOrder(draftId);
+        const fresh = draftStore.getDraft(draftId) || draft;
+        const playerCount = Math.max(draftOrder.length, fresh.players ?? 0);
+        const hasDraftStarted = playerCount >= 10 && rtdb.pickNumber >= 1;
+        const isFull = playerCount >= 10;
+        const isPaid = draft.passType !== 'free';
 
-        try {
-          const fresh = draftStore.getDraft(draft.id) || draft;
-          const playerCount = info.draftOrder?.length || 0;
-          const hasDraftStarted = playerCount >= 10 && info.pickNumber >= 1;
-          const isFull = playerCount >= 10;
-          const isPaid = draft.passType !== 'free';
+        const info: draftApi.DraftInfoResponse = {
+          draftId,
+          displayName: fresh.contestName,
+          draftStartTime: rtdb.draftStartTime,
+          pickLength: rtdb.pickLength,
+          currentDrafter: rtdb.currentDrafter,
+          pickNumber: rtdb.pickNumber,
+          roundNum: rtdb.roundNum,
+          pickInRound: rtdb.pickInRound,
+          currentPickEndTime: rtdb.pickEndTime,
+          draftOrder,
+          adp: [],
+        };
 
-          // Promo side-effects: fire only when this draft unambiguously belongs
-          // to the authenticated user. Belt-and-suspenders on top of the outer
-          // wallet filter — if anything leaks through (race during wallet
-          // switch, future refactor), this guard prevents misattribution.
-          const draftOwnedByUser = draft.liveWalletAddress
-            && draft.liveWalletAddress.toLowerCase() === currentWallet;
+        const draftOwnedByUser = draft.liveWalletAddress
+          && draft.liveWalletAddress.toLowerCase() === currentWallet;
 
           // Fire draft-complete for EVERY pass type (not just paid). The
           // server credits paid drafts to daily-drafts as before, and routes
           // free/jackpot/HOF drafts to the first-purchase popup gate only —
           // existing promo logic is unchanged (the free branch earns no
           // daily-drafts credit). pick10 stays paid-only below.
-          if (isFull && user?.id && draftOwnedByUser) {
-            const trackedKey = `promo-tracked:${draft.id}`;
-            if (!localStorage.getItem(trackedKey)) {
-              localStorage.setItem(trackedKey, '1');
-              fetch('/api/promos/draft-complete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
-              }).catch(() => {});
-            }
+        if (isFull && user?.id && draftOwnedByUser) {
+          const trackedKey = `promo-tracked:${draft.id}`;
+          if (!localStorage.getItem(trackedKey)) {
+            localStorage.setItem(trackedKey, '1');
+            fetch('/api/promos/draft-complete', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
+            }).catch(() => {});
+          }
 
-            if (isPaid && info.draftOrder && draft.liveWalletAddress) {
-              const userIdx = info.draftOrder.findIndex(
-                (e: { ownerId: string }) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
-              );
-              if (userIdx === 9) {
-                const pick10Key = `promo-pick10:${draft.id}`;
-                if (!localStorage.getItem(pick10Key)) {
-                  localStorage.setItem(pick10Key, '1');
-                  fetch('/api/promos/pick10', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
-                  }).catch(() => {});
-                }
+          if (isPaid && draftOrder.length > 0 && draft.liveWalletAddress) {
+            const userIdx = draftOrder.findIndex(
+              (e) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
+            );
+            if (userIdx === 9) {
+              const pick10Key = `promo-pick10:${draft.id}`;
+              if (!localStorage.getItem(pick10Key)) {
+                localStorage.setItem(pick10Key, '1');
+                fetch('/api/promos/pick10', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
+                }).catch(() => {});
               }
             }
           }
+        }
 
-          if (hasDraftStarted) {
-            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
-              computeTurnsFromServer(info, draft.liveWalletAddress!);
+        if (hasDraftStarted) {
+          const { turnsUntilUserPick, isUserTurn, userIndex } =
+            computeTurnsFromServer(info, draft.liveWalletAddress!);
 
             const totalPicks = (info.draftOrder?.length || 10) * 15;
             const isCompleted = info.pickNumber >= totalPicks;
@@ -1053,76 +1072,68 @@ export function useDraftingPageState() {
                 enginePickNumber: info.pickNumber,
               }),
             };
+          const patch: Partial<DraftState> = {
+            currentPick: turnsUntilUserPick,
+            isYourTurn: isUserTurn,
+            pickEndTimestamp: effectivePickEnd,
+            timeRemaining: isUserTurn && effectivePickEnd
+              ? capDisplayTimeRemaining(
+                  Math.max(0, Math.round(effectivePickEnd - nowMs / 1000)),
+                  pickLengthCap,
+                )
+              : undefined,
+            enginePickNumber: rtdb.pickNumber,
+          };
 
-            if (animStillRunning) {
-              draftStore.updateDraft(draft.id, patch);
-            } else {
-              // Draft is actively drafting (pickNumber >= 1) and we don't have
-              // a still-running reveal animation in local state. Mark drafting
-              // directly and CLEAR any stale animation timestamps. The previous
-              // version kicked off a brand-new randomizingStartedAt here when
-              // the user exited a mid-draft and re-landed on /drafting — which
-              // made the lobby replay the slot-machine reveal for a draft that
-              // was already in round 2. Never replay; if you missed the reveal
-              // by being in the draft room, you missed it.
-              draftStore.updateDraft(draft.id, {
-                ...patch,
-                status: 'drafting',
-                phase: 'drafting',
-                players: 10,
+          if (animStillRunning) {
+            draftStore.updateDraft(draft.id, patch);
+          } else {
+            draftStore.updateDraft(draft.id, {
+              ...patch,
+              status: 'drafting',
+              phase: 'drafting',
+              players: 10,
                 // Prefer the authoritative RTDB type (same source as the room);
                 // fall back to whatever's already stored so a transient RTDB
                 // miss never blanks a known type.
-                type: rtdbType || fresh.type || fresh.draftType || null,
-                draftType: rtdbType || fresh.draftType || fresh.type || null,
-                randomizingStartedAt: undefined,
-                preSpinStartedAt: undefined,
-              });
-            }
-          } else if (isFull) {
-            const patch: Partial<DraftState> = { players: 10 };
+              type: rtdbType || fresh.type || fresh.draftType || null,
+              draftType: rtdbType || fresh.draftType || fresh.type || null,
+              randomizingStartedAt: undefined,
+              preSpinStartedAt: undefined,
+            });
+          }
+        } else if (isFull) {
+          const patch: Partial<DraftState> = { players: 10 };
 
-            if (info.draftStartTime) {
+          if (rtdb.draftStartTime) {
               // Authoritative reveal clock for getLiveState's server-clock branch.
               patch.draftStartTimeMs = info.draftStartTime * 1000;
-              const serverPreSpin = info.draftStartTime * 1000 - 60000;
-              if (!fresh.preSpinStartedAt) {
-                if (fresh.randomizingStartedAt) {
-                  const barStillRunning = (Date.now() - fresh.randomizingStartedAt) < 3000;
-                  if (!barStillRunning) {
-                    patch.preSpinStartedAt = serverPreSpin;
-                    patch.randomizingStartedAt = undefined;
-                    patch.phase = 'pre-spin';
-                  }
-                } else {
-                  // Trust the server's pre-spin timestamp. If we landed here
-                  // without ever running the bar locally (common on mobile:
-                  // user opens /drafting after the draft already filled, or
-                  // after backgrounding the tab), don't restart the 3s + 60s
-                  // cycle from now — that double-counts: type reveals early
-                  // because the freshly-set timestamp puts us past elapsed=23s
-                  // on subsequent polls, then the countdown visibly restarts.
-                  // Only run the bar if we're still actually in the pre-fill
-                  // window where serverPreSpin is in the future.
-                  if (Date.now() >= serverPreSpin) {
-                    patch.preSpinStartedAt = serverPreSpin;
-                    patch.phase = 'pre-spin';
-                  } else {
-                    patch.randomizingStartedAt = Date.now();
-                  }
+            const serverPreSpin = rtdb.draftStartTime * 1000 - 60000;
+            if (!fresh.preSpinStartedAt) {
+              if (fresh.randomizingStartedAt) {
+                const barStillRunning = (Date.now() - fresh.randomizingStartedAt) < 3000;
+                if (!barStillRunning) {
+                  patch.preSpinStartedAt = serverPreSpin;
+                  patch.randomizingStartedAt = undefined;
+                  patch.phase = 'pre-spin';
                 }
-              } else if (Math.abs(fresh.preSpinStartedAt - serverPreSpin) > 2000) {
+              } else if (Date.now() >= serverPreSpin) {
                 patch.preSpinStartedAt = serverPreSpin;
+                patch.phase = 'pre-spin';
+              } else {
+                patch.randomizingStartedAt = Date.now();
               }
+            } else if (Math.abs(fresh.preSpinStartedAt - serverPreSpin) > 2000) {
+              patch.preSpinStartedAt = serverPreSpin;
             }
-
-            draftStore.updateDraft(draft.id, patch);
-          } else if (playerCount > 0 && draft.status === 'filling') {
-            draftStore.updateDraft(draft.id, { players: playerCount });
           }
-        } catch (err) {
-          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+
+          draftStore.updateDraft(draft.id, patch);
+        } else if (playerCount > 0 && draft.status === 'filling') {
+          draftStore.updateDraft(draft.id, { players: playerCount });
         }
+      } catch (err) {
+        console.warn(`[Drafting] Failed to apply RTDB update for ${draftId}:`, err);
       }
     };
 
@@ -1144,15 +1155,19 @@ export function useDraftingPageState() {
     intervalId = setInterval(() => {
       void syncLiveDrafts();
     }, 3000);
+    const unsubs = ids.map((draftId) =>
+      subscribeRealTimeDraftInfo(draftId, (rtdb) => {
+        if (rtdb) void applyRtdbUpdate(draftId, rtdb);
+      }),
+    );
 
     return () => {
-      cancelled = true;
-      window.removeEventListener('focus', onFocus);
+      for (const unsub of unsubs) {
       document.removeEventListener('visibilitychange', onVisible);
-      if (focusTimeout) clearTimeout(focusTimeout);
-      if (intervalId) clearInterval(intervalId);
+        try { unsub(); } catch { /* ignore */ }
+      }
     };
-  }, [isLive, user?.id, user?.walletAddress]);
+  }, [isLive, user?.id, user?.walletAddress, liveDraftIdsForRtdbKey]);
 
   const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
 
@@ -1171,20 +1186,7 @@ export function useDraftingPageState() {
     const wallet = user.walletAddress.trim().toLowerCase();
     const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 
-    let syncInFlight = false;
-    const syncConnections = async () => {
-      // Re-entrancy guard: the token fetch awaits, and an overlapping 3s tick
-      // could double-connect the same draft.
-      if (syncInFlight) return;
-      syncInFlight = true;
-      try {
-        await syncConnectionsInner();
-      } finally {
-        syncInFlight = false;
-      }
-    };
-
-    const syncConnectionsInner = async () => {
+    const syncConnections = () => {
       // WS connections are opened with the current wallet as the `address` param
       // — stale connections from a prior wallet would auth against the wrong
       // user and leak events into the wrong account. Scope by current wallet
@@ -1256,7 +1258,12 @@ export function useDraftingPageState() {
               draftStore.updateDraft(draftId, {
                 pickEndTimestamp: endTs,
                 isYourTurn: isUserTurn,
-                timeRemaining: endTs ? Math.max(0, Math.ceil(endTs - Date.now() / 1000)) : undefined,
+                timeRemaining: endTs
+                  ? capDisplayTimeRemaining(
+                      Math.max(0, Math.round(endTs - Date.now() / 1000)),
+                      expectedPickLengthFromSpeed(draft.draftSpeed),
+                    )
+                  : undefined,
               });
             }
 
@@ -1619,7 +1626,7 @@ export function useDraftingPageState() {
     } catch { /* ignore */ }
 
     try {
-      await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
+      await leaveDraft(exitingDraft.id, user.walletAddress, getAccessToken, storedDraft?.cardId);
       // Refund the Firestore pass counter (Go side already returns the
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
@@ -1702,7 +1709,7 @@ export function useDraftingPageState() {
 
     const wallet = user?.walletAddress;
     if (wallet && allIds.length > 0) {
-      void Promise.allSettled(allIds.map(id => leaveDraft(id, wallet)));
+      void Promise.allSettled(allIds.map(id => leaveDraft(id, wallet, getAccessTokenRef.current)));
     }
   };
 

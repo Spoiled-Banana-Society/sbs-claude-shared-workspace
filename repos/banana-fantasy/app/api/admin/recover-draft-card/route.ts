@@ -7,6 +7,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { logAdminAction } from '@/lib/adminAudit';
+import { draftsApiServer } from '@/lib/draftsApiServer';
 
 /**
  * POST /api/admin/recover-draft-card
@@ -28,10 +29,6 @@ import { logAdminAction } from '@/lib/adminAudit';
  */
 
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
-const DRAFTS_API_URL =
-  process.env.STAGING_DRAFTS_API_URL ||
-  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 export async function POST(req: Request) {
   const requestId = getRequestId(req);
@@ -53,27 +50,12 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'walletAddress must be a 0x-prefixed 40-hex-char address');
     }
 
-    const adminKey = process.env.ADMIN_API_KEY;
-    if (!adminKey) {
-      logger.error('admin.recover_card.no_admin_key', { requestId });
-      throw new ApiError(503, 'ADMIN_API_KEY not configured');
-    }
-
-    const url = `${DRAFTS_API_URL.replace(/\/$/, '')}/draft-actions/${encodeURIComponent(
-      draftId,
-    )}/owner/${encodeURIComponent(walletAddress)}/admin/recover-card`;
-
     logger.info('admin.recover_card.request', { requestId, actor: actorWallet, draftId, walletAddress });
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Admin-Key': adminKey,
-      },
-      // The Go endpoint takes no body — all needed inputs are URL params.
-      body: '{}',
-    });
+    const res = await draftsApiServer(
+      `/draft-actions/${encodeURIComponent(draftId)}/owner/${encodeURIComponent(walletAddress)}/admin/recover-card`,
+      { method: 'POST', adminKey: true, body: {} },
+    );
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');

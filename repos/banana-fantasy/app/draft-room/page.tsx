@@ -39,6 +39,7 @@ import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 import { useUserRankings } from '@/hooks/useUserRankings';
+import { assertSessionWallet } from '@/lib/assertSessionWallet';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -53,7 +54,7 @@ function DraftRoomContent() {
   // instead of flashing a hardcoded "1".
   const initialPlayers = parseInitialPlayers(searchParams?.get('players'));
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
-  const walletParam = searchParams?.get('wallet') || '';
+  const urlWallet = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
@@ -68,7 +69,7 @@ function DraftRoomContent() {
   const [draftId, _setDraftId] = useState(urlDraftId);
   const draftIdRef = useRef(draftId);
   draftIdRef.current = draftId;
-  const isLiveMode = modeParam === 'live' && !!walletParam;
+  const isLiveMode = modeParam === 'live' && !!urlWallet;
 
   // Ownership gate for wheel-pass (queue) drafts. If this draftId belongs to a
   // queue round but the connected wallet is NOT one of its members — e.g. they
@@ -135,8 +136,32 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, isLoading, walletAddress, setShowLoginModal } = useAuth();
+
+  const walletParam = React.useMemo(() => {
+    if (!isLiveMode || spectateParam) return urlWallet;
+    if (isLoading || !isLoggedIn || !walletAddress) return urlWallet;
+    try {
+      return assertSessionWallet({ userId: user!.id, walletAddress }, urlWallet);
+    } catch {
+      return walletAddress.toLowerCase();
+    }
+  }, [urlWallet, isLiveMode, spectateParam, isLoading, isLoggedIn, walletAddress, user?.id]);
+
+  useEffect(() => {
+    if (!isLiveMode || spectateParam || isLoading || !isLoggedIn || !walletAddress || !urlWallet) return;
+    try {
+      assertSessionWallet({ userId: user!.id, walletAddress }, urlWallet);
+    } catch {
+      const params = new URLSearchParams(window.location.search);
+      params.set('wallet', walletAddress);
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    }
+  }, [urlWallet, isLiveMode, spectateParam, isLoading, isLoggedIn, walletAddress, user?.id, pathname, router]);
+
   const { getAccessToken } = usePrivy();
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const {
     playSpinningSound,
     playReelStop,
@@ -1066,7 +1091,7 @@ function DraftRoomContent() {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
 
-    draftApi.getDraftPreferences(draftId, walletParam)
+    draftApi.getDraftPreferences(draftId, walletParam, getAccessTokenRef.current)
       .then((prefs) => {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
@@ -1090,7 +1115,7 @@ function DraftRoomContent() {
           && newSort === 'adp'
         ) {
           newSort = 'rank';
-          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch((err) => reportClientError({
+          draftApi.updateSortPreference(walletParam, draftId, 'RANK', getAccessTokenRef.current).catch((err) => reportClientError({
             source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
             message: err instanceof Error ? err.message : String(err),
             route: 'draft-room',
@@ -1175,7 +1200,7 @@ function DraftRoomContent() {
     if (engine.draftStatus === 'completed') return;
 
     let cancelled = false;
-    draftApi.getDraftPreferences(draftId, walletParam)
+    draftApi.getDraftPreferences(draftId, walletParam, getAccessTokenRef.current)
       .then((prefs) => {
         if (cancelled) return;
         const serverMissed = prefs.numPicksMissedConsecutive || 0;
@@ -1346,7 +1371,7 @@ function DraftRoomContent() {
 
     setAutoDraftLoading(true);
     try {
-      const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue);
+      const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue, getAccessTokenRef.current);
       // Reconcile with server in case it disagreed.
       if (prefs.autoDraft !== newValue) {
         logger.info('[Airplane] setAirplaneMode — source=patch-reconcile-disagreement', {
@@ -1398,7 +1423,7 @@ function DraftRoomContent() {
     setSortPreference(sort);
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
-      draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
+      draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase(), getAccessTokenRef.current)
         .catch(e => {
           console.warn('[Sort] Failed to persist sort preference:', e);
           reportClientError({
@@ -1479,11 +1504,9 @@ function DraftRoomContent() {
     if (walletParam && draftId) {
       logger.debug('[DraftComplete] isDraftClosed=true, fetching generated card...');
       const fetchUrl = async () => {
-        const { getDraftsApiUrl } = await import('@/lib/staging');
-        const FALLBACK_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // never prod
-        const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
+        const { draftsApiFetch } = await import('@/lib/draftsHttpClient');
         try {
-          const res = await fetch(`${baseUrl}/owner/${walletParam}/drafts/${draftId}`);
+          const res = await draftsApiFetch(`/owner/${walletParam}/drafts/${draftId}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
@@ -2749,7 +2772,7 @@ function DraftRoomContent() {
                   // flight, so it can't fetch stale server state (still
                   // autoDraft=true) and revert our optimistic flip.
                   setAutoDraftLoading(true);
-                  draftApi.patchDraftPreferences(draftId, walletParam, false)
+                  draftApi.patchDraftPreferences(draftId, walletParam, false, getAccessTokenRef.current)
                     .catch((e) => {
                       console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
                     })
@@ -2848,7 +2871,7 @@ function DraftRoomContent() {
                   setLeaving(true);
                   try {
                     const storedDraft = draftStore.getDraft(draftId);
-                    await leaveDraft(draftId, walletParam, storedDraft?.cardId);
+                    await leaveDraft(draftId, walletParam, getAccessTokenRef.current, storedDraft?.cardId);
                     // Await the refund-pass POST before navigating away.
                     // Was fire-and-forget, but window.location.href below
                     // can cancel in-flight requests in some browsers, so

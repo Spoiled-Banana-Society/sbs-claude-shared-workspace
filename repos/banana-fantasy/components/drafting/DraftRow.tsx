@@ -7,6 +7,11 @@ import { FounderPill } from '@/components/drafting/FounderPill';
 import { getDraftTypeColor } from '@/lib/draftTypes';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import type { DraftState } from '@/lib/draftStore';
+import {
+  capDisplayTimeRemaining,
+  expectedPickLengthFromSpeed,
+  looksLikeUnconfirmedTimerRemaining,
+} from '@/utils/draftTimer';
 
 export type Draft = DraftState;
 
@@ -210,16 +215,20 @@ export function DraftRow({
           ) : isYourTurn ? (
             (() => {
               // Suppress the brief on-mount flash of an un-confirmed
-              // countdown. If the "remaining" implied by the stored
-              // pickEndTimestamp is within 5% of the full pickLength for
-              // this speed, the value is almost certainly a pre-sync
-              // default that syncLiveDrafts will overwrite on its next
-              // poll (<= 3s). Render a quiet placeholder until then.
-              const remaining = draft.pickEndTimestamp
+              // countdown. If the raw remaining implied by pickEndTimestamp
+              // is within 2% of the full pickLength for this speed, the
+              // value is almost certainly a pre-sync default that
+              // syncLiveDrafts will overwrite on its next poll (<= 3s).
+              // Render a quiet placeholder until then.
+              const expectedPickLength = expectedPickLengthFromSpeed(draft.draftSpeed);
+              const rawRemaining = draft.pickEndTimestamp
                 ? Math.max(0, draft.pickEndTimestamp - Date.now() / 1000)
-                : (draft.timeRemaining ?? 30);
-              const expectedPickLength = draft.draftSpeed === 'fast' ? 30 : 28800;
-              const looksUnconfirmed = remaining > expectedPickLength * 0.95;
+                : (draft.timeRemaining ?? expectedPickLength);
+              const looksUnconfirmed = looksLikeUnconfirmedTimerRemaining(
+                rawRemaining,
+                expectedPickLength,
+              );
+              const remaining = capDisplayTimeRemaining(rawRemaining, expectedPickLength);
               if (looksUnconfirmed) {
                 return <span className="text-white/30 text-[11px] sm:text-sm">Syncing…</span>;
               }

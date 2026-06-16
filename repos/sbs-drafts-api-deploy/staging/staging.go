@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/batchproof"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
@@ -21,6 +22,9 @@ type StagingResources struct{}
 
 func (sr *StagingResources) Routes() chi.Router {
 	r := chi.NewRouter()
+	if auth.AuthEnabled() {
+		r.Use(auth.RequireAdminKey)
+	}
 	r.Post("/fill-bots/{speed}", sr.FillBots)
 	r.Post("/mint-tokens/{ownerId}", sr.MintTokens)
 	r.Post("/cleanup-stale-leagues", sr.CleanupStaleLeagues)
@@ -76,7 +80,7 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	}
 
 	draftNum := counts.CurrentSlowDraftCount + 1
-	draftId := fmt.Sprintf("2025-slow-draft-%d", draftNum)
+	draftId := models.FormatDraftLeagueID("slow", draftNum)
 
 	// Create the league with the special level
 	league := &models.League{
@@ -643,7 +647,7 @@ func (sr *StagingResources) FillBots(w http.ResponseWriter, r *http.Request) {
 			if len(cards) > 0 {
 				joinedLeagueId = cards[0].LeagueId
 				discoveredLeagueId = joinedLeagueId
-				// Extract draft number: "2025-fast-draft-42" → pass 41 (AddCardToLeague does +1)
+				// Extract draft number from league id (AddCardToLeague does +1)
 				parts := strings.Split(joinedLeagueId, "-")
 				if len(parts) > 0 {
 					if num, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
@@ -686,7 +690,7 @@ func (sr *StagingResources) CleanupStaleLeagues(w http.ResponseWriter, r *http.R
 	// Scan forward from the last filled league looking for stale unfilled ones
 	consecutiveNotFound := 0
 	for num := startNum; consecutiveNotFound < 5; num++ {
-		draftId := fmt.Sprintf("2025-fast-draft-%d", num)
+		draftId := models.FormatDraftLeagueID("fast", num)
 		var league models.League
 		err := utils.Db.ReadDocument("drafts", draftId, &league)
 		if err != nil {
@@ -728,7 +732,7 @@ func (sr *StagingResources) CleanupStaleLeagues(w http.ResponseWriter, r *http.R
 
 	// Also check slow drafts
 	for num := 1; ; num++ {
-		draftId := fmt.Sprintf("2025-slow-draft-%d", num)
+		draftId := models.FormatDraftLeagueID("slow", num)
 		var league models.League
 		err := utils.Db.ReadDocument("drafts", draftId, &league)
 		if err != nil {
@@ -802,7 +806,7 @@ func (sr *StagingResources) ResetDraftCounter(w http.ResponseWriter, r *http.Req
 		wg.Add(1)
 		go func(n int) {
 			defer func() { <-ticket; wg.Done() }()
-			deleteDraft(fmt.Sprintf("2025-fast-draft-%d", n))
+			deleteDraft(models.FormatDraftLeagueID("fast", n))
 		}(num)
 	}
 
@@ -812,7 +816,7 @@ func (sr *StagingResources) ResetDraftCounter(w http.ResponseWriter, r *http.Req
 		wg.Add(1)
 		go func(n int) {
 			defer func() { <-ticket; wg.Done() }()
-			deleteDraft(fmt.Sprintf("2025-slow-draft-%d", n))
+			deleteDraft(models.FormatDraftLeagueID("slow", n))
 		}(num)
 	}
 

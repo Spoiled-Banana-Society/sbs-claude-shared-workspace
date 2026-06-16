@@ -5,6 +5,7 @@ import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
+import { draftsApiServer } from '@/lib/draftsApiServer';
 
 const USERS_COLLECTION = 'v2_users';
 
@@ -175,10 +176,6 @@ export async function fetchGoApiAvailableCount(wallet: string): Promise<number |
  */
 async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passType: 'paid' | 'free'): Promise<number> {
   if (tokenIds.length === 0) return 0;
-  const apiBase = getServerDraftsApiUrl();
-  if (!apiBase) return 0;
-  // Go endpoint takes a minId/maxId range. For non-contiguous ids we call
-  // once per id. BBB4 mint is sequential so contiguous is the common case.
   let registered = 0;
   tokenIds.sort((a, b) => a - b);
   let runStart = tokenIds[0];
@@ -194,12 +191,13 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passT
     }
   }
   ranges.push([runStart, runEnd]);
+  const normalizedWallet = wallet.toLowerCase();
   for (const [minId, maxId] of ranges) {
     try {
-      const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/mint`, {
+      const res = await draftsApiServer(`/owner/${normalizedWallet}/draftToken/mint`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ minId, maxId, passType }),
+        wallet: normalizedWallet,
+        body: { minId, maxId, passType },
       });
       if (res.ok) {
         registered += maxId - minId + 1;

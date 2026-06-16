@@ -1,16 +1,7 @@
 // REST API service for the SBS drafts Go backend
 
-import { getDraftsApiUrl } from '@/lib/staging';
-
-// Safety net only — getDraftsApiUrl() now resolves the staging URL on the
-// server too (isStagingMode() returns true server-side). NEVER put
-// NEXT_PUBLIC_DRAFTS_API_URL in this chain: it points at the OLD PROD Go API,
-// and falling back to it made every server-side getDraftInfo/getDraftSummary
-// (refresh-draft card writer, pick-10 backstop, reveal-complete) silently 404
-// against prod (caught live on draft 2024-fast-draft-1382, 2026-06-10).
-const FALLBACK_URL =
-  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+import { authedAppFetch } from '@/lib/authedAppFetch';
+import { createDraftsHttpClient } from '@/lib/draftsHttpClient';
 
 
 // ==================== TYPES ====================
@@ -103,27 +94,34 @@ export interface UserTokens {
 
 // ==================== HELPERS ====================
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
-  const url = `${baseUrl}${path}`;
-  const res = await fetch(url, options);
+async function authedBffJson<T>(
+  path: string,
+  getAccessToken: () => Promise<string | null>,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await authedAppFetch(path, getAccessToken, init);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(
-      `API error ${res.status} ${res.statusText}: ${text || 'No body'}`
+      `API error ${res.status} ${res.statusText}: ${text || 'No body'}`,
     );
   }
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : ({} as T);
+}
+
+function draftsClient() {
+  return createDraftsHttpClient();
 }
 
 // ==================== DRAFT STATE ====================
 
 export async function getDraftInfo(draftId: string): Promise<DraftInfoResponse> {
-  return apiFetch<DraftInfoResponse>(`/draft/${draftId}/state/info`);
+  return draftsClient().get<DraftInfoResponse>(`/draft/${draftId}/state/info`);
 }
 
 export async function getDraftSummary(draftId: string): Promise<DraftSummary> {
-  const res = await apiFetch<unknown>(`/draft/${draftId}/state/summary`);
+  const res = await draftsClient().get<unknown>(`/draft/${draftId}/state/summary`);
   if (Array.isArray(res)) return res as DraftSummary;
   if (res && typeof res === 'object') {
     const obj = res as Partial<DraftSummaryEnvelope>;
@@ -133,7 +131,7 @@ export async function getDraftSummary(draftId: string): Promise<DraftSummary> {
 }
 
 export async function getDraftRosters(draftId: string): Promise<RosterState> {
-  return apiFetch<RosterState>(`/draft/${draftId}/state/rosters`);
+  return draftsClient().get<RosterState>(`/draft/${draftId}/state/rosters`);
 }
 
 // ==================== PLAYER STATE ====================
@@ -142,8 +140,8 @@ export async function getPlayerRankings(
   draftId: string,
   walletAddress: string
 ): Promise<PlayerDataResponse[]> {
-  return apiFetch<PlayerDataResponse[]>(
-    `/draft/${draftId}/playerState/${walletAddress}`
+  return draftsClient().get<PlayerDataResponse[]>(
+    `/draft/${draftId}/playerState/${walletAddress}`,
   );
 }
 
@@ -151,48 +149,47 @@ export async function getPlayerRankings(
 
 export async function getQueue(
   walletAddress: string,
-  draftId: string
+  draftId: string,
+  getAccessToken: () => Promise<string | null>,
 ): Promise<PlayerStateInfo[]> {
-  return apiFetch<PlayerStateInfo[]>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/queue`
+  return authedBffJson<PlayerStateInfo[]>(
+    `/api/draft/${draftId}/queue`,
+    getAccessToken,
   );
 }
 
 export async function updateQueue(
   walletAddress: string,
   draftId: string,
-  queue: PlayerStateInfo[]
+  queue: PlayerStateInfo[],
+  getAccessToken: () => Promise<string | null>,
 ): Promise<void> {
-  await apiFetch<void>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/queue`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(queue),
-    }
-  );
+  await authedBffJson<void>(`/api/draft/${draftId}/queue`, getAccessToken, {
+    method: 'POST',
+    body: JSON.stringify(queue),
+  });
 }
 
 // ==================== SORT PREFERENCE ====================
 
 export async function getSortPreference(
   walletAddress: string,
-  draftId: string
+  draftId: string,
+  getAccessToken: () => Promise<string | null>,
 ): Promise<string> {
-  return apiFetch<string>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/sort`
-  );
+  return authedBffJson<string>(`/api/draft/${draftId}/sort`, getAccessToken);
 }
 
 export async function updateSortPreference(
   walletAddress: string,
   draftId: string,
-  sortBy: string
+  sortBy: string,
+  getAccessToken: () => Promise<string | null>,
 ): Promise<void> {
-  await apiFetch<void>(
-    `/owner/${walletAddress}/drafts/${draftId}/state/sort/${sortBy}`,
-    { method: 'PUT' }
-  );
+  await authedBffJson<void>(`/api/draft/${draftId}/sort`, getAccessToken, {
+    method: 'PUT',
+    body: JSON.stringify({ sortBy }),
+  });
 }
 
 // ==================== TOKENS ====================
@@ -200,33 +197,7 @@ export async function updateSortPreference(
 export async function getUserTokens(
   walletAddress: string
 ): Promise<UserTokens> {
-  return apiFetch<UserTokens>(`/owner/${walletAddress}/draftToken/all`);
-}
-
-// ==================== LEAGUE ACTIONS ====================
-
-export async function joinDraft(
-  draftType: string,
-  walletAddress: string,
-  numLeagues: number
-): Promise<void> {
-  await apiFetch<void>(`/league/${draftType}/owner/${walletAddress}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ numLeaguesToJoin: numLeagues }),
-  });
-}
-
-export async function leaveDraft(
-  draftId: string,
-  ownerId: string,
-  tokenId: string
-): Promise<void> {
-  await apiFetch<void>(`/league/${draftId}/actions/leave`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ownerId, tokenId }),
-  });
+  return draftsClient().get<UserTokens>(`/owner/${walletAddress}/draftToken/all`);
 }
 
 // ==================== DRAFT ACTIONS (Firebase RTDB + Cloud Tasks migration) ====================
@@ -243,9 +214,11 @@ export interface DraftPreferences {
 export async function getDraftPreferences(
   draftId: string,
   walletAddress: string,
+  getAccessToken: () => Promise<string | null>,
 ): Promise<DraftPreferences> {
-  return apiFetch<DraftPreferences>(
-    `/draft-actions/${draftId}/owner/${walletAddress}/preferences`,
+  return authedBffJson<DraftPreferences>(
+    `/api/draft/${draftId}/preferences`,
+    getAccessToken,
   );
 }
 
@@ -256,15 +229,29 @@ export async function patchDraftPreferences(
   draftId: string,
   walletAddress: string,
   autoDraft: boolean,
+  getAccessToken: () => Promise<string | null>,
 ): Promise<DraftPreferences> {
-  return apiFetch<DraftPreferences>(
-    `/draft-actions/${draftId}/owner/${walletAddress}/preferences`,
+  return authedBffJson<DraftPreferences>(
+    `/api/draft/${draftId}/preferences`,
+    getAccessToken,
     {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autoDraft }),
     },
   );
+}
+
+/**
+ * Mint draft token(s) for the authenticated user (pre-join setup).
+ */
+export async function mintDraftToken(
+  getAccessToken: () => Promise<string | null>,
+  body: { minId: number; maxId: number } | { numberOfTokens: number },
+): Promise<unknown> {
+  return authedBffJson('/api/owner/mint', getAccessToken, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 }
 
 /**
@@ -281,16 +268,13 @@ export async function submitPickREST(
     team: string;
     position: string;
   },
+  getAccessToken: () => Promise<string | null>,
 ): Promise<unknown> {
   try {
-    return await apiFetch<unknown>(
-      `/draft-actions/${draftId}/owner/${walletAddress}/actions/pick`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pick),
-      },
-    );
+    return await authedBffJson(`/api/draft/${draftId}/pick`, getAccessToken, {
+      method: 'POST',
+      body: JSON.stringify(pick),
+    });
   } catch (err) {
     // Report failed pick submissions so admin sees them in real-time.
     // Anything blocking the user from advancing the draft is high

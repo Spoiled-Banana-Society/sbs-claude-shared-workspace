@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { getDraftSummary, getDraftInfo, type ApiDraftPick } from '@/lib/api/drafts';
 import { getOwnerDraftTokens } from '@/lib/api/owner';
-import { getDraftsApiUrl } from '@/lib/staging';
+import { draftsApiFetch } from '@/lib/draftsHttpClient';
 import type { League, Ripeness } from '@/types';
 import { LeagueChat } from '@/components/standings/LeagueChat';
 import { useAuth } from '@/hooks/useAuth';
@@ -94,8 +94,7 @@ function truncateAddress(addr: string): string {
 }
 
 async function fetchRosters(draftId: string): Promise<Record<string, Record<string, unknown>>> {
-  const base = getDraftsApiUrl();
-  const res = await fetch(`${base}/draft/${draftId}/state/rosters`);
+  const res = await draftsApiFetch(`/draft/${draftId}/state/rosters`);
   if (!res.ok) throw new Error('Failed to fetch rosters');
   return res.json();
 }

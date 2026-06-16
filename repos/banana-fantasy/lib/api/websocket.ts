@@ -79,7 +79,7 @@ export class DraftWebSocketClient {
   private anyHandlers = new Set<Handler>();
 
   constructor(options: DraftWebSocketClientOptions) {
-    const serverUrl = options.serverUrl || getDraftServerUrl() || '';
+    const serverUrl = options.serverUrl || getDraftServerUrl();
     this.opts = {
       walletAddress: options.walletAddress,
       draftId: options.draftId,
@@ -96,11 +96,6 @@ export class DraftWebSocketClient {
       draftId: this.opts.draftId,
       hasServerUrl: !!this.opts.serverUrl,
     });
-
-    if (!this.opts.serverUrl) {
-      console.error('[DraftWS] No server URL! getDraftServerUrl() returned empty. Check staging env vars.');
-      throw new Error('Missing draft server URL (NEXT_PUBLIC_DRAFT_SERVER_URL or staging equivalent)');
-    }
 
     if (typeof WebSocket === 'undefined') {
       throw new Error('WebSocket is not available in this runtime. Use DraftWebSocketClient in client components only.');

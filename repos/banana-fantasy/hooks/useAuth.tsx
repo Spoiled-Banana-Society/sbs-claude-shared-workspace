@@ -5,6 +5,7 @@ import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyPr
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
+import { setPrivyAccessTokenGetter } from '@/lib/privyAccessToken';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
@@ -259,6 +260,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem(REFERRAL_CODE_KEY, refCode);
     }
   }, []);
+
+  useEffect(() => {
+    setPrivyAccessTokenGetter(() => privy.getAccessToken());
+  }, [privy]);
 
   // Proactively refresh the Privy access token when the tab becomes
   // visible. Privy's SDK handles refresh on-demand when getAccessToken

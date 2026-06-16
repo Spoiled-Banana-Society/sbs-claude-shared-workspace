@@ -95,11 +95,16 @@ func main() {
 		fmt.Printf("[batchproof] init skipped: %v\n", err)
 	}
 
-	// CORS: Currently open for testing. TODO: Restrict origins once out of testing phase.
+	// CORS: reads stay browser-accessible; mutations go through Next.js BFF.
 	corConfig := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins: []string{
+			"https://banana-fantasy-sbs.vercel.app",
+			"https://sbsfantasy.com",
+			"https://www.sbsfantasy.com",
+			"http://localhost:3000",
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-SBS-Service-Key", "X-SBS-Wallet", "X-Auto-Draft-Secret", "X-Admin-Key"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,

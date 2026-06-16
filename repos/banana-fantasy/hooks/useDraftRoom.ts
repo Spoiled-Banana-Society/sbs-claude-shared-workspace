@@ -178,7 +178,7 @@ export function useDraftRoom(draftId: string | null) {
           const endMs = toMs(prev.endOfTurnTimestamp);
           if (endMs == null) return prev;
           const now = Date.now();
-          const remaining = Math.max(0, Math.floor((endMs - now) / 1000));
+          const remaining = Math.max(0, Math.round((endMs - now) / 1000));
           const nextCanDraft = deriveCanDraft(prev.currentDrafter, remaining);
 
           const shouldFreeze = remaining === 0 && prev.canDraft;
@@ -292,7 +292,7 @@ export function useDraftRoom(draftId: string | null) {
         const phase = draftStartMs != null && Date.now() < draftStartMs ? 'countdown' : 'drafting';
         const computedRemaining =
           draftInfo?.currentPickEndTime != null
-            ? Math.max(0, Math.floor(((toMs(draftInfo.currentPickEndTime) ?? Date.now()) - Date.now()) / 1000))
+            ? Math.max(0, Math.round(((toMs(draftInfo.currentPickEndTime) ?? Date.now()) - Date.now()) / 1000))
             : null;
         const currentDrafter = draftInfo?.currentDrafter ?? null;
         updateState({
@@ -370,7 +370,7 @@ export function useDraftRoom(draftId: string | null) {
             const startTimestamp = toNumberOrNull(payload.startOfTurnTimestamp);
             const computedRemaining =
               endTimestamp != null
-                ? Math.max(0, Math.floor(((toMs(endTimestamp) ?? Date.now()) - Date.now()) / 1000))
+                ? Math.max(0, Math.round(((toMs(endTimestamp) ?? Date.now()) - Date.now()) / 1000))
                 : null;
             const currentDrafter = toNonEmptyStringOrNull(payload.currentDrafter);
             updateState({

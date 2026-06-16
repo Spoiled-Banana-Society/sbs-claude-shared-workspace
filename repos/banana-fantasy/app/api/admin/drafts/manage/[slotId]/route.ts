@@ -24,7 +24,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
-import { getDraftsApiUrl } from '@/lib/staging';
+import { draftsApiServer } from '@/lib/draftsApiServer';
 
 const PROTECTED_DOC_IDS = new Set(['draftTracker']);
 const STATE_SUBCOLS = ['info', 'summary', 'playerState', 'rosters', 'connectionList', 'sortOrders'];
@@ -78,11 +78,6 @@ export async function DELETE(
     }
 
     // 1) Refund tokens by calling the Go API's leave endpoint for each card.
-    const apiBase = getDraftsApiUrl();
-    if (!apiBase) {
-      throw new ApiError(500, 'Drafts API base URL not configured');
-    }
-
     const cardsSnap = await db.collection('drafts').doc(slotId).collection('cards').get();
     const leaveResults: LeaveResult[] = [];
     for (const c of cardsSnap.docs) {
@@ -94,10 +89,11 @@ export async function DELETE(
         continue;
       }
       try {
-        const res = await fetch(`${apiBase}/league/${slotId}/actions/leave`, {
+        const wallet = ownerId.toLowerCase();
+        const res = await draftsApiServer(`/league/${slotId}/actions/leave`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ownerId, tokenId }),
+          wallet,
+          body: { ownerId: wallet, tokenId },
         });
         const ok = res.status >= 200 && res.status < 300;
         leaveResults.push({ ownerId, tokenId, ok, status: res.status });

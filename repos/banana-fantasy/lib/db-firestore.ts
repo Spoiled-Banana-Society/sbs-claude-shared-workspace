@@ -1334,21 +1334,18 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     if (ids.length > 0) {
       const minId = Math.min(...ids);
       const maxId = Math.max(...ids);
-      const apiBase = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app').trim(); // staging only — never the old prod API
-      if (apiBase) {
-        const res = await fetch(`${apiBase}/owner/${expectedFrom.toLowerCase()}/draftToken/mint`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ minId, maxId }),
-        });
-        if (!res.ok) {
-          const text = await res.text().catch(() => '');
-          logger.warn('verifyPurchase.record_tokens_failed', { status: res.status, body: text.slice(0, 200), txHash });
-        } else {
-          logger.info('verifyPurchase.record_tokens_ok', { minId, maxId, wallet: expectedFrom, txHash });
-        }
+      const wallet = expectedFrom.toLowerCase();
+      const { draftsApiServer } = await import('@/lib/draftsApiServer');
+      const res = await draftsApiServer(`/owner/${wallet}/draftToken/mint`, {
+        method: 'POST',
+        wallet,
+        body: { minId, maxId },
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        logger.warn('verifyPurchase.record_tokens_failed', { status: res.status, body: text.slice(0, 200), txHash });
       } else {
-        logger.warn('verifyPurchase.drafts_api_url_missing');
+        logger.info('verifyPurchase.record_tokens_ok', { minId, maxId, wallet: expectedFrom, txHash });
       }
     }
   } catch (err) {

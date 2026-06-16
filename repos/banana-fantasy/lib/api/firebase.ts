@@ -245,7 +245,6 @@ export function subscribeDraftRandomizeStartAt(draftId: string, cb: (startAtMs: 
  * relying on a REST retry loop.
  */
 export function subscribeDraftDisplayName(draftId: string, cb: (displayName: string) => void): Unsubscribe {
-  // Lazy-import to keep this file SSR-safe (clientLog is 'use client').
   const log = (event: string, payload?: unknown) => {
     void import('@/lib/clientLog').then(m => m.clientLog('league#', event, payload)).catch(() => {});
   };
@@ -258,6 +257,34 @@ export function subscribeDraftDisplayName(draftId: string, cb: (displayName: str
     log('rtdb.unsubscribe', { draftId });
     unsub();
   };
+}
+
+/** Snapshot of `drafts/{draftId}/realTimeDraftInfo` from Firebase RTDB. */
+export interface RealTimeDraftInfoSnapshot {
+  currentDrafter: string;
+  pickNumber: number;
+  roundNum: number;
+  pickInRound: number;
+  pickEndTime: number;
+  pickLength: number;
+  draftStartTime: number;
+  isDraftComplete?: boolean;
+  isDraftClosed?: boolean;
+}
+
+/**
+ * Subscribe to live draft timer / pick state.
+ *
+ * Firebase path: `/drafts/{draftId}/realTimeDraftInfo`
+ */
+export function subscribeRealTimeDraftInfo(
+  draftId: string,
+  cb: (info: RealTimeDraftInfoSnapshot | null) => void,
+): Unsubscribe {
+  return subscribeValue<RealTimeDraftInfoSnapshot>(
+    `/drafts/${draftId}/realTimeDraftInfo`,
+    cb,
+  );
 }
 
 // ─────────── User event stream (real-time toast + notification) ───────────

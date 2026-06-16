@@ -69,7 +69,7 @@ export function useLobbyStatus(
     if (!draftId || stoppedRef.current) return;
 
     try {
-      // Call Go API directly (staging-aware via getDraftsApiUrl inside getDraftInfo)
+      // Poll draft status via authenticated BFF (getDraftInfo inside lib/api/drafts)
       const info = await getDraftInfo(draftId);
       const data = mapInfoToLobbyStatus(draftId, info as unknown as Record<string, unknown>);
       setStatus(data);

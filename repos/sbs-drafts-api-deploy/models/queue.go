@@ -9,8 +9,25 @@ import (
 type DraftQueue []PlayerStateInfo
 type DraftQueueMap map[string]PlayerStateInfo
 
+func enrichQueuePlayerDisplayNames(draftId string, queue DraftQueue) {
+	if len(queue) == 0 {
+		return
+	}
+	playerState := make(map[string]PlayerStateInfo)
+	err := utils.Db.ReadDocument(fmt.Sprintf("drafts/%s/state", draftId), "playerState", &playerState)
+	if err != nil {
+		return
+	}
+	for i := range queue {
+		if state, ok := playerState[queue[i].PlayerId]; ok && state.DisplayName != "" {
+			queue[i].DisplayName = state.DisplayName
+		}
+	}
+}
+
 func UpdateQueueForDraft(draftId string, user string, queue DraftQueue) error {
 	fmt.Println("Updating Queue")
+	enrichQueuePlayerDisplayNames(draftId, queue)
 	// turn queue into a map for firebase
 	draftQueueMap := make(DraftQueueMap)
 	for i := 0; i < len(queue); i++ {
