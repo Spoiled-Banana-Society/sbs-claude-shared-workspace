@@ -135,7 +135,7 @@ const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
 // CONTINUITY: it starts at exactly the free-spin speed and eases out to a
 // stop, so the wheel spins cleanly through and slows once — never slowing
 // mid-spin and re-accelerating. See the landing math in spin().
-export const SPIN_DURATION_MS = 2800;
+export const SPIN_DURATION_MS = 3600;
 
 // Free-spin (pre-result) phase: the wheel starts spinning at a constant
 // speed the instant the user taps, while the RNG request is in flight, so
@@ -328,12 +328,14 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     // continuity means distance ≈ freeSpeed * duration / 2. We then snap the
     // whole-turn count to land exactly on the target angle.
     const current = estimateCurrentRotation();
-    // Land at a RANDOM spot within the winning wedge (not always dead-center)
-    // for a more natural finish. Kept to the central ~70% of the segment so the
-    // pointer never rests on a divider line. outcome.angle aligns the segment
-    // CENTER under the pointer; this jitter is cosmetic only — the result
-    // (outcome.result) is already locked in and unchanged.
-    const jitter = (Math.random() * 2 - 1) * (segmentAngle / 2) * 0.7;
+    // Land OFF-center within the winning wedge — and never dead-center — so
+    // every spin visibly stops in a different part of the segment. Pushed
+    // 35–75% toward a random edge, staying clear of the divider lines.
+    // outcome.angle aligns the segment CENTER under the pointer; this offset is
+    // cosmetic only — the result (outcome.result) is already locked in.
+    const halfSeg = segmentAngle / 2;
+    const jitterDir = Math.random() < 0.5 ? -1 : 1;
+    const jitter = jitterDir * (0.35 + Math.random() * 0.4) * halfSeg;
     let angleToTarget = (outcome.angle + jitter) - (((current % 360) + 360) % 360);
     if (angleToTarget <= 0) angleToTarget += 360; // 0..360 forward to the target
     const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / 2;
