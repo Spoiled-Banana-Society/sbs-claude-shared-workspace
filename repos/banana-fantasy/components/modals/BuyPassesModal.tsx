@@ -12,7 +12,6 @@ import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
-import { pushNotification } from '@/components/NotificationCenter';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
@@ -191,11 +190,8 @@ export function BuyPassesModal({
         context: { userId, quantity: qty, txHash: hash, paymentMethod },
         stack: err instanceof Error ? err.stack : undefined,
       });
-      pushNotification({
-        type: 'system',
-        title: 'Pass minted but sync delayed',
-        message: 'Your draft pass is in your wallet. The balance display will catch up shortly.',
-      });
+      // No user-facing ping on mint — the balance self-heals via the poll
+      // below; the failure is logged for admins only.
     }
     // Live-sync: poll the balance endpoint until the on-chain count reflects
     // the new mint. Covers the 1–2s window where Alchemy's RPC edge can still
@@ -244,14 +240,8 @@ export function BuyPassesModal({
     setMintedCount(count);
     setPhase('pick-speed');
     onPurchaseComplete?.(count);
-    // Pluralize title to match the count so "1 draft pass" + "Draft Passes
-    // Purchased!" doesn't read like a bug.
-    pushNotification({
-      type: 'purchase_complete',
-      title: count === 1 ? 'Draft Pass Purchased!' : 'Draft Passes Purchased!',
-      message: `You bought ${count} draft pass${count !== 1 ? 'es' : ''}. Time to draft!`,
-      link: '/drafting',
-    });
+    // No success ping on mint — the pick-speed screen IS the confirmation.
+    // (Promo rewards earned alongside still surface their own toast.)
   };
 
   const handlePurchase = async () => {

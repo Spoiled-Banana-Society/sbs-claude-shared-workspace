@@ -871,9 +871,11 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
     // the frontend refetches /api/promos (Privy-authed) to render the
     // full toast string ("Your friend Sarah verified!").
     if (result.updated && result.referrerUserId) {
-      pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestone });
       const late = (result as { lateFired?: number; friendName?: string; friendTotal?: number }).lateFired ?? 0;
       if (late > 0) {
+        // Friend-specific noti (names them) — covers live + bell on its own.
+        // Do NOT also emit the generic 'referral-milestone' event, or the
+        // referrer gets two pings for one event.
         void (async () => {
           try {
             const { createNotification } = await import('@/lib/queueNotifications');
@@ -887,6 +889,9 @@ export async function updateReferralRewards(referredUserId: string, milestone: k
             });
           } catch { /* best-effort */ }
         })();
+      } else {
+        // No friend-specific noti for this milestone — fire the single generic ping.
+        pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestone });
       }
     }
     return result;
@@ -1237,7 +1242,10 @@ async function notifyReferrerOfMilestones(
       icon: 'users',
     });
   } catch { /* noti best-effort — the claim is already committed */ }
-  pushStreamEventBg(result.referrerUserId, 'referral-milestone', { milestones: result.newlyHit ?? [] });
+  // NOTE: do NOT also emit a generic 'referral-milestone' stream event here —
+  // the createNotification above already delivers live + to the bell (naming
+  // the friend). A second event produced a duplicate generic "Referral free
+  // spin!" ping. One event, one ping.
 }
 
 export async function verifyPurchase(purchaseId: string, txHash: string) {
