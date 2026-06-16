@@ -82,13 +82,13 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
         <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-10">
           <button
             onClick={onEnter}
-            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-xl transition-all duration-200 bg-banana text-black hover:brightness-110 hover:scale-105"
+            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"
           >
-            ENTER
+            Enter Draft
           </button>
           <Link
             href="/buy-drafts?buy=1"
-            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-xl transition-all duration-200 border-2 border-banana text-banana hover:bg-banana hover:text-black hover:scale-105 text-center"
+            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
           >
             Buy Draft
           </Link>
