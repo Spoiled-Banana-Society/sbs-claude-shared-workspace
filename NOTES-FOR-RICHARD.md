@@ -4,6 +4,25 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jun 16 — ⚠️ TWO Vercel projects now (staging + prod countdown). DO NOT cross-deploy.
+
+`sbsfantasy.com` is going live with a pre-launch **countdown page**. There are now **two Vercel projects from the same `sbs-frontend-v2` repo** — deploys route by **branch**, never cross them:
+
+- **STAGING** (`banana-fantasy`) ← deploys from **`main`** → `banana-fantasy-sbs.vercel.app`. **Unchanged.** Daily `ship.sh` still goes here (pushes `main` + fires the staging deploy hook). PRELAUNCH off.
+- **`sbs-prod`** (NEW) ← deploys from the **`production`** branch ONLY → `sbsfantasy.com`. Runs the countdown with `PRELAUNCH_MODE=true`.
+
+**The rules that keep them from colliding:**
+- `ship.sh` (→ `main`) deploys **STAGING ONLY**. It **cannot** touch prod, because `sbs-prod` deploys from `production`, not `main`. So your normal workflow is 100% safe.
+- **Prod only updates when someone DELIBERATELY moves the `production` branch** to main's HEAD (`gh api -X PATCH …/git/refs/heads/production -f sha=<main HEAD>`). Don't do that unless you intend to push live to the public site.
+- **NEVER** set `sbs-prod`'s Production Branch to `main` (would make every `ship.sh` deploy to the public site).
+- **NEVER** point `sbsfantasy.com` at the staging project.
+- **No Vercel Password Protection** on `sbs-prod` — it would block the public from the countdown; the middleware gate (`PRELAUNCH_MODE`) is the protection.
+- **Launch** = flip `PRELAUNCH_MODE=false` on `sbs-prod` + redeploy (after moving `production` → latest `main`). Rollback = flip back.
+
+Pointing the domain deletes nothing on old prod (DNS only; reversible). Full detail in Boris's memory.
+
+---
+
 ## Jun 15 — ⛔ Please do NOT restore the home bottom "Buy Drafts" button
 
 Boris wants the **bottom-of-home `Buy Drafts` CTA removed** (the big pill under the Promos carousel in `app/page.tsx`). It's been removed twice now — your `acd84348 "Restore home bottom Buy Drafts button"` re-added it after Boris's removal, and he asked for it gone again. The "Buy Draft" button up top next to "Enter Draft" stays; only the bottom one goes. Please leave it out. If you think it should be there, ping Boris first rather than restoring. (Also remove the now-unused `import Link` if you ever touch that file.)
