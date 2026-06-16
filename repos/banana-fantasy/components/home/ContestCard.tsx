@@ -84,13 +84,13 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             onClick={onEnter}
             className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"
           >
-            Enter Draft
+            Enter
           </button>
           <Link
             href="/buy-drafts?buy=1"
             className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
           >
-            Buy Draft
+            Buy
           </Link>
         </div>
       </div>

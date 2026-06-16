@@ -187,13 +187,13 @@ export default function DraftingPage() {
               onClick={handleEnterDraft}
               className="w-32 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-full hover:brightness-110 hover:scale-105 transition-all"
             >
-              Enter Draft
+              Enter
             </button>
             <button
               onClick={() => router.push('/buy-drafts?buy=1')}
               className="w-32 py-2 text-sm font-semibold border-2 border-banana text-banana rounded-full hover:bg-banana hover:text-black hover:scale-105 transition-all"
             >
-              Buy Draft
+              Buy
             </button>
           </div>
         )}
@@ -255,13 +255,13 @@ export default function DraftingPage() {
                         onClick={handleEnterDraft}
                         className="px-10 py-3.5 bg-banana text-black border-2 border-banana font-bold text-[15px] rounded-full hover:brightness-110 active:scale-[0.98] transition-all"
                       >
-                        Enter Draft
+                        Enter
                       </button>
                       <button
                         onClick={() => router.push('/buy-drafts?buy=1')}
                         className="px-10 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
                       >
-                        Buy Draft
+                        Buy
                       </button>
                     </div>
                   </div>
