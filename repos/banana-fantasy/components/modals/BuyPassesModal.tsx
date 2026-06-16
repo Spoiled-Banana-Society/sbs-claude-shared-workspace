@@ -530,7 +530,7 @@ export function BuyPassesModal({
   const usdcStepOrder: FlowStep[] = ['signing', 'processing', 'success'];
   const visibleStepOrder = paymentMethod === 'card' ? cardStepOrder : usdcStepOrder;
 
-  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Join a Draft' : 'Joining Draft...';
+  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Choose Draft Speed' : 'Joining Draft...';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
@@ -852,46 +852,73 @@ export function BuyPassesModal({
           </>
         )}
 
-        {/* ═══ PHASE 2: PICK DRAFT SPEED ═══ */}
+        {/* ═══ PHASE 2: PICK DRAFT SPEED (matches in-app EntryFlowModal) ═══ */}
         {phase === 'pick-speed' && (
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="text-center">
-              <div className="text-4xl mb-3">✅</div>
-              <h3 className="text-2xl font-bold text-text-primary">
-                {mintedCount} Pass{mintedCount !== 1 ? 'es' : ''} Minted!
-              </h3>
-              <p className="text-text-muted mt-1">Join a draft to enter immediately</p>
-            </div>
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <p className="text-center text-white/50 text-sm mb-6">
+              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> minted · pick a speed to enter
+            </p>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <button
                 onClick={() => handlePickSpeed('fast')}
                 disabled={isJoiningDraft}
-                className={`group relative p-6 rounded-xl border-2 text-left transition-all ${isJoiningDraft ? 'border-banana/20 bg-banana/5 opacity-60 cursor-not-allowed' : 'border-banana/40 bg-banana/5 hover:bg-banana/15 hover:border-banana'}`}
+                className="w-full group relative overflow-hidden rounded-xl border-2 border-yellow-500/30 bg-yellow-500/5 p-5 text-left transition-all duration-300 hover:border-yellow-500/60 hover:bg-yellow-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="text-3xl mb-2">⚡</div>
-                <h4 className="text-lg font-bold text-text-primary">Fast Draft</h4>
-                <p className="text-text-muted text-sm mt-1">30-second picks</p>
-                <p className="text-text-muted text-xs mt-2">~15 min total</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-400">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Fast Draft</h3>
+                      <p className="text-yellow-400 text-sm font-medium">30 seconds per pick</p>
+                    </div>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-yellow-400 transition-colors">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </div>
               </button>
+
               <button
                 onClick={() => handlePickSpeed('slow')}
                 disabled={isJoiningDraft}
-                className={`group relative p-6 rounded-xl border-2 text-left transition-all ${isJoiningDraft ? 'border-blue-500/20 bg-blue-500/5 opacity-60 cursor-not-allowed' : 'border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/15 hover:border-blue-500'}`}
+                className="w-full group relative overflow-hidden rounded-xl border-2 border-blue-500/30 bg-blue-500/5 p-5 text-left transition-all duration-300 hover:border-blue-500/60 hover:bg-blue-500/10 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <div className="text-3xl mb-2">🐢</div>
-                <h4 className="text-lg font-bold text-text-primary">Slow Draft</h4>
-                <p className="text-text-muted text-sm mt-1">8-hour picks</p>
-                <p className="text-text-muted text-xs mt-2">Draft at your pace</p>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white">Slow Draft</h3>
+                      <p className="text-blue-400 text-sm font-medium">8 hours per pick</p>
+                    </div>
+                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/30 group-hover:text-blue-400 transition-colors">
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </div>
               </button>
             </div>
 
-            <button
-              onClick={onClose}
-              className="w-full text-center text-text-muted text-sm hover:text-text-secondary transition-colors py-2"
-            >
-              Skip — I&apos;ll draft later
-            </button>
+            {/* Footer */}
+            <div className="mt-6 flex items-center justify-between">
+              <button
+                onClick={onClose}
+                disabled={isJoiningDraft}
+                className="text-white/40 text-sm hover:text-white/60 transition-colors disabled:opacity-50"
+              >
+                Skip — I&apos;ll draft later
+              </button>
+              <p className="text-white/30 text-xs">1 pass will be used</p>
+            </div>
           </div>
         )}
 
