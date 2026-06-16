@@ -145,11 +145,14 @@ const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
 const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
 // Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
 const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
-// Landing easing — initial slope is kept at 2 (y1/x1 = 0.2 / 0.1) so it leaves
-// the free spin at the SAME speed (landing distance = FREE_SPEED * DURATION / 2,
-// see spin()), with NO jerk at hand-off. The tail is flatter than ease-out-quad
-// so the wheel crawls to a stop for a more dramatic, suspenseful finish.
-const LANDING_EASING = 'cubic-bezier(0.1, 0.2, 0.25, 1)';
+// Landing easing — ease-out-QUART: a STRONG ease-out so the wheel slows early
+// and then spends most of the duration creeping slowly to a stop (long, drawn-
+// out deceleration = max anticipation). Its initial slope is y1/x1 = 1/0.25 = 4
+// (LANDING_INITIAL_SLOPE below). The landing distance is set to
+// FREE_SPEED * DURATION / SLOPE (see spin()) so the landing leaves the free
+// spin at the SAME speed — no jerk/speed-up at hand-off.
+const LANDING_EASING = 'cubic-bezier(0.25, 1, 0.5, 1)';
+const LANDING_INITIAL_SLOPE = 4;
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
@@ -324,9 +327,11 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     // CSS transitions hand off from the current computed transform, so this
     // continues forward without a jump. For a CLEAN spin (no mid-slowdown +
     // re-accelerate), the landing distance is chosen so the ease-out leaves
-    // the free spin at the SAME speed: with ease-out-quad (initial slope 2),
-    // continuity means distance ≈ freeSpeed * duration / 2. We then snap the
-    // whole-turn count to land exactly on the target angle.
+    // the free spin at the SAME speed: continuity means
+    // distance ≈ freeSpeed * duration / LANDING_INITIAL_SLOPE (the easing's
+    // initial slope). With the strong ease-out-quart (slope 4) this gives a
+    // long, drawn-out crawl to the stop. We then snap the whole-turn count to
+    // land exactly on the target angle.
     const current = estimateCurrentRotation();
     // Land OFF-center within the winning wedge — and never dead-center — so
     // every spin visibly stops in a different part of the segment. Pushed
@@ -338,7 +343,7 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     const jitter = jitterDir * (0.35 + Math.random() * 0.4) * halfSeg;
     let angleToTarget = (outcome.angle + jitter) - (((current % 360) + 360) % 360);
     if (angleToTarget <= 0) angleToTarget += 360; // 0..360 forward to the target
-    const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / 2;
+    const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / LANDING_INITIAL_SLOPE;
     const fullRotations = Math.max(2, Math.round((idealDistance - angleToTarget) / 360));
     const deltaRotation = angleToTarget + 360 * fullRotations;
 
