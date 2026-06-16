@@ -4,6 +4,29 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jun 15 — Pre-launch COUNTDOWN gate + prod-environment plan (heads up so nothing collides)
+
+Setting up `sbsfantasy.com` to show a **countdown page** for pre-launch, walling the full app from the public, then flipping to the full app at launch. **Target launch: Tue 2026-06-23** (time TBD). Here's what shipped + how it works so you don't trip over it.
+
+### What shipped to staging (DORMANT — zero behavior change)
+- **`middleware.ts` → new `handlePrelaunch()`** gated on `process.env.PRELAUNCH_MODE`.
+  - **Flag off / unset = complete no-op.** Verified: every route, every API behaves exactly as before. **Staging always runs with the flag OFF**, so nothing changes for you.
+  - Flag `'true'` (prod only): public → rewritten to `/coming-soon` (URL stays clean), `/api/*` → 404, `/enter?key=<secret>` sets httpOnly cookie `sbs_preview` → real app, `/exit` clears it.
+  - Matcher widened to all routes (was `/api/:path*`) but the existing CORS/size logic is untouched and runs after the gate.
+- **`app/coming-soon/page.tsx`** replaced the old stale "BBB4 IS COMING" mock with a clean full-screen countdown overlay (prize pool + live timer + subtle floating bananas). **Makes ZERO `/api` calls** — so the `e2e/render-loop-guard.spec.ts` page that loads `/coming-soon` still passes easily.
+
+### The prod architecture (so we keep daily work off the live site)
+- **Staging = `main` branch → `banana-fantasy-sbs.vercel.app`.** Unchanged. Daily `ship.sh` keeps going here.
+- **PROD = a NEW separate Vercel project → `sbsfantasy.com`, deploying from a NEW `production` branch** (I created `production` off `main` today on `sbs-frontend-v2`). PRELAUNCH_MODE=`true` there until launch. DNS on GoDaddy. Vercel Password Protection on as a 2nd lock during pre-launch.
+- **⚠️ Please DON'T:** point the prod project at `main`, push to `production` (that = promoting to the LIVE public site — Boris does this deliberately), or set `PRELAUNCH_MODE=true` on **staging** (it would wall staging for everyone). Daily work to `main`/staging is totally unaffected.
+- **Launch day = flip `PRELAUNCH_MODE=false` on prod + redeploy.** Rollback = flip back.
+- Bypass key for previewing behind the wall is a prod env var (`PRELAUNCH_BYPASS_KEY`) — not committed here (public repo). Ask Boris if you need it.
+
+### Next
+Full staging→prod cutover after the countdown is up (prod backends/env/contracts + one-time web2 returning-user data import into prod). Will coordinate before any of that touches live.
+
+---
+
 ## May 27 — DDoS incident follow-up: 6 more spots patched, smoke test + rate-limit rule added
 
 Thanks for the diagnosis + write-up + the four-hook fix (`c02c508`). Boris's Claude picked it up from your `NOTES-FOR-BORIS.md` brief, verified your fix landed, then did an independent audit on top because the four polling hooks weren't the full surface area.
