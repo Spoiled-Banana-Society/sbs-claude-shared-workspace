@@ -162,9 +162,9 @@ export function EntryFlowModal({
               <button
                 onClick={() => { if (!isSubmitting) onBuyMore(); }}
                 disabled={isSubmitting}
-                className="w-full p-4 rounded-xl border-2 border-banana/30 bg-banana/5 text-center font-semibold text-banana hover:border-banana hover:bg-banana/10 hover:scale-[1.02] transition-all"
+                className="w-full p-4 rounded-xl border-2 border-banana/30 bg-banana/5 text-left hover:border-banana hover:bg-banana/10 hover:scale-[1.02] transition-all"
               >
-                Buy Drafts
+                <p className="font-semibold text-white">Buy Drafts</p>
               </button>
             )}
 
