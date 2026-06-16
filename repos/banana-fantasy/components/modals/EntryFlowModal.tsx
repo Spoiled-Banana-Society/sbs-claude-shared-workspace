@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface EntryFlowModalProps {
   isOpen: boolean;
@@ -10,8 +9,9 @@ interface EntryFlowModalProps {
   paidPasses: number;
   freePasses: number;
   isSubmitting?: boolean;
-  /** Optional — wired by the parent to switch into the buy/mint flow in place.
-   *  When omitted, the "Buy more drafts" button navigates to /buy-drafts?buy=1. */
+  /** Optional — when provided (the pass-ticket flow), shows a small "Buy Drafts"
+   *  button that switches into the buy/mint flow. Omitted on the regular Enter
+   *  flows, so the button doesn't appear there. */
   onBuyMore?: () => void;
 }
 
@@ -26,7 +26,6 @@ export function EntryFlowModal({
   isSubmitting = false,
   onBuyMore,
 }: EntryFlowModalProps) {
-  const router = useRouter();
   const [step, setStep] = useState<Step>('pass-type');
   const [selectedPassType, setSelectedPassType] = useState<'paid' | 'free' | null>(null);
 
@@ -157,21 +156,19 @@ export function EntryFlowModal({
               </button>
             </div>
 
-            {/* Buy more — intentionally smaller than the pass cards above */}
-            <div className="flex justify-center">
-              <button
-                onClick={() => {
-                  if (isSubmitting) return;
-                  if (onBuyMore) { onBuyMore(); return; }
-                  onClose();
-                  router.push('/buy-drafts?buy=1');
-                }}
-                disabled={isSubmitting}
-                className="px-4 py-1.5 text-sm font-medium text-banana/90 border border-banana/40 rounded-lg hover:border-banana hover:bg-banana/10 transition-all"
-              >
-                Buy more drafts
-              </button>
-            </div>
+            {/* Buy Drafts — only when the parent wires it (the pass-ticket flow),
+                not the regular Enter flows. Intentionally smaller than the cards. */}
+            {onBuyMore && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => { if (!isSubmitting) onBuyMore(); }}
+                  disabled={isSubmitting}
+                  className="px-4 py-1.5 text-sm font-medium text-banana/90 border border-banana/40 rounded-lg hover:border-banana hover:bg-banana/10 transition-all"
+                >
+                  Buy Drafts
+                </button>
+              </div>
+            )}
 
             <button
               onClick={() => {
