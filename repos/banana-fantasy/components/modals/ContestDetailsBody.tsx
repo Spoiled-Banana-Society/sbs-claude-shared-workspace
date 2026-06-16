@@ -92,10 +92,20 @@ const MORE_SCORING: ScoreGroup[] = [
   },
 ];
 
-// No kicker is scored (QB/RB/WR/TE/DST), so drop any stray "K" the contest
-// data still lists. Also strip the illustrative "· N leagues" count from
-// per-league prize notes — it reads as confusing precision.
-const isKicker = (position: string) => /^k$/i.test(position.trim());
+// Weekly STARTING lineup (8 slots). Best-ball auto-starts your top scorer at
+// each slot; you draft 15 total, so the other 7 are bench. Hardcoded (uniform
+// for BBB) since the per-contest rosterFormat data is unreliable.
+const STARTING_LINEUP: { position: string; count: number }[] = [
+  { position: 'QB', count: 1 },
+  { position: 'RB', count: 2 },
+  { position: 'WR', count: 2 },
+  { position: 'TE', count: 1 },
+  { position: 'FLEX', count: 1 },
+  { position: 'DEF', count: 1 },
+];
+
+// Strip the illustrative "· N leagues" count from per-league prize notes — it
+// reads as confusing precision.
 const cleanNote = (note?: string) =>
   (note ?? '').replace(/\s*·\s*[\d,]+\s*leagues?/i, '').trim();
 
@@ -125,7 +135,6 @@ function ScoreGroupCard({ group }: { group: ScoreGroup }) {
 }
 
 export function ContestDetailsBody({ contest }: { contest: Contest }) {
-  const roster = (contest.rosterFormat ?? []).filter((s) => !isKicker(s.position));
 
   return (
     <div className="space-y-6">
@@ -202,20 +211,21 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
         </div>
       </div>
 
-      {/* Roster Format */}
-      {roster.length > 0 && (
-        <div>
-          <h4 className="font-semibold text-text-primary mb-3">Roster Format</h4>
-          <div className="flex flex-wrap gap-2">
-            {roster.map((slot, index) => (
-              <div key={index} className="px-3 py-1.5 bg-bg-tertiary rounded-lg text-sm">
-                <span className="text-banana font-medium">{slot.count}x</span>
-                <span className="text-text-secondary ml-1">{slot.position}</span>
-              </div>
-            ))}
-          </div>
+      {/* Weekly starting lineup */}
+      <div>
+        <h4 className="font-semibold text-text-primary mb-1">Weekly Starting Lineup</h4>
+        <p className="text-text-muted text-xs mb-3">
+          Best-ball auto-starts your top scorer at each slot. You draft <span className="text-text-secondary font-medium">15 players</span> total — these 8 start, the other <span className="text-text-secondary font-medium">7 are bench</span>.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {STARTING_LINEUP.map((slot, index) => (
+            <div key={index} className="px-3 py-1.5 bg-bg-tertiary rounded-lg text-sm">
+              <span className="text-banana font-medium">{slot.count}x</span>
+              <span className="text-text-secondary ml-1">{slot.position}</span>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
 
       {/* Draft Type Odds + Guaranteed Distribution — at the bottom */}
       <div className="space-y-3">
