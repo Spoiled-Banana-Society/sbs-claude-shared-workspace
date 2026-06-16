@@ -64,8 +64,11 @@ export async function POST(req: Request) {
         const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' }) + ' PT';
         const todayPT = ptDate(Date.now());
         const eventDayPT = ptDate(eventMs);
-        const dayBeforePT = ptDate(eventMs - 86_400_000);
         const key = new Date(eventMs).toISOString().slice(0, 10);
+        // Day-OF bell fires on login (Wed). The day-BEFORE "tomorrow" ping is
+        // NOT on login anymore — it's a single 6PM-PT broadcast to all users
+        // (/api/crons/founder-teaser) so it doesn't get buried in the launch-day
+        // onboarding flood. Same dedupeKey there, so no double-ping.
         if (todayPT === eventDayPT && Date.now() < eventMs) {
           await createNotification(wallet, {
             type: 'founder_draft',
@@ -73,15 +76,6 @@ export async function POST(req: Request) {
             message: 'The Founder Draft drops today. Tap to learn how Founder Drafts work.',
             link: '/faq#founder-draft',
             dedupeKey: `founder-today-${key}`,
-            icon: 'crown',
-          });
-        } else if (todayPT === dayBeforePT) {
-          await createNotification(wallet, {
-            type: 'founder_draft',
-            title: `Founder Draft tomorrow — ${timePT}`,
-            message: 'A Founder Draft drops tomorrow. Tap to learn how Founder Drafts work.',
-            link: '/faq#founder-draft',
-            dedupeKey: `founder-tomorrow-${key}`,
             icon: 'crown',
           });
         }
