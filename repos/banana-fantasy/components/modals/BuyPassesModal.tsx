@@ -808,7 +808,7 @@ export function BuyPassesModal({
               onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
               disabled={isProcessing || quantity < 1 || (paymentMethod === 'usdc' && !mintActive)}
               className={`
-                w-full py-3.5 sm:py-4 rounded-xl font-bold text-base sm:text-lg transition-all shadow-lg shadow-banana/20
+                ${flowStep === 'success' ? 'mx-auto block w-fit min-w-[220px] px-8 py-3' : 'w-full py-3.5 sm:py-4'} rounded-xl font-bold text-base sm:text-lg transition-all shadow-lg shadow-banana/20
                 ${isProcessing || quantity < 1
                   ? 'bg-banana/50 text-black/50 cursor-not-allowed'
                   : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'

@@ -45,9 +45,11 @@ export default function TestBuySuccessBtn() {
             <span className="text-emerald-400 text-sm font-semibold">Payment complete</span>
           </div>
           {/* clean, single-purpose CTA — matches the real button exactly */}
-          <button className="w-full py-3.5 sm:py-4 rounded-xl font-bold text-base sm:text-lg shadow-lg shadow-banana/20 bg-banana text-black hover:brightness-110 transition-all flex items-center justify-center gap-2">
-            Start Drafting
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          <button className="mx-auto block w-fit min-w-[220px] px-8 py-3 rounded-xl font-bold text-base sm:text-lg shadow-lg shadow-banana/20 bg-banana text-black hover:brightness-110 transition-all">
+            <span className="flex items-center justify-center gap-2">
+              Start Drafting
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </span>
           </button>
         </Panel>
 
