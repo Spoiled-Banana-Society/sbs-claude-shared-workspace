@@ -87,7 +87,7 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
             ENTER
           </button>
           <Link
-            href="/buy-drafts"
+            href="/buy-drafts?buy=1"
             className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-xl transition-all duration-200 border-2 border-banana text-banana hover:bg-banana hover:text-black hover:scale-105 text-center"
           >
             Buy Draft

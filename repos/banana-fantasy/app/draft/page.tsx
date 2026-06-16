@@ -190,7 +190,7 @@ export default function DraftingPage() {
               New Draft
             </button>
             <button
-              onClick={() => router.push('/buy-drafts')}
+              onClick={() => router.push('/buy-drafts?buy=1')}
               className="w-28 py-2 text-sm font-semibold bg-banana text-black border-2 border-banana rounded-lg hover:scale-105 transition-all"
             >
               Buy Drafts
@@ -258,7 +258,7 @@ export default function DraftingPage() {
                         Enter Draft
                       </button>
                       <button
-                        onClick={() => router.push('/buy-drafts')}
+                        onClick={() => router.push('/buy-drafts?buy=1')}
                         className="px-10 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
                       >
                         Buy Draft

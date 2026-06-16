@@ -201,7 +201,7 @@ export default function HomePage() {
       {/* Buy Drafts CTA — pinned to the bottom of the page */}
       <section className="mt-auto pt-8 pb-10 flex justify-center">
         <Link
-          href="/buy-drafts"
+          href="/buy-drafts?buy=1"
           className="px-10 py-3.5 bg-banana text-black font-bold rounded-xl hover:brightness-110 hover:scale-105 transition-all"
         >
           Buy Drafts
