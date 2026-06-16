@@ -5,9 +5,9 @@ export const runtime = 'nodejs';
 
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { isFounderDraftMarked, markFounderDraft, promoCreditAllowed, recordFounderDraftJoin, unlockBadge } from '@/lib/db';
+import { isFounderDraftMarked, markFounderDraft, unlockBadge } from '@/lib/db';
+import { grantFounderDraftSpins } from '@/lib/founderGrant';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
-import { logger } from '@/lib/logger';
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
@@ -78,33 +78,19 @@ async function creditAllDrafters(
   out.humans = humans;
 
   for (const wallet of humans) {
-    try {
-      // Founders League badge — PLAYING in a founder draft earns it regardless
-      // of pass type. Idempotent + fires the bell/toast on first unlock.
-      // waitUntil-backed so the unlock survives the response.
-      runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
-
-      // The Free Banana Spin is PAID DRAFTS ONLY (Boris 2026-06-10) — same
-      // authoritative token-stamp gate as the other draft promos.
-      if (!(await promoCreditAllowed(wallet, draftId, undefined, 'founder-draft'))) {
-        out.results.push({ wallet, ok: false, reason: 'free pass — badge only, no founder spin credit' });
-        continue;
-      }
-      const promo = await recordFounderDraftJoin(wallet, draftId);
-      out.results.push({
-        wallet,
-        ok: !!promo,
-        reason: promo ? undefined : 'recordFounderDraftJoin returned null',
-      });
-    } catch (err) {
-      logger.warn('founder-drafts.credit.failed', { wallet, draftId, err });
-      out.results.push({
-        wallet,
-        ok: false,
-        reason: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // Founders League badge — PLAYING in a founder draft earns it for EVERYONE
+    // (any pass type, incl. the founder). Idempotent + fires its own bell on
+    // first unlock. waitUntil-backed so it survives the response.
+    runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
+    out.results.push({ wallet, ok: true });
   }
+
+  // The Free Banana Spin is granted DIRECTLY (paid-only, founder EXCLUDED) by
+  // grantFounderDraftSpins — race-safe + idempotent, sent straight to the wheel
+  // with a real-time bell. NOT a claimable promo (no promo box). The old
+  // claimable founder-draft promo credit was removed (Boris 2026-06-16) so
+  // there's exactly one path and no duplicate spins.
+  runInBackground('founder-spins', grantFounderDraftSpins(draftId, 'auto-fill'));
 
   await ref.set({ creditedAt: new Date().toISOString() }, { merge: true });
   return out;
