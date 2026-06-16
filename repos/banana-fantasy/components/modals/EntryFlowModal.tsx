@@ -154,22 +154,23 @@ export function EntryFlowModal({
                   </p>
                 </div>
               </button>
-            </div>
 
-            {/* Buy Drafts — only when the parent wires it (the pass-ticket flow),
-                not the regular Enter flows. Same size as the pass cards above. */}
-            {onBuyMore && (
-              <button
-                onClick={() => { if (!isSubmitting) onBuyMore(); }}
-                disabled={isSubmitting}
-                className="w-full p-4 rounded-xl border-2 border-banana/30 bg-banana/5 text-left hover:border-banana hover:bg-banana/10 hover:scale-[1.02] transition-all"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-white">Buy Drafts</p>
-                  <span className="text-3xl font-bold text-banana leading-none">+</span>
-                </div>
-              </button>
-            )}
+              {/* Buy Drafts — only in the pass-ticket flow (onBuyMore). Same size
+                  as the cards above, kept in this group so spacing is even. Distinct
+                  neutral color so it reads as an action, not a pass type. */}
+              {onBuyMore && (
+                <button
+                  onClick={() => { if (!isSubmitting) onBuyMore(); }}
+                  disabled={isSubmitting}
+                  className="w-full p-4 rounded-xl border-2 border-white/20 bg-white/[0.05] text-left hover:border-white/40 hover:bg-white/[0.08] hover:scale-[1.02] transition-all"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-white">Buy Drafts</p>
+                    <span className="text-3xl font-bold text-white/70 leading-none">+</span>
+                  </div>
+                </button>
+              )}
+            </div>
 
             <button
               onClick={() => {
