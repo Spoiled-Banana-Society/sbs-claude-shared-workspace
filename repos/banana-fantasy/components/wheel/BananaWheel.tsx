@@ -135,7 +135,7 @@ const PENDING_SPIN_KEY = 'banana-wheel-pending-spin';
 // CONTINUITY: it starts at exactly the free-spin speed and eases out to a
 // stop, so the wheel spins cleanly through and slows once — never slowing
 // mid-spin and re-accelerating. See the landing math in spin().
-export const SPIN_DURATION_MS = 2000;
+export const SPIN_DURATION_MS = 2800;
 
 // Free-spin (pre-result) phase: the wheel starts spinning at a constant
 // speed the instant the user taps, while the RNG request is in flight, so
@@ -145,10 +145,11 @@ const FREE_SPIN_MS = 8000;   // safety cap; the result almost always lands first
 const FREE_SPIN_TURNS = 20;  // ~2.5 rev/s — fast and energetic
 // Free-spin angular speed (deg/ms) — the landing matches this at hand-off.
 const FREE_SPIN_DEG_PER_MS = (360 * FREE_SPIN_TURNS) / FREE_SPIN_MS;
-// Landing easing ≈ ease-out-quad (initial slope 2, smooth stop). With the
-// landing distance set to FREE_SPEED * DURATION / 2, the wheel leaves the
-// free spin at the same speed and decelerates at a constant rate to rest.
-const LANDING_EASING = 'cubic-bezier(0.25, 0.5, 0.5, 1)';
+// Landing easing — initial slope is kept at 2 (y1/x1 = 0.2 / 0.1) so it leaves
+// the free spin at the SAME speed (landing distance = FREE_SPEED * DURATION / 2,
+// see spin()), with NO jerk at hand-off. The tail is flatter than ease-out-quad
+// so the wheel crawls to a stop for a more dramatic, suspenseful finish.
+const LANDING_EASING = 'cubic-bezier(0.1, 0.2, 0.25, 1)';
 
 interface PendingSpin {
   outcome: WheelSpinOutcome;
@@ -327,7 +328,13 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
     // continuity means distance ≈ freeSpeed * duration / 2. We then snap the
     // whole-turn count to land exactly on the target angle.
     const current = estimateCurrentRotation();
-    let angleToTarget = outcome.angle - (((current % 360) + 360) % 360);
+    // Land at a RANDOM spot within the winning wedge (not always dead-center)
+    // for a more natural finish. Kept to the central ~70% of the segment so the
+    // pointer never rests on a divider line. outcome.angle aligns the segment
+    // CENTER under the pointer; this jitter is cosmetic only — the result
+    // (outcome.result) is already locked in and unchanged.
+    const jitter = (Math.random() * 2 - 1) * (segmentAngle / 2) * 0.7;
+    let angleToTarget = (outcome.angle + jitter) - (((current % 360) + 360) % 360);
     if (angleToTarget <= 0) angleToTarget += 360; // 0..360 forward to the target
     const idealDistance = (FREE_SPIN_DEG_PER_MS * SPIN_DURATION_MS) / 2;
     const fullRotations = Math.max(2, Math.round((idealDistance - angleToTarget) / 360));
