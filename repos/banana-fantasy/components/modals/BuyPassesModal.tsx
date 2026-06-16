@@ -505,7 +505,7 @@ export function BuyPassesModal({
   const stepHelper: Partial<Record<FlowStep, string>> = isWeb2
     ? {
         funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'Usually 15–60s. Closed the window or want to change your order? Tap Cancel below — any USDC you bought stays in your wallet.',
+        'waiting-for-usdc': 'Usually 15–60s. Closed the window or want to change your order? Tap Cancel below — your payment is safe.',
         signing: '',
         processing: 'Finalizing — just a few seconds.',
       }
@@ -846,7 +846,7 @@ export function BuyPassesModal({
         {phase === 'pick-speed' && (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-300">
             <p className="text-center text-white/50 text-sm mb-6">
-              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> minted · pick a speed to enter
+              <span className="text-banana font-semibold">{mintedCount} pass{mintedCount !== 1 ? 'es' : ''}</span> purchased · pick a speed to enter
             </p>
 
             <div className="space-y-4">
