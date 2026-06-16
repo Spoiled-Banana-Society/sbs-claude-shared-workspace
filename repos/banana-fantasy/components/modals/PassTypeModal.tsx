@@ -26,19 +26,6 @@ export function PassTypeModal({
       <div className="space-y-5">
         {/* Header */}
         <div className="text-center">
-          <div className="flex justify-center mb-3">
-            <svg width="64" height="40" viewBox="0 0 88 56">
-              <defs>
-                <linearGradient id="goldGradientModal" x1="0%" y1="0%" x2="0%" y2="100%">
-                  <stop offset="0%" stopColor="#FBBF24"/>
-                  <stop offset="100%" stopColor="#D97706"/>
-                </linearGradient>
-              </defs>
-              <rect x="0" y="0" width="88" height="56" rx="6" fill="url(#goldGradientModal)"/>
-              <circle cx="0" cy="28" r="6" fill="#1a1a2e"/>
-              <circle cx="88" cy="28" r="6" fill="#1a1a2e"/>
-            </svg>
-          </div>
           <h2 className="text-xl font-bold text-text-primary">Which Draft Pass?</h2>
         </div>
 
