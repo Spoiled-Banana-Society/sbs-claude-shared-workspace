@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from 'react';
 
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
+import { LineIcon } from '@/components/NotificationIcons';
 import type { ActivityEventType } from '@/lib/activityEvents';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -21,18 +22,47 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   cashout_completed: 'Cashed out',
 };
 
-const TYPE_EMOJI: Record<ActivityEventType, string> = {
-  pass_purchased: '💳',
-  pass_granted: '🎁',
-  spin_won: '🎡',
-  promo_claimed: '🎯',
-  draft_entered: '🏟️',
-  draft_filled: '✅',
-  draft_left: '↩️',
-  draft_won: '🏆',
-  marketplace_sold: '💰',
-  cashout_completed: '💸',
+// Clean line-icon key per type (same icon set as the bell — never emoji).
+// pass_granted is overridden by source in iconFor().
+const TYPE_ICON: Record<ActivityEventType, string> = {
+  pass_purchased: 'bag',
+  pass_granted: 'gift',
+  spin_won: 'spin',
+  promo_claimed: 'target',
+  draft_entered: 'football',
+  draft_filled: 'check',
+  draft_left: 'undo',
+  draft_won: 'trophy',
+  marketplace_sold: 'banknote',
+  cashout_completed: 'banknote',
 };
+
+function iconFor(e: LiveActivityEvent): string {
+  if (e.type === 'pass_granted') {
+    const s = String(e.metadata?.source ?? '');
+    if (s === 'card_fee_reward') return 'banknote';
+    if (s === 'wheel_spin_mint') return 'spin';
+  }
+  return TYPE_ICON[e.type];
+}
+
+// Label varies for pass_granted so it only says "from SBS" when we actually
+// sent it, and names credit/wheel rewards correctly.
+function labelFor(e: LiveActivityEvent): string {
+  if (e.type === 'pass_granted') {
+    const s = String(e.metadata?.source ?? '');
+    if (s === 'card_fee_reward') return 'Credit reward';
+    if (s === 'wheel_spin_mint') return 'Wheel prize';
+    if (e.metadata?.adminActor) return 'Gift from SBS';
+    return 'Reward';
+  }
+  return TYPE_LABEL[e.type];
+}
+
+function leagueShort(e: LiveActivityEvent): string {
+  const id = String(e.metadata?.leagueId ?? '');
+  return id ? id.slice(0, 8) : '';
+}
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
   pass_purchased: 'text-emerald-300',
@@ -67,17 +97,17 @@ function describe(e: LiveActivityEvent): string {
       return `${e.quantity} draft pass${e.quantity !== 1 ? 'es' : ''}${priceStr}${via}`;
     }
     case 'pass_granted': {
-      // pass_granted fires for several reasons — label by the real source,
-      // not a blanket "from admin" (which is only true for manual admin grants).
+      // pass_granted fires for several reasons — describe by the real source,
+      // never a blanket "from admin".
       const passWord = `draft pass${e.quantity !== 1 ? 'es' : ''}`;
       const source = String(e.metadata?.source ?? '');
-      // Card-fee credit is EARNED from accumulated card fees — it's paid, not
-      // "free" and not an admin gift (see card-fee-credit promo semantics).
-      if (source === 'card_fee_reward') return `${e.quantity} ${passWord} — card fee credit`;
-      if (source === 'wheel_spin_mint') return `${e.quantity} ${passWord} — wheel prize`;
-      // Only a true manual admin grant carries adminActor.
-      if (e.metadata?.adminActor) return `${e.quantity} free ${passWord} from admin`;
-      return `${e.quantity} free ${passWord}`;
+      // Card-fee credit is EARNED from your accumulated card fees — a PAID
+      // pass (usable everywhere, incl. promos), not a free admin gift.
+      if (source === 'card_fee_reward') return `${e.quantity} paid ${passWord} from your $25 card credit`;
+      if (source === 'wheel_spin_mint') return `${e.quantity} ${passWord}`;
+      // Only a true manual admin grant carries adminActor — we actually sent it.
+      if (e.metadata?.adminActor) return `SBS Team sent you ${e.quantity} ${passWord}`;
+      return `${e.quantity} ${passWord}`;
     }
     case 'spin_won': {
       const prizeType = String(e.metadata?.prizeType ?? '');
@@ -95,8 +125,14 @@ function describe(e: LiveActivityEvent): string {
       if (spins > 0) return `${spins} wheel spin${spins !== 1 ? 's' : ''} (${promoType})`;
       return `${promoType} reward`;
     }
-    case 'draft_entered':
-      return `Entered draft ${String(e.metadata?.leagueId ?? '').slice(0, 16) || ''}`;
+    case 'draft_entered': {
+      const lg = leagueShort(e);
+      return lg ? `League ${lg}` : '';
+    }
+    case 'draft_filled':
+      return 'Your draft filled — drafting begins';
+    case 'draft_left':
+      return '';
     case 'draft_won': {
       const amount = Number(e.metadata?.amount);
       return Number.isFinite(amount) ? `Won $${amount.toLocaleString()}` : 'Draft win';
@@ -124,7 +160,7 @@ function describe(e: LiveActivityEvent): string {
       return `${amountStr}${railLabel ? ` ${railLabel}` : ''}`;
     }
     default:
-      return String(e.type);
+      return '';
   }
 }
 
@@ -218,15 +254,19 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
 
 function ActivityRow({ event }: { event: LiveActivityEvent }) {
   const tx = event.txHash ? `https://basescan.org/tx/${event.txHash}` : null;
+  const detail = describe(event);
   return (
     <div className="flex items-center gap-3 py-2 border-b border-white/[0.04] last:border-0">
-      <span className="text-base flex-shrink-0 w-6 text-center">{TYPE_EMOJI[event.type]}</span>
+      {/* Clean line-icon, muted grey — same language as the notification bell. */}
+      <span className="flex-shrink-0 w-6 flex items-center justify-center">
+        <LineIcon icon={iconFor(event)} color="rgba(255,255,255,0.55)" size={18} />
+      </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <p className={`text-xs font-semibold ${TYPE_COLOR[event.type]}`}>{TYPE_LABEL[event.type]}</p>
+          <p className={`text-xs font-semibold ${TYPE_COLOR[event.type]}`}>{labelFor(event)}</p>
           <p className="text-white/20 text-[10px]">{formatWhen(event.createdAt, event.createdAtIso)}</p>
         </div>
-        <p className="text-white/70 text-xs truncate">{describe(event)}</p>
+        {detail && <p className="text-white/70 text-xs truncate">{detail}</p>}
       </div>
       {tx && (
         <a

@@ -15,7 +15,8 @@ import type { NotificationType } from '@/components/NotificationCenter';
  *   3. the default icon for its `type`.
  * Tinted with the category's accent color by the caller.
  */
-const ICON_PATHS: Record<string, string> = {
+export const ICON_PATHS: Record<string, string> = {
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a6 6 0 0 1 0 12h-3"/>',
   football: '<path d="M2.5 12c3-3 7-3 9.5-3s6.5 0 9.5 3c-3 3-7 3-9.5 3S5.5 15 2.5 12Z"/><path d="M6 9.5 8 12l-2 2.5M18 9.5 16 12l2 2.5M9.5 12h5"/>',
   chart: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
   gift: '<path d="M20 12v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8"/><rect x="2" y="7" width="20" height="5" rx="1"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
@@ -73,6 +74,27 @@ const TYPE_ICON_KEY: Partial<Record<NotificationType, string>> = {
   founder_draft: 'crown',
   draft_alerts: 'bellring',
 };
+
+/**
+ * Lightweight clean line-icon by key (same icon set as the bell). Use for
+ * non-notification surfaces (e.g. the profile Activity feed) so icons stay
+ * consistent across the app and we never fall back to emoji.
+ */
+export function LineIcon({ icon, color, size = 20 }: { icon: string; color: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      dangerouslySetInnerHTML={{ __html: ICON_PATHS[icon] ?? ICON_PATHS.bell }}
+    />
+  );
+}
 
 export function NotificationIcon({
   icon,
