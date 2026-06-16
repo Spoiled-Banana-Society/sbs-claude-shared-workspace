@@ -20,7 +20,8 @@ import { isFounderDraft, type DraftOrderEntry } from '@/lib/founderDraft';
 //
 //  2. Pass just `draftId` and the pill relies on the server check alone.
 
-const FOUNDER_CYAN = '#06b6d4';
+// Clean orange wordmark — no pill background, no border, no glow (Boris 2026-06-16).
+const FOUNDER_ORANGE = '#f97316';
 
 interface BaseProps {
   size?: 'sm' | 'md';
@@ -73,18 +74,13 @@ export function FounderPill(props: FounderPillProps) {
   const isFounder = persistedFounder === true || (persistedFounder === null && optimisticEligible);
   if (!isFounder) return null;
 
-  const sizing = props.size === 'md'
-    ? 'text-[11px] px-2.5 py-0.5'
-    : 'text-[10px] px-2 py-0.5';
+  // Plain orange wordmark — no background, no border (circle), no glow.
+  const sizing = props.size === 'md' ? 'text-[13px]' : 'text-[11px]';
 
   return (
     <span
-      className={`${sizing} rounded-full font-bold uppercase tracking-wider`}
-      style={{
-        background: `${FOUNDER_CYAN}33`, // 20% alpha
-        color: FOUNDER_CYAN,
-        border: `1px solid ${FOUNDER_CYAN}55`,
-      }}
+      className={`${sizing} font-bold uppercase tracking-wider`}
+      style={{ color: FOUNDER_ORANGE }}
     >
       Founder
     </span>

@@ -2432,11 +2432,11 @@ function DraftRoomContent() {
           the MUTE / airplane buttons. Adds a soft cyan glow so it reads as a
           premium tag alongside the larger JP/HOF artwork rather than a plain
           chip. Self-hides when the draft isn't a Founder Draft. */}
-      {(draftId || urlDraftId) && (
-        <div
-          className="flex items-center"
-          style={{ filter: 'drop-shadow(0 0 6px rgba(6,182,212,0.55))' }}
-        >
+      {/* Founder tag — plain orange word, no glow. NEVER shown during filling
+          (Boris 2026-06-16: players can't know it's a founder draft until it
+          fills). Only renders once the draft is no longer filling. */}
+      {(draftId || urlDraftId) && phase !== 'filling' && (
+        <div className="flex items-center">
           <FounderPill draftId={draftId || urlDraftId} size="md" />
         </div>
       )}
@@ -2536,7 +2536,8 @@ function DraftRoomContent() {
             {phase === 'filling' && !specialTypeParam && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-white/10 text-white/50">UNREVEALED</span>
             )}
-            {(draftId || urlDraftId) && (
+            {/* Founder tag hidden during filling — only after the draft fills. */}
+            {(draftId || urlDraftId) && phase !== 'filling' && (
               <FounderPill draftId={draftId || urlDraftId} size="md" />
             )}
           </div>

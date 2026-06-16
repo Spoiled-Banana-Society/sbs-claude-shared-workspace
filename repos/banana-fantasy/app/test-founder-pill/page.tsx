@@ -14,20 +14,18 @@ import {
   draftWordShadow,
 } from '@/lib/draftBandStyle';
 
-const FOUNDER_CYAN = '#06b6d4';
+const FOUNDER_ORANGE = '#f97316';
 
 function FounderPillMock() {
-  // Identical markup/size to the real FounderPill (size="md") + the band's
-  // cyan drop-shadow glow wrapper.
+  // Identical to the real FounderPill (size="md"): plain orange word, no
+  // background, no border (circle), no glow.
   return (
-    <div className="flex items-center" style={{ filter: 'drop-shadow(0 0 6px rgba(6,182,212,0.55))' }}>
-      <span
-        className="text-[11px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider"
-        style={{ background: `${FOUNDER_CYAN}33`, color: FOUNDER_CYAN, border: `1px solid ${FOUNDER_CYAN}55` }}
-      >
-        Founder
-      </span>
-    </div>
+    <span
+      className="text-[13px] font-bold uppercase tracking-wider"
+      style={{ color: FOUNDER_ORANGE }}
+    >
+      Founder
+    </span>
   );
 }
 
@@ -65,8 +63,8 @@ export default function TestFounderPill() {
         <div>
           <h1 className="text-2xl font-bold">FOUNDER pill — color + placement</h1>
           <p className="text-white/50 text-sm mt-1">
-            This is the exact draft-room top band. The cyan <span style={{ color: FOUNDER_CYAN }}>FOUNDER</span> pill
-            sits right next to the type word (PRO / HOF / JACKPOT) with a soft cyan glow. Color = {FOUNDER_CYAN}.
+            This is the exact draft-room top band. The <span style={{ color: FOUNDER_ORANGE }}>FOUNDER</span> word
+            sits right next to the type word (PRO / HOF / JACKPOT) — plain orange, no circle, no glow. Color = {FOUNDER_ORANGE}.
           </p>
         </div>
 
@@ -87,9 +85,10 @@ export default function TestFounderPill() {
 
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-white/60 text-sm">
-            In the live draft room this band sits at the very top (above the player/turn area), and the
-            pill also shows during the filling state. It only appears on Founder drafts — every other
-            draft shows just the type word.
+            In the live draft room this band sits at the very top (above the player/turn area). The FOUNDER
+            word is HIDDEN during filling — it only appears once the draft has FILLED, so players can&apos;t
+            know it&apos;s a founder draft beforehand. Only on Founder drafts — every other draft shows just
+            the type word.
           </p>
         </div>
       </div>
