@@ -6,9 +6,9 @@ import GoogleAnalytics from './components/GoogleAnalytics';
 import { Footer } from '@/components/layout/Footer';
 // import ServiceWorkerRegistration from '@/components/ServiceWorkerRegistration';
 
-const SITE_URL = 'https://bananafantasy.com';
-const SITE_NAME = 'Banana Fantasy';
-const DEFAULT_TITLE = 'Banana Fantasy | Onchain Best Ball Fantasy Football Drafts';
+const SITE_URL = 'https://sbsfantasy.com';
+const SITE_NAME = 'SBSFantasy';
+const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
   'Draft best ball teams onchain, enter Spoiled Banana Society contests, and compete for prizes across fast and slow fantasy football drafts.';
 const DEFAULT_OG_IMAGE = '/bestball.webp';
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: DEFAULT_TITLE,
-    template: '%s | Banana Fantasy',
+    template: '%s | SBSFantasy',
   },
   description: DEFAULT_DESCRIPTION,
   alternates: {
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'Banana Fantasy',
+    title: 'SBSFantasy',
   },
   icons: {
     icon: [
@@ -85,7 +85,7 @@ export default function RootLayout({
     name: 'Spoiled Banana Society',
     url: SITE_URL,
     description:
-      'Spoiled Banana Society powers Banana Fantasy, an onchain best ball fantasy football drafting platform with prize contests.',
+      'Spoiled Banana Society powers SBSFantasy, an onchain best ball fantasy football drafting platform with prize contests.',
   };
 
   return (
