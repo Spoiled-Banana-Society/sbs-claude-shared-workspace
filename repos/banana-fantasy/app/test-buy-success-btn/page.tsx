@@ -35,28 +35,27 @@ export default function TestBuySuccessBtn() {
           </button>
         </Panel>
 
-        {/* PROPOSED */}
-        <Panel label="Proposed">
+        {/* SHIPPED — exact live version (responsive: shorter on mobile) */}
+        <Panel label="Shipped (live)">
           {/* subtle confirmation, separate from the action */}
-          <div className="flex items-center justify-center gap-2 mb-4">
+          <div className="flex items-center justify-center gap-2 mb-5">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.8 10A10 10 0 1 1 17 3.3" /><path d="m9 11 3 3L22 4" />
             </svg>
             <span className="text-emerald-400 text-sm font-semibold">Payment complete</span>
           </div>
-          {/* clean, single-purpose CTA */}
-          <button className="w-full py-4 rounded-xl font-bold text-lg bg-banana text-black hover:brightness-110 transition-all flex items-center justify-center gap-2">
+          {/* clean, single-purpose CTA — matches the real button exactly */}
+          <button className="w-full py-3.5 sm:py-4 rounded-xl font-bold text-base sm:text-lg shadow-lg shadow-banana/20 bg-banana text-black hover:brightness-110 transition-all flex items-center justify-center gap-2">
             Start Drafting
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
           </button>
-          <p className="text-white/30 text-[11px] text-center mt-3">Alt copy options: &ldquo;Pick Your Draft&rdquo; · &ldquo;Enter a Draft&rdquo;</p>
         </Panel>
 
         <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
           <p className="text-white/60 text-sm">
-            Change: the confirmation (&ldquo;Payment complete&rdquo;) is split out as a small green line, so the
-            button does ONE job with a clear action (&ldquo;Start Drafting&rdquo;). Smaller, calmer button
-            (py-4/text-lg vs py-5/text-xl), clean chevron instead of a raw arrow.
+            Now live in the buy modal: the confirmation (&ldquo;Payment complete&rdquo;) is a small green line,
+            and the button does ONE job — &ldquo;Start Drafting ›&rdquo;. Shorter rectangle
+            (py-3.5 mobile / py-4 desktop, was py-5), smaller text on mobile so it fits cleanly, clean chevron.
           </p>
         </div>
       </div>
