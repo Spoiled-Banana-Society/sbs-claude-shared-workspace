@@ -253,13 +253,13 @@ export default function DraftingPage() {
                     <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                       <button
                         onClick={handleEnterDraft}
-                        className="px-10 py-3.5 bg-banana text-black border-2 border-banana font-bold text-[15px] rounded-full hover:brightness-110 active:scale-[0.98] transition-all"
+                        className="w-36 py-3.5 bg-banana text-black border-2 border-banana font-bold text-[15px] rounded-full hover:brightness-110 active:scale-[0.98] transition-all"
                       >
                         Enter
                       </button>
                       <button
                         onClick={() => router.push('/buy-drafts?buy=1')}
-                        className="px-10 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
+                        className="w-36 py-3.5 border-2 border-banana text-banana font-bold text-[15px] rounded-full hover:bg-banana hover:text-black active:scale-[0.98] transition-all"
                       >
                         Buy
                       </button>
