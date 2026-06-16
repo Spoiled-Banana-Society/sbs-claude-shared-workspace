@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWallets } from '@privy-io/react-auth';
+import { useWallets, useSignTypedData, type SignTypedDataParams } from '@privy-io/react-auth';
 import {
   createPublicClient,
   http,
@@ -93,6 +93,13 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const { show } = useToast();
   const showToastRef = useRef(show);
   showToastRef.current = show;
+
+  // Privy embedded-wallet signer — lets web2 (email/X) users sign the gasless
+  // permit silently (no confirm modal) for a one-tap mint. Ref-held so it
+  // doesn't churn `mint`'s deps (render-loop rule).
+  const { signTypedData } = useSignTypedData();
+  const signTypedDataRef = useRef(signTypedData);
+  signTypedDataRef.current = signTypedData;
 
   const [isApproving, setIsApproving] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -243,25 +250,33 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           deadline,
         });
 
-        // Request EIP-712 signature via the wallet's own provider. Works for
-        // Privy embedded, MetaMask, Coinbase Wallet, etc. — no gas prompt.
-        const provider = await selectedWallet.getEthereumProvider();
-
-        // Make sure the wallet is on Base before signing. The USDC permit's
-        // domain references Base (8453), so a wallet on another network
-        // would warn or refuse. ensureBaseNetwork switches them — or adds
-        // Base if their wallet doesn't have it — and on failure returns
-        // clear copy instead of letting the signature fail murkily.
-        // Embedded wallets are already on Base, so this is a no-op.
-        const baseNet = await ensureBaseNetwork(provider);
-        if (!baseNet.ok) {
-          throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+        // Request the EIP-712 permit signature (gasless — no gas prompt either way).
+        let signature: Hex;
+        if (selectedWallet.walletClientType === 'privy') {
+          // Embedded (web2) wallet — sign silently for a true one-tap mint.
+          // showWalletUIs:false suppresses the Privy confirm modal. Embedded
+          // wallets are always on Base, so no network switch is needed.
+          const result = await signTypedDataRef.current(
+            typedData as unknown as SignTypedDataParams,
+            { uiOptions: { showWalletUIs: false }, address: selectedWallet.address },
+          );
+          signature = result.signature as Hex;
+        } else {
+          // External wallet (MetaMask/Coinbase) — must sign in its own popup;
+          // we can't (and shouldn't) suppress that. Ensure it's on Base first:
+          // the permit domain references Base (8453), so a wallet on another
+          // network would warn or refuse. ensureBaseNetwork switches/adds Base
+          // and returns clear copy on failure instead of a murky signature error.
+          const provider = await selectedWallet.getEthereumProvider();
+          const baseNet = await ensureBaseNetwork(provider);
+          if (!baseNet.ok) {
+            throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+          }
+          signature = (await provider.request({
+            method: 'eth_signTypedData_v4',
+            params: [selectedWallet.address, JSON.stringify(typedData)],
+          })) as Hex;
         }
-
-        const signature = (await provider.request({
-          method: 'eth_signTypedData_v4',
-          params: [selectedWallet.address, JSON.stringify(typedData)],
-        })) as Hex;
 
         setIsApproving(false);
         setIsMinting(true);

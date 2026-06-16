@@ -49,7 +49,8 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
   ): Promise<{ hash: string }> => {
     if (!selectedWallet) throw new Error('No wallet connected');
     if (selectedWallet.walletClientType === 'privy') {
-      const receipt = await sendTransaction(txRequest, { sponsor: true, uiOptions: { description: opts.description } });
+      // Embedded (web2) wallets sign silently — zero-friction listing.
+      const receipt = await sendTransaction(txRequest, { sponsor: true, uiOptions: { description: opts.description, showWalletUIs: false } });
       const r = receipt as Record<string, unknown>;
       return { hash: String(r.hash ?? r.transactionHash ?? '') };
     }
