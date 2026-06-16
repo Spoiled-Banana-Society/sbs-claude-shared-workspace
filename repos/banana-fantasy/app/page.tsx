@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
@@ -195,6 +196,16 @@ export default function HomePage() {
       {/* Promo Carousel */}
       <section className="mb-4">
         <PromoCarousel promos={allPromos} claimPromo={promosQuery.claimPromo} onVerifyTweet={promosQuery.verifyTweetEngagement} onGenerateReferralCode={promosQuery.generateReferralCode} />
+      </section>
+
+      {/* Buy Drafts CTA — pinned to the bottom of the page */}
+      <section className="mt-auto pt-8 pb-10 flex justify-center">
+        <Link
+          href="/buy-drafts"
+          className="px-10 py-3.5 bg-banana text-black font-bold rounded-xl hover:brightness-110 hover:scale-105 transition-all"
+        >
+          Buy Drafts
+        </Link>
       </section>
 
       {/* Contest Details Modal */}

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { getPurchaseFlow, resetPurchaseFlow } from '@/lib/purchaseFlow';
 
 const BuyPassesModal = dynamic(
   () => import('@/components/modals/BuyPassesModal').then(m => m.BuyPassesModal),
@@ -20,6 +21,12 @@ export default function BuyDraftsPage() {
   useEffect(() => {
     if (isLoading) return;
     if (isLoggedIn) {
+      // Always land on the buy/mint UI. A previous purchase can leave the flow
+      // parked on the post-mint "Join a Draft" (pick-speed) screen; coming here
+      // to "Buy Drafts" means the user wants to BUY, so clear that stale state
+      // and start a fresh purchase. (Don't disturb an in-progress purchase,
+      // which lives in the 'purchase' phase.)
+      if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
       setShowModal(true);
     } else {
       setShowLoginModal(true);
