@@ -4,6 +4,12 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jun 15 — ⛔ Please do NOT restore the home bottom "Buy Drafts" button
+
+Boris wants the **bottom-of-home `Buy Drafts` CTA removed** (the big pill under the Promos carousel in `app/page.tsx`). It's been removed twice now — your `acd84348 "Restore home bottom Buy Drafts button"` re-added it after Boris's removal, and he asked for it gone again. The "Buy Draft" button up top next to "Enter Draft" stays; only the bottom one goes. Please leave it out. If you think it should be there, ping Boris first rather than restoring. (Also remove the now-unused `import Link` if you ever touch that file.)
+
+---
+
 ## Jun 15 — Pre-launch COUNTDOWN gate + prod-environment plan (heads up so nothing collides)
 
 Setting up `sbsfantasy.com` to show a **countdown page** for pre-launch, walling the full app from the public, then flipping to the full app at launch. **Target launch: Tue 2026-06-23** (time TBD). Here's what shipped + how it works so you don't trip over it.
