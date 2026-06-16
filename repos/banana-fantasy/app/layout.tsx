@@ -10,8 +10,8 @@ const SITE_URL = 'https://sbsfantasy.com';
 const SITE_NAME = 'SBSFantasy';
 const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
-  'Draft best ball teams onchain, enter Spoiled Banana Society contests, and compete for prizes across fast and slow fantasy football drafts.';
-const DEFAULT_OG_IMAGE = '/bestball.webp';
+  'Banana Best Ball IV drops June 23rd — $100K GTD Prize Pool';
+const DEFAULT_OG_IMAGE = '/sbs-logo.png';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
