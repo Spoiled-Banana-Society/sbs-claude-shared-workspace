@@ -20,11 +20,12 @@ import { isFounderDraft, type DraftOrderEntry } from '@/lib/founderDraft';
 //
 //  2. Pass just `draftId` and the pill relies on the server check alone.
 
-// Clean orange wordmark — no pill background, no border, no glow (Boris 2026-06-16).
-const FOUNDER_ORANGE = '#f97316';
-
+// Clean wordmark — no pill background, no border, no glow (Boris 2026-06-16).
+// Color is the band's opposite tone (founderWordColor), passed by the caller.
 interface BaseProps {
   size?: 'sm' | 'md';
+  /** Word color per band (defaults to white). Use founderWordColor(type). */
+  color?: string;
 }
 
 interface DataProps extends BaseProps {
@@ -80,7 +81,7 @@ export function FounderPill(props: FounderPillProps) {
   return (
     <span
       className={`${sizing} font-bold uppercase tracking-wider`}
-      style={{ color: FOUNDER_ORANGE }}
+      style={{ color: props.color ?? '#ffffff' }}
     >
       Founder
     </span>

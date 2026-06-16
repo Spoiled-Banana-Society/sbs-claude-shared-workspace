@@ -32,7 +32,7 @@ import {
   generateReelItemsForReel,
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
-import { draftWordColor, draftWordShadow } from '@/lib/draftBandStyle';
+import { draftWordColor, draftWordShadow, founderWordColor } from '@/lib/draftBandStyle';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -2437,7 +2437,7 @@ function DraftRoomContent() {
           fills). Only renders once the draft is no longer filling. */}
       {(draftId || urlDraftId) && phase !== 'filling' && (
         <div className="flex items-center">
-          <FounderPill draftId={draftId || urlDraftId} size="md" />
+          <FounderPill draftId={draftId || urlDraftId} size="md" color={founderWordColor(visibleDraftType)} />
         </div>
       )}
       <div>
@@ -2538,7 +2538,7 @@ function DraftRoomContent() {
             )}
             {/* Founder tag hidden during filling — only after the draft fills. */}
             {(draftId || urlDraftId) && phase !== 'filling' && (
-              <FounderPill draftId={draftId || urlDraftId} size="md" />
+              <FounderPill draftId={draftId || urlDraftId} size="md" color={founderWordColor(visibleDraftType)} />
             )}
           </div>
           <div className="flex items-center gap-4">

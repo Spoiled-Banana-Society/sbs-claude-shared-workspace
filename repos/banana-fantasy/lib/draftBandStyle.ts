@@ -52,3 +52,12 @@ export function draftStatusColor(type: DraftType | null): string {
   if (type === 'hof') return '#231900';
   return '#fff';
 }
+
+/**
+ * Color of the FOUNDER word — the SAME color as the band's type word so e.g.
+ * "JACKPOT FOUNDER" reads as one unit (Boris 2026-06-16): white on JACKPOT,
+ * dark on HOF, purple on PRO.
+ */
+export function founderWordColor(type: DraftType | null): string {
+  return draftWordColor(type);
+}

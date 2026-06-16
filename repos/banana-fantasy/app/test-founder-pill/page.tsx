@@ -12,17 +12,16 @@ import {
   draftBandShadow,
   draftWordColor,
   draftWordShadow,
+  founderWordColor,
 } from '@/lib/draftBandStyle';
 
-const FOUNDER_ORANGE = '#f97316';
-
-function FounderPillMock() {
-  // Identical to the real FounderPill (size="md"): plain orange word, no
-  // background, no border (circle), no glow.
+function FounderPillMock({ type }: { type: 'pro' | 'hof' | 'jackpot' }) {
+  // Identical to the real FounderPill (size="md"): plain word, no background,
+  // no border (circle), no glow — SAME color as the band's type word.
   return (
     <span
       className="text-[13px] font-bold uppercase tracking-wider"
-      style={{ color: FOUNDER_ORANGE }}
+      style={{ color: founderWordColor(type), textShadow: draftWordShadow(type) }}
     >
       Founder
     </span>
@@ -51,7 +50,7 @@ function BandRow({ type, word }: { type: 'pro' | 'hof' | 'jackpot'; word: string
       >
         {word}
       </span>
-      <FounderPillMock />
+      <FounderPillMock type={type} />
     </div>
   );
 }
@@ -63,8 +62,9 @@ export default function TestFounderPill() {
         <div>
           <h1 className="text-2xl font-bold">FOUNDER pill — color + placement</h1>
           <p className="text-white/50 text-sm mt-1">
-            This is the exact draft-room top band. The <span style={{ color: FOUNDER_ORANGE }}>FOUNDER</span> word
-            sits right next to the type word (PRO / HOF / JACKPOT) — plain orange, no circle, no glow. Color = {FOUNDER_ORANGE}.
+            This is the exact draft-room top band. The FOUNDER word sits right next to the type word
+            (PRO / HOF / JACKPOT) — plain text, no circle, no glow, in the SAME color as the type word
+            (so it reads as one unit): white on JACKPOT, dark on HOF, purple on PRO.
           </p>
         </div>
 
