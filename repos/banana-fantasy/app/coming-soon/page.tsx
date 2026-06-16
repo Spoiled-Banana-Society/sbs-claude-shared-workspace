@@ -16,15 +16,15 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
 // Launch target: env override (NEXT_PUBLIC_LAUNCH_AT) wins; otherwise the
-// fallback is next Tuesday — 2026-06-23, noon PT placeholder until Boris
-// confirms the final time.
+// fallback is the confirmed launch — Tue 2026-06-23, 4:20pm Pacific. June is
+// PDT (UTC-7), so 16:20-07:00 lands at 4:20pm on a California clock that day.
 const LAUNCH_AT = (() => {
   const fromEnv = process.env.NEXT_PUBLIC_LAUNCH_AT;
   if (fromEnv) {
     const t = new Date(fromEnv).getTime();
     if (!Number.isNaN(t)) return t;
   }
-  return new Date('2026-06-23T12:00:00-07:00').getTime();
+  return new Date('2026-06-23T16:20:00-07:00').getTime();
 })();
 
 // Deterministic banana field (no Math.random → no hydration mismatch).
