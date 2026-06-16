@@ -27,7 +27,7 @@ async function callOwnerApi(method: 'POST' | 'PUT', payload: OwnerProfilePayload
 }
 
 export function useOnboarding() {
-  const { user, updateUser, isNewUser, setShowOnboarding, setIsNewUser, isBB3Holder, isLoggedIn } = useAuth();
+  const { user, updateUser, isNewUser, setShowOnboarding, setIsNewUser, isBB3Holder, returningResolved, isLoggedIn } = useAuth();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('tutorial');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +43,11 @@ export function useOnboarding() {
   //   - the account-synced `onboardingComplete` flag has LOADED (so we never
   //     flash it at someone who already finished it on another device), and is
   //     still false,
+  //   - the returning-user determination has fully RESOLVED (`returningResolved`)
+  //     — both the on-chain/allowlist check and the social-identity check have
+  //     settled. Without this gate the tutorial flashes for ~a frame on refresh
+  //     for returning users, because isBB3Holder starts false and only flips
+  //     true once the async checks complete. We wait until we actually know.
   //   - and they are NOT a returning BBB4/BBB3 holder (those are veterans, not
   //     new users — isBB3Holder is set synchronously from the returning-user
   //     snapshot for known holders, and via on-chain balance otherwise).
@@ -50,7 +55,7 @@ export function useOnboarding() {
   // completeOnboarding → sets onboardingComplete=true, so this can never re-trap
   // a user, and they never see it again across devices.
   const showOnboarding = Boolean(
-    isLoggedIn && onboardingLoaded && !onboardingDone && !isBB3Holder,
+    isLoggedIn && onboardingLoaded && returningResolved && !onboardingDone && !isBB3Holder,
   );
 
   useEffect(() => {

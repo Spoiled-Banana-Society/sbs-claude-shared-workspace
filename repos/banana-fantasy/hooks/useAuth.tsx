@@ -109,6 +109,11 @@ interface AuthContextType {
   newUserPromoClaimed: boolean;
   claimNewUserPromo: () => Promise<void>;
   isBB3Holder: boolean;
+  /** True once the returning-user determination has fully settled (both the
+   *  on-chain/allowlist check and the social-identity check). Gate any
+   *  new-vs-returning UX (e.g. the onboarding tutorial) on this to avoid a
+   *  flash before isBB3Holder resolves. */
+  returningResolved: boolean;
   showMobileLoginModal: boolean;
   setShowMobileLoginModal: (show: boolean) => void;
 }
@@ -286,6 +291,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [twitterError, setTwitterError] = useState<string | null>(null);
   const [newUserPromoClaimed, setNewUserPromoClaimed] = useState(false);
   const [isBB3Holder, setIsBB3Holder] = useState(false);
+  // Returning-status resolution flags. The onboarding tutorial must NOT flash
+  // before we know whether this account is a returning/onboarded user — so we
+  // track when each of the two async determinations has settled. Both start
+  // false on a fresh load and flip true once their check completes; the
+  // onboarding gate (useOnboarding) waits for `returningResolved` (both done).
+  const [bb3Resolved, setBb3Resolved] = useState(false);   // on-chain / allowlist / viewAs
+  const [web2Resolved, setWeb2Resolved] = useState(false); // social-identity returning-check
+  const returningResolved = bb3Resolved && web2Resolved;
 
   // Verify Twitter link with backend (anti-sybil check + Firestore storage)
   const verifyTwitterWithBackend = useCallback(async (
@@ -416,7 +429,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   privyRef2.current = privy;
   const returningCheckedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!walletAddress) return;
+    if (!walletAddress) { setWeb2Resolved(true); return; }
     if (returningCheckedRef.current === walletAddress) return;
     returningCheckedRef.current = walletAddress;
     (async () => {
@@ -430,6 +443,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json().catch(() => null);
         if (data?.returning) setIsBB3Holder(true);
       } catch { /* best-effort — wallet-snapshot path still applies */ }
+      finally { setWeb2Resolved(true); }
     })();
   }, [walletAddress]);
 
@@ -782,18 +796,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //      fetch. Seeds the admin testing wallet, which holds no BBB3 on mainnet.
   //   3. Live on-chain balanceOf against the BBB3 contract (Eth mainnet).
   useEffect(() => {
-    if (MOCK_AUTH) return;
-    if (!walletAddress) return;
+    if (MOCK_AUTH) { setBb3Resolved(true); return; }
+    if (!walletAddress) { setBb3Resolved(true); return; }
 
     // 1. Admin "view as" override.
     if (typeof window !== 'undefined' && isWalletAdmin(walletAddress)) {
       const viewAs = window.sessionStorage.getItem('sbs-view-as');
-      if (viewAs === 'returning') { setIsBB3Holder(true); return; }
-      if (viewAs === 'new') { setIsBB3Holder(false); return; }
+      if (viewAs === 'returning') { setIsBB3Holder(true); setBb3Resolved(true); return; }
+      if (viewAs === 'new') { setIsBB3Holder(false); setBb3Resolved(true); return; }
     }
 
     // 2. Manual allowlist — treat as returning without an on-chain hit.
-    if (isReturningWalletSync(walletAddress)) { setIsBB3Holder(true); return; }
+    if (isReturningWalletSync(walletAddress)) { setIsBB3Holder(true); setBb3Resolved(true); return; }
 
     // 3. Live on-chain check.
     const balanceOfSig = '0x70a08231';
@@ -813,7 +827,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsBB3Holder(parseInt(result.result, 16) > 0);
         }
       })
-      .catch(() => { /* silent */ });
+      .catch(() => { /* silent */ })
+      .finally(() => { setBb3Resolved(true); });
   }, [walletAddress]);
 
   // Live balance sync — real-time push via Server-Sent Events.
@@ -1171,6 +1186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         newUserPromoClaimed,
         claimNewUserPromo,
         isBB3Holder,
+        returningResolved,
         showMobileLoginModal,
         setShowMobileLoginModal,
       }}
