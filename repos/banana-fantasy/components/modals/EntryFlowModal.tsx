@@ -157,17 +157,15 @@ export function EntryFlowModal({
             </div>
 
             {/* Buy Drafts — only when the parent wires it (the pass-ticket flow),
-                not the regular Enter flows. Intentionally smaller than the cards. */}
+                not the regular Enter flows. Same size as the pass cards above. */}
             {onBuyMore && (
-              <div className="flex justify-center">
-                <button
-                  onClick={() => { if (!isSubmitting) onBuyMore(); }}
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 text-sm font-medium text-banana/90 border border-banana/40 rounded-lg hover:border-banana hover:bg-banana/10 transition-all"
-                >
-                  Buy Drafts
-                </button>
-              </div>
+              <button
+                onClick={() => { if (!isSubmitting) onBuyMore(); }}
+                disabled={isSubmitting}
+                className="w-full p-4 rounded-xl border-2 border-banana/30 bg-banana/5 text-center font-semibold text-banana hover:border-banana hover:bg-banana/10 hover:scale-[1.02] transition-all"
+              >
+                Buy Drafts
+              </button>
             )}
 
             <button
