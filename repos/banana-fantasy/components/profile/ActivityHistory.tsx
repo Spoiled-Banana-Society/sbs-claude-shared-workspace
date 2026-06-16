@@ -66,8 +66,19 @@ function describe(e: LiveActivityEvent): string {
       const via = e.paymentMethod === 'card' ? ' (card)' : e.paymentMethod === 'usdc' ? ' (USDC)' : '';
       return `${e.quantity} draft pass${e.quantity !== 1 ? 'es' : ''}${priceStr}${via}`;
     }
-    case 'pass_granted':
-      return `${e.quantity} free draft pass${e.quantity !== 1 ? 'es' : ''} from admin`;
+    case 'pass_granted': {
+      // pass_granted fires for several reasons — label by the real source,
+      // not a blanket "from admin" (which is only true for manual admin grants).
+      const passWord = `draft pass${e.quantity !== 1 ? 'es' : ''}`;
+      const source = String(e.metadata?.source ?? '');
+      // Card-fee credit is EARNED from accumulated card fees — it's paid, not
+      // "free" and not an admin gift (see card-fee-credit promo semantics).
+      if (source === 'card_fee_reward') return `${e.quantity} ${passWord} — card fee credit`;
+      if (source === 'wheel_spin_mint') return `${e.quantity} ${passWord} — wheel prize`;
+      // Only a true manual admin grant carries adminActor.
+      if (e.metadata?.adminActor) return `${e.quantity} free ${passWord} from admin`;
+      return `${e.quantity} free ${passWord}`;
+    }
     case 'spin_won': {
       const prizeType = String(e.metadata?.prizeType ?? '');
       const prizeValue = e.metadata?.prizeValue;
