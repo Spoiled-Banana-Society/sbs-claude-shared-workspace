@@ -33,7 +33,6 @@ import {
 } from '@/lib/draftRoomConstants';
 import type { DraftType, RoomPhase } from '@/lib/draftRoomConstants';
 import { draftWordColor, draftWordShadow } from '@/lib/draftBandStyle';
-import { Tooltip } from '@/components/ui/Tooltip';
 import * as draftStore from '@/lib/draftStore';
 import { getDraftTokenLevel } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
@@ -2426,14 +2425,7 @@ function DraftRoomContent() {
             {visibleDraftType === 'jackpot' ? 'JACKPOT' : visibleDraftType === 'hof' ? 'HOF' : 'PRO'}
           </span>
         );
-        // Hover the JP/HOF word for a clean one-line explainer of the perk.
-        if (visibleDraftType === 'jackpot' || visibleDraftType === 'hof') {
-          return (
-            <Tooltip content={<span className="text-xs whitespace-nowrap">{visibleDraftType === 'jackpot' ? 'Win your league, skip to finals' : 'Compete for bonus prizes'}</span>}>
-              {wordEl}
-            </Tooltip>
-          );
-        }
+        // No hover copy on the JP/HOF word (Boris 2026-06-16) — the band word stands alone.
         return wordEl;
       })()}
       {/* Founder pill — sits inline with the JP/HOF logo (when present) and
