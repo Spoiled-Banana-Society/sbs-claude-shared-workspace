@@ -173,6 +173,30 @@ export function BuyPassesModal({
     return () => clearInterval(id);
   }, [flowStep]);
 
+  // Cover Privy's vestigial funding modal on the CARD path once payment is
+  // confirmed on-chain. Privy never auto-closes its "You've funded / Continue"
+  // screen (confirmed in the SDK — the CTA is wired to closePrivyModal with no
+  // auto-effect), so from `signing` onward it's just noise sitting on top of
+  // our clean flow. We fade it out via Privy's stable element IDs. This is
+  // PURELY COSMETIC: the purchase/mint never depend on it, and if Privy ever
+  // renames those IDs the rule simply matches nothing → Privy shows exactly as
+  // today, with zero impact on the buy. We only hide from `signing` (funds
+  // confirmed) — never during funding/waiting, when the user still needs
+  // Privy's modal to reach MoonPay. MoonPay's own window is closed by Privy
+  // itself on completion. USDC has no Privy funding modal, so this is card-only.
+  const coverPrivyModal =
+    paymentMethod === 'card' &&
+    (flowStep === 'signing' || flowStep === 'processing' || flowStep === 'success');
+  useEffect(() => {
+    if (!coverPrivyModal) return;
+    const style = document.createElement('style');
+    style.setAttribute('data-sbs-cover-privy', '');
+    style.textContent =
+      '#privy-dialog,#privy-dialog-backdrop{opacity:0!important;pointer-events:none!important;transition:opacity .25s ease;}';
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, [coverPrivyModal]);
+
   /**
    * Track a purchase in Firestore: create record → verify → promo updates.
    * This ensures buy-bonus, mint-promo, and referral milestones are tracked
@@ -773,43 +797,54 @@ export function BuyPassesModal({
                 row. Bar advances on real milestones and eases between them. */}
             {flowStep !== 'idle' && (
               <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-4 space-y-4">
-                {/* Real-time progress bar */}
+                {/* Real-time progress bar + live percent (updates as each
+                    on-chain milestone lands; eases between them) */}
                 {flowStep !== 'error' && (
-                  <div className="relative h-2 rounded-full bg-white/[0.06] overflow-hidden">
-                    <div
-                      className="absolute inset-y-0 left-0 bg-banana rounded-full transition-[width] duration-700 ease-out"
-                      style={{ width: `${progressPct}%` }}
-                    />
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-1.5 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div
+                        className="absolute inset-y-0 left-0 bg-banana rounded-full transition-[width] duration-500 ease-out"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-xs font-semibold text-banana tabular-nums">
+                      {Math.round(progressPct)}%
+                    </span>
                   </div>
                 )}
 
-                {/* Steps */}
+                {/* Steps — minimal indicators: solid check (done) / pulsing dot
+                    (active) / dim dot (pending). Consistent 20px slot so rows
+                    line up cleanly on desktop and mobile. */}
                 {flowStep !== 'error' && (
-                  <div className="space-y-3">
+                  <div className="space-y-3.5">
                     {stepStatuses.map((step, i) => {
                       const isComplete = step.complete;
                       const isActive = i === activeRowIdx;
                       const helper = isActive ? step.helper : undefined;
                       return (
-                        <div key={step.label} className="flex items-start gap-2.5 text-sm">
-                          <span className="mt-0.5 flex-shrink-0">
+                        <div key={step.label} className="flex items-start gap-3 text-sm">
+                          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
                             {isComplete ? (
-                              <span className="h-4 w-4 rounded-full bg-banana/20 text-banana flex items-center justify-center">
-                                <svg viewBox="0 0 20 20" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                  <path d="M5 10l3 3 7-7" />
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-banana">
+                                <svg viewBox="0 0 20 20" className="h-3 w-3 text-black" fill="none" stroke="currentColor" strokeWidth="2.75" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M5 10.5l3.2 3.2L15 7" />
                                 </svg>
                               </span>
                             ) : isActive ? (
-                              <span className="h-4 w-4 rounded-full border-2 border-banana/30 border-t-banana animate-spin inline-block" />
+                              <span className="relative flex h-2.5 w-2.5 items-center justify-center">
+                                <span className="absolute inline-flex h-full w-full rounded-full bg-banana/40 animate-ping" />
+                                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-banana" />
+                              </span>
                             ) : (
-                              <span className="h-4 w-4 rounded-full border border-bg-elevated inline-block" />
+                              <span className="h-2 w-2 rounded-full bg-white/15" />
                             )}
                           </span>
-                          <div className="min-w-0">
-                            <p className={isComplete || isActive ? 'text-text-primary' : 'text-text-muted'}>
+                          <div className="min-w-0 leading-5">
+                            <p className={isComplete ? 'text-text-primary' : isActive ? 'text-text-primary font-medium' : 'text-text-muted'}>
                               {step.label}
                             </p>
-                            {helper && <p className="text-text-muted text-[11px] mt-0.5">{helper}</p>}
+                            {helper && <p className="text-text-muted text-[11px] mt-0.5 leading-snug">{helper}</p>}
                           </div>
                         </div>
                       );
