@@ -93,7 +93,7 @@ export function BuyPassesModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referrerCode: code, referredUserId: userId, referredUsername: user?.username }),
       });
-      const data = await res.json().catch(() => ({} as { error?: string }));
+      const data = await res.json().catch(() => ({} as { error?: string; eligible?: boolean }));
       if (!res.ok) {
         setReferralState('error');
         setReferralMsg(
@@ -104,7 +104,13 @@ export function BuyPassesModal({
         return;
       }
       setReferralState('applied');
-      setReferralMsg('Referral applied — your friend gets credit. ✓');
+      // Code is valid either way. But referral rewards only pay out for NEW
+      // players — be upfront when an existing account won't credit the friend.
+      setReferralMsg(
+        data?.eligible === false
+          ? 'Code found ✓ — but referral rewards are for new players, so your friend won’t be credited.'
+          : 'Referral applied ✓ — your friend gets credit once you verify your X.',
+      );
     } catch {
       setReferralState('error');
       setReferralMsg('Network error — try again.');
@@ -739,7 +745,7 @@ export function BuyPassesModal({
                   </button>
                 </div>
                 {referralMsg && (
-                  <p className={`text-[11px] mt-1.5 ${referralState === 'error' ? 'text-error' : 'text-success'}`}>{referralMsg}</p>
+                  <p className={`text-[11px] mt-1.5 ${referralState === 'error' ? 'text-error' : 'text-text-secondary'}`}>{referralMsg}</p>
                 )}
               </div>
             )}

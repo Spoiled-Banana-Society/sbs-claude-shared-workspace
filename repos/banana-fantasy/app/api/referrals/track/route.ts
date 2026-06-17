@@ -50,8 +50,24 @@ export async function POST(req: NextRequest) {
       referredUsername || `User${referredUserId}`,
     );
 
+    // Will this referral actually credit the referrer? Referral rewards pay
+    // out through the new-player flow (friend verifies X → mint milestones).
+    // An ALREADY-ACTIVE account (has spun the wheel or drafted) won't generate
+    // credit, so the UI can be honest instead of promising "your friend gets
+    // credit." Only the referred-user's own history matters here.
+    let eligible = true;
+    try {
+      const userRef = db.collection('v2_users').doc(referredUserId);
+      const [spun, drafted] = await Promise.all([
+        userRef.collection('wheelSpins').limit(1).get(),
+        userRef.collection('draftHistory').limit(1).get(),
+      ]);
+      eligible = spun.empty && drafted.empty;
+    } catch { /* default eligible:true on read error */ }
+
     return NextResponse.json({
       ...result,
+      eligible,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
