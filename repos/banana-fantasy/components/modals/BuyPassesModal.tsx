@@ -11,7 +11,6 @@ import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
-import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -251,52 +250,13 @@ export function BuyPassesModal({
 
     clientLog('payment', 'track_purchase_start', { userId, quantity: qty, txHash: hash, paymentMethod });
 
-    try {
-      // /api/purchases/create + /verify require the Privy JWT (Authorization
-      // header — getPrivyUser only reads the Bearer header). fetchJson doesn't
-      // attach it automatically, so we pass it here — without it these 401 with
-      // "Missing authorization token" (the secondary purchase record never
-      // writes). NOTE: referral/promo crediting is server-side in card-mint and
-      // does NOT depend on this; this is just the purchases-record/verify step.
-      const token = await getAccessToken().catch(() => null);
-      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-      const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
-      });
-      const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
-      });
-      // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
-      // fields earned alongside the mint. Deliberately DO NOT clobber
-      // `draftPasses` here: on-chain is the source of truth, and the next
-      // refreshBalance() call will pull it from Alchemy. Overwriting with the
-      // Firestore value would cause a flicker (optimistic bump → stale
-      // cached value → real on-chain value).
-      if (verifyRes.user) {
-        const serverUser = verifyRes.user as Partial<import('@/types').User>;
-        const { draftPasses: _ignore, ...rest } = serverUser;
-        void _ignore;
-        updateUser(rest);
-      }
-    } catch (err) {
-      // Verify failed after a successful on-chain mint. The NFT is real; the
-      // counter sync is behind. Log visibly so the user understands their
-      // balance will catch up when the backend reconciles.
-      console.warn('[BuyModal] Purchase tracking failed (mint succeeded):', err);
-      reportClientError({
-        source: LOG_SOURCES.payment.CARD_PURCHASE_TRACKING_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'buy-drafts',
-        context: { userId, quantity: qty, txHash: hash, paymentMethod },
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-      // No user-facing ping on mint — the balance self-heals via the poll
-      // below; the failure is logged for admins only.
-    }
+    // NOTE: the old /api/purchases/create + /verify calls were removed here —
+    // they were a legacy/stub path (built for a future real card processor) that
+    // always failed in the crypto flow and did nothing useful (it logged the
+    // "Missing authorization token" noise). The real work happens elsewhere: the
+    // pass is minted on-chain via card-mint, referral/promo crediting is
+    // server-side in card-mint, and the balance below self-heals the count.
+
     // Live-sync: poll the balance endpoint until the on-chain count reflects
     // the new mint. Covers the 1–2s window where Alchemy's RPC edge can still
     // be serving the pre-mint balanceOf even though the tx has finalized.
