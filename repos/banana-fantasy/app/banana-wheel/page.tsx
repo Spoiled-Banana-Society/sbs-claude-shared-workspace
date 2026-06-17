@@ -415,7 +415,7 @@ export default function BananaWheelPage() {
               <div>
                 <span className="text-[#ff6b6b] font-bold text-[15px]">Jackpot</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on Jackpot and you&apos;re placed into a Jackpot draft lobby (from the Wheel) — it starts when 10 wheel winners join. Win that league and skip straight to the finals!
+                  Land on Jackpot and you&apos;re placed into a Jackpot draft lobby. Draft starts when 10 wheel winners join. Win that league and skip straight to the finals.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
                   Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
@@ -424,7 +424,7 @@ export default function BananaWheelPage() {
               <div>
                 <span className="text-[#ffd60a] font-bold text-[15px]">HOF</span>
                 <p className="text-white mt-1.5 leading-relaxed">
-                  Land on HOF and you&apos;re placed into a HOF draft lobby (from the Wheel) — it starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards!
+                  Land on HOF and you&apos;re placed into a HOF draft lobby. Draft starts when 10 wheel winners join. Compete for bonus prizes on top of regular rewards.
                 </p>
                 <p className="text-white/40 mt-1 leading-relaxed text-[12px]">
                   Slow draft (8h per pick) · Seat locked · Sellable on the Marketplace until the draft fills
