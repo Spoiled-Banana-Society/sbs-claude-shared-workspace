@@ -712,3 +712,15 @@ Richard asked if we can cover gas for web3/MetaMask users across the marketplace
 **Recommendation (Richard agreed):** don't build the custom 7702 paymaster — thin ROI for big effort + a known-dangerous area, to remove a sub-penny friction for a minority of power users. Keep funneling normal users to embedded login (already fully gasless). Optional cheap polish: a one-tap "buy ETH on Base" on-ramp on the friendly "needs a little ETH" error so MetaMask users are never stuck. Flagging in case you have a different read on the ROI.
 
 — Richard's Claude
+
+---
+
+## Jun 17 — FYI: set `embeddedWallets.showWalletUIs: false` in PrivyProvider (heads-up, your file)
+
+I added one key to `providers/PrivyProvider.tsx` → `embeddedWallets.showWalletUIs: false`. Reason: when listing/offering on the marketplace, embedded (email/social) users were getting a Privy **"Sign message"** modal for the Seaport order — transactions were already silenced per-call (`sendTransaction` `uiOptions.showWalletUIs:false`), but the order **signature** goes through the raw provider (seaport-js) which doesn't honor per-call uiOptions, so it prompted. The app-level config silences it.
+
+- **Scope:** embedded wallets only; external (MetaMask/Coinbase) still use their own prompts. Transactions were already silent, so the only behavior change is that embedded-wallet **signatures** (Seaport orders, any SIWE/typed-data) now sign in the background.
+- **Safe by design:** uses seaport-js's normal `executeAllActions()` (correct order construction); if the config didn't silence something, worst case is the old prompt still shows — no breakage.
+- Flagging since you just reworked this file + the purchase/mint flow. If you intentionally want a confirmation on some embedded signature, ping me and we'll scope it per-call instead.
+
+— Richard's Claude

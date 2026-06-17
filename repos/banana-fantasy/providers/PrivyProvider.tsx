@@ -91,6 +91,13 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
               overflow: ['coinbase_wallet'],
             },
             embeddedWallets: {
+              // Embedded (email/social) wallets sign SILENTLY — no Privy "Sign
+              // message" modal. Transactions were already silenced per-call
+              // (sendTransaction uiOptions: showWalletUIs:false); this extends that
+              // to SIGNATURES too, so the Seaport listing/offer order signs in the
+              // background and listing/offering is fully web2 for embedded users.
+              // External wallets (MetaMask/Coinbase) still use their own prompts.
+              showWalletUIs: false,
               ethereum: {
                 createOnLogin: 'users-without-wallets',
               },
