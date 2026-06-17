@@ -74,11 +74,11 @@ const seedContests: Contest[] = [
     prizeBreakdown: [
       // Championship finals — $48,630
       { place: '1st', amount: 25000, section: 'Finals' },
-      { place: '2nd', amount: 5500, section: 'Finals' },
+      { place: '2nd', amount: 6000, section: 'Finals' },
       { place: '3rd', amount: 3500, section: 'Finals' },
-      { place: '4th', amount: 2300, section: 'Finals' },
-      { place: '5th', amount: 1700, section: 'Finals' },
-      { place: '6th', amount: 1300, section: 'Finals' },
+      { place: '4th', amount: 2100, section: 'Finals' },
+      { place: '5th', amount: 1500, section: 'Finals' },
+      { place: '6th', amount: 1200, section: 'Finals' },
       { place: '7th', amount: 1130, section: 'Finals' },
       { place: '8th', amount: 1100, section: 'Finals' },
       { place: '9th', amount: 900, section: 'Finals' },
