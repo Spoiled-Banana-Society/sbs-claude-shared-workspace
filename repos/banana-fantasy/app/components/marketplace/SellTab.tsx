@@ -372,15 +372,6 @@ export function SellTab({
             </div>
           )}
         </div>
-
-        <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">Selling Tips</h3>
-          <div className="space-y-4">
-            <TipRow number="1" title="Price competitively" description="Check similar teams to set a fair price. Jackpot and HOF teams command premiums." />
-            <TipRow number="2" title="Highlight your perks" description="Jackpot teams that win their league skip to finals. HOF teams compete for bonus prizes. Buyers pay more for these." />
-            <TipRow number="3" title="Low fees" description="Only a 1% OpenSea fee. No hidden charges — SBS takes zero cut." />
-          </div>
-        </div>
       </div>
 
       {showFreePassInfo && (
@@ -569,20 +560,6 @@ function SellTabOfferBadge({ tokenId }: { tokenId: string }) {
   const { bestOffer } = useNftOffers(tokenId);
   if (!bestOffer) return null;
   return <span className="text-xs text-banana font-mono font-medium">Best offer: ${bestOffer.amount.toFixed(2)}</span>;
-}
-
-function TipRow({ number, title, description }: { number: string; title: string; description: string }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-6 h-6 rounded-full bg-banana/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <span className="text-banana text-xs font-bold">{number}</span>
-      </div>
-      <div>
-        <h4 className="text-text-primary font-medium text-sm">{title}</h4>
-        <p className="text-text-secondary text-xs">{description}</p>
-      </div>
-    </div>
-  );
 }
 
 const HOUR = 60 * 60;
