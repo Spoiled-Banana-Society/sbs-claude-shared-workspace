@@ -122,7 +122,7 @@ const METHODS: Method[] = [
     title: 'Go through Coinbase',
     best: 'Best if your funds sit on Coinbase, or you want to buy USDC with a bank transfer first.',
     steps: [
-      <>Have crypto on Coinbase? <span className="text-text-primary font-semibold">Convert it to USDC.</span> Starting from zero? <span className="text-text-primary font-semibold">Buy USDC</span> with a card or bank transfer.</>,
+      <>Starting from zero? <span className="text-text-primary font-semibold">Buy USDC</span> with a card or bank transfer. Have crypto on Coinbase? <span className="text-text-primary font-semibold">Convert it to USDC.</span></>,
       <>Choose <span className="text-text-primary font-semibold">Send / Withdraw</span> and select <span className="text-text-primary font-semibold">USDC</span>.</>,
       <>For the network, pick <span className="text-banana font-semibold">Base</span> — this is the part that matters.</>,
       <>Paste <span className="text-text-primary font-semibold">your wallet address</span> (shown above — same address you use on Ethereum) and confirm.</>,
