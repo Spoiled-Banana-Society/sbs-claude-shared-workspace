@@ -4,6 +4,32 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## 🚨 Jun 16 — LAUNCH-BLOCKER: new-user signup fails on MOBILE (Privy embedded-wallet creation blocked by iOS)
+
+**Symptom (Richard confirmed live):** a brand-new account can't sign up on a phone.
+- New Gmail → glitches/hangs in **mobile Safari AND the home-screen app**.
+- Same new Gmail on **desktop → works**, account created cleanly (you can watch it appear).
+- **Existing** accounts (e.g. richardvagnermusic) log in fine on mobile.
+- Net: **mobile + NEW account = broken; desktop fine; existing accounts fine everywhere.** NOT a PWA-only thing, NOT login-method-specific.
+
+**Root cause (traced in code + config):**
+- `providers/PrivyProvider.tsx` → `embeddedWallets.ethereum.createOnLogin: 'users-without-wallets'`. Every brand-new signup makes Privy **create an embedded wallet at login**.
+- Privy creates that wallet in a **cross-origin iframe (auth.privy.io)**. iOS Safari storage partitioning / ITP blocks that third-party iframe from using its own storage, so key-gen never completes → the new account never finishes → "glitch." Desktop browsers don't partition it → works. Existing users already have a wallet → `createOnLogin` no-ops → fine on mobile.
+- So it hits **Gmail, X, AND email new-signups** on mobile (all go through wallet creation). Wallet logins bring their own wallet → unaffected.
+- Mobile login UI is separate: `components/modals/MobileLoginModal.tsx` → Privy `useLoginWithOAuth().initOAuth()` (full-page redirect). Desktop uses `useLogin().login()` (popup). The redirect itself works (existing users return fine) — it's the wallet **creation** that fails.
+- NOT the `/api/owners` → Go `/owner/create` 404 (separate dead-path; live OnboardingTutorial uses the working `updateUser` path so that 404 is harmless right now — though you may still want to add the Go `/owner/create` route since `app/api/owners/route.ts` calls it).
+
+**The fix — Privy "custom auth domain" so the wallet iframe is FIRST-PARTY on iOS. Dashboard + DNS, basically no code:**
+1. **Privy Dashboard:** set up a **custom auth domain / subdomain for Privy** (e.g. `auth.sbsfantasy.com`). Serves Privy's embedded-wallet iframe from OUR domain → first-party → iOS stops blocking its storage. (Privy's docs cover this under embedded wallets + Safari/iOS / "custom domain" — confirm the exact toggle there; it's their recommended iOS remedy.) Also double-check **Allowed origins/domains** lists staging (`banana-fantasy-sbs.vercel.app`) AND prod (`sbsfantasy.com`) for launch. And check the dashboard **logs** for the failed mobile new-user sessions — they should show the wallet-creation error and confirm this.
+2. **DNS (GoDaddy):** add the **CNAME** Privy gives you for that subdomain (e.g. `auth.sbsfantasy.com → <privy target>`) and let Privy verify it.
+3. **Code (only if their setup needs a prop):** point the SDK at the custom domain. Many setups are dashboard-only — ping me and I'll wire + re-test on a real phone.
+
+**Quick confirm if you want:** try a new **email** signup on mobile — it should also fail (proves it's wallet-creation, not OAuth-specific).
+
+**Why now:** most users sign up on phones and launch is **Jun 23**. As-is, mobile signups don't work and desktop hides it. Top launch blocker. — Richard's Claude (diagnosed 2026-06-16)
+
+---
+
 ## ⚠️ May 28 — Deploy system: workspace reconciled to live + things you need to do
 
 Today multiple Claude sessions deployed in parallel (chat names, name-fix, team-card, banana handles, your lobby work). It got messy and your backend got briefly reverted (recovered). Root cause: **the workspace had drifted behind the live site, and deploys weren't going through `deploy.sh`.** I've reconciled it. Here's what's done and what you need to do.
