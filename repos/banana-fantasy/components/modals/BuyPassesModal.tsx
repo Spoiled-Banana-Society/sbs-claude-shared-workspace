@@ -350,7 +350,19 @@ export function BuyPassesModal({
       // /api/coinbase/buy-session, /api/coinbase/buy-status) but disabled
       // here until the CDP project is approved out of trial mode — the
       // default $5/transaction cap blocks $25 draft passes.
-      const result = await fundWallet({
+      //
+      // We deliberately do NOT block our progress on fundWallet resolving.
+      // Privy's funding modal never auto-closes on completion — it parks on a
+      // "You've funded your account! / Continue" screen that requires a manual
+      // click (confirmed in the SDK: the CTA is wired to closePrivyModal with
+      // no auto-effect). Awaiting it used to stall our flow until the user
+      // dismissed Privy, which is what made the card path feel like three
+      // sequential waits. Instead we kick funding off and immediately poll the
+      // chain for the USDC: the moment the payment settles on-chain we advance
+      // and mint — even while Privy's modal is still open on top. By the time
+      // the user closes Privy, our pass is already minting / done.
+      let fundCancelled = false;
+      void fundWallet({
         address: walletAddress,
         options: {
           chain: BASE_SEPOLIA,
@@ -361,14 +373,20 @@ export function BuyPassesModal({
             preferredProvider: 'moonpay',
           },
         },
-      });
+      })
+        .then((result) => {
+          // 'cancelled' = user backed out of Privy before paying, so no USDC is
+          // coming — let the poll stop waiting early instead of timing out.
+          if (result?.status === 'cancelled') fundCancelled = true;
+        })
+        .catch((err) => {
+          // Don't hard-fail on a Privy reject — the on-chain balance is the real
+          // source of truth. Treat it like a cancel so we don't spin for 5 min.
+          logger.debug('[BuyModal] fundWallet rejected:', err);
+          fundCancelled = true;
+        });
 
-      if (result.status === 'cancelled') {
-        setFlowStep('idle');
-        return;
-      }
-
-      // Poll for USDC arrival before minting
+      // Poll for USDC arrival — runs concurrently with the Privy modal.
       setFlowStep('waiting-for-usdc');
       setWaitingForUsdcStartedAt(Date.now());
 
@@ -394,6 +412,10 @@ export function BuyPassesModal({
               context: { totalCostUsdc: String(totalCostUsdc) },
             });
           }
+          // User exited Privy before paying and nothing has landed on-chain —
+          // stop waiting instead of spinning out the full 5 minutes. The balance
+          // check just above means a last-second arrival still wins.
+          if (fundCancelled) return false;
           await new Promise((r) => setTimeout(r, pollIntervalMs));
         }
         return false;
@@ -403,6 +425,12 @@ export function BuyPassesModal({
       // User cancelled mid-wait — handleCancelCheckout already reset the flow.
       if (cancelledRef.current) return;
       if (!funded) {
+        // Clean user-cancel (closed Privy before paying) → quietly reset.
+        // A genuine timeout (paid but USDC slow) → surface the retry message.
+        if (fundCancelled) {
+          setFlowStep('idle');
+          return;
+        }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
 
