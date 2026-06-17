@@ -109,7 +109,7 @@ export function BuyPassesModal({
       setReferralMsg(
         data?.eligible === false
           ? "Code found ✓ — but your account isn’t new, so your friend won’t be credited."
-          : 'Applied ✓ — for your friend to get credit: verify your X, claim & do your free spin (new-user bonus), then buy.',
+          : 'Applied ✓ — for your friend to get credit: verify your X AND spin your free Banana Wheel, then buy.',
       );
     } catch {
       setReferralState('error');
