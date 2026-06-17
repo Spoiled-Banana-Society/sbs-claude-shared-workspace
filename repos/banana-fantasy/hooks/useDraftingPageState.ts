@@ -1480,6 +1480,15 @@ export function useDraftingPageState() {
     const timers = getBarTimers();
     const timerStart = timers.get(draft.id);
 
+    // Authoritative "already drafting" short-circuit: if the engine reports a
+    // real pick in progress, the draft is live — show drafting and NEVER replay
+    // the randomize/reveal intro. A returning or late-loading client would
+    // otherwise fabricate "Revealing…" off cached/`now` anchors for a draft that
+    // already started (the bug behind a card stuck on "Revealing…" for ~2s).
+    if ((draft.enginePickNumber ?? 0) > 0) {
+      return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
+    }
+
     // ── Server-clock reveal (authoritative + cross-device) ──────────────
     // When the server's draftStartTime is known, derive the ENTIRE
     // fill→reveal→drafting sequence from it, so every device (and a fresh
@@ -1560,10 +1569,15 @@ export function useDraftingPageState() {
     if (!draft.preSpinStartedAt && !draft.randomizingStartedAt && (draft.status === 'filling' || draft.phase === 'filling')) {
       const count = Math.min(10, draft.players || 1);
       if (count >= 10) {
-        if (!timers.has(draft.id)) timers.set(draft.id, now);
-        const tStart = timers.get(draft.id)!;
-        const t = Math.min(1, (now - tStart) / 3000);
-        return { displayPhase: 'randomizing', playerCount: 10, countdown: null, randomizingProgress: 0.99 * Math.pow(t, 0.6), isFilling: false };
+        // 10/10 but no authoritative server clock (draftStartTimeMs) or real
+        // randomize anchor yet. DON'T fabricate a "Revealing…" bar from `now` —
+        // a returning/late-loading client (cached "filling" 10/10) would wrongly
+        // replay the reveal for a draft that already started. Show an honest
+        // 10/10; the server-clock branch above owns randomize→reveal→drafting
+        // the instant draftStartTimeMs lands (≈1s after a genuine live fill, as
+        // it's fetched together with the player count), and the drafting branch
+        // takes over once the backend reports the draft as started.
+        return { displayPhase: 'filling', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: true };
       }
       return { displayPhase: 'filling', playerCount: count, countdown: null, randomizingProgress: null, isFilling: true };
     }
