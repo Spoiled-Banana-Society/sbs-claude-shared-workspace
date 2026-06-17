@@ -11,7 +11,13 @@ const SITE_NAME = 'SBSFantasy';
 const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
   'Banana Best Ball IV drops June 23rd — $100K GTD Prize Pool';
-const DEFAULT_OG_IMAGE = '/sbs-logo.png';
+// Dedicated 1200×630 share card: black SBS football-banana centered on a clean
+// white background (baked in, no transparency) so it renders identically on
+// every platform — Discord/iMessage dark cards, X, etc. The bare transparent
+// logo washed out on light card backgrounds. Static .png so it's served
+// directly (the prelaunch middleware walls off extension-less routes, which
+// would otherwise break the countdown's share card). Bump ?v= to bust caches.
+const DEFAULT_OG_IMAGE = '/og-card.png?v=2';
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -32,7 +38,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: DEFAULT_OG_IMAGE,
-        alt: 'Banana Fantasy best ball drafting platform',
+        width: 1200,
+        height: 630,
+        alt: 'SBSFantasy',
       },
     ],
   },
