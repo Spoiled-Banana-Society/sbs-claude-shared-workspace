@@ -113,15 +113,27 @@ export async function GET(req: Request) {
       // noti, whatever the account age (Boris's definition 2026-06-10).
       const { isReturningWalletSync } = await import('@/lib/returningUsers');
       if (isNew && !u.isReturningPlayer && !isReturningWalletSync(userId)) {
-        const { createNotification } = await import('@/lib/queueNotifications');
-        await createNotification(userId, {
-          type: 'welcome',
-          title: 'Welcome! Free Spin Waiting',
-          message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
-          link: '/promos?promo=6',
-          dedupeKey: 'welcome-new-user',
-          icon: 'party',
-        });
+        // Lifetime-activity guard: the zeroActivity check above only looks at
+        // CURRENT balances, so an active player who's spent all their spins/
+        // drafts reads as "new" and gets a welcome noti (hit by Richard's
+        // 32-spin account, 2026-06-16). A user who has EVER spun the wheel or
+        // drafted is not new — check the history before firing. Only runs when
+        // a welcome would otherwise fire, so it's not a hot-path cost.
+        const [spun, drafted] = await Promise.all([
+          userRef.collection('wheelSpins').limit(1).get(),
+          userRef.collection('draftHistory').limit(1).get(),
+        ]);
+        if (spun.empty && drafted.empty) {
+          const { createNotification } = await import('@/lib/queueNotifications');
+          await createNotification(userId, {
+            type: 'welcome',
+            title: 'Welcome! Free Spin Waiting',
+            message: 'Verify your X account to earn a Free Banana Spin — win up to 20 free drafts, at least 1 guaranteed. Tap to claim.',
+            link: '/promos?promo=6',
+            dedupeKey: 'welcome-new-user',
+            icon: 'party',
+          });
+        }
       }
     } catch { /* best-effort */ }
 
