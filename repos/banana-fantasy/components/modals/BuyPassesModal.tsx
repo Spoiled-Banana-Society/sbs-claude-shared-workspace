@@ -93,7 +93,7 @@ export function BuyPassesModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ referrerCode: code, referredUserId: userId, referredUsername: user?.username }),
       });
-      const data = await res.json().catch(() => ({} as { error?: string }));
+      const data = await res.json().catch(() => ({} as { error?: string; eligible?: boolean }));
       if (!res.ok) {
         setReferralState('error');
         setReferralMsg(
@@ -104,10 +104,13 @@ export function BuyPassesModal({
         return;
       }
       setReferralState('applied');
-      // The friend only earns the referral once THIS user completes the
-      // new-player flow — verify X, claim their free spin — and then buys.
-      // Spell out those steps so they know what's required.
-      setReferralMsg('Applied ✓ — for your friend to get credit: verify your X, claim & do your free spin (new-user bonus), then buy.');
+      // Eligible (new player) → spell out what THEY must do for the friend to
+      // earn it. Not eligible (established account) → be honest it won't credit.
+      setReferralMsg(
+        data?.eligible === false
+          ? "Code found ✓ — but your account isn’t new, so your friend won’t be credited."
+          : 'Applied ✓ — for your friend to get credit: verify your X, claim & do your free spin (new-user bonus), then buy.',
+      );
     } catch {
       setReferralState('error');
       setReferralMsg('Network error — try again.');

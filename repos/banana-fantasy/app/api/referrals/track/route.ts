@@ -50,8 +50,27 @@ export async function POST(req: NextRequest) {
       referredUsername || `User${referredUserId}`,
     );
 
+    // Will this referral actually credit the friend? Referral rewards pay out
+    // only via the new-player flow (verify X → claim spin → buy). Use the SAME
+    // "new player" definition as /api/promos so it's consistent: a real
+    // (non-estimated) createdAt within 7 days counts as new; otherwise the
+    // account must be zero-activity. An established account → won't credit.
+    let eligible = true;
+    try {
+      const snap = await db.collection('v2_users').doc(referredUserId).get();
+      const u = (snap.data() ?? {}) as {
+        createdAt?: string; createdAtEstimated?: boolean;
+        draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number;
+      };
+      const zeroActivity = !(u.draftPasses ?? 0) && !(u.freeDrafts ?? 0) && !(u.wheelSpins ?? 0) && !(u.usdcBalance ?? 0);
+      eligible = u.createdAt && !u.createdAtEstimated
+        ? Date.now() - new Date(u.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
+        : snap.exists && zeroActivity;
+    } catch { /* default eligible:true on read error */ }
+
     return NextResponse.json({
       ...result,
+      eligible,
       timestamp: new Date().toISOString(),
     });
   } catch (err) {
