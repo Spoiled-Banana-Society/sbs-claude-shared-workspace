@@ -259,7 +259,7 @@ export function BuyPassesModal({
       // writes). NOTE: referral/promo crediting is server-side in card-mint and
       // does NOT depend on this; this is just the purchases-record/verify step.
       const token = await getAccessToken().catch(() => null);
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+      const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
         method: 'POST',
         headers: authHeaders,
