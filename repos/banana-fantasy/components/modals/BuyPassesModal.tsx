@@ -748,14 +748,15 @@ export function BuyPassesModal({
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
               {isWeb2 ? (
-                <div className="flex items-center justify-center gap-2.5 py-2.5 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
-                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] text-banana shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <div className="flex items-center justify-center gap-3 py-4 px-5 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
+                  <svg viewBox="0 0 24 24" className="w-5 h-5 text-banana shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                     <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                     <path d="M3 9.5h18M6.5 14.5h4"/>
                   </svg>
-                  <span className="flex flex-col items-center leading-tight">
-                    <span className="text-sm font-semibold">Card</span>
-                    <span className="text-[10px] text-text-muted">Apple Pay · Venmo · PayPal</span>
+                  {/* All four read as equal options; wraps at the dots on narrow
+                      screens but never splits "Apple Pay". */}
+                  <span className="text-[15px] font-medium leading-relaxed text-center">
+                    Card · Apple{' '}Pay · PayPal · Venmo
                   </span>
                 </div>
               ) : (
@@ -780,7 +781,7 @@ export function BuyPassesModal({
                     </svg>
                     <span className="flex flex-col items-start leading-tight">
                       <span className="text-sm font-semibold">Card</span>
-                      <span className="text-[10px] text-text-muted">Apple Pay · Venmo · PayPal</span>
+                      <span className="text-[10px] text-text-muted">Apple Pay · PayPal · Venmo</span>
                     </span>
                   </button>
                 </div>
