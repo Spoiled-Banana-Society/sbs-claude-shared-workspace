@@ -75,6 +75,42 @@ export function BuyPassesModal({
   // the picker UI + the Coinbase route in handlePurchase.
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
+  // Referral code / username — paste who referred you (codes are name-based,
+  // so the referrer's username works). Sets referredBy via /api/referrals/track
+  // before the purchase, so the buy credits the referrer.
+  const [referralCode, setReferralCode] = useState('');
+  const [referralState, setReferralState] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
+  const [referralMsg, setReferralMsg] = useState<string | null>(null);
+  const applyReferral = async () => {
+    const code = referralCode.trim();
+    const userId = walletAddress || user?.id;
+    if (!code || referralState === 'applying') return;
+    if (!userId) { setReferralState('error'); setReferralMsg('Sign in first.'); return; }
+    setReferralState('applying'); setReferralMsg(null);
+    try {
+      const res = await fetch('/api/referrals/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referrerCode: code, referredUserId: userId, referredUsername: user?.username }),
+      });
+      const data = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        setReferralState('error');
+        setReferralMsg(
+          data?.error === 'Cannot refer yourself' ? "That's your own code."
+            : data?.error === 'Invalid referral code' ? "We couldn't find that code."
+            : 'Could not apply that code.',
+        );
+        return;
+      }
+      setReferralState('applied');
+      setReferralMsg('Referral applied — your friend gets credit. ✓');
+    } catch {
+      setReferralState('error');
+      setReferralMsg('Network error — try again.');
+    }
+  };
+
   useEffect(() => {
     if (!paymentMethodInitialized && user?.loginMethod) {
       setPaymentMethod(loggedInWithWallet ? 'usdc' : 'card');
@@ -576,23 +612,22 @@ export function BuyPassesModal({
               {/* First-purchase bonus nudge — first paid purchase only. Updates
                   live with the selected quantity (4 passes = 1 free spin). */}
               {firstPurchaseEligible && quantity > 0 && (
-                <div className="mt-3 flex items-start gap-2 rounded-xl border border-banana/30 bg-banana/10 px-3 py-2">
-                  <span className="text-base leading-none mt-0.5">🍌</span>
-                  <p className="text-xs text-text-secondary leading-relaxed">
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <p className="text-xs text-text-muted leading-relaxed">
                     {upsell.spinsThisPurchase > 0 ? (
                       <>
-                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        <span className="font-semibold text-text-secondary">First purchase bonus:</span>{' '}
                         you&apos;ll earn{' '}
-                        <span className="font-semibold text-banana">
+                        <span className="font-semibold text-text-secondary">
                           {upsell.spinsThisPurchase} free spin{upsell.spinsThisPurchase !== 1 ? 's' : ''}
                         </span>
                         ! Add {upsell.passesToNextSpin} more (total {upsell.nextSpinTotal}) for {upsell.spinsThisPurchase + 1}.
                       </>
                     ) : (
                       <>
-                        <span className="font-semibold text-text-primary">First purchase bonus:</span>{' '}
+                        <span className="font-semibold text-text-secondary">First purchase bonus:</span>{' '}
                         add{' '}
-                        <span className="font-semibold text-banana">{upsell.passesToNextSpin} more</span>{' '}
+                        <span className="font-semibold text-text-secondary">{upsell.passesToNextSpin} more</span>{' '}
                         (total {upsell.nextSpinTotal}) to earn a free spin
                       </>
                     )}
@@ -605,7 +640,7 @@ export function BuyPassesModal({
               {firstPurchaseEligible && !isBB3Holder && quantity > 0 && (
                 <p className="mt-2 px-1 text-[11px] leading-relaxed text-text-muted">
                   And it stacks — complete 4 drafts in a day and earn{' '}
-                  <span className="font-semibold text-text-secondary">another free spin</span>. Lots of value to start! 🍌
+                  <span className="font-semibold text-text-secondary">another free spin</span>. Lots of value to start!
                 </p>
               )}
             </div>
@@ -680,6 +715,34 @@ export function BuyPassesModal({
               </div>
               );
             })()}
+
+            {/* Referral code — paste a friend's username/code (works for both
+                USDC + card). Applied before purchase so the buy credits them. */}
+            {flowStep === 'idle' && (
+              <div>
+                <p className="text-text-muted text-[11px] uppercase tracking-wider mb-1.5">Referral code (optional)</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={referralCode}
+                    onChange={(e) => { setReferralCode(e.target.value); if (referralState !== 'idle') { setReferralState('idle'); setReferralMsg(null); } }}
+                    placeholder="Friend's username or code"
+                    disabled={referralState === 'applied'}
+                    className="flex-1 min-w-0 rounded-xl border border-bg-elevated bg-bg-tertiary px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-banana/50 disabled:opacity-60"
+                  />
+                  <button
+                    onClick={applyReferral}
+                    disabled={!referralCode.trim() || referralState === 'applying' || referralState === 'applied'}
+                    className="shrink-0 rounded-xl border-2 border-banana px-4 py-2.5 text-sm font-semibold text-banana hover:bg-banana hover:text-black disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-banana transition-all"
+                  >
+                    {referralState === 'applying' ? 'Applying…' : referralState === 'applied' ? 'Applied ✓' : 'Apply'}
+                  </button>
+                </div>
+                {referralMsg && (
+                  <p className={`text-[11px] mt-1.5 ${referralState === 'error' ? 'text-error' : 'text-success'}`}>{referralMsg}</p>
+                )}
+              </div>
+            )}
 
             {/* Unified purchase progress stepper (both USDC + card paths) */}
             {flowStep !== 'idle' && (
