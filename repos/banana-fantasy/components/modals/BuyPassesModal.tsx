@@ -748,14 +748,14 @@ export function BuyPassesModal({
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
               {isWeb2 ? (
-                <div className="flex items-center justify-center gap-3 py-4 px-5 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
+                <div className="flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 text-banana shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                     <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                     <path d="M3 9.5h18M6.5 14.5h4"/>
                   </svg>
                   {/* All four read as equal options; wraps at the dots on narrow
                       screens but never splits "Apple Pay". */}
-                  <span className="text-[15px] font-medium leading-relaxed text-center">
+                  <span className="text-[15px] sm:text-base font-semibold tracking-tight leading-relaxed text-center">
                     Card · Apple{' '}Pay · PayPal · Venmo
                   </span>
                 </div>
@@ -766,23 +766,23 @@ export function BuyPassesModal({
                 <div className="grid grid-cols-1 gap-1 p-1 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated">
                   <button
                     onClick={() => setPaymentMethod('usdc')}
-                    className={`flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    className={`flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                   >
                     <svg viewBox="0 0 24 24" className={`w-5 h-5 shrink-0 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
                       <circle cx="12" cy="12" r="9" />
                       <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
                     </svg>
-                    <span className="text-[15px] font-medium">USDC on Base</span>
+                    <span className="text-[15px] sm:text-base font-semibold tracking-tight">USDC on Base</span>
                   </button>
                   <button
                     onClick={() => setPaymentMethod('card')}
-                    className={`flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    className={`flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                   >
                     <svg viewBox="0 0 24 24" className={`w-5 h-5 shrink-0 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                       <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                       <path d="M3 9.5h18M6.5 14.5h4"/>
                     </svg>
-                    <span className="text-[15px] font-medium leading-relaxed text-center">Card · Apple Pay · PayPal · Venmo</span>
+                    <span className="text-[15px] sm:text-base font-semibold tracking-tight leading-relaxed text-center">Card · Apple Pay · PayPal · Venmo</span>
                   </button>
                 </div>
               )}
