@@ -25,6 +25,7 @@ import { installGlobalErrorHandlers } from '@/lib/globalErrorHandlers';
 import { recordPath } from '@/lib/navHistory';
 import { ClaimCelebrationProvider } from '@/contexts/ClaimCelebrationContext';
 import { SocialNotifier } from '@/components/social/SocialNotifier';
+import { PurchaseResumeRunner } from '@/components/PurchaseResumeRunner';
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const { showLoginModal, setShowLoginModal, setShowOnboarding, login, user } = useAuth();
@@ -114,6 +115,10 @@ function AppContent({ children }: { children: React.ReactNode }) {
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
         <SocialNotifier />
+        {/* Finishes a card purchase interrupted by a tab-kill (e.g. mobile
+            killing our backgrounded tab during the MoonPay window). Renders
+            nothing; only does real work when a resume marker exists. */}
+        <PurchaseResumeRunner />
         {/* First-purchase bonus is now announced via a subtle toast (see
             useUserEventStream 'first-purchase-unlocked') + the persistent home
             banner + promo box. The old full-screen modal was removed — too

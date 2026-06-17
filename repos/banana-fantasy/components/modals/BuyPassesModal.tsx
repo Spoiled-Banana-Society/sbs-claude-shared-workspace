@@ -24,6 +24,8 @@ import {
   setPurchaseFlow,
   resetPurchaseFlow,
   isPurchaseFlowActive,
+  writeResumeRecord,
+  clearResumeRecord,
 } from '@/lib/purchaseFlow';
 
 interface BuyPassesModalProps {
@@ -275,6 +277,7 @@ export function BuyPassesModal({
   const cancelledRef = useRef(false);
   const handleCancelCheckout = () => {
     cancelledRef.current = true;
+    clearResumeRecord(); // user explicitly backed out — don't resume later
     setWaitingForUsdcStartedAt(null);
     txTrackedRef.current = false;
     setFlowError(null);
@@ -332,6 +335,11 @@ export function BuyPassesModal({
     cancelledRef.current = false;
     setFlowStep('funding');
     setFlowError(null);
+    // Drop a durable resume marker now (before the MoonPay detour). If the tab
+    // is killed mid-purchase — common on mobile while the user is in the MoonPay
+    // window — a fresh load can finish the mint. Card path only; cleared on
+    // success/cancel below. Safe if abandoned: resume no-ops without USDC.
+    writeResumeRecord({ quantity, walletAddress });
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
@@ -454,6 +462,7 @@ export function BuyPassesModal({
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
       await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
+      clearResumeRecord(); // minted here — no resume needed
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
