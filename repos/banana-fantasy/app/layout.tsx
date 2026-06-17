@@ -11,13 +11,23 @@ const SITE_NAME = 'SBSFantasy';
 const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
   'Banana Best Ball IV drops June 23rd — $100K GTD Prize Pool';
+
+// The share-card image must be an ABSOLUTE url pointing at the SAME deployment
+// that renders the page — otherwise metadataBase (sbsfantasy.com) rewrites it
+// to the prod domain even on staging, so a staging share would 404 the image
+// until prod has the file. Vercel auto-exposes VERCEL_PROJECT_PRODUCTION_URL
+// (= banana-fantasy-sbs.vercel.app on staging, sbsfantasy.com on prod), so each
+// environment serves its own /og-card.png. Falls back to sbsfantasy.com locally.
+const DEPLOY_ORIGIN = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : SITE_URL;
 // Dedicated 1200×630 share card: black SBS football-banana centered on a clean
 // white background (baked in, no transparency) so it renders identically on
 // every platform — Discord/iMessage dark cards, X, etc. The bare transparent
 // logo washed out on light card backgrounds. Static .png so it's served
 // directly (the prelaunch middleware walls off extension-less routes, which
 // would otherwise break the countdown's share card). Bump ?v= to bust caches.
-const DEFAULT_OG_IMAGE = '/og-card.png?v=2';
+const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=2`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
