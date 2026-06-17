@@ -802,9 +802,9 @@ export function BuyPassesModal({
                     minimal — thin flat banana on a quiet track, no glow. */}
                 {flowStep !== 'error' && (
                   <div className="flex items-center gap-3">
-                    <div className="relative h-1 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div className="relative h-2 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
                       <div
-                        className="absolute inset-y-0 left-0 min-w-[0.375rem] rounded-full bg-banana transition-[width] duration-500 ease-out"
+                        className="absolute inset-y-0 left-0 min-w-[0.5rem] rounded-full bg-banana transition-[width] duration-500 ease-out"
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
