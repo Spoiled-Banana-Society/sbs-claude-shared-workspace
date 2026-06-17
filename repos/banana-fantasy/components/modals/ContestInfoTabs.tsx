@@ -20,7 +20,7 @@ const HOW = [
   { t: 'Team Positions', d: 'Draft “DAL WR1” and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.' },
   { t: 'Best Ball', d: 'No managing needed. Draft once, best scorers auto-selected weekly.' },
   { t: 'Regular Season (Weeks 1–14)', d: 'Points are CUMULATIVE — your team stacks points every week. The top 2 in your draft pod advance to the playoffs.' },
-  { t: 'Playoffs (Weeks 15–17)', d: 'Week 15 — Round 1: top 2 advance. Week 16 — Round 2: top 2 advance. Week 17 — Finals pod plays for the grand prize. (Jackpot winners skip straight to the finals.)' },
+  { t: 'Playoffs (Weeks 15–17)', d: 'Week 15 — new pod of 10, top 2 advance. Week 16 — new pod of 10, top 2 advance. Week 17 — Finals pod plays for the grand prize. (Jackpot winners skip straight to the finals.)' },
 ];
 const TYPES: { word: string; pct: string; color: string; d: string }[] = [
   { word: 'Pro', pct: '94%', color: '#a855f7', d: 'Standard draft. Compete for the $100K GTD Prize Pool.' },
