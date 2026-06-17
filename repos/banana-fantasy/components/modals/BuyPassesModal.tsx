@@ -23,6 +23,9 @@ import {
   setPurchaseFlow,
   resetPurchaseFlow,
   isPurchaseFlowActive,
+  writeResumeRecord,
+  readResumeRecord,
+  clearResumeRecord,
 } from '@/lib/purchaseFlow';
 
 interface BuyPassesModalProps {
@@ -100,6 +103,14 @@ export function BuyPassesModal({
   // it just goes through with no error.
   const [usdcShortfall, setUsdcShortfall] = useState<string | null>(null);
 
+  // Recovery prompt: if a CARD buy was started (marker written) and the user
+  // closed/lost the page mid-purchase, their USDC may have landed but the mint
+  // never finished. On reopen we (live-)check the chain; if the USDC is actually
+  // sitting there, we offer a one-tap "finish with your USDC" (no new charge).
+  // This ONLY shows a prompt — it never auto-mints, so it can't misfire like the
+  // old resume runner. Card path only; cleared on success/cancel.
+  const [recoverableUsdc, setRecoverableUsdc] = useState<{ quantity: number; usd: string } | null>(null);
+
   // Referral code / username — paste who referred you (codes are name-based,
   // so the referrer's username works). Sets referredBy via /api/referrals/track
   // before the purchase, so the buy credits the referrer.
@@ -152,6 +163,50 @@ export function BuyPassesModal({
   // The USDC-shortfall notice is transient — clear it whenever the user closes,
   // changes quantity, or switches payment method, so it never lingers.
   useEffect(() => { setUsdcShortfall(null); }, [quantity, paymentMethod, isOpen]);
+
+  // On reopen, detect a stranded CARD purchase: a marker is present AND the USDC
+  // is actually sitting on-chain (live read). Only sets the recovery prompt —
+  // never mints — so it can't misfire. Cleared when the modal closes.
+  useEffect(() => {
+    if (!isOpen) { setRecoverableUsdc(null); return; }
+    if (!walletAddress) return;
+    const rec = readResumeRecord();
+    if (!rec || rec.walletAddress.toLowerCase() !== walletAddress.toLowerCase()) return;
+    if (Date.now() - rec.ts > 45 * 60_000) { clearResumeRecord(); return; }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const bal = await getUsdcBalance(walletAddress as Address);
+        if (cancelled) return;
+        const perPassUsdc = BigInt(draftPassPricing.pricePerPass) * BigInt(10 ** 6);
+        if (bal < perPassUsdc) return; // not enough for even one pass → nothing to recover
+        const qty = Math.max(1, Math.min(rec.quantity, Number(bal / perPassUsdc)));
+        setRecoverableUsdc({ quantity: qty, usd: (Number(bal) / 1e6).toFixed(2) });
+        clientLog('payment', 'recovery_offer_shown', { wallet: walletAddress, quantity: qty });
+      } catch { /* RPC blip — just don't show the prompt */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen, walletAddress]);
+
+  // One-tap recovery: finish the stranded purchase with the USDC already in the
+  // wallet — no new charge. Reuses the same mint() the normal USDC buy uses.
+  const recoverWithUsdc = async () => {
+    const rec = recoverableUsdc;
+    if (!rec || isProcessing) return;
+    setRecoverableUsdc(null);
+    setPaymentMethod('usdc');
+    setQuantity(rec.quantity);
+    clearResumeRecord();
+    setFlowError(null);
+    clientLog('payment', 'recover_existing_usdc', { wallet: walletAddress, quantity: rec.quantity });
+    try {
+      await mint(rec.quantity, { paymentMethod: 'usdc' });
+      clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity: rec.quantity, paymentMethod: 'usdc', recovered: true });
+    } catch (err) {
+      setFlowError(friendlyPurchaseError(err instanceof Error ? err.message : String(err)));
+      setFlowStep('error');
+    }
+  };
 
   // Reset state when modal opens — but ONLY if there's no in-flight purchase
   // to preserve. If the user closed mid-MoonPay or before clicking "Pick speed",
@@ -276,6 +331,7 @@ export function BuyPassesModal({
   const cancelledRef = useRef(false);
   const handleCancelCheckout = () => {
     cancelledRef.current = true;
+    clearResumeRecord(); // user backed out — no recovery prompt later
     setWaitingForUsdcStartedAt(null);
     txTrackedRef.current = false;
     setFlowError(null);
@@ -377,6 +433,10 @@ export function BuyPassesModal({
     cancelledRef.current = false;
     setFlowStep('funding');
     setFlowError(null);
+    // Drop a marker so that, if the tab is lost mid-purchase (mobile tab-kill),
+    // we can OFFER a one-tap recovery on return. This never auto-mints — it only
+    // gates the recovery prompt. Cleared on success/cancel.
+    writeResumeRecord({ quantity, walletAddress });
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
@@ -478,6 +538,7 @@ export function BuyPassesModal({
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
       await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
+      clearResumeRecord(); // completed — no recovery needed
       clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'card' });
       setFlowStep('success');
       setMintedCount(quantity);
@@ -662,6 +723,26 @@ export function BuyPassesModal({
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
           <>
+            {/* Recovery prompt — only when a stranded card purchase is detected
+                (marker + USDC actually on-chain). Clean banana banner, one tap,
+                no new charge. Never auto-mints. */}
+            {flowStep === 'idle' && recoverableUsdc && (
+              <div className="rounded-2xl border border-banana/30 bg-banana/[0.08] p-4 space-y-2.5">
+                <p className="text-text-primary text-[15px] font-semibold leading-snug">
+                  You have ${recoverableUsdc.usd} USDC ready
+                </p>
+                <p className="text-text-muted text-xs leading-relaxed">
+                  Looks like a purchase didn&apos;t finish. Get your draft pass now with the USDC you already have — no new charge.
+                </p>
+                <button
+                  onClick={recoverWithUsdc}
+                  className="w-full py-2.5 rounded-xl bg-banana text-black font-bold text-sm hover:brightness-110 transition-all"
+                >
+                  {recoverableUsdc.quantity > 1 ? `Get my ${recoverableUsdc.quantity} draft passes` : 'Get my draft pass'}
+                </button>
+              </div>
+            )}
+
             {flowStep === 'idle' && (
             <>
             {/* Balance context — count paid and free passes separately so a
