@@ -732,7 +732,7 @@ export function BuyPassesModal({
                   Finish your purchase
                 </p>
                 <p className="text-text-muted text-xs leading-relaxed">
-                  Your payment went through — your pass didn&apos;t. Get it now, no extra charge.
+                  Your payment went through — continue to get your draft pass.
                 </p>
                 <button
                   onClick={recoverWithUsdc}
