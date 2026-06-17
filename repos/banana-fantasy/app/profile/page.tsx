@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import { useExportWallet } from '@privy-io/react-auth';
 import { SkeletonCard, Skeleton, SkeletonAvatar } from '@/components/ui/Skeleton';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
@@ -29,7 +28,6 @@ function memberSince(iso: string): string {
 
 export default function ProfilePage() {
   const { user, login, isLoading: authLoading, isEmbeddedWallet } = useAuth();
-  const { exportWallet } = useExportWallet();
   const [copiedWallet, setCopiedWallet] = useState(false);
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<
@@ -207,14 +205,6 @@ export default function ProfilePage() {
                 </p>
               </div>
             </div>
-            {isEmbeddedWallet && (
-              <button
-                onClick={() => exportWallet()}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/60 hover:text-white text-xs font-bold transition-all"
-              >
-                Export Wallet
-              </button>
-            )}
           </div>
         </motion.div>
 
