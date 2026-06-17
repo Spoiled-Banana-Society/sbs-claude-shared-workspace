@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 
+import { tryGetServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
@@ -1627,10 +1628,8 @@ export async function recomputeUserExposure(
   // which on Vercel is set to the production URL and would leak prod
   // roster data into staging exposure docs. Same pattern the badge
   // sweep uses (app/api/badges/route.ts).
-  const baseUrl = (
-    process.env.STAGING_DRAFTS_API_URL ||
-    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-  ).replace(/\/$/, '');
+  const baseUrl = tryGetServerDraftsApiUrl();
+  if (!baseUrl) return null;
 
   let active: Array<{ _leagueId?: string; roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
@@ -2696,11 +2695,8 @@ function jackpotWinnerIndex(draftId: string): number {
  */
 async function getDraftWinnerOwner(draftId: string, winnerIndex: number): Promise<string | null> {
   try {
-    const baseUrl = (
-      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-      process.env.STAGING_DRAFTS_API_URL ||
-      'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-    ).replace(/\/$/, '');
+    const baseUrl = tryGetServerDraftsApiUrl();
+    if (!baseUrl) return null;
     const res = await fetch(`${baseUrl}/draft/${encodeURIComponent(draftId)}/state/info`);
     if (!res.ok) return null;
     const data = (await res.json()) as { draftOrder?: { ownerId?: string }[] };

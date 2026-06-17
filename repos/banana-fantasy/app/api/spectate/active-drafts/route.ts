@@ -41,11 +41,7 @@ interface DraftInfoResponse {
 }
 
 // Hardcoded staging — see comment in /api/spectate/draft-state/route.ts.
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-
-function getServerDraftsApiUrl(): string {
-  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
-}
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {

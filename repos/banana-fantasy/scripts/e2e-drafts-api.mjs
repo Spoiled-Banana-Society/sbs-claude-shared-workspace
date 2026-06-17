@@ -19,13 +19,23 @@ for (const file of ['.env.local', '.env.staging', '.env']) {
   if (existsSync(path)) config({ path, override: false });
 }
 
-export const API_BASE = (
-  process.env.STAGING_DRAFTS_API_URL ||
-  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-).replace(/\/$/, '');
+function requireEnvUrl(...keys) {
+  for (const key of keys) {
+    const value = process.env[key]?.trim();
+    if (value) return value.replace(/\/$/, '');
+  }
+  throw new Error(`Missing env: set one of ${keys.join(', ')}`);
+}
 
-export const WS_BASE = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
+export const API_BASE = requireEnvUrl(
+  'STAGING_DRAFTS_API_URL',
+  'NEXT_PUBLIC_STAGING_DRAFTS_API_URL',
+);
+
+export const WS_BASE = requireEnvUrl(
+  'STAGING_DRAFT_SERVER_URL',
+  'NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL',
+);
 
 function buildHeaders({ wallet, admin } = {}) {
   const headers = { 'Content-Type': 'application/json' };

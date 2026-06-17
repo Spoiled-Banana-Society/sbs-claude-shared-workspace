@@ -11,6 +11,7 @@ import { getTeamForToken, getOwnerForToken, teamDataToTraits, type NftTrait } fr
 import { resolveTokenImage } from '@/lib/nftCardServer';
 import { getUserDisplayBatch } from '@/lib/db';
 import type { Ripeness } from '@/types';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,8 +61,7 @@ export async function GET(
     } catch { /* listing cache is best-effort */ }
 
     // Owner identity + team data + image, all from our backend, in parallel.
-    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const DRAFTS_API = getServerDraftsApiUrl();
     const ownerLc = owner ? owner.toLowerCase() : null;
     const [profile, displays, teamResult, trades, ogImage] = await Promise.all([
       ownerLc

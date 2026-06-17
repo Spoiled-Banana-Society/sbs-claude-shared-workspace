@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 import { logger } from '@/lib/logger';
 
 // GET /api/promos/jackpot-reveal?draftId=X
@@ -70,11 +71,7 @@ export async function GET(req: Request) {
       } catch { /* fall through to legacy labels */ }
     }
 
-    const apiBase = (
-      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-      process.env.STAGING_DRAFTS_API_URL ||
-      'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-    ).replace(/\/$/, '');
+    const apiBase = getServerDraftsApiUrl();
 
     const res = await fetch(`${apiBase}/draft/${encodeURIComponent(draftId)}/state/info`);
     if (!res.ok) throw new ApiError(404, 'draft not found');

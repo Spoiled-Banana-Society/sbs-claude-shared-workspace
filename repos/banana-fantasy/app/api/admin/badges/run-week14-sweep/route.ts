@@ -10,11 +10,7 @@ import { computeAndStoreRipeness } from '@/lib/db';
 import { mapDraftTokenToLeague, fetchOwnerPaidFilledCount, type ApiDraftToken } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-
-function getServerDraftsApiUrl(): string {
-  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
-}
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 interface RawApiToken {
   _cardId?: string;

@@ -7,11 +7,6 @@ import { walletFromSession } from '@/lib/assertSessionWallet';
 import { draftsApiServer } from '@/lib/draftsApiServer';
 import { updateQueueRoundDraftId, fillQueueRoundWithBots } from '@/lib/db';
 import { logger } from '@/lib/logger';
-
-const STAGING_API_URL =
-  process.env.STAGING_DRAFTS_API_URL ||
-  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 /**
@@ -41,12 +36,13 @@ export async function POST(req: Request) {
       return jsonError('Invalid queue type', 400);
     }
 
+    // Check if queue round already has a draftId with valid Go API state
     const { getQueueStatus } = await import('@/lib/db');
     const queues = await getQueueStatus();
     const existingRound = queues[queueType]?.rounds?.find((r: { roundId: number }) => r.roundId === roundId);
     if (existingRound?.draftId) {
       try {
-        const checkRes = await fetch(`${STAGING_API_URL}/draft/${existingRound.draftId}/state/info`);
+        const checkRes = await draftsApiServer(`/draft/${existingRound.draftId}/state/info`);
         if (checkRes.ok) {
           const info = await checkRes.json();
           if (info.draftOrder?.length >= 10) {
@@ -60,14 +56,14 @@ export async function POST(req: Request) {
     const mintId = 100000 + Math.floor(Math.random() * 50000);
     await draftsApiServer(`/owner/${userId}/draftToken/mint`, {
       method: 'POST',
-      wallet: userId,
       body: { minId: mintId, maxId: mintId },
+      wallet: userId,
     }).catch(() => {});
 
     const joinRes = await draftsApiServer(`/league/slow/owner/${userId}`, {
       method: 'POST',
-      wallet: userId,
       body: { numLeaguesToJoin: 1 },
+      wallet: userId,
     });
 
     if (!joinRes.ok) {
@@ -93,17 +89,16 @@ export async function POST(req: Request) {
     logger.debug('[create-draft] JoinLeagues returned:', draftId, '| Queue stored:', actualDraftId);
 
     const fillRes = await draftsApiServer(
-      `/staging/fill-bots/slow?count=9&leagueId=${encodeURIComponent(String(actualDraftId))}`,
-      { method: 'POST', adminKey: true },
+      `/staging/fill-bots/slow?count=9&leagueId=${actualDraftId}`,
+      { method: 'POST' },
     ).catch(() => null);
     logger.debug('[create-draft] fill-bots result:', fillRes?.status, fillRes?.ok);
 
-    await new Promise((r) => setTimeout(r, 3000));
-
+    await new Promise(r => setTimeout(r, 3000));
     let stateReady = false;
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
-        const infoRes = await fetch(`${STAGING_API_URL}/draft/${actualDraftId}/state/info`);
+        const infoRes = await draftsApiServer(`/draft/${actualDraftId}/state/info`);
         if (infoRes.ok) {
           const info = await infoRes.json();
           if (info.draftOrder && info.draftOrder.length >= 10) {
@@ -113,7 +108,7 @@ export async function POST(req: Request) {
           }
         }
       } catch {}
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 2000));
     }
     if (!stateReady) {
       console.warn('[create-draft] Draft state not ready after 10 attempts for', actualDraftId);

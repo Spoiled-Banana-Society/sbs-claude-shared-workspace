@@ -15,8 +15,11 @@
 
 import { test, expect } from '@playwright/test';
 
-const API_BASE = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-const WS_BASE = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
+const API_BASE = process.env.STAGING_DRAFTS_API_URL || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL;
+const WS_BASE = process.env.STAGING_DRAFT_SERVER_URL || process.env.NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL;
+if (!API_BASE || !WS_BASE) {
+  throw new Error('Set STAGING_DRAFTS_API_URL and STAGING_DRAFT_SERVER_URL (or NEXT_PUBLIC_* variants)');
+}
 const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
 const TEST_WALLET = '0x0000000000000000000000000000000000000001';
 

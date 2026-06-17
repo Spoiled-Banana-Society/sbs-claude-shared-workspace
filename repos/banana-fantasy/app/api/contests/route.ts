@@ -3,6 +3,15 @@ export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getContests } from '@/lib/db';
+
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
+
+const DRAFTS_API_URL = getServerDraftsApiUrl();
+
+interface LeagueSummary {
+  numPlayers: number;
+}
+
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 
 // Coalesce the draftTracker read so the client's live poll (every ~10s, many

@@ -1,17 +1,5 @@
 import { ApiError } from '@/lib/api/errors';
-
-const DEFAULT_STAGING_DRAFTS_API_URL =
-  'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-
-function baseUrl(): string {
-  const url = (
-    process.env.STAGING_DRAFTS_API_URL ||
-    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-    DEFAULT_STAGING_DRAFTS_API_URL
-  ).replace(/\/$/, '');
-  if (!url) throw new ApiError(503, 'Drafts API URL not configured');
-  return url;
-}
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 export type DraftsApiServerOptions = {
   method?: string;
@@ -37,7 +25,7 @@ export async function draftsApiServer(
   }
 
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return fetch(`${baseUrl()}${normalizedPath}`, {
+  return fetch(`${getServerDraftsApiUrl()}${normalizedPath}`, {
     method: opts.method ?? 'GET',
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
