@@ -20,6 +20,7 @@ import {
 import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { clientLog } from '@/lib/clientLog';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useToast } from '@/components/ui/Toast';
 import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
@@ -224,6 +225,14 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         throw new Error(message);
       }
 
+      const method = opts?.paymentMethod ?? 'usdc';
+      clientLog('payment', 'mint_started', {
+        wallet: activeWallet.address,
+        quantity,
+        paymentMethod: method,
+        walletType: activeWallet.walletClientType,
+      });
+
       try {
         setIsApproving(true);
         setMintStep('signing');
@@ -303,6 +312,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         setIsApproving(false);
         setIsMinting(true);
         setMintStep('processing');
+        clientLog('payment', 'mint_signed', { wallet: activeWallet.address, quantity, paymentMethod: method });
 
         // Server orchestrates permit → transferFrom → reserveTokens.
         const res = await fetch('/api/purchases/card-mint', {
@@ -325,6 +335,16 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           promoAwards?: PurchasePromoAwards;
           cardFreeDraftsEarned?: number;
         };
+        clientLog('payment', 'mint_server_result', {
+          wallet: activeWallet.address,
+          quantity,
+          paymentMethod: method,
+          httpOk: res.ok,
+          success: !!data.success,
+          paymentSucceeded: !!data.paymentSucceeded,
+          txHash: data.txHashes?.mint ?? null,
+          error: data.error ?? null,
+        });
         if (!res.ok || !data.success) {
           // Payment went through but delivery is pending — NOT a hard failure.
           // Surface a reassuring pending state instead of an error so the user

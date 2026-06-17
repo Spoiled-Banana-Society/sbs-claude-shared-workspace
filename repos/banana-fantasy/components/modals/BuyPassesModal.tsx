@@ -329,6 +329,16 @@ export function BuyPassesModal({
   const handlePurchase = async () => {
     if (!Number.isFinite(quantity) || quantity <= 0) return;
 
+    // One trail per attempt, all flows + login types. Filtering the admin Logs
+    // by a wallet shows the full journey: purchase_started → (funding) → mint_*
+    // → purchase_succeeded/failed → join_draft_*.
+    clientLog('payment', 'purchase_started', {
+      wallet: walletAddress,
+      quantity,
+      paymentMethod,
+      loginMethod: user?.loginMethod ?? 'unknown',
+    });
+
     if (paymentMethod === 'usdc') {
       try {
         // Pre-flight balance check — without it, a user with too little USDC
@@ -338,6 +348,12 @@ export function BuyPassesModal({
           const needed = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
           try {
             const bal = await getUsdcBalance(walletAddress as Address);
+            clientLog('payment', 'usdc_preflight', {
+              wallet: walletAddress,
+              balanceUsd: (Number(bal) / 1e6).toFixed(2),
+              neededUsd: totalPrice,
+              sufficient: bal >= needed,
+            });
             if (bal < needed) {
               const have = (Number(bal) / 1e6).toFixed(2);
               setFlowError(`Not enough USDC on Base — you have $${have}, this costs $${totalPrice}. Add USDC or pay by card.`);
@@ -349,8 +365,16 @@ export function BuyPassesModal({
           }
         }
         await mint(quantity, { paymentMethod: 'usdc' });
+        clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'usdc' });
         // Phase transition handled by useEffect on txHash
-      } catch {
+      } catch (err) {
+        clientLog('payment', 'purchase_failed', {
+          wallet: walletAddress,
+          quantity,
+          paymentMethod: 'usdc',
+          step: 'mint',
+          error: err instanceof Error ? err.message : String(err),
+        });
         // Error surfaced by mint hook
       }
       return;
@@ -415,6 +439,7 @@ export function BuyPassesModal({
       // mobile that fires before the funds are reliably settled across RPC
       // nodes, so the server's transferFrom reverts ("exceeds balance"). Waiting
       // for fundWallet to resolve is the known-good sequencing.
+      clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount });
       const result = await fundWallet({
         address: walletAddress,
         options: {
@@ -427,6 +452,7 @@ export function BuyPassesModal({
           },
         },
       });
+      clientLog('payment', 'funding_result', { wallet: walletAddress, status: result.status });
 
       if (result.status === 'cancelled') {
         setFlowStep('idle');
@@ -436,7 +462,8 @@ export function BuyPassesModal({
       // Confirm the USDC actually landed before minting — event-driven via the
       // on-chain Transfer subscription (instant once it settles), no polling.
       setFlowStep('waiting-for-usdc');
-      setWaitingForUsdcStartedAt(Date.now());
+      const usdcWaitStartedAt = Date.now();
+      setWaitingForUsdcStartedAt(usdcWaitStartedAt);
 
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
       const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
@@ -456,14 +483,17 @@ export function BuyPassesModal({
       });
       if (cancelledRef.current) return;
       if (!funded) {
+        clientLog('payment', 'usdc_timeout', { wallet: walletAddress, waitedMs: Date.now() - usdcWaitStartedAt });
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
+      clientLog('payment', 'usdc_arrived', { wallet: walletAddress, waitedMs: Date.now() - usdcWaitStartedAt });
 
       setWaitingForUsdcStartedAt(null);
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
       await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
+      clientLog('payment', 'purchase_succeeded', { wallet: walletAddress, quantity, paymentMethod: 'card' });
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
@@ -472,6 +502,12 @@ export function BuyPassesModal({
       // "Pick draft speed" button below to continue.
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Payment failed. Please try again.';
+      clientLog('payment', 'purchase_failed', {
+        wallet: walletAddress,
+        quantity,
+        paymentMethod: 'card',
+        error: message,
+      });
       setFlowError(message);
       setFlowStep('error');
     }
@@ -489,6 +525,7 @@ export function BuyPassesModal({
 
     setPhase('joining');
     setJoinError(null);
+    clientLog('payment', 'join_draft_start', { wallet: addr, speed });
 
     try {
       // Join a draft
@@ -516,6 +553,7 @@ export function BuyPassesModal({
       logger.debug('[BuyModal] Parsed:', { draftId, contestName });
 
       if (!draftId) throw new Error('No draft ID returned from join API');
+      clientLog('payment', 'join_draft_success', { wallet: addr, speed, draftId });
 
       // In staging mode, bots will fill AFTER user lands in draft room lobby
       // (triggered by draft-room page once WebSocket connects)
@@ -560,6 +598,7 @@ export function BuyPassesModal({
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to join draft';
       console.error('[BuyModal] Join error:', msg, err);
+      clientLog('payment', 'join_draft_failed', { wallet: addr, speed, error: msg });
       joinInFlightRef.current = false;
       setIsJoiningDraft(false);
       setJoinError(msg);
