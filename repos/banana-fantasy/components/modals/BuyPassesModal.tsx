@@ -729,10 +729,10 @@ export function BuyPassesModal({
             {flowStep === 'idle' && recoverableUsdc && (
               <div className="rounded-2xl border border-banana/30 bg-banana/[0.08] p-4 space-y-2.5">
                 <p className="text-text-primary text-[15px] font-semibold leading-snug">
-                  You have ${recoverableUsdc.usd} USDC ready
+                  Finish your purchase
                 </p>
                 <p className="text-text-muted text-xs leading-relaxed">
-                  Looks like a purchase didn&apos;t finish. Get your draft pass now with the USDC you already have — no new charge.
+                  Your payment went through, but your draft pass didn&apos;t finish. Get it now — no extra charge.
                 </p>
                 <button
                   onClick={recoverWithUsdc}
