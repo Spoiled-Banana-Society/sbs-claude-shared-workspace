@@ -9,7 +9,7 @@ import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
-import { BASE_SEPOLIA, waitForUsdcArrival } from '@/lib/contracts/bbb4';
+import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
@@ -315,6 +315,23 @@ export function BuyPassesModal({
 
     if (paymentMethod === 'usdc') {
       try {
+        // Pre-flight balance check — without it, a user with too little USDC
+        // signs, the server transferFrom reverts, and the modal hangs forever on
+        // "Processing your purchase." Fail fast with a clear message instead.
+        if (walletAddress) {
+          const needed = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
+          try {
+            const bal = await getUsdcBalance(walletAddress as Address);
+            if (bal < needed) {
+              const have = (Number(bal) / 1e6).toFixed(2);
+              setFlowError(`Not enough USDC on Base — you have $${have}, this costs $${totalPrice}. Add USDC or pay by card.`);
+              setFlowStep('error');
+              return;
+            }
+          } catch {
+            // RPC blip reading the balance — don't block; the server still guards.
+          }
+        }
         await mint(quantity, { paymentMethod: 'usdc' });
         // Phase transition handled by useEffect on txHash
       } catch {
@@ -340,6 +357,12 @@ export function BuyPassesModal({
     // window — a fresh load can finish the mint. Card path only; cleared on
     // success/cancel below. Safe if abandoned: resume no-ops without USDC.
     writeResumeRecord({ quantity, walletAddress });
+
+    // Tracks whether the USDC actually landed. If it did and the mint then
+    // fails (e.g. a transient wallet hiccup), the money is NOT lost — we keep
+    // the resume marker and reassure instead of showing a scary error, and the
+    // PurchaseResumeRunner finishes it on the next load.
+    let fundsArrived = false;
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
@@ -458,6 +481,7 @@ export function BuyPassesModal({
       }
 
       setWaitingForUsdcStartedAt(null);
+      fundsArrived = true; // USDC is in the wallet — payment succeeded
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
@@ -470,6 +494,15 @@ export function BuyPassesModal({
       // wondering whether their card was charged. They click the explicit
       // "Pick draft speed" button below to continue.
     } catch (err) {
+      if (fundsArrived) {
+        // Money is in the wallet but the mint hit a snag (e.g. a transient
+        // wallet hiccup). NOT lost — keep the resume marker so the
+        // PurchaseResumeRunner finishes it on the next load, and reassure
+        // instead of alarming. mintPaymentPending styling shows the calm copy.
+        setFlowError('Payment received — finishing your draft pass. This completes automatically, hang tight.');
+        setFlowStep('error');
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Payment failed. Please try again.';
       setFlowError(message);
       setFlowStep('error');

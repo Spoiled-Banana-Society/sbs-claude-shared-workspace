@@ -123,6 +123,15 @@ export function useMintDraftPass(): UseMintDraftPassResult {
     return wallets[0];
   }, [walletAddress, wallets]);
 
+  // Live refs so mint() can read the CURRENT wallet readiness at call time, not
+  // the (possibly stale) value captured when the callback was created. On mobile
+  // useWallets can be momentarily not-ready right after the MoonPay detour / a
+  // tab refocus, and the auto-mint may fire in that window.
+  const walletsReadyRef = useRef(walletsReady);
+  walletsReadyRef.current = walletsReady;
+  const selectedWalletRef = useRef(selectedWallet);
+  selectedWalletRef.current = selectedWallet;
+
   const onChainAddress = selectedWallet?.address ?? walletAddress;
 
   const publicClient = useMemo(
@@ -188,7 +197,20 @@ export function useMintDraftPass(): UseMintDraftPassResult {
       setTxHash(null);
       setMintStep('idle');
 
-      if (!walletsReady || !selectedWallet) {
+      // Wait briefly for the wallet to be ready rather than hard-failing on a
+      // transient. Reads the live refs so a stale captured `selectedWallet`
+      // (e.g. null right after the MoonPay detour on mobile) can't block a mint
+      // that's actually ready a beat later.
+      let activeWallet = selectedWalletRef.current;
+      if (!walletsReadyRef.current || !activeWallet) {
+        const readyStart = Date.now();
+        while (Date.now() - readyStart < 8000) {
+          await new Promise((r) => setTimeout(r, 250));
+          if (walletsReadyRef.current && selectedWalletRef.current) break;
+        }
+        activeWallet = selectedWalletRef.current;
+      }
+      if (!walletsReadyRef.current || !activeWallet) {
         const message = 'Wallet not ready — please wait a moment and try again.';
         setError(message);
         setMintStep('error');
@@ -222,7 +244,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
             address: BASE_SEPOLIA_USDC_ADDRESS,
             abi: USDC_PERMIT_ABI,
             functionName: 'nonces',
-            args: [selectedWallet.address as Address],
+            args: [activeWallet.address as Address],
           }),
           fetch('/api/purchases/admin-wallet').then((r) => r.ok ? r.json() : null).catch(() => null),
         ]);
@@ -243,7 +265,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const deadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_SECONDS);
 
         const typedData = buildUsdcPermitTypedData({
-          owner: selectedWallet.address as Address,
+          owner: activeWallet.address as Address,
           spender: adminAddress,
           value,
           nonce: userNonce as bigint,
@@ -252,13 +274,13 @@ export function useMintDraftPass(): UseMintDraftPassResult {
 
         // Request the EIP-712 permit signature (gasless — no gas prompt either way).
         let signature: Hex;
-        if (selectedWallet.walletClientType === 'privy') {
+        if (activeWallet.walletClientType === 'privy') {
           // Embedded (web2) wallet — sign silently for a true one-tap mint.
           // showWalletUIs:false suppresses the Privy confirm modal. Embedded
           // wallets are always on Base, so no network switch is needed.
           const result = await signTypedDataRef.current(
             typedData as unknown as SignTypedDataParams,
-            { uiOptions: { showWalletUIs: false }, address: selectedWallet.address },
+            { uiOptions: { showWalletUIs: false }, address: activeWallet.address },
           );
           signature = result.signature as Hex;
         } else {
@@ -267,14 +289,14 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           // the permit domain references Base (8453), so a wallet on another
           // network would warn or refuse. ensureBaseNetwork switches/adds Base
           // and returns clear copy on failure instead of a murky signature error.
-          const provider = await selectedWallet.getEthereumProvider();
+          const provider = await activeWallet.getEthereumProvider();
           const baseNet = await ensureBaseNetwork(provider);
           if (!baseNet.ok) {
             throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
           }
           signature = (await provider.request({
             method: 'eth_signTypedData_v4',
-            params: [selectedWallet.address, JSON.stringify(typedData)],
+            params: [activeWallet.address, JSON.stringify(typedData)],
           })) as Hex;
         }
 
@@ -287,7 +309,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            userId: (selectedWallet.address as string).toLowerCase(),
+            userId: (activeWallet.address as string).toLowerCase(),
             quantity,
             deadline: Number(deadline),
             signature,
