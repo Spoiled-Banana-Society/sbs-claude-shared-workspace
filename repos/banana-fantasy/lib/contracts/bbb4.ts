@@ -1,4 +1,4 @@
-import { type Abi, type Address, createPublicClient, defineChain, http } from 'viem';
+import { type Abi, type Address, createPublicClient, defineChain, http, webSocket, parseAbiItem } from 'viem';
 
 export const BASE_CHAIN_ID = 8453;
 export const BASE_RPC_URL = process.env.NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL || 'https://mainnet.base.org';
@@ -234,5 +234,121 @@ export async function getUsdcBalance(address: Address): Promise<bigint> {
     abi: USDC_ABI,
     functionName: 'balanceOf',
     args: [address],
+  });
+}
+
+// Alchemy serves a WebSocket endpoint on the same key/path — derive it from the
+// HTTP RPC so we can SUBSCRIBE to events (push) instead of polling. Null if the
+// configured RPC isn't a ws-capable Alchemy URL (e.g. the public fallback).
+const BASE_WSS_URL =
+  /^https?:\/\//.test(BASE_RPC_URL) && BASE_RPC_URL.includes('alchemy.com')
+    ? BASE_RPC_URL.replace(/^http/, 'ws')
+    : null;
+
+const USDC_TRANSFER_EVENT = parseAbiItem(
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+);
+
+/**
+ * Resolve as soon as `address` holds >= `minAmount` USDC — event-driven, no
+ * polling in the happy path.
+ *
+ * Primary path: a WebSocket subscription to USDC `Transfer(to: address)` logs.
+ * The instant the transfer is mined, Alchemy PUSHES the log and we confirm with
+ * a single balanceOf read — typically sub-second after settlement, vs the old
+ * 3s poll. We also read once up front (covers "already arrived") and once right
+ * after subscribing (covers the tiny race between the two).
+ *
+ * Safety net: only if the WS endpoint is unavailable or the socket errors/closes
+ * do we fall back to a balance check loop, so the purchase can never hang. In
+ * normal operation nothing is polled.
+ *
+ * Returns true when funded, false on timeout/cancel.
+ */
+export async function waitForUsdcArrival(
+  address: Address,
+  minAmount: bigint,
+  opts: { timeoutMs?: number; isCancelled?: () => boolean; onError?: (e: unknown) => void } = {},
+): Promise<boolean> {
+  const { timeoutMs = 300_000, isCancelled, onError } = opts;
+
+  const hasEnough = async () => {
+    try {
+      return (await getUsdcBalance(address)) >= minAmount;
+    } catch (e) {
+      onError?.(e);
+      return false;
+    }
+  };
+
+  // Fast path — maybe it's already here.
+  if (await hasEnough()) return true;
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let unwatch: (() => void) | undefined;
+    let fallbackTimer: ReturnType<typeof setInterval> | undefined;
+    let cancelTimer: ReturnType<typeof setInterval> | undefined;
+
+    // Re-check the instant the tab is foregrounded again. On mobile the user
+    // pays in MoonPay's separate tab, so ours is backgrounded and the browser
+    // throttles/suspends our socket + timers; this makes the return-to-tab
+    // update instant instead of waiting on a throttled event.
+    const onVisible = () => { if (document.visibilityState === 'visible') void check(); };
+
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      try { unwatch?.(); } catch { /* noop */ }
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      if (cancelTimer) clearInterval(cancelTimer);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+      clearTimeout(timer);
+      resolve(result);
+    };
+
+    const check = async () => {
+      if (settled) return;
+      if (await hasEnough()) finish(true);
+    };
+
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
+
+    // Safety net only — engages if WS is unavailable or drops. Not the primary
+    // mechanism; a generous interval purely so the flow can't stall on a dead
+    // socket.
+    const startFallback = () => {
+      if (settled || fallbackTimer) return;
+      fallbackTimer = setInterval(check, 5_000);
+    };
+
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    // Local cancel check (no network) — lets the caller abort if the user backs
+    // out of the funding flow.
+    if (isCancelled) {
+      cancelTimer = setInterval(() => { if (isCancelled()) finish(false); }, 500);
+    }
+
+    if (BASE_WSS_URL) {
+      try {
+        const wsClient = createPublicClient({ chain: BASE, transport: webSocket(BASE_WSS_URL) });
+        unwatch = wsClient.watchEvent({
+          address: BASE_SEPOLIA_USDC_ADDRESS,
+          event: USDC_TRANSFER_EVENT,
+          args: { to: address },
+          poll: false, // force eth_subscribe (push), never viem's HTTP-style polling
+          onLogs: () => { void check(); },
+          onError: (e) => { onError?.(e); startFallback(); },
+        });
+        // Cover the race between the initial read and the subscription opening.
+        void check();
+      } catch (e) {
+        onError?.(e);
+        startFallback();
+      }
+    } else {
+      startFallback();
+    }
   });
 }

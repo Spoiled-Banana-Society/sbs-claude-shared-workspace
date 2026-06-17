@@ -9,7 +9,7 @@ import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
-import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
+import { BASE_SEPOLIA, waitForUsdcArrival } from '@/lib/contracts/bbb4';
 import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
 import { fetchJson } from '@/lib/appApiClient';
 import { logger } from '@/lib/logger';
@@ -410,42 +410,33 @@ export function BuyPassesModal({
           fundCancelled = true;
         });
 
-      // Poll for USDC arrival — runs concurrently with the Privy modal.
+      // Wait for the USDC to land — EVENT-DRIVEN (no polling). waitForUsdcArrival
+      // subscribes to the on-chain USDC Transfer→wallet event over a WebSocket,
+      // so the instant MoonPay's purchase settles we're pushed the log and move
+      // on (~sub-second), instead of the old 3s poll. Runs concurrently with the
+      // Privy modal. `isCancelled` lets the user back out (manual cancel, or
+      // exiting Privy before paying) without waiting out the timeout.
       setFlowStep('waiting-for-usdc');
       setWaitingForUsdcStartedAt(Date.now());
 
       const totalCostUsdc = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
       const maxWaitMs = 300_000; // 5 minutes max (MoonPay card payments can take a few minutes)
-      const pollIntervalMs = 3_000; // check every 3s
 
-      const waitForUsdc = async () => {
-        const startTime = Date.now();
-        while (Date.now() - startTime < maxWaitMs) {
-          if (cancelledRef.current) return false;
-          try {
-            const balance = await getUsdcBalance(walletAddress as Address);
-            if (balance >= totalCostUsdc) return true;
-          } catch (err) {
-            // A transient RPC blip shouldn't abort the whole payment — log it
-            // (throttled per-source) and keep polling.
-            reportClientError({
-              source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
-              message: err instanceof Error ? err.message : String(err),
-              route: 'buy-passes',
-              actor: walletAddress,
-              context: { totalCostUsdc: String(totalCostUsdc) },
-            });
-          }
-          // User exited Privy before paying and nothing has landed on-chain —
-          // stop waiting instead of spinning out the full 5 minutes. The balance
-          // check just above means a last-second arrival still wins.
-          if (fundCancelled) return false;
-          await new Promise((r) => setTimeout(r, pollIntervalMs));
-        }
-        return false;
-      };
-
-      const funded = await waitForUsdc();
+      const funded = await waitForUsdcArrival(walletAddress as Address, totalCostUsdc, {
+        timeoutMs: maxWaitMs,
+        isCancelled: () => cancelledRef.current || fundCancelled,
+        onError: (err) => {
+          // A transient RPC/WS blip shouldn't abort the payment — log it
+          // (throttled per-source); the waiter self-heals (re-read / fallback).
+          reportClientError({
+            source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
+            message: err instanceof Error ? err.message : String(err),
+            route: 'buy-passes',
+            actor: walletAddress,
+            context: { totalCostUsdc: String(totalCostUsdc) },
+          });
+        },
+      });
       // User cancelled mid-wait — handleCancelCheckout already reset the flow.
       if (cancelledRef.current) return;
       if (!funded) {
