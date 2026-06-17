@@ -252,12 +252,22 @@ export function BuyPassesModal({
     clientLog('payment', 'track_purchase_start', { userId, quantity: qty, txHash: hash, paymentMethod });
 
     try {
+      // /api/purchases/create + /verify require the Privy JWT (Authorization
+      // header — getPrivyUser only reads the Bearer header). fetchJson doesn't
+      // attach it automatically, so we pass it here — without it these 401 with
+      // "Missing authorization token" (the secondary purchase record never
+      // writes). NOTE: referral/promo crediting is server-side in card-mint and
+      // does NOT depend on this; this is just the purchases-record/verify step.
+      const token = await getAccessToken().catch(() => null);
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
       const { purchase } = await fetchJson<{ purchase: { id: string } }>('/api/purchases/create', {
         method: 'POST',
+        headers: authHeaders,
         body: JSON.stringify({ userId, quantity: qty, paymentMethod: paymentMethod === 'usdc' ? 'usdc' : 'card' }),
       });
       const verifyRes = await fetchJson<{ user?: unknown }>('/api/purchases/verify', {
         method: 'POST',
+        headers: authHeaders,
         body: JSON.stringify({ purchaseId: purchase.id, txHash: hash }),
       });
       // Server confirmed — merge buy-bonus free drafts + wheel spins + promo
