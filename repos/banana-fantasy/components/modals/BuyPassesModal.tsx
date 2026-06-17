@@ -586,7 +586,7 @@ export function BuyPassesModal({
   // (spinning) row is derived as the first not-yet-complete row.
   type VisibleStep = { label: string; completeAtIdx: number; helper?: string };
   const cardSteps: VisibleStep[] = [
-    { label: 'Payment confirmed', completeAtIdx: 2, helper: 'Usually under a minute.' },
+    { label: 'Payment confirmed', completeAtIdx: 2 },
     { label: 'Processing your purchase', completeAtIdx: 3 },
     { label: 'Adding draft pass to your account', completeAtIdx: 4 },
   ];
