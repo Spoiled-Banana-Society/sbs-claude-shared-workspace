@@ -1512,13 +1512,26 @@ export default function NftDetailPage() {
                             </button>
                           )}
                           {isOwner && !isMyOffer && (
-                            <button
-                              onClick={() => handleAcceptOffer(offer)}
-                              disabled={acceptingOfferHash === offer.orderHash}
-                              className="px-4 py-1.5 bg-success text-white text-xs font-semibold rounded-lg hover:brightness-110 transition-all disabled:opacity-50"
-                            >
-                              {acceptingOfferHash === offer.orderHash ? 'Accepting...' : 'Accept'}
-                            </button>
+                            offer.protocolAddress ? (
+                              <button
+                                onClick={() => handleAcceptOffer(offer)}
+                                disabled={acceptingOfferHash === offer.orderHash}
+                                className="px-4 py-1.5 bg-success text-white text-xs font-semibold rounded-lg hover:brightness-110 transition-all disabled:opacity-50"
+                              >
+                                {acceptingOfferHash === offer.orderHash ? 'Accepting...' : 'Accept'}
+                              </button>
+                            ) : (
+                              // Offer is in our cache but OpenSea hasn't indexed it yet
+                              // (~5-15s). Accepting needs OpenSea's fulfillment data, so
+                              // show a disabled hint instead of letting it hard-fail.
+                              <button
+                                disabled
+                                title="This offer is still being confirmed — you can accept it in a few seconds."
+                                className="px-4 py-1.5 bg-white/10 text-text-muted text-xs font-semibold rounded-lg cursor-not-allowed"
+                              >
+                                Indexing…
+                              </button>
+                            )
                           )}
                         </div>
                       </div>
@@ -2074,11 +2087,11 @@ export default function NftDetailPage() {
                         <span className="text-text-primary font-mono">${offerAmountNum.toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-text-secondary">OpenSea Fee (1%)</span>
-                        <span className="text-text-primary font-mono">${offerFee.toFixed(2)}</span>
+                        <span className="text-text-secondary">Seller receives (after 1% OpenSea fee)</span>
+                        <span className="text-text-primary font-mono">${(offerAmountNum - offerFee).toFixed(2)}</span>
                       </div>
                       <div className="flex justify-between text-sm pt-2 border-t border-bg-tertiary font-semibold">
-                        <span className="text-text-primary">Total USDC Required</span>
+                        <span className="text-text-primary">You Pay</span>
                         <span className="text-text-primary font-mono">${offerAmountNum.toFixed(2)}</span>
                       </div>
                     </div>

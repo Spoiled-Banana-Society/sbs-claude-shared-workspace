@@ -139,6 +139,22 @@ export async function POST(req: Request) {
       return jsonError('You cannot buy your own listing', 400);
     }
 
+    // Same lock-at-fill guard the embedded-wallet fulfill route enforces: a
+    // wheel-won JP/HOF pass is only buyable while its special draft is still
+    // FILLING. Check BEFORE pulling any USDC so a locked pass can't be bought
+    // through the relay path (this path previously skipped the check entirely).
+    {
+      const { checkWheelPassLock } = await import('@/lib/marketplace/wheelPassLock');
+      const lock = await checkWheelPassLock(listing.tokenId);
+      if (lock?.locked) {
+        try {
+          const { recordCancelled } = await import('@/lib/marketplace/listingCache');
+          await recordCancelled(String(lock.tokenId), lock.wallet);
+        } catch { /* best-effort */ }
+        return jsonError('This draft already filled — the pass is locked and can no longer be bought.', 409);
+      }
+    }
+
     // Serialize on the shared admin wallet (same lock as card-mint) so
     // concurrent purchases can't race on the tx nonce or USDC allowance.
     const releaseAdminLock = await acquireAdminWalletLock('relay-buy');

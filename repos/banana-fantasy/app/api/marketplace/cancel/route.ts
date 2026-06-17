@@ -96,6 +96,17 @@ export async function POST(req: Request) {
       orders = orders.concat(await findOrdersByHashes('listings', missing));
     }
 
+    // Cache fallback: OpenSea hasn't indexed a just-made offer for ~5-15s, so a
+    // buyer who cancels immediately would otherwise hit a false "already
+    // cancelled". We stored the full signed parameters at create time — use them
+    // to build the cancel calldata without depending on OpenSea's index.
+    if (orderType === 'offer' && orders.length < orderHashes.length) {
+      const stillMissing = orderHashes.filter(h => !orders.some(o => o.order_hash === h));
+      const { getCachedOrdersByHashes } = await import('@/lib/marketplace/offerCache');
+      const cached = await getCachedOrdersByHashes(stillMissing);
+      orders = orders.concat(cached as unknown as OpenSeaOrderRecord[]);
+    }
+
     if (orders.length === 0) {
       return jsonError('Order not found — it may have already been cancelled', 404);
     }

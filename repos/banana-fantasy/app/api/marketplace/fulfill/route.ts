@@ -135,29 +135,18 @@ export async function POST(req: Request) {
     // based, no clocks involved, so there is no timing edge to get wrong.
     const tokenIdent = extractOfferIdentifier(inputData);
     if (tokenIdent) {
-      const { getQueueStatus } = await import('@/lib/db');
-      const queues = await getQueueStatus().catch(() => null);
-      if (queues) {
-        for (const type of ['jackpot', 'hof'] as const) {
-          for (const round of queues[type]?.rounds || []) {
-            const member = (round.members || []).find(
-              (m: { tokenId?: string }) => m.tokenId && canonId(String(m.tokenId)) === tokenIdent,
-            );
-            if (!member) continue;
-            const locked = round.status !== 'filling' || (round.members || []).length >= 10;
-            if (locked) {
-              // Hide the dead listing from our marketplace going forward.
-              try {
-                const { recordCancelled } = await import('@/lib/marketplace/listingCache');
-                await recordCancelled(String(member.tokenId), member.wallet);
-              } catch { /* best-effort */ }
-              return jsonError(
-                'This draft already filled — the pass is locked and can no longer be bought.',
-                409,
-              );
-            }
-          }
-        }
+      const { checkWheelPassLock } = await import('@/lib/marketplace/wheelPassLock');
+      const lock = await checkWheelPassLock(tokenIdent);
+      if (lock?.locked) {
+        // Hide the dead listing from our marketplace going forward.
+        try {
+          const { recordCancelled } = await import('@/lib/marketplace/listingCache');
+          await recordCancelled(String(lock.tokenId), lock.wallet);
+        } catch { /* best-effort */ }
+        return jsonError(
+          'This draft already filled — the pass is locked and can no longer be bought.',
+          409,
+        );
       }
     }
 

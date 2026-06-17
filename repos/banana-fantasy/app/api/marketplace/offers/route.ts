@@ -220,7 +220,9 @@ export async function POST(req: Request) {
       // can't one-click-accept until a real hash is known; the offer is real).
       if (tokenId && offerer) {
         const { recordOffer } = await import('@/lib/marketplace/offerCache');
-        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd, offerer, endTimeSec: meta.endTimeSec || p.endTime || null });
+        // Store the full signed Seaport parameters too — lets the offerer cancel
+        // during OpenSea's indexing lag (cancel route falls back to this).
+        await recordOffer({ tokenId: String(tokenId), orderHash, priceUsd, offerer, endTimeSec: meta.endTimeSec || p.endTime || null, parameters: (body.parameters as Record<string, unknown>) || null });
       } else {
         console.error('[marketplace/offers] cache skip — missing tokenId/offerer', { hasMeta: !!body._meta, tokenId, offerer });
       }

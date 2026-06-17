@@ -25,6 +25,11 @@ export interface CachedOffer {
   endTimeSec: string | null;
   status: 'active' | 'consumed';
   updatedAtMs: number;
+  // Full signed Seaport order parameters (OrderComponents) — stored so the
+  // offerer can CANCEL during OpenSea's indexing lag, when OpenSea can't yet
+  // resolve the order to build the cancel calldata. Optional (older docs / odd
+  // shapes won't have it).
+  parameters?: Record<string, unknown> | null;
 }
 
 export async function recordOffer(params: {
@@ -33,6 +38,7 @@ export async function recordOffer(params: {
   priceUsd: number;
   offerer: string;
   endTimeSec: string | null;
+  parameters?: Record<string, unknown> | null;
 }): Promise<void> {
   if (!isFirestoreConfigured() || !params.tokenId || !params.offerer) return;
   try {
@@ -46,11 +52,41 @@ export async function recordOffer(params: {
       offerer: params.offerer.toLowerCase(),
       endTimeSec: params.endTimeSec,
       status: 'active',
+      ...(params.parameters ? { parameters: params.parameters } : {}),
       updatedAtMs: Date.now(),
       updatedAt: FieldValue.serverTimestamp(),
     });
   } catch (e) {
     logger.warn('offerCache.recordOffer_failed', { tokenId: params.tokenId, err: (e as Error).message });
+  }
+}
+
+/**
+ * Look up cached offers by orderHash and return them in the same shape the
+ * cancel route expects from OpenSea ({ order_hash, protocol_data: { parameters } }).
+ * Lets the cancel route fall back to our cache when OpenSea hasn't indexed the
+ * order yet (the buyer just made it) — otherwise a fresh offer is un-cancellable
+ * for the ~5-15s indexing window. Only returns docs that stored full parameters.
+ */
+export async function getCachedOrdersByHashes(
+  orderHashes: string[],
+): Promise<Array<{ order_hash: string; protocol_data: { parameters: Record<string, unknown> } }>> {
+  if (!isFirestoreConfigured() || orderHashes.length === 0) return [];
+  try {
+    const col = getAdminFirestore().collection(COLLECTION);
+    const snaps = await Promise.all(orderHashes.map(h => col.doc(String(h)).get()));
+    const out: Array<{ order_hash: string; protocol_data: { parameters: Record<string, unknown> } }> = [];
+    for (const snap of snaps) {
+      if (!snap.exists) continue;
+      const d = snap.data() as CachedOffer;
+      if (d.orderHash && d.parameters) {
+        out.push({ order_hash: d.orderHash, protocol_data: { parameters: d.parameters } });
+      }
+    }
+    return out;
+  } catch (e) {
+    logger.warn('offerCache.getCachedOrdersByHashes_failed', { err: (e as Error).message });
+    return [];
   }
 }
 
