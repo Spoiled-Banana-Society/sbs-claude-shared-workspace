@@ -93,6 +93,14 @@ export function BuyPassesModal({
   // the picker UI + the Coinbase route in handlePurchase.
   const [paymentMethodInitialized, setPaymentMethodInitialized] = useState(false);
 
+  // Lightweight "not enough USDC" notice for the USDC-on-Base path. Kept OUT of
+  // the sticky error flowStep on purpose — it's a pre-flight validation, not a
+  // failed purchase: it shows only when you tap Buy without enough USDC, and
+  // clears the moment you close, change quantity, or switch payment method. Each
+  // Buy tap re-reads the live balance, so the instant you actually have enough
+  // it just goes through with no error.
+  const [usdcShortfall, setUsdcShortfall] = useState<string | null>(null);
+
   // Referral code / username — paste who referred you (codes are name-based,
   // so the referrer's username works). Sets referredBy via /api/referrals/track
   // before the purchase, so the buy credits the referrer.
@@ -141,6 +149,10 @@ export function BuyPassesModal({
       setPaymentMethodInitialized(true);
     }
   }, [user?.loginMethod, loggedInWithWallet, paymentMethodInitialized]);
+
+  // The USDC-shortfall notice is transient — clear it whenever the user closes,
+  // changes quantity, or switches payment method, so it never lingers.
+  useEffect(() => { setUsdcShortfall(null); }, [quantity, paymentMethod, isOpen]);
 
   // Reset state when modal opens — but ONLY if there's no in-flight purchase
   // to preserve. If the user closed mid-MoonPay or before clicking "Pick speed",
@@ -339,11 +351,15 @@ export function BuyPassesModal({
       loginMethod: user?.loginMethod ?? 'unknown',
     });
 
+    setUsdcShortfall(null);
+
     if (paymentMethod === 'usdc') {
       try {
-        // Pre-flight balance check — without it, a user with too little USDC
-        // signs, the server transferFrom reverts, and the modal hangs forever on
-        // "Processing your purchase." Fail fast with a clear message instead.
+        // Pre-flight balance check (LIVE on-chain read each tap) — without it, a
+        // user with too little USDC signs, the server transferFrom reverts, and
+        // the modal hangs on "Processing." Show a transient inline notice (NOT
+        // the sticky error screen) and stay on the form so they can fix it and
+        // retry. Re-reads fresh every tap, so it clears itself once funded.
         if (walletAddress) {
           const needed = usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6);
           try {
@@ -356,8 +372,7 @@ export function BuyPassesModal({
             });
             if (bal < needed) {
               const have = (Number(bal) / 1e6).toFixed(2);
-              setFlowError(`Not enough USDC on Base — you have $${have}, this costs $${totalPrice}. Add USDC or pay by card.`);
-              setFlowStep('error');
+              setUsdcShortfall(`Not enough USDC on Base — $${have} of $${totalPrice}. Add USDC or pay by card.`);
               return;
             }
           } catch {
@@ -956,6 +971,12 @@ export function BuyPassesModal({
                 </div>
               )}
             </div>
+            )}
+
+            {/* Transient "not enough USDC" notice — sits above the Buy button,
+                clears on close/change, re-checks live each tap. */}
+            {flowStep === 'idle' && usdcShortfall && (
+              <p className="text-center text-sm text-red-400 -mb-1">{usdcShortfall}</p>
             )}
 
             {/* CTA — only on idle (Buy) and success (Start Drafting). While a
