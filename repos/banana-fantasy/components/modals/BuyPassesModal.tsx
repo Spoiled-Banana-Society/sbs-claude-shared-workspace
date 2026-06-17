@@ -798,17 +798,17 @@ export function BuyPassesModal({
             {flowStep !== 'idle' && (
               <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-4 space-y-4">
                 {/* Real-time progress bar + live percent (updates as each
-                    on-chain milestone lands; eases between them). Subtle yellow
-                    gradient for a clean bit of depth — no glow, flat-premium. */}
+                    on-chain milestone lands; eases between them). Slim &
+                    minimal — thin flat banana on a quiet track, no glow. */}
                 {flowStep !== 'error' && (
                   <div className="flex items-center gap-3">
-                    <div className="relative h-2 flex-1 rounded-full bg-white/[0.07] overflow-hidden">
+                    <div className="relative h-1 flex-1 rounded-full bg-white/[0.06] overflow-hidden">
                       <div
-                        className="absolute inset-y-0 left-0 min-w-[0.5rem] rounded-full bg-gradient-to-r from-amber-300 to-banana transition-[width] duration-500 ease-out"
+                        className="absolute inset-y-0 left-0 min-w-[0.375rem] rounded-full bg-banana transition-[width] duration-500 ease-out"
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
-                    <span className="w-9 shrink-0 text-right text-xs font-semibold text-banana tabular-nums">
+                    <span className="w-9 shrink-0 text-right text-xs font-medium text-banana/90 tabular-nums">
                       {Math.round(progressPct)}%
                     </span>
                   </div>
