@@ -108,7 +108,7 @@ export function BuyPassesModal({
       // players — be upfront when an existing account won't credit the friend.
       setReferralMsg(
         data?.eligible === false
-          ? 'Code found ✓ — but referral rewards are for new players, so your friend won’t be credited.'
+          ? 'Code found ✓ — but YOUR account isn’t new, and referral credit only counts for new players. So your friend won’t be credited.'
           : 'Referral applied ✓ — your friend gets credit once you verify your X.',
       );
     } catch {
