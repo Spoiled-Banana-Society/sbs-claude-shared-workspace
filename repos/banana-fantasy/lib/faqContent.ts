@@ -25,7 +25,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What are Team Positions?',
-        answer: 'Instead of drafting individual players like Patrick Mahomes, you draft Team Positions like "KC QB". Each week, you automatically get the points from the highest-scoring player at that position for that team. Draft KC QB and you get whoever scores most - Mahomes, the backup, whoever plays.',
+        answer: 'Instead of drafting players like Patrick Mahomes, you draft Team Positions — e.g. "KC QB" or "DAL WR1". Each week you automatically score the top performer at that slot for that team. Example: you draft DAL WR1 — if CeeDee Lamb drops 28 that week, you get 28; if a different Cowboy is their top receiver that week, you get HIS points instead. You always get the team\'s best at that slot.\n\nSlots come in tiers: WR1 is a team\'s top WR each week and WR2 is their 2nd-best — same with RB1 and RB2. So you can roster DAL WR1 and PHI WR2 and stack the best receivers and backs from across the league.',
       },
       {
         question: 'Why draft Team Positions instead of players?',
@@ -43,7 +43,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Is this like a traditional 12-man redraft league?',
-        answer: 'No - this is a tournament contest, not a season-long league with friends. You draft a team against 9 other players, and top finishers advance through playoffs to compete for a massive shared prize pool. You can draft as many teams as you want.',
+        answer: 'No — it\'s a tournament, not a season-long league with your buddies. You draft a 10-person team-position roster against 9 strangers, and your team then plays all season on cumulative points. Weeks 1-14 are the regular season in that 10-team pod; the top finishers advance into playoff pods (Weeks 15-16) and then the Week 17 finals, all competing for one big shared, guaranteed prize pool. Enter as many drafts (= as many teams) as you want — more teams, more shots at the prizes.',
       },
       {
         question: 'How does a draft work?',
@@ -55,7 +55,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What\'s the difference between Fast and Slow drafts?',
-        answer: 'Fast drafts have a 30-second pick clock - the whole draft takes about 15-20 minutes. Slow drafts give you 8 hours per pick, perfect if you want to draft over a few days.',
+        answer: 'Fast drafts have a 30-second pick clock — the whole draft runs about 30-40 minutes. Slow drafts give you 8 hours per pick (the clock pauses overnight, 10pm-5am PT), so you can draft over a few days at your own pace.',
       },
     ],
   },
@@ -65,11 +65,11 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How are offensive points calculated?',
-        answer: 'Passing TDs: 4 pts. Rushing/Receiving TDs: 6 pts. Passing yards: 0.04 pts/yard (1 pt per 25 yards). Rushing/Receiving yards: 0.1 pts/yard (1 pt per 10 yards). Receptions: 0.5 pts (half-PPR). Interceptions and fumbles lost: -1 pt each.',
+        answer: 'Full PPR. The highest scorer at each team-position counts every week.\n\nPASSING\nPassing TD  +4\nPassing yards  +1 per 25\n300+ passing yards  +3 bonus\nInterception thrown  −1\n\nRUSHING\nRushing TD  +6\nRushing yards  +1 per 10\n100+ rushing yards  +3 bonus\n\nRECEIVING\nReceiving TD  +6\nReceiving yards  +1 per 10\n100+ receiving yards  +3 bonus\nReception  +1\n\nMISC\nFumble lost  −1\nFumble-return TD  +6\n2-point conversion  +2',
       },
       {
         question: 'How does defense/special teams scoring work?',
-        answer: 'Points allowed: 0 pts = +10, 1-6 pts = +7, 7-13 pts = +4, 14-20 pts = +1, 21-27 pts = 0, 28-34 pts = -1, 35+ pts = -4. Turnovers (INT, fumble recovery): +2 each. Sacks: +1 each. Defensive/ST touchdowns: +6.',
+        answer: 'DEFENSE / SPECIAL TEAMS\nSack  +1\nInterception  +2\nFumble recovery  +1\nForced fumble  +1\nSafety  +2\nDefensive / ST TD  +6\nBlocked kick  +2\n\nPOINTS ALLOWED\n0  +10\n1-6  +7\n7-13  +4\n14-20  +1\n21-27  0\n28-34  −1\n35+  −4',
       },
     ],
   },
@@ -79,7 +79,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What is a Jackpot Draft?',
-        answer: 'Jackpot Drafts are the rarest and most valuable draft type (1% of all drafts). If you win your league in a Jackpot draft, you skip straight to the finals, bypassing two weeks of playoffs. It\'s a massive shortcut to the grand prize.',
+        answer: 'Jackpot Drafts are the rarest draft type — just 1% of all drafts. Win your league in a Jackpot draft and you skip straight to the Week 17 finals, bypassing both playoff rounds (Weeks 15 and 16). Landing one is huge: it\'s a guaranteed deep playoff run from day one, while everyone else still has to fight through the bracket to get there.',
       },
       {
         question: 'How do I get into a Jackpot Draft?',
@@ -87,15 +87,15 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How does the guaranteed distribution work?',
-        answer: 'This is NOT random odds - it\'s a guaranteed distribution system. Every 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro drafts. The order is randomized, but the distribution is guaranteed. You\'re not gambling on luck - fair distribution is ensured for all players.',
+        answer: 'This is NOT random odds — it\'s a guaranteed distribution. Every 100 drafts contains exactly 1 Jackpot, 5 Hall of Fame, and 94 Pro drafts. The order is randomized, but the mix is guaranteed — you\'re not gambling on luck. You can see what\'s still left in the current batch of 100 anytime, in the counter at the top-right of the header.',
       },
       {
         question: 'I hit Jackpot on the Banana Wheel — what happens now?',
-        answer: 'You\'re automatically seated in a special Jackpot draft, free. It waits in your lobby until 10 wheel winners have joined, then starts on its own. It\'s a slow draft — 8 hours per pick, and the clock pauses overnight (10pm–5am PT). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
+        answer: 'You\'re automatically seated in a special Jackpot draft, free. It sits ready and starts on its own the moment 10 wheel winners have joined. It\'s a slow draft — 8 hours per pick, and the clock pauses overnight (10pm–5am PT). With Draft Alerts on, we\'ll notify you when it starts and every time you\'re on the clock.',
       },
       {
         question: 'Can I leave a wheel-won Jackpot or HOF draft?',
-        answer: 'No — your seat is locked from the moment you win it. What you CAN do is sell the pass on the SBS Marketplace while the draft is still filling. The buyer takes over your seat, name and all. Once the draft fills to 10, it can\'t be sold — it\'s your team.',
+        answer: 'No — your seat is locked from the moment you win it. But you CAN sell the pass on the SBS Marketplace while the draft is still filling — the buyer takes over your seat, name and all. Once the draft fills it becomes your team, and you can still sell that team on the Marketplace afterward, like any other team.',
       },
       {
         question: 'Why is this the only sellable draft pass?',
@@ -107,29 +107,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What exactly happens if I win a Jackpot league?',
-        answer: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely. You get a direct shot at the grand prize.',
-      },
-    ],
-  },
-  {
-    id: 'founder-draft',
-    title: 'Founder Drafts',
-    items: [
-      {
-        question: 'What is a Founder Draft?',
-        answer: 'Every Wednesday at 6 PM PT, the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft. If you\'re in it, you drafted with the founders — and they stream the whole draft live on X.',
-      },
-      {
-        question: 'What do I win?',
-        answer: 'Everyone in the Founder Draft who entered with a PAID pass gets a Free Banana Spin (added straight to your wheel, with a notification) and unlocks the exclusive Founders badge. Free entries are welcome in the draft too — they just don\'t earn the rewards.',
-      },
-      {
-        question: 'How do I get in?',
-        answer: 'There\'s no scheduled room — at exactly 6 PM PT, join a draft. Drafts fill fast in the rush, and only the one the founders actually land in counts. Once it fills, you\'ll see the founders\' wallet in your draft and the FOUNDER tag in the room.',
-      },
-      {
-        question: 'Is there an extra perk?',
-        answer: 'Yes — outscore the founder in your Founder league and you\'re entered into a draw with everyone else who beat them across all Founder leagues. One winner is picked to skip straight to the finals.',
+        answer: 'Win your 10-person Jackpot league during the regular season (Weeks 1-14) and you advance directly to the Week 17 finals, skipping the Week 15 and Week 16 playoff rounds entirely. A guaranteed shot at the biggest prizes.',
       },
     ],
   },
@@ -146,6 +124,10 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Jackpot winners skip to finals (advancement perk). HOF leagues compete for additional bonus prizes on top of regular rewards (prize perk). You can win both regular tournament prizes AND HOF bonuses in the same season.',
       },
       {
+        question: 'How do HOF playoffs work?',
+        answer: 'HOF has its own playoff track. Weeks 1-14 are the cumulative regular season in your HOF pod, and only the 1st-place team advances out of that pod (it\'s tougher than a regular league). Weeks 15-17 are the HOF playoffs, also cumulative. HOF prizes are paid on top of the regular tournament prizes, and they\'re guaranteed (GTD).',
+      },
+      {
         question: 'What are the odds of getting a HOF draft?',
         answer: 'HOF drafts make up 5% of all drafts. With the guaranteed distribution system, every 100 drafts contains exactly 5 HOF drafts. The order is randomized, but you\'re guaranteed fair distribution.',
       },
@@ -156,16 +138,38 @@ export const mockFAQSections: FAQSection[] = [
     ],
   },
   {
+    id: 'founder-draft',
+    title: 'Founder Drafts',
+    items: [
+      {
+        question: 'What is a Founder Draft?',
+        answer: 'Every Wednesday at 6 PM PT the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft, streamed live on X.\n\nWhy you want in: everyone who enters with a PAID pass earns a Free Banana Spin AND unlocks the exclusive Founders badge. And if you outscore the founder in your league, you\'re entered into a draw against everyone who beat them across all Founder leagues — and one winner gets to skip straight to the finals.',
+      },
+      {
+        question: 'What do I win?',
+        answer: 'Everyone in the Founder Draft who entered with a PAID pass gets a Free Banana Spin and unlocks the exclusive Founders badge. Free entries are welcome in the draft too — they just don\'t earn the rewards.',
+      },
+      {
+        question: 'How do I get in?',
+        answer: 'There\'s no scheduled room — at exactly 6 PM PT, join a draft. Drafts fill fast in the rush, and only the one the founders actually land in counts. Once it fills, you\'ll see the founders\' wallet in your draft and the FOUNDER tag in the room.',
+      },
+      {
+        question: 'Is there an extra perk?',
+        answer: 'Yes — outscore the founder in your Founder league and you\'re entered into a draw with everyone else who beat them across all Founder leagues. One winner is picked to skip straight to the finals.',
+      },
+    ],
+  },
+  {
     id: 'tournament',
     title: 'Tournament & Prizes',
     items: [
       {
         question: 'How does the tournament structure work?',
-        answer: 'Weeks 1-14: Regular season in your 10-person league. Top 2 teams advance plus wild cards based on total points. Week 15: Playoff leagues formed. Week 16: Semifinal round. Week 17: Finals among all advancing teams.',
+        answer: 'Weeks 1-14 — Regular season in your 10-team pod. Scoring is CUMULATIVE: your team stacks points every week, and the top 2 in your pod advance to the playoffs.\nWeek 15 — a fresh pod of 10, top 2 advance.\nWeek 16 — another fresh pod of 10, top 2 advance.\nWeek 17 — Finals pod plays for the grand prize.\n\nJackpot winners skip straight to the finals. HOF leagues run their own parallel playoff track (Weeks 15-17, 1st place advances from the 1-14 pod). All prizes are guaranteed (GTD).',
       },
       {
         question: 'What can I win?',
-        answer: 'The prize pool includes season-long grand prizes (1st place wins the largest share), weekly prizes for top-5 scorers each week, and separate HOF bonus pools. Prizes are paid out in cash to your account.',
+        answer: 'The guaranteed prize pool — shown as an example on the contest screen, and it only grows as more teams enter — pays out across the finals (1st place takes the biggest share), per-league winners, weekly top-scorer prizes, and a separate HOF bonus pool. Everything is paid in cash (USDC) to your account.',
       },
       {
         question: 'Are there weekly prizes?',
@@ -183,7 +187,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What prizes can I win on the Banana Wheel?',
-        answer: 'Every spin wins! Prizes include: 1, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, and guaranteed HOF draft entries. The wheel is weighted but every outcome is a winner.',
+        answer: 'Every spin wins! Prizes include: 1, 2, 5, 10, or up to 20 free draft passes, guaranteed Jackpot draft entries, and guaranteed HOF draft entries. The wheel is weighted but every outcome is a winner.',
       },
       {
         question: 'What is a "special draft"?',
@@ -233,7 +237,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How do I switch my wallet to Base?',
-        answer: 'Depends on the wallet. Log in with email or social? Nothing to do - your SBS wallet is already on Base. Coinbase Wallet has Base built in. MetaMask takes about 30 seconds to switch - our guide has separate steps for desktop and mobile, since the apps differ.',
+        answer: 'Depends on the wallet. Log in with email or social? Nothing to do - your SBS wallet is already on Base. Coinbase Wallet has Base built in. MetaMask takes about 30 seconds to switch - the Base setup guide below has separate steps for desktop and mobile, since the apps differ.',
         link: {
           label: 'Wallet setup steps',
           href: '/get-usdc',
@@ -292,7 +296,7 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Check out our leaderboards to see which teams are performing well and have winnings. From there, you can click through to our marketplace to view the team, see who owns it, and make an offer. When you purchase a team, the team and any future prize winnings transfer to your account.',
         link: {
           label: 'View Leaderboards',
-          href: '/my-teams',
+          href: '/teams',
         },
       },
       {
@@ -332,8 +336,8 @@ export const mockFAQSections: FAQSection[] = [
     title: 'About SBS',
     items: [
       {
-        question: 'Who is behind Banana Fantasy?',
-        answer: 'Banana Fantasy is created by Spoiled Banana Society (SBS), founded in 2021. We\'re passionate about combining fantasy sports with cutting-edge technology to create a more fair, liquid, and exciting experience.',
+        question: 'Who is behind Banana Best Ball?',
+        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021. We\'re passionate about combining fantasy sports with cutting-edge technology to create a more fair, liquid, and exciting experience.',
       },
       {
         question: 'What makes SBS different?',
