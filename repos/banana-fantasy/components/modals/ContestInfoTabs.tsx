@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { mockFAQSections } from '@/lib/faqContent';
 import { ContestDetailsBody } from './ContestDetailsBody';
 import type { Contest } from '@/types';
@@ -85,7 +86,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
             <div key={section.id}>
               <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">{section.title}</p>
               <div className="space-y-1.5">
-                {section.items.map((item, i) => <FaqItem key={i} q={item.question} a={item.answer} />)}
+                {section.items.map((item, i) => <FaqItem key={i} q={item.question} a={item.answer} link={item.link} />)}
               </div>
             </div>
           ))}
@@ -95,7 +96,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
   );
 }
 
-function FaqItem({ q, a }: { q: string; a: string }) {
+function FaqItem({ q, a, link }: { q: string; a: string; link?: { label: string; href: string } }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
@@ -103,7 +104,17 @@ function FaqItem({ q, a }: { q: string; a: string }) {
         <span className="text-white text-[13px] font-medium">{q}</span>
         <svg viewBox="0 0 24 24" className={`w-4 h-4 shrink-0 text-white/40 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
       </button>
-      {open && <p className="px-4 pb-3.5 -mt-0.5 text-white/55 text-[12.5px] leading-relaxed whitespace-pre-line">{a}</p>}
+      {open && (
+        <div className="px-4 pb-3.5 -mt-0.5">
+          <p className="text-white/55 text-[12.5px] leading-relaxed whitespace-pre-line">{a}</p>
+          {link && (
+            <Link href={link.href} className="inline-flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg bg-banana text-black text-[12px] font-semibold hover:brightness-110 transition-all">
+              {link.label}
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </Link>
+          )}
+        </div>
+      )}
     </div>
   );
 }

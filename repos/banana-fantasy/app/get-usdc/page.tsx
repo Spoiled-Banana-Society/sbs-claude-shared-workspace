@@ -4,8 +4,6 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 
-const USDC_BASE_CONTRACT = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
-
 // Manual "Add network" details for Base, in case it isn't in MetaMask's preset list.
 const BASE_NETWORK: { label: string; value: string; copy?: boolean }[] = [
   { label: 'Network name', value: 'Base' },
@@ -370,13 +368,6 @@ export default function GetUsdcPage() {
             <li>• Always send USDC on the <span className="font-semibold">Base</span> network. Sending on the wrong network can lose your funds.</li>
             <li>• If you&apos;re unsure, send a small test amount first, confirm it arrives, then send the rest.</li>
             <li>• You never need ETH to play — every transaction on SBS (minting, marketplace) is gas-free. Only outside swaps and bridges carry their own small fees.</li>
-            <li>
-              • To add USDC manually in your wallet, the contract on Base is:
-              <span className="mt-2 flex flex-col sm:flex-row sm:items-center gap-2 bg-black/20 rounded-lg p-2">
-                <code className="text-yellow-100 text-xs break-all font-mono flex-1">{USDC_BASE_CONTRACT}</code>
-                <CopyButton value={USDC_BASE_CONTRACT} label="USDC contract address" />
-              </span>
-            </li>
           </ul>
         </div>
 
