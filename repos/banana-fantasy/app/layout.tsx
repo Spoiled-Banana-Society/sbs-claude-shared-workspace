@@ -27,7 +27,7 @@ const DEPLOY_ORIGIN = process.env.VERCEL_PROJECT_PRODUCTION_URL
 // logo washed out on light card backgrounds. Static .png so it's served
 // directly (the prelaunch middleware walls off extension-less routes, which
 // would otherwise break the countdown's share card). Bump ?v= to bust caches.
-const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=2`;
+const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=3`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
