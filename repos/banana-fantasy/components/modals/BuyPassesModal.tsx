@@ -24,14 +24,31 @@ import {
   setPurchaseFlow,
   resetPurchaseFlow,
   isPurchaseFlowActive,
-  writeResumeRecord,
-  clearResumeRecord,
 } from '@/lib/purchaseFlow';
 
 interface BuyPassesModalProps {
   isOpen: boolean;
   onClose: () => void;
   onPurchaseComplete?: (quantity: number) => void;
+}
+
+// Map raw on-chain / SDK errors to short, human copy. Users should never see a
+// viem revert dump (e.g. "transferFrom reverted ... ERC20: transfer amount
+// exceeds balance ... viem@2.52.2").
+function friendlyPurchaseError(raw?: string | null): string {
+  const fallback = 'Something went wrong with the purchase. Please try again.';
+  if (!raw) return fallback;
+  const m = raw.toLowerCase();
+  if (m.includes('exceeds balance') || m.includes('insufficient')) return "The USDC payment didn't come through — please try again.";
+  if (m.includes('allowance')) return "Approval didn't go through — please try again.";
+  if (m.includes('wallet not ready')) return 'Wallet not ready — give it a second, then try again.';
+  if (m.includes('not yet received') || m.includes('not yet')) return 'Still waiting on your payment to settle — try again in a moment.';
+  if (m.includes('rejected') || m.includes('denied')) return 'Signature cancelled — tap Buy to try again.';
+  if (m.includes('not active') || m.includes('maintenance') || m.includes('paused')) return 'Purchases are paused for a moment — please try again shortly.';
+  if (m.includes('base network') || (m.includes('switch') && m.includes('base'))) return 'Switch your wallet to the Base network and try again.';
+  // Hide anything that looks like a raw contract/SDK dump; keep already-short copy.
+  if (m.includes('revert') || m.includes('viem') || m.includes('0x') || raw.length > 90) return fallback;
+  return raw;
 }
 
 export function BuyPassesModal({
@@ -277,7 +294,6 @@ export function BuyPassesModal({
   const cancelledRef = useRef(false);
   const handleCancelCheckout = () => {
     cancelledRef.current = true;
-    clearResumeRecord(); // user explicitly backed out — don't resume later
     setWaitingForUsdcStartedAt(null);
     txTrackedRef.current = false;
     setFlowError(null);
@@ -352,17 +368,6 @@ export function BuyPassesModal({
     cancelledRef.current = false;
     setFlowStep('funding');
     setFlowError(null);
-    // Drop a durable resume marker now (before the MoonPay detour). If the tab
-    // is killed mid-purchase — common on mobile while the user is in the MoonPay
-    // window — a fresh load can finish the mint. Card path only; cleared on
-    // success/cancel below. Safe if abandoned: resume no-ops without USDC.
-    writeResumeRecord({ quantity, walletAddress });
-
-    // Tracks whether the USDC actually landed. If it did and the mint then
-    // fails (e.g. a transient wallet hiccup), the money is NOT lost — we keep
-    // the resume marker and reassure instead of showing a scary error, and the
-    // PurchaseResumeRunner finishes it on the next load.
-    let fundsArrived = false;
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
@@ -405,19 +410,12 @@ export function BuyPassesModal({
       // /api/coinbase/buy-session, /api/coinbase/buy-status) but disabled
       // here until the CDP project is approved out of trial mode — the
       // default $5/transaction cap blocks $25 draft passes.
-      //
-      // We deliberately do NOT block our progress on fundWallet resolving.
-      // Privy's funding modal never auto-closes on completion — it parks on a
-      // "You've funded your account! / Continue" screen that requires a manual
-      // click (confirmed in the SDK: the CTA is wired to closePrivyModal with
-      // no auto-effect). Awaiting it used to stall our flow until the user
-      // dismissed Privy, which is what made the card path feel like three
-      // sequential waits. Instead we kick funding off and immediately poll the
-      // chain for the USDC: the moment the payment settles on-chain we advance
-      // and mint — even while Privy's modal is still open on top. By the time
-      // the user closes Privy, our pass is already minting / done.
-      let fundCancelled = false;
-      void fundWallet({
+      // Open Privy's MoonPay funding flow and WAIT for it to finish. We tried
+      // firing the mint the instant a balance read passed (parallel), but on
+      // mobile that fires before the funds are reliably settled across RPC
+      // nodes, so the server's transferFrom reverts ("exceeds balance"). Waiting
+      // for fundWallet to resolve is the known-good sequencing.
+      const result = await fundWallet({
         address: walletAddress,
         options: {
           chain: BASE_SEPOLIA,
@@ -428,25 +426,15 @@ export function BuyPassesModal({
             preferredProvider: 'moonpay',
           },
         },
-      })
-        .then((result) => {
-          // 'cancelled' = user backed out of Privy before paying, so no USDC is
-          // coming — let the poll stop waiting early instead of timing out.
-          if (result?.status === 'cancelled') fundCancelled = true;
-        })
-        .catch((err) => {
-          // Don't hard-fail on a Privy reject — the on-chain balance is the real
-          // source of truth. Treat it like a cancel so we don't spin for 5 min.
-          logger.debug('[BuyModal] fundWallet rejected:', err);
-          fundCancelled = true;
-        });
+      });
 
-      // Wait for the USDC to land — EVENT-DRIVEN (no polling). waitForUsdcArrival
-      // subscribes to the on-chain USDC Transfer→wallet event over a WebSocket,
-      // so the instant MoonPay's purchase settles we're pushed the log and move
-      // on (~sub-second), instead of the old 3s poll. Runs concurrently with the
-      // Privy modal. `isCancelled` lets the user back out (manual cancel, or
-      // exiting Privy before paying) without waiting out the timeout.
+      if (result.status === 'cancelled') {
+        setFlowStep('idle');
+        return;
+      }
+
+      // Confirm the USDC actually landed before minting — event-driven via the
+      // on-chain Transfer subscription (instant once it settles), no polling.
       setFlowStep('waiting-for-usdc');
       setWaitingForUsdcStartedAt(Date.now());
 
@@ -455,10 +443,8 @@ export function BuyPassesModal({
 
       const funded = await waitForUsdcArrival(walletAddress as Address, totalCostUsdc, {
         timeoutMs: maxWaitMs,
-        isCancelled: () => cancelledRef.current || fundCancelled,
+        isCancelled: () => cancelledRef.current,
         onError: (err) => {
-          // A transient RPC/WS blip shouldn't abort the payment — log it
-          // (throttled per-source); the waiter self-heals (re-read / fallback).
           reportClientError({
             source: LOG_SOURCES.payment.USDC_BALANCE_POLL_FAILED,
             message: err instanceof Error ? err.message : String(err),
@@ -468,25 +454,16 @@ export function BuyPassesModal({
           });
         },
       });
-      // User cancelled mid-wait — handleCancelCheckout already reset the flow.
       if (cancelledRef.current) return;
       if (!funded) {
-        // Clean user-cancel (closed Privy before paying) → quietly reset.
-        // A genuine timeout (paid but USDC slow) → surface the retry message.
-        if (fundCancelled) {
-          setFlowStep('idle');
-          return;
-        }
         throw new Error('USDC not yet received. Please try minting again in a few minutes.');
       }
 
       setWaitingForUsdcStartedAt(null);
-      fundsArrived = true; // USDC is in the wallet — payment succeeded
       // mint() drives flowStep from here on via mintStep → useEffect above:
       // signing → processing → success / error. cardProvider passed for
       // admin onramp_attempts logging — currently always 'moonpay'.
       await mint(quantity, { paymentMethod: 'card', cardProvider: 'moonpay' });
-      clearResumeRecord(); // minted here — no resume needed
       setFlowStep('success');
       setMintedCount(quantity);
       // Stop here. Don't auto-advance to pick-speed — the user needs to see
@@ -494,15 +471,6 @@ export function BuyPassesModal({
       // wondering whether their card was charged. They click the explicit
       // "Pick draft speed" button below to continue.
     } catch (err) {
-      if (fundsArrived) {
-        // Money is in the wallet but the mint hit a snag (e.g. a transient
-        // wallet hiccup). NOT lost — keep the resume marker so the
-        // PurchaseResumeRunner finishes it on the next load, and reassure
-        // instead of alarming. mintPaymentPending styling shows the calm copy.
-        setFlowError('Payment received — finishing your draft pass. This completes automatically, hang tight.');
-        setFlowStep('error');
-        return;
-      }
       const message = err instanceof Error ? err.message : 'Payment failed. Please try again.';
       setFlowError(message);
       setFlowStep('error');
@@ -896,15 +864,15 @@ export function BuyPassesModal({
                   </div>
                 )}
 
-                {flowStep === 'error' && mintPaymentPending && mintError ? (
+                {flowStep === 'error' && mintPaymentPending ? (
                   // Payment succeeded, delivery pending — reassure, don't alarm.
                   <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3">
                     <p className="text-banana font-semibold text-sm text-center">Payment received — pass on its way</p>
-                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">{mintError}</p>
+                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">It will land in your account shortly.</p>
                   </div>
                 ) : flowStep === 'error' && (flowError || mintError) ? (
                   <div className="text-sm text-red-400 text-center">
-                    {flowError || mintError}
+                    {friendlyPurchaseError(flowError || mintError)}
                   </div>
                 ) : null}
               </div>
