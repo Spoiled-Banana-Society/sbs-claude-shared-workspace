@@ -341,23 +341,34 @@ export async function POST(req: Request) {
       }
 
       if (!isFillingWheelPass && tokenId && offerer) {
+        // (a) Authoritative: the Go API says whether this token is still an
+        //     UNDRAFTED free pass. An undrafted free pass can't be listed; a
+        //     drafted team (free or paid) IS sellable, even pre-season.
+        let classifiedAsDraftedTeam = false;
         try {
           const cls = await classifyToken(String(tokenId), offerer);
           if (cls.isPass && /free/i.test(cls.passType || '')) {
             logger.info('marketplace.free_pass_list_blocked', { tokenId: String(tokenId), offerer, reason: 'undrafted_free_pass' });
             return jsonError('A free draft pass can only be sold after you draft it into a team.', 403);
           }
+          // Once drafted, classifyToken reports it's no longer a pass → it's a
+          // real team and sellable. Remember that so the backstop doesn't block it.
+          classifiedAsDraftedTeam = !cls.isPass;
         } catch { /* classifier unavailable — fall through to the backstop */ }
-      }
-      if (!isFillingWheelPass && isDraftingOpen() && tokenId && offerer) {
-        try {
-          const freeIds = new Set((await listFreeOriginTokenIds(offerer)).map(String));
-          if (freeIds.has(String(tokenId))) {
-            logger.info('marketplace.free_pass_list_blocked', { tokenId: String(tokenId), offerer, reason: 'free_origin_season_open' });
-            return jsonError('Free draft passes can only be listed once the season starts.', 403);
+
+        // (b) Backstop ONLY when the classifier couldn't confirm a drafted team
+        //     (e.g. Go API down): block a still-undrafted free-mint from listing
+        //     pre-season. A confirmed drafted free team is intentionally allowed.
+        if (!classifiedAsDraftedTeam && isDraftingOpen()) {
+          try {
+            const freeIds = new Set((await listFreeOriginTokenIds(offerer)).map(String));
+            if (freeIds.has(String(tokenId))) {
+              logger.info('marketplace.free_pass_list_blocked', { tokenId: String(tokenId), offerer, reason: 'free_origin_unconfirmed' });
+              return jsonError('A free draft pass can only be sold after you draft it into a team.', 403);
+            }
+          } catch (guardErr) {
+            console.error('[marketplace/listings] free-pass guard check failed (allowing listing):', guardErr);
           }
-        } catch (guardErr) {
-          console.error('[marketplace/listings] free-pass guard check failed (allowing listing):', guardErr);
         }
       }
     }

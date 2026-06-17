@@ -264,8 +264,10 @@ All at `~/borisvagner/`:
 ### Chain + payments
 - Entry fee is $25 USDC on Base. Never hard-code 0x1234… mock wallets into user resolution — admin grant must mint to the admin-typed recipient.
 
-### Marketplace listing rule
-- `team.passType === 'free'` + `isDraftingOpen()` → block listing with "Available After Season" (`components/marketplace/SellTab.tsx`, `app/marketplace/page.tsx`). Needs server-side enforcement before real volume — currently client-only.
+### Marketplace listing rule (updated 2026-06-17)
+- Block listing only for an **UNDRAFTED free pass** — i.e. `passType === 'free'` that has NOT yet been drafted into a team. A **drafted** team is sellable even pre-season, free or paid (Richard's call 2026-06-17 — drafting a free pass "unlocks" it for sale).
+- Enforced server-side in `app/api/marketplace/listings/route.ts`: `classifyToken` is authoritative (undrafted free pass → 403); the `listFreeOriginTokenIds` season-open backstop only fires when the classifier can't confirm a drafted team (Go API down). Client mirrors this in `SellTab.tsx` (`canSellTeam`) + `marketplace/page.tsx` (`handleList`).
+- Do NOT reinstate a blanket "all free-origin tokens blocked during `isDraftingOpen()`" rule — that wrongly blocked drafted free teams (sign → server-reject).
 
 ---
 
