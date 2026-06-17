@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { Logo } from './Logo';
@@ -52,6 +52,23 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
   const pathname = usePathname();
   const router = useRouter();
   const isAdminWallet = isWalletAdmin(walletAddress);
+
+  // Anti-stuck safety net for the header controls. The right side shows a
+  // loading skeleton while auth/balance resolve. On mobile Safari, Privy's
+  // embedded-wallet creation can hang (iOS partitions the cross-site iframe
+  // storage), so `isLoading`/`isBalanceLoaded` may NEVER settle — leaving the
+  // header frozen on the skeleton with no way to log in or out. After a
+  // timeout we stop waiting and fall through to the real controls (which show
+  // the "Log In" button when no user resolved), so the header is never bricked.
+  // Normal fast loads never hit this (the timer clears the moment loading ends).
+  const stillResolving = isLoading || (isLoggedIn && !isBalanceLoaded);
+  const [resolveTimedOut, setResolveTimedOut] = useState(false);
+  useEffect(() => {
+    if (!stillResolving) { setResolveTimedOut(false); return; }
+    const t = setTimeout(() => setResolveTimedOut(true), 8000);
+    return () => clearTimeout(t);
+  }, [stillResolving]);
+  const showAuthSkeleton = stillResolving && !resolveTimedOut;
 
   // Yellow badge next to the Admin link. Only polls when this wallet
   // is on the admin allowlist; non-admin sessions never hit the API.
@@ -137,7 +154,7 @@ export function Header({ onEditProfile, onShowTutorial: _onShowTutorial }: Heade
 
           {/* Right side */}
           <div className="flex items-center gap-0.5 sm:gap-1">
-            {isLoading || (isLoggedIn && !isBalanceLoaded) ? (
+            {showAuthSkeleton ? (
               // Skeleton
               <>
                 <div className="flex items-center px-1 py-1.5 animate-pulse">

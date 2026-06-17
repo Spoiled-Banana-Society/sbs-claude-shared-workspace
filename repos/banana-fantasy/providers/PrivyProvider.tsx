@@ -83,8 +83,12 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
               walletList: ['base_account', 'metamask', 'coinbase_wallet'],
             },
             loginMethodsAndOrder: {
-              primary: ['email', 'google', 'twitter', 'metamask', 'coinbase_wallet'],
-              overflow: [],
+              // Privy caps `primary` at 4 (it warns + can render oddly on mobile
+              // if you exceed it). Keep the 4 highest-priority methods primary
+              // and move the rest to overflow ("more options") so every login
+              // method stays available without the >4 warning.
+              primary: ['email', 'google', 'twitter', 'metamask'],
+              overflow: ['coinbase_wallet'],
             },
             embeddedWallets: {
               ethereum: {
