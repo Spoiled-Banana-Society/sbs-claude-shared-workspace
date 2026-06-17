@@ -7,7 +7,6 @@ import { formatUnits, type Address } from 'viem';
 import { useFundWallet, usePrivy } from '@privy-io/react-auth';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '@/hooks/useAuth';
-import { firstPurchaseUpsell } from '@/lib/promoMath';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
@@ -39,7 +38,7 @@ export function BuyPassesModal({
   onPurchaseComplete,
 }: BuyPassesModalProps) {
   const _router = useRouter();
-  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil, isBB3Holder } = useAuth();
+  const { user, walletAddress, updateUser, refreshBalance, refreshBalanceUntil } = useAuth();
   const { mint, mintStep, error: mintError, paymentPending: mintPaymentPending, txHash, tokenPrice, mintActive } = useMintDraftPass();
   const { fundWallet } = useFundWallet({
     onUserExited: ({ balance, fundingMethod }) => {
@@ -136,10 +135,6 @@ export function BuyPassesModal({
 
   const { pricePerPass } = draftPassPricing;
   const totalPrice = quantity * pricePerPass;
-  // First-purchase bonus nudge — only on a user's first paid purchase (new OR
-  // returning). Disappears once firstPurchaseBonusGranted flips true.
-  const firstPurchaseEligible = !!user && !user.firstPurchaseBonusGranted;
-  const upsell = firstPurchaseUpsell(quantity);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
   const quantityOptions = [1, 5, 10, 20, 30, 40];
   const isProcessing =
@@ -159,22 +154,24 @@ export function BuyPassesModal({
     else if (mintStep === 'error') setFlowStep('error');
   }, [mintStep]);
 
-  // Track how long the "waiting for USDC to arrive" step has been running
-  // so the modal can show an elapsed timer and an expected duration. MoonPay
-  // can take anywhere from ~15s (card) to ~60s (Apple Pay first-run).
-  const waitingForUsdcStartedAt = flow.waitingForUsdcStartedAt;
   const setWaitingForUsdcStartedAt = (t: number | null) =>
     setPurchaseFlow({ waitingForUsdcStartedAt: t });
+
+  // Heartbeat that drives the live progress bar. `stepStartedAt` resets on
+  // every flowStep change so the bar can ease forward ("creep") within the
+  // current step and snap exactly when the next real milestone fires. The
+  // ticker only runs while a purchase is in flight.
   const [nowTick, setNowTick] = useState(Date.now());
+  const [stepStartedAt, setStepStartedAt] = useState(Date.now());
   useEffect(() => {
-    if (flowStep !== 'waiting-for-usdc') return;
-    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    setStepStartedAt(Date.now());
+    setNowTick(Date.now());
+  }, [flowStep]);
+  useEffect(() => {
+    if (flowStep === 'idle' || flowStep === 'success' || flowStep === 'error') return;
+    const id = setInterval(() => setNowTick(Date.now()), 300);
     return () => clearInterval(id);
   }, [flowStep]);
-  const waitingElapsedSec =
-    waitingForUsdcStartedAt && flowStep === 'waiting-for-usdc'
-      ? Math.max(0, Math.floor((nowTick - waitingForUsdcStartedAt) / 1000))
-      : 0;
 
   /**
    * Track a purchase in Firestore: create record → verify → promo updates.
@@ -517,52 +514,69 @@ export function BuyPassesModal({
     }
   };
 
-  // Step labels are tailored per user segment:
-  //   - Web2 (Privy social login) → friendly, no crypto jargon.
-  //   - Web3 (external wallet) → accurate, since they know what a signature is.
-  // The card path adds two leading steps (payment + funding) that the
-  // USDC path skips — visibleSteps() filters by paymentMethod.
   const isWeb2 = user?.loginMethod === 'social';
 
-  const stepLabels: Record<FlowStep, string> = isWeb2
-    ? {
-        idle: '',
-        funding: 'Processing your payment…',
-        'waiting-for-usdc': 'Preparing your funds…',
-        signing: 'Confirming your purchase…',
-        processing: 'Getting your passes ready…',
-        success: 'All set! Your passes are live',
-        error: '',
-      }
-    : {
-        idle: '',
-        funding: 'Purchasing USDC via MoonPay…',
-        'waiting-for-usdc': 'Waiting for USDC to arrive…',
-        signing: 'Waiting for your wallet signature…',
-        processing: 'Processing on-chain…',
-        success: 'Purchase complete!',
-        error: '',
-      };
+  // Clean, crypto-free progress model. Each visible row maps to one or more
+  // real internal stages (funding / waiting-for-usdc / signing / processing).
+  // Card shows 3 rows; USDC prepends a "Confirm with your wallet" row — the
+  // bottom three rows are identical across both flows. Same copy for everyone
+  // (email, X, wallet), so it can never drift between segments.
+  const internalOrder: FlowStep[] =
+    paymentMethod === 'card'
+      ? ['funding', 'waiting-for-usdc', 'signing', 'processing', 'success']
+      : ['signing', 'processing', 'success'];
+  const internalIdx =
+    flowStep === 'error' || flowStep === 'idle'
+      ? 0
+      : Math.max(0, internalOrder.indexOf(flowStep));
 
-  const stepHelper: Partial<Record<FlowStep, string>> = isWeb2
-    ? {
-        funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'Usually 15–60s. Closed the window or want to change your order? Tap Cancel below — your payment is safe.',
-        signing: '',
-        processing: 'Finalizing — just a few seconds.',
-      }
-    : {
-        funding: 'After paying, tap Continue in the popup to proceed.',
-        'waiting-for-usdc': 'Typically 15–60s. Closed the window or want a different amount? Tap Cancel below — any USDC you bought stays in your wallet.',
-        signing: "Check your wallet — this is just a signature, it won't cost gas.",
-        processing: 'Admin wallet is paying gas for you. ~5 seconds.',
-      };
+  // completeAtIdx = internal index at which the row flips to ✓. The active
+  // (spinning) row is derived as the first not-yet-complete row.
+  type VisibleStep = { label: string; completeAtIdx: number; helper?: string };
+  const cardSteps: VisibleStep[] = [
+    { label: 'Payment confirmed', completeAtIdx: 2, helper: 'Usually under a minute.' },
+    { label: 'Processing your purchase', completeAtIdx: 3 },
+    { label: 'Adding draft pass to your account', completeAtIdx: 4 },
+  ];
+  const usdcSteps: VisibleStep[] = [
+    { label: 'Confirm with your wallet', completeAtIdx: 1, helper: 'Check your wallet to approve.' },
+    { label: 'Payment confirmed', completeAtIdx: 1 },
+    { label: 'Processing your purchase', completeAtIdx: 2 },
+    { label: 'Adding draft pass to your account', completeAtIdx: 2 },
+  ];
+  const visibleSteps = paymentMethod === 'card' ? cardSteps : usdcSteps;
 
-  const cardStepOrder: FlowStep[] = ['funding', 'waiting-for-usdc', 'signing', 'processing', 'success'];
-  const usdcStepOrder: FlowStep[] = ['signing', 'processing', 'success'];
-  const visibleStepOrder = paymentMethod === 'card' ? cardStepOrder : usdcStepOrder;
+  const stepStatuses = visibleSteps.map((s) => ({
+    ...s,
+    complete: flowStep === 'success' ? true : internalIdx >= s.completeAtIdx,
+  }));
+  // Active = first not-yet-complete row, only while a purchase is in flight.
+  const activeRowIdx =
+    flowStep === 'idle' || flowStep === 'success' || flowStep === 'error'
+      ? -1
+      : stepStatuses.findIndex((s) => !s.complete);
 
-  const modalTitle = phase === 'purchase' ? 'Buy Draft Passes' : phase === 'pick-speed' ? 'Choose Draft Speed' : 'Joining Draft...';
+  // Real-time bar: snaps forward on each real milestone, and eases within the
+  // active step so it always looks live (never frozen). The longer card-funding
+  // wait gets a slower creep so it doesn't race to the end prematurely.
+  const totalSteps = visibleSteps.length || 1;
+  const completedCount = stepStatuses.filter((s) => s.complete).length;
+  const activeElapsedSec = activeRowIdx >= 0 ? Math.max(0, (nowTick - stepStartedAt) / 1000) : 0;
+  const activeTau = flowStep === 'funding' || flowStep === 'waiting-for-usdc' ? 9 : 3;
+  const creep = activeRowIdx >= 0 ? (1 - Math.exp(-activeElapsedSec / activeTau)) * 0.85 : 0;
+  const progressPct =
+    flowStep === 'success' ? 100 : Math.min(99, ((completedCount + creep) / totalSteps) * 100);
+
+  const modalTitle =
+    phase === 'pick-speed'
+      ? 'Choose Draft Speed'
+      : phase === 'purchase'
+        ? flowStep === 'success'
+          ? 'Draft Pass ready'
+          : isProcessing
+            ? 'Draft Pass on the way'
+            : 'Buy Draft Passes'
+        : 'Joining Draft...';
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
@@ -571,6 +585,8 @@ export function BuyPassesModal({
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
           <>
+            {flowStep === 'idle' && (
+            <>
             {/* Balance context — count paid and free passes separately so a
                 user holding only a free pass doesn't read "0 draft passes". */}
             <p className="text-text-muted text-sm text-center -mt-2">
@@ -614,62 +630,31 @@ export function BuyPassesModal({
                   className="flex-1 bg-bg-tertiary border border-bg-elevated rounded-xl px-4 py-2 text-center text-text-primary font-medium focus:outline-none focus:border-banana transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
               </div>
-
-              {/* First-purchase bonus nudge — first paid purchase only. Updates
-                  live with the selected quantity (4 passes = 1 free spin). */}
-              {firstPurchaseEligible && quantity > 0 && (
-                <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-                  <p className="text-xs text-text-muted leading-relaxed">
-                    {upsell.spinsThisPurchase > 0 ? (
-                      <>
-                        <span className="font-semibold text-text-secondary">First purchase bonus:</span>{' '}
-                        you&apos;ll earn{' '}
-                        <span className="font-semibold text-text-secondary">
-                          {upsell.spinsThisPurchase} free spin{upsell.spinsThisPurchase !== 1 ? 's' : ''}
-                        </span>
-                        ! Add {upsell.passesToNextSpin} more (total {upsell.nextSpinTotal}) for {upsell.spinsThisPurchase + 1}.
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-semibold text-text-secondary">First purchase bonus:</span>{' '}
-                        add{' '}
-                        <span className="font-semibold text-text-secondary">{upsell.passesToNextSpin} more</span>{' '}
-                        (total {upsell.nextSpinTotal}) to earn a free spin
-                      </>
-                    )}
-                  </p>
-                </div>
-              )}
-
-              {/* Stacked-value note — new users only (non-BB3). Reminds them the
-                  spins stack with the "4 drafts a day → free spin" promo. */}
-              {firstPurchaseEligible && !isBB3Holder && quantity > 0 && (
-                <p className="mt-2 px-1 text-[11px] leading-relaxed text-text-muted">
-                  And it stacks — complete 4 drafts in a day and earn{' '}
-                  <span className="font-semibold text-text-secondary">another free spin</span>. Lots of value to start!
-                </p>
-              )}
             </div>
 
             {/* Payment Method. Social (Gmail/X) login → Card only, one clean
-                button (no crypto option, Boris 2026-06-16). Wallet login → both. */}
+                box. Wallet login → USDC on Base | Card toggle. The card option
+                covers Card, Apple Pay, Venmo and PayPal (all via MoonPay). */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
               {isWeb2 ? (
-                <div className="flex items-center justify-center gap-2 py-2.5 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
-                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] text-banana" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <div className="flex items-center justify-center gap-2.5 py-2.5 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
+                  <svg viewBox="0 0 24 24" className="w-[18px] h-[18px] text-banana shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                     <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                     <path d="M3 9.5h18M6.5 14.5h4"/>
                   </svg>
-                  <span className="text-sm font-semibold">Card</span>
+                  <span className="flex flex-col items-center leading-tight">
+                    <span className="text-sm font-semibold">Card</span>
+                    <span className="text-[10px] text-text-muted">Apple Pay · Venmo · PayPal</span>
+                  </span>
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-1 p-1 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated">
                   <button
                     onClick={() => setPaymentMethod('usdc')}
-                    className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    className={`flex items-center justify-center gap-2 py-3 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                   >
-                    <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] shrink-0 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
                       <circle cx="12" cy="12" r="9" />
                       <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
                     </svg>
@@ -677,17 +662,22 @@ export function BuyPassesModal({
                   </button>
                   <button
                     onClick={() => setPaymentMethod('card')}
-                    className={`flex items-center justify-center gap-2 py-2.5 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    className={`flex items-center justify-center gap-2 py-2 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
                   >
-                    <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <svg viewBox="0 0 24 24" className={`w-[18px] h-[18px] shrink-0 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                       <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                       <path d="M3 9.5h18M6.5 14.5h4"/>
                     </svg>
-                    <span className="text-sm font-semibold">Card</span>
+                    <span className="flex flex-col items-start leading-tight">
+                      <span className="text-sm font-semibold">Card</span>
+                      <span className="text-[10px] text-text-muted">Apple Pay · Venmo · PayPal</span>
+                    </span>
                   </button>
                 </div>
               )}
             </div>
+            </>
+            )}
 
             {/* Card-fee credit → free draft banner (live $ progress) */}
             {paymentMethod === 'card' && flowStep === 'idle' && (() => {
@@ -732,7 +722,7 @@ export function BuyPassesModal({
                     type="text"
                     value={referralCode}
                     onChange={(e) => { setReferralCode(e.target.value); if (referralState !== 'idle') { setReferralState('idle'); setReferralMsg(null); } }}
-                    placeholder="Friend's username or code"
+                    placeholder="Friend's username"
                     disabled={referralState === 'applied'}
                     className="flex-1 min-w-0 rounded-xl border border-bg-elevated bg-bg-tertiary px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-banana/50 disabled:opacity-60"
                   />
@@ -750,73 +740,70 @@ export function BuyPassesModal({
               </div>
             )}
 
-            {/* Unified purchase progress stepper (both USDC + card paths) */}
+            {/* Live purchase progress — one real-time bar + clean, crypto-free
+                steps. Same shell for card + USDC; USDC adds the wallet-confirm
+                row. Bar advances on real milestones and eases between them. */}
             {flowStep !== 'idle' && (
-              <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-3 space-y-3">
-                {visibleStepOrder.map((key) => {
-                  const currentIdx = visibleStepOrder.indexOf(
-                    flowStep === 'error' ? visibleStepOrder[0] : (flowStep as FlowStep),
-                  );
-                  const stepIdx = visibleStepOrder.indexOf(key);
-                  const isComplete = flowStep === 'success' ? true : stepIdx < currentIdx;
-                  const isActive = key === flowStep;
-                  const label = stepLabels[key];
-                  const helper = isActive ? stepHelper[key] : undefined;
+              <div className="bg-bg-tertiary/60 border border-bg-elevated rounded-xl p-4 space-y-4">
+                {/* Real-time progress bar */}
+                {flowStep !== 'error' && (
+                  <div className="relative h-2 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div
+                      className="absolute inset-y-0 left-0 bg-banana rounded-full transition-[width] duration-700 ease-out"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                )}
 
-                  return (
-                    <div key={key} className="flex items-start justify-between gap-3 text-sm">
-                      <div className="flex items-start gap-2 min-w-0">
-                        <span className="mt-0.5 flex-shrink-0">
-                          {isComplete ? (
-                            <span className="h-4 w-4 rounded-full bg-banana/20 text-banana flex items-center justify-center">
-                              <svg viewBox="0 0 20 20" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M5 10l3 3 7-7" />
-                              </svg>
-                            </span>
-                          ) : isActive ? (
-                            <span className="h-4 w-4 rounded-full border-2 border-banana/30 border-t-banana animate-spin inline-block" />
-                          ) : (
-                            <span className="h-4 w-4 rounded-full border border-bg-elevated inline-block" />
-                          )}
-                        </span>
-                        <div className="min-w-0">
-                          <p className={isComplete ? 'text-text-primary' : isActive ? 'text-text-primary' : 'text-text-muted'}>
-                            {label}
-                          </p>
-                          {helper && (
-                            <p className="text-text-muted text-[11px] mt-0.5">{helper}</p>
-                          )}
-                          {isActive && key === 'waiting-for-usdc' && waitingElapsedSec > 0 && (
-                            <p className="text-text-muted text-[11px] mt-0.5 tabular-nums">
-                              {waitingElapsedSec}s elapsed
+                {/* Steps */}
+                {flowStep !== 'error' && (
+                  <div className="space-y-3">
+                    {stepStatuses.map((step, i) => {
+                      const isComplete = step.complete;
+                      const isActive = i === activeRowIdx;
+                      const helper = isActive ? step.helper : undefined;
+                      return (
+                        <div key={step.label} className="flex items-start gap-2.5 text-sm">
+                          <span className="mt-0.5 flex-shrink-0">
+                            {isComplete ? (
+                              <span className="h-4 w-4 rounded-full bg-banana/20 text-banana flex items-center justify-center">
+                                <svg viewBox="0 0 20 20" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                  <path d="M5 10l3 3 7-7" />
+                                </svg>
+                              </span>
+                            ) : isActive ? (
+                              <span className="h-4 w-4 rounded-full border-2 border-banana/30 border-t-banana animate-spin inline-block" />
+                            ) : (
+                              <span className="h-4 w-4 rounded-full border border-bg-elevated inline-block" />
+                            )}
+                          </span>
+                          <div className="min-w-0">
+                            <p className={isComplete || isActive ? 'text-text-primary' : 'text-text-muted'}>
+                              {step.label}
                             </p>
-                          )}
+                            {helper && <p className="text-text-muted text-[11px] mt-0.5">{helper}</p>}
+                          </div>
                         </div>
-                      </div>
-                      {isComplete && <span className="text-text-muted text-xs flex-shrink-0">Done</span>}
-                    </div>
-                  );
-                })}
+                      );
+                    })}
+                  </div>
+                )}
 
-                {/* Gas-covered badge — crypto users only, so it doesn't confuse web2 users */}
-                {!isWeb2 && flowStep !== 'success' && flowStep !== 'error' && (
-                  <div className="pt-2 mt-1 border-t border-bg-elevated/60 flex items-center gap-1.5 text-[11px] text-text-muted">
-                    <svg viewBox="0 0 20 20" className="h-3 w-3 text-banana" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M4 6h8l2 2v7H4z" />
-                      <path d="M14 11h2v2a1 1 0 01-1 1 1 1 0 01-1-1z" />
-                    </svg>
-                    <span>Gas fees covered by SBS — you only sign, we pay.</span>
+                {/* Gas line — USDC on Base only (card has no gas) */}
+                {paymentMethod === 'usdc' && flowStep !== 'success' && flowStep !== 'error' && (
+                  <div className="pt-2 mt-1 border-t border-bg-elevated/60 text-[11px] text-text-muted text-center">
+                    We cover the gas.
                   </div>
                 )}
 
                 {flowStep === 'error' && mintPaymentPending && mintError ? (
                   // Payment succeeded, delivery pending — reassure, don't alarm.
-                  <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3 mt-1">
-                    <p className="text-banana font-semibold text-sm text-center">✓ Payment received — pass on its way</p>
+                  <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3">
+                    <p className="text-banana font-semibold text-sm text-center">Payment received — pass on its way</p>
                     <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">{mintError}</p>
                   </div>
                 ) : flowStep === 'error' && (flowError || mintError) ? (
-                  <div className="text-sm text-red-400 text-center pt-1">
+                  <div className="text-sm text-red-400 text-center">
                     {flowError || mintError}
                   </div>
                 ) : null}
@@ -828,8 +815,10 @@ export function BuyPassesModal({
               <p className="text-red-400 text-center text-xs">Mint is currently inactive</p>
             )}
 
-            {/* Order summary (Option 2) — line item + balance + total in one
-                clean card. Works full-width on mobile and desktop. */}
+            {/* Order summary — line item + balance + total in one clean card.
+                Hidden once a purchase is in flight so the progress screen stays
+                focused on just the bar + steps. */}
+            {flowStep === 'idle' && (
             <div className="space-y-3">
               <div className="rounded-2xl bg-bg-primary/60 border border-bg-tertiary p-4 space-y-2.5">
                 <div className="flex items-center justify-between text-sm">
@@ -860,56 +849,42 @@ export function BuyPassesModal({
                 </div>
               )}
             </div>
-
-            {/* Payment-complete confirmation — small green line above the CTA,
-                only after a successful purchase. */}
-            {flowStep === 'success' && (
-              <div className="flex items-center justify-center gap-2">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.8 10A10 10 0 1 1 17 3.3" /><path d="m9 11 3 3L22 4" />
-                </svg>
-                <span className="text-emerald-400 text-sm font-semibold">Payment complete</span>
-              </div>
             )}
 
-            {/* CTA Button — shorter clean rectangle, responsive for mobile */}
-            <button
-              onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
-              disabled={isProcessing || quantity < 1 || (paymentMethod === 'usdc' && !mintActive)}
-              className={`
-                ${flowStep === 'success' ? 'mx-auto block w-fit min-w-[220px] px-8 py-3' : 'w-full py-3.5 sm:py-4'} rounded-xl font-bold text-base sm:text-lg transition-all shadow-lg shadow-banana/20
-                ${isProcessing || quantity < 1
-                  ? 'bg-banana/50 text-black/50 cursor-not-allowed'
-                  : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
-                }
-              `}
-            >
-              {isProcessing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  {stepLabels[flowStep as FlowStep] || 'Processing…'}
-                </span>
-              ) : flowStep === 'success' ? (
-                <span className="flex items-center justify-center gap-2">
-                  Start Drafting
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                </span>
-              ) : (
-                `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
-              )}
-            </button>
+            {/* CTA — only on idle (Buy) and success (Start Drafting). While a
+                purchase is in flight the progress bar + steps carry the state,
+                so there's no loud processing button competing with them. */}
+            {(flowStep === 'idle' || flowStep === 'success') && (
+              <button
+                onClick={flowStep === 'success' ? () => goToPickSpeed(mintedCount || quantity) : handlePurchase}
+                disabled={quantity < 1 || (flowStep === 'idle' && paymentMethod === 'usdc' && !mintActive)}
+                className={`
+                  ${flowStep === 'success' ? 'mx-auto block w-fit min-w-[220px] px-8 py-3' : 'w-full py-3.5 sm:py-4'} rounded-xl font-bold text-base sm:text-lg transition-all shadow-lg shadow-banana/20
+                  ${quantity < 1
+                    ? 'bg-banana/50 text-black/50 cursor-not-allowed'
+                    : 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]'
+                  }
+                `}
+              >
+                {flowStep === 'success' ? (
+                  <span className="flex items-center justify-center gap-2">
+                    Start Drafting
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                  </span>
+                ) : (
+                  `Buy ${quantity} Draft Pass${quantity !== 1 ? 'es' : ''}`
+                )}
+              </button>
+            )}
 
-            {/* Cancel / change order — only while waiting on the card flow
-                (pre-on-chain). Lets the user back out without a hard refresh. */}
+            {/* Cancel — only while waiting on the card flow (pre-on-chain).
+                Lets the user back out without a hard refresh. */}
             {(flowStep === 'funding' || flowStep === 'waiting-for-usdc') && (
               <button
                 onClick={handleCancelCheckout}
                 className="w-full py-3 rounded-2xl border border-bg-elevated text-text-secondary hover:text-text-primary hover:border-text-muted text-sm font-semibold transition-all"
               >
-                ✕ Cancel / change order
+                Cancel
               </button>
             )}
 
@@ -922,14 +897,6 @@ export function BuyPassesModal({
                 Try again
               </button>
             )}
-
-            {/* Promo */}
-            <div className="pt-2 border-t border-bg-elevated/40">
-              <p className="text-sm text-text-muted text-center">
-                <span className="text-text-secondary font-medium">Promo: Buy 10, get a FREE Banana Wheel spin.</span>
-                {' '}<span className="text-banana font-medium">{(user?.draftPasses || 0) % 10}/10</span>
-              </p>
-            </div>
           </>
         )}
 
