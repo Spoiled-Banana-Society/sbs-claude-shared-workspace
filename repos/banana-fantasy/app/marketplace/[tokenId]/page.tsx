@@ -344,7 +344,12 @@ export default function NftDetailPage() {
         },
       } : prev);
       setTimeout(() => fetchNft(), 12000);
-    } catch { /* listError surfaces the message */ }
+    } catch {
+      // listError surfaces the message. But if the cancel succeeded and only the
+      // re-list failed, the team is now delisted on-chain while the UI still shows
+      // the old listing — reconcile from chain so it doesn't show a phantom price.
+      fetchNft();
+    }
   }, [isLoggedIn, setShowLoginModal, ownerListPrice, nft, cancelTeam, listTeam, tokenId, fetchNft, walletAddress]);
 
   useEffect(() => {
@@ -796,7 +801,7 @@ export default function NftDetailPage() {
       }
       const acceptReceipt = await sendTx(
         { to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.data as `0x${string}`, chainId: 8453 },
-        { description: 'Accept offer — gas fees covered by SBS' },
+        { description: 'Accept offer — gas fees covered by SBS', waitForReceipt: true },
       );
       const acceptTxHash = acceptReceipt.hash || null;
 

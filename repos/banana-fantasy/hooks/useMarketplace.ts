@@ -291,6 +291,7 @@ export function useMyNfts(walletAddress: string | null): UseMyNftsResult {
   const fetchMyNfts = useCallback(async () => {
     if (!walletAddress) {
       setData([]);
+      setIsLoading(false); // logged-out: no wallet to load — clear the skeleton
       return;
     }
     // Paint instantly from the localStorage snapshot the MOMENT the wallet is

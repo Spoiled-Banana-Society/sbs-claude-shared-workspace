@@ -678,7 +678,16 @@ export default function MarketplacePage() {
     if (!selectedTeam || !walletAddress || !listPrice) return;
     setTxError(null);
 
-    if (selectedTeam.passType === 'free' && isDraftingOpen()) {
+    // A free pass can't be listed until it's drafted into a real team — but a
+    // drafted free team (hasBackendRecord) and a wheel-won pass that's still in a
+    // FILLING lobby ARE sellable. Mirror SellTab.canSellTeam + the server guard,
+    // otherwise the modal SellTab opened for those bounces back here and never lists.
+    if (
+      selectedTeam.passType === 'free' &&
+      isDraftingOpen() &&
+      !selectedTeam.fillingWheelLevel &&
+      selectedTeam.hasBackendRecord !== true
+    ) {
       setShowSellModal(false);
       setShowFreePassInfo('team');
       return;
