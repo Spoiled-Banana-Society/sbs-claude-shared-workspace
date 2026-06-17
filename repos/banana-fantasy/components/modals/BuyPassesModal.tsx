@@ -678,9 +678,12 @@ export function BuyPassesModal({
               {(() => {
                 const paid = user?.draftPasses || 0;
                 const free = user?.freeDrafts || 0;
-                if (paid === 0 && free > 0) return `You have ${free} free draft pass${free !== 1 ? 'es' : ''}`;
-                if (free > 0) return `You have ${paid} draft pass${paid !== 1 ? 'es' : ''} + ${free} free`;
-                return `You have ${paid} draft pass${paid !== 1 ? 'es' : ''}`;
+                // Always label paid vs free when both kinds exist; otherwise
+                // name the one kind they hold.
+                if (paid === 0 && free === 0) return `You have 0 draft passes`;
+                if (free === 0) return `You have ${paid} paid draft pass${paid !== 1 ? 'es' : ''}`;
+                if (paid === 0) return `You have ${free} free draft pass${free !== 1 ? 'es' : ''}`;
+                return `You have ${paid} paid + ${free} free draft pass${paid + free !== 1 ? 'es' : ''}`;
               })()}
             </p>
 
