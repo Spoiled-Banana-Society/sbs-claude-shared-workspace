@@ -50,22 +50,22 @@ export async function POST(req: NextRequest) {
       referredUsername || `User${referredUserId}`,
     );
 
-    // Will this referral actually credit the friend? Referral rewards pay out
-    // only via the new-player flow (verify X → claim spin → buy). Use the SAME
-    // "new player" definition as /api/promos so it's consistent: a real
-    // (non-estimated) createdAt within 7 days counts as new; otherwise the
-    // account must be zero-activity. An established account → won't credit.
+    // Will this referral actually credit the friend? A "new player" who earns
+    // their referrer credit is someone who (a) has NOT drafted yet, and (b) is
+    // NOT a returning player from a previous season (the imported list). Account
+    // age / balances don't matter — only those two things.
     let eligible = true;
     try {
-      const snap = await db.collection('v2_users').doc(referredUserId).get();
-      const u = (snap.data() ?? {}) as {
-        createdAt?: string; createdAtEstimated?: boolean;
-        draftPasses?: number; freeDrafts?: number; wheelSpins?: number; usdcBalance?: number;
-      };
-      const zeroActivity = !(u.draftPasses ?? 0) && !(u.freeDrafts ?? 0) && !(u.wheelSpins ?? 0) && !(u.usdcBalance ?? 0);
-      eligible = u.createdAt && !u.createdAtEstimated
-        ? Date.now() - new Date(u.createdAt).getTime() < 7 * 24 * 60 * 60 * 1000
-        : snap.exists && zeroActivity;
+      const userRef = db.collection('v2_users').doc(referredUserId);
+      const [snap, draftedSnap] = await Promise.all([
+        userRef.get(),
+        userRef.collection('draftHistory').limit(1).get(),
+      ]);
+      const u = (snap.data() ?? {}) as { isReturningPlayer?: boolean };
+      const { isReturningWalletSync } = await import('@/lib/returningUsers');
+      const isReturning = u.isReturningPlayer === true || isReturningWalletSync(referredUserId);
+      const hasDrafted = !draftedSnap.empty;
+      eligible = !hasDrafted && !isReturning;
     } catch { /* default eligible:true on read error */ }
 
     return NextResponse.json({
