@@ -183,7 +183,7 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
     if (!file) return;
 
     if (!ALLOWED_ID_TYPES.includes(file.type) && !/\.(jpg|jpeg|png|heic|webp)$/i.test(file.name)) {
-      setError('Please upload a JPG, PNG, HEIC, or WEBP image of your ID.');
+      setError('Please upload a JPG or PNG image of your ID.');
       return;
     }
     const sizeMb = file.size / (1024 * 1024);
@@ -458,7 +458,7 @@ export function VerificationModal({ isOpen, onClose, userId: _userId, onComplete
                   <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                 </svg>
                 <p className="text-text-primary text-sm font-medium">Upload ID photo</p>
-                <p className="text-text-muted text-xs mt-0.5">JPG, PNG, HEIC, or WEBP</p>
+                <p className="text-text-muted text-xs mt-0.5">JPG or PNG</p>
               </button>
             )}
           </div>
