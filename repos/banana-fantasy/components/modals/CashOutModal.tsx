@@ -708,6 +708,10 @@ export function CashOutModal({
                   );
                 })}
 
+              {/* "Keep as USDC" sends to an external wallet — only meaningful for
+                  users who manage their own wallet. Hidden when no onSwitchToUsdc
+                  handler is passed (embedded/web2 users → bank cash-out only). */}
+              {onSwitchToUsdc && (
               <button
                 type="button"
                 onClick={() => setSelectedMethod('USDC')}
@@ -738,6 +742,7 @@ export function CashOutModal({
                   </div>
                 </div>
               </button>
+              )}
             </div>
           </div>
 

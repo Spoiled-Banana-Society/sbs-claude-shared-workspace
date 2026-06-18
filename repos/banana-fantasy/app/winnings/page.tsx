@@ -207,25 +207,44 @@ export default function PrizesPage() {
                     - $0: gentle nudge */}
                 <div className="mt-6">
                   {hasBalance && isEligible && customAmount === null && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <button
-                        onClick={handleWithdrawAll}
-                        disabled={withdrawing}
-                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-                      >
-                        {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
-                      </button>
-                      <button
-                        onClick={() => setCustomAmount(availableBalance.toFixed(2))}
-                        disabled={withdrawing}
-                        className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
-                      >
-                        Edit amount
-                      </button>
-                      <p className="text-[11px] text-text-muted ml-auto">
-                        Sent as USDC, arrives ~24h
-                      </p>
-                    </div>
+                    isEmbeddedWallet ? (
+                      // Web2 (embedded) users have no external wallet they manage —
+                      // "send USDC to your wallet" is meaningless to them (it's the
+                      // app's own hidden wallet). Their only real payout is cashing
+                      // out to a bank via Coinbase. Open the cash-out for the full
+                      // balance (no fixed prize → maxAmount = availableBalance).
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                          onClick={() => setCashOutModal({ isOpen: true })}
+                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                        >
+                          Cash out to bank
+                        </button>
+                        <p className="text-[11px] text-text-muted ml-auto">
+                          Cashed out to your bank via Coinbase
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                          onClick={handleWithdrawAll}
+                          disabled={withdrawing}
+                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+                        >
+                          {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
+                        </button>
+                        <button
+                          onClick={() => setCustomAmount(availableBalance.toFixed(2))}
+                          disabled={withdrawing}
+                          className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
+                        >
+                          Edit amount
+                        </button>
+                        <p className="text-[11px] text-text-muted ml-auto">
+                          Sent as USDC, arrives ~24h
+                        </p>
+                      </div>
+                    )
                   )}
 
                   {hasBalance && isEligible && customAmount !== null && (
@@ -520,14 +539,16 @@ export default function PrizesPage() {
       <CashOutModal
         isOpen={cashOutModal.isOpen}
         onClose={() => setCashOutModal({ isOpen: false })}
-        maxAmount={cashOutModal.prize?.amount ?? 0}
+        maxAmount={cashOutModal.prize?.amount ?? availableBalance}
         fixedAmount={Boolean(cashOutModal.prize)}
         draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
         userId={user?.id}
         walletAddress={user?.walletAddress}
         initialStatusMode={cashOutModal.statusMode}
         onVerified={() => { eligibilityQuery.mutate(); }}
-        onSwitchToUsdc={() => {
+        // Embedded (web2) users have no external wallet — don't offer the
+        // "keep as USDC / send to wallet" escape; bank cash-out only.
+        onSwitchToUsdc={isEmbeddedWallet ? undefined : () => {
           if (cashOutModal.prize) {
             setWithdrawModal({ isOpen: true, prize: cashOutModal.prize });
           }
