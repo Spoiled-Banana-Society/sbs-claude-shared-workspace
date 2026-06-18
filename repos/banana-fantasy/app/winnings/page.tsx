@@ -34,6 +34,28 @@ export default function PrizesPage() {
   // full balance so they can dial it down.
   const [customAmount, setCustomAmount] = useState<string | null>(null);
 
+  // Web2 (embedded) users can't reach their Privy wallet directly, so their
+  // on-chain USDC — team-sale proceeds, leftover mint credit, AND paid-out
+  // prizes (the prize payout pays USDC straight into the wallet) — must surface
+  // here as one real, cashable balance. External-wallet users manage their own
+  // wallet, so we don't fold it into our withdraw UI for them.
+  const [walletUsdc, setWalletUsdc] = useState(0);
+  const walletForBalance = user?.walletAddress;
+  useEffect(() => {
+    if (!isEmbeddedWallet || !walletForBalance) { setWalletUsdc(0); return; }
+    let cancelled = false;
+    fetch(`/api/owner/usdc-balance?wallet=${walletForBalance}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d && typeof d.usdc === 'number') setWalletUsdc(d.usdc); })
+      .catch(() => { /* best-effort — balance still shows prizes */ });
+    return () => { cancelled = true; };
+  }, [isEmbeddedWallet, walletForBalance]);
+
+  // The cashable on-chain portion (embedded users only) and the one unified
+  // "Available to withdraw" number = pending prizes + wallet USDC.
+  const cashableWalletUsdc = isEmbeddedWallet ? walletUsdc : 0;
+  const unifiedAvailable = availableBalance + cashableWalletUsdc;
+
   // Surface eligibility-fetch failures to the admin error log. useSWRLike
   // has no onError hook, so we watch the query's error field and report
   // once when it transitions to an error state.
@@ -191,15 +213,18 @@ export default function PrizesPage() {
             (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
           // On fetch error we don't know the balance — never render "$0.00"
           // as if it were fact (a user with real winnings would panic).
-          const hasBalance = !hasPrizeError && availableBalance > 0;
+          const hasBalance = !hasPrizeError && unifiedAvailable > 0;
 
           return (
             <>
               <div className="mb-3 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
                 <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
                 <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
-                  {hasPrizeError ? '—' : formatBalance(availableBalance)}
+                  {hasPrizeError ? '—' : formatBalance(unifiedAvailable)}
                 </p>
+                {!hasPrizeError && cashableWalletUsdc > 0 && (
+                  <p className="mt-1 text-[12px] text-text-muted">Includes prizes, team sales &amp; leftover credit</p>
+                )}
 
                 {/* Action area. Three states:
                     - balance > 0 + verified: withdraw all + edit amount
@@ -539,7 +564,7 @@ export default function PrizesPage() {
       <CashOutModal
         isOpen={cashOutModal.isOpen}
         onClose={() => setCashOutModal({ isOpen: false })}
-        maxAmount={cashOutModal.prize?.amount ?? availableBalance}
+        maxAmount={cashOutModal.prize?.amount ?? cashableWalletUsdc}
         fixedAmount={Boolean(cashOutModal.prize)}
         draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
         userId={user?.id}
