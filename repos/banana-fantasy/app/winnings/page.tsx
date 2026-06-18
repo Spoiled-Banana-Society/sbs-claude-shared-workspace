@@ -186,7 +186,7 @@ export default function PrizesPage() {
       <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
         <div className="text-center py-12">
           <div className="text-6xl mb-4">🏆</div>
-          <h1 className="text-3xl font-bold text-text-primary mb-4">Winnings</h1>
+          <h1 className="text-3xl font-bold text-text-primary mb-4">Wallet</h1>
           <p className="text-text-secondary mb-6">
             Win drafts and your prizes will land here.
           </p>
@@ -201,7 +201,7 @@ export default function PrizesPage() {
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Winnings</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-text-primary mb-6">Wallet</h1>
 
         {/* Balance hero — always renders, even at $0. Apple-clean:
             generous padding, soft gradient, big tracked-tight number,
@@ -318,7 +318,7 @@ export default function PrizesPage() {
 
                   {hasPrizeError && (
                     <p className="text-sm text-warning">
-                      We couldn&apos;t load your balance. Refresh to try again — your winnings are safe.
+                      We couldn&apos;t load your balance. Refresh to try again — your money is safe.
                     </p>
                   )}
                 </div>
@@ -341,7 +341,7 @@ export default function PrizesPage() {
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-warning" />
                         <span className="text-sm font-medium text-warning">
-                          Verify your identity once to withdraw winnings
+                          Verify your identity once to withdraw your balance
                         </span>
                       </button>
                     )}
