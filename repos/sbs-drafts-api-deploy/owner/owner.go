@@ -330,6 +330,22 @@ func (or *OwnerResources) UpdateUserRankings(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (or *OwnerResources) RemoveUserRankings(w http.ResponseWriter, r *http.Request) {
+	ownerId := chi.URLParam(r, "ownerId")
+	if ownerId == "" {
+		http.Error(w, "Did not find an ownerId in the url path", http.StatusInternalServerError)
+		return
+	}
+	ownerId = strings.ToLower(ownerId)
+
+	err := utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/drafts", ownerId), "rankings")
+	if err != nil {
+		fmt.Println("error in removing the owners rankings in the db")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 type GetRankingsResponse struct {
 	PlayerId string             `json:"playerId"`
 	Rank     int64              `json:"rank"`

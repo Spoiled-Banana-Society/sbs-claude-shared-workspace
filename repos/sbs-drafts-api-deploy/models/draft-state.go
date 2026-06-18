@@ -790,7 +790,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		CurrentRound:      1,
 		PickInRound:       1,
 		DraftStartTime:    info.DraftStartTime,
-		PickStartTime:     info.DraftStartTime + 1,
+		PickStartTime:     info.DraftStartTime,
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
 	}
@@ -808,7 +808,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	if strings.ToLower(leagueInfo.DraftType) == "slow" {
 		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
 	} else {
-		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength
+		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength + 1
 	}
 
 	fmt.Printf("[league#] rtdb.write.start draftId=%s displayName=%q numPlayers=%d\n", draftId, leagueInfo.DisplayName, leagueInfo.NumPlayers)
