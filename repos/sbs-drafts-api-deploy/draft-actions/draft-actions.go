@@ -146,25 +146,24 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 
 	userInfo := models.FetchSortForDrafter(draftId, ownerId)
 
-	calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
-	if err != nil {
-		if models.IsPickAlreadyProcessed(err) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Pick already completed"))
+	if userInfo.AutoDraft {
+		calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
+		if err != nil {
+			if models.IsPickAlreadyProcessed(err) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Pick already completed"))
+				return
+			}
+			fmt.Printf("autoDraft error (CalculateAutoPickForUser): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("autoDraft error (CalculateAutoPickForUser): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+		if calculatedPick.PlayerId == "" {
+			fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated (empty PlayerId)\n", draftId, ownerId)
+			http.Error(w, "No pick was calculated", http.StatusInternalServerError)
+			return
+		}
 
-	if calculatedPick.PlayerId == "" {
-		fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated (empty PlayerId)\n", draftId, ownerId)
-		http.Error(w, "No pick was calculated", http.StatusInternalServerError)
-		return
-	}
-
-	if userInfo.AutoDraft {
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
 			if models.IsPickAlreadyProcessed(err) {
@@ -187,21 +186,54 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 			}
 			// Non-transient (benign race: pick landed concurrently, validation
 			// mismatch) — retrying would fail identically; keep the no-retry 200.
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Pick processed successfully"))
 			return
 		}
 	} else {
-		now := time.Now().Unix()
-		if now < realTimeDraftInfo.PickEndTime {
-			err = models.EnqueueAutoDraftTask(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo.PickEndTime)
-			if err != nil {
-				fmt.Printf("autoDraft error (EnqueueAutoDraftTask): draftId=%s ownerId=%s pickEndTime=%d err=%v\n", draftId, ownerId, realTimeDraftInfo.PickEndTime, err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Timer-expiry path: Cloud Task was scheduled ~2s before PickEndTime.
+		// Wait out the remaining time in-process, re-check the slot, then pick.
+		pickEndTime := realTimeDraftInfo.PickEndTime
+		if wait := time.Until(time.Unix(pickEndTime, 0)); wait > 0 {
+			fmt.Printf("autoDraft waiting %v until pickEndTime for draftId=%s pick=%d\n", wait, draftId, currentPickNumber)
+			time.Sleep(wait)
+		}
+
+		realTimeDraftInfo, err = models.GetRealTimeDraftInfoForDraft(draftId)
+		if err != nil {
+			fmt.Printf("autoDraft error (GetRealTimeDraftInfoForDraft after wait): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if realTimeDraftInfo.CurrentPickNumber > currentPickNumber {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Pick already completed"))
+			return
+		}
+
+		calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
+		if err != nil {
+			if models.IsPickAlreadyProcessed(err) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Pick already completed"))
 				return
 			}
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Pick scheduled for timer expiry"))
+			fmt.Printf("autoDraft error (CalculateAutoPickForUser after wait): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
+		}
+		if calculatedPick.PlayerId == "" {
+			fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated after wait (empty PlayerId)\n", draftId, ownerId)
+			http.Error(w, "No pick was calculated", http.StatusInternalServerError)
+			return
+		}
+
+		userInfo.NumPicksMissedConsecutive++
+		if userInfo.NumPicksMissedConsecutive >= 2 {
+			userInfo.AutoDraft = true
+		}
+		if err := models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
+			fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
 		}
 
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
@@ -212,42 +244,12 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 				return
 			}
 			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Update SortByObj to reflect missed pick
-		userInfo.NumPicksMissedConsecutive++
-
-		// After 2 consecutive timer-expired picks (server auto-pick), enable auto-draft for future picks.
-		// Was 3 originally; bumped to 2 (2026-04-26) per Richard — three full timers of waiting was so
-		// long in slow drafts that AFK users effectively never auto-drafted.
-		if userInfo.NumPicksMissedConsecutive >= 2 {
-			userInfo.AutoDraft = true
-		}
-
-		// Update the SortByObj in the database BEFORE processing the pick.
-		// Failure here is logged but non-fatal — losing a counter increment
-		// is far less bad than skipping the pick entirely. The next handler
-		// invocation will see one of two correct states: (a) we already
-		// wrote (instant branch fires), or (b) we didn't write and the
-		// 30s timer rolls again, which is the pre-fix behavior anyway.
-		err = models.UpdateSortForDrafter(draftId, ownerId, userInfo)
-		if err != nil {
-			fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
-		}
-
-		// Process the pick (also spawns next-pick scheduling goroutine,
-		// which now reads the just-persisted userInfo).
-		err = models.ProcessNewPick(draftId, calculatedPick, false)
-		if err != nil {
-			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
-			// Same transient-vs-benign split as the AutoDraft branch above.
 			if utils.IsTransientDbErr(err) {
 				fmt.Printf(`{"severity":"ERROR","event":"autodraft_transient_will_retry","draftId":"%s","pick":%d,"error":%q}`+"\n", draftId, currentPickNumber, err.Error())
 				http.Error(w, "transient failure — retry", http.StatusServiceUnavailable)
 				return
 			}
+			// Non-transient (benign race) — no-retry 200 so Cloud Tasks stops.
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Pick processed successfully"))
 			return
