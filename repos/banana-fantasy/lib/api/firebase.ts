@@ -191,21 +191,18 @@ export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | '
   });
 }
 
-/** Snapshot of `drafts/{draftId}/realTimeDraftInfo` from Firebase RTDB. */
-export interface RealTimeDraftInfoSnapshot {
+/** The fast-changing live fields the My Drafts list needs per drafting row. */
+export interface DraftRealTimeInfoLite {
   currentDrafter?: string;
   pickNumber?: number;
   roundNum?: number;
-  pickInRound?: number;
   pickEndTime?: number;
-  pickLength?: number;
-  draftStartTime?: number;
   isDraftComplete?: boolean;
-  isDraftClosed?: boolean;
+  // Set at fill. Used to reject a STALE reused-id node (staging reuses draft
+  // ids): only trust this snapshot if its draftStartTime matches the draft's
+  // known start, so a previous draft's leftover state can't drive the row.
+  draftStartTime?: number;
 }
-
-/** @deprecated Use RealTimeDraftInfoSnapshot */
-export type DraftRealTimeInfoLite = RealTimeDraftInfoSnapshot;
 
 /**
  * Subscribe to the whole /drafts/{draftId}/realTimeDraftInfo node — the SAME
@@ -218,9 +215,9 @@ export type DraftRealTimeInfoLite = RealTimeDraftInfoSnapshot;
  */
 export function subscribeRealTimeDraftInfo(
   draftId: string,
-  cb: (info: RealTimeDraftInfoSnapshot | null) => void,
+  cb: (info: DraftRealTimeInfoLite | null) => void,
 ): Unsubscribe {
-  return subscribeValue<RealTimeDraftInfoSnapshot>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
+  return subscribeValue<DraftRealTimeInfoLite>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
     cb(v && typeof v === 'object' ? v : null);
   });
 }
@@ -248,6 +245,7 @@ export function subscribeDraftRandomizeStartAt(draftId: string, cb: (startAtMs: 
  * relying on a REST retry loop.
  */
 export function subscribeDraftDisplayName(draftId: string, cb: (displayName: string) => void): Unsubscribe {
+  // Lazy-import to keep this file SSR-safe (clientLog is 'use client').
   const log = (event: string, payload?: unknown) => {
     void import('@/lib/clientLog').then(m => m.clientLog('league#', event, payload)).catch(() => {});
   };

@@ -9,11 +9,9 @@ import {
     generatedCardProps,
 } from "./types/types"
 import { getDraftsApiUrl } from "@/lib/staging"
-import { getPrivyAccessToken } from "@/lib/privyAccessToken"
 axios.defaults.headers.post["Content-Type"] = "application/json"
 
 const getEnv = () => {
-    if (typeof window !== 'undefined') return '/api/drafts-api'
     return getDraftsApiUrl()
 }
 
@@ -21,12 +19,8 @@ const api = axios.create({
     baseURL: getEnv(),
 })
 
-api.interceptors.request.use(async (config) => {
+api.interceptors.request.use((config) => {
     config.baseURL = getEnv()
-    if (typeof window !== 'undefined') {
-        const token = await getPrivyAccessToken()
-        if (token) config.headers.Authorization = `Bearer ${token}`
-    }
     return config
 })
 

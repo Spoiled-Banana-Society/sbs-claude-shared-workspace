@@ -5,8 +5,6 @@ import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
-import { draftsApiServer } from '@/lib/draftsApiServer';
-import { tryGetServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 const USERS_COLLECTION = 'v2_users';
 
@@ -110,7 +108,7 @@ function decodeGoOnchainId(cardId: string, realTokenId: string): string {
 export async function fetchGoApiTokenLists(
   wallet: string,
 ): Promise<{ available: GoTokenRef[]; active: GoTokenRef[] }> {
-  const apiBase = tryGetServerDraftsApiUrl();
+  const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return { available: [], active: [] };
   const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
   if (!res.ok) {
@@ -140,7 +138,11 @@ export async function fetchGoApiTokenLists(
  * prod URL in server contexts (Next.js API routes, SSR). This codebase is
  * staging-only per CLAUDE.md, so we explicitly prefer the staging URL.
  */
-
+function getServerDraftsApiUrl(): string {
+  const staging = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ?? '').trim();
+  if (staging) return staging;
+  return 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // staging only — never the old prod API
+}
 
 /**
  * Returns the Go API's authoritative count of available draft passes for a
@@ -150,7 +152,7 @@ export async function fetchGoApiTokenLists(
  * available tokens returns 0 (not null) — a wallet legitimately has no passes.
  */
 export async function fetchGoApiAvailableCount(wallet: string): Promise<number | null> {
-  const apiBase = tryGetServerDraftsApiUrl();
+  const apiBase = getServerDraftsApiUrl();
   if (!apiBase) return null;
   try {
     const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
@@ -173,6 +175,10 @@ export async function fetchGoApiAvailableCount(wallet: string): Promise<number |
  */
 async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passType: 'paid' | 'free'): Promise<number> {
   if (tokenIds.length === 0) return 0;
+  const apiBase = getServerDraftsApiUrl();
+  if (!apiBase) return 0;
+  // Go endpoint takes a minId/maxId range. For non-contiguous ids we call
+  // once per id. BBB4 mint is sequential so contiguous is the common case.
   let registered = 0;
   tokenIds.sort((a, b) => a - b);
   let runStart = tokenIds[0];
@@ -188,13 +194,12 @@ async function registerTokensWithGoApi(wallet: string, tokenIds: number[], passT
     }
   }
   ranges.push([runStart, runEnd]);
-  const normalizedWallet = wallet.toLowerCase();
   for (const [minId, maxId] of ranges) {
     try {
-      const res = await draftsApiServer(`/owner/${normalizedWallet}/draftToken/mint`, {
+      const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/mint`, {
         method: 'POST',
-        wallet: normalizedWallet,
-        body: { minId, maxId, passType },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minId, maxId, passType }),
       });
       if (res.ok) {
         registered += maxId - minId + 1;

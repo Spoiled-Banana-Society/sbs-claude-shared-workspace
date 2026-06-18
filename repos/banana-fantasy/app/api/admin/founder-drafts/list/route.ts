@@ -48,12 +48,15 @@ const FOUNDER_DRAFTS_COLLECTION = 'founderDrafts';
 // Boris's ask: "would be good to write down all the wallets leagues
 // that are founder draft throughout the year too." This collection IS
 // the year-long log — every confirmed founder draft stays here forever.
-import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
-
 const LIST_LIMIT = 200;
 
+const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 function goApiBase(): string {
-  return getServerDraftsApiUrl();
+  // Vercel uses NEXT_PUBLIC_STAGING_DRAFTS_API_URL — check it first.
+  return (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+    || process.env.STAGING_DRAFTS_API_URL
+    || process.env.NEXT_PUBLIC_SBS_API_URL
+    || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
 }
 
 interface DraftInfoResponse {

@@ -13,16 +13,15 @@
  *   npx playwright test e2e/dual-tab-stability.spec.ts --project=chromium --workers=1 --timeout=180000
  */
 
-import { test, expect, type Page } from '@playwright/test';
-import {
-  mintToken,
-  joinDraft,
-  fillBots,
-  getDraftInfo,
-  extractDraftId,
-} from '../scripts/e2e-drafts-api.mjs';
+import { test, expect, type Page, type BrowserContext } from '@playwright/test';
 
+const API_BASE = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
+
+async function fetchJson(url: string, opts?: RequestInit) {
+  const res = await fetch(url, opts);
+  try { return await res.json(); } catch { return { _error: true, status: res.status }; }
+}
 
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -66,16 +65,28 @@ test.describe('Dual-Tab Stability', () => {
     console.log('\n=== STEP 1: Mint, Join, Fill ===');
     console.log('Wallet:', wallet);
 
-    const mintResult = await mintToken(wallet, tokenRand, tokenRand);
+    const mintResult = await fetchJson(`${API_BASE}/owner/${wallet}/draftToken/mint`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minId: tokenRand, maxId: tokenRand }),
+    });
     expect(mintResult?.tokens?.length).toBeGreaterThan(0);
     console.log('Minted token');
 
-    const joinResult = await joinDraft(wallet, 'fast', 1);
-    const draftId = extractDraftId(joinResult);
+    const joinResult = await fetchJson(`${API_BASE}/league/fast/owner/${wallet}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numLeaguesToJoin: 1 }),
+    });
+    const raw = Array.isArray(joinResult) ? joinResult[0] : joinResult;
+    const draftId = raw?._leagueId ?? raw?.draftId ?? raw?.leagueId ?? null;
     expect(draftId).toBeTruthy();
     console.log('Joined draft:', draftId);
 
-    await fillBots(String(draftId), 'fast', 9);
+    await fetchJson(
+      `${API_BASE}/staging/fill-bots/fast?count=9&leagueId=${encodeURIComponent(draftId)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' },
+    );
     console.log('Filled with bots');
 
     // Wait for draft to start
@@ -83,7 +94,7 @@ test.describe('Dual-Tab Stability', () => {
     await sleep(15_000);
 
     // Verify draft is active
-    const info = await getDraftInfo(String(draftId));
+    const info = await fetchJson(`${API_BASE}/draft/${draftId}/state/info`);
     console.log(`Draft state: pick#${info.pickNumber}, drafter=${(info.currentDrafter || '').slice(0, 12)}...`);
     expect(info.pickNumber).toBeGreaterThanOrEqual(1);
 
@@ -209,11 +220,11 @@ test.describe('Dual-Tab Stability', () => {
     });
     console.log('Draft room content (first 200 chars):', draftRoomContent.bodyText?.slice(0, 200));
 
-    // ===== STEP 6: Verify heartbeat prevents dual draft-room updates =====
-    console.log('\n=== STEP 6: Verify heartbeat prevents dual-tab conflict ===');
+    // ===== STEP 6: Wait more and check heartbeat prevents dual WS =====
+    console.log('\n=== STEP 6: Verify heartbeat prevents dual WebSocket ===');
 
     const heartbeatCheck = await draftingPage.evaluate((draftId) => {
-      const key = `draft-room-active:${draftId}`;
+      const key = `draft-room-ws:${draftId}`;
       const val = localStorage.getItem(key);
       return {
         key,
@@ -232,7 +243,7 @@ test.describe('Dual-Tab Stability', () => {
 
     // Heartbeat should be stale now
     const heartbeatAfterClose = await draftingPage.evaluate((draftId) => {
-      const key = `draft-room-active:${draftId}`;
+      const key = `draft-room-ws:${draftId}`;
       const val = localStorage.getItem(key);
       return {
         value: val,

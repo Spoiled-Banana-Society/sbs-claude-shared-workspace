@@ -7,13 +7,6 @@ export type { PlayerData } from '@/data/nfl-players';
 export type DraftType = 'jackpot' | 'hof' | 'pro';
 export type RoomPhase = 'filling' | 'pre-spin' | 'spinning' | 'result' | 'countdown' | 'drafting' | 'completed' | 'loading';
 
-/** localStorage heartbeat: draft-room tab is active (cross-tab coordination). */
-export const DRAFT_ROOM_ACTIVE_KEY_PREFIX = 'draft-room-active:';
-
-export function draftRoomActiveKey(draftId: string): string {
-  return `${DRAFT_ROOM_ACTIVE_KEY_PREFIX}${draftId}`;
-}
-
 // ==================== POSITION COLORS ====================
 export const POSITION_COLORS: Record<string, string> = {
   QB: '#FF474C',   // red

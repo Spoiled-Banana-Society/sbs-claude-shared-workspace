@@ -2,10 +2,11 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 
 const API_URL = process.env.STAGING_API_URL;
+const WS_URL = process.env.STAGING_WS_URL;
 const BASE_URL = process.env.STAGING_FRONTEND_URL || 'https://sbs-frontend-v2.vercel.app';
 
-if (!API_URL) {
-  console.error('Missing STAGING_API_URL');
+if (!API_URL || !WS_URL) {
+  console.error('Missing STAGING_API_URL or STAGING_WS_URL');
   process.exit(1);
 }
 
@@ -40,7 +41,7 @@ try {
   const mintText = await mintRes.text();
   logs.push(`[mint:${mintRes.status}] ${mintText}`);
 
-  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}`;
+  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&wsUrl=${encodeURIComponent(WS_URL)}`;
   mark(`goto home ${homeUrl}`);
   await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(2500);
@@ -92,6 +93,7 @@ try {
   proof = {
     baseUrl: BASE_URL,
     apiUrl: API_URL,
+    wsUrl: WS_URL,
     finalUrl: page.url(),
     noDraftingRoute: !page.url().includes('/drafting'),
     lobbyReached: /10\/10 joined/i.test(bodyText),
@@ -109,7 +111,7 @@ try {
   try {
     await page.screenshot({ path: `${outDir}/99-failure.png`, fullPage: true });
   } catch {}
-  proof = { failed: true, error: msg, finalUrl: page.url(), baseUrl: BASE_URL, apiUrl: API_URL };
+  proof = { failed: true, error: msg, finalUrl: page.url(), baseUrl: BASE_URL, apiUrl: API_URL, wsUrl: WS_URL };
   console.error(msg);
 } finally {
   fs.writeFileSync(`${outDir}/proof.json`, JSON.stringify(proof, null, 2));

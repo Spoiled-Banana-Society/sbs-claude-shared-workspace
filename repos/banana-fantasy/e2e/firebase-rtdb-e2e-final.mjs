@@ -14,10 +14,11 @@
 
 import { chromium } from 'playwright';
 import fs from 'fs';
-import { API_BASE } from '../scripts/e2e-drafts-api.mjs';
 
 // ==================== CONFIG ====================
 const VERCEL_URL = 'https://banana-fantasy-sbs.vercel.app';
+const API_BASE = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const WS_BASE = 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
 const WALLET = '0x59dd025b0aa0fecf39f2c69fc7aea9f943b8779e';
 
 const SCREENSHOT_DIR = '/tmp';

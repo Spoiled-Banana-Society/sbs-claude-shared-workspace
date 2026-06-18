@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { capDisplayTimeRemaining } from '@/utils/draftTimer';
 import {
   isSlowDraftPickLength,
   slowDraftActiveSecondsUntil,
@@ -23,7 +22,6 @@ import {
  *
  * @param endOfTurnTimestamp - Unix timestamp in SECONDS when the current turn ends
  * @param draftStartTime - Unix timestamp in SECONDS when the draft starts (optional)
- * @param pickLengthSec - Server pick length; caps display so +1s backend grace is hidden
  * @param pickLengthSec - Pick length in seconds; when it's a slow-draft length the
  *                        countdown uses the active-window clock (optional)
  * @returns Time remaining in seconds, or null if no timestamps available
@@ -45,7 +43,7 @@ export function useTimeRemaining(
       if (draftStartTime && now < draftStartTime * 1000) {
         // Countdown to draft start (always wall-clock — the pause doesn't apply pre-draft)
         const remaining = draftStartTime * 1000 - now;
-        setTimeRemaining(Math.max(0, Math.round(remaining / 1000)));
+        setTimeRemaining(Math.max(0, Math.floor(remaining / 1000)));
       } else if (endOfTurnTimestamp) {
         // Countdown for turn timer
         if (isSlow) {
@@ -58,9 +56,7 @@ export function useTimeRemaining(
           // endOfTurnTimestamp is in seconds (Unix timestamp), convert to milliseconds
           const timestampMs = endOfTurnTimestamp * 1000;
           const remaining = timestampMs - now;
-          setTimeRemaining(
-          capDisplayTimeRemaining(Math.max(0, Math.round(remaining / 1000)), pickLengthSec),
-        );
+          setTimeRemaining(Math.max(0, Math.floor(remaining / 1000)));
         }
       } else {
         // No timestamps available

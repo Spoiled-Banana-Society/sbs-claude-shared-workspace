@@ -3,9 +3,9 @@
  * Quick check — use existing draft 2024-fast-draft-22 which has state + active picks
  */
 import { chromium } from 'playwright';
-import { API_BASE as API } from '../scripts/e2e-drafts-api.mjs';
 
 const VERCEL = 'https://banana-fantasy-sbs.vercel.app';
+const API = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 const WALLET = '0x59dd025b0aa0fecf39f2c69fc7aea9f943b8779e';
 const DRAFT = '2024-fast-draft-22';
 
@@ -34,8 +34,9 @@ async function main() {
     }
   });
 
-  const url = `${VERCEL}/draft-room?draftId=${DRAFT}&id=${DRAFT}&speed=fast&mode=live&wallet=${WALLET}&staging=true`;
-  console.log(`\nOpening draft room: ${url}`);
+  // Open with useWs=true to force WS mode
+  const url = `${VERCEL}/draft-room?draftId=${DRAFT}&id=${DRAFT}&speed=fast&mode=live&wallet=${WALLET}&staging=true&useWs=true`;
+  console.log(`\nOpening with useWs=true: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   console.log('Waiting 30 seconds...');

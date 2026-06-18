@@ -3,12 +3,14 @@
  */
 
 import type { DraftRoom, League, Player, TeamPosition } from '@/types';
-import { normalizeWalletAddress } from './client';
+import { createHttpClient, normalizeWalletAddress } from './client';
 import { mapDraftTokenToLeague, type ApiDraftToken } from './owner';
-import { createDraftsHttpClient } from '@/lib/draftsHttpClient';
+import { getDraftsApiUrl } from '@/lib/staging';
 
 function draftsApi() {
-  return createDraftsHttpClient();
+  return createHttpClient({
+    baseUrl: getDraftsApiUrl(),
+  });
 }
 
 /** Backend draft info from `GET /draft/{draftId}/state/info`. */
@@ -68,7 +70,7 @@ export function mapDraftInfoToDraftRoom(info: ApiDraftInfo, opts?: { walletAddre
       ? (info.draftStartTime || now) - now
       : (info.currentPickEndTime || now) - now;
 
-  const timeRemaining = Math.max(0, Math.round(timeRemainingMs / 1000));
+  const timeRemaining = Math.max(0, Math.floor(timeRemainingMs / 1000));
 
   return {
     id: String(draftId),

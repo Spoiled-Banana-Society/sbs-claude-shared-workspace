@@ -6,13 +6,14 @@
  */
 
 import type { DraftRoom, LeaderboardEntry } from '@/types';
-import { authedAppFetch } from '@/lib/authedAppFetch';
-import { ApiError, normalizeWalletAddress } from './client';
+import { ApiError, createHttpClient, normalizeWalletAddress } from './client';
 import type { ApiDraftToken, ApiDraftTokenLevel } from './owner';
-import { createDraftsHttpClient } from '@/lib/draftsHttpClient';
+import { getDraftsApiUrl } from '@/lib/staging';
 
 function draftsApi() {
-  return createDraftsHttpClient();
+  return createHttpClient({
+    baseUrl: getDraftsApiUrl(),
+  });
 }
 
 export type DraftSpeed = 'fast' | 'slow';
@@ -34,28 +35,23 @@ export type LeaderboardOrderBy = string;
 export async function joinDraft(
   walletAddress: string,
   speed: DraftSpeed,
-  getAccessToken: () => Promise<string | null>,
   numLeaguesToJoin: number = 1,
   passType?: 'paid' | 'free',
 ): Promise<DraftRoom> {
+  const wallet = normalizeWalletAddress(walletAddress);
   const controller = new AbortController();
   const timeoutMs = 20_000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  let res: Response;
+  let res: unknown;
   try {
-    res = await authedAppFetch('/api/league/join', getAccessToken, {
-      method: 'POST',
-      body: JSON.stringify({
-        speed,
+    res = await draftsApi().post<unknown>(
+      `/league/${speed}/owner/${wallet}`,
+      {
         numLeaguesToJoin,
         passType: passType || 'paid',
-      }),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(text || `Join failed (${res.status})`);
-    }
+      },
+      { signal: controller.signal },
+    );
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.name === 'AbortError') {
@@ -66,19 +62,14 @@ export async function joinDraft(
     clearTimeout(timeout);
   }
 
-  const payload = (await res.json()) as unknown;
-
   // API returns an array of joined cards — unwrap first element
-  const raw = Array.isArray(payload) ? payload[0] : payload;
+  const raw = Array.isArray(res) ? res[0] : res;
   const obj: Record<string, unknown> = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
 
   // Best-effort mapping to the UI's `DraftRoom` type.
   // Expected fields vary; commonly includes `draftId` and/or `leagueId`.
-  const rawDraftId = obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id;
-  if (rawDraftId == null || String(rawDraftId).trim() === '') {
-    throw new Error('Join succeeded but the server response did not include a draft ID.');
-  }
-  const draftId = String(rawDraftId);
+  const draftId: string =
+    String(obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id ?? `${Date.now()}`);
 
   const maxPlayers: number = Number(obj.maxPlayers ?? obj.maxDrafters ?? 10) || 10;
   const players: number = Number(obj.players ?? obj.numPlayers ?? 1) || 1;
@@ -109,20 +100,9 @@ export async function joinDraft(
  *
  * Backend endpoint: `POST /league/{draftId}/actions/leave`
  */
-export async function leaveDraft(
-  draftId: string,
-  walletAddress: string,
-  getAccessToken: () => Promise<string | null>,
-  tokenId?: string,
-): Promise<void> {
-  const res = await authedAppFetch('/api/league/leave', getAccessToken, {
-    method: 'POST',
-    body: JSON.stringify({ draftId, tokenId: tokenId || '' }),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `Leave failed (${res.status})`);
-  }
+export async function leaveDraft(draftId: string, walletAddress: string, tokenId?: string): Promise<void> {
+  const wallet = normalizeWalletAddress(walletAddress);
+  await draftsApi().post(`/league/${draftId}/actions/leave`, { ownerId: wallet, tokenId: tokenId || '' });
 }
 
 function mapLeaderboardTokenToEntry(

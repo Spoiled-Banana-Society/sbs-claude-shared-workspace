@@ -25,9 +25,8 @@
 
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 
-import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
-
-const DRAFTS_API_BASE = getServerDraftsApiUrl();
+const DRAFTS_API_BASE = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 const NFT_LEAGUE_MAP_COLLECTION = 'nft_league_map';
 const TEAM_NICKNAMES_COLLECTION = 'userTeamNicknames';
@@ -165,7 +164,7 @@ function cardIdMatchesTokenId(cardId: string, tokenId: string): boolean {
 async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<BackendDraftToken | null> {
   if (!owner) return null;
   try {
-    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${owner.toLowerCase()}/draftToken/all`, {
+    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
@@ -188,7 +187,7 @@ async function findTokenByCardIdMatch(owner: string, tokenId: string): Promise<B
 async function findTokenByLeagueId(owner: string | null, leagueId: string): Promise<BackendDraftToken | null> {
   if (!owner) return null;
   try {
-    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${owner.toLowerCase()}/draftToken/all`, {
+    const res = await fetch(`${DRAFTS_API_BASE}/owner/${owner.toLowerCase()}/draftToken/all`, {
       signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return null;
@@ -402,7 +401,7 @@ export async function getTeamsForTokens(
     [...ownersToTokens.entries()].map(async ([owner, tokenIds]) => {
       try {
         const [res, nicknames] = await Promise.all([
-          fetch(`${getServerDraftsApiUrl()}/owner/${owner}/draftToken/all`, { signal: AbortSignal.timeout(3000) }),
+          fetch(`${DRAFTS_API_BASE}/owner/${owner}/draftToken/all`, { signal: AbortSignal.timeout(3000) }),
           readOwnerNicknames(owner),
         ]);
         if (!res.ok) return { owner, tokenIds, tokens: [] as BackendDraftToken[], nicknames };

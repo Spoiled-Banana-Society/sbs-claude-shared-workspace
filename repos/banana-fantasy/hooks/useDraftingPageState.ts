@@ -6,7 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { isDraftingOpen } from '@/lib/draftTypes';
-import { isStagingMode } from '@/lib/staging';
+import { isStagingMode, getDraftServerUrl } from '@/lib/staging';
 import { useActiveDrafts } from '@/hooks/useActiveDrafts';
 import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
@@ -16,27 +16,30 @@ import { leaveDraft } from '@/lib/api/leagues';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useContests } from '@/hooks/useContests';
 import { fetchJson } from '@/lib/appApiClient';
-import { authedAppFetch } from '@/lib/authedAppFetch';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import {
-  subscribeDraftNumPlayers,
-  subscribeDraftDisplayName,
-  subscribeDraftType,
-  subscribeRealTimeDraftInfo,
-  type RealTimeDraftInfoSnapshot,
-} from '@/lib/api/firebase';
+import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import type { Draft, LiveState } from '@/components/drafting/DraftRow';
-import {
-  capDisplayTimeRemaining,
-  expectedPickLengthFromSpeed,
-} from '@/utils/draftTimer';
-import { draftRoomActiveKey } from '@/lib/draftRoomConstants';
+import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
+
+type DraftingPageSocketMessage =
+  | { type: 'timer_update'; payload: TimerPayload }
+  | { type: 'draft_info_update'; payload: DraftInfoPayload }
+  | { type: 'draft_complete'; payload?: unknown }
+  | { type?: string; payload?: unknown };
+
+function isTimerUpdateMessage(data: DraftingPageSocketMessage): data is Extract<DraftingPageSocketMessage, { type: 'timer_update' }> {
+  return data.type === 'timer_update';
+}
+
+function isDraftInfoUpdateMessage(data: DraftingPageSocketMessage): data is Extract<DraftingPageSocketMessage, { type: 'draft_info_update' }> {
+  return data.type === 'draft_info_update';
+}
 
 function getSnakeDrafterIndex(pickNumber: number): number {
   const round = Math.ceil(pickNumber / 10);
@@ -104,7 +107,7 @@ export function formatRelativeTime(timestamp: number): string {
 }
 
 export function formatCountdown(totalSeconds: number): string {
-  const s = Math.max(0, Math.round(totalSeconds));
+  const s = Math.max(0, Math.ceil(totalSeconds));
   if (s < 60) return `${s}s`;
   const hrs = Math.floor(s / 3600);
   const mins = Math.floor((s % 3600) / 60);
@@ -116,9 +119,6 @@ export function formatCountdown(totalSeconds: number): string {
 export function useDraftingPageState() {
   const router = useRouter();
   const { isLoggedIn, user, setShowLoginModal, updateUser, refreshBalance, isLoading: authLoading, isBB3Holder, newUserPromoClaimed, isTwitterVerified, isBalanceLoaded } = useAuth();
-  const { getAccessToken } = usePrivy();
-  const getAccessTokenRef = useRef(getAccessToken);
-  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const contestsQuery = useContests();
   const contest = contestsQuery.data?.[0] ?? null;
   const promosQuery = usePromos({ userId: user?.id });
@@ -313,7 +313,7 @@ export function useDraftingPageState() {
           console.error('[Queue] Poll failed:', e);
           // 5s poll — reportClientError's per-source throttle dedupes the spam.
           reportClientError({
-            source: 'draft.queue_poll_failed',
+            source: LOG_SOURCES.draft.QUEUE_POLL_FAILED,
             message: e instanceof Error ? e.message : String(e),
             route: 'drafting',
             actor: user?.walletAddress,
@@ -383,15 +383,15 @@ export function useDraftingPageState() {
         const parts = draft.id.split('-');
         const queueType = parts[1];
         const roundId = parseInt(parts[2] || '1', 10) || 1;
-        const fetchRes = await authedAppFetch('/api/queues/create-draft', getAccessTokenRef.current, {
+        const res = await fetchJson<{ draftId: string }>('/api/queues/create-draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ queueType, roundId }),
+          body: JSON.stringify({
+            userId: user?.id || user?.walletAddress || '',
+            queueType,
+            roundId,
+          }),
         });
-        const res = (await fetchRes.json().catch(() => ({}))) as { draftId?: string; error?: string };
-        if (!fetchRes.ok) {
-          throw new Error(typeof res.error === 'string' ? res.error : `Request failed (${fetchRes.status})`);
-        }
 
         if (res.draftId) {
           let finalDraftId = res.draftId;
@@ -816,7 +816,7 @@ export function useDraftingPageState() {
 
         // Let the draft-room tab own writes while it's live (it has full engine
         // state) — avoid a tug-of-war with the in-room flow.
-        const hb = localStorage.getItem(draftRoomActiveKey(draftId));
+        const hb = localStorage.getItem(`draft-room-ws:${draftId}`);
         if (hb && Date.now() - Number(hb) < 10_000) return;
 
         const isYourTurn = !!wallet
@@ -872,139 +872,127 @@ export function useDraftingPageState() {
     };
   }, [liveDraftIdsKey]);
 
-  const draftOrderCacheRef = useRef(new Map<string, draftApi.DraftOrderEntry[]>());
-
-  const liveDraftIdsForRtdbSync = useMemo(() => {
-    const currentWallet = user?.walletAddress?.toLowerCase();
-    if (!currentWallet) return [] as string[];
-    return localDrafts
-      .filter(d =>
-        d.liveWalletAddress
-        && d.liveWalletAddress.toLowerCase() === currentWallet
-        && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
-      )
-      .map(d => d.id);
-  }, [localDrafts, user?.walletAddress]);
-
-  const liveDraftIdsForRtdbKey = liveDraftIdsForRtdbSync.join(',');
-
-  // Live draft state on /drafting cards — Firebase RTDB push updates replace
-  // the previous 3s getDraftInfo polling loop. draftOrder is fetched once per
-  // draft (stable for the draft lifetime); timer/pick state comes from RTDB.
   useEffect(() => {
     if (!isLive || !user?.walletAddress) return;
 
-    const currentWallet = user.walletAddress.toLowerCase();
-    const ids = liveDraftIdsForRtdbKey ? liveDraftIdsForRtdbKey.split(',') : [];
-    if (ids.length === 0) return;
+    let cancelled = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    const ensureDraftOrder = async (draftId: string) => {
-      const cached = draftOrderCacheRef.current.get(draftId);
-      if (cached) return cached;
-      try {
-        const restInfo = await draftApi.getDraftInfo(draftId);
-        const order = restInfo.draftOrder ?? [];
-        draftOrderCacheRef.current.set(draftId, order);
-        return order;
-      } catch (err) {
-        console.warn(`[Drafting] Failed to fetch draft order for ${draftId}:`, err);
-        return [] as draftApi.DraftOrderEntry[];
-      }
-    };
+    const syncLiveDrafts = async () => {
+      // Wallet-scope every iteration of this loop. Using the auth context's
+      // wallet (not the stale `banana-last-wallet` localStorage the useActiveDrafts
+      // hook reads) so the filter tracks auth state directly. Legacy rows with
+      // no liveWalletAddress are skipped: their promo attribution would be
+      // guessing, and misattributing promo credit across wallets is a real
+      // data-corruption risk, not cosmetic.
+      const currentWallet = user?.walletAddress?.toLowerCase();
+      if (!currentWallet) return;
 
-    const markDraftCompleted = (draftId: string) => {
-      draftStore.removeDraft(draftId);
-      setHiddenDraftIds((prev) => {
-        if (prev.has(draftId)) return prev;
-        const next = new Set(prev);
-        next.add(draftId);
-        try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
-        return next;
-      });
-    };
+      const allDrafts = draftStore.getActiveDrafts();
+      const liveDraftsToSync = allDrafts.filter(
+        d => d.liveWalletAddress
+          && d.liveWalletAddress.toLowerCase() === currentWallet
+          && (d.status === 'filling' || d.status === 'drafting' || d.phase === 'drafting'),
+      );
 
-    const applyRtdbUpdate = async (draftId: string, rtdb: RealTimeDraftInfoSnapshot) => {
-      const draft = draftStore.getDraft(draftId);
-      if (!draft?.liveWalletAddress || draft.liveWalletAddress.toLowerCase() !== currentWallet) return;
+      for (const draft of liveDraftsToSync) {
+        if (cancelled) return;
 
-      const pickNumber = rtdb.pickNumber ?? 0;
-      const totalPicks = 150;
-      if (rtdb.isDraftComplete || pickNumber >= totalPicks) {
-        markDraftCompleted(draftId);
-        return;
-      }
+        // Always fetch state — completion detection must NEVER be skipped.
+        // The heartbeat guard below only opts out of mid-draft *state*
+        // updates (so we don't fight the active WS connection), but a
+        // completed draft must always be removed from My Drafts so the
+        // next league shows up live.
+        let info;
+        try {
+          info = await draftApi.getDraftInfo(draft.id);
+        } catch (err) {
+          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
+          continue;
+        }
+        if (cancelled) return;
 
-      const heartbeat = localStorage.getItem(draftRoomActiveKey(draftId));
-      if (heartbeat && Date.now() - Number(heartbeat) < 10_000) return;
+        // Early completion exit — bypasses the heartbeat skip so a
+        // freshly-completed draft disappears the instant the next 3s
+        // sync runs, not after the WS heartbeat goes stale.
+        // ALSO adds the id to hiddenDraftIds (persisted in localStorage)
+        // so the next loadLiveDrafts() can't re-add it via the user's
+        // active-token list — completed drafts stay completed.
+        {
+          const totalPicks = (info.draftOrder?.length || 10) * 15;
+          if ((info.pickNumber ?? 0) >= totalPicks) {
+            draftStore.removeDraft(draft.id);
+            setHiddenDraftIds((prev) => {
+              if (prev.has(draft.id)) return prev;
+              const next = new Set(prev);
+              next.add(draft.id);
+              try { localStorage.setItem('banana-hidden-drafts', JSON.stringify([...next])); } catch { /* quota */ }
+              return next;
+            });
+            continue;
+          }
+        }
 
-      try {
-        const draftOrder = await ensureDraftOrder(draftId);
-        const fresh = draftStore.getDraft(draftId) || draft;
-        const playerCount = Math.max(draftOrder.length, fresh.players ?? 0);
-        const hasDraftStarted = playerCount >= 10 && pickNumber >= 1;
-        const isFull = playerCount >= 10;
-        const isPaid = draft.passType !== 'free';
+        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
+        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
 
-        const info: draftApi.DraftInfoResponse = {
-          draftId,
-          displayName: fresh.contestName,
-          draftStartTime: rtdb.draftStartTime ?? 0,
-          pickLength: rtdb.pickLength ?? 0,
-          currentDrafter: rtdb.currentDrafter ?? '',
-          pickNumber,
-          roundNum: rtdb.roundNum ?? 0,
-          pickInRound: rtdb.pickInRound ?? 0,
-          currentPickEndTime: rtdb.pickEndTime,
-          draftOrder,
-          adp: [],
-        };
+        try {
+          const fresh = draftStore.getDraft(draft.id) || draft;
+          const playerCount = info.draftOrder?.length || 0;
+          const hasDraftStarted = playerCount >= 10 && info.pickNumber >= 1;
+          const isFull = playerCount >= 10;
+          const isPaid = draft.passType !== 'free';
 
-        const draftOwnedByUser = draft.liveWalletAddress
-          && draft.liveWalletAddress.toLowerCase() === currentWallet;
+          // Promo side-effects: fire only when this draft unambiguously belongs
+          // to the authenticated user. Belt-and-suspenders on top of the outer
+          // wallet filter — if anything leaks through (race during wallet
+          // switch, future refactor), this guard prevents misattribution.
+          const draftOwnedByUser = draft.liveWalletAddress
+            && draft.liveWalletAddress.toLowerCase() === currentWallet;
 
           // Fire draft-complete for EVERY pass type (not just paid). The
           // server credits paid drafts to daily-drafts as before, and routes
           // free/jackpot/HOF drafts to the first-purchase popup gate only —
           // existing promo logic is unchanged (the free branch earns no
           // daily-drafts credit). pick10 stays paid-only below.
-        if (isFull && user?.id && draftOwnedByUser) {
-          const trackedKey = `promo-tracked:${draft.id}`;
-          if (!localStorage.getItem(trackedKey)) {
-            localStorage.setItem(trackedKey, '1');
-            fetch('/api/promos/draft-complete', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
-            }).catch(() => {});
-          }
+          if (isFull && user?.id && draftOwnedByUser) {
+            const trackedKey = `promo-tracked:${draft.id}`;
+            if (!localStorage.getItem(trackedKey)) {
+              localStorage.setItem(trackedKey, '1');
+              fetch('/api/promos/draft-complete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id, draftId: draft.id, passType: draft.passType || 'paid' }),
+              }).catch(() => {});
+            }
 
-          if (isPaid && draftOrder.length > 0 && draft.liveWalletAddress) {
-            const userIdx = draftOrder.findIndex(
-              (e) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
-            );
-            if (userIdx === 9) {
-              const pick10Key = `promo-pick10:${draft.id}`;
-              if (!localStorage.getItem(pick10Key)) {
-                localStorage.setItem(pick10Key, '1');
-                fetch('/api/promos/pick10', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
-                }).catch(() => {});
+            if (isPaid && info.draftOrder && draft.liveWalletAddress) {
+              const userIdx = info.draftOrder.findIndex(
+                (e: { ownerId: string }) => e.ownerId.toLowerCase() === draft.liveWalletAddress!.toLowerCase(),
+              );
+              if (userIdx === 9) {
+                const pick10Key = `promo-pick10:${draft.id}`;
+                if (!localStorage.getItem(pick10Key)) {
+                  localStorage.setItem(pick10Key, '1');
+                  fetch('/api/promos/pick10', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user.id, draftId: draft.id, draftName: draft.contestName, passType: draft.passType || 'paid' }),
+                  }).catch(() => {});
+                }
               }
             }
           }
-        }
 
-        if (hasDraftStarted) {
-          const { turnsUntilUserPick, isUserTurn, userIndex } =
-            computeTurnsFromServer(info, draft.liveWalletAddress!);
+          if (hasDraftStarted) {
+            const { turnsUntilUserPick, isUserTurn, pickEndTimestamp, userIndex } =
+              computeTurnsFromServer(info, draft.liveWalletAddress!);
 
             const totalPicks = (info.draftOrder?.length || 10) * 15;
             const isCompleted = info.pickNumber >= totalPicks;
             if (isCompleted) {
-              markDraftCompleted(draft.id);
-              return;
+              draftStore.removeDraft(draft.id);
+              continue;
             }
 
             // /state/info doesn't carry the current pick's absolute
@@ -1032,7 +1020,7 @@ export function useDraftingPageState() {
             } catch { /* ignore — fall back to prior computation */ }
 
             const nowMs = Date.now();
-            const effectivePickEnd = rtdbPickEnd ?? fresh.pickEndTimestamp;
+            const effectivePickEnd = rtdbPickEnd ?? pickEndTimestamp ?? fresh.pickEndTimestamp;
             const animStillRunning = (() => {
               if (fresh.randomizingStartedAt && !fresh.preSpinStartedAt) {
                 return (nowMs - fresh.randomizingStartedAt) < 63000;
@@ -1051,84 +1039,280 @@ export function useDraftingPageState() {
             // between rounds before). userSeat (static) + status/type still write.
             const pollPickStale = typeof fresh.enginePickNumber === 'number'
               && info.pickNumber < fresh.enginePickNumber;
-            
-          const patch: Partial<DraftState> = {
-            currentPick: turnsUntilUserPick,
-            isYourTurn: isUserTurn,
-            pickEndTimestamp: effectivePickEnd,
-            timeRemaining: isUserTurn && effectivePickEnd
-              ? capDisplayTimeRemaining(
-                  Math.max(0, Math.round(effectivePickEnd - nowMs / 1000)),
-                  info.pickLength,
-                )
-              : undefined,
-            enginePickNumber: pickNumber,
-          };
+            const patch: Partial<DraftState> = {
+              // Cache the user's seat so the realtime push can compute "N picks
+              // away" instantly without re-fetching the draft order.
+              ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
+              ...(pollPickStale ? {} : {
+                currentPick: turnsUntilUserPick,
+                isYourTurn: isUserTurn,
+                pickEndTimestamp: effectivePickEnd,
+                timeRemaining: isUserTurn && effectivePickEnd
+                  ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
+                  : undefined,
+                enginePickNumber: info.pickNumber,
+              }),
+            };
 
-          if (animStillRunning) {
-            draftStore.updateDraft(draft.id, patch);
-          } else {
-            draftStore.updateDraft(draft.id, {
-              ...patch,
-              status: 'drafting',
-              phase: 'drafting',
-              players: 10,
+            if (animStillRunning) {
+              draftStore.updateDraft(draft.id, patch);
+            } else {
+              // Draft is actively drafting (pickNumber >= 1) and we don't have
+              // a still-running reveal animation in local state. Mark drafting
+              // directly and CLEAR any stale animation timestamps. The previous
+              // version kicked off a brand-new randomizingStartedAt here when
+              // the user exited a mid-draft and re-landed on /drafting — which
+              // made the lobby replay the slot-machine reveal for a draft that
+              // was already in round 2. Never replay; if you missed the reveal
+              // by being in the draft room, you missed it.
+              draftStore.updateDraft(draft.id, {
+                ...patch,
+                status: 'drafting',
+                phase: 'drafting',
+                players: 10,
                 // Prefer the authoritative RTDB type (same source as the room);
                 // fall back to whatever's already stored so a transient RTDB
                 // miss never blanks a known type.
-              type: rtdbType || fresh.type || fresh.draftType || null,
-              draftType: rtdbType || fresh.draftType || fresh.type || null,
-              randomizingStartedAt: undefined,
-              preSpinStartedAt: undefined,
-            });
-          }
-        } else if (isFull) {
-          const patch: Partial<DraftState> = { players: 10 };
+                type: rtdbType || fresh.type || fresh.draftType || null,
+                draftType: rtdbType || fresh.draftType || fresh.type || null,
+                randomizingStartedAt: undefined,
+                preSpinStartedAt: undefined,
+              });
+            }
+          } else if (isFull) {
+            const patch: Partial<DraftState> = { players: 10 };
 
-          if (rtdb.draftStartTime) {
+            if (info.draftStartTime) {
               // Authoritative reveal clock for getLiveState's server-clock branch.
               patch.draftStartTimeMs = info.draftStartTime * 1000;
-            const serverPreSpin = rtdb.draftStartTime * 1000 - 60000;
-            if (!fresh.preSpinStartedAt) {
-              if (fresh.randomizingStartedAt) {
-                const barStillRunning = (Date.now() - fresh.randomizingStartedAt) < 3000;
-                if (!barStillRunning) {
-                  patch.preSpinStartedAt = serverPreSpin;
-                  patch.randomizingStartedAt = undefined;
-                  patch.phase = 'pre-spin';
+              const serverPreSpin = info.draftStartTime * 1000 - 60000;
+              if (!fresh.preSpinStartedAt) {
+                if (fresh.randomizingStartedAt) {
+                  const barStillRunning = (Date.now() - fresh.randomizingStartedAt) < 3000;
+                  if (!barStillRunning) {
+                    patch.preSpinStartedAt = serverPreSpin;
+                    patch.randomizingStartedAt = undefined;
+                    patch.phase = 'pre-spin';
+                  }
+                } else {
+                  // Trust the server's pre-spin timestamp. If we landed here
+                  // without ever running the bar locally (common on mobile:
+                  // user opens /drafting after the draft already filled, or
+                  // after backgrounding the tab), don't restart the 3s + 60s
+                  // cycle from now — that double-counts: type reveals early
+                  // because the freshly-set timestamp puts us past elapsed=23s
+                  // on subsequent polls, then the countdown visibly restarts.
+                  // Only run the bar if we're still actually in the pre-fill
+                  // window where serverPreSpin is in the future.
+                  if (Date.now() >= serverPreSpin) {
+                    patch.preSpinStartedAt = serverPreSpin;
+                    patch.phase = 'pre-spin';
+                  } else {
+                    patch.randomizingStartedAt = Date.now();
+                  }
                 }
-              } else if (Date.now() >= serverPreSpin) {
+              } else if (Math.abs(fresh.preSpinStartedAt - serverPreSpin) > 2000) {
                 patch.preSpinStartedAt = serverPreSpin;
-                patch.phase = 'pre-spin';
-              } else {
-                patch.randomizingStartedAt = Date.now();
               }
-            } else if (Math.abs(fresh.preSpinStartedAt - serverPreSpin) > 2000) {
-              patch.preSpinStartedAt = serverPreSpin;
             }
-          }
 
-          draftStore.updateDraft(draft.id, patch);
-        } else if (playerCount > 0 && draft.status === 'filling') {
-          draftStore.updateDraft(draft.id, { players: playerCount });
+            draftStore.updateDraft(draft.id, patch);
+          } else if (playerCount > 0 && draft.status === 'filling') {
+            draftStore.updateDraft(draft.id, { players: playerCount });
+          }
+        } catch (err) {
+          console.warn(`[Drafting] Failed to sync draft ${draft.id}:`, err);
         }
-      } catch (err) {
-        console.warn(`[Drafting] Failed to apply RTDB update for ${draftId}:`, err);
       }
     };
 
-    const unsubs = ids.map((draftId) =>
-      subscribeRealTimeDraftInfo(draftId, (rtdb) => {
-        if (rtdb) void applyRtdbUpdate(draftId, rtdb);
-      }),
-    );
+    void syncLiveDrafts();
+
+    let focusTimeout: ReturnType<typeof setTimeout> | null = null;
+    const onFocus = () => {
+      if (focusTimeout) clearTimeout(focusTimeout);
+      focusTimeout = setTimeout(() => {
+        void syncLiveDrafts();
+      }, 500);
+    };
+
+    // visibilitychange too — mobile returning from background fires it (not
+    // focus); without it the cached phase rendered stale for ~10s.
+    const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisible);
+    intervalId = setInterval(() => {
+      void syncLiveDrafts();
+    }, 3000);
 
     return () => {
-      for (const unsub of unsubs) {
-        try { unsub(); } catch { /* ignore */ }
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisible);
+      if (focusTimeout) clearTimeout(focusTimeout);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isLive, user?.id, user?.walletAddress]);
+
+  const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
+
+  // Privy access token for the WS auth gate, via the ref pattern (Rule #0:
+  // privy-derived callbacks must never enter effect deps). The Go WS server
+  // verifies this JWT before upgrading — these lobby connections were
+  // rejected 401 on EVERY attempt since auth was added because no token was
+  // ever sent; the page silently fell back to polling and nobody noticed.
+  const privyForWs = usePrivy();
+  const getWsTokenRef = useRef(privyForWs.getAccessToken);
+  getWsTokenRef.current = privyForWs.getAccessToken;
+
+  useEffect(() => {
+    if (!isLive || !user?.walletAddress) return;
+
+    const wallet = user.walletAddress.trim().toLowerCase();
+    const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
+
+    let syncInFlight = false;
+    const syncConnections = async () => {
+      // Re-entrancy guard: the token fetch awaits, and an overlapping 3s tick
+      // could double-connect the same draft.
+      if (syncInFlight) return;
+      syncInFlight = true;
+      try {
+        await syncConnectionsInner();
+      } finally {
+        syncInFlight = false;
       }
     };
-  }, [isLive, user?.id, user?.walletAddress, liveDraftIdsForRtdbKey]);
+
+    const syncConnectionsInner = async () => {
+      // WS connections are opened with the current wallet as the `address` param
+      // — stale connections from a prior wallet would auth against the wrong
+      // user and leak events into the wrong account. Scope by current wallet
+      // and let the effect's cleanup (which re-runs on user.walletAddress
+      // change, see dep at bottom) close prior-wallet connections.
+      const allDrafts = draftStore.getActiveDrafts();
+      const draftingDrafts = allDrafts.filter(
+        d => d.liveWalletAddress
+          && d.liveWalletAddress.toLowerCase() === wallet
+          && d.phase === 'drafting'
+          && d.status === 'drafting',
+      );
+
+      const activeIds = new Set(draftingDrafts.map(d => d.id));
+      const conns = wsConnectionsRef.current;
+
+      conns.forEach((ws, id) => {
+        const heartbeat = localStorage.getItem(`draft-room-ws:${id}`);
+        const draftRoomActive = heartbeat && Date.now() - Number(heartbeat) < 10_000;
+        if (!activeIds.has(id) || draftRoomActive) {
+          ws.close();
+          conns.delete(id);
+        }
+      });
+
+      // Fetch the Privy token ONCE per sync (same token for every draft).
+      // Without it the server 401s the upgrade and we silently lose live
+      // updates; on fetch failure we still attempt token-less (= today's
+      // behavior: rejected → the 3s poll keeps the page fresh).
+      let wsToken: string | null = null;
+      if (draftingDrafts.some((d) => !conns.has(d.id))) {
+        try {
+          wsToken = (await getWsTokenRef.current?.()) ?? null;
+        } catch { /* token-less attempt below; poll remains the fallback */ }
+      }
+
+      for (const draft of draftingDrafts) {
+        if (conns.has(draft.id)) continue;
+
+        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
+        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
+
+        const tokenParam = wsToken ? `&token=${encodeURIComponent(wsToken)}` : '';
+        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}${tokenParam}`;
+        const ws = new WebSocket(url);
+        conns.set(draft.id, ws);
+
+        let pingInterval: ReturnType<typeof setInterval> | null = null;
+        ws.onopen = () => {
+          logger.debug(`[Drafting WS] connected to ${draft.id}`);
+          pingInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'ping', payload: {} }));
+            }
+          }, 30_000);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data) as DraftingPageSocketMessage;
+            const { type } = data;
+            const draftId = draft.id;
+
+            if (isTimerUpdateMessage(data)) {
+              const payload = data.payload;
+              const endTs = payload.endOfTurnTimestamp;
+              const currentDrafter = (payload.currentDrafter || '').toLowerCase();
+              const isUserTurn = wallet === currentDrafter;
+              draftStore.updateDraft(draftId, {
+                pickEndTimestamp: endTs,
+                isYourTurn: isUserTurn,
+                timeRemaining: endTs ? Math.max(0, Math.ceil(endTs - Date.now() / 1000)) : undefined,
+              });
+            }
+
+            if (isDraftInfoUpdateMessage(data)) {
+              const info = data.payload;
+              const currentDrafter = (info.currentDrafter || '').toLowerCase();
+              const isUserTurn = wallet === currentDrafter;
+              const userIndex = (info.draftOrder || []).findIndex(
+                (entry: { ownerId: string }) => entry.ownerId.toLowerCase() === wallet,
+              );
+
+              let turnsUntilUserPick = 0;
+              if (!isUserTurn && userIndex >= 0) {
+                const totalPicks = (info.draftOrder?.length || 10) * 15;
+                for (let i = 1; i <= totalPicks - info.pickNumber + 1; i++) {
+                  if (getSnakeDrafterIndex(info.pickNumber + i) === userIndex) {
+                    turnsUntilUserPick = i;
+                    break;
+                  }
+                }
+              }
+
+              draftStore.updateDraft(draftId, {
+                currentPick: turnsUntilUserPick,
+                isYourTurn: isUserTurn,
+                enginePickNumber: info.pickNumber,
+              });
+            }
+
+            if (type === 'draft_complete') {
+              draftStore.removeDraft(draftId);
+              ws.close();
+              conns.delete(draftId);
+            }
+          } catch {}
+        };
+
+        ws.onclose = () => {
+          if (pingInterval) clearInterval(pingInterval);
+          conns.delete(draft.id);
+        };
+
+        ws.onerror = () => {};
+      }
+    };
+
+    void syncConnections();
+    const interval = setInterval(() => { void syncConnections(); }, 3000);
+
+    return () => {
+      clearInterval(interval);
+      const conns = wsConnectionsRef.current;
+      conns.forEach((ws) => ws.close());
+      conns.clear();
+    };
+  }, [isLive, user?.walletAddress]);
 
   const activeDrafts = useMemo(() => {
     // Not signed in → don't show anyone else's drafts cached in localStorage.
@@ -1435,7 +1619,7 @@ export function useDraftingPageState() {
     } catch { /* ignore */ }
 
     try {
-      await leaveDraft(exitingDraft.id, user.walletAddress, getAccessToken, storedDraft?.cardId);
+      await leaveDraft(exitingDraft.id, user.walletAddress, storedDraft?.cardId);
       // Refund the Firestore pass counter (Go side already returns the
       // card; without this the header counter stays decremented).
       // Awaited so the POST has a chance to land before any subsequent
@@ -1518,7 +1702,7 @@ export function useDraftingPageState() {
 
     const wallet = user?.walletAddress;
     if (wallet && allIds.length > 0) {
-      void Promise.allSettled(allIds.map(id => leaveDraft(id, wallet, getAccessTokenRef.current)));
+      void Promise.allSettled(allIds.map(id => leaveDraft(id, wallet)));
     }
   };
 

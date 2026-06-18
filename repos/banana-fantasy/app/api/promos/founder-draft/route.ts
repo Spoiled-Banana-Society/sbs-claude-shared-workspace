@@ -12,7 +12,11 @@ import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 // Hardcoded staging — same pattern as /api/spectate/draft-state.
-import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
+const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+
+function getServerDraftsApiUrl(): string {
+  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
+}
 
 interface DraftInfoResponse {
   draftId: string;

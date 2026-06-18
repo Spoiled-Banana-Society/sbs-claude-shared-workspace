@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
 import { getDraftInfo } from '@/lib/api/drafts';
 import { getOwnerDraftTokens, isPlaceholderName } from '@/lib/api/owner';
-import { draftsApiFetch } from '@/lib/draftsHttpClient';
+import { getDraftsApiUrl } from '@/lib/staging';
 import { bananaDefaultName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -58,7 +58,8 @@ function positionColor(playerId: string): string {
 // ─── Fetch rosters (returns all 10 teams) ────────────────────────────────
 
 async function fetchRosters(draftId: string): Promise<Record<string, Record<string, unknown>>> {
-  const res = await draftsApiFetch(`/draft/${draftId}/state/rosters`);
+  const base = getDraftsApiUrl();
+  const res = await fetch(`${base}/draft/${draftId}/state/rosters`);
   if (!res.ok) throw new Error('Failed to fetch rosters');
   return res.json();
 }

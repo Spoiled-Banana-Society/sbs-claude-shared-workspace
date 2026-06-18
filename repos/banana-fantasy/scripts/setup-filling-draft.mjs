@@ -2,8 +2,7 @@
  * Sets up a draft with 4/10 players on staging for testing the filling flow.
  * Run: node scripts/setup-filling-draft.mjs
  */
-import { API_BASE } from './e2e-drafts-api.mjs';
-
+const API_BASE = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
 
 async function fetchJson(url, opts) {

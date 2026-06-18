@@ -1,16 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/lib/staging', () => ({
-  getDraftsApiUrl: () => 'https://drafts-api.test',
+  getDraftsApiUrl: () => 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app',
 }));
 vi.mock('@/lib/clientLog', () => ({
   clientLog: vi.fn(),
-}));
-// pruneMissingDrafts now calls the API via createDraftsHttpClient, which awaits
-// an auth token (getPrivyAccessToken) before fetching. Mock it so the test
-// exercises the real 404 -> prune path instead of erroring on the token.
-vi.mock('@/lib/privyAccessToken', () => ({
-  getPrivyAccessToken: async () => 'test-token',
 }));
 
 // jsdom-free env — stub localStorage + window for the module's window check.
@@ -61,9 +55,7 @@ function mockFetchByStatus(perId: Record<string, number>) {
     const m = /\/draft\/([^/]+)\/state\/info/.exec(s);
     const id = m?.[1] ?? '';
     const status = perId[id] ?? 200;
-    // Full Response shape: the HTTP client reads res.headers too (the old
-    // direct-fetch path didn't), so the mock must provide it.
-    return { ok: status >= 200 && status < 300, status, headers: { get: () => null }, json: async () => ({}), text: async () => '' };
+    return { ok: status >= 200 && status < 300, status, json: async () => ({}), text: async () => '' };
   });
   global.fetch = fn as unknown as typeof fetch;
   return fn;

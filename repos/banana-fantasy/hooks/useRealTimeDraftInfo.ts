@@ -98,10 +98,11 @@ export function useRealTimeDraftInfo(
     setIsListening(true);
     setHasError(false);
 
-    // Set up a timeout: if we don't receive any data within 15s, mark as error.
+    // Set up a timeout: if we don't receive any data within 15s,
+    // mark as error so the page can fall back to WebSocket.
     const timeoutId = setTimeout(() => {
       if (!data) {
-        console.warn('[Firebase RTDB] No data received within 15s — marking as error');
+        console.warn('[Firebase RTDB] No data received within 15s — marking as error for WS fallback');
         reportClientError({
           source: LOG_SOURCES.draft.FIREBASE_RTDB_TIMEOUT,
           message: 'No Firebase RTDB data received within 15s',
@@ -120,7 +121,7 @@ export function useRealTimeDraftInfo(
         if (!value) {
           console.warn(`[Firebase RTDB] No data at ${path}`);
           // If we get a null value on first callback, this often means the path doesn't exist
-          // or we don't have permission.
+          // or we don't have permission. Signal error for WS fallback.
           setHasError(true);
           return;
         }

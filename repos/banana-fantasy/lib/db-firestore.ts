@@ -1,6 +1,5 @@
 import crypto from 'node:crypto';
 
-import { tryGetServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
@@ -1356,18 +1355,21 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     if (ids.length > 0) {
       const minId = Math.min(...ids);
       const maxId = Math.max(...ids);
-      const wallet = expectedFrom.toLowerCase();
-      const { draftsApiServer } = await import('@/lib/draftsApiServer');
-      const res = await draftsApiServer(`/owner/${wallet}/draftToken/mint`, {
-        method: 'POST',
-        wallet,
-        body: { minId, maxId },
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        logger.warn('verifyPurchase.record_tokens_failed', { status: res.status, body: text.slice(0, 200), txHash });
+      const apiBase = (process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app').trim(); // staging only — never the old prod API
+      if (apiBase) {
+        const res = await fetch(`${apiBase}/owner/${expectedFrom.toLowerCase()}/draftToken/mint`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ minId, maxId }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          logger.warn('verifyPurchase.record_tokens_failed', { status: res.status, body: text.slice(0, 200), txHash });
+        } else {
+          logger.info('verifyPurchase.record_tokens_ok', { minId, maxId, wallet: expectedFrom, txHash });
+        }
       } else {
-        logger.info('verifyPurchase.record_tokens_ok', { minId, maxId, wallet: expectedFrom, txHash });
+        logger.warn('verifyPurchase.drafts_api_url_missing');
       }
     }
   } catch (err) {
@@ -1649,8 +1651,10 @@ export async function recomputeUserExposure(
   // which on Vercel is set to the production URL and would leak prod
   // roster data into staging exposure docs. Same pattern the badge
   // sweep uses (app/api/badges/route.ts).
-  const baseUrl = tryGetServerDraftsApiUrl();
-  if (!baseUrl) return null;
+  const baseUrl = (
+    process.env.STAGING_DRAFTS_API_URL ||
+    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
+  ).replace(/\/$/, '');
 
   let active: Array<{ _leagueId?: string; roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
@@ -2744,8 +2748,11 @@ function jackpotWinnerIndex(draftId: string): number {
  */
 async function getDraftWinnerOwner(draftId: string, winnerIndex: number): Promise<string | null> {
   try {
-    const baseUrl = tryGetServerDraftsApiUrl();
-    if (!baseUrl) return null;
+    const baseUrl = (
+      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
+      process.env.STAGING_DRAFTS_API_URL ||
+      'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
+    ).replace(/\/$/, '');
     const res = await fetch(`${baseUrl}/draft/${encodeURIComponent(draftId)}/state/info`);
     if (!res.ok) return null;
     const data = (await res.json()) as { draftOrder?: { ownerId?: string }[] };

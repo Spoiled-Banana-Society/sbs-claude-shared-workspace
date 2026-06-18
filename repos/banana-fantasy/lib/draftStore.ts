@@ -191,11 +191,15 @@ export async function pruneMissingDrafts(): Promise<string[]> {
   // Dynamic imports keep draftStore SSR-safe. `lib/staging` reads
   // window-side flags during isStagingMode(); `lib/clientLog` ships to
   // /api/debug/log so prune activity shows up in the admin Logs tab.
-  const [{ createDraftsHttpClient }, { clientLog }] = await Promise.all([
-    import('@/lib/draftsHttpClient'),
+  const [{ getDraftsApiUrl }, { clientLog }] = await Promise.all([
+    import('@/lib/staging'),
     import('@/lib/clientLog'),
   ]);
-  const client = createDraftsHttpClient();
+  const baseUrl = getDraftsApiUrl();
+  if (!baseUrl) {
+    clientLog('prune', 'skip.no-base-url', { cached: all.length });
+    return [];
+  }
 
   const now = Date.now();
   const candidates = all.filter((d) => {
@@ -208,26 +212,25 @@ export async function pruneMissingDrafts(): Promise<string[]> {
     cached: all.length,
     candidates: candidates.length,
     skippedFresh: all.length - candidates.length,
+    baseUrl,
   });
 
   const pruned: string[] = [];
   const errors: Array<{ id: string; reason: string }> = [];
   for (const d of candidates) {
     try {
-      await client.get(`/draft/${d.id}/state/info`);
-    } catch (e) {
-      const { ApiError } = await import('@/lib/api/client');
-      if (e instanceof ApiError && e.status === 404) {
+      const res = await fetch(`${baseUrl}/draft/${d.id}/state/info`);
+      if (res.status === 404) {
         pruned.push(d.id);
         clientLog('prune', 'remove', { id: d.id });
-      } else if (e instanceof ApiError && e.status && e.status >= 500) {
-        errors.push({ id: d.id, reason: `http_${e.status}` });
-      } else {
-        errors.push({
-          id: d.id,
-          reason: e instanceof Error ? e.message : String(e),
-        });
+      } else if (res.status >= 500) {
+        errors.push({ id: d.id, reason: `http_${res.status}` });
       }
+    } catch (e) {
+      errors.push({
+        id: d.id,
+        reason: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 

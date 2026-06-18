@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 /**
  * Cron job that pulls severity>=ERROR log entries from the staging Go
- * services (sbs-drafts-api-staging) and
+ * services (sbs-drafts-api-staging + sbs-drafts-server-staging) and
  * writes them into the v2_error_events Firestore collection. From there
  * the existing admin notification-counts pipeline (countServerErrors +
  * IMPORTANT_ERROR_PATTERNS regex with ^backend\.) lights up the admin
@@ -56,7 +56,7 @@ function httpContext(entry: LogEntry): string {
   return `${h.requestMethod || 'request'} ${path} → ${h.status ?? '?'}`;
 }
 
-const SERVICES = ['sbs-drafts-api-staging'];
+const SERVICES = ['sbs-drafts-api-staging', 'sbs-drafts-server-staging'];
 const STATE_DOC = 'admin_state/cloud_error_sync';
 const PROJECT_ID = 'sbs-staging-env';
 const LOOKBACK_FALLBACK_MS = 15 * 60 * 1000; // 15 min on first run
@@ -137,6 +137,12 @@ function classifyEvent(entry: LogEntry, serviceName: string): { source: string; 
   }
   if (/Removed user from draft after it failed/i.test(tp)) {
     return { source: `backend.${svc}.fill_rollback`, message: tp.slice(0, 1500) };
+  }
+  if (/WebSocket closed due to client creation error/i.test(tp)) {
+    return { source: `backend.${svc}.ws_client_create_failed`, message: tp.slice(0, 1500) };
+  }
+  if (/\[ws\] auth failed/i.test(tp)) {
+    return { source: `backend.${svc}.ws_auth_failed`, message: tp.slice(0, 1500) };
   }
   if (/cloud task/i.test(tp)) {
     return { source: `backend.${svc}.cloud_task_error`, message: tp.slice(0, 1500) };

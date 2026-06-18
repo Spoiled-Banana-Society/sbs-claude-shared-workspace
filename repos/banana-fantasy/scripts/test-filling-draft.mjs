@@ -6,7 +6,8 @@
  * After 20 seconds, fills the draft to 10/10 so you can watch the transition.
  */
 import { chromium } from 'playwright';
-import { API_BASE } from './e2e-drafts-api.mjs';
+
+const API_BASE = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
 
 async function fetchJson(url, opts) {

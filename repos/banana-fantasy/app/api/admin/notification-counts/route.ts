@@ -85,7 +85,7 @@ const IMPORTANT_ERROR_PATTERNS: RegExp[] = [
   // freeze class). Fired by the health-canary stall watchdog.
   /^draft\.stalled_no_advance/i,
   // Draft money + blocking gaps (Phase 1 coverage). Note: `^ws\.` does NOT
-  // match `draft.autopick_submit_failed`, and `autopick_failed` does NOT match
+  // match `draft.ws.*`, and `autopick_failed` does NOT match
   // `autopick_submit_failed` — so these are listed explicitly.
   /^draft\.leave/i,
   /^draft\.join_refund/i,

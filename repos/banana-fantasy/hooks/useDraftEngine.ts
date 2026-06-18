@@ -14,7 +14,6 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DEFAULT_POSITION_LIMITS, type Position, type PositionLimits } from '@/lib/positionLimits';
 import { usePositionLimits } from '@/hooks/usePositionLimits';
-import { capDisplayTimeRemaining } from '@/utils/draftTimer';
 import { bananaDefaultName } from '@/utils/helpers';
 
 export type DraftPlayer = typeof DRAFT_PLAYERS[number];
@@ -234,7 +233,6 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const userPickedManuallyRef = useRef(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pickLengthRef = useRef(30);
   const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isProcessingRef = useRef(false);
   // Track highest pickNum seen — rejects duplicate/stale picks (matches old useDraftRoom.ts pattern)
@@ -441,15 +439,14 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     const now = Date.now();
     if (draftInfo.draftStartTime && now < draftInfo.draftStartTime * 1000) {
       // Draft hasn't started yet — show countdown to start
-      const remaining = Math.max(0, Math.round((draftInfo.draftStartTime * 1000 - now) / 1000));
+      const remaining = Math.max(0, Math.ceil((draftInfo.draftStartTime * 1000 - now) / 1000));
       setTimeRemaining(remaining);
       setEndOfTurnTimestamp(draftInfo.draftStartTime);
       setDraftPhase('countdown');
     } else {
       // Draft is active — use pickLength as reasonable default
       // The WS timer_update message will quickly override this with the precise endOfTurnTimestamp
-      pickLengthRef.current = draftInfo.pickLength || 30;
-      setTimeRemaining(pickLengthRef.current);
+      setTimeRemaining(draftInfo.pickLength || 30);
       setDraftPhase('live');
       // Don't set endOfTurnTimestamp here — let the WS timer_update set it accurately
     }
@@ -467,8 +464,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     setCurrentDrafterAddress(payload.currentDrafter);
     setEndOfTurnTimestamp(payload.endOfTurnTimestamp);
     // Calculate remaining from server timestamps (server sends UNIX seconds, convert to ms)
-    const remaining = Math.max(0, Math.round((payload.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
-    setTimeRemaining(capDisplayTimeRemaining(remaining, pickLengthRef.current));
+    const remaining = Math.max(0, Math.ceil((payload.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+    setTimeRemaining(remaining);
     setDraftPhase('live'); // First timer_update = draft has started, picks are happening
   }, []);
 
@@ -668,10 +665,6 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   // Accepts a Firebase RTDB snapshot and updates engine state accordingly.
   // This replaces the WebSocket timer_update, new_pick, and draft_info_update handlers.
   const setFirebaseState = useCallback((rtdb: RealTimeDraftInfo) => {
-    if (rtdb.pickLength > 0) {
-      pickLengthRef.current = rtdb.pickLength;
-    }
-
     // Update current drafter
     setCurrentDrafterAddress(rtdb.currentDrafter);
 
@@ -687,15 +680,14 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     // Update timer from pickEndTime (replaces WS timer_update)
     if (rtdb.pickEndTime) {
       setEndOfTurnTimestamp(rtdb.pickEndTime);
-      const remaining = Math.max(0, Math.round((rtdb.pickEndTime * 1000 - Date.now()) / 1000));
-      const capped = capDisplayTimeRemaining(remaining, pickLengthRef.current);
-      setTimeRemaining(prev => prev === capped ? prev : capped);
+      const remaining = Math.max(0, Math.ceil((rtdb.pickEndTime * 1000 - Date.now()) / 1000));
+      setTimeRemaining(prev => prev === remaining ? prev : remaining);
       setDraftPhase('live');
     }
 
     // Detect draft start countdown
     if (rtdb.draftStartTime && Date.now() < rtdb.draftStartTime * 1000) {
-      const remaining = Math.max(0, Math.round((rtdb.draftStartTime * 1000 - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.ceil((rtdb.draftStartTime * 1000 - Date.now()) / 1000));
       setPreTimeRemaining(remaining);
       setDraftPhase('countdown');
     }
@@ -1028,9 +1020,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     // 250ms interval matches production useDraftRoom.ts for smooth countdown display
     timerRef.current = setInterval(() => {
-      const remaining = Math.max(0, Math.round((endOfTurnTimestamp * 1000 - Date.now()) / 1000));
-      const capped = capDisplayTimeRemaining(remaining, pickLengthRef.current);
-      setTimeRemaining(prev => prev === capped ? prev : capped);
+      const remaining = Math.max(0, Math.ceil((endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+      setTimeRemaining(prev => prev === remaining ? prev : remaining);
     }, 250);
 
     return () => {

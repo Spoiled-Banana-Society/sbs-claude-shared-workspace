@@ -6,7 +6,6 @@ import {
   COLLECTION_SLUG,
   type OfferData,
 } from '@/lib/opensea';
-import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +104,8 @@ export async function GET(req: Request) {
     offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
     // Enrich with SBS profiles (same pattern as listings route)
-    const DRAFTS_API = getServerDraftsApiUrl();
+    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
+      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
     try {
       const uniqueOfferers = [...new Set(offers.map((o: OfferData) => o.offererAddress.toLowerCase()))];
       const profiles = new Map<string, { name: string; pfp: string | null }>();

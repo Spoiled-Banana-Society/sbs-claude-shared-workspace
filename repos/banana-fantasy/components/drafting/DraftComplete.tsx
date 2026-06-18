@@ -9,7 +9,6 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
 import { toCardPlayers, teamNoFromToken } from '@/lib/teamCardData';
-import { draftsApiFetch } from '@/lib/draftsHttpClient';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface RosterEntry {
@@ -130,11 +129,18 @@ export function DraftComplete({
     if (cardReady || !draftId || !walletAddress) return;
     let cancelled = false;
 
-    async function fetchCard() {
-      // Retry up to 10 times over ~30 seconds (card generation takes a few seconds)
+    logger.info('[DraftComplete] Generating digital team — polling for card-ready', { draftId, type });
+
+    async function pollCardReady() {
+      const { getDraftsApiUrl } = await import('@/lib/staging');
+      const FALLBACK_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // never prod
+      const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
+
+      // Retry up to 10 times over ~30s — matches prior behaviour. The card
+      // usually lands in a few seconds; the cap only guards a stuck backend.
       for (let attempt = 0; attempt < 10; attempt++) {
         try {
-          const res = await draftsApiFetch(`/owner/${walletAddress}/drafts/${draftId}`);
+          const res = await fetch(`${baseUrl}/owner/${walletAddress}/drafts/${draftId}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           if (cancelled) return;
@@ -170,7 +176,7 @@ export function DraftComplete({
       }
     }
 
-    void fetchCard();
+    pollCardReady();
     return () => { cancelled = true; };
   }, [draftId, walletAddress, cardReady, type]);
 

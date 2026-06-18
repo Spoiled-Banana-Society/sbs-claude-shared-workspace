@@ -1,24 +1,5 @@
 import admin from 'firebase-admin';
-import { readFileSync, existsSync } from 'fs';
-import { config } from 'dotenv';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-for (const file of ['.env.local', '.env.staging', '.env']) {
-  const path = join(ROOT, file);
-  if (existsSync(path)) config({ path, override: false });
-}
-
-const API_BASE = (
-  process.env.STAGING_DRAFTS_API_URL ||
-  process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-  ''
-).replace(/\/$/, '');
-if (!API_BASE) {
-  throw new Error('Set STAGING_DRAFTS_API_URL or NEXT_PUBLIC_STAGING_DRAFTS_API_URL');
-}
-
+import { readFileSync } from 'fs';
 const sa = JSON.parse(readFileSync(process.env.SA_PATH, 'utf8'));
 admin.initializeApp({ credential: admin.credential.cert(sa), databaseURL: 'https://sbs-staging-env-default-rtdb.firebaseio.com' });
 const rtdb = admin.database();
@@ -29,7 +10,7 @@ console.log(`Wallet: ${wallet}\n`);
 
 // 1. What does the Go API return for this user's draft tokens?
 console.log('=== 1. Go API /owner/.../draftToken/all (raw) ===');
-const apiRes = await fetch(`${API_BASE}/owner/${wallet}/draftToken/all`);
+const apiRes = await fetch(`https://sbs-drafts-api-staging-652484219017.us-central1.run.app/owner/${wallet}/draftToken/all`);
 const apiData = await apiRes.json();
 const active = apiData.active || [];
 console.log(`  ${active.length} active tokens`);

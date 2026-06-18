@@ -39,7 +39,6 @@ import { logger } from '@/lib/logger';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 import { useUserRankings } from '@/hooks/useUserRankings';
-import { assertSessionWallet } from '@/lib/assertSessionWallet';
 
 function DraftRoomContent() {
   const searchParams = useSearchParams();
@@ -54,7 +53,7 @@ function DraftRoomContent() {
   // instead of flashing a hardcoded "1".
   const initialPlayers = parseInitialPlayers(searchParams?.get('players'));
   const urlDraftId = searchParams?.get('draftId') || searchParams?.get('id') || '';
-  const urlWallet = searchParams?.get('wallet') || '';
+  const walletParam = searchParams?.get('wallet') || '';
   const modeParam = searchParams?.get('mode') as DraftMode | null;
   const speedParam = searchParams?.get('speed') as 'fast' | 'slow' | null;
   const passTypeParam = searchParams?.get('passType') as 'paid' | 'free' | null;
@@ -69,7 +68,34 @@ function DraftRoomContent() {
   const [draftId, _setDraftId] = useState(urlDraftId);
   const draftIdRef = useRef(draftId);
   draftIdRef.current = draftId;
-  const isLiveMode = modeParam === 'live' && !!urlWallet;
+  const isLiveMode = modeParam === 'live' && !!walletParam;
+
+  // Ownership gate for wheel-pass (queue) drafts. If this draftId belongs to a
+  // queue round but the connected wallet is NOT one of its members — e.g. they
+  // sold the pass while it was filling and the slot moved to the buyer — bounce
+  // them back to the lobby; they don't own this draft anymore. One-shot fetch,
+  // deps are stable scalars only (no Privy-derived callback) per Rule #0.
+  useEffect(() => {
+    if (!draftId || !walletParam || spectateParam) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/queues');
+        if (!res.ok) return;
+        const queues = (await res.json()) as Record<string, { rounds?: Array<{ draftId?: string | null; members?: Array<{ wallet?: string }> }> }>;
+        const me = walletParam.toLowerCase();
+        for (const q of Object.values(queues || {})) {
+          for (const r of q.rounds || []) {
+            if (!r.draftId || String(r.draftId) !== String(draftId)) continue;
+            const isMember = (r.members || []).some((m) => m.wallet?.toLowerCase() === me);
+            if (!isMember && !cancelled) router.replace('/drafting');
+            return; // found the round for this draft — done either way
+          }
+        }
+      } catch { /* best-effort — never block a legit user on a fetch error */ }
+    })();
+    return () => { cancelled = true; };
+  }, [draftId, walletParam, spectateParam, router]);
 
   // Wrap setDraftId to also update the URL so refresh rejoins the same draft.
   // Belt-and-suspenders:
@@ -109,59 +135,8 @@ function DraftRoomContent() {
     console.log('[DraftRoom] post-update window.location:', window.location.href);
   }, [router, pathname]);
 
-  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, isLoading, walletAddress, setShowLoginModal } = useAuth();
-
-  const walletParam = React.useMemo(() => {
-    if (!isLiveMode || spectateParam) return urlWallet;
-    if (isLoading || !isLoggedIn || !walletAddress) return urlWallet;
-    try {
-      return assertSessionWallet({ userId: user!.id, walletAddress }, urlWallet);
-    } catch {
-      return walletAddress.toLowerCase();
-    }
-  }, [urlWallet, isLiveMode, spectateParam, isLoading, isLoggedIn, walletAddress, user?.id]);
-
-  useEffect(() => {
-    if (!isLiveMode || spectateParam || isLoading || !isLoggedIn || !walletAddress || !urlWallet) return;
-    try {
-      assertSessionWallet({ userId: user!.id, walletAddress }, urlWallet);
-    } catch {
-      const params = new URLSearchParams(window.location.search);
-      params.set('wallet', walletAddress);
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    }
-  }, [urlWallet, isLiveMode, spectateParam, isLoading, isLoggedIn, walletAddress, user?.id]);
-
-  // Ownership gate for wheel-pass (queue) drafts. If this draftId belongs to a
-  // queue round but the connected wallet is NOT one of its members — e.g. they
-  // sold the pass while it was filling and the slot moved to the buyer — bounce
-  // them back to the lobby; they don't own this draft anymore. One-shot fetch,
-  // deps are stable scalars only (no Privy-derived callback) per Rule #0.
-  useEffect(() => {
-    if (!draftId || !walletParam || spectateParam) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch('/api/queues');
-        if (!res.ok) return;
-        const queues = (await res.json()) as Record<string, { rounds?: Array<{ draftId?: string | null; members?: Array<{ wallet?: string }> }> }>;
-        const me = walletParam.toLowerCase();
-        for (const q of Object.values(queues || {})) {
-          for (const r of q.rounds || []) {
-            if (!r.draftId || String(r.draftId) !== String(draftId)) continue;
-            const isMember = (r.members || []).some((m) => m.wallet?.toLowerCase() === me);
-            if (!isMember && !cancelled) router.replace('/drafting');
-            return; // found the round for this draft — done either way
-          }
-        }
-      } catch { /* best-effort — never block a legit user on a fetch error */ }
-    })();
-    return () => { cancelled = true; };
-  }, [draftId, walletParam, spectateParam, router]);
-
+  const { user, refreshBalance, isLoggedIn, isLoading: authLoading, setShowLoginModal } = useAuth();
   const { getAccessToken } = usePrivy();
-  const getAccessTokenRef = useRef(getAccessToken);
-  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const {
     playSpinningSound,
     playReelStop,
@@ -364,7 +339,10 @@ function DraftRoomContent() {
   // Draft Alerts bell (Boris 2026-06-15): the FIRST time a user is in a draft
   // lobby, fire the one-time "Set up Draft Alerts" bell — real-time, server-
   // backed, deduped once-ever. Fires on lobby entry (filling phase), not on
-  // login. getAccessTokenRef is defined above (render-loop rule).
+  // login. getAccessToken lives in a ref so this effect's deps stay stable
+  // scalars (render-loop rule).
+  const getAccessTokenRef = useRef(getAccessToken);
+  getAccessTokenRef.current = getAccessToken;
   const draftAlertsFiredRef = useRef(false);
   useEffect(() => {
     if (!isLiveMode || phase !== 'filling') return;
@@ -478,6 +456,7 @@ function DraftRoomContent() {
     setEngineReady,
     firebaseActive,
     firebaseRtdb,
+    ws,
     bestTimeRemaining,
     isSlowDraft,
     isSlowDraftPaused,
@@ -1087,7 +1066,7 @@ function DraftRoomContent() {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
 
-    draftApi.getDraftPreferences(draftId, walletParam, getAccessTokenRef.current)
+    draftApi.getDraftPreferences(draftId, walletParam)
       .then((prefs) => {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
@@ -1111,7 +1090,7 @@ function DraftRoomContent() {
           && newSort === 'adp'
         ) {
           newSort = 'rank';
-          draftApi.updateSortPreference(walletParam, draftId, 'RANK', getAccessTokenRef.current).catch((err) => reportClientError({
+          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch((err) => reportClientError({
             source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
             message: err instanceof Error ? err.message : String(err),
             route: 'draft-room',
@@ -1196,7 +1175,7 @@ function DraftRoomContent() {
     if (engine.draftStatus === 'completed') return;
 
     let cancelled = false;
-    draftApi.getDraftPreferences(draftId, walletParam, getAccessTokenRef.current)
+    draftApi.getDraftPreferences(draftId, walletParam)
       .then((prefs) => {
         if (cancelled) return;
         const serverMissed = prefs.numPicksMissedConsecutive || 0;
@@ -1367,7 +1346,7 @@ function DraftRoomContent() {
 
     setAutoDraftLoading(true);
     try {
-      const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue, getAccessTokenRef.current);
+      const prefs = await draftApi.patchDraftPreferences(draftId, walletParam, newValue);
       // Reconcile with server in case it disagreed.
       if (prefs.autoDraft !== newValue) {
         logger.info('[Airplane] setAirplaneMode — source=patch-reconcile-disagreement', {
@@ -1419,7 +1398,7 @@ function DraftRoomContent() {
     setSortPreference(sort);
     engine.setAutoPickSortPreference(sort);
     if (isLiveMode && draftId && walletParam) {
-      draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase(), getAccessTokenRef.current)
+      draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
         .catch(e => {
           console.warn('[Sort] Failed to persist sort preference:', e);
           reportClientError({
@@ -1500,9 +1479,11 @@ function DraftRoomContent() {
     if (walletParam && draftId) {
       logger.debug('[DraftComplete] isDraftClosed=true, fetching generated card...');
       const fetchUrl = async () => {
-        const { draftsApiFetch } = await import('@/lib/draftsHttpClient');
+        const { getDraftsApiUrl } = await import('@/lib/staging');
+        const FALLBACK_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'; // never prod
+        const baseUrl = getDraftsApiUrl() || FALLBACK_URL;
         try {
-          const res = await draftsApiFetch(`/owner/${walletParam}/drafts/${draftId}`);
+          const res = await fetch(`${baseUrl}/owner/${walletParam}/drafts/${draftId}`);
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           const imageUrl = data?.card?._imageUrl || data?.card?.imageUrl || data?.imageUrl;
@@ -2621,8 +2602,8 @@ function DraftRoomContent() {
 
       {isLiveMode && (phase === 'drafting' || phase === 'loading' || phase === 'filling') && (
         <div className="absolute top-16 right-4 z-20 flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${firebaseRtdb.isListening ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
-          <span className="text-xs text-white/40">{firebaseRtdb.isListening ? 'Live' : 'Connecting...'}</span>
+          <span className={`w-2 h-2 rounded-full ${firebaseRtdb.isListening || ws.isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
+          <span className="text-xs text-white/40">{firebaseRtdb.isListening ? 'Live' : ws.isConnected ? 'WS' : 'Connecting...'}</span>
         </div>
       )}
 
@@ -2768,7 +2749,7 @@ function DraftRoomContent() {
                   // flight, so it can't fetch stale server state (still
                   // autoDraft=true) and revert our optimistic flip.
                   setAutoDraftLoading(true);
-                  draftApi.patchDraftPreferences(draftId, walletParam, false, getAccessTokenRef.current)
+                  draftApi.patchDraftPreferences(draftId, walletParam, false)
                     .catch((e) => {
                       console.warn('[Airplane] auto-off PATCH failed (client state already off):', e);
                     })
@@ -2867,7 +2848,7 @@ function DraftRoomContent() {
                   setLeaving(true);
                   try {
                     const storedDraft = draftStore.getDraft(draftId);
-                    await leaveDraft(draftId, walletParam, getAccessTokenRef.current, storedDraft?.cardId);
+                    await leaveDraft(draftId, walletParam, storedDraft?.cardId);
                     // Await the refund-pass POST before navigating away.
                     // Was fire-and-forget, but window.location.href below
                     // can cancel in-flight requests in some browsers, so

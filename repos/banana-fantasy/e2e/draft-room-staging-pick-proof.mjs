@@ -2,12 +2,13 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 
 const API_URL = process.env.STAGING_API_URL;
+const WS_URL = process.env.STAGING_WS_URL;
 const BASE_URL = process.env.STAGING_FRONTEND_URL || 'https://sbs-frontend-v2.vercel.app';
 const STAGING_WALLET = process.env.STAGING_WALLET || '0x0000000000000000000000000000000000000001';
 const STAGING_SPEED = process.env.STAGING_SPEED || 'fast';
 
-if (!API_URL) {
-  console.error('Missing STAGING_API_URL');
+if (!API_URL || !WS_URL) {
+  console.error('Missing STAGING_API_URL or STAGING_WS_URL');
   process.exit(1);
 }
 
@@ -60,7 +61,7 @@ const joinDraftViaApi = async () => {
 };
 
 const ensureDraftViaHomeJoin = async (page) => {
-  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}`;
+  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&wsUrl=${encodeURIComponent(WS_URL)}`;
   await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(1200);
   try {
@@ -93,7 +94,7 @@ page.on('response', (res) => {
 try {
   const draftId = await ensureDraftViaHomeJoin(page);
   mark(`draft ${draftId}`);
-  const url = `${BASE_URL}/draft-room?id=${encodeURIComponent(draftId)}&speed=${encodeURIComponent(STAGING_SPEED)}&staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&debug=true`;
+  const url = `${BASE_URL}/draft-room?id=${encodeURIComponent(draftId)}&speed=${encodeURIComponent(STAGING_SPEED)}&staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&wsUrl=${encodeURIComponent(WS_URL)}&debug=true`;
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
   await page.waitForFunction(() => document.querySelector('[data-stage-marker="drafting"]'), { timeout: 240000 });
