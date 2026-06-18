@@ -245,8 +245,8 @@ export default function PrizesPage() {
                         >
                           Cash out to bank
                         </button>
-                        <p className="text-[11px] text-text-muted ml-auto">
-                          Cashed out to your bank via Coinbase
+                        <p className="text-[11px] text-text-muted ml-auto text-right">
+                          To your bank via Coinbase{cashableWalletUsdc < 2 ? ' · about $2 minimum to cash out' : ''}
                         </p>
                       </div>
                     ) : (

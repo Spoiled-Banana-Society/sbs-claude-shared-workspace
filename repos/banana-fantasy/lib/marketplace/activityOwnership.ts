@@ -13,7 +13,14 @@ import { logger } from '@/lib/logger';
  */
 
 const COLLECTION = 'marketplace_activity';
-const OWNERSHIP_WINDOW_MS = 10 * 60 * 1000;
+// How long a buy/sell stays in the overlay that adds/removes a team from My
+// Teams ahead of OpenSea's lagging by-owner index. 24h, not 10min: OpenSea can
+// take well over 10 minutes to drop a sold NFT from the seller's account view,
+// and once that overlay expired a sold team would REAPPEAR in the seller's Sell
+// tab (seen with token #176 ~76min after sale). Safe to keep long because the
+// caller ALWAYS re-confirms on-chain ownerOf before hiding/adding (a stale log
+// row can never wrongly hide a team you still own or add one you don't).
+const OWNERSHIP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface WalletTrades {
   paidByToken: Map<string, number>;
