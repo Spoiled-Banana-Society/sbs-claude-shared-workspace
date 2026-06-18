@@ -528,14 +528,27 @@ export async function claimPromo(userId: string, promoId: string) {
     promo.claimable = false;
     promo.claimCount = 0;
     // Reset the progress bar after claiming so the next cycle starts at 0 —
-    // EXCEPT promos that own their progress elsewhere (zeroing them on claim is
-    // a bug):
+    // EXCEPT promos whose progressCurrent is a CARRYOVER counter that lives
+    // across the claim (zeroing it on claim throws away in-progress work):
     //   • daily-drafts: progressCurrent is the in-progress 24h cycle — zeroing
     //     it wiped a cycle the user was already part-way through.
     //   • referral: progressCurrent is the cumulative referral count (rewards
     //     live in referralHistory) — zeroing it desynced the count display.
-    // (mint/buy-bonus recompute progress on read, so they're unaffected.)
-    const ownsProgressElsewhere = promo.type === 'daily-drafts' || promo.type === 'referral';
+    //   • mint ("Buy 10 → FREE SPIN") + buy-bonus: progressCurrent is the
+    //     running pass count toward the NEXT milestone — createPurchase reads
+    //     the stored value (computeMintProgress / bbCurrent) and adds to it, so
+    //     it carries across purchases. Zeroing it on claim discarded passes the
+    //     user already bought toward their next spin (Boris's "1/10 → 0/10"
+    //     report on 0xc7900…). The earned spin lives in claimCount, which IS
+    //     drained above — only the carryover bar must survive.
+    // Per-event / one-time promos (pick-10, jackpot, new-user, first-purchase)
+    // use progressCurrent as a flag recomputed on the next event, so the reset
+    // is harmless for them — keep it.
+    const ownsProgressElsewhere =
+      promo.type === 'daily-drafts' ||
+      promo.type === 'referral' ||
+      promo.type === 'mint' ||
+      promo.type === 'buy-bonus';
     if (promo.progressMax !== undefined && !ownsProgressElsewhere) {
       promo.progressCurrent = 0;
     }
