@@ -362,7 +362,7 @@ export function SellTab({
                     </div>
                   </div>
                   <Link
-                    href={`/marketplace/${offer.tokenId}`}
+                    href={`/marketplace/${offer.tokenId}?review=offers`}
                     className="px-4 py-2 bg-success text-white text-xs font-semibold rounded-xl hover:brightness-110 transition-all"
                   >
                     Review

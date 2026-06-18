@@ -678,7 +678,7 @@ export function BuyTab({
                     )}
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
-                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'Paid with your USDC balance'}
+                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'Paid with your balance'}
                   </p>
                 </div>
               </>

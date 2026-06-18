@@ -129,6 +129,10 @@ export default function NftDetailPage() {
   const tokenId = (params?.tokenId as string) ?? '';
   const autoBuy = searchParams?.get('buy') === 'true';
   const autoOffer = searchParams?.get('offer') === 'true';
+  // Arriving from the "Review" button on Offers-on-Your-Teams: jump straight to
+  // the Offers section so the owner can Accept without scrolling the whole page.
+  const reviewOffers = searchParams?.get('review') === 'offers';
+  const offersSectionRef = React.useRef<HTMLDivElement>(null);
   const { isLoggedIn, walletAddress, user, setShowLoginModal } = useAuth();
   const { wallets, ready: _walletsReady } = useWallets();
   const { sendTransaction } = useSendTransaction();
@@ -451,6 +455,16 @@ export default function NftDetailPage() {
       setShowOfferModal(true);
     }
   }, [autoOffer, nft, isLoggedIn]);
+
+  // Navigated via "Review" (?review=offers): scroll straight to the Offers
+  // section once it's rendered, so accepting an offer is one tap, no scrolling.
+  const reviewScrolled = React.useRef(false);
+  useEffect(() => {
+    if (reviewOffers && !reviewScrolled.current && offersSectionRef.current && (offers.length > 0 || !offersLoading)) {
+      reviewScrolled.current = true;
+      offersSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [reviewOffers, offers.length, offersLoading]);
 
   const executeBuy = useCallback(async () => {
     if (!nft?.listing?.order_hash || !nft?.listing?.protocol_address || !walletAddress) return;
@@ -1434,7 +1448,7 @@ export default function NftDetailPage() {
 
           {/* Offers Section */}
           {(offers.length > 0 || offersLoading) && (
-            <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5">
+            <div ref={offersSectionRef} className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-5 scroll-mt-24">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-text-primary font-semibold text-sm">
                   Offers {offers.length > 0 && <span className="text-text-muted font-normal">({offers.length})</span>}
@@ -1822,7 +1836,7 @@ export default function NftDetailPage() {
                   <p className="text-center text-text-muted text-xs mt-3">
                     {paymentMethod === 'card'
                       ? 'Secure payment powered by MoonPay'
-                      : 'Paid with your USDC balance'
+                      : 'Paid with your balance'
                     }
                   </p>
                 </div>
