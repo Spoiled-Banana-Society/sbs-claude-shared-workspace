@@ -248,17 +248,25 @@ export async function GET(req: Request) {
       return { ...rest, hasBackendRecord, leagueId, pricePaid };
     });
 
-    // Drop teams the wallet just sold that OpenSea still lists under it (confirm
-    // on-chain the wallet truly no longer owns them before hiding).
+    // Drop any team the wallet sold that's still showing (OpenSea's by-owner
+    // index AND the Go draftToken backstop both keep listing sold teams — Go
+    // keeps the draft record under the original drafter forever). recentSells is
+    // ALL-TIME (no window), but we only ground-truth-check the ones actually
+    // present in this list, so the ownerOf cost stays bounded to the stale set.
+    // ownerOf is authoritative: a re-bought team passes (owner == wallet) and is
+    // kept; we never hide on a null/errored read.
     let finalNfts = nfts;
     if (trades.recentSells.size > 0) {
-      const soldIds = [...trades.recentSells];
-      const confirmedSold = new Set<string>();
-      await Promise.all(soldIds.map(async (tid) => {
-        const onchain = await getOnchainOwner(tid);
-        if (onchain && onchain !== owner.toLowerCase()) confirmedSold.add(tid);
-      }));
-      finalNfts = finalNfts.filter(n => !confirmedSold.has(n.tokenId));
+      const presentIdSet = new Set(nfts.map(n => n.tokenId));
+      const soldIds = [...trades.recentSells].filter(tid => presentIdSet.has(tid));
+      if (soldIds.length > 0) {
+        const confirmedSold = new Set<string>();
+        await Promise.all(soldIds.map(async (tid) => {
+          const onchain = await getOnchainOwner(tid);
+          if (onchain && onchain !== owner.toLowerCase()) confirmedSold.add(tid);
+        }));
+        finalNfts = finalNfts.filter(n => !confirmedSold.has(n.tokenId));
+      }
     }
 
     // Add teams the wallet just bought that OpenSea hasn't indexed yet (confirm

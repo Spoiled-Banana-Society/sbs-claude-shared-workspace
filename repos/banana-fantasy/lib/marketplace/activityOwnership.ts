@@ -13,13 +13,13 @@ import { logger } from '@/lib/logger';
  */
 
 const COLLECTION = 'marketplace_activity';
-// How long a buy/sell stays in the overlay that adds/removes a team from My
-// Teams ahead of OpenSea's lagging by-owner index. 24h, not 10min: OpenSea can
-// take well over 10 minutes to drop a sold NFT from the seller's account view,
-// and once that overlay expired a sold team would REAPPEAR in the seller's Sell
-// tab (seen with token #176 ~76min after sale). Safe to keep long because the
-// caller ALWAYS re-confirms on-chain ownerOf before hiding/adding (a stale log
-// row can never wrongly hide a team you still own or add one you don't).
+// Window for the BUY overlay only — how long a just-bought team is force-added
+// to My Teams ahead of OpenSea's lagging index. After this, OpenSea has it, so
+// the overlay isn't needed. SELLS are NOT windowed (see below): a sold team must
+// stay hidden FOREVER until on-chain says the wallet owns it again — otherwise
+// it reappears once any window expires (the recurring "sold team back in my Sell
+// tab" bug). Safe because the caller re-confirms on-chain ownerOf before
+// hiding/adding, so a stale log row can never wrongly hide/add anything.
 const OWNERSHIP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export interface WalletTrades {
@@ -56,12 +56,15 @@ export async function getWalletTrades(wallet: string): Promise<WalletTrades> {
           paidAtByToken.set(tokenId, tsMs);
         }
         if (tsMs >= cutoff) recentBuys.push({ tokenId, teamName: d.teamName ?? null });
-      } else if (d.type === 'sell' && tsMs >= cutoff) {
+      } else if (d.type === 'sell') {
+        // NO window on sells: once the wallet sold a token, it must stay hidden
+        // until on-chain ownerOf says the wallet owns it again. The caller
+        // ownerOf-confirms each before hiding (so a re-buy correctly un-hides it),
+        // and only checks sold tokens still being shown — bounded + bulletproof.
         recentSells.add(tokenId);
-      } else if (d.type === 'offer_accepted' && tsMs >= cutoff) {
+      } else if (d.type === 'offer_accepted') {
         // A team sold by accepting an offer: the acceptor (this walletAddress)
-        // is the SELLER. Drop it from their My Teams instantly, same as a 'sell'.
-        // (Newer sales log a real buy+sell pair; this covers legacy rows.)
+        // is the SELLER. Same as a 'sell' — hidden until on-chain says otherwise.
         recentSells.add(tokenId);
       }
     }
