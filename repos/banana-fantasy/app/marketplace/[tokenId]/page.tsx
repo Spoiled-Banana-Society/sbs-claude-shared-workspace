@@ -1822,7 +1822,7 @@ export default function NftDetailPage() {
                   <p className="text-center text-text-muted text-xs mt-3">
                     {paymentMethod === 'card'
                       ? 'Secure payment powered by MoonPay'
-                      : 'USDC payment on Base network'
+                      : 'Paid with your USDC balance'
                     }
                   </p>
                 </div>
@@ -1847,8 +1847,8 @@ export default function NftDetailPage() {
                   {paymentMethod === 'card'
                     ? cardFlowStep === 'funding' ? 'Complete your payment in the MoonPay window...'
                     : cardFlowStep === 'waiting' ? 'Your funds are on the way. This may take a moment...'
-                    : 'Completing your purchase on Base...'
-                    : 'Completing your purchase on Base...'
+                    : 'Completing your purchase...'
+                    : 'Completing your purchase...'
                   }
                 </p>
                 {paymentMethod === 'card' && cardFlowStep !== 'idle' && (
@@ -2127,7 +2127,7 @@ export default function NftDetailPage() {
                   Creating Offer
                 </h3>
                 <p className="text-text-secondary text-sm">
-                  Signing your offer on Base...
+                  Signing your offer...
                 </p>
               </div>
             )}

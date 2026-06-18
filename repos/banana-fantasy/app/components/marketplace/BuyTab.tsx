@@ -678,7 +678,7 @@ export function BuyTab({
                     )}
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
-                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'USDC payment on Base network'}
+                    {paymentMethod === 'card' ? 'Secure payment powered by MoonPay' : 'Paid with your USDC balance'}
                   </p>
                 </div>
               </>
@@ -699,8 +699,8 @@ export function BuyTab({
                       ? 'Complete your payment in the MoonPay window...'
                       : cardFlowStep === 'waiting'
                         ? 'Your funds are on the way. This may take a moment...'
-                        : 'Completing your purchase on Base...'
-                    : 'Completing your purchase on Base...'}
+                        : 'Completing your purchase...'
+                    : 'Completing your purchase...'}
                 </p>
                 {paymentMethod === 'card' && cardFlowStep !== 'idle' && (
                   <div className="mt-6 space-y-2 text-left max-w-[240px] mx-auto">
