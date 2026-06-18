@@ -128,12 +128,25 @@ export async function GET(req: Request) {
     // every request (outside the Alchemy cache) so freshness isn't pinned.
     // Best-effort + deduped, so it can only ADD missing teams, never remove.
     try {
-      const ourTokenIds = await getOwnerOnchainTokenIds(owner);
+      const goTokenIds = await getOwnerOnchainTokenIds(owner);
       const haveIds = new Set(rawNfts.map(n => n.identifier));
-      for (const tid of ourTokenIds) {
-        if (haveIds.has(tid)) continue;
-        haveIds.add(tid);
-        rawNfts.push({ identifier: tid, contract: BBB4_CONTRACT, traits: [], name: null, image_url: '', display_image_url: '' } as unknown as OpenSeaNft);
+      // Go's draftToken list keeps every team under its ORIGINAL drafter FOREVER,
+      // so a token it returns that's NOT in the Alchemy (authoritative on-chain)
+      // holdings is EITHER a fresh mint Alchemy hasn't indexed yet (add it) OR a
+      // team the drafter has since SOLD or directly TRANSFERRED away (must NOT add
+      // — this unconditional union is what made sold/transferred teams reappear).
+      // Only ownerOf can tell them apart, so ownerOf-confirm before adding. The
+      // cap only bounds the fresh-mint ADD backstop; sold/transferred REMOVAL is
+      // handled by the Alchemy base + recentSells, so it can never re-show one.
+      const missing = goTokenIds.filter(tid => !haveIds.has(tid)).slice(0, 50);
+      if (missing.length > 0) {
+        const confirmed = await Promise.all(missing.map(async (tid) => {
+          const oc = await getOnchainOwner(tid);
+          return oc && oc === owner.toLowerCase() ? tid : null;
+        }));
+        for (const tid of confirmed) {
+          if (tid) rawNfts.push({ identifier: tid, contract: BBB4_CONTRACT, traits: [], name: null, image_url: '', display_image_url: '' } as unknown as OpenSeaNft);
+        }
       }
     } catch { /* backstop is best-effort — Alchemy list still stands */ }
 
