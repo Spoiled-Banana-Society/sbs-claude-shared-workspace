@@ -527,8 +527,16 @@ export async function claimPromo(userId: string, promoId: string) {
     }
     promo.claimable = false;
     promo.claimCount = 0;
-    // Reset progress after claiming so next cycle starts at 0
-    if (promo.progressMax !== undefined) {
+    // Reset the progress bar after claiming so the next cycle starts at 0 —
+    // EXCEPT promos that own their progress elsewhere (zeroing them on claim is
+    // a bug):
+    //   • daily-drafts: progressCurrent is the in-progress 24h cycle — zeroing
+    //     it wiped a cycle the user was already part-way through.
+    //   • referral: progressCurrent is the cumulative referral count (rewards
+    //     live in referralHistory) — zeroing it desynced the count display.
+    // (mint/buy-bonus recompute progress on read, so they're unaffected.)
+    const ownsProgressElsewhere = promo.type === 'daily-drafts' || promo.type === 'referral';
+    if (promo.progressMax !== undefined && !ownsProgressElsewhere) {
       promo.progressCurrent = 0;
     }
 
