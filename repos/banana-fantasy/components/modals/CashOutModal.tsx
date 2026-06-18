@@ -645,6 +645,10 @@ export function CashOutModal({
   // ---- quotes ----
   if (step === 'quotes' && quotes) {
     const usdcReceived = parsedAmount;
+    // When Coinbase returns no usable payout method (almost always because the
+    // amount is below its cash-out minimum), there's nothing to pick — show a
+    // clear reason instead of a dead, disabled "Continue" button.
+    const availableCount = quotes.filter((q) => q.available).length;
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
@@ -743,23 +747,36 @@ export function CashOutModal({
                 </div>
               </button>
               )}
+
+              {availableCount === 0 && (
+                <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5">
+                  <p className="text-warning text-sm font-medium">This amount is too small to cash out</p>
+                  <p className="text-text-muted text-xs mt-1">
+                    Coinbase has a small minimum for bank cash-outs. Your balance will be cashable once it&apos;s a bit higher.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
-            <span className="text-text-primary font-medium">FYI:</span> rates above include
-            Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
-          </div>
+          {availableCount > 0 && (
+            <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
+              <span className="text-text-primary font-medium">FYI:</span> rates above include
+              Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
+            </div>
+          )}
 
-          <button
-            onClick={proceedFromQuotes}
-            disabled={!selectedMethod}
-            className={`w-full py-4 rounded-xl font-bold text-base transition-all ${
-              selectedMethod ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
-            }`}
-          >
-            {selectedMethod === 'USDC' ? 'Continue with USDC' : 'Continue to Coinbase'}
-          </button>
+          {availableCount > 0 && (
+            <button
+              onClick={proceedFromQuotes}
+              disabled={!selectedMethod}
+              className={`w-full py-4 rounded-xl font-bold text-base transition-all ${
+                selectedMethod ? 'bg-banana text-black hover:brightness-110 hover:scale-[1.01]' : 'bg-bg-tertiary text-text-muted cursor-not-allowed'
+              }`}
+            >
+              {selectedMethod === 'USDC' ? 'Continue with USDC' : 'Continue to Coinbase'}
+            </button>
+          )}
 
           <button onClick={() => setStep('amount')} className="w-full text-text-muted text-xs hover:text-text-secondary transition-colors">
             ← Change amount
