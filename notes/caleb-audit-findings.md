@@ -145,3 +145,22 @@ The comment correctly says these should be **no-retry 200** (current behavior), 
 6. Then we re-verify (scripted now, fast) and deploy **frontend + backend together**.
 
 *None of this is a knock — the frontend is solid and the direction is right. The backend just needs an actual build + test pass, which would have surfaced §1–§8 immediately.*
+
+---
+
+# Round 2 — follow-up (after your backend fix, PR #2)
+
+**Backend fix verified — good work.** Re-pulled and checked: it now **compiles** (service packages clean), the **double-advance is gone** (atomic claim removed, reverted to the working single-advance engine), **benign-race returns 200** again, the **timer +1 is on `PickEndTime`** (first pick + all picks → shows 30), **auto-draft is a real `now + 1`** (1s), slow-draft/PickStartTime/draftInfo.Update all preserved, and **no live work was reverted** (clean superset of what's deployed). You also fixed the pre-existing `NewSeasonPlayers.go` syntax error. 👍
+
+## One remaining item — a frontend test (from the URL refactor, not the backend fix)
+
+**`__tests__/pruneMissingDrafts.test.ts` fails 2 cases on the branch; passes on live. It's a STALE TEST, not a runtime bug — proven locally.**
+
+- Cause: your URL refactor changed `pruneMissingDrafts` (`lib/draftStore.ts`) from a direct `fetch()` to `createDraftsHttpClient().get()`. The new client (a) `await`s `getAccessToken → getPrivyAccessToken`, and (b) reads `res.headers`. The test's mock only provides `{ ok, status, json, text }` on `global.fetch` and doesn't mock the token — so in the test the new path errors *before* the 404 is detected → nothing prunes → red.
+- **Proof it's the test, not the code:** adding a `getPrivyAccessToken` mock + `headers: { get: () => null }` to the fake response → **all 7 tests pass.** So the prune logic (404 → `ApiError` → prune) is correct.
+
+**Asks:**
+1. Update `__tests__/pruneMissingDrafts.test.ts` to mock the new client path (auth token + `headers`) so it's green again — don't want red tests going in.
+2. Confirm the behavior change is intended: prune now goes through the **authed BFF** (needs a Privy token) instead of the old **unauthenticated direct fetch**. Fine at runtime, but if a token is momentarily unavailable, prune now no-ops that cycle (old code pruned regardless of auth). Intended, or should prune stay auth-independent for resilience?
+
+*Everything else passes: backend `models` tests green, and 211/213 frontend unit tests pass (the 2 failures are only this stale prune test).*
