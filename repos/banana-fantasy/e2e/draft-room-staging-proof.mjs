@@ -2,13 +2,12 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 
 const API_URL = process.env.STAGING_API_URL;
-const WS_URL = process.env.STAGING_WS_URL;
 const BASE_URL = process.env.STAGING_FRONTEND_URL || 'https://sbs-frontend-v2.vercel.app';
 const STAGING_WALLET = process.env.STAGING_WALLET || '0x0000000000000000000000000000000000000001';
 const STAGING_SPEED = process.env.STAGING_SPEED || 'fast';
 
-if (!API_URL || !WS_URL) {
-  console.error('Missing STAGING_API_URL or STAGING_WS_URL');
+if (!API_URL) {
+  console.error('Missing STAGING_API_URL');
   process.exit(1);
 }
 
@@ -57,7 +56,7 @@ const ensureFreshDraftIdViaHomeJoin = async (page) => {
   const mintText = await mintRes.text();
   logs.push(`[mint:${mintRes.status}] ${mintText}`);
 
-  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&wsUrl=${encodeURIComponent(WS_URL)}`;
+  const homeUrl = `${BASE_URL}/?staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}`;
   mark(`goto home ${homeUrl}`);
   await page.goto(homeUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(1500);
@@ -165,7 +164,7 @@ let proof = {};
 
 try {
   const DRAFT_ID = process.env.STAGING_DRAFT_ID || (await ensureFreshDraftIdViaHomeJoin(page));
-  const url = `${BASE_URL}/draft-room?id=${encodeURIComponent(DRAFT_ID)}&speed=${encodeURIComponent(STAGING_SPEED)}&staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&wsUrl=${encodeURIComponent(WS_URL)}&debug=true`;
+  const url = `${BASE_URL}/draft-room?id=${encodeURIComponent(DRAFT_ID)}&speed=${encodeURIComponent(STAGING_SPEED)}&staging=true&wallet=${encodeURIComponent(STAGING_WALLET)}&apiUrl=${encodeURIComponent(API_URL)}&debug=true`;
   mark(`goto draft-room proof URL ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
@@ -301,7 +300,6 @@ try {
     speed: STAGING_SPEED,
     baseUrl: BASE_URL,
     apiUrl: API_URL,
-    wsUrl: WS_URL,
     finalUrl: page.url(),
     checkpoints,
     stageMarkersObserved: finalEvidence.stageSequenceObserved,
@@ -331,7 +329,6 @@ try {
     finalUrl: page.url(),
     baseUrl: BASE_URL,
     apiUrl: API_URL,
-    wsUrl: WS_URL,
     checkpoints,
     stepTimes,
     evidence,

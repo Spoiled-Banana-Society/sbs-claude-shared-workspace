@@ -14,7 +14,7 @@
 
 import { chromium } from 'playwright';
 import fs from 'fs';
-import { API_BASE as API, WS_BASE as WS } from '../scripts/e2e-drafts-api.mjs';
+import { API_BASE as API } from '../scripts/e2e-drafts-api.mjs';
 const VERCEL = 'https://banana-fantasy-sbs.vercel.app';
 const WALLET = '0x59dd025b0aa0fecf39f2c69fc7aea9f943b8779e';
 

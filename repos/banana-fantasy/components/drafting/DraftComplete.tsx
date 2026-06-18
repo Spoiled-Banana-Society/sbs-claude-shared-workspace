@@ -9,6 +9,7 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import type { DraftType } from '@/lib/draftRoomConstants';
 import TeamCardObsidian from '@/components/draft/TeamCardObsidian';
 import { toCardPlayers, teamNoFromToken } from '@/lib/teamCardData';
+import { draftsApiFetch } from '@/lib/draftsHttpClient';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 
 interface RosterEntry {
@@ -169,7 +170,7 @@ export function DraftComplete({
       }
     }
 
-    pollCardReady();
+    void fetchCard();
     return () => { cancelled = true; };
   }, [draftId, walletAddress, cardReady, type]);
 

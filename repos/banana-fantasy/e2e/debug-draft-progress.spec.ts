@@ -16,9 +16,8 @@
 import { test, expect } from '@playwright/test';
 
 const API_BASE = process.env.STAGING_DRAFTS_API_URL || process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL;
-const WS_BASE = process.env.STAGING_DRAFT_SERVER_URL || process.env.NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL;
-if (!API_BASE || !WS_BASE) {
-  throw new Error('Set STAGING_DRAFTS_API_URL and STAGING_DRAFT_SERVER_URL (or NEXT_PUBLIC_* variants)');
+if (!API_BASE) {
+  throw new Error('Set STAGING_DRAFTS_API_URL (or NEXT_PUBLIC_STAGING_DRAFTS_API_URL)');
 }
 const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
 const TEST_WALLET = '0x0000000000000000000000000000000000000001';
@@ -236,57 +235,9 @@ test.describe('Debug: Draft Pick Advancement', () => {
       await sleep(POLL_INTERVAL);
     }
 
-    // ===== STEP 7: Also try connecting WebSocket to see if that triggers advancement =====
+    // ===== STEP 7: Final poll =====
     console.log('\n========================================');
-    console.log('STEP 7: Try WebSocket connection to see if it triggers picks');
-    console.log('========================================\n');
-
-    // Use the browser page to open a WebSocket connection
-    const wsMessages = await page.evaluate(async ({ wsBase, wallet, draftId }) => {
-      const messages: string[] = [];
-      return new Promise<string[]>((resolve) => {
-        try {
-          const wsUrl = `${wsBase}/ws?address=${wallet}&draftName=${draftId}`;
-          messages.push(`Connecting to: ${wsUrl}`);
-          const ws = new WebSocket(wsUrl);
-
-          ws.onopen = () => {
-            messages.push('WebSocket CONNECTED');
-          };
-
-          ws.onmessage = (event) => {
-            messages.push(`WS MSG: ${typeof event.data === 'string' ? event.data.slice(0, 500) : 'binary'}`);
-          };
-
-          ws.onerror = (event) => {
-            messages.push(`WS ERROR: ${JSON.stringify(event)}`);
-          };
-
-          ws.onclose = (event) => {
-            messages.push(`WS CLOSED: code=${event.code} reason=${event.reason}`);
-          };
-
-          // Listen for 30 seconds, then close and return messages
-          setTimeout(() => {
-            messages.push('Closing WebSocket after 30s observation');
-            try { ws.close(); } catch {}
-            resolve(messages);
-          }, 30000);
-        } catch (err) {
-          messages.push(`WS INIT ERROR: ${err}`);
-          resolve(messages);
-        }
-      });
-    }, { wsBase: WS_BASE, wallet: TEST_WALLET, draftId });
-
-    console.log('\nWebSocket messages received:');
-    for (const msg of wsMessages) {
-      console.log(`  ${msg}`);
-    }
-
-    // ===== STEP 8: Final poll after WebSocket connection =====
-    console.log('\n========================================');
-    console.log('STEP 8: Final poll after WebSocket connection');
+    console.log('STEP 7: Final poll');
     console.log('========================================\n');
 
     const finalInfo = await fetchJson(`${API_BASE}/draft/${draftId}/state/info`) as DraftInfo;
@@ -343,8 +294,7 @@ test.describe('Debug: Draft Pick Advancement', () => {
       console.log('\n*** CONCLUSION: pickNumber DID NOT CHANGE ***');
       console.log('The server is NOT auto-advancing picks.');
       console.log('This means bots do NOT auto-pick on their own.');
-      console.log('The server likely requires a WebSocket client connection');
-      console.log('or some other trigger to advance picks.');
+      console.log('Check Cloud Functions / RTDB pick-advance pipeline for stalls.');
 
       // Check if the timer expired
       const lastEntry = results[results.length - 1];

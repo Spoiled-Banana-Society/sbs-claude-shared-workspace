@@ -6,6 +6,7 @@ import { canonTokenId } from '@/lib/onchain/contractSupply';
 import { recountFromInventory } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
 import { draftsApiServer } from '@/lib/draftsApiServer';
+import { tryGetServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 const USERS_COLLECTION = 'v2_users';
 
@@ -109,7 +110,7 @@ function decodeGoOnchainId(cardId: string, realTokenId: string): string {
 export async function fetchGoApiTokenLists(
   wallet: string,
 ): Promise<{ available: GoTokenRef[]; active: GoTokenRef[] }> {
-  const apiBase = getServerDraftsApiUrl();
+  const apiBase = tryGetServerDraftsApiUrl();
   if (!apiBase) return { available: [], active: [] };
   const res = await fetch(`${apiBase}/owner/${wallet.toLowerCase()}/draftToken/all`);
   if (!res.ok) {
@@ -139,7 +140,7 @@ export async function fetchGoApiTokenLists(
  * prod URL in server contexts (Next.js API routes, SSR). This codebase is
  * staging-only per CLAUDE.md, so we explicitly prefer the staging URL.
  */
-import { tryGetServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
+
 
 /**
  * Returns the Go API's authoritative count of available draft passes for a

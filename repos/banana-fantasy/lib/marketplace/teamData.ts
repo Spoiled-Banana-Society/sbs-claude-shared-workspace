@@ -27,6 +27,8 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 
 import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
+const DRAFTS_API_BASE = getServerDraftsApiUrl();
+
 const NFT_LEAGUE_MAP_COLLECTION = 'nft_league_map';
 const TEAM_NICKNAMES_COLLECTION = 'userTeamNicknames';
 const MARKETPLACE_ACTIVITY_COLLECTION = 'marketplace_activity';

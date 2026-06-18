@@ -6,7 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { usePromos } from '@/hooks/usePromos';
 import { isDraftingOpen } from '@/lib/draftTypes';
-import { isStagingMode, getDraftServerUrl } from '@/lib/staging';
+import { isStagingMode } from '@/lib/staging';
 import { useActiveDrafts } from '@/hooks/useActiveDrafts';
 import * as draftStore from '@/lib/draftStore';
 import type { DraftState } from '@/lib/draftStore';
@@ -20,7 +20,13 @@ import { authedAppFetch } from '@/lib/authedAppFetch';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import type { DraftQueue, Promo } from '@/types';
 import { logger } from '@/lib/logger';
-import { subscribeDraftNumPlayers, subscribeDraftDisplayName, subscribeRealTimeDraftInfo, type RealTimeDraftInfoSnapshot, subscribeDraftType, subscribeRealTimeDraftInfo } from '@/lib/api/firebase';
+import {
+  subscribeDraftNumPlayers,
+  subscribeDraftDisplayName,
+  subscribeDraftType,
+  subscribeRealTimeDraftInfo,
+  type RealTimeDraftInfoSnapshot,
+} from '@/lib/api/firebase';
 import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { reportClientError } from '@/lib/clientErrors';
@@ -30,21 +36,7 @@ import {
   capDisplayTimeRemaining,
   expectedPickLengthFromSpeed,
 } from '@/utils/draftTimer';
-import type { DraftInfoPayload, TimerPayload } from '@/hooks/useDraftWebSocket';
-
-type DraftingPageSocketMessage =
-  | { type: 'timer_update'; payload: TimerPayload }
-  | { type: 'draft_info_update'; payload: DraftInfoPayload }
-  | { type: 'draft_complete'; payload?: unknown }
-  | { type?: string; payload?: unknown };
-
-function isTimerUpdateMessage(data: DraftingPageSocketMessage): data is Extract<DraftingPageSocketMessage, { type: 'timer_update' }> {
-  return data.type === 'timer_update';
-}
-
-function isDraftInfoUpdateMessage(data: DraftingPageSocketMessage): data is Extract<DraftingPageSocketMessage, { type: 'draft_info_update' }> {
-  return data.type === 'draft_info_update';
-}
+import { draftRoomActiveKey } from '@/lib/draftRoomConstants';
 
 function getSnakeDrafterIndex(pickNumber: number): number {
   const round = Math.ceil(pickNumber / 10);
@@ -321,7 +313,7 @@ export function useDraftingPageState() {
           console.error('[Queue] Poll failed:', e);
           // 5s poll — reportClientError's per-source throttle dedupes the spam.
           reportClientError({
-            source: LOG_SOURCES.draft.QUEUE_POLL_FAILED,
+            source: 'draft.queue_poll_failed',
             message: e instanceof Error ? e.message : String(e),
             route: 'drafting',
             actor: user?.walletAddress,
@@ -824,7 +816,7 @@ export function useDraftingPageState() {
 
         // Let the draft-room tab own writes while it's live (it has full engine
         // state) — avoid a tug-of-war with the in-room flow.
-        const hb = localStorage.getItem(`draft-room-ws:${draftId}`);
+        const hb = localStorage.getItem(draftRoomActiveKey(draftId));
         if (hb && Date.now() - Number(hb) < 10_000) return;
 
         const isYourTurn = !!wallet
@@ -935,32 +927,33 @@ export function useDraftingPageState() {
       const draft = draftStore.getDraft(draftId);
       if (!draft?.liveWalletAddress || draft.liveWalletAddress.toLowerCase() !== currentWallet) return;
 
+      const pickNumber = rtdb.pickNumber ?? 0;
       const totalPicks = 150;
-      if (rtdb.isDraftComplete || rtdb.pickNumber >= totalPicks) {
+      if (rtdb.isDraftComplete || pickNumber >= totalPicks) {
         markDraftCompleted(draftId);
         return;
       }
 
-      const heartbeat = localStorage.getItem(`draft-room-ws:${draftId}`);
+      const heartbeat = localStorage.getItem(draftRoomActiveKey(draftId));
       if (heartbeat && Date.now() - Number(heartbeat) < 10_000) return;
 
       try {
         const draftOrder = await ensureDraftOrder(draftId);
         const fresh = draftStore.getDraft(draftId) || draft;
         const playerCount = Math.max(draftOrder.length, fresh.players ?? 0);
-        const hasDraftStarted = playerCount >= 10 && rtdb.pickNumber >= 1;
+        const hasDraftStarted = playerCount >= 10 && pickNumber >= 1;
         const isFull = playerCount >= 10;
         const isPaid = draft.passType !== 'free';
 
         const info: draftApi.DraftInfoResponse = {
           draftId,
           displayName: fresh.contestName,
-          draftStartTime: rtdb.draftStartTime,
-          pickLength: rtdb.pickLength,
-          currentDrafter: rtdb.currentDrafter,
-          pickNumber: rtdb.pickNumber,
-          roundNum: rtdb.roundNum,
-          pickInRound: rtdb.pickInRound,
+          draftStartTime: rtdb.draftStartTime ?? 0,
+          pickLength: rtdb.pickLength ?? 0,
+          currentDrafter: rtdb.currentDrafter ?? '',
+          pickNumber,
+          roundNum: rtdb.roundNum ?? 0,
+          pickInRound: rtdb.pickInRound ?? 0,
           currentPickEndTime: rtdb.pickEndTime,
           draftOrder,
           adp: [],
@@ -1010,8 +1003,8 @@ export function useDraftingPageState() {
             const totalPicks = (info.draftOrder?.length || 10) * 15;
             const isCompleted = info.pickNumber >= totalPicks;
             if (isCompleted) {
-              draftStore.removeDraft(draft.id);
-              continue;
+              markDraftCompleted(draft.id);
+              return;
             }
 
             // /state/info doesn't carry the current pick's absolute
@@ -1039,7 +1032,7 @@ export function useDraftingPageState() {
             } catch { /* ignore — fall back to prior computation */ }
 
             const nowMs = Date.now();
-            const effectivePickEnd = rtdbPickEnd ?? pickEndTimestamp ?? fresh.pickEndTimestamp;
+            const effectivePickEnd = rtdbPickEnd ?? fresh.pickEndTimestamp;
             const animStillRunning = (() => {
               if (fresh.randomizingStartedAt && !fresh.preSpinStartedAt) {
                 return (nowMs - fresh.randomizingStartedAt) < 63000;
@@ -1058,20 +1051,7 @@ export function useDraftingPageState() {
             // between rounds before). userSeat (static) + status/type still write.
             const pollPickStale = typeof fresh.enginePickNumber === 'number'
               && info.pickNumber < fresh.enginePickNumber;
-            const patch: Partial<DraftState> = {
-              // Cache the user's seat so the realtime push can compute "N picks
-              // away" instantly without re-fetching the draft order.
-              ...(userIndex >= 0 ? { userSeat: userIndex } : {}),
-              ...(pollPickStale ? {} : {
-                currentPick: turnsUntilUserPick,
-                isYourTurn: isUserTurn,
-                pickEndTimestamp: effectivePickEnd,
-                timeRemaining: isUserTurn && effectivePickEnd
-                  ? Math.max(0, Math.ceil(effectivePickEnd - nowMs / 1000))
-                  : undefined,
-                enginePickNumber: info.pickNumber,
-              }),
-            };
+            
           const patch: Partial<DraftState> = {
             currentPick: turnsUntilUserPick,
             isYourTurn: isUserTurn,
@@ -1079,10 +1059,10 @@ export function useDraftingPageState() {
             timeRemaining: isUserTurn && effectivePickEnd
               ? capDisplayTimeRemaining(
                   Math.max(0, Math.round(effectivePickEnd - nowMs / 1000)),
-                  pickLengthCap,
+                  info.pickLength,
                 )
               : undefined,
-            enginePickNumber: rtdb.pickNumber,
+            enginePickNumber: pickNumber,
           };
 
           if (animStillRunning) {
@@ -1137,24 +1117,6 @@ export function useDraftingPageState() {
       }
     };
 
-    void syncLiveDrafts();
-
-    let focusTimeout: ReturnType<typeof setTimeout> | null = null;
-    const onFocus = () => {
-      if (focusTimeout) clearTimeout(focusTimeout);
-      focusTimeout = setTimeout(() => {
-        void syncLiveDrafts();
-      }, 500);
-    };
-
-    // visibilitychange too — mobile returning from background fires it (not
-    // focus); without it the cached phase rendered stale for ~10s.
-    const onVisible = () => { if (document.visibilityState === 'visible') onFocus(); };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisible);
-    intervalId = setInterval(() => {
-      void syncLiveDrafts();
-    }, 3000);
     const unsubs = ids.map((draftId) =>
       subscribeRealTimeDraftInfo(draftId, (rtdb) => {
         if (rtdb) void applyRtdbUpdate(draftId, rtdb);
@@ -1163,163 +1125,10 @@ export function useDraftingPageState() {
 
     return () => {
       for (const unsub of unsubs) {
-      document.removeEventListener('visibilitychange', onVisible);
         try { unsub(); } catch { /* ignore */ }
       }
     };
   }, [isLive, user?.id, user?.walletAddress, liveDraftIdsForRtdbKey]);
-
-  const wsConnectionsRef = useRef<Map<string, WebSocket>>(new Map());
-
-  // Privy access token for the WS auth gate, via the ref pattern (Rule #0:
-  // privy-derived callbacks must never enter effect deps). The Go WS server
-  // verifies this JWT before upgrading — these lobby connections were
-  // rejected 401 on EVERY attempt since auth was added because no token was
-  // ever sent; the page silently fell back to polling and nobody noticed.
-  const privyForWs = usePrivy();
-  const getWsTokenRef = useRef(privyForWs.getAccessToken);
-  getWsTokenRef.current = privyForWs.getAccessToken;
-
-  useEffect(() => {
-    if (!isLive || !user?.walletAddress) return;
-
-    const wallet = user.walletAddress.trim().toLowerCase();
-    const serverUrl = getDraftServerUrl() || 'wss://sbs-drafts-server-staging-652484219017.us-central1.run.app';
-
-    const syncConnections = () => {
-      // WS connections are opened with the current wallet as the `address` param
-      // — stale connections from a prior wallet would auth against the wrong
-      // user and leak events into the wrong account. Scope by current wallet
-      // and let the effect's cleanup (which re-runs on user.walletAddress
-      // change, see dep at bottom) close prior-wallet connections.
-      const allDrafts = draftStore.getActiveDrafts();
-      const draftingDrafts = allDrafts.filter(
-        d => d.liveWalletAddress
-          && d.liveWalletAddress.toLowerCase() === wallet
-          && d.phase === 'drafting'
-          && d.status === 'drafting',
-      );
-
-      const activeIds = new Set(draftingDrafts.map(d => d.id));
-      const conns = wsConnectionsRef.current;
-
-      conns.forEach((ws, id) => {
-        const heartbeat = localStorage.getItem(`draft-room-ws:${id}`);
-        const draftRoomActive = heartbeat && Date.now() - Number(heartbeat) < 10_000;
-        if (!activeIds.has(id) || draftRoomActive) {
-          ws.close();
-          conns.delete(id);
-        }
-      });
-
-      // Fetch the Privy token ONCE per sync (same token for every draft).
-      // Without it the server 401s the upgrade and we silently lose live
-      // updates; on fetch failure we still attempt token-less (= today's
-      // behavior: rejected → the 3s poll keeps the page fresh).
-      let wsToken: string | null = null;
-      if (draftingDrafts.some((d) => !conns.has(d.id))) {
-        try {
-          wsToken = (await getWsTokenRef.current?.()) ?? null;
-        } catch { /* token-less attempt below; poll remains the fallback */ }
-      }
-
-      for (const draft of draftingDrafts) {
-        if (conns.has(draft.id)) continue;
-
-        const heartbeat = localStorage.getItem(`draft-room-ws:${draft.id}`);
-        if (heartbeat && Date.now() - Number(heartbeat) < 10_000) continue;
-
-        const tokenParam = wsToken ? `&token=${encodeURIComponent(wsToken)}` : '';
-        const url = `${serverUrl}/ws?address=${encodeURIComponent(wallet)}&draftName=${encodeURIComponent(draft.id)}${tokenParam}`;
-        const ws = new WebSocket(url);
-        conns.set(draft.id, ws);
-
-        let pingInterval: ReturnType<typeof setInterval> | null = null;
-        ws.onopen = () => {
-          logger.debug(`[Drafting WS] connected to ${draft.id}`);
-          pingInterval = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'ping', payload: {} }));
-            }
-          }, 30_000);
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as DraftingPageSocketMessage;
-            const { type } = data;
-            const draftId = draft.id;
-
-            if (isTimerUpdateMessage(data)) {
-              const payload = data.payload;
-              const endTs = payload.endOfTurnTimestamp;
-              const currentDrafter = (payload.currentDrafter || '').toLowerCase();
-              const isUserTurn = wallet === currentDrafter;
-              draftStore.updateDraft(draftId, {
-                pickEndTimestamp: endTs,
-                isYourTurn: isUserTurn,
-                timeRemaining: endTs
-                  ? capDisplayTimeRemaining(
-                      Math.max(0, Math.round(endTs - Date.now() / 1000)),
-                      expectedPickLengthFromSpeed(draft.draftSpeed),
-                    )
-                  : undefined,
-              });
-            }
-
-            if (isDraftInfoUpdateMessage(data)) {
-              const info = data.payload;
-              const currentDrafter = (info.currentDrafter || '').toLowerCase();
-              const isUserTurn = wallet === currentDrafter;
-              const userIndex = (info.draftOrder || []).findIndex(
-                (entry: { ownerId: string }) => entry.ownerId.toLowerCase() === wallet,
-              );
-
-              let turnsUntilUserPick = 0;
-              if (!isUserTurn && userIndex >= 0) {
-                const totalPicks = (info.draftOrder?.length || 10) * 15;
-                for (let i = 1; i <= totalPicks - info.pickNumber + 1; i++) {
-                  if (getSnakeDrafterIndex(info.pickNumber + i) === userIndex) {
-                    turnsUntilUserPick = i;
-                    break;
-                  }
-                }
-              }
-
-              draftStore.updateDraft(draftId, {
-                currentPick: turnsUntilUserPick,
-                isYourTurn: isUserTurn,
-                enginePickNumber: info.pickNumber,
-              });
-            }
-
-            if (type === 'draft_complete') {
-              draftStore.removeDraft(draftId);
-              ws.close();
-              conns.delete(draftId);
-            }
-          } catch {}
-        };
-
-        ws.onclose = () => {
-          if (pingInterval) clearInterval(pingInterval);
-          conns.delete(draft.id);
-        };
-
-        ws.onerror = () => {};
-      }
-    };
-
-    void syncConnections();
-    const interval = setInterval(() => { void syncConnections(); }, 3000);
-
-    return () => {
-      clearInterval(interval);
-      const conns = wsConnectionsRef.current;
-      conns.forEach((ws) => ws.close());
-      conns.clear();
-    };
-  }, [isLive, user?.walletAddress]);
 
   const activeDrafts = useMemo(() => {
     // Not signed in → don't show anyone else's drafts cached in localStorage.

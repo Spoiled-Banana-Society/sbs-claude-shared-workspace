@@ -14,7 +14,7 @@
 
 import { chromium } from 'playwright';
 import fs from 'fs';
-import { API_BASE, WS_BASE } from '../scripts/e2e-drafts-api.mjs';
+import { API_BASE } from '../scripts/e2e-drafts-api.mjs';
 
 // ==================== CONFIG ====================
 const VERCEL_URL = 'https://banana-fantasy-sbs.vercel.app';

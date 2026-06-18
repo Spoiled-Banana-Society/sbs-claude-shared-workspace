@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
-import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
 import { isSlowDraftPickLength, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
@@ -17,16 +16,7 @@ import { logger } from '@/lib/logger';
 import { capDisplayTimeRemaining } from '@/utils/draftTimer';
 import { clientLog } from '@/lib/clientLog';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
-import type {
-  DraftInfoPayload,
-  NewPickPayload,
-  TimerPayload,
-} from '@/hooks/useDraftWebSocket';
-
-type PendingWsMessage =
-  | { type: 'timer_update'; payload: TimerPayload }
-  | { type: 'new_pick'; payload: NewPickPayload }
-  | { type: 'draft_info_update'; payload: DraftInfoPayload };
+import { draftRoomActiveKey } from '@/lib/draftRoomConstants';
 
 type JoinStatus = 'idle' | 'joining' | 'joined' | 'failed';
 
@@ -99,8 +89,6 @@ export function useDraftLiveSync({
   const loadLiveDataGenerationRef = useRef(0);
   const loadLiveDataRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadLiveDataReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingWsMessagesRef = useRef<PendingWsMessage[]>([]);
-  const lastWsUpdateRef = useRef<number>(Date.now());
   const lastFirebaseUpdateRef = useRef<number>(Date.now());
   const watchdogBackoffRef = useRef(5_000);
   const lastWatchdogAttemptRef = useRef(0);
@@ -141,22 +129,21 @@ export function useDraftLiveSync({
     if (firebaseRtdb.data) lastFirebaseUpdateRef.current = Date.now();
   }, [firebaseRtdb.data]);
 
-  const prevJoinParamsRef = useRef({ walletParam, speedParam, passTypeParam, promoTypeParam });
+  const prevJoinParamsRef = useRef({ walletParam, speedParam, passTypeParam });
 
   useEffect(() => {
     const prev = prevJoinParamsRef.current;
     if (
       prev.walletParam === walletParam &&
       prev.speedParam === speedParam &&
-      prev.passTypeParam === passTypeParam &&
-      prev.promoTypeParam === promoTypeParam
+      prev.passTypeParam === passTypeParam
     ) {
       return;
     }
-    prevJoinParamsRef.current = { walletParam, speedParam, passTypeParam, promoTypeParam };
+    prevJoinParamsRef.current = { walletParam, speedParam, passTypeParam };
     setJoinStatus('idle');
     setJoinAttempt((a) => a + 1);
-  }, [walletParam, speedParam, passTypeParam, promoTypeParam]);
+  }, [walletParam, speedParam, passTypeParam]);
 
   useEffect(() => {
     if (!isLiveMode || draftId || !walletParam) return;
@@ -199,7 +186,6 @@ export function useDraftLiveSync({
             speedParam || 'fast',
             getAccessTokenRef.current,
             1,
-            promoTypeParam ?? undefined,
             passTypeParam || 'paid',
           );
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
@@ -394,106 +380,11 @@ export function useDraftLiveSync({
     });
   }, [isLiveMode, draftId, walletParam]);
 
-  // Firebase RTDB is the primary live-state transport. The standalone
-  // WebSocket server (sbs-drafts-server) is being retired by the dev — staging
-  // rules now permit /drafts/{id}/realTimeDraftInfo reads (verified
-  // 2026-05-25), so the supplementary Firebase listener can fully drive the
-  // engine. WS handlers below remain for now as dead code but are not connected;
-  // removal of the WS hook + lib/api/websocket.ts is the next migration step.
-  const wsEnabled = false;
-
-  const ws = useDraftWebSocket({
-    walletAddress: walletParam,
-    draftName: draftId,
-    enabled: wsEnabled,
-    getToken: getAccessToken,
-    onCountdownUpdate: (payload) => {
-      engine.handleCountdownUpdate(payload);
-    },
-    onTimerUpdate: (payload) => {
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'timer_update', payload });
-        return;
-      }
-      engine.handleTimerUpdate(payload);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onNewPick: (payload) => {
-      logger.debug('[WS] new_pick received:', payload?.playerId, 'pick#', payload?.pickNum, 'initialized:', liveInitializedRef.current);
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'new_pick', payload });
-        logger.debug('[WS] Queued new_pick (engine not ready). Queue size:', pendingWsMessagesRef.current.length);
-        return;
-      }
-      engine.handleNewPick(payload);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onDraftInfoUpdate: (payload) => {
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'draft_info_update', payload });
-        return;
-      }
-      engine.handleDraftInfoUpdate(payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onDraftComplete: () => {
-      engine.handleDraftComplete();
-    },
-    onFinalCard: (payload) => {
-      engine.handleFinalCard(payload);
-    },
-    onInvalidPick: (payload) => {
-      console.warn('[WS] Invalid pick rejected by server:', payload);
-      if (engine.airplaneMode && engine.isUserTurn) {
-        const msg = (payload as { errorMessage?: string })?.errorMessage || '';
-        const match = msg.match(/already picked (\S+)/);
-        if (match) {
-          const staleId = match[1];
-          logger.debug('[Airplane] Removing stale player and retrying:', staleId);
-          engine.removeFromAvailable(staleId);
-          setTimeout(() => {
-            const nextPick = engine.getAutoPickPlayer();
-            if (nextPick) {
-              logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
-              const retryPayload = engine.draftPlayer(nextPick);
-              if (retryPayload) ws.sendPick(retryPayload);
-            }
-          }, 300);
-        }
-      }
-    },
-    onNewQueue: (payload) => {
-      const available = engine.availablePlayers;
-      const queuePlayers = payload
-        .map(q => available.find(a => a.playerId === q.playerId))
-        .filter((p): p is NonNullable<typeof p> => p !== undefined);
-      engine.reorderQueue(queuePlayers);
-    },
-    onOpen: () => {
-      logger.debug('[WS] Connected to draft server');
-      lastWsUpdateRef.current = Date.now();
-      if (liveInitializedRef.current && draftId) {
-        draftApi.getDraftSummary(draftId).then(summary => {
-          const summaryArr = summary;
-          if (summaryArr.length > 0) {
-            engine.refreshSummaryPicks(summaryArr);
-            logger.debug(`[WS Reconnect] Synced ${countSummaryPicks(summaryArr)} picks from summary`);
-          }
-        }).catch(() => {});
-      }
-    },
-    onClose: () => {
-      logger.debug('[WS] Disconnected from draft server');
-    },
-  });
-
   useEffect(() => {
     if (!isLiveMode || !draftId) return;
-    // Cross-tab coordination: drafting page skips its own WS/poll for this
-    // draft if our heartbeat is fresh (< 10s old). Contract is a numeric
-    // timestamp. Ownership is handled by always overwriting — last writer
-    // wins, and readers only care about recency, not identity.
-    const key = `draft-room-ws:${draftId}`;
+    // Cross-tab coordination: drafting page skips its own poll for this draft
+    // while the draft-room tab heartbeat is fresh (< 10s).
+    const key = draftRoomActiveKey(draftId);
     const writeHeartbeat = () => localStorage.setItem(key, String(Date.now()));
     writeHeartbeat();
     const interval = setInterval(writeHeartbeat, 3_000);
@@ -614,24 +505,7 @@ export function useDraftLiveSync({
 
         logger.debug('[Draft Room] Engine ready — draft data loaded successfully');
 
-        if (pendingWsMessagesRef.current.length > 0) {
-          logger.debug(`[Draft Room] Replaying ${pendingWsMessagesRef.current.length} queued WS messages`);
-          for (const msg of pendingWsMessagesRef.current) {
-            switch (msg.type) {
-              case 'new_pick':
-                engine.handleNewPick(msg.payload);
-                break;
-              case 'timer_update':
-                engine.handleTimerUpdate(msg.payload);
-                break;
-              case 'draft_info_update':
-                engine.handleDraftInfoUpdate(msg.payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
-                break;
-            }
-          }
-          pendingWsMessagesRef.current = [];
-        }
-        lastWsUpdateRef.current = Date.now();
+        lastFirebaseUpdateRef.current = Date.now();
         setLiveLoading(false);
 
         const draftAlreadyStarted = draftInfo.pickNumber > 1 ||
@@ -894,14 +768,12 @@ export function useDraftLiveSync({
     setEngineReady,
     firebaseActive,
     firebaseRtdb,
-    ws,
     bestTimeRemaining,
     isSlowDraft,
     isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
     liveInitializedRef,
-    lastWsUpdateRef,
     draftIdRef,
   };
 }

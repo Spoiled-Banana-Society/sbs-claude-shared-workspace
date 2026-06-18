@@ -191,18 +191,21 @@ export function subscribeDraftType(draftId: string, cb: (type: 'pro' | 'hof' | '
   });
 }
 
-/** The fast-changing live fields the My Drafts list needs per drafting row. */
-export interface DraftRealTimeInfoLite {
+/** Snapshot of `drafts/{draftId}/realTimeDraftInfo` from Firebase RTDB. */
+export interface RealTimeDraftInfoSnapshot {
   currentDrafter?: string;
   pickNumber?: number;
   roundNum?: number;
+  pickInRound?: number;
   pickEndTime?: number;
-  isDraftComplete?: boolean;
-  // Set at fill. Used to reject a STALE reused-id node (staging reuses draft
-  // ids): only trust this snapshot if its draftStartTime matches the draft's
-  // known start, so a previous draft's leftover state can't drive the row.
+  pickLength?: number;
   draftStartTime?: number;
+  isDraftComplete?: boolean;
+  isDraftClosed?: boolean;
 }
+
+/** @deprecated Use RealTimeDraftInfoSnapshot */
+export type DraftRealTimeInfoLite = RealTimeDraftInfoSnapshot;
 
 /**
  * Subscribe to the whole /drafts/{draftId}/realTimeDraftInfo node — the SAME
@@ -215,9 +218,9 @@ export interface DraftRealTimeInfoLite {
  */
 export function subscribeRealTimeDraftInfo(
   draftId: string,
-  cb: (info: DraftRealTimeInfoLite | null) => void,
+  cb: (info: RealTimeDraftInfoSnapshot | null) => void,
 ): Unsubscribe {
-  return subscribeValue<DraftRealTimeInfoLite>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
+  return subscribeValue<RealTimeDraftInfoSnapshot>(`/drafts/${draftId}/realTimeDraftInfo`, (v) => {
     cb(v && typeof v === 'object' ? v : null);
   });
 }
@@ -257,34 +260,6 @@ export function subscribeDraftDisplayName(draftId: string, cb: (displayName: str
     log('rtdb.unsubscribe', { draftId });
     unsub();
   };
-}
-
-/** Snapshot of `drafts/{draftId}/realTimeDraftInfo` from Firebase RTDB. */
-export interface RealTimeDraftInfoSnapshot {
-  currentDrafter: string;
-  pickNumber: number;
-  roundNum: number;
-  pickInRound: number;
-  pickEndTime: number;
-  pickLength: number;
-  draftStartTime: number;
-  isDraftComplete?: boolean;
-  isDraftClosed?: boolean;
-}
-
-/**
- * Subscribe to live draft timer / pick state.
- *
- * Firebase path: `/drafts/{draftId}/realTimeDraftInfo`
- */
-export function subscribeRealTimeDraftInfo(
-  draftId: string,
-  cb: (info: RealTimeDraftInfoSnapshot | null) => void,
-): Unsubscribe {
-  return subscribeValue<RealTimeDraftInfoSnapshot>(
-    `/drafts/${draftId}/realTimeDraftInfo`,
-    cb,
-  );
 }
 
 // ─────────── User event stream (real-time toast + notification) ───────────

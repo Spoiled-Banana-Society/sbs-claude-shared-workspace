@@ -514,14 +514,13 @@ export function BuyPassesModal({
     clientLog('payment', 'join_draft_start', { wallet: addr, speed });
 
     try {
-      const forcedDraftType = peekPromoDraftType();
-      logger.debug('[BuyModal] Joining draft:', { speed, addr, forcedDraftType });
+      logger.debug('[BuyModal] Joining draft:', { speed, addr });
       const draftRoom = await joinDraft(
         addr,
         speed,
         getAccessToken,
         1,
-        forcedDraftType ?? undefined,
+       'paid',
       );
       const draftId = draftRoom.id;
       const contestName = draftRoom.contestName;
@@ -563,9 +562,7 @@ export function BuyPassesModal({
         const current = new URLSearchParams(window.location.search);
         if (current.get('staging') === 'true') params.set('staging', 'true');
         const apiUrl = current.get('apiUrl');
-        const wsUrl = current.get('wsUrl');
         if (apiUrl) params.set('apiUrl', apiUrl);
-        if (wsUrl) params.set('wsUrl', wsUrl);
       }
       const lobbyUrl = `/draft-room?${params.toString()}`;
       logger.debug('[BuyModal] Navigating to:', lobbyUrl);

@@ -48,9 +48,6 @@ export const LOG_SOURCES = {
     // watchdog). Fired by the health-canary stall watchdog. CRITICAL: a
     // frozen draft strands 10 paying players.
     STALLED_NO_ADVANCE: 'draft.stalled_no_advance',
-    WS_TOKEN_FETCH_FAILED: 'draft.ws.token_fetch_failed',
-    WS_MESSAGE_PARSE_FAILED: 'draft.ws.message_parse_failed',
-    WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
     // Money paths: a draft pass was spent but the refund (on join-fail or leave)
@@ -303,8 +300,6 @@ const CRITICAL_PATTERNS: RegExp[] = [
   // ── Drafts freezing / not starting / not advancing ──
   /^draft\.join_failed/i,
   /^draft\.live_load_exhausted/i,
-  /^draft\.ws\.token_fetch_failed/i,
-  /^draft\.ws\.reconnect_failed/i,
   /^draft\.pick_submit/i,
   /^draft\.autopick_submit/i,
   /^draft\.phase_check_failed/i,

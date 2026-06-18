@@ -32,11 +32,6 @@ export const API_BASE = requireEnvUrl(
   'NEXT_PUBLIC_STAGING_DRAFTS_API_URL',
 );
 
-export const WS_BASE = requireEnvUrl(
-  'STAGING_DRAFT_SERVER_URL',
-  'NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL',
-);
-
 function buildHeaders({ wallet, admin } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   const serviceKey = process.env.DRAFTS_API_SERVICE_KEY?.trim();

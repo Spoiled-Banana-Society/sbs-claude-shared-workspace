@@ -209,11 +209,11 @@ test.describe('Dual-Tab Stability', () => {
     });
     console.log('Draft room content (first 200 chars):', draftRoomContent.bodyText?.slice(0, 200));
 
-    // ===== STEP 6: Wait more and check heartbeat prevents dual WS =====
-    console.log('\n=== STEP 6: Verify heartbeat prevents dual WebSocket ===');
+    // ===== STEP 6: Verify heartbeat prevents dual draft-room updates =====
+    console.log('\n=== STEP 6: Verify heartbeat prevents dual-tab conflict ===');
 
     const heartbeatCheck = await draftingPage.evaluate((draftId) => {
-      const key = `draft-room-ws:${draftId}`;
+      const key = `draft-room-active:${draftId}`;
       const val = localStorage.getItem(key);
       return {
         key,
@@ -232,7 +232,7 @@ test.describe('Dual-Tab Stability', () => {
 
     // Heartbeat should be stale now
     const heartbeatAfterClose = await draftingPage.evaluate((draftId) => {
-      const key = `draft-room-ws:${draftId}`;
+      const key = `draft-room-active:${draftId}`;
       const val = localStorage.getItem(key);
       return {
         value: val,

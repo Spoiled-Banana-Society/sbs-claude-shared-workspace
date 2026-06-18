@@ -34,9 +34,8 @@ async function main() {
     }
   });
 
-  // Open with useWs=true to force WS mode
-  const url = `${VERCEL}/draft-room?draftId=${DRAFT}&id=${DRAFT}&speed=fast&mode=live&wallet=${WALLET}&staging=true&useWs=true`;
-  console.log(`\nOpening with useWs=true: ${url}`);
+  const url = `${VERCEL}/draft-room?draftId=${DRAFT}&id=${DRAFT}&speed=fast&mode=live&wallet=${WALLET}&staging=true`;
+  console.log(`\nOpening draft room: ${url}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
   console.log('Waiting 30 seconds...');
