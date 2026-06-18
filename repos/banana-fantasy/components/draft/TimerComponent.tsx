@@ -28,12 +28,12 @@ const TimerComponent = () => {
             if (draftStartTime && now < draftStartTime * 1000) {
                 // Countdown to draft start
                 const remaining = draftStartTime * 1000 - now;
-                setTimeRemaining(Math.max(0, Math.floor(remaining / 1000))); // Convert milliseconds to seconds
+                setTimeRemaining(Math.max(0, Math.round(remaining / 1000))); // Convert milliseconds to seconds
             } else if (endOfTurnTimestamp) {
                 // Countdown for turn timer
                 const timestampMs = endOfTurnTimestamp * 1000; // Convert to milliseconds
                 const remaining = timestampMs - now;
-                setTimeRemaining(Math.max(0, Math.floor(remaining / 1000))); // Convert milliseconds to seconds
+                setTimeRemaining(Math.max(0, Math.round(remaining / 1000))); // Convert milliseconds to seconds
             } else {
                 // Set default preTime if no timestamps are available
                 setTimeRemaining(preTime || 30);

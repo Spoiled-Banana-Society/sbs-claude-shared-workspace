@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	cloudtasks "cloud.google.com/go/cloudtasks/apiv2"
 	"cloud.google.com/go/cloudtasks/apiv2/cloudtaskspb"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -52,11 +55,9 @@ func GetenvOrDefault(key, defaultValue string) string {
 	return defaultValue
 }
 
-// CreateCloudTask creates a Cloud Task that will be executed at the specified schedule time
-// url: The full URL where the task will be sent (HTTP POST)
-// payload: The JSON payload to send with the task
-// scheduleTime: Unix timestamp when the task should be executed
-func CreateCloudTask(url, payload string, scheduleTime int64) error {
+// CreateCloudTask creates a Cloud Task that will be executed at the specified schedule time.
+// taskID is optional; when set, Cloud Tasks rejects duplicate names (treated as success).
+func CreateCloudTask(url, payload string, scheduleTime int64, taskID string) error {
 	if cloudTasksClient == nil {
 		return fmt.Errorf("cloud tasks client not initialized - call InitCloudTasksClient first")
 	}
@@ -75,6 +76,11 @@ func CreateCloudTask(url, payload string, scheduleTime int64) error {
 	// Construct the fully qualified queue name
 	queuePath := fmt.Sprintf("projects/%s/locations/%s/queues/%s", projectID, location, queueName)
 
+	headers := map[string]string{"Content-Type": "application/json"}
+	if secret := strings.TrimSpace(os.Getenv("AUTO_DRAFT_SECRET")); secret != "" {
+		headers["X-Auto-Draft-Secret"] = secret
+	}
+
 	// Convert schedule time to protobuf timestamp
 	scheduleTimestamp := time.Unix(scheduleTime, 0)
 	if scheduleTimestamp.Before(time.Now()) {
@@ -82,27 +88,31 @@ func CreateCloudTask(url, payload string, scheduleTime int64) error {
 		scheduleTimestamp = time.Now().Add(1 * time.Second)
 	}
 
-	// Create the task request
-	req := &cloudtaskspb.CreateTaskRequest{
-		Parent: queuePath,
-		Task: &cloudtaskspb.Task{
-			MessageType: &cloudtaskspb.Task_HttpRequest{
-				HttpRequest: &cloudtaskspb.HttpRequest{
-					HttpMethod: cloudtaskspb.HttpMethod_POST,
-					Url:        url,
-					Headers: map[string]string{
-						"Content-Type": "application/json",
-					},
-					Body: []byte(payload),
-				},
+	task := &cloudtaskspb.Task{
+		MessageType: &cloudtaskspb.Task_HttpRequest{
+			HttpRequest: &cloudtaskspb.HttpRequest{
+				HttpMethod: cloudtaskspb.HttpMethod_POST,
+				Url:        url,
+				Headers:    headers,
+				Body:       []byte(payload),
 			},
-			ScheduleTime: timestamppb.New(scheduleTimestamp),
 		},
+		ScheduleTime: timestamppb.New(scheduleTimestamp),
+	}
+	if taskID != "" {
+		task.Name = fmt.Sprintf("%s/tasks/%s", queuePath, taskID)
 	}
 
-	// Create the task
+	req := &cloudtaskspb.CreateTaskRequest{
+		Parent: queuePath,
+		Task:   task,
+	}
+
 	_, err := cloudTasksClient.CreateTask(ctx, req)
 	if err != nil {
+		if st, ok := status.FromError(err); ok && st.Code() == codes.AlreadyExists {
+			return nil
+		}
 		return fmt.Errorf("failed to create cloud task: %w", err)
 	}
 

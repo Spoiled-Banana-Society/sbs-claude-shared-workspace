@@ -4,33 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
 )
-
-// requireAdminKey gates a handler with the X-Admin-Key header. Fails closed
-// when ADMIN_API_KEY is not configured so a missing-env-var deploy can't
-// silently expose admin endpoints to the internet.
-func requireAdminKey(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		expected := strings.TrimSpace(os.Getenv("ADMIN_API_KEY"))
-		if expected == "" {
-			http.Error(w, "ADMIN_API_KEY not configured", http.StatusServiceUnavailable)
-			return
-		}
-		provided := strings.TrimSpace(r.Header.Get("X-Admin-Key"))
-		if provided == "" || provided != expected {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		next.ServeHTTP(w, r)
-	}
-}
 
 type DraftActionResources struct{}
 
@@ -50,16 +31,23 @@ type ManualPickRequest struct {
 func (dra *DraftActionResources) Routes() chi.Router {
 	r := chi.NewRouter()
 
+	if auth.AuthEnabled() {
+		r.With(auth.RequireAutoDraftSecret).Post("/{draftId}/owner/{ownerId}/actions/autoDraft", dra.autoDraft)
+		r.With(auth.RequireAdminKey).Post("/{draftId}/owner/{ownerId}/admin/recover-card", dra.recoverCard)
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireServiceKey, auth.RequireWalletMatchesOwner)
+			r.Get("/{draftId}/owner/{ownerId}/preferences", dra.getDraftPreferences)
+			r.Patch("/{draftId}/owner/{ownerId}/preferences", dra.patchDraftPreferences)
+			r.Post("/{draftId}/owner/{ownerId}/actions/pick", dra.submitPick)
+		})
+		return r
+	}
+
 	r.Get("/{draftId}/owner/{ownerId}/preferences", dra.getDraftPreferences)
 	r.Patch("/{draftId}/owner/{ownerId}/preferences", dra.patchDraftPreferences)
 	r.Post("/{draftId}/owner/{ownerId}/actions/autoDraft", dra.autoDraft)
 	r.Post("/{draftId}/owner/{ownerId}/actions/pick", dra.submitPick)
-
-	// Admin-only: re-run close-draft per-card flow for one user. Used when
-	// the original close partially failed (image-gen 500, network blip, etc)
-	// and a card needs its roster + image re-persisted. Idempotent. Gated
-	// with X-Admin-Key — also called by the daily reconciliation cron.
-	r.Post("/{draftId}/owner/{ownerId}/admin/recover-card", requireAdminKey(dra.recoverCard))
+	r.With(auth.RequireAdminKey).Post("/{draftId}/owner/{ownerId}/admin/recover-card", dra.recoverCard)
 
 	return r
 }
@@ -160,6 +148,11 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 
 	calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
 	if err != nil {
+		if models.IsPickAlreadyProcessed(err) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Pick already completed"))
+			return
+		}
 		fmt.Printf("autoDraft error (CalculateAutoPickForUser): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -174,6 +167,11 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 	if userInfo.AutoDraft {
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
+			if models.IsPickAlreadyProcessed(err) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Pick already completed"))
+				return
+			}
 			fmt.Printf("autoDraft error (ProcessNewPick): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
 			// TRANSIENT failure (stall/blip): tell Cloud Tasks the truth so it
 			// re-delivers — the in-process 2s×3 retries are the first line; this
@@ -189,32 +187,36 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 			}
 			// Non-transient (benign race: pick landed concurrently, validation
 			// mismatch) — retrying would fail identically; keep the no-retry 200.
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Pick processed successfully"))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	} else {
-		// Wait until PickEndTime before processing the pick
 		now := time.Now().Unix()
 		if now < realTimeDraftInfo.PickEndTime {
-			waitDuration := time.Duration(realTimeDraftInfo.PickEndTime-now) * time.Second
-			time.Sleep(waitDuration)
+			err = models.EnqueueAutoDraftTask(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo.PickEndTime)
+			if err != nil {
+				fmt.Printf("autoDraft error (EnqueueAutoDraftTask): draftId=%s ownerId=%s pickEndTime=%d err=%v\n", draftId, ownerId, realTimeDraftInfo.PickEndTime, err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Pick scheduled for timer expiry"))
+			return
 		}
 
-		// Apply the missed-pick effects to userInfo and PERSIST BEFORE
-		// ProcessNewPick. ProcessNewPick spawns a goroutine that calls
-		// scheduleAutoDraftTask for the NEXT pick — and that scheduler
-		// re-reads userInfo from Firestore to decide whether to fire the
-		// next Cloud Task immediately (AutoDraft=true) or after the full
-		// 30s clock. If we write userInfo AFTER ProcessNewPick the goroutine
-		// races us and reads the pre-increment value. For most positions
-		// the next pick isn't theirs and the race never matters. For
-		// position 1's back-to-back picks (snake reversal: pick 20 → pick
-		// 21, pick 40 → pick 41, etc.), the next pick IS them, the
-		// scheduler reads stale AutoDraft=false, NumPicksMissedConsecutive=1,
-		// and schedules a full 30s wait — so what should be an instant
-		// auto-pick on miss #3 onward actually still burns 30s on miss #3.
-		// Persisting first closes the race.
+		err = models.ProcessNewPick(draftId, calculatedPick, false)
+		if err != nil {
+			if models.IsPickAlreadyProcessed(err) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Pick already completed"))
+				return
+			}
+			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Update SortByObj to reflect missed pick
 		userInfo.NumPicksMissedConsecutive++
 
 		// After 2 consecutive timer-expired picks (server auto-pick), enable auto-draft for future picks.

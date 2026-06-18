@@ -5,14 +5,12 @@
  */
 
 import type { League, RosterPlayer, User } from '@/types';
-import { createHttpClient, normalizeWalletAddress } from './client';
-import { getDraftsApiUrl } from '@/lib/staging';
+import { normalizeWalletAddress } from './client';
+import { createDraftsHttpClient } from '@/lib/draftsHttpClient';
 import { bananaDefaultName } from '@/utils/helpers';
 
 function draftsApi() {
-  return createHttpClient({
-    baseUrl: getDraftsApiUrl(),
-  });
+  return createDraftsHttpClient();
 }
 
 /** Backend shape from `GET /owner/{walletAddress}`. */

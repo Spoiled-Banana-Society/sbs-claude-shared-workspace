@@ -8,6 +8,7 @@ import {
   type MarketplaceTeam,
   type OpenSeaNft,
 } from '@/lib/opensea';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 
@@ -144,9 +145,8 @@ export async function GET(req: Request) {
       }
     }
 
-    // Enrich with SBS owner profiles (bounded by unique owners).
-    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    // Enrich with SBS owner profiles
+    const DRAFTS_API = getServerDraftsApiUrl();
     try {
       const uniqueOwners = [...new Set(teams.filter(n => n.ownerAddress).map(n => n.ownerAddress.toLowerCase()))];
       const ownerProfiles = new Map<string, { name: string; pfp: string | null }>();

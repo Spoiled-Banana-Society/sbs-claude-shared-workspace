@@ -11,6 +11,7 @@ import {
   type OpenSeaListing,
   type OpenSeaNft,
 } from '@/lib/opensea';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 import { listFreeOriginTokenIds } from '@/lib/onchain/passOrigin';
 import { isDraftingOpen } from '@/lib/draftTypes';
 import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
@@ -232,8 +233,7 @@ export async function GET(req: Request) {
     });
 
     // Enrich with SBS owner profiles (name + pfp) — best-effort with timeout
-    const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-      || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+    const DRAFTS_API = getServerDraftsApiUrl();
     try {
       const uniqueOwners = [...new Set(listings.map(l => l.ownerAddress.toLowerCase()))];
       const ownerProfiles = new Map<string, { name: string; pfp: string | null }>();

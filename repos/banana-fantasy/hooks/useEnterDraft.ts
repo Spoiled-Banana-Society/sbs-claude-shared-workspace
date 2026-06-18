@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
@@ -34,6 +35,7 @@ import { LOG_SOURCES } from '@/lib/logSources';
  */
 export function useEnterDraft() {
   const router = useRouter();
+  const { getAccessToken } = usePrivy();
   const { user, updateUser, refreshBalance } = useAuth();
   const [joiningLobby, setJoiningLobby] = useState(false);
   // Synchronous re-entrancy guard. setState (joiningLobby) doesn't take effect
@@ -144,7 +146,7 @@ export function useEnterDraft() {
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
       try {
-        draftRoom = await joinDraft(user.walletAddress, speed, 1, passType);
+        draftRoom = await joinDraft(user.walletAddress, speed, getAccessToken, 1, passType);
         if (draftRoom?.id) break;
         throw new Error('Join failed: no draft ID');
       } catch (err) {

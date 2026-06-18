@@ -12,12 +12,9 @@ import { mapDraftTokenToLeague, fetchOwnerPaidFilledCount, type ApiDraftToken } 
 import type { User } from '@/types';
 import { logger } from '@/lib/logger';
 
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-const SWEEP_THROTTLE_MS = 30_000;
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
-function getServerDraftsApiUrl(): string {
-  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
-}
+const SWEEP_THROTTLE_MS = 30_000;
 
 interface RawApiToken {
   _cardId?: string;

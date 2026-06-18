@@ -25,6 +25,7 @@ import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { fetchRecentDeliveries } from '@/lib/notifications/activityLog';
 import { fetchOneSignalNotificationStats } from '@/lib/notifications/onesignal';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -125,14 +126,7 @@ async function fetchOwnerProfile(wallet: string): Promise<OwnerProfile> {
   // back to the hardcoded staging URL so this works even if env is
   // missing entirely. THIS WAS THE PFP/NAME BUG: env var I was checking
   // didn't exist on Vercel, so every owner-profile call returned empty.
-  const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-  const baseRaw =
-    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-    || process.env.STAGING_DRAFTS_API_URL
-    || process.env.NEXT_PUBLIC_SBS_API_URL
-    || process.env.SBS_API_URL
-    || STAGING_FALLBACK;
-  const base = baseRaw.replace(/\/+$/, '');
+  const base = getServerDraftsApiUrl();
   // 15s timeout — Vercel function max is ~30s; Cloud Run cold-start on
   // staging is 5-8s in the worst case. Previous 8s was still timing out
   // when Boris's session hit a cold container. Generous timeout costs
@@ -386,11 +380,7 @@ interface TeamRow {
 }
 
 async function readUserTeams(wallet: string, gameweek: string): Promise<TeamRow[] | null> {
-  const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-  const base =
-    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-    || process.env.STAGING_DRAFTS_API_URL
-    || STAGING_FALLBACK;
+  const base = getServerDraftsApiUrl();
 
   try {
     const ctl = new AbortController();

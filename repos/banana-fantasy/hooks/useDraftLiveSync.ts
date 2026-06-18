@@ -4,28 +4,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
-import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
 import { isSlowDraftPickLength, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
-import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
+import { isStagingMode } from '@/lib/staging';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
+import { capDisplayTimeRemaining } from '@/utils/draftTimer';
 import { clientLog } from '@/lib/clientLog';
 import type { RoomPhase } from '@/lib/draftRoomConstants';
-import type {
-  DraftInfoPayload,
-  NewPickPayload,
-  TimerPayload,
-} from '@/hooks/useDraftWebSocket';
+import { draftRoomActiveKey } from '@/lib/draftRoomConstants';
 
-type PendingWsMessage =
-  | { type: 'timer_update'; payload: TimerPayload }
-  | { type: 'new_pick'; payload: NewPickPayload }
-  | { type: 'draft_info_update'; payload: DraftInfoPayload };
+type JoinStatus = 'idle' | 'joining' | 'joined' | 'failed';
 
 function countSummaryPicks(summary: draftApi.DraftSummary): number {
   return summary.filter((item) => Boolean(item.playerInfo?.playerId)).length;
@@ -73,12 +66,15 @@ export function useDraftLiveSync({
   draftIdRef,
 }: UseDraftLiveSyncParams) {
   const { getAccessToken } = usePrivy();
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [engineReady, setEngineReady] = useState(false);
 
   const liveInitializedRef = useRef(false);
-  const joinCalledRef = useRef(false);
+  const [joinStatus, setJoinStatus] = useState<JoinStatus>('idle');
+  const [joinAttempt, setJoinAttempt] = useState(0);
   const liveRetryCountRef = useRef(0);
   // How many times loadLiveData has waited because the draft simply hasn't
   // STARTED yet (still filling/randomizing). These waits are NOT failures —
@@ -90,11 +86,12 @@ export function useDraftLiveSync({
   // phase in its deps) can read the CURRENT phase when deciding wait-vs-fail.
   const phaseRef = useRef(phase);
   useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const loadLiveDataGenerationRef = useRef(0);
   const loadLiveDataRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadLiveDataReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingWsMessagesRef = useRef<PendingWsMessage[]>([]);
-  const lastWsUpdateRef = useRef<number>(Date.now());
   const lastFirebaseUpdateRef = useRef<number>(Date.now());
+  const watchdogBackoffRef = useRef(5_000);
+  const lastWatchdogAttemptRef = useRef(0);
   // Slow-draft "your pick is up" push fires exclusively server-side via the
   // Firebase Cloud Function listening on drafts/{id}/realTimeDraftInfo; a
   // previous client-side trigger here was removed because proving "some
@@ -132,9 +129,25 @@ export function useDraftLiveSync({
     if (firebaseRtdb.data) lastFirebaseUpdateRef.current = Date.now();
   }, [firebaseRtdb.data]);
 
+  const prevJoinParamsRef = useRef({ walletParam, speedParam, passTypeParam });
+
   useEffect(() => {
-    if (!isLiveMode || draftId || !walletParam || joinCalledRef.current) return;
-    joinCalledRef.current = true;
+    const prev = prevJoinParamsRef.current;
+    if (
+      prev.walletParam === walletParam &&
+      prev.speedParam === speedParam &&
+      prev.passTypeParam === passTypeParam
+    ) {
+      return;
+    }
+    prevJoinParamsRef.current = { walletParam, speedParam, passTypeParam };
+    setJoinStatus('idle');
+    setJoinAttempt((a) => a + 1);
+  }, [walletParam, speedParam, passTypeParam]);
+
+  useEffect(() => {
+    if (!isLiveMode || draftId || !walletParam) return;
+    setJoinStatus('joining');
 
     const pendingId = `pending-${Date.now()}`;
     const joinStartedAt = Date.now();
@@ -152,6 +165,8 @@ export function useDraftLiveSync({
       passType: passTypeParam || 'paid',
     });
 
+    let cancelled = false;
+
     async function joinAndFill() {
       const MAX_JOIN_RETRIES = 3;
       let lastErr: unknown = null;
@@ -163,10 +178,16 @@ export function useDraftLiveSync({
       // refund. Stock test wallets via /staging/mint-tokens instead.)
 
       for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
+        if (cancelled) return;
         try {
           const { joinDraft } = await import('@/lib/api/leagues');
-          // Draft TYPE is never client-chosen — backend provably-fair only.
-          const draftRoom = await joinDraft(walletParam, speedParam || 'fast', 1, passTypeParam || 'paid');
+          const draftRoom = await joinDraft(
+            walletParam,
+            speedParam || 'fast',
+            getAccessTokenRef.current,
+            1,
+            passTypeParam || 'paid',
+          );
           if (!draftRoom?.id) throw new Error('Join failed: no draft ID');
 
           const newId = draftRoom.id;
@@ -177,7 +198,9 @@ export function useDraftLiveSync({
           const joinedCount = (draftRoom as { numPlayers?: number; players?: number }).numPlayers
             ?? (draftRoom as { players?: number }).players;
           logger.debug('[Draft Room] Joined draft:', newId, 'numPlayers:', joinedCount);
+          if (cancelled) return;
           setDraftId(newId);
+          setJoinStatus('joined');
 
           // Show the real player count immediately from the join response —
           // the backend tells us the post-join count, so the room renders
@@ -239,6 +262,7 @@ export function useDraftLiveSync({
         }
       }
 
+      if (cancelled) return;
       console.error('[Draft Room] Failed to join draft after retries:', lastErr);
       reportClientError({
         source: LOG_SOURCES.draft.JOIN_FAILED,
@@ -249,11 +273,13 @@ export function useDraftLiveSync({
         stack: lastErr instanceof Error ? lastErr.stack : undefined,
       });
       draftStore.removeDraft(pendingId);
+      setJoinStatus('failed');
       setLiveError(lastErr instanceof Error ? lastErr.message : 'Failed to join draft');
     }
 
     joinAndFill();
-  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, setDraftId]);
+    return () => { cancelled = true; };
+  }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, joinAttempt, setDraftId, setPlayerCount]);
 
   const handleLiveDraft = useCallback((playerId: string) => {
     // Manual-pick / airplane auto-off side effects are handled at the
@@ -276,7 +302,7 @@ export function useDraftLiveSync({
         displayName: pickPayload.displayName,
         team: pickPayload.team,
         position: pickPayload.position,
-      }).then(() => {
+      }, getAccessTokenRef.current).then(() => {
         logger.debug('[REST] Pick submitted:', pickPayload.playerId);
       }).catch((err) => {
         const msg = err?.message || '';
@@ -299,7 +325,7 @@ export function useDraftLiveSync({
                   displayName: retryPayload.displayName,
                   team: retryPayload.team,
                   position: retryPayload.position,
-                }).catch(e => {
+                }, getAccessTokenRef.current).catch(e => {
                   console.error('[Airplane] Retry failed:', e);
                   // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
                   reportClientError({
@@ -341,7 +367,7 @@ export function useDraftLiveSync({
       pickNum: 0,
       round: 0,
     }));
-    draftApi.updateQueue(walletParam, draftId, payload).catch(err => {
+    draftApi.updateQueue(walletParam, draftId, payload, getAccessTokenRef.current).catch(err => {
       console.error('[Queue] REST sync failed:', err);
       reportClientError({
         source: LOG_SOURCES.draft.QUEUE_UPDATE_FAILED,
@@ -354,106 +380,11 @@ export function useDraftLiveSync({
     });
   }, [isLiveMode, draftId, walletParam]);
 
-  // Firebase RTDB is the primary live-state transport. The standalone
-  // WebSocket server (sbs-drafts-server) is being retired by the dev — staging
-  // rules now permit /drafts/{id}/realTimeDraftInfo reads (verified
-  // 2026-05-25), so the supplementary Firebase listener can fully drive the
-  // engine. WS handlers below remain for now as dead code but are not connected;
-  // removal of the WS hook + lib/api/websocket.ts is the next migration step.
-  const wsEnabled = false;
-
-  const ws = useDraftWebSocket({
-    walletAddress: walletParam,
-    draftName: draftId,
-    enabled: wsEnabled,
-    getToken: getAccessToken,
-    onCountdownUpdate: (payload) => {
-      engine.handleCountdownUpdate(payload);
-    },
-    onTimerUpdate: (payload) => {
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'timer_update', payload });
-        return;
-      }
-      engine.handleTimerUpdate(payload);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onNewPick: (payload) => {
-      logger.debug('[WS] new_pick received:', payload?.playerId, 'pick#', payload?.pickNum, 'initialized:', liveInitializedRef.current);
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'new_pick', payload });
-        logger.debug('[WS] Queued new_pick (engine not ready). Queue size:', pendingWsMessagesRef.current.length);
-        return;
-      }
-      engine.handleNewPick(payload);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onDraftInfoUpdate: (payload) => {
-      if (!liveInitializedRef.current) {
-        pendingWsMessagesRef.current.push({ type: 'draft_info_update', payload });
-        return;
-      }
-      engine.handleDraftInfoUpdate(payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
-      lastWsUpdateRef.current = Date.now();
-    },
-    onDraftComplete: () => {
-      engine.handleDraftComplete();
-    },
-    onFinalCard: (payload) => {
-      engine.handleFinalCard(payload);
-    },
-    onInvalidPick: (payload) => {
-      console.warn('[WS] Invalid pick rejected by server:', payload);
-      if (engine.airplaneMode && engine.isUserTurn) {
-        const msg = (payload as { errorMessage?: string })?.errorMessage || '';
-        const match = msg.match(/already picked (\S+)/);
-        if (match) {
-          const staleId = match[1];
-          logger.debug('[Airplane] Removing stale player and retrying:', staleId);
-          engine.removeFromAvailable(staleId);
-          setTimeout(() => {
-            const nextPick = engine.getAutoPickPlayer();
-            if (nextPick) {
-              logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
-              const retryPayload = engine.draftPlayer(nextPick);
-              if (retryPayload) ws.sendPick(retryPayload);
-            }
-          }, 300);
-        }
-      }
-    },
-    onNewQueue: (payload) => {
-      const available = engine.availablePlayers;
-      const queuePlayers = payload
-        .map(q => available.find(a => a.playerId === q.playerId))
-        .filter((p): p is NonNullable<typeof p> => p !== undefined);
-      engine.reorderQueue(queuePlayers);
-    },
-    onOpen: () => {
-      logger.debug('[WS] Connected to draft server');
-      lastWsUpdateRef.current = Date.now();
-      if (liveInitializedRef.current && draftId) {
-        draftApi.getDraftSummary(draftId).then(summary => {
-          const summaryArr = summary;
-          if (summaryArr.length > 0) {
-            engine.refreshSummaryPicks(summaryArr);
-            logger.debug(`[WS Reconnect] Synced ${countSummaryPicks(summaryArr)} picks from summary`);
-          }
-        }).catch(() => {});
-      }
-    },
-    onClose: () => {
-      logger.debug('[WS] Disconnected from draft server');
-    },
-  });
-
   useEffect(() => {
     if (!isLiveMode || !draftId) return;
-    // Cross-tab coordination: drafting page skips its own WS/poll for this
-    // draft if our heartbeat is fresh (< 10s old). Contract is a numeric
-    // timestamp. Ownership is handled by always overwriting — last writer
-    // wins, and readers only care about recency, not identity.
-    const key = `draft-room-ws:${draftId}`;
+    // Cross-tab coordination: drafting page skips its own poll for this draft
+    // while the draft-room tab heartbeat is fresh (< 10s).
+    const key = draftRoomActiveKey(draftId);
     const writeHeartbeat = () => localStorage.setItem(key, String(Date.now()));
     writeHeartbeat();
     const interval = setInterval(writeHeartbeat, 3_000);
@@ -465,6 +396,9 @@ export function useDraftLiveSync({
 
   useEffect(() => {
     if (!isLiveMode || liveInitializedRef.current || !liveDataReady || !draftId) return;
+
+    const generation = ++loadLiveDataGenerationRef.current;
+    const isStaleLoad = () => generation !== loadLiveDataGenerationRef.current;
 
     async function retryAsync<T,>(fn: () => Promise<T>, maxRetries = 3, delayMs = 2000): Promise<T> {
       let lastError: Error | null = null;
@@ -493,7 +427,7 @@ export function useDraftLiveSync({
             retryAsync(() => draftApi.getPlayerRankings(draftId, walletParam)),
             retryAsync(() => draftApi.getDraftInfo(draftId)),
             draftApi.getDraftRosters(draftId),
-            draftApi.getQueue(walletParam, draftId),
+            draftApi.getQueue(walletParam, draftId, getAccessTokenRef.current),
             draftApi.getDraftSummary(draftId),
           ]);
 
@@ -504,6 +438,8 @@ export function useDraftLiveSync({
           : ({} as draftApi.RosterState);
         const queue = queueResult.status === 'fulfilled' ? queueResult.value : ([] as draftApi.PlayerStateInfo[]);
         const summary = summaryResult.status === 'fulfilled' ? summaryResult.value : ([] as draftApi.DraftSummaryItem[]);
+
+        if (isStaleLoad()) return;
 
         if (!draftInfo || (playerRankings as draftApi.PlayerDataResponse[]).length === 0) {
           throw new Error('Required draft data not available yet');
@@ -569,24 +505,7 @@ export function useDraftLiveSync({
 
         logger.debug('[Draft Room] Engine ready — draft data loaded successfully');
 
-        if (pendingWsMessagesRef.current.length > 0) {
-          logger.debug(`[Draft Room] Replaying ${pendingWsMessagesRef.current.length} queued WS messages`);
-          for (const msg of pendingWsMessagesRef.current) {
-            switch (msg.type) {
-              case 'new_pick':
-                engine.handleNewPick(msg.payload);
-                break;
-              case 'timer_update':
-                engine.handleTimerUpdate(msg.payload);
-                break;
-              case 'draft_info_update':
-                engine.handleDraftInfoUpdate(msg.payload as unknown as Parameters<typeof engine.handleDraftInfoUpdate>[0]);
-                break;
-            }
-          }
-          pendingWsMessagesRef.current = [];
-        }
-        lastWsUpdateRef.current = Date.now();
+        lastFirebaseUpdateRef.current = Date.now();
         setLiveLoading(false);
 
         const draftAlreadyStarted = draftInfo.pickNumber > 1 ||
@@ -666,9 +585,11 @@ export function useDraftLiveSync({
           if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
           if (loadLiveDataReadyTimeoutRef.current) clearTimeout(loadLiveDataReadyTimeoutRef.current);
           loadLiveDataRetryTimeoutRef.current = setTimeout(() => {
+            if (isStaleLoad()) return;
             liveInitializedRef.current = false;
             setLiveDataReady(false);
             loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
+              if (isStaleLoad()) return;
               setLiveDataReady(true);
               loadLiveDataReadyTimeoutRef.current = null;
             }, 100);
@@ -678,7 +599,11 @@ export function useDraftLiveSync({
       }
     }
 
-    loadLiveData();
+    void loadLiveData();
+
+    return () => {
+      loadLiveDataGenerationRef.current += 1;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam, liveDataReady]);
 
@@ -705,10 +630,16 @@ export function useDraftLiveSync({
       const elapsed = Date.now() - lastFirebaseUpdateRef.current;
 
       if (elapsed > STALE_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastWatchdogAttemptRef.current < watchdogBackoffRef.current) {
+          return;
+        }
+        lastWatchdogAttemptRef.current = now;
+
         console.warn(`[Watchdog] No Firebase RTDB update in ${Math.round(elapsed / 1000)}s — re-syncing from REST`);
 
         if (liveInitializedRef.current) {
-          draftApi.getDraftSummary(draftId).then(summary => {
+          const summaryPromise = draftApi.getDraftSummary(draftId).then(summary => {
             const summaryArr = summary;
             if (summaryArr.length > 0) {
               engine.refreshSummaryPicks(summaryArr);
@@ -723,9 +654,10 @@ export function useDraftLiveSync({
               context: { draftId, call: 'getDraftSummary' },
               stack: err instanceof Error ? err.stack : undefined,
             });
+            throw err;
           });
 
-          draftApi.getDraftInfo(draftId).then(info => {
+          const infoPromise = draftApi.getDraftInfo(draftId).then(info => {
             // Defensive null-handling: the Go backend can return null for
             // `adp` (and occasionally other arrays) during state
             // transitions or after a draft completes. Without these
@@ -758,10 +690,19 @@ export function useDraftLiveSync({
               context: { draftId, call: 'getDraftInfo' },
               stack: err instanceof Error ? err.stack : undefined,
             });
+            throw err;
+          });
+
+          void Promise.allSettled([summaryPromise, infoPromise]).then((results) => {
+            const allOk = results.every(r => r.status === 'fulfilled');
+            if (allOk) {
+              lastFirebaseUpdateRef.current = Date.now();
+              watchdogBackoffRef.current = 5_000;
+            } else {
+              watchdogBackoffRef.current = Math.min(watchdogBackoffRef.current * 2, 60_000);
+            }
           });
         }
-
-        lastFirebaseUpdateRef.current = Date.now();
       }
     }, CHECK_INTERVAL);
 
@@ -770,6 +711,12 @@ export function useDraftLiveSync({
   }, [isLiveMode, draftId, engine.draftStatus]);
 
   const retryLiveSync = useCallback(() => {
+    setLiveError(null);
+    if (!draftId) {
+      setJoinStatus('idle');
+      setJoinAttempt((a) => a + 1);
+      return;
+    }
     if (loadLiveDataRetryTimeoutRef.current) {
       clearTimeout(loadLiveDataRetryTimeoutRef.current);
       loadLiveDataRetryTimeoutRef.current = null;
@@ -781,20 +728,19 @@ export function useDraftLiveSync({
     liveRetryCountRef.current = 0;
     fillingWaitCountRef.current = 0;
     liveInitializedRef.current = false;
-    setLiveError(null);
     setLiveDataReady(false);
     loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
       setLiveDataReady(true);
       loadLiveDataReadyTimeoutRef.current = null;
     }, 100);
-  }, [setLiveDataReady]);
+  }, [draftId, setLiveDataReady]);
 
   const bestTimeRemaining = useMemo(() => {
     const value = (firebaseActive && firebaseTimeRemaining !== null)
       ? firebaseTimeRemaining
       : engine.timeRemaining;
-    return value ?? 0;
-  }, [firebaseActive, firebaseTimeRemaining, engine.timeRemaining]);
+    return capDisplayTimeRemaining(value ?? 0, firebasePickLength);
+  }, [firebaseActive, firebaseTimeRemaining, engine.timeRemaining, firebasePickLength]);
 
   // Slow drafts pause overnight (22:00–05:00 PT). Surface whether this is a slow
   // draft and whether the clock is currently frozen so the UI can show the
@@ -822,14 +768,12 @@ export function useDraftLiveSync({
     setEngineReady,
     firebaseActive,
     firebaseRtdb,
-    ws,
     bestTimeRemaining,
     isSlowDraft,
     isSlowDraftPaused,
     handleLiveDraft,
     handleLiveQueueSync,
     liveInitializedRef,
-    lastWsUpdateRef,
     draftIdRef,
   };
 }

@@ -225,7 +225,7 @@ func CreateLeague(ownerId string, draftNum int, draftType string) (*League, erro
 		return nil, err
 	}
 	res := &League{
-		LeagueId:     fmt.Sprintf("2024-%s-draft-%d", draftType, draftNum),
+		LeagueId:     FormatDraftLeagueID(draftType, draftNum),
 		DisplayName:  fmt.Sprintf("BBB #%d", (draftNum)),
 		CurrentUsers: make([]LeagueUser, 0),
 		NumPlayers:   0,
@@ -319,7 +319,7 @@ func scanForPartialLeague(startFrom int, draftType string, ownerId string) int {
 	start := time.Now()
 	read := func(n int) (*League, bool) {
 		var l League
-		draftId := fmt.Sprintf("2024-%s-draft-%d", draftType, n)
+		draftId := FormatDraftLeagueID(draftType, n)
 		if err := utils.Db.ReadDocument("drafts", draftId, &l); err != nil {
 			return nil, false
 		}
@@ -347,7 +347,7 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 
 	// find the right league to add the card to ensuring that this owner does not already have a token in that league
 	for {
-		draftId = fmt.Sprintf("2024-%s-draft-%d", draftType, currentDraftNum)
+		draftId = FormatDraftLeagueID(draftType, currentDraftNum)
 		err := utils.Db.ReadDocument("drafts", draftId, &l)
 		if err != nil {
 			s := err.Error()

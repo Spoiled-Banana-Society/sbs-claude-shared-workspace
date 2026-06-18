@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@/lib/staging', () => ({
-  getDraftsApiUrl: () => 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app',
+  getDraftsApiUrl: () => 'https://drafts-api.test',
 }));
 vi.mock('@/lib/clientLog', () => ({
   clientLog: vi.fn(),

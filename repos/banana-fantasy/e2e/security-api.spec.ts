@@ -80,6 +80,82 @@ test.describe('Security: API Route Protection', () => {
     });
   });
 
+  test.describe('Draft BFF Routes', () => {
+    const DRAFT_ID = 'test-draft-auth-guard';
+
+    test('rejects unauthenticated pick', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/draft/${DRAFT_ID}/pick`, {
+        data: {
+          playerId: 'SF-RB1',
+          displayName: 'SF RB1',
+          team: 'SF',
+          position: 'RB',
+        },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated preferences read', async ({ request }) => {
+      const res = await request.get(`${API_BASE}/api/draft/${DRAFT_ID}/preferences`);
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated preferences patch', async ({ request }) => {
+      const res = await request.patch(`${API_BASE}/api/draft/${DRAFT_ID}/preferences`, {
+        data: { autoDraft: true },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated queue update', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/draft/${DRAFT_ID}/queue`, {
+        data: [],
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated sort update', async ({ request }) => {
+      const res = await request.put(`${API_BASE}/api/draft/${DRAFT_ID}/sort`, {
+        data: { sortBy: 'ADP' },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated league join', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/league/join`, {
+        data: { speed: 'fast', numLeaguesToJoin: 1 },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated league leave', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/league/leave`, {
+        data: { draftId: DRAFT_ID, tokenId: '123' },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects unauthenticated owner mint', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/owner/mint`, {
+        data: { minId: 1, maxId: 1 },
+      });
+      expect(res.status()).toBe(401);
+    });
+
+    test('rejects pick with invalid JWT', async ({ request }) => {
+      const res = await request.post(`${API_BASE}/api/draft/${DRAFT_ID}/pick`, {
+        headers: { Authorization: 'Bearer invalid-token-here' },
+        data: {
+          playerId: 'SF-RB1',
+          displayName: 'SF RB1',
+          team: 'SF',
+          position: 'RB',
+        },
+      });
+      expect(res.status()).toBe(401);
+    });
+  });
+
   test.describe('Withdrawal API', () => {
     test('rejects unauthenticated requests', async ({ request }) => {
       const res = await request.post(`${API_BASE}/api/prizes/withdraw`, {

@@ -10,7 +10,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useMintDraftPass } from '@/hooks/useMintDraftPass';
 import { draftPassPricing, feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { BASE_SEPOLIA, waitForUsdcArrival, getUsdcBalance } from '@/lib/contracts/bbb4';
-import { isStagingMode, getDraftsApiUrl } from '@/lib/staging';
+import { joinDraft } from '@/lib/api/leagues';
+import { isStagingMode } from '@/lib/staging';
 import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { clientLog } from '@/lib/clientLog';
@@ -574,29 +575,17 @@ export function BuyPassesModal({
     clientLog('payment', 'join_draft_start', { wallet: addr, speed });
 
     try {
-      // Join a draft
-      const apiBase = getDraftsApiUrl();
-      logger.debug('[BuyModal] Joining draft:', { apiBase, speed, addr });
-      // Draft TYPE is decided solely by the backend's provably-fair logic —
-      // the client never sends a draftType (would be a rigged-outcome vector).
-      const joinRes = await fetch(`${apiBase}/league/${speed}/owner/${addr}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numLeaguesToJoin: 1 }),
-      });
-
-      if (!joinRes.ok) {
-        const errText = await joinRes.text().catch(() => 'Unknown error');
-        throw new Error(`Join failed (${joinRes.status}): ${errText}`);
-      }
-
-      const joinData = await joinRes.json();
-      logger.debug('[BuyModal] Join response:', JSON.stringify(joinData));
-      // API returns an array of joined cards
-      const card = Array.isArray(joinData) ? joinData[0] : joinData;
-      const draftId = String(card?._leagueId ?? card?.draftId ?? card?.leagueId ?? card?.id ?? '');
-      const contestName = String(card?._leagueDisplayName ?? card?.displayName ?? `Draft ${draftId}`);
-      logger.debug('[BuyModal] Parsed:', { draftId, contestName });
+      logger.debug('[BuyModal] Joining draft:', { speed, addr });
+      const draftRoom = await joinDraft(
+        addr,
+        speed,
+        getAccessToken,
+        1,
+       'paid',
+      );
+      const draftId = draftRoom.id;
+      const contestName = draftRoom.contestName;
+      logger.debug('[BuyModal] Joined:', { draftId, contestName });
 
       if (!draftId) throw new Error('No draft ID returned from join API');
       clientLog('payment', 'join_draft_success', { wallet: addr, speed, draftId });
@@ -634,9 +623,7 @@ export function BuyPassesModal({
         const current = new URLSearchParams(window.location.search);
         if (current.get('staging') === 'true') params.set('staging', 'true');
         const apiUrl = current.get('apiUrl');
-        const wsUrl = current.get('wsUrl');
         if (apiUrl) params.set('apiUrl', apiUrl);
-        if (wsUrl) params.set('wsUrl', wsUrl);
       }
       const lobbyUrl = `/draft-room?${params.toString()}`;
       logger.debug('[BuyModal] Navigating to:', lobbyUrl);

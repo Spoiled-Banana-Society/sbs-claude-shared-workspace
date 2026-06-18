@@ -9,11 +9,7 @@ import { isFounderDraftMarked, markFounderDraft, unlockBadge } from '@/lib/db';
 import { grantFounderDraftSpins } from '@/lib/founderGrant';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-
-function getServerDraftsApiUrl(): string {
-  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
-}
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 interface DraftInfoResponse {
   draftId: string;

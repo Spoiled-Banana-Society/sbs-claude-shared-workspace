@@ -2,7 +2,6 @@ package models
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -791,7 +790,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 		CurrentRound:      1,
 		PickInRound:       1,
 		DraftStartTime:    info.DraftStartTime,
-		PickStartTime:     info.DraftStartTime,
+		PickStartTime:     info.DraftStartTime + 1,
 		LastPick:          PlayerStateInfo{},
 		PickLength:        info.PickLength,
 	}
@@ -825,34 +824,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 
 	fmt.Printf("First pick info: %v\n for draft %s has created the real time draft info\n", firstPickInfo, draftId)
 
-	// Build the auto-draft URL based on environment
-	autoDraftUrl, err := buildAutoDraftURL(draftId, firstPickInfo.CurrentDrafter)
-	if err != nil {
-		fmt.Printf("Error building auto-draft URL for draft %s, owner %s: %v\n", draftId, firstPickInfo.CurrentDrafter, err)
-		return err
-	}
-
-	// Create the payload
-	payload := map[string]interface{}{
-		"currentPickNumber": 1,
-		"currentRound":      1,
-		"isServerPick":      true,
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		fmt.Printf("Error marshaling auto-draft payload for pick %d: %v\n", 1, err)
-		return err
-	}
-
-	// Create the cloud task
-	err = utils.CreateCloudTask(autoDraftUrl, string(payloadBytes), firstPickInfo.PickEndTime-2)
-	if err != nil {
-		fmt.Printf("Error scheduling auto-draft cloud task for draft %s, pick %d: %v\n", draftId, 1, err)
-		return err
-	}
-
-	fmt.Printf("Successfully scheduled auto-draft cloud task for draft %s, pick %d (round %d) at timestamp %d\n",
-		draftId, 1, 1, firstPickInfo.PickEndTime-5)
+	go scheduleAutoDraftTask(draftId, firstPickInfo.CurrentDrafter, 1, 1, firstPickInfo.PickEndTime)
 
 	// DEFERRED: per-card Level write for JP/HOF drafts. Best-effort,
 	// run AFTER RTDB + Cloud Task have committed so a partial failure

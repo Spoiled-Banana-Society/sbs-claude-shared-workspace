@@ -12,8 +12,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"firebase.google.com/go/db"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
+
+// ErrPickAlreadyProcessed marks a duplicate or stale auto-draft attempt where
+// the pick slot was already filled. Cloud Tasks should treat these as success.
+var ErrPickAlreadyProcessed = errors.New("pick already processed")
+
+func IsPickAlreadyProcessed(err error) bool {
+	return errors.Is(err, ErrPickAlreadyProcessed)
+}
 
 type RealTimeDraftInfo struct {
 	CurrentDrafter    string          `json:"currentDrafter"`
@@ -68,7 +77,11 @@ func CheckIfPlayerIsPickedAlready(draftId, playerId string) error {
 		fmt.Println("Error because all the players state is nil in default user picking")
 		return err
 	}
-	if currentPlayers[playerId].OwnerAddress != "" || currentPlayers[playerId].OwnerAddress == "null" {
+	player, exists := currentPlayers[playerId]
+	if !exists || player.PlayerId == "" {
+		return fmt.Errorf("playerId %s is not in the draft player state", playerId)
+	}
+	if player.OwnerAddress != "" || player.OwnerAddress == "null" {
 		errMes := fmt.Sprintf("This player was already picked %s so we are not updating or counting this pick\r", playerId)
 		fmt.Println(errMes)
 		return fmt.Errorf(errMes)
@@ -88,35 +101,78 @@ func logCriticalDraftError(event, draftId string, pick int, err error) {
 	fmt.Printf(`{"severity":"ERROR","event":"%s","draftId":"%s","pick":%d,"error":%q}`+"\n", event, draftId, pick, err.Error())
 }
 
-func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) error {
-	realTimeDraftInfo, err := GetRealTimeDraftInfoForDraft(draftId)
+// claimPickSlot atomically validates and advances realTimeDraftInfo in RTDB so
+// concurrent pick requests cannot double-process the same pick number.
+func claimPickSlot(draftId string, pickInfo *PlayerStateInfo, isUserPick bool, draftInfo *DraftInfo) (*RealTimeDraftInfo, bool, error) {
+	ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s/realTimeDraftInfo", draftId))
+
+	var claimed *RealTimeDraftInfo
+	var isLastPick bool
+
+	err := ref.Transaction(context.TODO(), func(tn db.TransactionNode) (interface{}, error) {
+		var info RealTimeDraftInfo
+		if err := tn.Unmarshal(&info); err != nil {
+			return nil, err
+		}
+
+		if time.Now().Unix() > info.PickEndTime && isUserPick {
+			return nil, fmt.Errorf("the pick end time has passed so we are not processing this pick")
+		}
+		if info.CurrentDrafter != pickInfo.OwnerAddress {
+			return nil, fmt.Errorf("%w: the current drafter is not the owner of the pick", ErrPickAlreadyProcessed)
+		}
+		if info.CurrentPickNumber != pickInfo.PickNum {
+			return nil, fmt.Errorf("%w: the current pick number is not the pick number of the pick", ErrPickAlreadyProcessed)
+		}
+		if info.CurrentRound != pickInfo.Round {
+			return nil, fmt.Errorf("%w: the current round is not the round of the pick", ErrPickAlreadyProcessed)
+		}
+
+		lastPick := info.CurrentPickNumber == 150
+		info.LastPick = *pickInfo
+		if lastPick {
+			info.IsDraftComplete = true
+		} else {
+			info.CurrentPickNumber++
+			info.PickEndTime = time.Now().Unix() + info.PickLength + 1
+			info.PickInRound++
+			nextRound := info.CurrentRound
+			nextPickInRound := info.PickInRound
+			if nextPickInRound > 10 {
+				nextRound++
+				nextPickInRound = 1
+				info.CurrentRound = nextRound
+				info.PickInRound = nextPickInRound
+			}
+			var index int
+			if nextRound%2 == 0 {
+				index = len(draftInfo.DraftOrder) - nextPickInRound
+			} else {
+				index = nextPickInRound - 1
+			}
+			info.CurrentDrafter = draftInfo.DraftOrder[index].OwnerId
+		}
+
+		isLastPick = lastPick
+		claimed = &info
+		return info, nil
+	})
 	if err != nil {
-		fmt.Printf("ProcessNewPick error (GetRealTimeDraftInfoForDraft): draftId=%s err=%v\n", draftId, err)
-		return err
+		return nil, false, err
 	}
-	isLastPick := false
-	if realTimeDraftInfo.CurrentPickNumber == 150 {
-		isLastPick = true
-	}
+	return claimed, isLastPick, nil
+}
 
-	if time.Now().Unix() > realTimeDraftInfo.PickEndTime && isUserPick {
-		err := fmt.Errorf("the pick end time has passed so we are not processing this pick")
-		fmt.Printf("ProcessNewPick error: draftId=%s isUserPick=%v pickEndTime=%d err=%v\n", draftId, isUserPick, realTimeDraftInfo.PickEndTime, err)
+func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) error {
+	draftInfo, err := ReturnDraftInfoForDraft(draftId)
+	if err != nil {
+		fmt.Printf("ProcessNewPick error (ReturnDraftInfoForDraft): draftId=%s err=%v\n", draftId, err)
 		return err
 	}
 
-	// check if the pick is valid
-	if realTimeDraftInfo.CurrentDrafter != pickInfo.OwnerAddress {
-		err := fmt.Errorf("the current drafter is not the owner of the pick")
-		fmt.Printf("ProcessNewPick error: draftId=%s currentDrafter=%s pickOwner=%s pickInfo=%+v err=%v\n", draftId, realTimeDraftInfo.CurrentDrafter, pickInfo.OwnerAddress, pickInfo, err)
-		return err
-	} else if realTimeDraftInfo.CurrentPickNumber != pickInfo.PickNum {
-		err := fmt.Errorf("the current pick number is not the pick number of the pick")
-		fmt.Printf("ProcessNewPick error: draftId=%s currentPickNumber=%d pickPickNum=%d pickInfo=%+v err=%v\n", draftId, realTimeDraftInfo.CurrentPickNumber, pickInfo.PickNum, pickInfo, err)
-		return err
-	} else if realTimeDraftInfo.CurrentRound != pickInfo.Round {
-		err := fmt.Errorf("the current round is not the round of the pick")
-		fmt.Printf("ProcessNewPick error: draftId=%s currentRound=%d pickRound=%d pickInfo=%+v err=%v\n", draftId, realTimeDraftInfo.CurrentRound, pickInfo.Round, pickInfo, err)
+	realTimeDraftInfo, isLastPick, err := claimPickSlot(draftId, pickInfo, isUserPick, draftInfo)
+	if err != nil {
+		fmt.Printf("ProcessNewPick error (claimPickSlot): draftId=%s isUserPick=%v pickInfo=%+v err=%v\n", draftId, isUserPick, pickInfo, err)
 		return err
 	}
 
@@ -175,7 +231,7 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 
 	realTimeDraftInfo.LastPick = *pickInfo
 	if isLastPick {
-		realTimeDraftInfo.IsDraftComplete = true
+		draftInfo.CurrentDrafter = pickInfo.OwnerAddress
 	} else {
 		realTimeDraftInfo.CurrentPickNumber++
 		draftInfo.CurrentPickNumber++
@@ -217,7 +273,7 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		return err
 	}
 
-	// Schedule cloud task to trigger auto draft 5 seconds before pick end time
+	// Schedule cloud task to trigger auto draft at pick end time (or immediately for auto-draft users).
 	// This runs asynchronously so it doesn't block the pick processing
 	if !realTimeDraftInfo.IsDraftComplete {
 		go scheduleAutoDraftTask(
@@ -239,8 +295,30 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 	return nil
 }
 
-// scheduleAutoDraftTask schedules a Cloud Task to trigger auto-draft 5 seconds before the pick end time
-// This function runs in a goroutine and handles errors gracefully without blocking the main flow
+// EnqueueAutoDraftTask schedules a Cloud Task to invoke the auto-draft endpoint at scheduleTime.
+func EnqueueAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, scheduleTime int64) error {
+	autoDraftUrl, err := buildAutoDraftURL(draftId, ownerId)
+	if err != nil {
+		return err
+	}
+
+	payload := map[string]interface{}{
+		"currentPickNumber": pickNum,
+		"currentRound":      roundNum,
+		"isServerPick":      true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal auto-draft payload: %w", err)
+	}
+
+	taskID := fmt.Sprintf("drafts-auto-%s-pick-%d", draftId, pickNum)
+	return utils.CreateCloudTask(autoDraftUrl, string(payloadBytes), scheduleTime, taskID)
+}
+
+// scheduleAutoDraftTask schedules a Cloud Task to trigger auto-draft at pick end time.
+// Auto-draft users get an immediate task; manual drafters get a task at PickEndTime.
+// This function runs in a goroutine and handles errors gracefully without blocking the main flow.
 func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickEndTime int64) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -248,11 +326,10 @@ func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickE
 		}
 	}()
 
-	// Read the sortByObj for this user to check AutoDraft setting
 	sortByObj := FetchSortForDrafter(draftId, ownerId)
 
 	var scheduleTime int64
-	now := time.Now().Unix()
+	now := time.Now().Unix() + 1
 
 	// If user has AutoPick turned on, schedule for 2 seconds from now
 	if sortByObj.AutoDraft {
@@ -262,37 +339,14 @@ func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickE
 		scheduleTime = now + 8
 		fmt.Printf("User has missed 2 picks in a row, scheduling auto-draft task for 5 seconds from now for pick %d\n", pickNum)
 	} else {
-		// Calculate schedule time: 5 seconds before pick end time
-		scheduleTime = pickEndTime - 2
+		scheduleTime = pickEndTime
 		if scheduleTime < now {
-			// If time has already passed, schedule for 1 second from now
-			scheduleTime = now + 1
-			fmt.Printf("Pick end time has passed, scheduling auto-draft task immediately for pick %d\n", pickNum)
+			scheduleTime = now
 		}
+		fmt.Printf("Scheduling timer-expiry auto-draft task for pick %d at timestamp %d\n", pickNum, scheduleTime)
 	}
 
-	// Build the auto-draft URL based on environment
-	autoDraftUrl, err := buildAutoDraftURL(draftId, ownerId)
-	if err != nil {
-		fmt.Printf("Error building auto-draft URL for draft %s, owner %s: %v\n", draftId, ownerId, err)
-		return
-	}
-
-	// Create the payload
-	payload := map[string]interface{}{
-		"currentPickNumber": pickNum,
-		"currentRound":      roundNum,
-		"isServerPick":      true,
-	}
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		fmt.Printf("Error marshaling auto-draft payload for pick %d: %v\n", pickNum, err)
-		return
-	}
-
-	// Create the cloud task
-	err = utils.CreateCloudTask(autoDraftUrl, string(payloadBytes), scheduleTime)
-	if err != nil {
+	if err := EnqueueAutoDraftTask(draftId, ownerId, pickNum, roundNum, scheduleTime); err != nil {
 		fmt.Printf("Error scheduling auto-draft cloud task for draft %s, pick %d: %v\n", draftId, pickNum, err)
 		return
 	}
@@ -690,25 +744,25 @@ func CalculateAutoPickForUser(draftId string, currentDrafter string, currentPick
 	}
 
 	if realTimeDraftInfo.CurrentPickNumber > currentPickNumber {
-		err := errors.New("the current pick number is greater than the current pick number, so this pick was already completed")
+		err := fmt.Errorf("%w: the current pick number is greater than the requested pick number", ErrPickAlreadyProcessed)
 		fmt.Printf("CalculateAutoPickForUser error: draftId=%s currentDrafter=%s currentPickNumber=%d currentRound=%d realTimePickNumber=%d err=%v\n", draftId, currentDrafter, currentPickNumber, currentRound, realTimeDraftInfo.CurrentPickNumber, err)
 		return nil, err
 	}
 
 	if realTimeDraftInfo.CurrentDrafter != currentDrafter {
-		err := errors.New("the current drafter is not the drafter of the default pick")
+		err := fmt.Errorf("%w: the current drafter is not the drafter of the default pick", ErrPickAlreadyProcessed)
 		fmt.Printf("CalculateAutoPickForUser error: draftId=%s currentDrafter=%s realTimeDrafter=%s err=%v\n", draftId, currentDrafter, realTimeDraftInfo.CurrentDrafter, err)
 		return nil, err
 	}
 
 	if realTimeDraftInfo.CurrentPickNumber != currentPickNumber {
-		err := errors.New("the current pick number is not the pick number of the default pick")
+		err := fmt.Errorf("%w: the current pick number is not the pick number of the default pick", ErrPickAlreadyProcessed)
 		fmt.Printf("CalculateAutoPickForUser error: draftId=%s currentPickNumber=%d realTimePickNumber=%d err=%v\n", draftId, currentPickNumber, realTimeDraftInfo.CurrentPickNumber, err)
 		return nil, err
 	}
 
 	if realTimeDraftInfo.CurrentRound != currentRound {
-		err := errors.New("the current round is not the round of the default pick")
+		err := fmt.Errorf("%w: the current round is not the round of the default pick", ErrPickAlreadyProcessed)
 		fmt.Printf("CalculateAutoPickForUser error: draftId=%s currentRound=%d realTimeRound=%d err=%v\n", draftId, currentRound, realTimeDraftInfo.CurrentRound, err)
 		return nil, err
 	}

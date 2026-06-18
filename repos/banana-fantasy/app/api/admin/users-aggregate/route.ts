@@ -27,6 +27,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
 export const dynamic = 'force-dynamic';
 
@@ -363,13 +364,7 @@ export async function GET(req: Request) {
     // Boris's wallet 0x438b…72e0 is the canonical example — his
     // Firestore doc has no username/displayName, only the Go owner
     // profile does.
-    const STAGING_FALLBACK = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
-    const goBase =
-      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-      || process.env.STAGING_DRAFTS_API_URL
-      || process.env.NEXT_PUBLIC_SBS_API_URL
-      || process.env.SBS_API_URL
-      || STAGING_FALLBACK;
+    const goBase = getServerDraftsApiUrl();
     // Backfill ANY user missing a displayName — even if they have an
     // auto-generated username in Firestore. The Go owner profile is
     // the source of truth for the user's chosen name (Profile page

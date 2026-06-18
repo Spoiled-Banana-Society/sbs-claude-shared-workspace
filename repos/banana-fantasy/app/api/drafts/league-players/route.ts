@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminApp } from '@/lib/firebaseAdmin';
 
-const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
-  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
+
+const DRAFTS_API_URL = getServerDraftsApiUrl();
 
 /** Normalize the server's draft-type strings (human or short code) → the UI
  *  short code. Returns undefined for anything unrecognized so callers keep

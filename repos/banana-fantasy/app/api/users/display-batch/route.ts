@@ -9,16 +9,9 @@ import { logger } from '@/lib/logger';
 import type { Ripeness } from '@/types';
 import { bananaDefaultName } from '@/utils/helpers';
 
-const MAX_BATCH = 30;
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
-// Server-side fetches must explicitly target the staging Go API. The
-// shared `getDraftsApiUrl()` reads `isStagingMode()` which is window-only
-// (returns prod URL on the server), so use the staging env var pattern
-// the badges route already follows.
-function getServerDraftsApiUrl(): string {
-  return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');
-}
+const MAX_BATCH = 30;
 
 interface OwnerPfp {
   displayName?: string;

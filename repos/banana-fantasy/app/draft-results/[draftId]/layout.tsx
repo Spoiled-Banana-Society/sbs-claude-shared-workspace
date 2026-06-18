@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
+import { getServerDraftsApiUrl } from '@/lib/serverDraftsApiUrl';
 
-const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_API_URL
-  || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const DRAFTS_API = getServerDraftsApiUrl();
 
 async function fetchDraftMeta(draftId: string) {
   try {
