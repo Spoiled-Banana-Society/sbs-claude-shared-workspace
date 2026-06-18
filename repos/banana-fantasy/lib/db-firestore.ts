@@ -414,12 +414,12 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     // next paid draft fills), but showing the stale "2/4 · 0:00:00" in the
     // meantime contradicted the rules ("after 24 hours it resets"). Read-side
     // normalization only — no write.
-    if (
-      promo.type === 'daily-drafts' &&
-      promo.timerEndTime &&
-      !promo.claimable &&
-      new Date(promo.timerEndTime).getTime() < Date.now()
-    ) {
+    // Reset the in-progress CYCLE for display when it's expired or orphaned.
+    // NOTE: deliberately NOT gated on !claimable — unclaimed spins (claimable/
+    // claimCount) are SEPARATE from the cycle. Gating on !claimable left users
+    // with a pending CLAIM stuck showing a stale "2/4 · 0:00:00". We reset only
+    // progress + timer here; the CLAIM button (claimable/claimCount) is untouched.
+    if (promo.type === 'daily-drafts' && dailyDraftCycleNeedsReset(promo)) {
       promo.progressCurrent = 0;
       promo.timerEndTime = undefined;
     }
@@ -2199,6 +2199,30 @@ const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const DAILY_DEDUP_LEDGER_MAX = 50;
 
 /**
+ * Does a daily-drafts cycle need resetting (progress + timer back to 0/24:00)?
+ * Single source of truth used by BOTH the read-side display normalization and
+ * the write-side recordDraftCompletion, so they can never drift apart.
+ *
+ * Resets when EITHER:
+ *   - the 24h timer has expired, OR
+ *   - progress > 0 but there is NO timer (an orphaned doc left by the old
+ *     delete-collision bug — would otherwise stick at "3/4 · 24:00:00").
+ *
+ * Deliberately NOT gated on `claimable`: unclaimed spins are separate from the
+ * cycle, so a pending CLAIM must not block the cycle reset (that left users
+ * stuck at "2/4 · 0:00:00 · CLAIM"). Callers reset progress + timer only and
+ * leave claimable/claimCount untouched.
+ */
+export function dailyDraftCycleNeedsReset(
+  promo: { timerEndTime?: string; progressCurrent?: number },
+  now: number = Date.now(),
+): boolean {
+  const timerExpired = !!promo.timerEndTime && new Date(promo.timerEndTime).getTime() < now;
+  const orphanedProgress = !promo.timerEndTime && (promo.progressCurrent || 0) > 0;
+  return timerExpired || orphanedProgress;
+}
+
+/**
  * New-user first-purchase popup gate. A wheel-won draft just completed — count
  * it down. Runs for EVERY completion regardless of pass type: pre-purchase, a
  * user's only drafts are their wheel winnings (free drafts, plus jackpot/HOF
@@ -2406,14 +2430,14 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
     if (ids.includes(draftId)) return { promo: promo as Promo | null, justBecameClaimable: false };
 
     let needsTimerDelete = false;
-    if (promo.timerEndTime) {
-      const expired = new Date(promo.timerEndTime).getTime() < Date.now();
-      if (expired && !promo.claimable) {
-        promo.progressCurrent = 0;
-        promo.timerEndTime = undefined;
-        promo.completedDraftIds = [];
-        needsTimerDelete = true;
-      }
+    // Reset a stale cycle before crediting (expired timer, or orphaned progress
+    // with no timer). See dailyDraftCycleNeedsReset. Resets progress + timer +
+    // dedup ledger only; keeps claimable/claimCount so a pending CLAIM survives.
+    if (dailyDraftCycleNeedsReset(promo)) {
+      promo.progressCurrent = 0;
+      promo.timerEndTime = undefined;
+      promo.completedDraftIds = [];
+      needsTimerDelete = true;
     }
 
     const prevProgress = promo.progressCurrent || 0;
@@ -2422,6 +2446,10 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
     if (prevProgress === 0) {
       promo.timerEndTime = new Date(Date.now() + TWENTY_FOUR_HOURS_MS).toISOString();
+      // We just set a fresh timer for the new cycle. Clear the delete flag so
+      // the write below can't wipe it (THE bug: an expiry-reset set the flag,
+      // then this fresh timer got deleted, leaving a cycle with no timer).
+      needsTimerDelete = false;
     }
 
     // Target reached: 3/4 → (4th draft) → 0/4 with CLAIM button + 24:00:00.
