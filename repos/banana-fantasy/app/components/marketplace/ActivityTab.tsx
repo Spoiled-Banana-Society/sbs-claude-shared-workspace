@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ActivityEntry } from '@/hooks/useMarketplace';
@@ -27,6 +28,19 @@ export function ActivityTab({
   onLoadMoreActivity,
 }: ActivityTabProps) {
   const activeListings = myNfts.filter(team => team.orderHash);
+
+  // Filter the transaction history by category. Sales = money moved (buy/sell/
+  // accepted offers); Listings = list/cancel; Offers = offers made. Client-side
+  // over the loaded page — "Load more" pulls additional history to filter over.
+  const [actFilter, setActFilter] = useState<'all' | 'sales' | 'listings' | 'offers'>('all');
+  const FILTER_TYPES: Record<'sales' | 'listings' | 'offers', ActivityEntry['type'][]> = {
+    sales: ['buy', 'sell', 'offer_accepted'],
+    listings: ['list', 'cancel'],
+    offers: ['offer_made'],
+  };
+  const shownActivities = actFilter === 'all'
+    ? activities
+    : activities.filter(a => FILTER_TYPES[actFilter].includes(a.type));
 
   return (
     <div className="space-y-8">
@@ -93,7 +107,20 @@ export function ActivityTab({
       </div>
 
       <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Transaction History</h3>
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
+            {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setActFilter(key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${actFilter === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {activityLoading && activities.length === 0 ? (
           <div className="space-y-3">
@@ -103,10 +130,12 @@ export function ActivityTab({
           </div>
         ) : activities.length === 0 ? (
           <p className="text-text-muted text-sm py-8 text-center">No transaction history yet. Buy, sell, or list a team to get started.</p>
+        ) : shownActivities.length === 0 ? (
+          <p className="text-text-muted text-sm py-8 text-center">No {actFilter} in your loaded history — try “Load more” or another filter.</p>
         ) : (
           <>
             <div className="space-y-2">
-              {activities.map(activity => {
+              {shownActivities.map(activity => {
                 const typeConfig: Record<string, { label: string; icon: string; color: string }> = {
                   buy: { label: 'Bought', icon: '🛒', color: 'text-success' },
                   sell: { label: 'Sold', icon: '💵', color: 'text-banana' },
