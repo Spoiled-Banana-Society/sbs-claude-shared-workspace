@@ -231,17 +231,6 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     const anyWallet = accounts.find((a) => a.type === 'wallet' && typeof a.address === 'string');
     wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
     if (wallet) wallet = wallet.toLowerCase();
-    // TEMP diagnostic (mobile new-user signup): what does Privy's User API
-    // actually return? If `wallet` stays null for new social users, their
-    // embedded wallet isn't in linked_accounts yet — the real root cause.
-    logger.info('auth.privy_user_api.result', {
-      actor: userId,
-      context: {
-        resolvedWallet: wallet,
-        accountTypes: accounts.map((a) => `${a.type}:${a.wallet_client_type ?? ''}`).join(','),
-        topWallet: data.wallet?.address ?? null,
-      },
-    });
     privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + (wallet ? PRIVY_USER_TTL_MS : PRIVY_USER_NEG_TTL_MS) });
     return wallet;
   } catch (err) {

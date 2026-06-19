@@ -198,11 +198,21 @@ function buildSeedUser(userId: string): {
   return { user, promos, wheelSpins, badges, exposure, draftHistory, referral };
 }
 
-async function ensureUserSeeded(userId: string): Promise<User> {
+export async function ensureUserSeeded(userId: string): Promise<User> {
   const db = getAdminFirestore();
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const snap = await userRef.get();
-  if (snap.exists) return snap.data() as User;
+  // A doc with a `username` is FULLY seeded → cheap idempotent return.
+  // A *partial* doc (no username) was created by an early merge-write from a
+  // co-located endpoint — /api/badges (lastBadgeSweepAt/ripeness), the
+  // activity touch (lastActiveAt), or returning-check (firstLoginAt) — that
+  // raced ahead of the seed. The old `if (snap.exists)` bail treated those
+  // bare docs as "already seeded" and PERMANENTLY skipped seeding, so the
+  // user ended up with no username, no promos, no badges and no welcome bell.
+  // `username` is a safe marker: only this seed and the profile setters (which
+  // call ensureUserSeeded first) ever write it — no partial writer does.
+  const existing = snap.exists ? (snap.data() as Partial<User>) : null;
+  if (existing && existing.username) return existing as User;
 
   const seed = buildSeedUser(userId);
   const batch = db.batch();

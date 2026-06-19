@@ -118,6 +118,18 @@ export async function claimUsername(name: string, selfWallet: string): Promise<U
     return { available: false, reason: 'reserved' };
   }
 
+  // Seed the user FIRST so the username we're about to mirror onto v2_users
+  // always lands on a fully-seeded doc (promos/badges/welcome bell present).
+  // Without this, a name claim that beats the lazy seed would write `username`
+  // onto a bare doc — and ensureUserSeeded treats "has username" as "already
+  // seeded", so the user would be permanently stuck with no promos/badges/bell.
+  // Cheap for existing users (ensureUserSeeded bails immediately when the doc
+  // already has a username). Lazy import avoids a module cycle with db-firestore.
+  try {
+    const { ensureUserSeeded } = await import('@/lib/db-firestore');
+    await ensureUserSeeded(self);
+  } catch { /* non-fatal — claim still proceeds; seed will heal on next read */ }
+
   const db = getAdminFirestore();
 
   const resRef = db.collection(RESERVATIONS).doc(lower);

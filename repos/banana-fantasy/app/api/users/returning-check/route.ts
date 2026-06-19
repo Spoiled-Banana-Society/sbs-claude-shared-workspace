@@ -32,14 +32,6 @@ export async function POST(req: Request) {
 
   try {
     const { userId: did, walletAddress } = await getPrivyUser(req);
-    // TEMP diagnostic — write to a readable Firestore doc: did the wallet
-    // resolve server-side for this caller? (walletAddress null = Privy User API
-    // doesn't have the embedded wallet yet → the real root cause.)
-    try {
-      await getAdminFirestore().collection('_signup_diag').add({
-        did, walletResolved: walletAddress ?? null, at: new Date().toISOString(),
-      });
-    } catch { /* never block on the diagnostic */ }
     if (!walletAddress) {
       return json({ returning: false, reason: 'no-wallet' });
     }
