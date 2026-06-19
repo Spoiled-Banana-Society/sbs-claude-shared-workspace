@@ -11,6 +11,10 @@
       "schedule": "*/2 * * * *"
     },
     {
+      "path": "/api/crons/reconcile-relay-buys",
+      "schedule": "*/2 * * * *"
+    },
+    {
       "path": "/api/crons/skim-bbb4-usdc",
       "schedule": "0 * * * *"
     },

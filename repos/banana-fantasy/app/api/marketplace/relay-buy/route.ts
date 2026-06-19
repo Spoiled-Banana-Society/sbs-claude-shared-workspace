@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { createPublicClient, http, type Address, type Hex } from 'viem';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
@@ -188,6 +188,11 @@ export async function POST(req: Request) {
     let pulled = false;
     let transferTxHash: Hex | undefined;
     let permitTxHash: Hex | 'skipped' = 'skipped';
+    // Durable lifecycle record (written the instant the money is in-hand). If
+    // the server dies mid-fulfill, the reconcile-relay-buys cron finds this
+    // 'pulled' row and either confirms on-chain delivery or refunds — so a
+    // crash can never leave the buyer's USDC stuck with no trace.
+    let purchaseRef: DocumentReference | null = null;
     try {
       const readAllowance = () =>
         publicClient.readContract({
@@ -236,6 +241,26 @@ export async function POST(req: Request) {
       //     fulfillment below fail on a "missing" balance and strand the funds.
       await waitForAdminUsdc(adminWallet, price);
 
+      // 2c. Record the in-hand funds BEFORE the risky fulfill, so a crash/timeout
+      //     in steps 3–4 always leaves a durable trace for the reconcile cron.
+      if (isFirestoreConfigured()) {
+        try {
+          purchaseRef = getAdminFirestore().collection('relay_buys').doc();
+          await purchaseRef.set({
+            status: 'pulled',
+            buyerAddress,
+            tokenId: String(listing.tokenId),
+            priceUsdc: price.toString(),
+            orderHash,
+            transferTxHash: transferTxHash ?? null,
+            createdAt: FieldValue.serverTimestamp(),
+          });
+        } catch (e) {
+          purchaseRef = null;
+          logger.warn('relay-buy.lifecycle_write_failed', { buyerAddress, orderHash, err: (e as Error).message });
+        }
+      }
+
       // 3. One-time: the conduit must be able to pull USDC from the admin.
       await ensureAdminUsdcAllowance({ spender: OPENSEA_CONDUIT_ADDRESS, min: price });
 
@@ -245,6 +270,13 @@ export async function POST(req: Request) {
         protocolAddress,
         recipient: buyer,
       });
+
+      // Delivered — close out the lifecycle record so the cron skips it.
+      if (purchaseRef) {
+        try {
+          await purchaseRef.set({ status: 'completed', fulfillTxHash, completedAt: FieldValue.serverTimestamp() }, { merge: true });
+        } catch { /* cron will reconcile via on-chain ownerOf */ }
+      }
     } catch (err) {
       if (!pulled) throw err;
       // Money was pulled but the purchase didn't complete (e.g. sniped by a
@@ -261,6 +293,9 @@ export async function POST(req: Request) {
         await waitForAdminUsdc(adminWallet, price);
         const refundTxHash = await transferUsdcFromAdmin({ to: buyer, amount: price });
         logger.info('relay-buy.refunded', { buyerAddress, orderHash, refundTxHash });
+        if (purchaseRef) {
+          try { await purchaseRef.set({ status: 'refunded', refundTxHash, refundedAt: FieldValue.serverTimestamp() }, { merge: true }); } catch { /* cron reconciles */ }
+        }
         return jsonError(
           'The purchase couldn’t complete (the listing may have just sold). Your USDC has been refunded in full.',
           409,

@@ -584,7 +584,7 @@ export default function NftDetailPage() {
         setTimeout(() => fetchNft(), 2000);
       } catch (err) {
         console.error('[NFT Detail] Buy failed:', err);
-        setTxError(friendlyTxError(err, 'Transaction failed. Please try again.'));
+        setTxError(friendlyTxError(err, "We couldn't confirm your purchase. If any USDC left your wallet, it's returned automatically within a few minutes — check your balance before trying again."));
         setBuyStep('confirm');
       }
     } else {
