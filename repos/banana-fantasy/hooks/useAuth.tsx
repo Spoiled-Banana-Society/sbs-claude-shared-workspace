@@ -424,21 +424,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       serverWalletFetchedRef.current = true;
       try {
         const p = authPrivyRef.current;
+        console.log('[walletdebug] grace elapsed, no client wallet — trying server resolve', { authenticated: p.authenticated, hasUser: !!p.user });
         if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
         const token = await p.getAccessToken();
-        if (!token) { serverWalletFetchedRef.current = false; return; }
+        if (!token) { console.log('[walletdebug] no access token'); serverWalletFetchedRef.current = false; return; }
         const res = await fetch('/api/auth/resolve-wallet', {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json().catch(() => null);
+        console.log('[walletdebug] resolve-wallet response', { status: res.status, wallet: data?.wallet ?? null });
         if (data?.wallet) setServerWalletAddress(data.wallet as string);
         else serverWalletFetchedRef.current = false; // allow a later retry
-      } catch {
+      } catch (e) {
+        console.log('[walletdebug] resolve-wallet threw', e);
         serverWalletFetchedRef.current = false;
       }
     }, 2000);
     return () => clearTimeout(t);
   }, [privy.authenticated, clientWalletAddress]);
+
+  // TEMP diagnostic (remove after mobile-signup debug): prints the exact auth
+  // state on every change so the console spells out where new-social-user
+  // login stalls (does it reach authenticated? does a wallet ever resolve?).
+  useEffect(() => {
+    console.log('[walletdebug] state', {
+      ready: privy.ready,
+      authenticated: privy.authenticated,
+      hasUser: !!privy.user,
+      clientWallet: clientWalletAddress,
+      serverWallet: serverWalletAddress,
+    });
+  }, [privy.ready, privy.authenticated, privy.user, clientWalletAddress, serverWalletAddress]);
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
