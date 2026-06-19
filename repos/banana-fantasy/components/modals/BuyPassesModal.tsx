@@ -179,7 +179,11 @@ export function BuyPassesModal({
         const bal = await getUsdcBalance(walletAddress as Address);
         if (cancelled) return;
         const perPassUsdc = BigInt(draftPassPricing.pricePerPass) * BigInt(10 ** 6);
-        if (bal < perPassUsdc) return; // not enough for even one pass → nothing to recover
+        // Not enough for even one pass → nothing to recover. CLEAR any stale
+        // offer too: the balance can drop after the offer was first shown (e.g.
+        // the user spent it elsewhere), and a lingering "your payment went
+        // through" banner with no funds behind it is alarming + misleading.
+        if (bal < perPassUsdc) { setRecoverableUsdc(null); return; }
         const qty = Math.max(1, Math.min(rec.quantity, Number(bal / perPassUsdc)));
         setRecoverableUsdc({ quantity: qty, usd: (Number(bal) / 1e6).toFixed(2) });
         clientLog('payment', 'recovery_offer_shown', { wallet: walletAddress, quantity: qty });
