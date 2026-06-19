@@ -29,32 +29,38 @@ export default function PrizesPage() {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
-  // Amount editor state. `customAmount === null` means "withdraw all"
-  // (the default). When user opens the editor we initialise to the
-  // full balance so they can dial it down.
-  const [customAmount, setCustomAmount] = useState<string | null>(null);
 
-  // Web2 (embedded) users can't reach their Privy wallet directly, so their
-  // on-chain USDC — team-sale proceeds, leftover mint credit, AND paid-out
-  // prizes (the prize payout pays USDC straight into the wallet) — must surface
-  // here as one real, cashable balance. External-wallet users manage their own
-  // wallet, so we don't fold it into our withdraw UI for them.
+  // The on-chain USDC sitting in the user's wallet (Privy embedded wallet for
+  // web2, their external wallet for web3) — team-sale proceeds, leftover mint
+  // credit, AND paid-out prizes (the prize payout pays USDC straight into the
+  // wallet). Fetched for BOTH user types now, because we show it as its own
+  // "Balance" line rather than folding it into the prize total.
   const [walletUsdc, setWalletUsdc] = useState(0);
   const walletForBalance = user?.walletAddress;
   useEffect(() => {
-    if (!isEmbeddedWallet || !walletForBalance) { setWalletUsdc(0); return; }
+    if (!walletForBalance) { setWalletUsdc(0); return; }
     let cancelled = false;
     fetch(`/api/owner/usdc-balance?wallet=${walletForBalance}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (!cancelled && d && typeof d.usdc === 'number') setWalletUsdc(d.usdc); })
-      .catch(() => { /* best-effort — balance still shows prizes */ });
+      .catch(() => { /* best-effort — Winnings still shows */ });
     return () => { cancelled = true; };
-  }, [isEmbeddedWallet, walletForBalance]);
+  }, [walletForBalance]);
 
-  // The cashable on-chain portion (embedded users only) and the one unified
-  // "Available to withdraw" number = pending prizes + wallet USDC.
-  const cashableWalletUsdc = isEmbeddedWallet ? walletUsdc : 0;
-  const unifiedAvailable = availableBalance + cashableWalletUsdc;
+  // Two SEPARATE pots, shown separately (no longer summed into one misleading
+  // "available" number):
+  //   • Balance  = real money already in the user's wallet — spendable on the
+  //                marketplace + cashable now.
+  //   • Winnings = prizes won that we're still holding (the prize ledger).
+  //                These conceptually live "on the cards" and must be
+  //                transferred to the balance before they can be cashed out.
+  // NOTE: per-card winnings that follow a card on sale, the listing lock, and
+  // the My-Teams per-card transfer button are backend-dependent and ship later
+  // (see WINNINGS_CARDS_PAYOUT_SPEC.md). Today winningsAvailable is the user's
+  // pending prize ledger, which is $0 until the season produces prizes — so the
+  // Winnings section below is dormant until then.
+  const balanceUsdc = walletUsdc;
+  const winningsAvailable = availableBalance;
 
   // Surface eligibility-fetch failures to the admin error log. useSWRLike
   // has no onError hook, so we watch the query's error field and report
@@ -98,53 +104,42 @@ export default function PrizesPage() {
     }).format(amount);
   };
 
-  // Submit a withdrawal. If `amount` provided, backend rounds DOWN
-  // greedy-oldest-first to a clean prize subset (so user sees what
-  // actually got withdrawn in the success message). Omitted = take all.
-  const submitWithdraw = async (amount?: number) => {
+  // Transfer ALL pending winnings into the user's balance. Full amount only —
+  // a card's winnings move as a whole, so a card is never left partially
+  // drained (keeps the "sell a card with its winnings" model honest). Routes
+  // through the existing prize-withdraw pipeline: the Safe pays the USDC into
+  // the user's wallet (Privy embedded wallet for web2 → becomes their Balance,
+  // which they then cash out to bank; external wallet for web3 → done).
+  const handleTransferWinnings = async () => {
     if (!withdrawAll || withdrawing) return;
-    const display = amount != null ? formatBalance(amount) : formatBalance(availableBalance);
-    if (!confirm(`Withdraw ${display} to your wallet? Funds typically arrive within 24 hours.`)) return;
+    const display = formatBalance(availableBalance);
+    if (!confirm(`Transfer ${display} of winnings to your balance? It can take up to 2–3 days to land.`)) return;
     setWithdrawing(true);
     setWithdrawSuccess(null);
     try {
-      const res = await withdrawAll('usdc', amount);
+      const res = await withdrawAll('usdc');
       const actual = formatBalance(res.totalAmount);
-      const note = amount != null && res.totalAmount !== amount
-        ? ` (rounded from ${display} to nearest prize boundary)`
-        : '';
       setWithdrawSuccess(
-        `Withdrawing ${actual} (${res.prizeCount} ${res.prizeCount === 1 ? 'prize' : 'prizes'})${note}. You'll see it confirmed in activity once paid.`,
+        `Transferring ${actual} (${res.prizeCount} ${res.prizeCount === 1 ? 'prize' : 'prizes'}) to your balance. You'll be notified once it lands.`,
       );
-      setCustomAmount(null);
     } catch (err) {
       const isVerificationGate = err && typeof err === 'object' && 'requiresVerification' in err;
       if (isVerificationGate) {
         setShowVerifyModal(true);
       } else {
-        const msg = err instanceof Error ? err.message : 'Withdrawal failed';
+        const msg = err instanceof Error ? err.message : 'Transfer failed';
         setWithdrawSuccess(`✗ ${msg}`);
         reportClientError({
           source: LOG_SOURCES.prizes.WITHDRAWAL_API_FAILED,
           message: msg,
           route: 'prizes',
-          context: { userId: user?.walletAddress ?? user?.id, amount, availableBalance },
+          context: { userId: user?.walletAddress ?? user?.id, availableBalance },
           stack: err instanceof Error ? err.stack : undefined,
         });
       }
     } finally {
       setWithdrawing(false);
     }
-  };
-
-  const handleWithdrawAll = () => submitWithdraw();
-  const handleWithdrawCustom = () => {
-    const parsed = parseFloat(customAmount ?? '');
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      setWithdrawSuccess('✗ Enter a valid amount');
-      return;
-    }
-    submitWithdraw(parsed);
   };
 
   const getStatusBadge = (item: PrizeHistoryItem) => {
@@ -213,162 +208,151 @@ export default function PrizesPage() {
             (eligibility.cumulativeWithdrawals ?? 0) >= 2000;
           // On fetch error we don't know the balance — never render "$0.00"
           // as if it were fact (a user with real winnings would panic).
-          const hasBalance = !hasPrizeError && unifiedAvailable > 0;
+          const hasBalance = balanceUsdc > 0;
+          const hasWinnings = !hasPrizeError && winningsAvailable > 0;
 
           return (
             <>
-              <div className="mb-3 rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-10">
-                <p className="text-[13px] font-medium text-text-muted">Available to withdraw</p>
-                <p className="mt-2 text-5xl sm:text-6xl font-semibold tracking-tight text-text-primary">
-                  {hasPrizeError ? '—' : formatBalance(unifiedAvailable)}
-                </p>
-                {!hasPrizeError && cashableWalletUsdc > 0 && (
-                  <p className="mt-1 text-[12px] text-text-muted">Includes prizes, team sales &amp; leftover credit</p>
-                )}
+              {/* Two SEPARATE pots — Balance (real money in the wallet) and
+                  Winnings (prizes we're holding, on the cards). No longer
+                  summed into one misleading "available" number. Winnings is
+                  dormant ($0) until the season produces prizes. */}
+              <div className="grid gap-3 sm:grid-cols-2 mb-3">
 
-                {/* Action area. Three states:
-                    - balance > 0 + verified: withdraw all + edit amount
-                    - balance > 0 + unverified: verify to withdraw
-                    - $0: gentle nudge */}
-                <div className="mt-6">
-                  {hasBalance && isEligible && customAmount === null && (
-                    isEmbeddedWallet ? (
-                      // Web2 (embedded) users have no external wallet they manage —
-                      // "send USDC to your wallet" is meaningless to them (it's the
-                      // app's own hidden wallet). Their only real payout is cashing
-                      // out to a bank via Coinbase. Open the cash-out for the full
-                      // balance (no fixed prize → maxAmount = availableBalance).
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <button
-                          onClick={() => setCashOutModal({ isOpen: true })}
-                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                        >
-                          Cash out to bank
-                        </button>
-                        <p className="text-[11px] text-text-muted ml-auto text-right">
-                          To your bank via Coinbase{cashableWalletUsdc < 2 ? ' · about $2 minimum to cash out' : ''}
-                        </p>
-                      </div>
+                {/* ---- Balance ---- */}
+                <div className="rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-8">
+                  <p className="text-[13px] font-medium text-text-muted">Balance</p>
+                  <p className="mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-text-primary">
+                    {formatBalance(balanceUsdc)}
+                  </p>
+                  <p className="mt-1 text-[12px] text-text-muted">
+                    {isEmbeddedWallet ? 'In your wallet · cash out anytime' : 'USDC in your connected wallet'}
+                  </p>
+
+                  <div className="mt-6">
+                    {isEmbeddedWallet ? (
+                      hasBalance ? (
+                        isEligible ? (
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button
+                              onClick={() => setCashOutModal({ isOpen: true })}
+                              className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                            >
+                              Cash out to bank
+                            </button>
+                            <p className="text-[11px] text-text-muted ml-auto text-right">
+                              Via Coinbase{balanceUsdc < 2 ? ' · about $2 minimum' : ''}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <button
+                              onClick={() => setShowVerifyModal(true)}
+                              className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                            >
+                              Verify to cash out
+                            </button>
+                            <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
+                          </div>
+                        )
+                      ) : (
+                        <p className="text-sm text-text-muted">Team sales &amp; transferred winnings land here.</p>
+                      )
                     ) : (
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <button
-                          onClick={handleWithdrawAll}
-                          disabled={withdrawing}
-                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-                        >
-                          {withdrawing ? 'Withdrawing…' : 'Withdraw all'}
-                        </button>
-                        <button
-                          onClick={() => setCustomAmount(availableBalance.toFixed(2))}
-                          disabled={withdrawing}
-                          className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
-                        >
-                          Edit amount
-                        </button>
-                        <p className="text-[11px] text-text-muted ml-auto">
-                          Sent as USDC, arrives ~24h
-                        </p>
-                      </div>
-                    )
-                  )}
-
-                  {hasBalance && isEligible && customAmount !== null && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-base font-medium">$</span>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max={availableBalance}
-                          autoFocus
-                          value={customAmount}
-                          onChange={(e) => setCustomAmount(e.target.value)}
-                          className="w-32 rounded-full bg-black/30 border border-white/[0.10] focus:border-banana/50 pl-7 pr-3 py-3 text-base font-semibold text-text-primary outline-none transition-colors"
-                        />
-                      </div>
-                      <button
-                        onClick={handleWithdrawCustom}
-                        disabled={withdrawing}
-                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-                      >
-                        {withdrawing ? 'Withdrawing…' : 'Withdraw'}
-                      </button>
-                      <button
-                        onClick={() => setCustomAmount(null)}
-                        disabled={withdrawing}
-                        className="text-sm text-text-muted hover:text-text-primary underline underline-offset-4 transition-colors disabled:opacity-50"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  )}
-
-                  {hasBalance && !isEligible && (
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <button
-                        onClick={() => setShowVerifyModal(true)}
-                        className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                      >
-                        Verify to withdraw
-                      </button>
-                      <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
-                    </div>
-                  )}
-
-                  {hasPrizeError && (
-                    <p className="text-sm text-warning">
-                      We couldn&apos;t load your balance. Refresh to try again — your money is safe.
-                    </p>
-                  )}
+                      <p className="text-sm text-text-muted">This is the USDC in your own wallet — spend or move it anytime.</p>
+                    )}
+                  </div>
                 </div>
 
-                {/* Verify pill when $0 — pre-verify so withdraw is
-                    instant once they win. Hidden during fetch errors;
-                    the warning line above owns that state. */}
-                {!hasBalance && !hasPrizeError && (
-                  <div>
-                    {isEligible ? (
-                      <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                        <span className="text-sm font-medium text-success">Identity verified</span>
-                      </div>
+                {/* ---- Winnings ---- */}
+                <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-6 sm:p-8">
+                  <p className="text-[13px] font-medium text-text-muted">Winnings</p>
+                  <p className="mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-banana">
+                    {hasPrizeError ? '—' : formatBalance(winningsAvailable)}
+                  </p>
+                  <p className="mt-1 text-[12px] text-text-muted">
+                    {hasWinnings ? 'Prizes on your cards · ready to transfer' : 'Prizes you win land here'}
+                  </p>
+
+                  <div className="mt-6">
+                    {hasWinnings ? (
+                      isEligible ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={handleTransferWinnings}
+                            disabled={withdrawing}
+                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
+                          >
+                            {withdrawing ? 'Transferring…' : 'Transfer to balance'}
+                          </button>
+                          <p className="text-[11px] text-text-muted ml-auto text-right">
+                            {isEmbeddedWallet ? 'Then cash out · up to 2–3 days' : 'Sent to your wallet · up to 2–3 days'}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => setShowVerifyModal(true)}
+                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                          >
+                            Verify to transfer
+                          </button>
+                          <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
+                        </div>
+                      )
+                    ) : hasPrizeError ? (
+                      <p className="text-sm text-warning">Couldn&apos;t load winnings. Refresh — your money is safe.</p>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShowVerifyModal(true)}
-                        className="inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                        <span className="text-sm font-medium text-warning">
-                          Verify your identity once to withdraw your balance
-                        </span>
-                      </button>
+                      <p className="text-sm text-text-muted">Win a draft and your prize shows here. Transfer it to your balance, then cash out.</p>
                     )}
                   </div>
-                )}
-
-                {needsW9 && (
-                  <div className="mt-4 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
-                    <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
-                    {eligibility?.w9Completed ? (
-                      <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
-                    ) : (
-                      <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
-                    )}
-                  </div>
-                )}
-
-                {withdrawSuccess && (
-                  <div className={`mt-4 rounded-xl px-4 py-3 text-xs ${
-                    withdrawSuccess.startsWith('✗')
-                      ? 'bg-error/10 border border-error/30 text-error'
-                      : 'bg-success/10 border border-success/30 text-success'
-                  }`}>
-                    {withdrawSuccess}
-                  </div>
-                )}
+                </div>
               </div>
+
+              {/* Pre-verify nudge / verified pill when nothing is actionable
+                  yet, so KYC is already done by the time they win. */}
+              {!hasBalance && !hasWinnings && !hasPrizeError && (
+                <div className="mb-3">
+                  {isEligible ? (
+                    <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                      <span className="text-sm font-medium text-success">Identity verified</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowVerifyModal(true)}
+                      className="inline-flex items-center gap-2 rounded-full border border-warning/40 bg-warning/10 hover:bg-warning/20 active:scale-[0.98] transition-all px-3 py-1.5"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                      <span className="text-sm font-medium text-warning">
+                        Verify your identity once so payouts are instant
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {needsW9 && (
+                <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
+                  <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
+                  {eligibility?.w9Completed ? (
+                    <Badge type="default" className="bg-success/20 text-success border-success/30">Submitted</Badge>
+                  ) : (
+                    <Badge type="default" className="bg-warning/20 text-warning border-warning/30">Required</Badge>
+                  )}
+                </div>
+              )}
+
+              {withdrawSuccess && (
+                <div className={`mb-3 rounded-xl px-4 py-3 text-xs ${
+                  withdrawSuccess.startsWith('✗')
+                    ? 'bg-error/10 border border-error/30 text-error'
+                    : 'bg-success/10 border border-success/30 text-success'
+                }`}>
+                  {withdrawSuccess}
+                </div>
+              )}
 
               {/* In-flight money lives in its own row below the hero,
                   not competing with the headline number. Coinbase /
@@ -564,7 +548,7 @@ export default function PrizesPage() {
       <CashOutModal
         isOpen={cashOutModal.isOpen}
         onClose={() => setCashOutModal({ isOpen: false })}
-        maxAmount={cashOutModal.prize?.amount ?? cashableWalletUsdc}
+        maxAmount={cashOutModal.prize?.amount ?? balanceUsdc}
         fixedAmount={Boolean(cashOutModal.prize)}
         draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
         userId={user?.id}
