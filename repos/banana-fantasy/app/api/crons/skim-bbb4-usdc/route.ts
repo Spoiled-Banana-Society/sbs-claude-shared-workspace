@@ -98,6 +98,7 @@ export async function GET(req: Request) {
     withdrawTxHash: null as Hex | null,
     transferTxHash: null as Hex | null,
     transferredToTreasury: '0',
+    owedReserve: '0',
     note: '' as string,
   };
 
@@ -128,21 +129,48 @@ export async function GET(req: Request) {
     args: [opsWallet],
   })) as bigint;
 
-  if (opsUsdcAfterWithdraw > 0n) {
+  // Compute the refund reserve to KEEP in the ops wallet: any gasless relay-buy
+  // that pulled a buyer's USDC but hasn't delivered the team yet is owed a
+  // refund, and reconcile-relay-buys pays those FROM this wallet. Sweeping them
+  // to the cold treasury would starve that refund — money owed to a customer
+  // would end up in our treasury with no automated way back. So we leave it.
+  let owedReserve = 0n;
+  if (isFirestoreConfigured()) {
+    try {
+      const db = getAdminFirestore();
+      const [legacy, pending] = await Promise.all([
+        db.collection('failed_marketplace_relays').where('resolved', '==', false).get(),
+        db.collection('relay_buys').where('status', 'in', ['pulled', 'reconciling', 'needs_manual']).get(),
+      ]);
+      for (const doc of [...legacy.docs, ...pending.docs]) {
+        try { owedReserve += BigInt(doc.data().priceUsdc ?? '0'); } catch { /* skip bad row */ }
+      }
+    } catch (err) {
+      // Fail SAFE: if we can't tell what's owed, don't sweep anything this run.
+      logger.warn('skim.reserve_calc_failed', { err: (err as Error).message });
+      owedReserve = opsUsdcAfterWithdraw;
+    }
+  }
+  result.owedReserve = owedReserve.toString();
+
+  const sweepable = opsUsdcAfterWithdraw > owedReserve ? opsUsdcAfterWithdraw - owedReserve : 0n;
+  if (sweepable > 0n) {
     try {
       const hash = await wallet.writeContract({
         address: BASE_SEPOLIA_USDC_ADDRESS,
         abi: USDC_ABI,
         functionName: 'transfer',
-        args: [treasury, opsUsdcAfterWithdraw],
+        args: [treasury, sweepable],
       });
       result.transferTxHash = hash;
-      result.transferredToTreasury = opsUsdcAfterWithdraw.toString();
+      result.transferredToTreasury = sweepable.toString();
       await pub.waitForTransactionReceipt({ hash, timeout: 60_000 });
     } catch (err) {
       logger.error('skim.transfer_failed', { err: (err as Error).message });
       result.note = `${result.note} / transfer failed: ${(err as Error).message}`.trim();
     }
+  } else if (owedReserve > 0n) {
+    result.note = `${result.note} / held ${owedReserve} as buyer-refund reserve`.trim();
   }
 
   // 3. Record the sweep for audit trail.
