@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 
 const COLLECTION = 'marketplace_activity';
 
@@ -98,6 +98,36 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error('[activity] GET tokenId error:', err);
       return NextResponse.json({ error: 'Failed to fetch token activity' }, { status: 500 });
+    }
+  }
+
+  // Mode 2b: Global feed (scope=all) — most recent activity across ALL wallets.
+  // orderBy('timestamp') is a single-field index (auto-created), and a range/
+  // startAfter on that SAME field is allowed — no composite index needed.
+  if (req.nextUrl.searchParams.get('scope') === 'all') {
+    const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '20', 10), 50);
+    const cursor = req.nextUrl.searchParams.get('cursor'); // ISO timestamp of last item shown
+    try {
+      const db = getAdminFirestore();
+      let q = db.collection(COLLECTION).orderBy('timestamp', 'desc');
+      if (cursor) {
+        const d = new Date(cursor);
+        if (!Number.isNaN(d.getTime())) q = q.startAfter(Timestamp.fromDate(d));
+      }
+      const snapshot = await q.limit(limit + 1).get();
+      const docs = snapshot.docs.slice(0, limit);
+      const hasMore = snapshot.docs.length > limit;
+      const activities = docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        timestamp: doc.data().timestamp?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+      }));
+      const last = docs[docs.length - 1];
+      const nextCursor = hasMore && last ? (last.data().timestamp?.toDate?.()?.toISOString() ?? null) : null;
+      return NextResponse.json({ activities, hasMore, nextCursor });
+    } catch (err) {
+      console.error('[activity] GET all error:', err);
+      return NextResponse.json({ error: 'Failed to fetch activity' }, { status: 500 });
     }
   }
 

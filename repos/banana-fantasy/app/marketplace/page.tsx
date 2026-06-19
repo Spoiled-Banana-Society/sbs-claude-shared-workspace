@@ -256,7 +256,8 @@ export default function MarketplacePage() {
   const collectionLevel = viewFilter === 'jackpot' ? 'jackpot' : viewFilter === 'hof' ? 'hof' : null;
   const { data: allNfts, isLoading: allNftsLoading, hasMore: allNftsHasMore, loadMore: loadMoreAllNfts } = useCollectionNfts(50, collectionLevel, leagueFilter, teamFilter);
   const { data: myNfts, isLoading: myNftsLoading, refetch: refetchMyNfts, patchListing: patchMyNftListing } = useMyNfts(isLoggedIn ? walletAddress : null);
-  const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null);
+  const [activityScope, setActivityScope] = useState<'mine' | 'all'>('mine');
+  const { activities, isLoading: activityLoading, hasMore: activityHasMore, loadMore: loadMoreActivity, refetch: refetchActivity } = useActivityHistory(isLoggedIn ? walletAddress : null, activityScope);
   const { allOffers: myNftOffers, isLoading: myNftOffersLoading } = useMyNftOffers(isLoggedIn ? walletAddress : null, myNfts);
   const { watchlist, watchlistSet, toggle: toggleWatchlist } = useWatchlist(isLoggedIn ? walletAddress : null);
   const myMadeOffers = useMyMadeOffers(isLoggedIn ? walletAddress : null);
@@ -1124,6 +1125,8 @@ export default function MarketplacePage() {
           cancellingTokenId={cancellingTokenId}
           onCancel={(team) => setCancelConfirmTeam(team)}
           onLoadMoreActivity={loadMoreActivity}
+          activityScope={activityScope}
+          onSetActivityScope={setActivityScope}
         />
       )}
 

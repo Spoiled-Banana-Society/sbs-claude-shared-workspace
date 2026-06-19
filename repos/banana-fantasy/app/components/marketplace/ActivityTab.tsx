@@ -15,6 +15,8 @@ interface ActivityTabProps {
   cancellingTokenId: string | null;
   onCancel: (team: MarketplaceTeam) => void;
   onLoadMoreActivity: () => void;
+  activityScope: 'mine' | 'all';
+  onSetActivityScope: (scope: 'mine' | 'all') => void;
 }
 
 export function ActivityTab({
@@ -26,6 +28,8 @@ export function ActivityTab({
   cancellingTokenId,
   onCancel,
   onLoadMoreActivity,
+  activityScope,
+  onSetActivityScope,
 }: ActivityTabProps) {
   const activeListings = myNfts.filter(team => team.orderHash);
 
@@ -108,7 +112,21 @@ export function ActivityTab({
 
       <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl p-6">
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-          <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h3 className="text-lg font-semibold text-text-primary">Transaction History</h3>
+            {/* Scope: just my transactions, or the whole marketplace's feed. */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
+              {([['mine', 'My Activity'], ['all', 'All Activity']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => onSetActivityScope(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${activityScope === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
             {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
               <button
@@ -129,7 +147,7 @@ export function ActivityTab({
             ))}
           </div>
         ) : activities.length === 0 ? (
-          <p className="text-text-muted text-sm py-8 text-center">No transaction history yet. Buy, sell, or list a team to get started.</p>
+          <p className="text-text-muted text-sm py-8 text-center">{activityScope === 'all' ? 'No marketplace activity yet.' : 'No transaction history yet. Buy, sell, or list a team to get started.'}</p>
         ) : shownActivities.length === 0 ? (
           <p className="text-text-muted text-sm py-8 text-center">No {actFilter} in your loaded history — try “Load more” or another filter.</p>
         ) : (
