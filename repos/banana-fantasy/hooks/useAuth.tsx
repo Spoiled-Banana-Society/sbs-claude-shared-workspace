@@ -424,6 +424,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [privy.authenticated, walletAddress, walletsReady]);
 
+  // TEMP UNGATED diagnostic — fires on authentication regardless of wallet, and
+  // re-captures the SETTLED state ~3.5s later (after createWallet should have
+  // run). Writes to clientState keyed by the Privy DID (always available), so it
+  // CANNOT come back empty like the wallet-gated probes. Tells us exactly why
+  // walletAddress is/ isn't resolving inside useAuth.
+  const authDiagStateRef = useRef({ walletAddress, privyWallets, walletsReady, user: privy.user as unknown });
+  authDiagStateRef.current = { walletAddress, privyWallets, walletsReady, user: privy.user as unknown };
+  const authDiagFiredRef = useRef(false);
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    if (!privy.authenticated || !privy.user) { authDiagFiredRef.current = false; return; }
+    if (authDiagFiredRef.current) return;
+    authDiagFiredRef.current = true;
+    const write = (tag: string) => {
+      const s = authDiagStateRef.current;
+      const u = s.user as { id?: string; linkedAccounts?: Array<{ type?: string; walletClientType?: string }>; wallet?: { address?: string } } | null;
+      const did = u?.id || 'unknown';
+      const linked = (u?.linkedAccounts || []).map((a) => `${a.type}:${a.walletClientType ?? ''}`).join(';');
+      void fetch('/api/user/client-state', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallet: did, key: `_authdiag_${tag}`, value: `wallet:${s.walletAddress ?? 'NULL'}|linked:[${linked}]|pwLen:${(s.privyWallets as unknown[])?.length ?? '?'}|ready:${s.walletsReady}|userWallet:${u?.wallet?.address ?? 'none'}` }),
+      }).catch(() => {});
+    };
+    write('t0');                              // immediate state
+    const t = setTimeout(() => write('t3'), 3500); // settled state (after createWallet)
+    return () => clearTimeout(t);
+  }, [privy.authenticated, privy.user]);
+
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
   // Pending "wipe the local user" timer. Privy briefly reports
