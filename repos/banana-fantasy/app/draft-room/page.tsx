@@ -952,6 +952,37 @@ function DraftRoomContent() {
     });
   }, [draftId, phase, draftType, engine.currentPickNumber, engine.isUserTurn, bestTimeRemaining, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickLength, engine.turnsUntilUserPick, engine.draftStatus, engine.picks.length, engine.picks, engine.queuedPlayers]);
 
+  // DIAGNOSTIC (first-pick timer lag): while the FIRST pick is active, log the
+  // room's phase + the timer inputs on every meaningful change, capped. Lets us
+  // see exactly WHEN the pick clock becomes visible relative to draftStartTime
+  // (the "first pick shows ~25 not 30" gap) and whether the displayed value
+  // matches pickEndTime − now. Pure logging, no behavior change.
+  const firstPickDiagRef = useRef<{ n: number; lastKey: string }>({ n: 0, lastKey: '' });
+  useEffect(() => {
+    const pickNum = engine.currentPickNumber ?? 0;
+    if (pickNum > 1) return;
+    const ds = firebaseRtdb.data?.draftStartTime ?? null;
+    const pe = firebaseRtdb.data?.pickEndTime ?? null;
+    const pl = firebaseRtdb.data?.pickLength ?? null;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const key = `${phase}|${pickNum}|${bestTimeRemaining}|${pe}`;
+    const ref = firstPickDiagRef.current;
+    if (ref.lastKey === key || ref.n > 25) return;
+    ref.lastKey = key;
+    ref.n += 1;
+    clientLog('first-pick', 'draftroom.timer', {
+      phase,
+      pickNumber: pickNum,
+      draftStartTime: ds,
+      pickEndTime: pe,
+      pickLength: pl,
+      bestTimeRemaining,
+      nowSec,
+      sinceDraftStart: ds ? nowSec - ds : null,
+      expectedRemaining: pe ? pe - nowSec : null,
+    });
+  }, [phase, engine.currentPickNumber, bestTimeRemaining, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickEndTime, firebaseRtdb.data?.pickLength]);
+
   const getPersistId = () => draftId || urlDraftId;
 
   useEffect(() => {
