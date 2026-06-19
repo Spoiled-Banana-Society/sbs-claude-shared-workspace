@@ -78,6 +78,23 @@ export function DraftRow({
       displayedLeagueName,
     })).catch(() => {});
   }, [draft.id, liveLeagueNumber, draft.contestName, looksLikeSlotFallback, displayedLeagueName]);
+  // Reveal-state diagnostic — confirms the type-gate never shows a type
+  // before the actual draft reveal. Logs only on meaningful change.
+  const lastRevealLogRef = React.useRef<string>('');
+  React.useEffect(() => {
+    const type = draft.type || draft.draftType || draft.specialType || null;
+    const key = `${live.displayPhase}|${live.playerCount}|${live.countdown}|${type}`;
+    if (lastRevealLogRef.current === key) return;
+    lastRevealLogRef.current = key;
+    void import('@/lib/clientLog').then(m => m.clientLog('type-reveal', 'DraftRow.gate', {
+      slotId: draft.id,
+      displayPhase: live.displayPhase,
+      playerCount: live.playerCount,
+      countdown: live.countdown,
+      resolvedType: type,
+      enginePickNumber: draft.enginePickNumber ?? null,
+    })).catch(() => {});
+  }, [draft.id, live.displayPhase, live.playerCount, live.countdown, draft.type, draft.draftType, draft.specialType, draft.enginePickNumber]);
   const isYourTurn = draft.isYourTurn;
   const isSpecial = !!draft.specialType;
   // Wheel-won drafts know their tier up front, so label them clearly instead of
@@ -129,7 +146,7 @@ export function DraftRow({
             check + colored type already communicates it, and the word
             crams the 5-column row. Desktop: full badge with the word. */}
         <div className="sm:w-28 flex-shrink-0 flex items-center justify-center gap-1 sm:gap-1.5">
-          {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37)) ? (
+          {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37) || (effectiveLive.displayPhase === 'filling' && effectiveLive.playerCount >= 10)) ? (
             <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
             <>
