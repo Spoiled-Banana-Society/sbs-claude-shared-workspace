@@ -32,7 +32,11 @@ export async function POST(req: Request) {
 
   try {
     const { userId: did, walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) return json({ returning: false, reason: 'no-wallet' });
+    if (!walletAddress) {
+      logger.info('users.returning_check.no_wallet', { actor: did }); // TEMP diagnostic
+      return json({ returning: false, reason: 'no-wallet' });
+    }
+    logger.info('users.returning_check.ran', { actor: walletAddress.toLowerCase() }); // TEMP diagnostic
     const wallet = walletAddress.toLowerCase();
     const db = getAdminFirestore();
 
