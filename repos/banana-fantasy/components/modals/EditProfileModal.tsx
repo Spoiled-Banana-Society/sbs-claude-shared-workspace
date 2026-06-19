@@ -84,22 +84,39 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
     // anyway. A 409 means someone already has it.
     const nameChanged = username.trim().toLowerCase() !== (user?.username ?? '').toLowerCase();
     if (nameChanged) {
-      try {
-        const headers = await authHeaders();
-        const res = await fetch('/api/username', {
-          method: 'POST', headers, body: JSON.stringify({ name: username.trim() }),
-        });
-        if (!res.ok) {
+      // A brand-new web2 wallet resolves server-side a few seconds after login
+      // (Privy propagation). In that window POST /api/username 400s with
+      // 'wallet required' and used to surface as a misleading "Username
+      // unavailable." Retry a few times so the claim lands once the wallet
+      // propagates, rather than failing on the first beat.
+      let claimed = false;
+      for (let attempt = 0; attempt < 6 && !claimed; attempt++) {
+        try {
+          const headers = await authHeaders();
+          const res = await fetch('/api/username', {
+            method: 'POST', headers, body: JSON.stringify({ name: username.trim() }),
+          });
+          if (res.ok) { setNameError(null); claimed = true; break; }
           const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
-          setNameError(usernameErrorText(data.reason || data.error));
+          const notReady = res.status === 400 && /wallet required/i.test(data.error || '');
+          if (notReady && attempt < 5) {
+            setNameError('Finalizing your account…');
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          setNameError(notReady
+            ? 'Still finalizing your account — try that name again in a moment.'
+            : usernameErrorText(data.reason || data.error));
+          setSaving(false);
+          return;
+        } catch {
+          if (attempt < 5) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+          setNameError('Could not check username — try again.');
           setSaving(false);
           return;
         }
-      } catch {
-        setNameError('Could not check username — try again.');
-        setSaving(false);
-        return;
       }
+      if (!claimed) { setSaving(false); return; }
     }
 
     let pic = profilePicturePreview || undefined;

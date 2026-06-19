@@ -122,6 +122,25 @@ export function useOnboarding() {
   const completeOnboarding = useCallback(
     async (opts?: { displayName?: string; avatar?: string | null }) => {
       if (!walletAddress) return;
+      // Persist the onboarding-complete flag FIRST. The gate reads this
+      // account-synced `onboardingComplete` client-state flag (NOT the owner
+      // record), and this endpoint is no-auth (keyed by wallet) so it lands even
+      // while a brand-new web2 wallet is still resolving server-side. Doing it
+      // before the best-effort owner PUT means a slow/failed owner write — or a
+      // mobile tab backgrounding right after — can never stop the flag from
+      // landing, which was making the tutorial reappear on every refresh.
+      try {
+        await fetch('/api/user/client-state', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet: walletAddress.toLowerCase(), key: 'onboardingComplete', value: true }),
+        });
+      } catch { /* setOnboardingDone below still does the optimistic + synced write */ }
+      setOnboardingDone(true);
+      setShowOnboarding(false);
+      setIsNewUser(false);
+      // Best-effort: mirror the display name / avatar + completion onto the Go
+      // owner record. Non-blocking for the gate above; errors are ignored.
       try {
         await callOwnerApi('PUT', {
           walletAddress,
@@ -132,21 +151,6 @@ export function useOnboarding() {
       } catch {
         // Ignore backend completion errors to avoid blocking the UI
       }
-      // The onboarding gate reads the account-synced `onboardingComplete` flag
-      // (client-state), NOT the owner record. setOnboardingDone updates locally +
-      // fire-and-forget; this AWAITED write guarantees it lands server-side even
-      // if a mobile tab backgrounds right after — otherwise the flag never
-      // persists and the tutorial reappears on every return.
-      try {
-        await fetch('/api/user/client-state', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wallet: walletAddress.toLowerCase(), key: 'onboardingComplete', value: true }),
-        });
-      } catch { /* setOnboardingDone below still attempts the optimistic write */ }
-      setOnboardingDone(true);
-      setShowOnboarding(false);
-      setIsNewUser(false);
     },
     [setIsNewUser, setShowOnboarding, setOnboardingDone, user?.profilePicture, user?.username, walletAddress],
   );

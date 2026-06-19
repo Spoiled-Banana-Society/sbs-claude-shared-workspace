@@ -140,23 +140,38 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const reserveUsername = async (name: string): Promise<boolean> => {
     const changed = name.toLowerCase() !== (user?.username ?? '').toLowerCase();
     if (!changed) return true;
-    try {
-      const token = await privy.getAccessToken();
-      const res = await fetch('/api/username', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) {
+    // A brand-new web2 wallet takes a few seconds to resolve server-side (Privy
+    // propagation). During that window POST /api/username 400s with
+    // 'wallet required', which used to surface as a misleading "Username
+    // unavailable." on a perfectly free name. Retry a few times so the claim
+    // lands once the wallet propagates, instead of failing on the first beat.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const token = await privy.getAccessToken();
+        const res = await fetch('/api/username', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) { setNameError(null); return true; }
         const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
-        setNameError(usernameErrorText(data.reason || data.error));
+        const notReady = res.status === 400 && /wallet required/i.test(data.error || '');
+        if (notReady && attempt < 5) {
+          setNameError('Finalizing your account…');
+          await new Promise((r) => setTimeout(r, 1500));
+          continue;
+        }
+        setNameError(notReady
+          ? 'Still finalizing your account — try that name again in a moment.'
+          : usernameErrorText(data.reason || data.error));
+        return false;
+      } catch {
+        if (attempt < 5) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+        setNameError('Could not check username — try again.');
         return false;
       }
-      return true;
-    } catch {
-      setNameError('Could not check username — try again.');
-      return false;
     }
+    return false;
   };
 
   // Persist the typed name/avatar through useAuth.updateUser — the SAME path

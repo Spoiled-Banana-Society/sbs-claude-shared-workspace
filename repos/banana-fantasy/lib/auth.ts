@@ -199,14 +199,11 @@ interface PrivyLinkedAccount {
   chain_type?: string;
 }
 
-async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
-  const cached = privyUserCache.get(userId);
-  if (cached && cached.expires > Date.now()) return cached.walletAddress;
-
+// Single uncached call to the Privy User API → the user's wallet, or null.
+async function privyUserApiFetchOnce(userId: string): Promise<string | null> {
   const appId = getPrivyAppId();
   const appSecret = process.env.PRIVY_APP_SECRET?.trim();
   if (!appSecret) return null;
-
   try {
     const auth = Buffer.from(`${appId}:${appSecret}`).toString('base64');
     const res = await fetch(`https://auth.privy.io/api/v1/users/${encodeURIComponent(userId)}`, {
@@ -218,26 +215,45 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     if (!res.ok) {
       console.warn('[auth] Privy User API non-OK:', res.status);
       logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { actor: userId, context: { status: res.status } });
-      privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_NEG_TTL_MS });
       return null;
     }
     const data = (await res.json()) as { linked_accounts?: PrivyLinkedAccount[]; wallet?: { address?: string } };
-    let wallet: string | null = null;
     // Prefer the first non-Privy embedded wallet (external > embedded)
     const accounts = Array.isArray(data.linked_accounts) ? data.linked_accounts : [];
     const external = accounts.find(
       (a) => a.type === 'wallet' && a.wallet_client_type !== 'privy' && typeof a.address === 'string',
     );
     const anyWallet = accounts.find((a) => a.type === 'wallet' && typeof a.address === 'string');
-    wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
-    if (wallet) wallet = wallet.toLowerCase();
-    privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + (wallet ? PRIVY_USER_TTL_MS : PRIVY_USER_NEG_TTL_MS) });
-    return wallet;
+    const wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
+    return wallet ? wallet.toLowerCase() : null;
   } catch (err) {
     console.warn('[auth] Privy User API fetch failed:', err);
     logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { err, actor: userId });
     return null;
   }
+}
+
+async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
+  const cached = privyUserCache.get(userId);
+  if (cached && cached.expires > Date.now()) return cached.walletAddress;
+
+  // A brand-new web2/social signup creates its embedded wallet CLIENT-side, and
+  // Privy's server-side User API only learns about it a beat later (the JWT
+  // never carries the wallet claim for social logins). So the first auth'd
+  // request of a fresh session would resolve a null wallet — which 400s the
+  // username claim (surfaced as "Username unavailable") and makes
+  // returning-check skip firstLoginAt + the welcome bells. Retry briefly within
+  // the request so the wallet resolves the moment propagation lands, instead of
+  // hard-failing the whole first session. Only fresh-wallet users ever loop
+  // here; for everyone else the first call returns a wallet immediately.
+  let wallet: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    wallet = await privyUserApiFetchOnce(userId);
+    if (wallet) break;
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 700));
+  }
+  privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + (wallet ? PRIVY_USER_TTL_MS : PRIVY_USER_NEG_TTL_MS) });
+  return wallet;
 }
 
 export async function getPrivyUser(req: Request): Promise<{ userId: string; walletAddress: string | null }> {
