@@ -1,6 +1,6 @@
 'use client';
 
-import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase } from '@privy-io/react-auth';
+import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase, useCreateWallet as useCreateWalletBase } from '@privy-io/react-auth';
 import { base } from 'viem/chains';
 import React, { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 
@@ -28,6 +28,22 @@ export function useSafePrivy() {
     return usePrivyBase();
   } catch {
     return PRIVY_FALLBACK;
+  }
+}
+
+// Safe wrapper around useCreateWallet — returns a no-op when Privy isn't
+// available (SSR / no app id), mirroring useSafePrivy. Used to force-create the
+// embedded wallet for new social users on mobile Safari, where Privy's
+// createOnLogin auto-creation silently fails.
+const CREATE_WALLET_FALLBACK = { createWallet: async () => null } as unknown as ReturnType<typeof useCreateWalletBase>;
+export function useSafeCreateWallet() {
+  const available = usePrivyAvailable();
+  try {
+    if (!available) return CREATE_WALLET_FALLBACK;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useCreateWalletBase();
+  } catch {
+    return CREATE_WALLET_FALLBACK;
   }
 }
 

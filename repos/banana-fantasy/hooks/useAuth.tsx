@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useSafePrivy as usePrivy, usePrivyAvailable } from '@/providers/PrivyProvider';
+import { useSafePrivy as usePrivy, usePrivyAvailable, useSafeCreateWallet } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
@@ -404,6 +404,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const authPrivyRef = useRef(privy);
   authPrivyRef.current = privy;
 
+  // createWallet() to force the embedded wallet into existence (kept in a ref
+  // so the effect deps stay stable). Privy's createOnLogin auto-creation
+  // silently fails for new social users on mobile Safari — diagnosed live: the
+  // wallet was null on the client AND in Privy's User API, i.e. never created.
+  const { createWallet } = useSafeCreateWallet();
+  const createWalletRef = useRef(createWallet);
+  createWalletRef.current = createWallet;
+
   useEffect(() => {
     if (MOCK_AUTH) return;
     // Logged out (or a transient blink) → reset so a fresh login can retry.
@@ -422,10 +430,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = setTimeout(async () => {
       if (serverWalletFetchedRef.current) return;
       serverWalletFetchedRef.current = true;
+      const p = authPrivyRef.current;
+      console.log('[walletdebug] grace elapsed, no client wallet', { authenticated: p.authenticated, hasUser: !!p.user });
+      if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
+
+      // 1) Force-create the embedded wallet. Privy's createOnLogin auto-creation
+      //    silently fails for new social users on mobile Safari — calling
+      //    createWallet() explicitly creates it. On success it surfaces in
+      //    privy.user → clientWalletAddress updates → this effect re-runs and
+      //    the normal login/owner pipeline proceeds. If it throws, the logged
+      //    error tells us the exact blocker (gesture / webcrypto / config).
       try {
-        const p = authPrivyRef.current;
-        console.log('[walletdebug] grace elapsed, no client wallet — trying server resolve', { authenticated: p.authenticated, hasUser: !!p.user });
-        if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
+        console.log('[walletdebug] forcing createWallet()');
+        const w = await createWalletRef.current();
+        const addr = (w as { address?: string } | null)?.address ?? null;
+        console.log('[walletdebug] createWallet ok', { address: addr });
+        if (addr) { setServerWalletAddress(addr); return; }
+      } catch (e) {
+        console.log('[walletdebug] createWallet failed', String((e as { message?: string })?.message ?? e));
+      }
+
+      // 2) Backup: maybe a wallet exists server-side but didn't surface — resolve it.
+      try {
         const token = await p.getAccessToken();
         if (!token) { console.log('[walletdebug] no access token'); serverWalletFetchedRef.current = false; return; }
         const res = await fetch('/api/auth/resolve-wallet', {
