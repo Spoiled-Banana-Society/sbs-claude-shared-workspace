@@ -366,7 +366,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
-  const walletAddress = useMemo(() => {
+  const clientWalletAddress = useMemo(() => {
     if (MOCK_AUTH) return MOCK_WALLET;
     if (!privy.user) return null;
     // First: look for an external (non-Privy) wallet
@@ -384,6 +384,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const w = privy.user.wallet;
     return w?.address ?? null;
   }, [privy.user]);
+
+  // ── Mobile-Safari new-social-user wallet fallback ──────────────────────────
+  // For a brand-new Google/X/email user on mobile Safari, Privy's embedded
+  // wallet can fail to surface in `privy.user` (iOS partitions the cross-site
+  // wallet iframe storage), so `clientWalletAddress` stays null. Since the whole
+  // login/onboarding pipeline below is gated on a wallet, the header greys for
+  // ~8s then reverts to "Log In" and the account is never created. The SERVER
+  // can always resolve the wallet via the Privy User API (getPrivyUser's
+  // social-login fallback) — not subject to browser storage partitioning. We
+  // fetch it ONLY when the client couldn't derive a wallet, so the happy path
+  // (wallet present locally within the grace window) never makes this call and
+  // nothing else about auth changes.
+  const [serverWalletAddress, setServerWalletAddress] = useState<string | null>(null);
+  const serverWalletFetchedRef = useRef(false);
+  const walletAddress = clientWalletAddress ?? serverWalletAddress;
+
+  // privy in a ref so the effect's deps stay stable scalars (render-loop Rule #0).
+  const authPrivyRef = useRef(privy);
+  authPrivyRef.current = privy;
+
+  useEffect(() => {
+    if (MOCK_AUTH) return;
+    // Logged out (or a transient blink) → reset so a fresh login can retry.
+    if (!privy.authenticated) {
+      serverWalletFetchedRef.current = false;
+      setServerWalletAddress(null);
+      return;
+    }
+    // Client already derived the wallet → no fallback needed (the common path).
+    if (clientWalletAddress) return;
+    if (serverWalletFetchedRef.current) return;
+    // Grace window: let Privy surface the embedded wallet locally first (desktop
+    // resolves in <1s); only fall back to the server if it hasn't shown up. If
+    // the client wallet arrives during the wait, this effect re-runs and the
+    // cleanup cancels the timer, so the happy path never hits the server.
+    const t = setTimeout(async () => {
+      if (serverWalletFetchedRef.current) return;
+      serverWalletFetchedRef.current = true;
+      try {
+        const p = authPrivyRef.current;
+        if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
+        const token = await p.getAccessToken();
+        if (!token) { serverWalletFetchedRef.current = false; return; }
+        const res = await fetch('/api/auth/resolve-wallet', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.wallet) setServerWalletAddress(data.wallet as string);
+        else serverWalletFetchedRef.current = false; // allow a later retry
+      } catch {
+        serverWalletFetchedRef.current = false;
+      }
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [privy.authenticated, clientWalletAddress]);
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
