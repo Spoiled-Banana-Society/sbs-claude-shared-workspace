@@ -220,6 +220,25 @@ export function BuyPassesModal({
 
   const { pricePerPass } = draftPassPricing;
   const totalPrice = quantity * pricePerPass;
+  // Web2 (email/social) users can have real USDC in their embedded wallet (team
+  // sales, prizes, leftover credit). When they already hold enough, let them pay
+  // from that balance instead of forcing a card top-up — the USDC mint path is
+  // gasless for embedded wallets (useMintDraftPass signs the permit silently).
+  const hasWalletFunds = (user?.usdcBalance ?? 0) >= totalPrice;
+  // Web2 payment preference: when they already hold enough USDC, default to
+  // paying from balance (once — never fights a later manual toggle). If a bigger
+  // quantity outgrows the balance, the "Pay with balance" option disappears, so
+  // fall back to card to keep the summary/Buy button consistent.
+  const web2BalancePrefSet = useRef(false);
+  useEffect(() => {
+    if (user?.loginMethod !== 'social') return;
+    if (!web2BalancePrefSet.current && hasWalletFunds) {
+      web2BalancePrefSet.current = true;
+      setPaymentMethod('usdc');
+    } else if (!hasWalletFunds && paymentMethod === 'usdc') {
+      setPaymentMethod('card');
+    }
+  }, [user?.loginMethod, hasWalletFunds, paymentMethod]);
   const usdcTotal = tokenPrice ? tokenPrice * BigInt(quantity) : null;
   const quantityOptions = [1, 5, 10, 20, 30, 40];
   const isProcessing =
@@ -798,7 +817,7 @@ export function BuyPassesModal({
                 covers Card, Apple Pay, Venmo and PayPal (all via MoonPay). */}
             <div>
               <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
-              {isWeb2 ? (
+              {isWeb2 && !hasWalletFunds ? (
                 <div className="flex items-center justify-center gap-2.5 py-3 px-4 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated text-text-primary">
                   <svg viewBox="0 0 24 24" className="w-5 h-5 text-banana shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                     <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
@@ -823,7 +842,7 @@ export function BuyPassesModal({
                       <circle cx="12" cy="12" r="9" />
                       <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
                     </svg>
-                    <span className="text-[15px] sm:text-base font-semibold tracking-tight">USDC on Base</span>
+                    <span className="text-[15px] sm:text-base font-semibold tracking-tight">{isWeb2 ? 'Pay with balance' : 'USDC on Base'}</span>
                   </button>
                   <button
                     onClick={() => setPaymentMethod('card')}
