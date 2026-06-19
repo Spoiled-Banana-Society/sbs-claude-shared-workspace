@@ -97,12 +97,17 @@ export interface CardResumeRecord {
   quantity: number;
   walletAddress: string;
   ts: number;
+  /** USDC balance (USD) right BEFORE the card flow started. Recovery only fires
+   *  if the balance later GREW by ~the purchase amount — proof the card actually
+   *  funded — so pre-existing USDC (e.g. team-sale proceeds) can't trip a false
+   *  "your payment went through" prompt. */
+  balanceBefore?: number;
 }
 
-export function writeResumeRecord(rec: { quantity: number; walletAddress: string }): void {
+export function writeResumeRecord(rec: { quantity: number; walletAddress: string; balanceBefore?: number }): void {
   try {
     if (typeof window === 'undefined') return;
-    const payload: CardResumeRecord = { quantity: rec.quantity, walletAddress: rec.walletAddress, ts: Date.now() };
+    const payload: CardResumeRecord = { quantity: rec.quantity, walletAddress: rec.walletAddress, ts: Date.now(), balanceBefore: rec.balanceBefore };
     window.localStorage.setItem(RESUME_KEY, JSON.stringify(payload));
   } catch { /* storage unavailable — resume just won't be possible, no harm */ }
 }

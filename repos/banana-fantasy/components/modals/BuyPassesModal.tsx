@@ -184,8 +184,17 @@ export function BuyPassesModal({
         // the user spent it elsewhere), and a lingering "your payment went
         // through" banner with no funds behind it is alarming + misleading.
         if (bal < perPassUsdc) { setRecoverableUsdc(null); return; }
+        // TIGHTENED: only a real card funding makes the balance GROW. Compare to
+        // the balance recorded right before the card flow started; if it didn't
+        // rise by ~a pass, this USDC was already there (e.g. team-sale proceeds
+        // or a top-up) — NOT a stranded card payment — so don't false-claim
+        // "your payment went through". Markers without a recorded baseline
+        // (older ones) are treated as unverifiable and never shown.
+        const currentUsd = Number(bal) / 1e6;
+        const grew = currentUsd - (rec.balanceBefore ?? Number.POSITIVE_INFINITY);
+        if (grew < draftPassPricing.pricePerPass * 0.9) { setRecoverableUsdc(null); return; }
         const qty = Math.max(1, Math.min(rec.quantity, Number(bal / perPassUsdc)));
-        setRecoverableUsdc({ quantity: qty, usd: (Number(bal) / 1e6).toFixed(2) });
+        setRecoverableUsdc({ quantity: qty, usd: currentUsd.toFixed(2) });
         clientLog('payment', 'recovery_offer_shown', { wallet: walletAddress, quantity: qty });
       } catch { /* RPC blip — just don't show the prompt */ }
     })();
@@ -459,7 +468,7 @@ export function BuyPassesModal({
     // Drop a marker so that, if the tab is lost mid-purchase (mobile tab-kill),
     // we can OFFER a one-tap recovery on return. This never auto-mints — it only
     // gates the recovery prompt. Cleared on success/cancel.
-    writeResumeRecord({ quantity, walletAddress });
+    writeResumeRecord({ quantity, walletAddress, balanceBefore: user?.usdcBalance ?? 0 });
 
     try {
       const fundingAmount = usdcTotal ? formatUnits(usdcTotal, 6) : String(quantity * pricePerPass);
