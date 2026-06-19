@@ -790,9 +790,33 @@ export function useDraftLiveSync({
   }, [setLiveDataReady]);
 
   const bestTimeRemaining = useMemo(() => {
-    const value = (firebaseActive && firebaseTimeRemaining !== null)
-      ? firebaseTimeRemaining
-      : engine.timeRemaining;
+    // The displayed clock MUST be a pure function of the SHARED server pick-end
+    // timestamp and the local now, with ONE rounding rule — otherwise desktop
+    // and mobile drift (the first-pick "desktop 29 / mobile 27" desync). Order:
+    //   1. Firebase's pickEndTime − now (floor, via useTimeRemaining)        [shared]
+    //   2. the engine's endOfTurnTimestamp − now, computed with the SAME floor.
+    //      It's the IDENTICAL server pickEndTime (set from the same WS/RTDB),
+    //      so a device whose Firebase subscription isn't live yet (e.g. a
+    //      slower-loading phone on the first pick) still shows the exact same
+    //      number as a device already on Firebase. NEVER engine.timeRemaining
+    //      here — that's a per-device ceil()/default LOCAL countdown and is the
+    //      whole reason the two devices diverged. Gated to active drafting so
+    //      it can't interfere with the pre-draft start countdown, and to fast
+    //      drafts (slow drafts use the active-window clock in useTimeRemaining).
+    //   3. engine.timeRemaining only as a last resort, before ANY server
+    //      pick-end timestamp exists (both devices show the same default there).
+    let value: number | null;
+    if (firebaseActive && firebaseTimeRemaining !== null) {
+      value = firebaseTimeRemaining;
+    } else if (
+      engine.draftStatus === 'active'
+      && engine.endOfTurnTimestamp > 0
+      && !isSlowDraftPickLength(firebasePickLength ?? 0)
+    ) {
+      value = Math.max(0, Math.floor((engine.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+    } else {
+      value = engine.timeRemaining;
+    }
     const raw = value ?? 0;
     // Display cap: the backend adds a +1s grace to PickEndTime (so the clock
     // reads a solid 30 instead of flashing 29), and the raw floor of that would
@@ -802,7 +826,7 @@ export function useDraftLiveSync({
       return Math.min(raw, firebasePickLength);
     }
     return raw;
-  }, [firebaseActive, firebaseTimeRemaining, engine.timeRemaining, firebasePickLength]);
+  }, [firebaseActive, firebaseTimeRemaining, engine.draftStatus, engine.endOfTurnTimestamp, engine.timeRemaining, firebasePickLength]);
 
   // Slow drafts pause overnight (22:00–05:00 PT). Surface whether this is a slow
   // draft and whether the clock is currently frozen so the UI can show the

@@ -1085,6 +1085,11 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     queuedPlayers,
     rosters,
     timeRemaining,
+    // Absolute server pick-end timestamp (Unix seconds), set from the SAME
+    // WS/RTDB pickEndTime everyone shares. Exposed so the live-sync timer can
+    // anchor to it (floor(end − now)) instead of the per-device local countdown
+    // — keeps desktop/mobile identical from the first tick.
+    endOfTurnTimestamp,
     isUserTurn,
     turnsUntilUserPick,
     draftStatus,
