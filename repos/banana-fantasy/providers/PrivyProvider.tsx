@@ -1,6 +1,6 @@
 'use client';
 
-import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase, useCreateWallet as useCreateWalletBase } from '@privy-io/react-auth';
+import { PrivyProvider as PrivyProviderBase, usePrivy as usePrivyBase, useCreateWallet as useCreateWalletBase, useWallets as useWalletsBase } from '@privy-io/react-auth';
 import { base } from 'viem/chains';
 import React, { ReactNode, useState, useEffect, createContext, useContext } from 'react';
 
@@ -44,6 +44,22 @@ export function useSafeCreateWallet() {
     return useCreateWalletBase();
   } catch {
     return CREATE_WALLET_FALLBACK;
+  }
+}
+
+// Safe wrapper around useWallets — the embedded wallet often surfaces in this
+// list (with a `ready` flag) BEFORE it repopulates `privy.user.linkedAccounts`,
+// so reading it here shrinks the window where a new mobile social user has no
+// wallet. No-op fallback when Privy isn't available.
+const WALLETS_FALLBACK = { wallets: [], ready: false } as unknown as ReturnType<typeof useWalletsBase>;
+export function useSafeWallets() {
+  const available = usePrivyAvailable();
+  try {
+    if (!available) return WALLETS_FALLBACK;
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    return useWalletsBase();
+  } catch {
+    return WALLETS_FALLBACK;
   }
 }
 

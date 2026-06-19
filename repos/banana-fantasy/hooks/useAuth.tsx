@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
-import { useSafePrivy as usePrivy, usePrivyAvailable, useSafeCreateWallet } from '@/providers/PrivyProvider';
+import { useSafePrivy as usePrivy, usePrivyAvailable, useSafeCreateWallet, useSafeWallets } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
@@ -365,6 +365,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // useWallets() surfaces the embedded wallet (with a `ready` flag) often before
+  // privy.user.linkedAccounts repopulates — an extra source to shrink the
+  // no-wallet window for new mobile social users (esp. right after createWallet).
+  const { wallets: privyWallets, ready: walletsReady } = useSafeWallets();
+
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
   const clientWalletAddress = useMemo(() => {
     if (MOCK_AUTH) return MOCK_WALLET;
@@ -382,8 +387,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (anyWallet?.address) return anyWallet.address;
     // Last resort: wallet field
     const w = privy.user.wallet;
-    return w?.address ?? null;
-  }, [privy.user]);
+    if (w?.address) return w.address;
+    // Final source: useWallets() often surfaces the embedded wallet before
+    // linkedAccounts does (especially right after createWallet on mobile).
+    if (walletsReady && privyWallets?.length) {
+      const emb = privyWallets.find((x) => (x as { walletClientType?: string }).walletClientType === 'privy') ?? privyWallets[0];
+      if (emb?.address) return emb.address;
+    }
+    return null;
+  }, [privy.user, privyWallets, walletsReady]);
 
   // ── Mobile-Safari new-social-user wallet fallback ──────────────────────────
   // For a brand-new Google/X/email user on mobile Safari, Privy's embedded

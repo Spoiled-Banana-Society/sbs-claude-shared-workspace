@@ -27,7 +27,9 @@ export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
-    const { walletAddress } = await getPrivyUser(req);
+    const { walletAddress, userId } = await getPrivyUser(req);
+    // New-user-flow trace (low volume — only hit when the client has no wallet).
+    logger.info('auth.resolve_wallet', { userId, wallet: walletAddress ?? null });
     return json({ wallet: walletAddress ?? null });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
