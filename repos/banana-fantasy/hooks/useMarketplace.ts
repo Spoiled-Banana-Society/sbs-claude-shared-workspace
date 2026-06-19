@@ -481,20 +481,23 @@ interface UseActivityHistoryResult {
   refetch: () => void;
 }
 
-export function useActivityHistory(walletAddress: string | null): UseActivityHistoryResult {
+export function useActivityHistory(walletAddress: string | null, scope: 'mine' | 'all' = 'mine'): UseActivityHistoryResult {
   const [activities, setActivities] = useState<ActivityEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
 
   const fetchActivities = useCallback(async (append = false, nextCursor?: string | null) => {
-    if (!walletAddress) {
+    // 'mine' is wallet-scoped (needs a wallet); 'all' is the global feed.
+    if (scope === 'mine' && !walletAddress) {
       setActivities([]);
       return;
     }
     if (!append) setIsLoading(true);
     try {
-      const params = new URLSearchParams({ wallet: walletAddress, limit: '20' });
+      const params = new URLSearchParams({ limit: '20' });
+      if (scope === 'all') params.set('scope', 'all');
+      else params.set('wallet', walletAddress as string);
       if (nextCursor) params.set('cursor', nextCursor);
 
       const res = await fetch(`/api/marketplace/activity?${params}`);
@@ -510,7 +513,7 @@ export function useActivityHistory(walletAddress: string | null): UseActivityHis
     } finally {
       setIsLoading(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, scope]);
 
   useEffect(() => {
     fetchActivities(false);
