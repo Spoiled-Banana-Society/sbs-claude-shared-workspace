@@ -513,19 +513,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!walletAddress) { setWeb2Resolved(true); return; }
     if (returningCheckedRef.current === walletAddress) return;
     returningCheckedRef.current = walletAddress;
-    (async () => {
+
+    let cancelled = false;
+    let retries = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // returning-check stamps firstLoginAt + the new-user bells (app-download,
+    // base-usdc-guide, …). It's auth-gated, so for a brand-new social user it
+    // can briefly resolve `no-wallet` server-side while the Privy User API
+    // catches up to the just-created embedded wallet. Retry a few times so the
+    // bells + firstLoginAt actually land instead of being permanently skipped.
+    const run = async () => {
       try {
         const token = await privyRef2.current.getAccessToken();
-        if (!token) return;
+        if (!token) { scheduleRetry(); return; }
         const res = await fetch('/api/users/returning-check', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json().catch(() => null);
+        if (data?.reason === 'no-wallet') { scheduleRetry(); return; }
         if (data?.returning) setIsBB3Holder(true);
-      } catch { /* best-effort — wallet-snapshot path still applies */ }
-      finally { setWeb2Resolved(true); }
-    })();
+        if (!cancelled) setWeb2Resolved(true);
+      } catch {
+        // Network error — don't loop forever; let the wallet-snapshot path apply.
+        if (!cancelled) setWeb2Resolved(true);
+      }
+    };
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      if (retries >= 4) { setWeb2Resolved(true); return; } // ~8s max, then give up
+      retries += 1;
+      retryTimer = setTimeout(() => { if (!cancelled) run(); }, 2000);
+    };
+
+    run();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, [walletAddress]);
 
   // Tag Sentry with the current user so every frontend error / breadcrumb

@@ -158,7 +158,12 @@ function buildSeedUser(userId: string): {
     ...deepClone(seedUser),
     id: userId,
     walletAddress: userId,
-    username: `User-${userId.slice(0, 6)}`,
+    // Seed the deterministic Banana#### handle (the same default the header
+    // shows) instead of a `User-0x…` placeholder, so a new user reads correctly
+    // even before onboarding completes (mobile users who stall mid-tutorial got
+    // stuck on the placeholder). claimUsername still overwrites this with a
+    // user-chosen name when they finish onboarding.
+    username: bananaDefaultName(userId),
     xHandle: undefined,
     profilePicture: undefined,
     nflTeam: undefined,

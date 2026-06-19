@@ -185,6 +185,11 @@ async function verifyPrivyJwt(token: string): Promise<{ userId: string; walletAd
 // 5-minute TTL.
 const privyUserCache = new Map<string, { walletAddress: string | null; expires: number }>();
 const PRIVY_USER_TTL_MS = 5 * 60 * 1000;
+// A NULL result is cached only briefly: a brand-new social user's embedded
+// wallet can take a beat to appear in the Privy User API, so a 5-min negative
+// cache would wedge the wallet at null long after it exists (breaking new-user
+// setup — firstLoginAt, bells). Short TTL = pick it up on the next call.
+const PRIVY_USER_NEG_TTL_MS = 5 * 1000;
 
 interface PrivyLinkedAccount {
   type?: string;
@@ -212,7 +217,7 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     if (!res.ok) {
       console.warn('[auth] Privy User API non-OK:', res.status);
       logger.error(LOG_SOURCES.auth.PRIVY_USER_API_FAILED, { actor: userId, context: { status: res.status } });
-      privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_TTL_MS });
+      privyUserCache.set(userId, { walletAddress: null, expires: Date.now() + PRIVY_USER_NEG_TTL_MS });
       return null;
     }
     const data = (await res.json()) as { linked_accounts?: PrivyLinkedAccount[]; wallet?: { address?: string } };
@@ -225,7 +230,9 @@ async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | nul
     const anyWallet = accounts.find((a) => a.type === 'wallet' && typeof a.address === 'string');
     wallet = (external?.address ?? anyWallet?.address ?? data.wallet?.address ?? null);
     if (wallet) wallet = wallet.toLowerCase();
-    privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + PRIVY_USER_TTL_MS });
+    // Positive resolutions cache for the full TTL; a null (wallet not yet
+    // visible) caches only briefly so the just-created wallet is picked up soon.
+    privyUserCache.set(userId, { walletAddress: wallet, expires: Date.now() + (wallet ? PRIVY_USER_TTL_MS : PRIVY_USER_NEG_TTL_MS) });
     return wallet;
   } catch (err) {
     console.warn('[auth] Privy User API fetch failed:', err);
@@ -275,10 +282,14 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
   // user's lastActiveAt in Firestore and writes a `login` event when
   // the gap qualifies. Persistent across Vercel cold starts (unlike
   // the previous in-memory throttle).
-  const loginId = user.walletAddress || user.userId;
-  if (loginId) {
+  // Record activity ONLY under the resolved wallet — never the Privy DID.
+  // Recording under the DID (when the wallet hasn't resolved yet) created junk
+  // `v2_users/{did:privy:…}` docs with no wallet/owner/bells for new mobile
+  // social users. Desktop/web3 always have a wallet here, so this is a no-op
+  // for them.
+  if (user.walletAddress) {
     import('@/lib/userEvents')
-      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId))
+      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(user.walletAddress as string))
       .catch(() => { /* non-fatal */ });
   }
 
