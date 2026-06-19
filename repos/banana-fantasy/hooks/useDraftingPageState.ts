@@ -1097,7 +1097,11 @@ export function useDraftingPageState() {
               });
             }
           } else if (isFull) {
-            const patch: Partial<DraftState> = { players: 10 };
+            // Reused-slot hygiene: the backend reports this draft as
+            // full-but-not-started (pickNumber 0), so any enginePickNumber left
+            // in the store is STALE from this slot's PREVIOUS draft. Clear it so
+            // getLiveState's pick short-circuit can't flash the type pre-reveal.
+            const patch: Partial<DraftState> = { players: 10, enginePickNumber: 0 };
 
             if (info.draftStartTime) {
               // Authoritative reveal clock for getLiveState's server-clock branch.
@@ -1497,22 +1501,18 @@ export function useDraftingPageState() {
     const timers = getBarTimers();
     const timerStart = timers.get(draft.id);
 
-    // Authoritative "already drafting" short-circuit: if the engine reports a
-    // real pick in progress, the draft is live — show drafting and NEVER replay
-    // the randomize/reveal intro. A returning or late-loading client would
-    // otherwise fabricate "Revealing…" off cached/`now` anchors for a draft that
-    // already started (the bug behind a card stuck on "Revealing…" for ~2s).
-    if ((draft.enginePickNumber ?? 0) > 0) {
-      return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
-    }
-
     // ── Server-clock reveal (authoritative + cross-device) ──────────────
-    // When the server's draftStartTime is known, derive the ENTIRE
-    // fill→reveal→drafting sequence from it, so every device (and a fresh
-    // page load) shows the SAME phase at the SAME wall-clock second — instead
-    // of each browser timing the reveal from its own local "saw it fill"
-    // anchor (which made mobile jump straight to PRO/drafting while desktop was
-    // still revealing). draftStartTime = fill + 60s, so the 60s before it is:
+    // The server's draftStartTime (= fill + 60s, stamped FRESH on every fill)
+    // is the single source of truth for whether a draft has started. We check
+    // it FIRST — before the enginePickNumber short-circuit below — because on a
+    // REUSED slot id the store can still carry a stale enginePickNumber from
+    // this slot's PREVIOUS draft. If the fresh clock says we're still in the
+    // fill→reveal window (secs > 0), that leftover pick number is provably
+    // stale and must NOT force "drafting" (the "PRO before reveal" bug: the
+    // stale pick made getLiveState skip every reveal phase and show the type
+    // instantly). When the clock is known, derive the ENTIRE
+    // fill→reveal→drafting sequence from it so every device (and a fresh page
+    // load) shows the SAME phase at the SAME wall-clock second:
     // 3s randomize bar → 15s slot-reveal countdown → draft-starting countdown
     // (DraftRow flips "Revealing…" → the type once that countdown drops < 37s).
     // Wheel specials keep their own pre-spin flow (handled below).
@@ -1529,6 +1529,16 @@ export function useDraftingPageState() {
         return { displayPhase: 'pre-spin-countdown', playerCount: 10, countdown: Math.max(0, Math.ceil(secs - 45)), randomizingProgress: null, isFilling: false };
       }
       return { displayPhase: 'draft-starting', playerCount: 10, countdown: Math.max(0, Math.ceil(secs)), randomizingProgress: null, isFilling: false };
+    }
+
+    // Authoritative "already drafting" short-circuit (FALLBACK — only when no
+    // server clock is available above): if the engine reports a real pick in
+    // progress, the draft is live — show drafting and NEVER replay the
+    // randomize/reveal intro. A returning or late-loading client would
+    // otherwise fabricate "Revealing…" off cached/`now` anchors for a draft
+    // that already started (the bug behind a card stuck on "Revealing…" ~2s).
+    if ((draft.enginePickNumber ?? 0) > 0) {
+      return { displayPhase: 'drafting', playerCount: 10, countdown: null, randomizingProgress: null, isFilling: false };
     }
 
     if (timerStart && !draft.preSpinStartedAt) {
