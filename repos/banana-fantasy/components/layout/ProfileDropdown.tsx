@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/useAuth';
-import { usePrizes } from '@/hooks/usePrizes';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { canSwitchWallet } from '@/lib/switchWalletAllowlist';
 import { InstallAppButton } from '@/components/home/AddToHomeScreenCard';
@@ -21,7 +20,6 @@ interface ProfileDropdownProps {
 
 export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
   const { user, logout, switchWallet, isEmbeddedWallet } = useAuth();
-  const { availableBalance } = usePrizes();
   const [isOpen, setIsOpen] = useState(false);
   const [walletCopied, setWalletCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -51,20 +49,23 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
     setTimeout(() => setCopiedRef(false), 1800);
   };
 
-  // Embedded (web2) users' real balance lives in their Privy wallet as USDC
-  // (team sales + leftover mint + paid prizes), which prize-only availableBalance
-  // misses. Fold it in so this row matches the /winnings page. Fetch on open only.
+  // The real USDC balance in the user's wallet — Privy embedded wallet for web2,
+  // their external wallet (e.g. MetaMask) for web3. Team sales + leftover mint +
+  // paid-out prizes all land here. Fetched for BOTH user types (web3 was wrongly
+  // excluded before, so a connected MetaMask with USDC read $0.00). Matches the
+  // "Balance" card on /winnings; pending prizes show there separately as
+  // "Winnings". Fetch on open only.
   const [walletUsdc, setWalletUsdc] = useState(0);
   useEffect(() => {
-    if (!isOpen || !isEmbeddedWallet || !refWallet) { return; }
+    if (!isOpen || !refWallet) { return; }
     let cancelled = false;
     fetch(`/api/owner/usdc-balance?wallet=${refWallet}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (!cancelled && d && typeof d.usdc === 'number') setWalletUsdc(d.usdc); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [isOpen, isEmbeddedWallet, refWallet]);
-  const unifiedBalance = availableBalance + (isEmbeddedWallet ? walletUsdc : 0);
+  }, [isOpen, refWallet]);
+  const unifiedBalance = walletUsdc;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -175,11 +176,10 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             </button>
           </div>
 
-          {/* Withdrawable winnings — same number shown atop /prizes
-              ("Available to withdraw"). Replaces the old idle-wallet-USDC
-              balance, which read $0.00 for card/Privy users since funds are
-              spent on mint immediately and payouts never sit in the wallet.
-              Tapping the row jumps to /prizes to cash out. */}
+          {/* Wallet balance — the real USDC in the user's wallet, same as the
+              "Balance" card on /winnings (web2 Privy wallet or web3 external
+              wallet). Tapping the row jumps to /winnings to cash out / transfer
+              winnings. */}
           <Link
             href="/winnings"
             onClick={() => setIsOpen(false)}
