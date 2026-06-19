@@ -37,6 +37,32 @@ const ADMIN_WALLET_GAS_FLOOR_WEI = 1_000_000_000_000_000n; // 0.001 ETH
 const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
 
 /**
+ * Wait until the admin wallet's on-chain USDC balance actually reflects at
+ * least `min`. `pullUsdcFromUser` already waits for its transferFrom receipt,
+ * but the RPC node the very next reads hit can lag a block behind — which made
+ * BOTH the Seaport fulfillment ("fulfiller does not have the balances needed")
+ * AND the fallback refund ("ERC20: transfer amount exceeds balance") fail on a
+ * balance that had really already arrived, leaving the pulled USDC stuck in the
+ * admin wallet. Polling here lets the chain state catch up before we spend or
+ * refund, so neither step acts on a stale empty balance.
+ */
+async function waitForAdminUsdc(adminWallet: Address, min: bigint, timeoutMs = 30_000): Promise<bigint> {
+  const start = Date.now();
+  let bal = 0n;
+  do {
+    bal = (await publicClient.readContract({
+      address: BASE_SEPOLIA_USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: 'balanceOf',
+      args: [adminWallet],
+    })) as bigint;
+    if (bal >= min) return bal;
+    await new Promise((r) => setTimeout(r, 1500));
+  } while (Date.now() - start < timeoutMs);
+  return bal;
+}
+
+/**
  * POST /api/marketplace/relay-buy
  *
  * Gasless marketplace Buy Now for EXTERNAL wallets (MetaMask, Coinbase
@@ -204,6 +230,12 @@ export async function POST(req: Request) {
         return jsonError(`USDC transfer failed: ${(err as Error).message}`, 402);
       }
 
+      // 2b. Wait until the admin wallet's balance actually shows the pulled
+      //     USDC before spending it. The transferFrom is confirmed, but the
+      //     next RPC reads can lag a block — which is exactly what made the
+      //     fulfillment below fail on a "missing" balance and strand the funds.
+      await waitForAdminUsdc(adminWallet, price);
+
       // 3. One-time: the conduit must be able to pull USDC from the admin.
       await ensureAdminUsdcAllowance({ spender: OPENSEA_CONDUIT_ADDRESS, min: price });
 
@@ -222,6 +254,11 @@ export async function POST(req: Request) {
         buyerAddress, orderHash, price: price.toString(), transferTxHash, err: (err as Error).message,
       });
       try {
+        // Same lag guard as before fulfillment: make sure the admin balance
+        // shows the pulled USDC before sending it back, so the refund can't
+        // revert on a stale "insufficient balance" read (which is what left
+        // the funds stuck the first time this fired).
+        await waitForAdminUsdc(adminWallet, price);
         const refundTxHash = await transferUsdcFromAdmin({ to: buyer, amount: price });
         logger.info('relay-buy.refunded', { buyerAddress, orderHash, refundTxHash });
         return jsonError(
