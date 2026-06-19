@@ -127,16 +127,20 @@ export function ActivityTab({
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
-            {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setActFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${actFilter === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Look up any wallet's teams. */}
+            <Link href="/u" className="text-xs font-semibold text-banana hover:brightness-110 transition-all">🔍 Look up a wallet</Link>
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
+              {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setActFilter(key)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${actFilter === key ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -166,34 +170,42 @@ export function ActivityTab({
                 const timeAgo = formatTimeAgo(activity.timestamp);
 
                 return (
-                  <Link
+                  <div
                     key={activity.id}
-                    href={`/marketplace/${activity.tokenId}`}
-                    className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary hover:bg-bg-tertiary/50 transition-colors"
+                    className="flex items-center justify-between gap-2 p-3 rounded-xl bg-bg-primary border border-bg-tertiary hover:bg-bg-tertiary/50 transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-bg-tertiary flex items-center justify-center text-base">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Link href={`/marketplace/${activity.tokenId}`} className="w-9 h-9 rounded-lg bg-bg-tertiary flex items-center justify-center text-base shrink-0">
                         {config.icon}
-                      </div>
-                      <div>
+                      </Link>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-semibold ${config.color}`}>{config.label}</span>
-                          <span className="text-text-primary text-sm font-mono">{activity.teamName}</span>
+                          <Link href={`/marketplace/${activity.tokenId}`} className="text-text-primary text-sm font-mono hover:text-banana transition-colors truncate">{activity.teamName}</Link>
                         </div>
-                        {activity.counterparty && (
-                          <p className="text-text-muted text-[11px]">
-                            {activity.type === 'buy' ? 'from' : 'to'} {activity.counterparty.slice(0, 6)}...{activity.counterparty.slice(-4)}
-                          </p>
-                        )}
+                        {/* Both wallets shown, each clickable → that owner's teams. */}
+                        <p className="text-text-muted text-[11px] flex items-center gap-1 flex-wrap">
+                          <Link href={`/u/${activity.walletAddress}`} className="font-mono hover:text-banana transition-colors">
+                            {activity.walletAddress.slice(0, 6)}…{activity.walletAddress.slice(-4)}
+                          </Link>
+                          {activity.counterparty && (
+                            <>
+                              <span>{activity.type === 'buy' ? '← from' : (activity.type === 'sell' || activity.type === 'offer_accepted') ? '→ to' : '·'}</span>
+                              <Link href={`/u/${activity.counterparty}`} className="font-mono hover:text-banana transition-colors">
+                                {activity.counterparty.slice(0, 6)}…{activity.counterparty.slice(-4)}
+                              </Link>
+                            </>
+                          )}
+                        </p>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                       {activity.price != null && (
                         <p className="text-text-primary font-mono text-sm font-medium">${activity.price.toFixed(2)}</p>
                       )}
                       <p className="text-text-muted text-[10px]">{timeAgo}</p>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
