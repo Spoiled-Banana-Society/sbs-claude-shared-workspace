@@ -3219,10 +3219,32 @@ export async function unlockBadge(
     return true;
   });
 
-  // Real-time push to the user's event stream → bell + toast. Fire-and-forget.
-  // `silent` skips it (ripeness tiers unlock quietly — no notification spam for
-  // your banana ripening).
+  // On a genuinely new unlock, surface it two ways. `silent` skips both
+  // (ripeness/club tiers can opt out — no notification spam).
   if (wasNewlyUnlocked && !opts?.silent) {
+    // BELL — write it EXPLICITLY and AWAITED here. The `badge-unlock` stream
+    // event below ALSO attempts a best-effort dual-write bell, but that runs
+    // fire-and-forget in a nested waitUntil chain that can freeze right after
+    // the fast RTDB toast push lands — so the toast appeared but the bell was
+    // silently dropped ("ripe toast, no bell"). createNotification is
+    // idempotent on `dedupeKey` (badge-<id> → .create() ALREADY_EXISTS no-op),
+    // so this never double-bells with the stream dual-write; it just guarantees
+    // the durable record exists. It also fires its own real-time 'notification'
+    // ping, so the bell shows up live on every device.
+    const badge = BADGE_BY_ID[badgeId];
+    if (badge) {
+      try {
+        await createNotification(userId, {
+          type: 'promo',
+          title: `Badge unlocked: ${badge.label}`,
+          message: badge.description,
+          link: '/profile?tab=badges',
+          dedupeKey: `badge-${badgeId}`,
+          icon: 'award',
+        });
+      } catch { /* best-effort; the toast below still delivers the moment */ }
+    }
+    // TOAST — fast RTDB push to the user's event stream (real-time, transient).
     pushStreamEventBg(userId, 'badge-unlock', {
       badgeId,
       source: typeof source?.source === 'string' ? source.source : undefined,
