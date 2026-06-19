@@ -68,8 +68,15 @@ export async function joinDraft(
 
   // Best-effort mapping to the UI's `DraftRoom` type.
   // Expected fields vary; commonly includes `draftId` and/or `leagueId`.
-  const draftId: string =
-    String(obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id ?? `${Date.now()}`);
+  // A successful join ALWAYS carries one of these id fields. If none is present
+  // the response is malformed/failed — throw instead of fabricating a fake id
+  // (the old `${Date.now()}` fallback spawned a phantom draft and could waste a
+  // pass). This only affects the broken-response case; a real join is unchanged.
+  const resolvedId = obj._leagueId ?? obj.draftId ?? obj.draftName ?? obj.leagueId ?? obj.id;
+  if (resolvedId === undefined || resolvedId === null || resolvedId === '') {
+    throw new Error('Join did not return a draft — please try again.');
+  }
+  const draftId: string = String(resolvedId);
 
   const maxPlayers: number = Number(obj.maxPlayers ?? obj.maxDrafters ?? 10) || 10;
   const players: number = Number(obj.players ?? obj.numPlayers ?? 1) || 1;
