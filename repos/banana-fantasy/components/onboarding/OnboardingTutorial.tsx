@@ -140,34 +140,23 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
   const reserveUsername = async (name: string): Promise<boolean> => {
     const changed = name.toLowerCase() !== (user?.username ?? '').toLowerCase();
     if (!changed) return true;
-    // Retry loop: a brand-new mobile social user's wallet can resolve a beat
-    // after they reach the name step, so /api/username can transiently 400 with
-    // "wallet required". That's NOT a taken name — wait and retry instead of
-    // showing a misleading "unavailable". A genuinely-taken name errors at once.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const token = await privy.getAccessToken();
-        const res = await fetch('/api/username', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        if (res.ok) return true;
+    try {
+      const token = await privy.getAccessToken();
+      const res = await fetch('/api/username', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };
-        const msg = String(data.error || data.reason || '');
-        if (res.status === 400 && /wallet required/i.test(msg)) {
-          if (attempt < 3) { await new Promise((r) => setTimeout(r, 1200)); continue; }
-          setNameError('Still setting up your account — try again in a moment.');
-          return false;
-        }
         setNameError(usernameErrorText(data.reason || data.error));
         return false;
-      } catch {
-        setNameError('Could not check username — try again.');
-        return false;
       }
+      return true;
+    } catch {
+      setNameError('Could not check username — try again.');
+      return false;
     }
-    return false;
   };
 
   // Persist the typed name/avatar through useAuth.updateUser — the SAME path
@@ -965,12 +954,10 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         }`}
       />
 
-      {/* Skip button — offset below the iOS notch/safe-area so it's reachable
-          and tappable on mobile (top-5 alone could sit under the status bar/notch). */}
+      {/* Skip button */}
       <button
         onClick={handleSkip}
-        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
-        className="absolute right-5 flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
+        className="absolute top-5 right-5 flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
       >
         Skip
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

@@ -132,18 +132,6 @@ export function useOnboarding() {
       } catch {
         // Ignore backend completion errors to avoid blocking the UI
       }
-      // The onboarding gate reads the account-synced `onboardingComplete` flag
-      // (client-state), NOT the owner record. setOnboardingDone updates locally
-      // + fire-and-forget; this AWAITED write guarantees it lands server-side
-      // even if a mobile tab backgrounds right after "Let's Go" — otherwise the
-      // flag never persists and the tutorial reappears on every return.
-      try {
-        await fetch('/api/user/client-state', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wallet: walletAddress.toLowerCase(), key: 'onboardingComplete', value: true }),
-        });
-      } catch { /* setOnboardingDone below still attempts the optimistic write */ }
       setOnboardingDone(true);
       setShowOnboarding(false);
       setIsNewUser(false);

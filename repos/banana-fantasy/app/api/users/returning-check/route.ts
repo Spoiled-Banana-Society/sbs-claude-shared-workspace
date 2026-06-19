@@ -32,11 +32,7 @@ export async function POST(req: Request) {
 
   try {
     const { userId: did, walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) {
-      // New-user trace: wallet not yet resolved server-side → client retries.
-      logger.info('users.returning_check.no_wallet', { actor: did });
-      return json({ returning: false, reason: 'no-wallet' });
-    }
+    if (!walletAddress) return json({ returning: false, reason: 'no-wallet' });
     const wallet = walletAddress.toLowerCase();
     const db = getAdminFirestore();
 
@@ -95,7 +91,6 @@ export async function POST(req: Request) {
     // (Doc existence alone is meaningless — imports/referrals/promo writes
     // create docs for wallets that never logged in here.)
     if (!userSnap.get('firstLoginAt')) {
-      logger.info('users.first_login', { actor: wallet });
       await userRef.set({ firstLoginAt: new Date().toISOString() }, { merge: true }).catch(() => {});
       await db.collection('system_cache').doc('userRoster').delete().catch(() => {});
     }

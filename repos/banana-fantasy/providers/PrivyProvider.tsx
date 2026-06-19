@@ -31,10 +31,9 @@ export function useSafePrivy() {
   }
 }
 
-// Safe wrapper around useCreateWallet — returns a no-op when Privy isn't
-// available (SSR / no app id), mirroring useSafePrivy. Used to force-create the
-// embedded wallet for new social users on mobile Safari, where Privy's
-// createOnLogin auto-creation silently fails.
+// Safe wrapper around useCreateWallet — used to force-create the embedded wallet
+// for new social users on mobile Safari, where Privy's createOnLogin auto-create
+// silently fails (the original mobile-signup bug). No-op when Privy isn't ready.
 const CREATE_WALLET_FALLBACK = { createWallet: async () => null } as unknown as ReturnType<typeof useCreateWalletBase>;
 export function useSafeCreateWallet() {
   const available = usePrivyAvailable();
@@ -47,10 +46,9 @@ export function useSafeCreateWallet() {
   }
 }
 
-// Safe wrapper around useWallets — the embedded wallet often surfaces in this
-// list (with a `ready` flag) BEFORE it repopulates `privy.user.linkedAccounts`,
-// so reading it here shrinks the window where a new mobile social user has no
-// wallet. No-op fallback when Privy isn't available.
+// Safe wrapper around useWallets — surfaces the embedded wallet (with a `ready`
+// flag) often before privy.user.linkedAccounts repopulates, so we can detect it
+// faster and know the exact moment it's safe to force-create one.
 const WALLETS_FALLBACK = { wallets: [], ready: false } as unknown as ReturnType<typeof useWalletsBase>;
 export function useSafeWallets() {
   const available = usePrivyAvailable();

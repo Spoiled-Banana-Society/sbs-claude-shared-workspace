@@ -366,12 +366,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // useWallets() surfaces the embedded wallet (with a `ready` flag) often before
-  // privy.user.linkedAccounts repopulates — an extra source to shrink the
-  // no-wallet window for new mobile social users (esp. right after createWallet).
+  // privy.user.linkedAccounts repopulates — an extra wallet source, and the
+  // signal for when it's safe to force-create one.
   const { wallets: privyWallets, ready: walletsReady } = useSafeWallets();
+  const { createWallet } = useSafeCreateWallet();
 
   // Derive wallet address from Privy user — prioritize external wallets (MetaMask etc)
-  const clientWalletAddress = useMemo(() => {
+  const walletAddress = useMemo(() => {
     if (MOCK_AUTH) return MOCK_WALLET;
     if (!privy.user) return null;
     // First: look for an external (non-Privy) wallet
@@ -385,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (a: { type: string }) => a.type === 'wallet'
     ) as { address?: string } | undefined;
     if (anyWallet?.address) return anyWallet.address;
-    // Last resort: wallet field
+    // wallet field
     const w = privy.user.wallet;
     if (w?.address) return w.address;
     // Final source: useWallets() often surfaces the embedded wallet before
@@ -397,86 +398,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   }, [privy.user, privyWallets, walletsReady]);
 
-  // ── Mobile-Safari new-social-user wallet fallback ──────────────────────────
-  // For a brand-new Google/X/email user on mobile Safari, Privy's embedded
-  // wallet can fail to surface in `privy.user` (iOS partitions the cross-site
-  // wallet iframe storage), so `clientWalletAddress` stays null. Since the whole
-  // login/onboarding pipeline below is gated on a wallet, the header greys for
-  // ~8s then reverts to "Log In" and the account is never created. The SERVER
-  // can always resolve the wallet via the Privy User API (getPrivyUser's
-  // social-login fallback) — not subject to browser storage partitioning. We
-  // fetch it ONLY when the client couldn't derive a wallet, so the happy path
-  // (wallet present locally within the grace window) never makes this call and
-  // nothing else about auth changes.
-  const [serverWalletAddress, setServerWalletAddress] = useState<string | null>(null);
-  const serverWalletFetchedRef = useRef(false);
-  const walletAddress = clientWalletAddress ?? serverWalletAddress;
-
-  // privy in a ref so the effect's deps stay stable scalars (render-loop Rule #0).
-  const authPrivyRef = useRef(privy);
-  authPrivyRef.current = privy;
-
-  // createWallet() to force the embedded wallet into existence (kept in a ref
-  // so the effect deps stay stable). Privy's createOnLogin auto-creation
-  // silently fails for new social users on mobile Safari — diagnosed live: the
-  // wallet was null on the client AND in Privy's User API, i.e. never created.
-  const { createWallet } = useSafeCreateWallet();
+  // ── New-user embedded-wallet creation (the mobile-signup fix) ──────────────
+  // Privy's createOnLogin auto-create silently fails for brand-new social users
+  // on mobile Safari, so the wallet never appears and the whole login pipeline
+  // stalls (the original bug). When the user is authenticated but has NO wallet,
+  // force-create one: immediately once Privy's wallet state is `ready` (fast
+  // path), or after a short grace if `ready` never flips (mobile fallback).
+  // Additive — desktop/external/returning users already have a wallet here, so
+  // this never runs for them.
   const createWalletRef = useRef(createWallet);
   createWalletRef.current = createWallet;
-
+  const walletCreateTriedRef = useRef(false);
   useEffect(() => {
     if (MOCK_AUTH) return;
-    // Logged out (or a transient blink) → reset so a fresh login can retry.
-    if (!privy.authenticated) {
-      serverWalletFetchedRef.current = false;
-      setServerWalletAddress(null);
-      return;
-    }
-    // Client already derived the wallet → no fallback needed (the common path).
-    if (clientWalletAddress) return;
-    if (serverWalletFetchedRef.current) return;
-    // Grace window: let Privy surface the embedded wallet locally first (desktop
-    // resolves in <1s); only fall back to the server if it hasn't shown up. If
-    // the client wallet arrives during the wait, this effect re-runs and the
-    // cleanup cancels the timer, so the happy path never hits the server.
-    const t = setTimeout(async () => {
-      if (serverWalletFetchedRef.current) return;
-      serverWalletFetchedRef.current = true;
-      const p = authPrivyRef.current;
-      if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
-
-      // 1) Force-create the embedded wallet. Privy's createOnLogin auto-creation
-      //    silently fails for new social users on mobile Safari (diagnosed live:
-      //    wallet was null on the client AND in Privy's User API). Calling
-      //    createWallet() explicitly creates it; on success it surfaces in
-      //    privy.user → clientWalletAddress updates → this effect re-runs and the
-      //    normal login/owner pipeline proceeds.
-      try {
-        const w = await createWalletRef.current();
-        const addr = (w as { address?: string } | null)?.address ?? null;
-        if (addr) { setServerWalletAddress(addr); return; }
-      } catch {
-        // Wallet may already be creating/created (or createWallet unsupported) —
-        // fall through to the server resolve below.
-      }
-
-      // 2) Backup: a wallet may exist server-side but not have surfaced locally —
-      //    resolve it via the Privy User API (not subject to browser storage).
-      try {
-        const token = await p.getAccessToken();
-        if (!token) { serverWalletFetchedRef.current = false; return; }
-        const res = await fetch('/api/auth/resolve-wallet', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json().catch(() => null);
-        if (data?.wallet) setServerWalletAddress(data.wallet as string);
-        else serverWalletFetchedRef.current = false; // allow a later retry
-      } catch {
-        serverWalletFetchedRef.current = false;
-      }
-    }, 1000);
+    if (!privy.authenticated) { walletCreateTriedRef.current = false; return; }
+    if (walletAddress) return;            // already have a wallet — nothing to do
+    if (walletCreateTriedRef.current) return;
+    const tryCreate = () => {
+      if (walletCreateTriedRef.current) return;
+      walletCreateTriedRef.current = true;
+      createWalletRef.current().catch(() => { walletCreateTriedRef.current = false; });
+    };
+    if (walletsReady) { tryCreate(); return; }      // fast path
+    const t = setTimeout(tryCreate, 1200);          // fallback if `ready` never flips
     return () => clearTimeout(t);
-  }, [privy.authenticated, clientWalletAddress]);
+  }, [privy.authenticated, walletAddress, walletsReady]);
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);
@@ -525,42 +471,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!walletAddress) { setWeb2Resolved(true); return; }
     if (returningCheckedRef.current === walletAddress) return;
     returningCheckedRef.current = walletAddress;
-
-    let cancelled = false;
-    let retries = 0;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    // returning-check stamps firstLoginAt + the new-user bells (app-download,
-    // base-usdc-guide, …). It's auth-gated, so for a brand-new social user it
-    // can briefly resolve `no-wallet` server-side while the Privy User API
-    // catches up to the just-created embedded wallet. Retry a few times so the
-    // bells + firstLoginAt actually land instead of being permanently skipped.
-    const run = async () => {
+    (async () => {
       try {
         const token = await privyRef2.current.getAccessToken();
-        if (!token) { scheduleRetry(); return; }
+        if (!token) return;
         const res = await fetch('/api/users/returning-check', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json().catch(() => null);
-        if (data?.reason === 'no-wallet') { scheduleRetry(); return; }
         if (data?.returning) setIsBB3Holder(true);
-        if (!cancelled) setWeb2Resolved(true);
-      } catch {
-        // Network error — don't loop forever; let the wallet-snapshot path apply.
-        if (!cancelled) setWeb2Resolved(true);
-      }
-    };
-    const scheduleRetry = () => {
-      if (cancelled) return;
-      if (retries >= 4) { setWeb2Resolved(true); return; } // ~8s max, then give up
-      retries += 1;
-      retryTimer = setTimeout(() => { if (!cancelled) run(); }, 2000);
-    };
-
-    run();
-    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
+      } catch { /* best-effort — wallet-snapshot path still applies */ }
+      finally { setWeb2Resolved(true); }
+    })();
   }, [walletAddress]);
 
   // Tag Sentry with the current user so every frontend error / breadcrumb
