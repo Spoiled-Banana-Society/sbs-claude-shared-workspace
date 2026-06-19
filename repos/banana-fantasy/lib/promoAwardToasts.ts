@@ -14,7 +14,7 @@
  * nudges the bell to refetch so they're visible the moment the user opens it.
  */
 
-import { markLocalSurface, requestBellRefetch } from '@/lib/localSurfaceDedupe';
+import { markLocalSurface, requestBellRefetch, wasRecentLocalSurface } from '@/lib/localSurfaceDedupe';
 
 export interface PurchasePromoAwards {
   mintMilestonesEarned?: number;
@@ -47,7 +47,7 @@ export function surfacePurchasePromoAwards(
   if (typeof window === 'undefined') return;
 
   const firstPurchase = awards?.firstPurchaseSpinsEarned ?? 0;
-  if (firstPurchase > 0) {
+  if (firstPurchase > 0 && !wasRecentLocalSurface('promo-first-purchase')) {
     markLocalSurface('promo-first-purchase');
     toast(
       show,
@@ -59,7 +59,7 @@ export function surfacePurchasePromoAwards(
   }
 
   const buy10 = awards?.mintMilestonesEarned ?? 0;
-  if (buy10 > 0) {
+  if (buy10 > 0 && !wasRecentLocalSurface('promo-buy-10')) {
     markLocalSurface('promo-buy-10');
     toast(
       show,
@@ -72,7 +72,7 @@ export function surfacePurchasePromoAwards(
   // hidden from the UI (retired); surfacing it here would confuse users.
 
   const cardFree = opts.cardFreeDraftsEarned ?? 0;
-  if (cardFree > 0) {
+  if (cardFree > 0 && !wasRecentLocalSurface('promo-card-free-draft')) {
     markLocalSurface('promo-card-free-draft');
     toast(
       show,

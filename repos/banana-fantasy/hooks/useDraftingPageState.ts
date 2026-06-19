@@ -801,7 +801,24 @@ export function useDraftingPageState() {
       subscribeRealTimeDraftInfo(draftId, (info) => {
         if (!info) return;
         const pickNumber = typeof info.pickNumber === 'number' ? info.pickNumber : 0;
-        if (pickNumber < 1) return; // not drafting yet — reveal flow owns the row
+        // Load the reveal clock from THIS fast RTDB push even during the reveal
+        // window (pickNumber 0), so getLiveState's server-clock branch fires
+        // immediately and the type can't leak as "filling 10/10" before the
+        // clock arrives via the slower league-players fetch (the mobile/refresh
+        // "PRO before reveal" bug). Future-only guard: a just-filled draft's
+        // start is ~60s out, so accept future/just-now values and REJECT a
+        // stale reused-id PAST value. An already-started draft (past start) is
+        // unaffected — it's driven by the pickNumber>=1 path below + the
+        // enginePickNumber short-circuit, so this never replays its reveal.
+        const revealStartMs = typeof info.draftStartTime === 'number' && info.draftStartTime > 0
+          ? info.draftStartTime * 1000 : 0;
+        if (revealStartMs && revealStartMs > Date.now() - 3000) {
+          const ex = draftStore.getDraft(draftId);
+          if (ex && ex.draftStartTimeMs !== revealStartMs) {
+            draftStore.updateDraft(draftId, { draftStartTimeMs: revealStartMs });
+          }
+        }
+        if (pickNumber < 1) return; // not drafting yet — reveal flow owns the row (clock set above)
         const existing = draftStore.getDraft(draftId);
         if (!existing) return;
 

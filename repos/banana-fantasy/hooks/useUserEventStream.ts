@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/components/ui/Toast';
 import { subscribeUserEvents, type UserStreamEvent } from '@/lib/api/firebase';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
-import { wasRecentLocalSurface } from '@/lib/localSurfaceDedupe';
+import { wasRecentLocalSurface, markLocalSurface } from '@/lib/localSurfaceDedupe';
 
 /**
  * Real-time user event stream — primary surface for badge unlocks +
@@ -295,6 +295,10 @@ export function useUserEventStream() {
             message,
             ...(link ? { action: { label: 'View', onClick: () => { window.location.href = link; } } } : {}),
           });
+          // Mark AFTER showing so the other surface (the purchase-response toast
+          // in surfacePurchasePromoAwards) is suppressed if the stream wins the
+          // race — makes the dedupe bidirectional (fixes the double-toast).
+          markLocalSurface(event.type);
         },
         // No-op: the persistent bell entry is now created SERVER-SIDE in
         // pushStreamEvent (lib/userEventStream.ts → createNotification), so
