@@ -485,9 +485,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const token = await privyRef2.current.getAccessToken();
         if (!token) { scheduleRetry(); return; }
+        // Pass the wallet the browser already holds. The server prefers its own
+        // Privy-resolved wallet, but falls back to this when Privy's User API
+        // hasn't propagated the fresh embedded wallet yet — so firstLoginAt +
+        // the new-user bells land on the first try instead of being skipped.
         const res = await fetch('/api/users/returning-check', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet: walletAddress }),
         });
         const data = await res.json().catch(() => null);
         if (data?.reason === 'no-wallet') { scheduleRetry(); return; }

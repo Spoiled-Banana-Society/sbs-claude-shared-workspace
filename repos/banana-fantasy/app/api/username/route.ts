@@ -15,16 +15,29 @@ import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import { checkUsername, claimUsername } from '@/lib/usernames';
 
-async function requireWallet(req: Request): Promise<string> {
+// Resolve the caller's wallet. getPrivyUser still authenticates them (throws
+// 401 on a bad/absent token), so only a logged-in user reaches the fallback:
+// when Privy's User API hasn't propagated a brand-new embedded wallet yet, we
+// trust the wallet the client holds (same as the no-auth seed path). The claim
+// is scoped to that wallet's own doc, so the worst a spoofed value could do is
+// reserve a name — no access to funds or anyone else's account.
+function validClientWallet(w: unknown): string | null {
+  return typeof w === 'string' && /^0x[0-9a-fA-F]{40}$/.test(w) ? w.toLowerCase() : null;
+}
+
+async function resolveWallet(req: Request, clientWallet: unknown): Promise<string> {
   const user = await getPrivyUser(req);
-  if (!user.walletAddress) throw new ApiError(400, 'wallet required');
-  return user.walletAddress;
+  if (user.walletAddress) return user.walletAddress.toLowerCase();
+  const fallback = validClientWallet(clientWallet);
+  if (fallback) return fallback;
+  throw new ApiError(400, 'wallet required');
 }
 
 export async function GET(req: Request) {
   try {
-    const wallet = await requireWallet(req);
-    const name = new URL(req.url).searchParams.get('name') || '';
+    const url = new URL(req.url);
+    const wallet = await resolveWallet(req, url.searchParams.get('wallet'));
+    const name = url.searchParams.get('name') || '';
     if (!name.trim()) return NextResponse.json({ available: false, reason: 'too_short' });
     const result = await checkUsername(name, wallet);
     return NextResponse.json(result);
@@ -36,8 +49,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const wallet = await requireWallet(req);
     const body = await req.json().catch(() => ({}));
+    const wallet = await resolveWallet(req, body.wallet);
     const name = typeof body.name === 'string' ? body.name : '';
     const result = await claimUsername(name, wallet);
     if (!result.available) {

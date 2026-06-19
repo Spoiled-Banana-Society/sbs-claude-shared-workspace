@@ -151,7 +151,7 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         const res = await fetch('/api/username', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
+          body: JSON.stringify({ name, wallet: user?.walletAddress }),
         });
         if (res.ok) { setNameError(null); return true; }
         const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };

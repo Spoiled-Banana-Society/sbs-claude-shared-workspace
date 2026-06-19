@@ -54,7 +54,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
     const t = setTimeout(async () => {
       try {
         const headers = await authHeadersRef.current();
-        const res = await fetch(`/api/username?name=${encodeURIComponent(name)}`, { headers, cache: 'no-store' });
+        const res = await fetch(`/api/username?name=${encodeURIComponent(name)}&wallet=${encodeURIComponent(user?.walletAddress ?? '')}`, { headers, cache: 'no-store' });
         const data = (await res.json()) as { available?: boolean; reason?: string };
         if (cancelled) return;
         setNameError(data.available ? null : usernameErrorText(data.reason));
@@ -94,7 +94,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
         try {
           const headers = await authHeaders();
           const res = await fetch('/api/username', {
-            method: 'POST', headers, body: JSON.stringify({ name: username.trim() }),
+            method: 'POST', headers, body: JSON.stringify({ name: username.trim(), wallet: user?.walletAddress }),
           });
           if (res.ok) { setNameError(null); claimed = true; break; }
           const data = (await res.json().catch(() => ({}))) as { reason?: string; error?: string };

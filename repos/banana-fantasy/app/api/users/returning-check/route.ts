@@ -32,10 +32,20 @@ export async function POST(req: Request) {
 
   try {
     const { userId: did, walletAddress } = await getPrivyUser(req);
-    if (!walletAddress) {
+    // Fallback to the client-supplied wallet when Privy's User API hasn't yet
+    // propagated a brand-new embedded wallet (the JWT still authenticates the
+    // user via `did`, so this only decides WHICH of the caller's own wallets we
+    // stamp firstLoginAt / new-user bells onto — the returning-player identity
+    // match below stays server-verified off `did`). This is the same trust the
+    // no-auth seed path already uses, and it's the one path that never fails.
+    let body: { wallet?: string } = {};
+    try { body = (await req.json()) as { wallet?: string }; } catch { /* no body */ }
+    const clientWallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet)
+      ? body.wallet.toLowerCase() : null;
+    const wallet = (walletAddress?.toLowerCase()) || clientWallet;
+    if (!wallet) {
       return json({ returning: false, reason: 'no-wallet' });
     }
-    const wallet = walletAddress.toLowerCase();
     const db = getAdminFirestore();
 
     // ── On-login bells (every session; dedupeKeys make them idempotent so a
