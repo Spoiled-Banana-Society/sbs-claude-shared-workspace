@@ -323,7 +323,14 @@ export function BuyTab({
                   {team.price != null ? (
                     <>
                       <p className="font-mono font-bold text-[17px] text-text-primary leading-tight">${team.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</p>
-                      <p className="font-mono text-[10.5px] text-text-muted truncate">{hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : team.name}</p>
+                      {/* Keep the Team # visible alongside the price (don't let the
+                          listing price replace it), plus pts/League # for context. */}
+                      <p className="font-mono text-[10.5px] text-text-muted truncate">
+                        {team.name}
+                        {hasSeasonStarted() && team.points > 0
+                          ? ` · ${team.points.toLocaleString()} pts`
+                          : team.leagueNumber != null ? ` · League #${team.leagueNumber}` : ''}
+                      </p>
                     </>
                   ) : (
                     <>

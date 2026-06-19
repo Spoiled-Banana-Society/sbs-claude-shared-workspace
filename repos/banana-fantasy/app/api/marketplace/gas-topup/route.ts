@@ -40,10 +40,11 @@ function dayKey(): string {
  *
  * "We pay the gas" for the marketplace actions an external wallet must send
  * itself (NFT approval, accept-offer fulfillment, cancel listing — none of
- * which can be signature-relayed). Sends the exact ETH shortfall for the
- * pending action to the AUTHENTICATED user's wallet. Guard rails: Privy JWT
+ * which can be signature-relayed). Sends the per-action gas amount to the
+ * AUTHENTICATED user's wallet — ALWAYS, even if the wallet already has ETH, so
+ * SBS covers gas for everyone incl. web3 users. Guard rails: Privy JWT
  * required, wallet comes from the token (not the body), fixed per-action
- * targets, shortfall-only funding, hard per-send cap, daily per-wallet cap.
+ * targets, hard per-send cap, daily per-wallet cap.
  */
 export async function POST(req: Request) {
   if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
@@ -72,12 +73,12 @@ export async function POST(req: Request) {
       return jsonError(`Unknown action: ${action}`, 400);
     }
 
-    const balance = await publicClient.getBalance({ address: wallet });
-    if (balance >= target) {
-      return json({ success: true, funded: false, sufficient: true });
-    }
-    const shortfall = target - balance;
-    if (shortfall > MAX_SINGLE_TOPUP_WEI) {
+    // Always fund the action's gas — even if the wallet already has ETH. SBS
+    // covers gas for EVERYONE incl. web3 users with their own ETH (Richard's
+    // call 2026-06-18). We send the full per-action amount rather than just the
+    // shortfall; the per-wallet daily cap below bounds any abuse (a few cents).
+    const amount = target;
+    if (amount > MAX_SINGLE_TOPUP_WEI) {
       // Unreachable with the current targets; guards future target edits.
       return jsonError('Top-up amount out of range', 400);
     }
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
           dayKey: day,
           dayCount: count + 1,
           totalCount: FieldValue.increment(1),
-          totalWei: FieldValue.increment(Number(shortfall)),
+          totalWei: FieldValue.increment(Number(amount)),
           lastAction: action,
           lastAt: FieldValue.serverTimestamp(),
         }, { merge: true });
@@ -116,11 +117,11 @@ export async function POST(req: Request) {
       }
     }
 
-    const txHash = await sendEthFromAdmin({ to: wallet, amountWei: shortfall });
+    const txHash = await sendEthFromAdmin({ to: wallet, amountWei: amount });
     logger.info(LOG_SOURCES.payment.GAS_TOPUP_SENT, {
       wallet,
       action,
-      amountWei: shortfall.toString(),
+      amountWei: amount.toString(),
       txHash,
     });
 
