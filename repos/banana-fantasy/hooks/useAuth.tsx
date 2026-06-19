@@ -431,56 +431,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (serverWalletFetchedRef.current) return;
       serverWalletFetchedRef.current = true;
       const p = authPrivyRef.current;
-      console.log('[walletdebug] grace elapsed, no client wallet', { authenticated: p.authenticated, hasUser: !!p.user });
       if (!p.authenticated || !p.user) { serverWalletFetchedRef.current = false; return; }
 
       // 1) Force-create the embedded wallet. Privy's createOnLogin auto-creation
-      //    silently fails for new social users on mobile Safari — calling
-      //    createWallet() explicitly creates it. On success it surfaces in
-      //    privy.user → clientWalletAddress updates → this effect re-runs and
-      //    the normal login/owner pipeline proceeds. If it throws, the logged
-      //    error tells us the exact blocker (gesture / webcrypto / config).
+      //    silently fails for new social users on mobile Safari (diagnosed live:
+      //    wallet was null on the client AND in Privy's User API). Calling
+      //    createWallet() explicitly creates it; on success it surfaces in
+      //    privy.user → clientWalletAddress updates → this effect re-runs and the
+      //    normal login/owner pipeline proceeds.
       try {
-        console.log('[walletdebug] forcing createWallet()');
         const w = await createWalletRef.current();
         const addr = (w as { address?: string } | null)?.address ?? null;
-        console.log('[walletdebug] createWallet ok', { address: addr });
         if (addr) { setServerWalletAddress(addr); return; }
-      } catch (e) {
-        console.log('[walletdebug] createWallet failed', String((e as { message?: string })?.message ?? e));
+      } catch {
+        // Wallet may already be creating/created (or createWallet unsupported) —
+        // fall through to the server resolve below.
       }
 
-      // 2) Backup: maybe a wallet exists server-side but didn't surface — resolve it.
+      // 2) Backup: a wallet may exist server-side but not have surfaced locally —
+      //    resolve it via the Privy User API (not subject to browser storage).
       try {
         const token = await p.getAccessToken();
-        if (!token) { console.log('[walletdebug] no access token'); serverWalletFetchedRef.current = false; return; }
+        if (!token) { serverWalletFetchedRef.current = false; return; }
         const res = await fetch('/api/auth/resolve-wallet', {
           headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json().catch(() => null);
-        console.log('[walletdebug] resolve-wallet response', { status: res.status, wallet: data?.wallet ?? null });
         if (data?.wallet) setServerWalletAddress(data.wallet as string);
         else serverWalletFetchedRef.current = false; // allow a later retry
-      } catch (e) {
-        console.log('[walletdebug] resolve-wallet threw', e);
+      } catch {
         serverWalletFetchedRef.current = false;
       }
-    }, 2000);
+    }, 1000);
     return () => clearTimeout(t);
   }, [privy.authenticated, clientWalletAddress]);
-
-  // TEMP diagnostic (remove after mobile-signup debug): prints the exact auth
-  // state on every change so the console spells out where new-social-user
-  // login stalls (does it reach authenticated? does a wallet ever resolve?).
-  useEffect(() => {
-    console.log('[walletdebug] state', {
-      ready: privy.ready,
-      authenticated: privy.authenticated,
-      hasUser: !!privy.user,
-      clientWallet: clientWalletAddress,
-      serverWallet: serverWalletAddress,
-    });
-  }, [privy.ready, privy.authenticated, privy.user, clientWalletAddress, serverWalletAddress]);
 
   // Track whether we've already started fetching for this wallet
   const fetchingRef = useRef<string | null>(null);

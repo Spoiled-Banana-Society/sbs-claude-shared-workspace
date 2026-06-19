@@ -27,10 +27,7 @@ export async function GET(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
   try {
-    const { walletAddress, userId } = await getPrivyUser(req);
-    // TEMP diagnostic (remove after mobile-signup debug): records whether the
-    // Privy User API could resolve a wallet for this user server-side.
-    logger.info('auth.resolve_wallet.result', { userId, wallet: walletAddress ?? null });
+    const { walletAddress } = await getPrivyUser(req);
     return json({ wallet: walletAddress ?? null });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
