@@ -235,17 +235,19 @@ async function privyUserApiFetchOnce(userId: string): Promise<string | null> {
 
 async function fetchWalletFromPrivyUserApi(userId: string): Promise<string | null> {
   const cached = privyUserCache.get(userId);
-  if (cached && cached.expires > Date.now()) return cached.walletAddress;
+  // CRITICAL: only a POSITIVE cached wallet may short-circuit. A cached NULL
+  // must NEVER be served — proven via the Privy probe: a brand-new web2 user's
+  // embedded wallet IS linked in Privy, but lands a beat after login. The first
+  // request resolved null and cached it; every request in that 5s window
+  // (returning-check + ALL its client retries, the username claim) then got the
+  // stale null and never re-queried Privy — so firstLoginAt/bells were skipped
+  // and the name claim 400'd as "Username unavailable". Re-resolving on every
+  // call until the wallet appears is what actually fixes the first session.
+  if (cached && cached.walletAddress && cached.expires > Date.now()) return cached.walletAddress;
 
-  // A brand-new web2/social signup creates its embedded wallet CLIENT-side, and
-  // Privy's server-side User API only learns about it a beat later (the JWT
-  // never carries the wallet claim for social logins). So the first auth'd
-  // request of a fresh session would resolve a null wallet — which 400s the
-  // username claim (surfaced as "Username unavailable") and makes
-  // returning-check skip firstLoginAt + the welcome bells. Retry briefly within
-  // the request so the wallet resolves the moment propagation lands, instead of
-  // hard-failing the whole first session. Only fresh-wallet users ever loop
-  // here; for everyone else the first call returns a wallet immediately.
+  // Retry briefly within the request so the wallet resolves the moment Privy
+  // propagation lands. Only fresh-wallet users ever loop here; everyone else's
+  // first call returns a wallet immediately (then positive-cached for 5min).
   let wallet: string | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     wallet = await privyUserApiFetchOnce(userId);
