@@ -8,6 +8,9 @@ interface PromosSidebarProps {
   promos: Promo[];
   promoIndex: number;
   promoCount: number;
+  /** True while promos are still loading (e.g. on refresh, before auth/promos
+   *  resolve) — so we show a loading state instead of flashing "No promos". */
+  loading?: boolean;
   claimedPromos: Set<string>;
   onSelectPromo: (promo: Promo) => void;
   onClaim: (promo: Promo, e?: React.MouseEvent) => void | Promise<void>;
@@ -20,6 +23,7 @@ export function PromosSidebar({
   promos,
   promoIndex,
   promoCount,
+  loading,
   claimedPromos,
   onSelectPromo,
   onClaim,
@@ -38,7 +42,7 @@ export function PromosSidebar({
 
       {promoCount === 0 ? (
         <div className="rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] flex items-center justify-center text-sm text-[#4a4a4a]">
-          No promos available
+          {loading ? 'Loading promos…' : 'No promos available'}
         </div>
       ) : (
         (() => {

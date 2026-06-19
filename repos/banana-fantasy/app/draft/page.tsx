@@ -357,6 +357,7 @@ export default function DraftingPage() {
             promos={promos}
             promoIndex={promoIndex}
             promoCount={promoCount}
+            loading={isLoading || promosQuery.isLoading}
             claimedPromos={claimedPromos}
             onSelectPromo={setSelectedPromo}
             onClaim={handleClaim}

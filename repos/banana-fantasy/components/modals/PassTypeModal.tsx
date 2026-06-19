@@ -35,7 +35,7 @@ export function PassTypeModal({
           <button
             onClick={() => hasPaid && onSelect('paid')}
             disabled={!hasPaid}
-            className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+            className={`w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 text-left transition-all ${
               hasPaid
                 ? 'border-banana/30 bg-banana/5 hover:border-banana hover:bg-banana/10 hover:scale-[1.02] cursor-pointer'
                 : 'border-bg-elevated bg-bg-tertiary opacity-50 cursor-not-allowed'
@@ -58,7 +58,7 @@ export function PassTypeModal({
           <button
             onClick={() => hasFree && onSelect('free')}
             disabled={!hasFree}
-            className={`w-full p-4 rounded-xl border-2 text-left transition-all ${
+            className={`w-full p-5 min-h-[5.5rem] flex flex-col justify-center rounded-xl border-2 text-left transition-all ${
               hasFree
                 ? 'border-green-500/30 bg-green-500/5 hover:border-green-500 hover:bg-green-500/10 hover:scale-[1.02] cursor-pointer'
                 : 'border-bg-elevated bg-bg-tertiary opacity-50 cursor-not-allowed'
