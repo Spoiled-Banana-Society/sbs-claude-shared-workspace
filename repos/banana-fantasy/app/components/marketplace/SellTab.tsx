@@ -232,11 +232,6 @@ export function SellTab({
                         <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
                       )}
                     </div>
-                    {/* Offers badge only for LISTED teams — fetching offers per
-                        card for every owned team flooded the rate limiter. */}
-                    {team.orderHash && (
-                      <div className="absolute top-3 right-3 z-10"><SellTabOfferBadge tokenId={team.tokenId} /></div>
-                    )}
                   </div>
 
                   {/* Footer below the card — info + action sit on their own row so
@@ -252,6 +247,9 @@ export function SellTab({
                           ? `From wheel · Filling${typeof team.lobbyCount === 'number' ? ` ${team.lobbyCount}/10` : ''}`
                           : hasSeasonStarted() && team.points > 0 ? `${team.points.toLocaleString()} pts` : team.leagueNumber != null ? `League #${team.leagueNumber}` : 'Not listed'}
                       </p>
+                      {/* Best offer — only for LISTED teams; fetching offers per
+                          card for every owned team flooded the rate limiter. */}
+                      {team.orderHash && <SellTabOfferBadge tokenId={team.tokenId} />}
                     </div>
                     <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
                       {team.orderHash ? (
@@ -559,7 +557,7 @@ export function SellTab({
 function SellTabOfferBadge({ tokenId }: { tokenId: string }) {
   const { bestOffer } = useNftOffers(tokenId);
   if (!bestOffer) return null;
-  return <span className="text-xs text-banana font-mono font-medium">Best offer: ${bestOffer.amount.toFixed(2)}</span>;
+  return <p className="mt-0.5 text-[10.5px] text-text-muted font-mono">Best offer <span className="text-banana font-semibold">${bestOffer.amount.toFixed(2)}</span></p>;
 }
 
 const HOUR = 60 * 60;

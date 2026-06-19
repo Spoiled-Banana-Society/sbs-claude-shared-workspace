@@ -8,6 +8,7 @@ import type { League } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 import type { ModalTab } from './LeagueDetailModal';
 import { useUnreadChatCount } from '@/hooks/useUnreadChatCount';
+import { useNftOffers } from '@/hooks/useMarketplace';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 interface TeamCardProps {
@@ -195,6 +196,10 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         )}
       </div>
 
+      {/* Best offer — only for LISTED teams (fetching offers for every owned
+          team floods the rate limiter), mirrors the marketplace Sell tab. */}
+      {isListed && mt?.tokenId && <TeamOfferLine tokenId={mt.tokenId} />}
+
       {/* List for Sale — straight to the working list/delist form for this token.
           Shown only when it's actually listable: a wheel-won filling pass, an
           already-listed item, or a paid team. A free team mid-season can't list. */}
@@ -228,6 +233,21 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         ))}
       </div>
 
+    </div>
+  );
+}
+
+// Best offer on a listed team, shown under the Team #/League # strip. Matches
+// the marketplace Sell tab. Gated to listed teams by the caller so we don't
+// fetch offers for every owned team (rate-limiter protection).
+function TeamOfferLine({ tokenId }: { tokenId: string }) {
+  const { bestOffer } = useNftOffers(tokenId);
+  if (!bestOffer) return null;
+  return (
+    <div className="px-4 pt-1">
+      <span className="text-[11px] text-text-muted font-mono">
+        Best offer <span className="text-banana font-semibold">${bestOffer.amount.toFixed(2)}</span>
+      </span>
     </div>
   );
 }
