@@ -133,7 +133,7 @@ export default function NftDetailPage() {
   // the Offers section so the owner can Accept without scrolling the whole page.
   const reviewOffers = searchParams?.get('review') === 'offers';
   const offersSectionRef = React.useRef<HTMLDivElement>(null);
-  const { isLoggedIn, walletAddress, user, setShowLoginModal } = useAuth();
+  const { isLoggedIn, walletAddress, user, setShowLoginModal, isEmbeddedWallet } = useAuth();
   const { wallets, ready: _walletsReady } = useWallets();
   const { sendTransaction } = useSendTransaction();
   const { fundWallet } = useFundWallet();
@@ -1764,11 +1764,11 @@ export default function NftDetailPage() {
                           <span className="text-lg font-bold text-text-primary">$</span>
                         </div>
                         <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          USDC
+                          {isEmbeddedWallet ? 'Balance' : 'USDC'}
                         </span>
                         {user?.usdcBalance != null && (
                           <p className="text-text-muted text-[10px] mt-1">
-                            Balance: ${user.usdcBalance.toFixed(2)}
+                            {isEmbeddedWallet ? `$${user.usdcBalance.toFixed(2)}` : `Balance: $${user.usdcBalance.toFixed(2)}`}
                           </p>
                         )}
                       </button>
@@ -1829,7 +1829,7 @@ export default function NftDetailPage() {
                       </>
                     ) : (
                       <>
-                        Pay ${(price + 0.01).toFixed(2)} USDC
+                        Pay ${(price + 0.01).toFixed(2)}{isEmbeddedWallet ? '' : ' USDC'}
                       </>
                     )}
                   </button>

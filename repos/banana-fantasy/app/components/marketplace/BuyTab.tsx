@@ -7,6 +7,7 @@ import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
+import { useAuth } from '@/hooks/useAuth';
 
 type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
 type BuyStep = 'confirm' | 'processing' | 'complete';
@@ -109,6 +110,9 @@ export function BuyTab({
   onSetPaymentMethod,
   onHandleBuy,
 }: BuyTabProps) {
+  // Web2 (embedded) users pay from their in-app balance — label it "Balance",
+  // not "USDC" (crypto jargon). Web3 users keep "USDC".
+  const { isEmbeddedWallet } = useAuth();
   const isTeamsLoading = viewFilter === 'all' || viewFilter === 'top' || viewFilter === 'pro' || viewFilter === 'jackpot' || viewFilter === 'hof'
     ? allNftsLoading
     : listingsLoading;
@@ -631,8 +635,8 @@ export function BuyTab({
                         <div className="flex items-center justify-center gap-2 mb-2">
                           <span className="text-lg font-bold text-text-primary">$</span>
                         </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</span>
-                        {userUsdcBalance != null && <p className="text-text-muted text-[10px] mt-1">Balance: ${userUsdcBalance.toFixed(2)}</p>}
+                        <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
+                        {userUsdcBalance != null && <p className="text-text-muted text-[10px] mt-1">{isEmbeddedWallet ? `$${userUsdcBalance.toFixed(2)}` : `Balance: $${userUsdcBalance.toFixed(2)}`}</p>}
                       </button>
                     </div>
                   </div>
@@ -681,7 +685,7 @@ export function BuyTab({
                         Pay ${((selectedTeam.price || 0) * 1.03).toFixed(2)}
                       </>
                     ) : (
-                      <>Pay ${((selectedTeam.price || 0) + 0.01).toFixed(2)} USDC</>
+                      <>Pay ${((selectedTeam.price || 0) + 0.01).toFixed(2)}{isEmbeddedWallet ? '' : ' USDC'}</>
                     )}
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
