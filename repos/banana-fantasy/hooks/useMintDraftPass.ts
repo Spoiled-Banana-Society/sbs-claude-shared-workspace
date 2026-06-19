@@ -287,8 +287,27 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           // Embedded (web2) wallet — sign silently for a true one-tap mint.
           // showWalletUIs:false suppresses the Privy confirm modal. Embedded
           // wallets are always on Base, so no network switch is needed.
+          //
+          // Privy signs via viem, which (UNLIKE the raw eth_signTypedData_v4
+          // path below) wants NO `EIP712Domain` entry in `types` and bigint —
+          // not stringified — values. Passing the JSON-RPC-shaped `typedData`
+          // here yielded a malformed signature that USDC rejected with
+          // "EIP2612: invalid signature", breaking every embedded-wallet USDC
+          // purchase. Build a viem-shaped payload for this path.
+          const viemTypedData = {
+            domain: typedData.domain,
+            types: { Permit: typedData.types.Permit },
+            primaryType: 'Permit' as const,
+            message: {
+              owner: activeWallet.address as Address,
+              spender: adminAddress,
+              value,
+              nonce: userNonce as bigint,
+              deadline,
+            },
+          };
           const result = await signTypedDataRef.current(
-            typedData as unknown as SignTypedDataParams,
+            viemTypedData as unknown as SignTypedDataParams,
             { uiOptions: { showWalletUIs: false }, address: activeWallet.address },
           );
           signature = result.signature as Hex;
