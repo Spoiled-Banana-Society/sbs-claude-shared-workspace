@@ -103,13 +103,21 @@ export async function POST(req: Request) {
     }
     const deadline = BigInt(Math.floor(deadlineNum));
 
-    const signatureStr = requireString(body.signature, 'signature');
+    // Permit signature is OPTIONAL. Smart-account wallets (EIP-7702/Privy smart
+    // wallets) can't produce an ECDSA permit USDC accepts, so they set the
+    // allowance with an on-chain `approve` and send NO signature (sentinel
+    // '0x'). We only parse + submit a permit below when the on-chain allowance
+    // doesn't already cover the purchase.
+    const signatureStr = typeof body.signature === 'string' ? body.signature : '';
+    const hasPermitSig = signatureStr.length > 0 && signatureStr !== '0x';
     const signature = (signatureStr.startsWith('0x') ? signatureStr : `0x${signatureStr}`) as Hex;
-    let parsedSig: { v: number; r: Hex; s: Hex };
-    try {
-      parsedSig = parsePermitSignature(signature);
-    } catch (err) {
-      return jsonError(`invalid signature: ${(err as Error).message}`, 400);
+    let parsedSig: { v: number; r: Hex; s: Hex } | null = null;
+    if (hasPermitSig) {
+      try {
+        parsedSig = parsePermitSignature(signature);
+      } catch (err) {
+        return jsonError(`invalid signature: ${(err as Error).message}`, 400);
+      }
     }
 
     const paymentMethodRaw = body.paymentMethod;
@@ -202,8 +210,11 @@ export async function POST(req: Request) {
         }) as Promise<bigint>;
 
       // 1. Ensure the admin wallet can pull `value`. Skip the permit if a prior
-      //    (unconsumed) allowance already covers it.
-      if ((await readAllowance()) < value) {
+      //    (unconsumed) allowance already covers it — OR if the buyer is a smart
+      //    account that set the allowance via an on-chain approve (no permit sig
+      //    sent; parsedSig is null). The allowance is re-verified at 1b below, so
+      //    a missing/failed approve is caught cleanly there ("You were NOT charged").
+      if ((await readAllowance()) < value && parsedSig) {
         try {
           permitTxHash = await submitUsdcPermit({
             owner,

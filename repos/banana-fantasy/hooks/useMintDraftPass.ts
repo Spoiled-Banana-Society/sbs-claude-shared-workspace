@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWallets, useSignTypedData, type SignTypedDataParams } from '@privy-io/react-auth';
+import { useWallets, useSignTypedData, useSendTransaction, type SignTypedDataParams } from '@privy-io/react-auth';
 import {
   createPublicClient,
+  encodeFunctionData,
   http,
   type Address,
   type Hex,
@@ -11,6 +12,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import {
   BASE,
+  BASE_CHAIN_ID,
   BASE_RPC_URL,
   BASE_SEPOLIA_USDC_ADDRESS,
   BBB4_ABI,
@@ -101,6 +103,14 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   const { signTypedData } = useSignTypedData();
   const signTypedDataRef = useRef(signTypedData);
   signTypedDataRef.current = signTypedData;
+
+  // Gas-sponsored send for embedded wallets (same proven path as useListTeam).
+  // Smart-account embedded wallets can't produce an ECDSA permit USDC accepts,
+  // so they grant the allowance with a real (sponsored, gasless) `approve` tx
+  // instead; the relay then skips the permit and pulls + mints as usual.
+  const { sendTransaction } = useSendTransaction();
+  const sendTransactionRef = useRef(sendTransaction);
+  sendTransactionRef.current = sendTransaction;
 
   const [isApproving, setIsApproving] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
@@ -273,40 +283,78 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const value = (price as bigint) * BigInt(quantity);
         const deadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_SECONDS);
 
-        const typedData = buildUsdcPermitTypedData({
-          owner: activeWallet.address as Address,
-          spender: adminAddress,
-          value,
-          nonce: userNonce as bigint,
-          deadline,
-        });
+        const isEmbedded = activeWallet.walletClientType === 'privy';
 
-        // Request the EIP-712 permit signature (gasless — no gas prompt either way).
-        let signature: Hex;
-        if (activeWallet.walletClientType === 'privy') {
-          // Embedded (web2) wallet — sign silently for a true one-tap mint.
-          // showWalletUIs:false suppresses the Privy confirm modal. Embedded
-          // wallets are always on Base, so no network switch is needed.
-          const result = await signTypedDataRef.current(
-            typedData as unknown as SignTypedDataParams,
-            { uiOptions: { showWalletUIs: false }, address: activeWallet.address },
+        // Detect a smart-contract account (e.g. an EIP-7702 / Privy smart wallet
+        // — it has on-chain bytecode). USDC validates permits for such accounts
+        // via EIP-1271, which REJECTS a plain ECDSA permit ("EIP2612: invalid
+        // signature"). So for an embedded smart account we grant the allowance
+        // with a real, gas-sponsored `approve` tx instead of a permit signature;
+        // the relay then sees the allowance and skips the permit (no signature
+        // needed) before pulling + minting. Plain EOAs keep the gasless permit.
+        let walletCode: string | undefined;
+        try {
+          walletCode = await publicClient.getBytecode({ address: activeWallet.address as Address });
+        } catch { walletCode = undefined; }
+        const isSmartAccount = !!walletCode && walletCode !== '0x';
+
+        const ALLOWANCE_ABI = [{
+          type: 'function', name: 'allowance', stateMutability: 'view',
+          inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }],
+          outputs: [{ type: 'uint256' }],
+        }] as const;
+        const APPROVE_ABI = [{
+          type: 'function', name: 'approve', stateMutability: 'nonpayable',
+          inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
+          outputs: [{ type: 'bool' }],
+        }] as const;
+
+        // '0x' is a sentinel meaning "no permit — allowance set on-chain instead".
+        let signature: Hex = '0x';
+        if (isEmbedded && isSmartAccount) {
+          // Gas-sponsored approve (Privy sponsors it → $0 for the user).
+          const approveData = encodeFunctionData({ abi: APPROVE_ABI, functionName: 'approve', args: [adminAddress, value] });
+          await sendTransactionRef.current(
+            { to: BASE_SEPOLIA_USDC_ADDRESS, data: approveData, chainId: BASE_CHAIN_ID },
+            { sponsor: true, uiOptions: { showWalletUIs: false } },
           );
-          signature = result.signature as Hex;
-        } else {
-          // External wallet (MetaMask/Coinbase) — must sign in its own popup;
-          // we can't (and shouldn't) suppress that. Ensure it's on Base first:
-          // the permit domain references Base (8453), so a wallet on another
-          // network would warn or refuse. ensureBaseNetwork switches/adds Base
-          // and returns clear copy on failure instead of a murky signature error.
-          const provider = await activeWallet.getEthereumProvider();
-          const baseNet = await ensureBaseNetwork(provider);
-          if (!baseNet.ok) {
-            throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+          // Wait until the allowance actually reflects on-chain before the relay
+          // reads it (RPC nodes can lag a block behind the just-mined approve).
+          for (let i = 0; i < 20; i++) {
+            const allowance = (await publicClient.readContract({
+              address: BASE_SEPOLIA_USDC_ADDRESS, abi: ALLOWANCE_ABI,
+              functionName: 'allowance', args: [activeWallet.address as Address, adminAddress],
+            }).catch(() => 0n)) as bigint;
+            if (allowance >= value) break;
+            await new Promise((r) => setTimeout(r, 1500));
           }
-          signature = (await provider.request({
-            method: 'eth_signTypedData_v4',
-            params: [activeWallet.address, JSON.stringify(typedData)],
-          })) as Hex;
+        } else {
+          const typedData = buildUsdcPermitTypedData({
+            owner: activeWallet.address as Address,
+            spender: adminAddress,
+            value,
+            nonce: userNonce as bigint,
+            deadline,
+          });
+          if (isEmbedded) {
+            // Embedded EOA — sign the gasless permit silently for a one-tap mint.
+            const result = await signTypedDataRef.current(
+              typedData as unknown as SignTypedDataParams,
+              { uiOptions: { showWalletUIs: false }, address: activeWallet.address },
+            );
+            signature = result.signature as Hex;
+          } else {
+            // External wallet (MetaMask/Coinbase) — signs in its own popup; ensure Base first.
+            const provider = await activeWallet.getEthereumProvider();
+            const baseNet = await ensureBaseNetwork(provider);
+            if (!baseNet.ok) {
+              throw new Error(baseNet.message ?? 'Please switch your wallet to the Base network to continue.');
+            }
+            signature = (await provider.request({
+              method: 'eth_signTypedData_v4',
+              params: [activeWallet.address, JSON.stringify(typedData)],
+            })) as Hex;
+          }
         }
 
         setIsApproving(false);
