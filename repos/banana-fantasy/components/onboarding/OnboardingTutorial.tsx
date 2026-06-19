@@ -954,10 +954,12 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
         }`}
       />
 
-      {/* Skip button */}
+      {/* Skip button — offset below the iOS notch/safe-area so it's reachable
+          and tappable on the mobile/PWA app (top-5 alone sat under the notch). */}
       <button
         onClick={handleSkip}
-        className="absolute top-5 right-5 flex items-center gap-2 px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
+        style={{ top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+        className="absolute right-5 flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-all z-20 text-sm"
       >
         Skip
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
