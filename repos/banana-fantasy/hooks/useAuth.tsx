@@ -484,6 +484,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const run = async () => {
       try {
         const token = await privyRef2.current.getAccessToken();
+        // TEMP diagnostic — record (client-side truth, via the no-auth
+        // client-state endpoint) whether getAccessToken returned a token and
+        // whether we have a wallet. Pinpoints token-vs-wallet root cause.
+        fetch('/api/user/client-state', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet: walletAddress.toLowerCase(), key: '_diag', value: `${token ? 'TOKEN_OK' : 'NO_TOKEN'}|wallet:${walletAddress.slice(0, 8)}|try:${retries}` }),
+        }).catch(() => {});
         if (!token) { scheduleRetry(); return; }
         const res = await fetch('/api/users/returning-check', {
           method: 'POST',
