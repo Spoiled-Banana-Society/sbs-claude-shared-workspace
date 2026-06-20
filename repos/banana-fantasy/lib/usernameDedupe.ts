@@ -29,6 +29,7 @@ const BATCH_SIZE = 400; // Firestore caps at 500 writes per batch.
 function isRealName(name: string | undefined, wallet: string): boolean {
   const t = (name || '').trim();
   if (!t) return false;
+  if (/^user-0x[0-9a-fA-F]/i.test(t)) return false; // seeded `User-0x…` placeholder
   if (/^0x[0-9a-fA-F]{4,}/.test(t)) return false;
   if (t.toLowerCase() === wallet.toLowerCase()) return false;
   if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return false;

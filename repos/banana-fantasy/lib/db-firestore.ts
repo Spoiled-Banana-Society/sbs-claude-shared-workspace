@@ -1231,7 +1231,14 @@ async function _incrementReferralPromosInTx(
   return {
     referralMilestonesEarned: milestonesEarned,
     referrerUserId: buyerUser.referredBy ?? null,
-    friendName: buyerUser.username || `${buyerUserId.slice(0, 6)}…${buyerUserId.slice(-4)}`,
+    // Floor placeholder/raw-wallet usernames to the canonical Banana handle (same
+    // guard as cleanUsername above) so a referrer's milestone noti never reads
+    // "User-0x…" or a raw wallet for a freshly-seeded buyer.
+    friendName: buyerUser.username
+      && !/^user-?[0-9a-fx]/i.test(buyerUser.username.trim())
+      && !/^0x[0-9a-f]{6,}/i.test(buyerUser.username.trim())
+      ? buyerUser.username.trim()
+      : bananaDefaultName(buyerUserId),
     friendTotal: entry.draftsPurchased,
     newlyHit,
   };
@@ -1823,7 +1830,14 @@ export async function recomputeUserExposure(
   const existing = existingSnap.exists ? (existingSnap.data() as UserExposure) : null;
   const existingMap = new Map<string, UserExposure['exposures'][number]>();
   for (const e of existing?.exposures ?? []) existingMap.set(e.teamPosition, e);
-  const username = userSnap.exists ? ((userSnap.data() as User).username || '') : (existing?.username || '');
+  const rawExposureName = userSnap.exists ? ((userSnap.data() as User).username || '') : (existing?.username || '');
+  // Floor the seeded `User-0x…` placeholder / raw wallet to the canonical Banana
+  // handle so the exposure page never shows the internal placeholder.
+  const username = rawExposureName
+    && !/^user-?[0-9a-fx]/i.test(rawExposureName.trim())
+    && !/^0x[0-9a-f]{6,}/i.test(rawExposureName.trim())
+    ? rawExposureName.trim()
+    : bananaDefaultName(lower);
 
   const exposures: UserExposure['exposures'] = [];
   for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
@@ -2899,7 +2913,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
   // Display names for the draw animation + notis.
   const { getPublicUsers } = await import('@/lib/friends');
   const nameMap = await getPublicUsers(humans).catch(() => new Map());
-  const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || `${w.slice(0, 6)}…${w.slice(-4)}`;
+  const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || bananaDefaultName(w);
 
   const atIso = new Date().toISOString();
   await drawRef.set({

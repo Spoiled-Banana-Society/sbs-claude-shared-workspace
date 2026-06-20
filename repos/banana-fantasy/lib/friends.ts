@@ -76,6 +76,7 @@ function isPlaceholderProfileName(name: string | undefined | null, wallet: strin
   const t = (name || '').trim();
   if (t === '') return true;
   if (['testname', 'testuser', 'test'].includes(t.toLowerCase())) return true;
+  if (/^user-0x[0-9a-fA-F]/i.test(t)) return true;           // seeded `User-0x…` placeholder
   if (/^0x[0-9a-fA-F]{4,}/.test(t)) return true;             // raw / truncated wallet
   if (/^0x[0-9a-fA-F]+\.[0-9a-fA-F]+$/.test(t)) return true; // "0x709.a4e9" form
   if (t.toLowerCase() === wallet.toLowerCase()) return true;

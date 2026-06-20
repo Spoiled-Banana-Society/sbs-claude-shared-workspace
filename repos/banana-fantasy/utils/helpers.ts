@@ -98,6 +98,9 @@ export const getTruncatedAccountName = (displayName: string, walletAddress: stri
     const name = (displayName || "").trim()
     const isPlaceholder =
         name === "" || isWalletAddress(name) || PLACEHOLDER_NAMES.has(name.toLowerCase())
+        // Reject the seeded `User-0x…` placeholder (db-firestore createUser) so it
+        // falls through to the Banana default — same rule everywhere on the site.
+        || /^user-0x[0-9a-f]/i.test(name)
 
     return isPlaceholder ? bananaDefaultName(walletAddress) : truncateDisplayName(name)
 }

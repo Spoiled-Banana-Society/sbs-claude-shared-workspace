@@ -111,8 +111,17 @@ export async function POST(req: Request) {
       // made referral rows show a different "default" than the user's own
       // header, Boris 2026-06-11).
       const bananaName = bananaDefaultName(w);
+      // A freshly-seeded user gets the internal placeholder username
+      // `User-<first6>` (db-firestore createUser). That's junk, never a display
+      // name — reject it (exactly like the admin/activity/jackpot routes do) so
+      // it falls through to the legacy Go name or the canonical Banana<last5>
+      // default. Without this guard the draft room shows "User-0xebc6" instead
+      // of "Banana12345"/the edited team name.
+      const realUsername = v?.username && !v.username.startsWith('User-') ? v.username : null;
+      const goName = goApiData[w]?.displayName;
+      const realGoName = goName && !goName.startsWith('User-') ? goName : null;
       out[w] = {
-        displayName: v?.username || goApiData[w]?.displayName || bananaName,
+        displayName: realUsername || realGoName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,
         equippedBadge: v?.equippedBadge ?? null,
         ripeness: v?.ripeness ?? null,
