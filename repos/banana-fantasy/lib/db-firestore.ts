@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { API_CONFIG, getUsdcPaymentAddressOrThrow } from '@/lib/api/config';
 import { ApiError } from '@/lib/api/errors';
 import { seedDb } from '@/lib/api/seed';
@@ -1666,7 +1667,7 @@ export async function recomputeUserExposure(
     'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
   ).replace(/\/$/, '');
 
-  let active: Array<{ _leagueId?: string; roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
+  let active: Array<{ _cardId?: string; _leagueId?: string; roster?: Record<string, Array<{ team?: string; position?: string; playerId?: string; displayName?: string }> | undefined> }> = [];
   try {
     const url = `${baseUrl}/owner/${encodeURIComponent(lower)}/draftToken/all`;
     if (diagOut) diagOut.url = url;
@@ -1678,6 +1679,27 @@ export async function recomputeUserExposure(
     }
     const body = (await res.json()) as { active?: typeof active };
     active = body.active ?? [];
+
+    // CRITICAL: the Go `/draftToken/all` list keeps a draft under its ORIGINAL
+    // drafter forever — it does NOT drop a team you sold or transferred away. So
+    // without this gate, sold teams stay in your Exposure even though they're
+    // gone from My Teams (which is on-chain `ownerOf`-gated). Filter to tokens
+    // the wallet STILL owns on-chain. Safe-by-default: we only drop a token when
+    // the chain returns a DIFFERENT valid owner; a null/errored/ambiguous read
+    // (or a non-numeric staging cardId) keeps the token, so we never wrongly
+    // hide a team you actually own. Matches the My-Teams ownerOf philosophy.
+    const ownerChecked = await Promise.all(
+      active.map(async (t) => {
+        const cid = t._cardId;
+        if (!cid) return t;
+        let owner: string | null = null;
+        try { owner = await getOnchainOwner(cid); } catch { owner = null; }
+        if (owner && owner !== lower) return null; // chain says someone else owns it → sold/transferred
+        return t;
+      }),
+    );
+    active = ownerChecked.filter((t): t is (typeof active)[number] => t !== null);
+
     if (diagOut) {
       diagOut.tokenCount = active.length;
       diagOut.tokensWithRoster = active.filter(t => t.roster && Object.values(t.roster).some(p => Array.isArray(p) && p.length > 0)).length;
