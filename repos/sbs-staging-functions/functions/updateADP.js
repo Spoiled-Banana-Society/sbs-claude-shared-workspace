@@ -32,6 +32,16 @@ const PLAYER_MAP_DOC = "playerMap";
 // completion from the pick data itself (the real signal) instead of the flag.
 const DRAFT_PICK_COUNT = 150;
 
+// Only let drafts completed AFTER the 2026 custom-rankings launch shape ADP.
+// On staging there are ~197 OLD bot/test drafts whose pick patterns reflect
+// LAST season's order (SF-RB1 #1, etc.). Folding those in every run snapped the
+// ADP back to the old order and clobbered the seeded 2026 rankings. We don't
+// pause the cron — we just ignore pre-launch drafts, so ADP holds at the seed
+// until REAL 2026 drafts complete, then evolves from those going forward.
+// A playerState doc's updateTime is the time of its final pick (it's never
+// written again once a draft completes), so it's a reliable "completed at".
+const ADP_CUTOFF = new Date("2026-06-20T08:00:00Z");
+
 // Same team / position keys prod uses (stat.js).
 const TEAMS = [
   "ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN",
@@ -57,6 +67,7 @@ async function updateADP({ db } = {}) {
   const pickMap = {}; // playerId -> number[]
   let draftsCounted = 0;
   let draftsSkipped = 0;
+  let draftsBeforeCutoff = 0;
 
   for (const leagueId of leagueIds) {
     const stateSnap = await db
@@ -65,6 +76,13 @@ async function updateADP({ db } = {}) {
         .get();
     if (!stateSnap.exists) {
       draftsSkipped += 1;
+      continue;
+    }
+
+    // Skip drafts that completed before the rankings launch (see ADP_CUTOFF) —
+    // they're old test/bot drafts that would revert ADP to last season's order.
+    if (stateSnap.updateTime && stateSnap.updateTime.toDate() < ADP_CUTOFF) {
+      draftsBeforeCutoff += 1;
       continue;
     }
 
@@ -121,7 +139,7 @@ async function updateADP({ db } = {}) {
 
   await mapRef.set(statsMap);
 
-  return { playersUpdated, draftsCounted, draftsSkipped, playersMissing };
+  return { playersUpdated, draftsCounted, draftsSkipped, draftsBeforeCutoff, playersMissing };
 }
 
 module.exports = { updateADP };
