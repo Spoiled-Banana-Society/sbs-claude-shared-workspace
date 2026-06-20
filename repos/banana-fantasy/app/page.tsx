@@ -5,7 +5,6 @@ import dynamic from 'next/dynamic';
 import { ContestCard } from '@/components/home/ContestCard';
 import { PromoCarousel } from '@/components/home/PromoCarousel';
 import { TopBanners } from '@/components/home/TopBanners';
-import { FounderDraftBanner } from '@/components/home/FounderDraftBanner';
 import { ContestDetailsModal } from '@/components/modals/ContestDetailsModal';
 import { EntryFlowModal } from '@/components/modals/EntryFlowModal';
 import { JoiningLobbyOverlay } from '@/components/drafting/JoiningLobbyOverlay';
@@ -153,9 +152,8 @@ export default function HomePage() {
 
       {/* Special Draft Banner removed — special drafts now show on /drafting page */}
 
-      {/* Founder Draft event banner — only renders on the day-of (within 24h before
-          the event) or during the live window. Otherwise self-hides. */}
-      <FounderDraftBanner />
+      {/* Founder Draft banner removed (Boris 2026-06-20) — users get the founder
+          notification instead. Component kept at components/home/FounderDraftBanner.tsx. */}
 
       {/* Featured Contest */}
       <section className="mb-6">
