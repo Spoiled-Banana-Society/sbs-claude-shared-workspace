@@ -843,29 +843,47 @@ export function BuyPassesModal({
                   </span>
                 </div>
               ) : (
-                // Stacked full-width so the Card row has room to show all four
-                // payment options at equal size — same clean treatment as the
-                // web2 box, even with USDC sitting above it.
-                <div className="grid grid-cols-1 gap-1 p-1 rounded-2xl bg-bg-tertiary/60 border border-bg-elevated">
+                // Two distinct bordered cards so it reads unmistakably as a
+                // CHOICE between two ways to pay — the selected one lights up
+                // with a banana ring + check, the other stays clearly tappable.
+                <div className="grid grid-cols-1 gap-2.5">
                   <button
                     onClick={() => setPaymentMethod('usdc')}
-                    className={`flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl transition-colors ${paymentMethod === 'usdc' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    aria-pressed={paymentMethod === 'usdc'}
+                    className={`relative flex items-center gap-3 py-3.5 px-4 rounded-2xl border-2 text-left transition-all ${paymentMethod === 'usdc' ? 'border-banana bg-banana/[0.08] ring-1 ring-banana/40' : 'border-bg-elevated bg-bg-tertiary/40 hover:border-text-muted/40'}`}
                   >
-                    <svg viewBox="0 0 24 24" className={`w-5 h-5 shrink-0 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <svg viewBox="0 0 24 24" className={`w-6 h-6 shrink-0 ${paymentMethod === 'usdc' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8">
                       <circle cx="12" cy="12" r="9" />
                       <path d="M12 7v10M9.5 9.2c0-1 1.1-1.6 2.5-1.6s2.5.6 2.5 1.6-1 1.5-2.5 1.7-2.5.7-2.5 1.7 1.1 1.6 2.5 1.6 2.5-.6 2.5-1.6" strokeLinecap="round" />
                     </svg>
-                    <span className="text-[15px] sm:text-base font-semibold tracking-tight">{isWeb2 ? 'Pay with balance' : 'USDC on Base'}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[15px] sm:text-base font-semibold tracking-tight text-text-primary">{isWeb2 ? 'Pay with balance' : 'USDC on Base'}</span>
+                      <span className="block text-[12px] text-text-muted">{isWeb2 ? 'Use the USDC in your wallet' : 'Instant — pay from your wallet'}</span>
+                    </span>
+                    <span className={`shrink-0 flex items-center justify-center w-5 h-5 rounded-full border-2 transition-colors ${paymentMethod === 'usdc' ? 'border-banana bg-banana text-bg-primary' : 'border-bg-elevated'}`}>
+                      {paymentMethod === 'usdc' && (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      )}
+                    </span>
                   </button>
                   <button
                     onClick={() => setPaymentMethod('card')}
-                    className={`flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl transition-colors ${paymentMethod === 'card' ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:text-text-primary'}`}
+                    aria-pressed={paymentMethod === 'card'}
+                    className={`relative flex items-center gap-3 py-3.5 px-4 rounded-2xl border-2 text-left transition-all ${paymentMethod === 'card' ? 'border-banana bg-banana/[0.08] ring-1 ring-banana/40' : 'border-bg-elevated bg-bg-tertiary/40 hover:border-text-muted/40'}`}
                   >
-                    <svg viewBox="0 0 24 24" className={`w-5 h-5 shrink-0 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                    <svg viewBox="0 0 24 24" className={`w-6 h-6 shrink-0 ${paymentMethod === 'card' ? 'text-banana' : 'text-text-muted'}`} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                       <rect x="3" y="5.5" width="18" height="13" rx="2.5"/>
                       <path d="M3 9.5h18M6.5 14.5h4"/>
                     </svg>
-                    <span className="text-[15px] sm:text-base font-semibold tracking-tight leading-relaxed text-center">Card · Apple Pay · PayPal · Venmo</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-[15px] sm:text-base font-semibold tracking-tight text-text-primary">Card</span>
+                      <span className="block text-[12px] text-text-muted">Apple Pay · PayPal · Venmo</span>
+                    </span>
+                    <span className={`shrink-0 flex items-center justify-center w-5 h-5 rounded-full border-2 transition-colors ${paymentMethod === 'card' ? 'border-banana bg-banana text-bg-primary' : 'border-bg-elevated'}`}>
+                      {paymentMethod === 'card' && (
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      )}
+                    </span>
                   </button>
                 </div>
               )}

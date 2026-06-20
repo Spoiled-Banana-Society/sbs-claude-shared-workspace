@@ -143,6 +143,10 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 {user.xHandle}
               </a>
             )}
+            {/* Wallet address: only shown to external-wallet (web3) users.
+                Web2 sign-ins (email / X) use an embedded wallet they never
+                need to see or copy — hide it so the profile stays clean. */}
+            {!isEmbeddedWallet && (
             <button
               onClick={copyWallet}
               title="Copy wallet address"
@@ -174,6 +178,7 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
                 </svg>
               )}
             </button>
+            )}
           </div>
 
           {/* Wallet balance — the real USDC in the user's wallet, same as the
