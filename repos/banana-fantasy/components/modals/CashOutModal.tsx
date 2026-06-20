@@ -648,18 +648,10 @@ export function CashOutModal({
     // When Coinbase returns no usable payout method (almost always because the
     // amount is below its cash-out minimum), there's nothing to pick — show a
     // clear reason instead of a dead, disabled "Continue" button.
-    const availableCount = quotes.filter((q) => q.available).length;
-    // Default to bank-only. Coinbase caps ACH/bank cash-outs per week, but
-    // SELLING to the Coinbase USD balance is uncapped — so we only surface the
-    // Coinbase-balance (and crypto-account) option as an OVERFLOW valve when the
-    // bank route isn't available for THIS withdrawal: over the weekly bank cap
-    // (Coinbase returns the ACH quote as unavailable), amount below the bank
-    // minimum, or no bank linked yet. When bank works, it's the only choice —
-    // keeps the normal flow to one obvious "cash out to bank" path.
-    const bankAvailable = quotes.some((q) => q.method === 'ACH_BANK_ACCOUNT' && q.available);
-    const renderedQuotes = quotes
-      .filter((q) => q.available)
-      .filter((q) => (bankAvailable ? q.method === 'ACH_BANK_ACCOUNT' : true));
+    // Show every payout option Coinbase can quote (bank + Coinbase balance +
+    // crypto). Default selection still prefers bank (set when quotes load).
+    const availableQuotes = quotes.filter((q) => q.available);
+    const availableCount = availableQuotes.length;
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
@@ -671,7 +663,7 @@ export function CashOutModal({
           <div>
             <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
             <div className="space-y-2">
-              {renderedQuotes
+              {availableQuotes
                 .map((q) => {
                   const fee = q.totalFee ?? 0;
                   const isFree = fee < 0.01;
@@ -762,13 +754,14 @@ export function CashOutModal({
                   </p>
                 </div>
               )}
+
             </div>
           </div>
 
           {/* Only relevant when more than one option is shown (the "rates above"
-              comparison + the "extra" fast-rails fee note). With just the bank
-              option (No extra fee) it's confusing noise, so hide it. */}
-          {renderedQuotes.length > 1 && (
+              comparison + the "extra" fast-rails fee note). With a single option
+              (No extra fee) it's confusing noise, so hide it. */}
+          {availableCount > 1 && (
             <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
               <span className="text-text-primary font-medium">FYI:</span> rates above include
               Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
