@@ -400,11 +400,11 @@ export function DraftRoomDrafting({
             {isSlowDraft && (
               isSlowDraftPaused ? (
                 <div className="text-center text-[13px] font-semibold mt-1 px-3" style={{ color: '#fbbf24' }}>
-                  ⏸ Paused till 5am PT — you can still make picks
+                  ⏸ Clock paused till 5am PT — you can still make picks
                 </div>
               ) : (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
-                  Drafting pauses daily 10pm–5am PT · you can still pick during that time
+                  Clock pauses daily 10pm–5am PT · you can still make picks
                 </div>
               )
             )}
