@@ -24,6 +24,7 @@ import { DraftRoomDrafting } from '@/components/drafting/DraftRoomDrafting';
 import { BatchRandomnessLoading } from '@/components/drafting/BatchRandomnessLoading';
 import { useBatchProofReady } from '@/hooks/useBatchProofReady';
 import { parseDraftNumber, locateDraft } from '@/lib/batchProof';
+import { isSlowDraftPickLength } from '@/utils/slowDraftClock';
 import type { DraftTab } from '@/components/drafting/DraftTabs';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import {
@@ -2127,15 +2128,22 @@ function DraftRoomContent() {
     const startedAt = preSpinStartedAtRef.current;
     if (!startedAt) return;
 
+    // SLOW drafts: anchor the displayed "draft starts in" countdown to the
+    // SHARED server draftStartTime (the value fast stays synced on) so mobile
+    // and desktop match — never a per-device local anchor. Fast keeps the
+    // local-elapsed path (already synced); the reveal animation (preSpinCountdown
+    // / preSpinStartedAtRef) is untouched.
+    const ds = firebaseRtdb.data?.draftStartTime;
+    const slowAnchor = isSlowDraftPickLength(firebaseRtdb.data?.pickLength ?? 0) && typeof ds === 'number' && ds > 0;
     const tick = () => {
       const elapsed = (Date.now() - startedAt) / 1000;
       setPreSpinCountdown(Math.max(0, Math.floor(15 - elapsed)));
-      setMainCountdown(Math.max(0, Math.floor(60 - elapsed)));
+      setMainCountdown(slowAnchor ? Math.max(0, Math.floor(ds - Date.now() / 1000)) : Math.max(0, Math.floor(60 - elapsed)));
     };
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [phase]);
+  }, [phase, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickLength]);
 
   useEffect(() => {
     if (phase !== 'pre-spin' || preSpinCountdown > 0) return;
@@ -2168,9 +2176,12 @@ function DraftRoomContent() {
     const startedAt = preSpinStartedAtRef.current;
     if (!startedAt) return;
 
+    // Slow: shared server draftStartTime anchor (see pre-spin effect above).
+    const ds = firebaseRtdb.data?.draftStartTime;
+    const slowAnchor = isSlowDraftPickLength(firebaseRtdb.data?.pickLength ?? 0) && typeof ds === 'number' && ds > 0;
     const tick = () => {
       const elapsed = (Date.now() - startedAt) / 1000;
-      const main = Math.max(0, Math.floor(60 - elapsed));
+      const main = slowAnchor ? Math.max(0, Math.floor(ds - Date.now() / 1000)) : Math.max(0, Math.floor(60 - elapsed));
       setMainCountdown(prev => {
         if (main < prev && main <= 10 && main > 0) playCountdownTick();
         return main;
@@ -2179,7 +2190,7 @@ function DraftRoomContent() {
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [phase, playCountdownTick]);
+  }, [phase, playCountdownTick, firebaseRtdb.data?.draftStartTime, firebaseRtdb.data?.pickLength]);
 
   useEffect(() => {
     if (phase !== 'pre-spin' && phase !== 'spinning' && phase !== 'result' && phase !== 'countdown') return;
