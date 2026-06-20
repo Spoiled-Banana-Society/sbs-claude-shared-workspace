@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     const key = new Date(eventMs).toISOString().slice(0, 10); // matches on-login dedupeKey
     if (fs?.teaserBroadcastKey === key) return json({ ok: true, skipped: 'already broadcast', key }, 200);
 
-    const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' }) + ' PT';
+    const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
 
     // Every real (logged-in) user. orderBy a field only returns docs that have
     // it, so this naturally excludes imported/never-logged-in wallet docs.

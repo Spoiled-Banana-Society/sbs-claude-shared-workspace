@@ -79,7 +79,7 @@ export async function POST(req: Request) {
       const eventMs = fs?.active && typeof fs.at === 'string' ? Date.parse(fs.at) : NaN;
       if (Number.isFinite(eventMs)) {
         const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
-        const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' }) + ' PT';
+        const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
         const todayPT = ptDate(Date.now());
         const eventDayPT = ptDate(eventMs);
         const key = new Date(eventMs).toISOString().slice(0, 10);
