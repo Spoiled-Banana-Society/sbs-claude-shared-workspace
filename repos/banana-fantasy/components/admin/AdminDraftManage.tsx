@@ -21,6 +21,7 @@ import {
   useAdminDraftsManage,
   useDeleteDraftWithRefund,
   type ManageDraftRow,
+  type DraftHealth,
 } from '@/hooks/admin/useAdminApi';
 import { clientLog } from '@/lib/clientLog';
 import { normalizeContestName } from '@/lib/draftStore';
@@ -36,6 +37,15 @@ function shortAddr(a: string): string {
   if (a.length < 12) return a;
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
+
+// Health badge styling — color tells the admin at a glance what's safe to touch.
+const HEALTH_BADGE: Record<DraftHealth, { label: string; cls: string }> = {
+  completed: { label: 'Completed', cls: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30' },
+  filling: { label: 'Filling', cls: 'bg-sky-500/15 text-sky-300 border border-sky-500/30' },
+  drafting: { label: 'Drafting', cls: 'bg-purple-500/15 text-purple-300 border border-purple-500/30' },
+  frozen: { label: '⚠ Frozen', cls: 'bg-red-500/20 text-red-300 border border-red-500/40' },
+  unknown: { label: 'Unknown', cls: 'bg-amber-500/15 text-amber-300 border border-amber-500/30' },
+};
 
 export function AdminDraftManage({ enabled }: Props) {
   const [walletInput, setWalletInput] = useState('');
@@ -217,10 +227,28 @@ export function AdminDraftManage({ enabled }: Props) {
               <tr key={row.id} className="border-t border-white/5">
                 <td className="px-3 py-2 font-mono text-xs text-white/90">{row.id}</td>
                 <td className="px-3 py-2 text-white/80">{row.displayName ? normalizeContestName(row.displayName) : <span className="text-white/30">—</span>}</td>
-                <td className="px-3 py-2 text-white/70">
-                  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] bg-white/10 capitalize">
-                    {row.status ?? 'unknown'}
-                  </span>
+                <td className="px-3 py-2">
+                  <div className="flex flex-col gap-0.5">
+                    <span className={`inline-block w-fit px-2 py-0.5 rounded-full text-[10px] font-medium ${HEALTH_BADGE[row.health].cls}`}>
+                      {HEALTH_BADGE[row.health].label}
+                    </span>
+                    {row.health === 'frozen' && row.stalledMinutes != null && (
+                      <span className="text-[10px] text-red-300/80">
+                        clock expired {row.stalledMinutes}m ago{row.pickNumber != null ? ` · pick ${row.pickNumber}` : ''}
+                      </span>
+                    )}
+                    {row.health === 'drafting' && row.pickNumber != null && (
+                      <span className="text-[10px] text-white/40">
+                        {row.roundNum != null ? `R${row.roundNum} ` : ''}pick {row.pickNumber}
+                      </span>
+                    )}
+                    {row.health === 'filling' && (
+                      <span className="text-[10px] text-white/40">{row.numPlayers}/{row.maxPlayers} joined</span>
+                    )}
+                    {row.health === 'unknown' && (
+                      <span className="text-[10px] text-amber-300/70">no live state — inspect</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-white/80">
                   {row.numPlayers} / {row.maxPlayers}
@@ -242,21 +270,28 @@ export function AdminDraftManage({ enabled }: Props) {
                 </td>
                 <td className="px-3 py-2 text-right">
                   {pendingDeleteId === row.id ? (
-                    <div className="flex items-center gap-2 justify-end">
-                      <button
-                        onClick={() => handleDelete(row)}
-                        disabled={deleteMutation.isPending}
-                        className="px-2 py-1 text-xs bg-red-500/80 hover:bg-red-500 text-white rounded disabled:opacity-50"
-                      >
-                        {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
-                      </button>
-                      <button
-                        onClick={() => setPendingDeleteId(null)}
-                        disabled={deleteMutation.isPending}
-                        className="px-2 py-1 text-xs bg-zinc-800 border border-white/10 text-white/70 rounded hover:bg-zinc-700"
-                      >
-                        Cancel
-                      </button>
+                    <div className="flex flex-col items-end gap-1">
+                      {(row.health === 'completed' || row.health === 'drafting') && (
+                        <span className="text-amber-400 text-[10px] max-w-[200px] text-right">
+                          ⚠ This draft looks {row.health === 'completed' ? 'COMPLETED' : 'healthy & actively drafting'} — only delete if you&apos;re sure.
+                        </span>
+                      )}
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          onClick={() => handleDelete(row)}
+                          disabled={deleteMutation.isPending}
+                          className="px-2 py-1 text-xs bg-red-500/80 hover:bg-red-500 text-white rounded disabled:opacity-50"
+                        >
+                          {deleteMutation.isPending ? 'Deleting…' : 'Confirm delete'}
+                        </button>
+                        <button
+                          onClick={() => setPendingDeleteId(null)}
+                          disabled={deleteMutation.isPending}
+                          className="px-2 py-1 text-xs bg-zinc-800 border border-white/10 text-white/70 rounded hover:bg-zinc-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <button

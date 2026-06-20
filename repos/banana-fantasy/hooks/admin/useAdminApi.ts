@@ -186,6 +186,8 @@ export function useAdminDrafts(enabled: boolean) {
   });
 }
 
+export type DraftHealth = 'completed' | 'drafting' | 'filling' | 'frozen' | 'unknown';
+
 export interface ManageDraftRow {
   id: string;
   displayName: string | null;
@@ -197,6 +199,10 @@ export interface ManageDraftRow {
   startDate: string | null;
   endDate: string | null;
   isLocked: boolean;
+  health: DraftHealth;
+  pickNumber: number | null;
+  roundNum: number | null;
+  stalledMinutes: number | null;
 }
 
 interface ManageDraftsResponse {

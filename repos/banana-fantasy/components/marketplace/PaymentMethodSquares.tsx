@@ -141,7 +141,7 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
           <UsdcMark />
         </span>
         <span className="text-lg font-semibold leading-none">{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
-        {!isEmbeddedWallet && <span className="text-text-muted text-[11px] leading-none">on Base</span>}
+        {!isEmbeddedWallet && <span className="text-text-secondary text-[11px] leading-none">on Base</span>}
         <span className="text-text-muted text-xs leading-none">{usdcBalance != null ? `$${usdcBalance.toFixed(2)}` : ' '}</span>
       </div>
     </button>
