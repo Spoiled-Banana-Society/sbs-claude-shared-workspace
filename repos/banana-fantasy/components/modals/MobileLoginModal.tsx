@@ -526,15 +526,10 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
                     <span className="text-white text-[14px] font-medium">Google</span>
                   </button>
 
-                  <button
-                    onClick={() => initOAuth({ provider: 'twitter' })}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] active:bg-white/[0.08] transition-colors"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="#f8f8f8">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    <span className="text-white text-[14px] font-medium">X (Twitter)</span>
-                  </button>
+                  {/* X (Twitter) is intentionally NOT a login/sign-up option
+                      (Boris 2026-06-20). X stays available only for the promo's
+                      "link X / verify" flow via privy.linkTwitter() — account
+                      CREATION with X is removed on both mobile and desktop. */}
                 </>
               )}
 

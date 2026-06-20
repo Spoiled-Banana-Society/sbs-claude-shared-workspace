@@ -113,12 +113,13 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
               walletList: ['base_account', 'metamask', 'coinbase_wallet'],
             },
             loginMethodsAndOrder: {
-              // Coinbase Wallet is shown DIRECTLY (Boris: don't bury it under
-              // "More options"). That makes 5 primary methods — Privy soft-caps
-              // primary at 4 and warns it "can render oddly on mobile", so if the
-              // mobile login sheet looks cramped, move the lowest-priority method
-              // (twitter) back to overflow instead.
-              primary: ['email', 'google', 'twitter', 'metamask', 'coinbase_wallet'],
+              // X (Twitter) is intentionally NOT a sign-up/login method (Boris
+              // 2026-06-20) — account creation with X is removed everywhere. X
+              // remains usable only for the promo's link/verify flow via
+              // privy.linkTwitter(). Coinbase Wallet is shown DIRECTLY (don't
+              // bury it under "More options"). That's exactly 4 primary methods,
+              // which also sits within Privy's soft cap (no mobile-render warning).
+              primary: ['email', 'google', 'metamask', 'coinbase_wallet'],
               overflow: [],
             },
             embeddedWallets: {
