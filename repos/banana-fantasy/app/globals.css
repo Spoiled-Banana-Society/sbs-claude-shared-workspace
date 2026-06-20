@@ -528,3 +528,16 @@ body {
     animation: modal-sheet-up 0.25s ease-out forwards;
   }
 }
+
+/* "Creating your account" animated ellipsis — clean sequential dot fade
+   (typing-indicator style). Safari-safe (opacity keyframes, no content anim). */
+.cc-dot {
+  animation: cc-dot-fade 1.4s infinite both;
+  opacity: 0.2;
+}
+.cc-dot:nth-child(2) { animation-delay: 0.2s; }
+.cc-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cc-dot-fade {
+  0%, 70%, 100% { opacity: 0.2; }
+  35% { opacity: 1; }
+}

@@ -14,6 +14,7 @@ import { MobileTabBar } from '@/components/layout/MobileTabBar';
 import { EditProfileModal } from '@/components/modals/EditProfileModal';
 import { OnboardingTutorial } from '@/components/onboarding/OnboardingTutorial';
 import { CrispChat } from '@/components/CrispChat';
+import { CreatingAccountOverlay } from '@/components/CreatingAccountOverlay';
 import { useAuth } from '@/hooks/useAuth';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import OneSignal from 'react-onesignal';
@@ -108,6 +109,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
         <main className="pb-20 md:pb-0">{children}</main>
         {!isDraftRoom && <MobileTabBar />}
         <EditProfileModal isOpen={showEditProfile} onClose={() => setShowEditProfile(false)} />
+        <CreatingAccountOverlay />
         {showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
         {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
         <CrispChat />
