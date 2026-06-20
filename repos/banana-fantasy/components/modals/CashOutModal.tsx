@@ -648,10 +648,15 @@ export function CashOutModal({
     // When Coinbase returns no usable payout method (almost always because the
     // amount is below its cash-out minimum), there's nothing to pick — show a
     // clear reason instead of a dead, disabled "Continue" button.
-    // Show every payout option Coinbase can quote (bank + Coinbase balance +
-    // crypto). Default selection still prefers bank (set when quotes load).
     const availableQuotes = quotes.filter((q) => q.available);
     const availableCount = availableQuotes.length;
+    // When bank (ACH) is available, show ONLY the bank option and hide the
+    // Coinbase-balance / crypto options. They reappear as a fallback only when
+    // bank isn't available for this amount (over the weekly cap, etc.).
+    const bankAvailable = availableQuotes.some((q) => q.method === 'ACH_BANK_ACCOUNT');
+    const renderedQuotes = bankAvailable
+      ? availableQuotes.filter((q) => q.method === 'ACH_BANK_ACCOUNT')
+      : availableQuotes;
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
@@ -663,7 +668,7 @@ export function CashOutModal({
           <div>
             <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
             <div className="space-y-2">
-              {availableQuotes
+              {renderedQuotes
                 .map((q) => {
                   const fee = q.totalFee ?? 0;
                   const isFree = fee < 0.01;
@@ -761,7 +766,7 @@ export function CashOutModal({
           {/* Only relevant when more than one option is shown (the "rates above"
               comparison + the "extra" fast-rails fee note). With a single option
               (No extra fee) it's confusing noise, so hide it. */}
-          {availableCount > 1 && (
+          {renderedQuotes.length > 1 && (
             <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
               <span className="text-text-primary font-medium">FYI:</span> rates above include
               Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
