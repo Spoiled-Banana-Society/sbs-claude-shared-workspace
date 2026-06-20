@@ -271,20 +271,26 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
       if (qToken && qToken.length >= 20) token = qToken;
     } catch { /* malformed URL → fall through to the 401 below */ }
   }
-  if (!token) throw new ApiError(401, 'Missing authorization token');
-
-  // TEMP DIAG — record success OR failure of JWT verification for the new-user
-  // auth routes, to a readable Firestore doc. Captures the token's claims +
-  // exact failure reason vs. the server's expected app/issuer. REMOVE after.
+  // TEMP DIAG — record EVERY outcome (no-token / verification-failure / success)
+  // of the auth gate for the new-user routes, to a readable Firestore doc.
+  // Set up before the token check so the no-token case is captured too. REMOVE after.
   const diagPath = (() => { try { return new URL(req.url).pathname; } catch { return '?'; } })();
   const isDiagRoute = /returning-check|\/api\/username|user\/metadata|owners/.test(diagPath);
   const writeDiag = async (row: Record<string, unknown>) => {
     if (!isDiagRoute) return;
     try {
       const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
-      await getAdminFirestore().collection('_gpudiag').add({ path: diagPath, at: new Date().toISOString(), ...row });
+      await getAdminFirestore().collection('_gpudiag').add({
+        path: diagPath, at: new Date().toISOString(),
+        authHeaderPresent: !!authHeader, tokenLen: token.length, ...row,
+      });
     } catch { /* never block auth on the diagnostic */ }
   };
+
+  if (!token) {
+    await writeDiag({ stage: 'no-token' });
+    throw new ApiError(401, 'Missing authorization token');
+  }
 
   let user: { userId: string; walletAddress: string | null };
   try {
