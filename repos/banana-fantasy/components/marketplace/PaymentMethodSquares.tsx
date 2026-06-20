@@ -60,7 +60,7 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
 
   // Compact landscape box (wider than tall) so it doesn't read as a tall column.
   const box = (active: boolean) =>
-    `flex flex-col items-center justify-center text-center gap-1.5 aspect-[3/2] rounded-xl border-2 p-3 transition-all ${
+    `w-full flex flex-col items-center justify-center text-center gap-1.5 aspect-[3/2] rounded-xl border-2 p-3 transition-all ${
       active ? 'border-banana bg-banana/10' : 'border-bg-tertiary hover:border-bg-elevated'
     }`;
 
