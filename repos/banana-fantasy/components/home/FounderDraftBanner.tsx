@@ -23,6 +23,7 @@ function formatCountdown(ms: number): string {
 export function FounderDraftBanner() {
   const { schedule, loaded } = useFounderSchedule();
   const [now, setNow] = useState<number>(() => Date.now());
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -43,10 +44,23 @@ export function FounderDraftBanner() {
 
   const isLive = diff <= 0 && diff >= showFrom;
   const isImminent = diff > 0 && diff <= 60_000; // last minute
-  const dateLabel = schedule.dayLabel || new Date(eventMs).toLocaleString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric',
+
+  // Always derive the label from the real event time so it can never disagree
+  // with the countdown. Say "today" when the event is on the current day.
+  const eventDate = new Date(eventMs);
+  const isToday = eventDate.toDateString() === new Date(now).toDateString();
+  const timeLabel = eventDate.toLocaleString(undefined, {
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   });
+  const fullLabel = eventDate.toLocaleString(undefined, {
+    weekday: 'long', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  });
+  const headline = isLive
+    ? 'Founder Draft is live — join now to qualify'
+    : isToday
+      ? `Founder Draft today · ${timeLabel}`
+      : `Next Founder Draft: ${fullLabel}`;
 
   return (
     <section
@@ -65,17 +79,24 @@ export function FounderDraftBanner() {
             >
               Founder Draft
             </span>
+            {/* Info (i) — full how-it-works details */}
+            <button
+              type="button"
+              onClick={() => setShowInfo((v) => !v)}
+              aria-label="How Founder Drafts work"
+              aria-expanded={showInfo}
+              className="w-5 h-5 rounded-full border flex items-center justify-center text-[11px] font-bold leading-none transition-colors hover:bg-white/10"
+              style={{ borderColor: `${FOUNDER_CYAN}88`, color: FOUNDER_CYAN }}
+            >
+              i
+            </button>
             {isLive && (
               <span className="text-[11px] uppercase tracking-wider font-bold text-red-400 animate-pulse">
                 ● Live now — join immediately
               </span>
             )}
           </div>
-          <h2 className="text-lg sm:text-xl font-bold text-white">
-            {isLive
-              ? 'Founder Draft is live — join now to qualify'
-              : `Next Founder Draft: ${dateLabel}`}
-          </h2>
+          <h2 className="text-lg sm:text-xl font-bold text-white">{headline}</h2>
           <p className="text-xs sm:text-sm text-white/60 mt-1">
             Happens every week at this time. Click <span className="text-white font-medium">Join Draft</span> the second the clock hits
             <span className="text-white font-mono"> 0:00:00</span>. Everyone in the draft with the founder
@@ -95,6 +116,33 @@ export function FounderDraftBanner() {
           </div>
         )}
       </div>
+
+      {/* How it works — full detail, toggled by the (i) */}
+      {showInfo && (
+        <div
+          className="mt-4 pt-4 border-t text-xs sm:text-sm text-white/75 space-y-3 leading-relaxed"
+          style={{ borderColor: `${FOUNDER_CYAN}33` }}
+        >
+          <div>
+            <span className="font-semibold text-white">How to get in.</span> There&apos;s no special room —
+            at exactly the start time, jump into a draft. Drafts fill fast in the rush, and only the one
+            the founders actually land in counts. Once it fills you&apos;ll see the founders&apos; wallet in
+            your draft and the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> tag in the room.
+          </div>
+          <div>
+            <span className="font-semibold text-white">Free Spin + Founders badge.</span> Everyone who enters
+            the Founder Draft with a <span className="font-semibold text-white">paid</span> pass gets a Free
+            Banana Spin (added straight to your wheel) and unlocks the exclusive Founders badge. Free entries
+            are welcome in the draft — they just don&apos;t earn the rewards.
+          </div>
+          <div>
+            <span className="font-semibold text-white">Skip the playoffs.</span> If your team outscores the
+            founder&apos;s team over the regular season (weeks 1–14), you&apos;re entered into a draw against
+            everyone who beat the founder across all Founder leagues. One winner is picked at random to
+            <span className="font-semibold text-white"> skip straight to the finals</span>.
+          </div>
+        </div>
+      )}
     </section>
   );
 }
