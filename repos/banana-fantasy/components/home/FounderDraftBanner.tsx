@@ -97,9 +97,9 @@ export function FounderDraftBanner() {
           <h2 className="text-lg sm:text-xl font-bold text-white">{headline}</h2>
           <p className="text-xs sm:text-sm text-white/60 mt-1">
             Happens every week at this time. The second the clock hits
-            <span className="text-white font-mono"> 0:00:00</span>, hit <span className="text-white font-medium">Join Draft</span>. You made it
-            only if you see the founders + the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> sticker in your
-            draft — no sticker means you joined a different one and missed it. Paid entries in the founder&apos;s draft earn a free spin + a shot at skipping the playoffs.
+            <span className="text-white font-mono"> 0:00:00</span>, hit <span className="text-white font-medium">Join Draft</span>. You won&apos;t know
+            yet — <span className="text-white">once your draft fills</span>, the founders + the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> sticker
+            appear if you landed in the right one. No sticker once it&apos;s full = you joined a different draft and missed it. Paid entries in the founder&apos;s draft earn a free spin + a shot at skipping the playoffs.
           </p>
         </div>
 
@@ -123,10 +123,11 @@ export function FounderDraftBanner() {
           <div>
             <span className="font-semibold text-white">How to get in.</span> There&apos;s no special room —
             at exactly the start time, jump into a draft. Drafts fill fast in the rush, and only the one
-            the founders actually land in counts. You&apos;ll know you made it when you see the founders in
-            your draft and the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> sticker
-            in the room. <span className="text-white">If you don&apos;t see the founders + the FOUNDER sticker, you joined a
-            different draft and missed it this week</span> — try again next week.
+            the founders actually land in counts. You won&apos;t know the moment you join —
+            <span className="text-white"> once your draft fills (all 10 seats)</span>, the founders and the
+            <span className="font-semibold" style={{ color: FOUNDER_CYAN }}> FOUNDER</span> sticker show up if you
+            landed in the right one (they&apos;re hidden while it&apos;s still filling). <span className="text-white">If they&apos;re
+            not there once it&apos;s full, you joined a different draft and missed it this week</span> — try again next week.
           </div>
           <div>
             <span className="font-semibold text-white">Free Spin + Founders badge.</span> Everyone who enters
