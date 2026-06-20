@@ -25,6 +25,9 @@ const ACTION_TARGET_WEI: Record<string, bigint> = {
   cancel: 15_000_000_000_000n,
   // Seaport fulfillment when accepting an offer (~300k gas)
   'accept-offer': 50_000_000_000_000n, // 0.00005 ETH
+  // ERC20.transfer for a cash-out send (~65k gas) — external wallets only;
+  // embedded wallets use Privy gas sponsorship instead.
+  withdraw: 20_000_000_000_000n, // 0.00002 ETH
 };
 const MAX_SINGLE_TOPUP_WEI = 50_000_000_000_000n; // hard cap per send
 const ADMIN_WALLET_GAS_FLOOR_WEI = 200_000_000_000_000n;

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrizes, useEligibility } from '@/hooks/usePrizes';
 import { WithdrawModal } from '@/components/modals/WithdrawModal';
-import { CashOutModal } from '@/components/modals/CashOutModal';
+import { SelfCashOutModal } from '@/components/modals/SelfCashOutModal';
 import { VerificationModal } from '@/components/modals/VerificationModal';
 import type { PrizeHistoryItem } from '@/types';
 import { reportClientError } from '@/lib/clientErrors';
@@ -230,36 +230,34 @@ export default function PrizesPage() {
                   </p>
 
                   <div className="mt-6">
-                    {isEmbeddedWallet ? (
-                      hasBalance ? (
-                        isEligible ? (
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <button
-                              onClick={() => setCashOutModal({ isOpen: true })}
-                              className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                            >
-                              Cash out to bank
-                            </button>
-                            <p className="text-[11px] text-text-muted ml-auto text-right">
-                              Via Coinbase{balanceUsdc < 2 ? ' · about $2 minimum' : ''}
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <button
-                              onClick={() => setShowVerifyModal(true)}
-                              className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                            >
-                              Verify to cash out
-                            </button>
-                            <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
-                          </div>
-                        )
+                    {hasBalance ? (
+                      isEligible ? (
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => setCashOutModal({ isOpen: true })}
+                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                          >
+                            Cash out to bank
+                          </button>
+                          <p className="text-[11px] text-text-muted ml-auto text-right">
+                            Sent to your Coinbase, then your bank
+                          </p>
+                        </div>
                       ) : (
-                        <p className="text-sm text-text-muted">Team sales &amp; transferred winnings land here.</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button
+                            onClick={() => setShowVerifyModal(true)}
+                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                          >
+                            Verify to cash out
+                          </button>
+                          <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
+                        </div>
                       )
                     ) : (
-                      <p className="text-sm text-text-muted">This is the USDC in your own wallet — spend or move it anytime.</p>
+                      <p className="text-sm text-text-muted">
+                        {isEmbeddedWallet ? 'Team sales & transferred winnings land here.' : 'This is the USDC in your own wallet — spend or move it anytime.'}
+                      </p>
                     )}
                   </div>
                 </div>
@@ -545,23 +543,13 @@ export default function PrizesPage() {
         onWithdraw={prizesQuery.withdraw}
       />
 
-      <CashOutModal
+      <SelfCashOutModal
         isOpen={cashOutModal.isOpen}
         onClose={() => setCashOutModal({ isOpen: false })}
-        maxAmount={cashOutModal.prize?.amount ?? balanceUsdc}
-        fixedAmount={Boolean(cashOutModal.prize)}
-        draftId={cashOutModal.prize?.type === 'win' ? cashOutModal.prize.draftId : undefined}
-        userId={user?.id}
+        balanceUsdc={cashOutModal.prize?.amount ?? balanceUsdc}
         walletAddress={user?.walletAddress}
-        initialStatusMode={cashOutModal.statusMode}
+        isEmbeddedWallet={isEmbeddedWallet}
         onVerified={() => { eligibilityQuery.mutate(); }}
-        // Embedded (web2) users have no external wallet — don't offer the
-        // "keep as USDC / send to wallet" escape; bank cash-out only.
-        onSwitchToUsdc={isEmbeddedWallet ? undefined : () => {
-          if (cashOutModal.prize) {
-            setWithdrawModal({ isOpen: true, prize: cashOutModal.prize });
-          }
-        }}
       />
 
       {/* Direct entry to KYC from the eligibility CTA at the top of
