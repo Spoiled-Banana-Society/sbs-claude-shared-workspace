@@ -84,8 +84,8 @@ function UsdcMark() {
 // same size/font. Fixed-height mark row keeps every word baseline-aligned.
 function Method({ mark, label }: { mark: React.ReactNode; label: string }) {
   return (
-    <div className="flex flex-col items-center justify-end gap-1.5">
-      <span className="flex h-6 items-center">{mark}</span>
+    <div className="flex flex-col items-center justify-end gap-1">
+      <span className="flex h-5 items-center">{mark}</span>
       <span className="text-[11px] font-medium leading-none whitespace-nowrap">{label}</span>
     </div>
   );
@@ -106,14 +106,14 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
   // Shared box shell — both boxes use the exact same shell so they read as a
   // cohesive pair. Grey text by default; selection shown by banana border/fill.
   const box = (active: boolean) =>
-    `w-full flex flex-col items-center justify-center rounded-xl border-2 p-3 transition-all ${
+    `w-full flex flex-col items-center justify-center rounded-xl border-2 p-2.5 transition-all ${
       active ? 'border-banana bg-banana/10 text-text-primary' : 'border-white/25 hover:border-white/45 text-text-secondary'
     }`;
 
   const cardBox = (
     <button type="button" onClick={() => onChange('card')} className={box(value === 'card' || !showBalance)}>
       {/* 4 methods, each = grey logo on top of its word, all words one size. */}
-      <div className="grid w-full grid-cols-2 gap-x-2 gap-y-3">
+      <div className="grid w-full grid-cols-2 gap-x-2 gap-y-2">
         <Method mark={<CardMark />} label="Card" />
         <Method mark={<ApplePayMark />} label="Apple Pay" />
         <Method mark={<PayPalMark />} label="PayPal" />
@@ -136,13 +136,12 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
   // marks so it reads clearly and fills its half of the row.
   const usdcBox = (
     <button type="button" onClick={() => onChange('usdc')} className={box(value === 'usdc')}>
-      <div className="flex h-full flex-col items-center justify-center gap-1.5">
-        <span className="flex h-7 items-center">
+      <div className="flex h-full flex-col items-center justify-center gap-1">
+        <span className="flex h-6 items-center">
           <UsdcMark />
         </span>
-        <span className="text-lg font-semibold leading-none">{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
+        <span className="text-base font-semibold leading-none">{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
         {!isEmbeddedWallet && <span className="text-text-secondary text-[11px] leading-none">on Base</span>}
-        <span className="text-text-muted text-xs leading-none">{usdcBalance != null ? `$${usdcBalance.toFixed(2)}` : ' '}</span>
       </div>
     </button>
   );

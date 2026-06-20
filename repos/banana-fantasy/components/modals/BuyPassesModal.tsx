@@ -751,7 +751,7 @@ export function BuyPassesModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
-      <div className="space-y-5">
+      <div className="space-y-3.5">
 
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
@@ -795,7 +795,7 @@ export function BuyPassesModal({
 
             {/* Quantity Selection */}
             <div>
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Quantity</h3>
+              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Quantity</h3>
               <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                 {quantityOptions.map((qty) => (
                   <button
@@ -830,7 +830,7 @@ export function BuyPassesModal({
                 box. Wallet login → USDC on Base | Card toggle. The card option
                 covers Card, Apple Pay, Venmo and PayPal (all via MoonPay). */}
             <div>
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">Payment</h3>
+              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-2">Payment</h3>
               <PaymentMethodSquares
                 value={paymentMethod}
                 onChange={setPaymentMethod}
