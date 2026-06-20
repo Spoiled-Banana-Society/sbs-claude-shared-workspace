@@ -100,9 +100,18 @@ export function AvatarWithBadge({
   // Track image load failure so a broken/glitched pfp URL falls back to
   // the banana instead of rendering a broken image.
   const [loadFailed, setLoadFailed] = useState(false);
-  // Reset the failure flag if the image URL changes (e.g. user updates pfp).
+  // Track a CLEAN load (the image actually decoded with real pixels). Until
+  // then we keep the <img> transparent so a broken / blank / still-loading URL
+  // never flashes the browser's broken-image glyph (the blue "?" box, with its
+  // square edges poking past the round circle) on top of the banana — the
+  // banana background shows through instead. web2/Gmail (Google) pfp URLs on
+  // mobile are the usual culprit: they can render the "?" without ever firing
+  // onError, so onError alone isn't enough.
+  const [imgLoaded, setImgLoaded] = useState(false);
+  // Reset both flags if the image URL changes (e.g. user updates pfp).
   useEffect(() => {
     setLoadFailed(false);
+    setImgLoaded(false);
   }, [imageUrl]);
 
   const isFallback = !imageUrl || loadFailed;
@@ -151,9 +160,13 @@ export function AvatarWithBadge({
           width={innerSize}
           height={innerSize}
           className="rounded-full object-cover"
-          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset }}
+          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset, opacity: isFallback || imgLoaded ? 1 : 0 }}
           unoptimized
           onError={() => setLoadFailed(true)}
+          onLoad={(e) => {
+            if ((e.currentTarget as HTMLImageElement).naturalWidth === 0) setLoadFailed(true);
+            else setImgLoaded(true);
+          }}
         />
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
@@ -163,8 +176,12 @@ export function AvatarWithBadge({
           width={innerSize}
           height={innerSize}
           className="rounded-full object-cover"
-          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset }}
+          style={{ width: innerSize, height: innerSize, position: 'absolute', top: innerOffset, left: innerOffset, opacity: isFallback || imgLoaded ? 1 : 0 }}
           onError={() => setLoadFailed(true)}
+          onLoad={(e) => {
+            if ((e.currentTarget as HTMLImageElement).naturalWidth === 0) setLoadFailed(true);
+            else setImgLoaded(true);
+          }}
         />
       )}
       {(() => {
