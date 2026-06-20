@@ -119,6 +119,12 @@ function isCategoryEnabled(type: NotificationType): boolean {
 const _toastedIds = new Set<string>();
 let _toastsSeeded = false;
 
+// Onboarding / informational bells live in the bell list but NEVER pop a toast
+// — they're not time-sensitive, and toasting them spams a brand-new user with
+// "Welcome…" + "Get the app…" the moment they sign in (Boris). Real events
+// (wins, claims, referrals) still toast.
+const NO_TOAST_TYPES = new Set<NotificationType>(['welcome', 'app_download', 'base_guide']);
+
 // Current wallet, registered by useNotifications (header-mounted) so the
 // standalone pushNotification() helper can attribute POSTs without a hook.
 let _notificationWallet: string | null = null;
@@ -322,6 +328,7 @@ export function useNotifications() {
             !n.read
             && !_toastedIds.has(n.id)
             && !hasOwnPopup(n.title)
+            && !NO_TOAST_TYPES.has(n.type) // onboarding/info bells: bell only, no toast
             && (nowMs - new Date(n.createdAt).getTime()) < 60_000, // created within last 60s
           );
           fresh.forEach((n) => _toastedIds.add(n.id));
