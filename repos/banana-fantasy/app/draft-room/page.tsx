@@ -1097,12 +1097,34 @@ function DraftRoomContent() {
     if (!isLiveMode || !draftId || !walletParam) return;
     let cancelled = false;
 
+    // Restore the user's last in-draft sort for THIS draft (device-local).
+    // This is the source of truth for "whatever you left it on" — the server
+    // read (/draft-actions/.../preferences) and write (/owner/.../state/sort)
+    // use different endpoints, so the server value can lag and reset to ADP.
+    try {
+      const savedSort = localStorage.getItem(`draftSort:${draftId}`);
+      if (savedSort === 'adp' || savedSort === 'rank') {
+        setSortPreference(savedSort);
+        engine.setAutoPickSortPreference(savedSort);
+      }
+    } catch { /* ignore */ }
+
     draftApi.getDraftPreferences(draftId, walletParam)
       .then((prefs) => {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
         const sortOrder = (prefs.sortBy || 'ADP').toUpperCase();
         let newSort = sortOrder === 'RANK' ? 'rank' as const : 'adp' as const;
+
+        // Device-local last choice for this draft wins over the (possibly stale)
+        // server value AND the global-default override below — it's what the
+        // user explicitly left it on.
+        let savedSort: 'adp' | 'rank' | null = null;
+        try {
+          const v = localStorage.getItem(`draftSort:${draftId}`);
+          if (v === 'adp' || v === 'rank') savedSort = v;
+        } catch { /* ignore */ }
+        if (savedSort) newSort = savedSort;
 
         // First-time entry into this draft: if the per-draft sortBy is still
         // the system default 'ADP' AND the user's global default is 'rank',
@@ -1115,7 +1137,8 @@ function DraftRoomContent() {
         const appliedKey = `sortDefaultApplied:${draftId}`;
         const alreadyApplied = typeof window !== 'undefined' && localStorage.getItem(appliedKey) === '1';
         if (
-          !alreadyApplied
+          !savedSort
+          && !alreadyApplied
           && defaultSortPreferenceLoaded
           && defaultSortPreference === 'rank'
           && newSort === 'adp'
@@ -1428,6 +1451,9 @@ function DraftRoomContent() {
   const handleSortChange = useCallback((sort: 'adp' | 'rank') => {
     setSortPreference(sort);
     engine.setAutoPickSortPreference(sort);
+    // Remember per-draft so re-entering keeps "whatever you left it on" even if
+    // the server round-trip lags (read/write hit different endpoints).
+    if (draftId) { try { localStorage.setItem(`draftSort:${draftId}`, sort); } catch { /* ignore */ } }
     if (isLiveMode && draftId && walletParam) {
       draftApi.updateSortPreference(walletParam, draftId, sort.toUpperCase())
         .catch(e => {
