@@ -36,14 +36,14 @@ export function FounderDraftBanner() {
   if (!Number.isFinite(eventMs)) return null;
 
   const diff = eventMs - now;
-  // Show within 24h before, and for the duration of the window after start.
-  const windowMs = Math.max(0, schedule.windowMinutes) * 60_000;
-  const showFrom = -windowMs;
+  // Show only BEFORE the event (24h out → 0:00:00). The moment the clock hits
+  // the start time we pull the banner — once the founders' draft fills it's too
+  // late to join, so we never leave a misleading "join now" up after the time.
+  // The countdown reaching 0:00:00 IS the go signal.
   const showUntil = SHOW_WITHIN_HOURS * 3600_000;
-  if (diff < showFrom || diff > showUntil) return null;
+  if (diff <= 0 || diff > showUntil) return null;
 
-  const isLive = diff <= 0 && diff >= showFrom;
-  const isImminent = diff > 0 && diff <= 60_000; // last minute
+  const isImminent = diff <= 60_000; // last minute — red urgency
 
   // Always derive the label from the real event time so it can never disagree
   // with the countdown. Say "today" when the event is on the current day.
@@ -56,11 +56,9 @@ export function FounderDraftBanner() {
     weekday: 'long', month: 'short', day: 'numeric',
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
   });
-  const headline = isLive
-    ? 'Founder Draft is live — join now to qualify'
-    : isToday
-      ? `Founder Draft today · ${timeLabel}`
-      : `Next Founder Draft: ${fullLabel}`;
+  const headline = isToday
+    ? `Founder Draft today · ${timeLabel}`
+    : `Next Founder Draft: ${fullLabel}`;
 
   return (
     <section
@@ -90,31 +88,30 @@ export function FounderDraftBanner() {
             >
               i
             </button>
-            {isLive && (
+            {isImminent && (
               <span className="text-[11px] uppercase tracking-wider font-bold text-red-400 animate-pulse">
-                ● Live now — join immediately
+                ● Starting now — get ready
               </span>
             )}
           </div>
           <h2 className="text-lg sm:text-xl font-bold text-white">{headline}</h2>
           <p className="text-xs sm:text-sm text-white/60 mt-1">
-            Happens every week at this time. Click <span className="text-white font-medium">Join Draft</span> the second the clock hits
-            <span className="text-white font-mono"> 0:00:00</span>. Everyone in the draft with the founder
-            earns a free spin + a shot at skipping playoffs.
+            Happens every week at this time. The second the clock hits
+            <span className="text-white font-mono"> 0:00:00</span>, hit <span className="text-white font-medium">Join Draft</span>. You made it
+            only if you see the founders + the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> sticker in your
+            draft — no sticker means you joined a different one and missed it. Paid entries in the founder&apos;s draft earn a free spin + a shot at skipping the playoffs.
           </p>
         </div>
 
-        {!isLive && (
-          <div className="text-right">
-            <div className="text-[11px] uppercase tracking-widest text-white/50">Starts in</div>
-            <div
-              className="font-mono font-bold text-2xl sm:text-3xl"
-              style={{ color: isImminent ? '#ef4444' : FOUNDER_CYAN }}
-            >
-              {formatCountdown(diff)}
-            </div>
+        <div className="text-right">
+          <div className="text-[11px] uppercase tracking-widest text-white/50">Starts in</div>
+          <div
+            className="font-mono font-bold text-2xl sm:text-3xl"
+            style={{ color: isImminent ? '#ef4444' : FOUNDER_CYAN }}
+          >
+            {formatCountdown(diff)}
           </div>
-        )}
+        </div>
       </div>
 
       {/* How it works — full detail, toggled by the (i) */}
@@ -126,8 +123,10 @@ export function FounderDraftBanner() {
           <div>
             <span className="font-semibold text-white">How to get in.</span> There&apos;s no special room —
             at exactly the start time, jump into a draft. Drafts fill fast in the rush, and only the one
-            the founders actually land in counts. Once it fills you&apos;ll see the founders&apos; wallet in
-            your draft and the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> tag in the room.
+            the founders actually land in counts. You&apos;ll know you made it when you see the founders in
+            your draft and the <span className="font-semibold" style={{ color: FOUNDER_CYAN }}>FOUNDER</span> sticker
+            in the room. <span className="text-white">If you don&apos;t see the founders + the FOUNDER sticker, you joined a
+            different draft and missed it this week</span> — try again next week.
           </div>
           <div>
             <span className="font-semibold text-white">Free Spin + Founders badge.</span> Everyone who enters
