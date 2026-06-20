@@ -40,9 +40,19 @@ export function PromosSidebar({
         </span>
       </div>
 
-      {promoCount === 0 ? (
+      {loading ? (
+        // Apple-style skeleton silhouette while promos resolve — no text flash.
+        <div className="rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] flex flex-col animate-pulse" aria-hidden="true">
+          <div className="mx-auto h-4 w-3/5 rounded-full bg-[#e8e8ed]" />
+          <div className="mx-auto mt-2 h-3 w-2/5 rounded-full bg-[#ececf0]" />
+          <div className="mt-auto">
+            <div className="mb-2 h-1.5 w-full rounded-full bg-[#e8e8ed]" />
+            <div className="h-9 w-full rounded-full bg-[#e8e8ed]" />
+          </div>
+        </div>
+      ) : promoCount === 0 ? (
         <div className="rounded-[20px] p-5 h-44 bg-[#fbfbfd] border border-[#d2d2d7] flex items-center justify-center text-sm text-[#4a4a4a]">
-          {loading ? 'Loading promos…' : 'No promos available'}
+          No promos available
         </div>
       ) : (
         (() => {
@@ -105,26 +115,31 @@ export function PromosSidebar({
         })()
       )}
 
-      <div className="flex justify-center gap-1.5 mt-3">
-        {promos.map((_, idx) => (
-          <button
-            key={idx}
-            onClick={() => onSelectIndex(idx)}
-            className={`w-2 h-2 rounded-full transition-all ${
-              idx === promoIndex ? 'bg-banana w-4' : 'bg-white/20 hover:bg-white/40'
-            }`}
-          />
-        ))}
-      </div>
+      {/* Dots + nav only once real promos are present — never under the skeleton/empty. */}
+      {!loading && promoCount > 0 && (
+        <>
+          <div className="flex justify-center gap-1.5 mt-3">
+            {promos.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => onSelectIndex(idx)}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  idx === promoIndex ? 'bg-banana w-4' : 'bg-white/20 hover:bg-white/40'
+                }`}
+              />
+            ))}
+          </div>
 
-      <div className="flex justify-between mt-3">
-        <button onClick={onPrev} className="px-3 py-1.5 text-white/40 hover:text-white/70 transition-colors text-sm">
-          ← Prev
-        </button>
-        <button onClick={onNext} className="px-3 py-1.5 text-white/40 hover:text-white/70 transition-colors text-sm">
-          Next →
-        </button>
-      </div>
+          <div className="flex justify-between mt-3">
+            <button onClick={onPrev} className="px-3 py-1.5 text-white/40 hover:text-white/70 transition-colors text-sm">
+              ← Prev
+            </button>
+            <button onClick={onNext} className="px-3 py-1.5 text-white/40 hover:text-white/70 transition-colors text-sm">
+              Next →
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -357,7 +357,7 @@ export default function DraftingPage() {
             promos={promos}
             promoIndex={promoIndex}
             promoCount={promoCount}
-            loading={isLoading || promosQuery.isLoading}
+            loading={isLoading || promosQuery.isLoading || (!!user && promosQuery.promos === undefined)}
             claimedPromos={claimedPromos}
             onSelectPromo={setSelectedPromo}
             onClaim={handleClaim}

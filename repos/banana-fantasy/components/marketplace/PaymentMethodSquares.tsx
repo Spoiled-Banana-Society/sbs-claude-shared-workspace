@@ -107,7 +107,7 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
   // cohesive pair. Grey text by default; selection shown by banana border/fill.
   const box = (active: boolean) =>
     `w-full flex flex-col items-center justify-center rounded-xl border-2 p-3 transition-all ${
-      active ? 'border-banana bg-banana/10 text-text-primary' : 'border-bg-tertiary hover:border-bg-elevated text-text-secondary'
+      active ? 'border-banana bg-banana/10 text-text-primary' : 'border-white/25 hover:border-white/45 text-text-secondary'
     }`;
 
   const cardBox = (
