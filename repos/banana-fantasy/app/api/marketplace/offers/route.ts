@@ -100,9 +100,43 @@ export async function GET(req: Request) {
       }
     } catch (e) { console.error('[marketplace/offers] cache read failed:', e); }
 
-    // Show EVERY live offer (deduped by orderHash above) — each is a separate
-    // signed order the owner can accept and the offerer can cancel, so hiding
-    // any of them hides a real cancellable/acceptable order.
+    // OpenSea-style funding validation: an offer is only real if the offerer
+    // STILL holds enough USDC and has approved the Seaport conduit for it. The
+    // funds aren't escrowed — if the offerer spent/withdrew them (e.g. minted a
+    // pass or bought a team), the offer would revert on accept. OpenSea hides
+    // such offers from sellers; we do the same so a seller never accepts one
+    // that can't pay. Best-effort: on any RPC error we KEEP the offer (never
+    // hide a real order just because a balance read hiccuped).
+    if (offers.length > 0) {
+      const OPENSEA_CONDUIT_ADDRESS = '0x1e0049783f008a0085193e00003d00cd54003c71';
+      try {
+        const { createPublicClient, http } = await import('viem');
+        const { BASE, BASE_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS, USDC_ABI } = await import('@/lib/contracts/bbb4');
+        const client = createPublicClient({ chain: BASE, transport: http(BASE_RPC_URL) });
+        const fundOf = new Map<string, { bal: bigint; allow: bigint }>();
+        await Promise.all(
+          [...new Set(offers.map((o: OfferData) => o.offererAddress.toLowerCase()))].map(async (addr) => {
+            try {
+              const [bal, allow] = await Promise.all([
+                client.readContract({ address: BASE_SEPOLIA_USDC_ADDRESS, abi: USDC_ABI, functionName: 'balanceOf', args: [addr as `0x${string}`] }),
+                client.readContract({ address: BASE_SEPOLIA_USDC_ADDRESS, abi: USDC_ABI, functionName: 'allowance', args: [addr as `0x${string}`, OPENSEA_CONDUIT_ADDRESS as `0x${string}`] }),
+              ]);
+              fundOf.set(addr, { bal: bal as bigint, allow: allow as bigint });
+            } catch { /* unreadable → leave unset → keep the offer */ }
+          }),
+        );
+        for (let i = offers.length - 1; i >= 0; i--) {
+          const f = fundOf.get(offers[i].offererAddress.toLowerCase());
+          if (!f) continue; // couldn't verify → don't hide
+          const needWei = BigInt(Math.ceil(offers[i].amount * 1e6));
+          if (f.bal < needWei || f.allow < needWei) offers.splice(i, 1); // underfunded → hide
+        }
+      } catch (e) { console.error('[marketplace/offers] funding validation skipped (non-fatal):', e); }
+    }
+
+    // Show EVERY remaining live offer (deduped by orderHash above) — each is a
+    // separate signed order the owner can accept and the offerer can cancel, so
+    // hiding any of them hides a real cancellable/acceptable order.
     offers.sort((a: OfferData, b: OfferData) => b.amount - a.amount); // top offer first
 
     // Enrich with SBS profiles (same pattern as listings route)
