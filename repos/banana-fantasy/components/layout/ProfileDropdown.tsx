@@ -99,13 +99,17 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 p-1 rounded-lg hover:bg-bg-tertiary transition-colors group"
       >
-        {/* Avatar with equipped badge */}
+        {/* Avatar with equipped badge. No badge tooltip HERE: this avatar is
+            the tap target to open the profile menu, so people hit it constantly
+            — a badge hover/tap tooltip every time would get annoying (Boris
+            2026-06-20). The badge still shows; only the text-on-hover is off. */}
         <AvatarWithBadge
           imageUrl={user.profilePicture}
           alt={user.username}
           size={36}
           equippedBadge={user.equippedBadge}
           ripeness={user.ripeness}
+          showBadgeTooltip={false}
         />
         {/* Dropdown arrow */}
         <svg
