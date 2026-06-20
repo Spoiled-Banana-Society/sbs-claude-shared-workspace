@@ -47,7 +47,7 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
     // Coinbase / Base Account SDK
     import('@base-org/account').then(({ createBaseAccountSDK }) => {
       const sdk = createBaseAccountSDK({
-        appName: 'Banana Fantasy',
+        appName: 'SBS',
         appLogoUrl: `${window.location.origin}/sbs-logo.png`,
         appChainIds: [8453],
       });

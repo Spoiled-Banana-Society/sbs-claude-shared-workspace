@@ -2,6 +2,8 @@
 
 import Image from 'next/image';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { useAuth } from '@/hooks/useAuth';
+import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 
 type SweepStep = 'confirm' | 'processing' | 'complete';
 type SweepStatus = 'pending' | 'processing' | 'done' | 'failed';
@@ -34,6 +36,7 @@ export function SweepModal({
   onExecuteSweep,
   onDone,
 }: SweepModalProps) {
+  const { isEmbeddedWallet, user } = useAuth();
   if (!show) return null;
 
   return (
@@ -79,20 +82,13 @@ export function SweepModal({
 
               <div className="mb-4">
                 <label className="block text-text-secondary text-sm mb-3">Payment Method</label>
-                <div className="grid gap-3 grid-cols-2">
-                  <button
-                    onClick={() => onSetPaymentMethod('card')}
-                    className={`p-3 rounded-xl border-2 transition-all text-center ${sweepPaymentMethod === 'card' ? 'border-banana bg-banana/10' : 'border-bg-tertiary hover:border-bg-elevated'}`}
-                  >
-                    <span className={`text-sm font-medium ${sweepPaymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>Card</span>
-                  </button>
-                  <button
-                    onClick={() => onSetPaymentMethod('usdc')}
-                    className={`p-3 rounded-xl border-2 transition-all text-center ${sweepPaymentMethod === 'usdc' ? 'border-banana bg-banana/10' : 'border-bg-tertiary hover:border-bg-elevated'}`}
-                  >
-                    <span className={`text-sm font-medium ${sweepPaymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>USDC</span>
-                  </button>
-                </div>
+                <PaymentMethodSquares
+                  value={sweepPaymentMethod}
+                  onChange={onSetPaymentMethod}
+                  isEmbeddedWallet={isEmbeddedWallet}
+                  usdcBalance={user?.usdcBalance}
+                  requiredAmount={sweepTotal}
+                />
               </div>
 
               <div className="p-4 bg-bg-primary rounded-xl space-y-2 mb-4">

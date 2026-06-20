@@ -117,6 +117,19 @@ export function useCollectionNfts(limit: number = 50, level?: 'jackpot' | 'hof' 
     fetchNfts(false);
   }, [fetchNfts]);
 
+  // Refresh when the tab/window regains focus so navigating to the marketplace
+  // (e.g. right after a draft finishes) shows the latest teams without a manual
+  // reload. User-driven events only — never a per-render fetch.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refetch]);
+
   return { data, isLoading, error, hasMore, loadMore, refetch };
 }
 
@@ -179,6 +192,18 @@ export function useListings(
   const refetch = useCallback(() => {
     fetchListings(false);
   }, [fetchListings]);
+
+  // Refresh when the tab/window regains focus so navigating back shows the
+  // latest listings without a manual reload. User-driven events only.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refetch]);
 
   return { data, isLoading, error, hasMore, loadMore, refetch };
 }

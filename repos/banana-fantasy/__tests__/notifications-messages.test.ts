@@ -3,43 +3,44 @@ import { renderMessage } from '@/lib/notifications/messages';
 
 describe('renderMessage', () => {
   describe('draft.filled', () => {
-    it('includes the draft name in the title and "filled" language', () => {
+    it('renders just "League #<n> filled" (League number, no BBB, no emoji)', () => {
       const m = renderMessage({
         type: 'draft.filled',
-        draftId: 'd1',
-        draftName: 'Sunday Slugfest',
+        draftId: 'league-25',
+        draftName: 'BBB #25',
       });
-      // Per Boris 2026-05-25: title carries the league name + "filled".
-      // Body stays generic so it's short enough to render fully in an
-      // iOS lock-screen banner: "Tap to join the draft."
-      expect(m.title).toMatch(/filled/i);
-      expect(m.title).toContain('Sunday Slugfest');
+      // Boris 2026-06-20: the visible line is only "League #<n> filled".
+      expect(m.title).toBe('League #25 filled');
+      expect(m.title).not.toMatch(/BBB|🍌/);
+      // body exists only so web push has contents; channels don't show it.
       expect(m.body.length).toBeGreaterThan(0);
     });
 
-    it('falls back to generic copy when draftName is missing', () => {
+    it('falls back to generic copy when no league number is resolvable', () => {
       const m = renderMessage({ type: 'draft.filled', draftId: 'd1' });
       expect(m.title).toMatch(/filled/i);
-      expect(m.body.length).toBeGreaterThan(0);
-      expect(m.body).not.toContain('undefined');
       expect(m.title).not.toContain('undefined');
+      expect(m.title).not.toContain('#');
     });
   });
 
   describe('draft.your_turn', () => {
-    it('uses "on the clock" copy', () => {
+    it('renders "You\'re on the clock — League #<n>"', () => {
       const m = renderMessage({
         type: 'draft.your_turn',
-        draftId: 'd1',
-        draftName: 'X',
+        draftId: 'league-25',
+        draftName: 'BBB #25',
         pickNumber: 5,
         pickLengthSeconds: 30,
       });
       expect(m.title).toMatch(/clock/i);
+      expect(m.title).toContain('League #25');
+      expect(m.title).not.toMatch(/BBB|🍌/);
+      // timer lives in the push-only body, not the visible title line.
       expect(m.body).toContain('30 seconds');
     });
 
-    it('rounds long pick lengths to whole hours', () => {
+    it('rounds long pick lengths to whole hours (push body)', () => {
       const m = renderMessage({
         type: 'draft.your_turn',
         draftId: 'd1',
@@ -51,14 +52,14 @@ describe('renderMessage', () => {
     it('omits the timer when pickLengthSeconds is absent', () => {
       const m = renderMessage({
         type: 'draft.your_turn',
-        draftId: 'd1',
-        draftName: 'X',
+        draftId: 'league-9',
+        draftName: 'BBB #9',
       });
       expect(m.body).not.toMatch(/seconds|hours/);
     });
   });
 
-  it('builds a draft-room deep link with the draft id', () => {
+  it('builds a draft-room deep link with the draft id (push tap-target)', () => {
     const m = renderMessage({ type: 'draft.filled', draftId: 'abc123' });
     expect(m.url).toContain('/draft-room?id=abc123');
   });

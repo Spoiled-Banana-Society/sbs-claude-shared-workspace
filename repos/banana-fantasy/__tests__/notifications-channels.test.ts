@@ -208,7 +208,7 @@ describe('sendTelegram', () => {
     expect(r.status).toBe('skipped');
   });
 
-  it('posts sendMessage with the chat id and a deep-link button', async () => {
+  it('posts sendMessage with clean copy only — no button, no link', async () => {
     vi.stubEnv('TELEGRAM_BOT_TOKEN', 'bot-token');
     const fetchFn = mockFetch(true);
     const r = await sendTelegram(
@@ -220,7 +220,9 @@ describe('sendTelegram', () => {
     expect(fetchFn.mock.calls[0][0]).toContain('/botbot-token/sendMessage');
     const body = JSON.parse(fetchFn.mock.calls[0][1].body);
     expect(body.chat_id).toBe('99887');
-    expect(body.reply_markup.inline_keyboard[0][0].url).toBe(message.url);
+    expect(body.text).toBe(message.title);
+    expect(body.reply_markup).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain(message.url);
   });
 
   it('returns failed when Telegram responds non-OK', async () => {
@@ -268,8 +270,9 @@ describe('sendDiscord', () => {
       'https://discord.com/api/v10/channels/dm-chan-1/messages',
     );
     const body = JSON.parse(fetchFn.mock.calls[1][1].body);
-    expect(body.content).toContain(message.title);
+    expect(body.content).toBe(message.title); // clean copy only
     expect(body.content).not.toContain('<@');
+    expect(body.content).not.toContain(message.url); // no link to the draft/site
   });
 
   it('returns failed when Discord responds non-OK', async () => {

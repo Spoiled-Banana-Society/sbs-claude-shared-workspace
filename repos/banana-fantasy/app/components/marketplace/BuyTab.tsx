@@ -244,7 +244,7 @@ export function BuyTab({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-12">
-          {deduplicatedTeams.map(team => (
+          {deduplicatedTeams.map((team, idx) => (
             <div
               key={`${team.id}-${team.orderHash}`}
               onClick={() => {
@@ -256,9 +256,9 @@ export function BuyTab({
               <div className="relative aspect-[4/5] bg-[#0d0d12]">
                 {team.fillingWheelLevel ? (
                   // Wheel-won JP/HOF pass listed while filling: gold/red tier art.
-                  <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                  <Image src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" priority={idx < 6} />
                 ) : team.imageUrl ? (
-                  <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" />
+                  <Image src={team.imageUrl} alt={team.name} fill className="object-contain" sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" priority={idx < 6} />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center"><FallbackPassSvg gradientId={`passGrad-${team.id}`} /></div>
                 )}
