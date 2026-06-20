@@ -68,42 +68,52 @@ function fireCelebration(segment: WheelSegment) {
 }
 
 // Clean, minimal Apple-style prize icons — our own marks, not emojis. Each
-// tier is distinct and tier-colored: Jackpot = trophy, HOF = star, draft hauls
-// = a stack of passes (more layers for bigger hauls, +sparkle at 20).
+// Each tier gets a distinct, tier-colored icon: Jackpot = trophy, HOF = gold
+// star, draft wins = a ticket (fanned into a stack for bigger hauls, +sparkle
+// at the 20-draft top tier).
 function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: number }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', style: { color: segment.color }, 'aria-hidden': true as const };
   if (segment.id === 'jackpot') {
+    // Clean two-handled trophy on a pedestal.
     return (
       <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M7 4h10v4.5a5 5 0 0 1-10 0V4z" fill="currentColor" fillOpacity={0.15} />
-        <path d="M7 5.5H4.2v1.8a3 3 0 0 0 3 3M17 5.5h2.8v1.8a3 3 0 0 1-3 3" />
-        <path d="M12 13.5v2.5M9.2 20h5.6M10 20l.4-4h3.2l.4 4" />
+        <path d="M8 4h8v4.5a4 4 0 0 1-8 0V4z" fill="currentColor" fillOpacity={0.12} />
+        <path d="M8 5.2H5.5V7a2.5 2.5 0 0 0 2.5 2.5" />
+        <path d="M16 5.2h2.5V7a2.5 2.5 0 0 1-2.5 2.5" />
+        <path d="M12 12.5v3" />
+        <path d="M10.2 15.5h3.6l.7 4h-5z" fill="currentColor" fillOpacity={0.12} />
       </svg>
     );
   }
   if (segment.id === 'hof') {
+    // Hall of Fame = solid gold star.
     return (
       <svg {...common} fill="currentColor">
         <path d="M12 2.6l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.56 5.92 20.16l1.09-6.35-4.62-4.5 6.38-.93z" />
       </svg>
     );
   }
-  // Draft passes: stacked cards (1 / 5 / 10 / 20 → 1 / 2 / 3 / 3+sparkle layers).
+  // Draft wins = ticket/pass. Fan a stack for bigger hauls; sparkle at 20.
   const val = typeof segment.prizeValue === 'number' ? segment.prizeValue : 1;
-  const layers = val >= 10 ? 3 : val >= 5 ? 2 : 1;
+  const layers = val >= 10 ? 3 : val >= 2 ? 2 : 1;
+  const recenter = (layers - 1) * 1.3;
   return (
-    <svg {...common} fill="currentColor">
-      {Array.from({ length: layers }).map((_, i) => {
-        const off = (layers - 1 - i) * 2.6;
-        const front = i === layers - 1;
-        return (
-          <g key={i} transform={`translate(${off}, ${-off})`}>
-            <rect x="3.5" y="7" width="16" height="11" rx="2.4" opacity={front ? 1 : 0.4} />
-            {front && <rect x="3.5" y="10.2" width="16" height="1.4" fill="#000" fillOpacity={0.35} />}
-          </g>
-        );
-      })}
-      {val >= 20 && <path d="M20 3l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />}
+    <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+      <g transform={`translate(${-recenter} ${recenter})`}>
+        {Array.from({ length: layers }).map((_, i) => {
+          const front = i === layers - 1;
+          const dx = i * 2.6;
+          return (
+            <g key={i} transform={`translate(${dx} ${-dx})`} opacity={front ? 1 : 0.4}>
+              <rect x="4.5" y="8.5" width="13.5" height="8" rx="2" />
+              {front && <line x1="13.2" y1="8.7" x2="13.2" y2="16.3" strokeDasharray="1.3 1.6" />}
+            </g>
+          );
+        })}
+      </g>
+      {val >= 20 && (
+        <path d="M19.6 3l.55 1.5 1.5.55-1.5.55L19.6 7l-.55-1.5L17.55 5l1.5-.55z" fill="currentColor" stroke="none" />
+      )}
     </svg>
   );
 }
