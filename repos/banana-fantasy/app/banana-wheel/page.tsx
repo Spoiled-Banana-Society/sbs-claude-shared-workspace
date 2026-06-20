@@ -364,10 +364,10 @@ export default function BananaWheelPage() {
             type="button"
             onClick={() => setShowOdds(true)}
             aria-label="Prize odds"
-            className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/25 text-white/60 hover:text-white hover:border-white/50 transition-colors"
+            className="text-white/30 hover:text-white/60 transition-colors"
           >
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
-              <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 4.5a1.3 1.3 0 110 2.6 1.3 1.3 0 010-2.6zM13.3 18h-2.6v-7h2.6v7z" />
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </button>
         </div>
@@ -394,14 +394,14 @@ export default function BananaWheelPage() {
         `lg:order-N` for desktop. Items inside each wrapper keep DOM order on
         both breakpoints.
       */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start lg:items-stretch">
         {/* LEFT column on desktop (order-1); mobile bottom (order-3) */}
         <div className="flex flex-col gap-4 order-3 lg:order-1">
           {/* Prizes on Wheel moved into the "i" popover by the title (Boris 2026-06-20). */}
 
-          {/* What Are These? */}
+          {/* What Are These? — flex-1 so its bottom lines up with the right column (Boris 2026-06-20). */}
           <div
-            className="rounded-2xl p-6 backdrop-blur-md"
+            className="rounded-2xl p-6 backdrop-blur-md lg:flex-1"
             style={{
               background: 'rgba(20, 20, 20, 0.7)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -567,11 +567,10 @@ export default function BananaWheelPage() {
             style={{ background: 'rgba(20,20,20,0.96)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-4">
               <h3 className="text-[17px] font-semibold text-white tracking-tight">Prizes on Wheel</h3>
               <button type="button" onClick={() => setShowOdds(false)} aria-label="Close" className="text-white/40 hover:text-white transition-colors text-[20px] leading-none">×</button>
             </div>
-            <p className="text-white/55 text-[13px] mb-4 leading-relaxed">Every spin wins at least 1 draft — with a shot at more, plus HOF &amp; Jackpot.</p>
             <div className="space-y-3.5 text-[14px]">
               {prizeSummary.map((item) => (
                 <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
