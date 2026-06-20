@@ -136,8 +136,13 @@ export function AvatarWithBadge({
   // well within any `overflow-hidden` parent and isn't clipped.
   return (
     <div
-      className={`relative inline-block flex-shrink-0 rounded-full ${className}`}
-      style={{ width: size, height: size }}
+      className={`relative inline-block flex-shrink-0 rounded-full bg-cover bg-center ${className}`}
+      // The banana sits as a background BEHIND the <img>. An opaque real pfp
+      // covers it completely; a transparent/blank/slow-loading external pfp
+      // (common for web2 Google/Gmail avatars on mobile — they can return a
+      // 200 with empty content, or simply never finish loading, so onError
+      // never fires) reveals the banana underneath instead of a blank circle.
+      style={{ width: size, height: size, backgroundImage: isFallback ? undefined : `url(${fallbackSrc})` }}
     >
       {useNextImage ? (
         <Image
