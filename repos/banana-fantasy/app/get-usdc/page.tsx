@@ -390,7 +390,7 @@ export default function GetUsdcPage() {
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-10">
           <Link
             href="/buy-drafts"
-            className="px-8 py-3.5 bg-banana text-black font-bold rounded-xl hover:brightness-110 transition-all shadow-lg shadow-banana/20 w-full sm:w-auto text-center"
+            className="px-8 py-3.5 bg-banana text-black font-bold rounded-xl hover:brightness-110 transition-all w-full sm:w-auto text-center"
           >
             Buy Draft Passes →
           </Link>

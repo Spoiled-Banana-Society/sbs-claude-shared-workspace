@@ -75,7 +75,7 @@ export default function BuyDraftsPage() {
                 if (getPurchaseFlow().phase !== 'purchase') resetPurchaseFlow();
                 setMode('buy');
               }}
-              className="px-8 py-4 bg-banana text-black font-bold text-xl rounded-2xl hover:brightness-110 transition-all shadow-lg shadow-banana/20"
+              className="px-8 py-4 bg-banana text-black font-bold text-xl rounded-2xl hover:brightness-110 transition-all"
             >
               Buy Draft Passes
             </button>
