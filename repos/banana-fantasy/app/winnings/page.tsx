@@ -230,7 +230,14 @@ export default function PrizesPage() {
                   </p>
 
                   <div className="mt-6">
-                    {hasBalance ? (
+                    {!isEmbeddedWallet ? (
+                      // Web3: their balance IS the USDC in their own MetaMask —
+                      // it's already theirs, nothing to "cash out". Only winnings
+                      // (held by us) need a withdrawal.
+                      <p className="text-sm text-text-muted">
+                        Already in your connected wallet — it&apos;s yours to spend or move anytime.
+                      </p>
+                    ) : hasBalance ? (
                       isEligible ? (
                         <div className="flex items-center gap-3 flex-wrap">
                           <button
@@ -255,9 +262,7 @@ export default function PrizesPage() {
                         </div>
                       )
                     ) : (
-                      <p className="text-sm text-text-muted">
-                        {isEmbeddedWallet ? 'Team sales & transferred winnings land here.' : 'This is the USDC in your own wallet — spend or move it anytime.'}
-                      </p>
+                      <p className="text-sm text-text-muted">Team sales &amp; transferred winnings land here.</p>
                     )}
                   </div>
 
@@ -274,7 +279,7 @@ export default function PrizesPage() {
                     {hasPrizeError ? '—' : formatBalance(winningsAvailable)}
                   </p>
                   <p className="mt-1 text-[12px] text-text-muted">
-                    {hasWinnings ? 'Prizes on your cards · ready to transfer' : 'Prizes you win land here'}
+                    {hasWinnings ? (isEmbeddedWallet ? 'Prizes on your cards · ready to transfer' : 'Prizes on your cards · ready to cash out') : 'Prizes you win land here'}
                   </p>
 
                   <div className="mt-6">
@@ -286,7 +291,7 @@ export default function PrizesPage() {
                             disabled={withdrawing}
                             className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
                           >
-                            {withdrawing ? 'Transferring…' : 'Transfer to balance'}
+                            {withdrawing ? (isEmbeddedWallet ? 'Transferring…' : 'Cashing out…') : (isEmbeddedWallet ? 'Transfer to balance' : 'Cash out')}
                           </button>
                           <p className="text-[11px] text-text-muted ml-auto text-right">
                             {isEmbeddedWallet ? 'Then cash out · up to 2–3 days' : 'Sent to your wallet · up to 2–3 days'}
@@ -298,7 +303,7 @@ export default function PrizesPage() {
                             onClick={() => setShowVerifyModal(true)}
                             className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
                           >
-                            Verify to transfer
+                            {isEmbeddedWallet ? 'Verify to transfer' : 'Verify to cash out'}
                           </button>
                           <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
                         </div>
@@ -306,7 +311,7 @@ export default function PrizesPage() {
                     ) : hasPrizeError ? (
                       <p className="text-sm text-warning">Couldn&apos;t load winnings. Refresh — your money is safe.</p>
                     ) : (
-                      <p className="text-sm text-text-muted">Win a draft and your prize shows here. Transfer it to your balance, then cash out.</p>
+                      <p className="text-sm text-text-muted">{isEmbeddedWallet ? 'Win a draft and your prize shows here. Transfer it to your balance, then cash out.' : 'Win a draft and your prize shows here — cash out straight to your wallet.'}</p>
                     )}
                   </div>
                 </div>
