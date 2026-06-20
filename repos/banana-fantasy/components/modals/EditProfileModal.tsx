@@ -8,6 +8,7 @@ import { Button } from '../ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { usernameErrorText } from '@/lib/usernameMessages';
+import { publishIdentityChange } from '@/lib/identityBus';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -144,6 +145,9 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
       username: username.trim(),
       profilePicture: pic,
     });
+    // Instantly refresh the editor's OTHER surfaces (e.g. their draft-room card,
+    // which reads display-batch, not useAuth). Other users get it via the 30s poll.
+    publishIdentityChange(user?.walletAddress);
     setSaving(false);
     onClose();
   };

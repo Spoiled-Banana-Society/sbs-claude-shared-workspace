@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { useSyncedFlag } from '@/hooks/useSyncedFlag';
+import { publishIdentityChange } from '@/lib/identityBus';
 
 type OnboardingStep = 'tutorial' | 'profile';
 
@@ -82,6 +83,7 @@ export function useOnboarding() {
           username: displayName,
           profilePicture: avatar ?? undefined,
         });
+        publishIdentityChange(walletAddress);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to create profile';
         setError(message);
@@ -108,6 +110,7 @@ export function useOnboarding() {
           username: displayName,
           profilePicture: avatar ?? undefined,
         });
+        publishIdentityChange(walletAddress);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to update profile';
         setError(message);

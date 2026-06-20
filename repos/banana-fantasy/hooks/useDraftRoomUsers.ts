@@ -1,6 +1,8 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useSWRLike } from '@/hooks/useSWRLike';
+import { subscribeIdentityChange } from '@/lib/identityBus';
 import type { Ripeness } from '@/types';
 
 export interface DraftRoomUser {
@@ -97,11 +99,25 @@ export function useDraftRoomUsers(walletsRaw: (string | undefined | null)[]): Dr
   )).sort();
 
   const key = wallets.length > 0 ? `users-display:${wallets.join(',')}` : null;
-  const { data } = useSWRLike<DraftRoomUsersMap>(
+  const { data, mutate } = useSWRLike<DraftRoomUsersMap>(
     key,
     ({ signal }) => fetchUsers(wallets, signal),
-    { fallbackData: EMPTY },
+    // Live-feel without a socket: re-pull on focus, and poll every 30s (paused
+    // while the tab is hidden) so a name/pfp another player edits shows up for
+    // everyone within ~30s.
+    { fallbackData: EMPTY, revalidateOnFocus: true, refreshInterval: 30_000 },
   );
+
+  // Instant path for the EDITOR's own screens: when this client saves a name/pfp
+  // edit, refetch immediately if the changed wallet is one we're displaying (no
+  // wait for the 30s poll). Other clients still get it via the poll above.
+  const walletsKey = wallets.join(',');
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
+  useEffect(() => {
+    const set = new Set(walletsKey ? walletsKey.split(',') : []);
+    return subscribeIdentityChange((w) => { if (set.has(w)) void mutateRef.current(); });
+  }, [walletsKey]);
 
   return data;
 }
