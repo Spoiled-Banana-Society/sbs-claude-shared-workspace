@@ -260,6 +260,11 @@ export default function PrizesPage() {
                       </p>
                     )}
                   </div>
+
+                  {/* What the balance can be used for. */}
+                  <p className="mt-4 text-[11px] text-text-muted leading-relaxed border-t border-white/[0.06] pt-3">
+                    Use your balance to buy teams in the marketplace or to purchase draft passes — a draft pass needs the full $25, so you can only buy one when your balance covers it.
+                  </p>
                 </div>
 
                 {/* ---- Winnings ---- */}
