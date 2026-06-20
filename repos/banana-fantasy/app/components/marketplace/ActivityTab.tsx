@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { UserPopover } from '@/components/social/UserPopover';
 import type { ActivityEntry } from '@/hooks/useMarketplace';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { bananaDefaultName } from '@/utils/helpers';
 
 interface ActivityTabProps {
   myNfts: MarketplaceTeam[];
@@ -71,7 +72,7 @@ export function ActivityTab({
   const nameFor = (w?: string | null) => {
     if (!w) return '';
     const lw = w.toLowerCase();
-    return nameMap[lw] || `${w.slice(0, 6)}…${w.slice(-4)}`;
+    return nameMap[lw] || bananaDefaultName(w);
   };
 
   return (

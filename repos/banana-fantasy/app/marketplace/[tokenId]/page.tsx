@@ -8,6 +8,7 @@ import { useSendTransaction, useWallets, useFundWallet } from '@privy-io/react-a
 import { useAuth } from '@/hooks/useAuth';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { friendlyTxError } from '@/lib/marketplace/txErrors';
+import { bananaDefaultName } from '@/utils/helpers';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useListTeam } from '@/hooks/useListTeam';
 import { useNotifications } from '@/components/NotificationCenter';
@@ -290,7 +291,7 @@ export default function NftDetailPage() {
 
   const nameFor = (w?: string | null) => {
     if (!w) return '';
-    return nameMap[w.toLowerCase()] || `${w.slice(0, 6)}…${w.slice(-4)}`;
+    return nameMap[w.toLowerCase()] || bananaDefaultName(w);
   };
 
   const ACTIVITY_PREVIEW = 5;
@@ -1239,7 +1240,7 @@ export default function NftDetailPage() {
                     badgeRingColor="#13141a"
                   />
                   <span className="text-text-secondary">
-                    {nft.ownerName || `${nftOwner.slice(0, 6)}…${nftOwner.slice(-4)}`}
+                    {nft.ownerName || bananaDefaultName(nftOwner)}
                   </span>
                 </span>
               </UserPopover>

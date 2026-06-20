@@ -6,6 +6,7 @@ import {
   type MarketplaceTeam,
 } from '@/lib/opensea';
 import { getAllRecentCachedListings } from '@/lib/marketplace/listingCache';
+import { bananaDefaultName } from '@/utils/helpers';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 
 export const dynamic = 'force-dynamic';
@@ -118,7 +119,7 @@ export async function GET(req: Request) {
           t.orderHash = l.orderHash;
           t.protocolAddress = l.protocolAddress;
           t.ownerAddress = l.offerer;
-          t.owner = `${l.offerer.slice(0, 6)}...${l.offerer.slice(-4)}`;
+          t.owner = bananaDefaultName(l.offerer);
         }
       }
     } catch (e) {

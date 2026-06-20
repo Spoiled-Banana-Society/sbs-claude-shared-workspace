@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { markChatRead } from '@/hooks/useUnreadChatCount';
 import { UserPopover } from '@/components/social/UserPopover';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface ChatMessage {
   id: string;
@@ -59,7 +60,7 @@ export function LeagueChat({ draftId, walletAddress, username = 'You' }: LeagueC
         if (cancelled || !Array.isArray(data.messages)) return;
         setMessages(data.messages.slice(-HISTORY_LIMIT).map((r) => ({
           id: r.id,
-          sender: r.username || r.walletAddress.slice(0, 6),
+          sender: getTruncatedAccountName(r.username || '', r.walletAddress),
           pfpUrl: r.pfpUrl,
           walletAddress: r.walletAddress,
           text: r.text,

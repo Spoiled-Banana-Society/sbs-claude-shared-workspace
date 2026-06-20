@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { UserPopover } from '@/components/social/UserPopover';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface ChatMessage {
   id: string;
@@ -89,7 +90,7 @@ export function DraftRoomChat({
         if (cancelled || !Array.isArray(data.messages)) return;
         const next = data.messages.map((r) => ({
           id: r.id,
-          sender: r.username || r.walletAddress.slice(0, 6),
+          sender: getTruncatedAccountName(r.username || '', r.walletAddress),
           pfpUrl: r.pfpUrl,
           text: r.text,
           walletAddress: r.walletAddress,

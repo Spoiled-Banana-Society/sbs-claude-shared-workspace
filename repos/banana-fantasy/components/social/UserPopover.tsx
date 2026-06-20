@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
+import { getTruncatedAccountName } from '@/utils/helpers';
 
 interface UserPopoverProps {
   walletAddress: string;
@@ -320,7 +321,9 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
     );
   };
 
-  const displayName = username || shortWallet(walletAddress);
+  // Floor the placeholder/empty username to the canonical Banana handle; the raw
+  // wallet still shows on its own sub-line below (line ~360), never as the name.
+  const displayName = getTruncatedAccountName(username || '', walletAddress);
 
   return (
     <>
