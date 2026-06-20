@@ -250,7 +250,10 @@ export default function BananaWheelPage() {
           title: segment.prizeValue === 1 ? 'Free Draft Won!' : `${segment.prizeValue} Free Drafts Won!`,
           message: `You won ${segment.prizeValue} free draft${segment.prizeValue !== 1 ? 's' : ''} on the Banana Wheel!`,
           link: '/drafting',
-          icon: 'ticket',
+          // 'gift' = a FREE draft (won/earned), distinct from a PURCHASED pass
+          // ('ticket'). Same icon for every free-draft notification (wheel win
+          // + card-fee credit) so "free draft" always reads the same (Boris).
+          icon: 'gift',
           // Stable key → idempotent server doc AND the instant local bell
           // insert in pushNotification (entry shows the ms the wheel stops).
           ...(_outcome?.spinId ? { dedupeKey: `spin-win-${_outcome.spinId}` } : {}),
