@@ -143,11 +143,11 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What is a Founder Draft?',
-        answer: 'Every Wednesday at 6 PM PT the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft, streamed live on X.\n\nWhy you want in: everyone who enters with a PAID pass earns a Free Banana Spin AND unlocks the exclusive Founders badge. And if you outscore the founder in your league, you\'re entered into a draw against everyone who beat them across all Founder leagues — and one winner gets to skip straight to the finals.',
+        answer: 'Every Wednesday at 6 PM PT the founders (the Vag Bros) jump into the draft queue like everyone else — whichever draft they land in becomes that week\'s Founder Draft, streamed live on X.\n\nWhy you want in: everyone in the Founder Draft unlocks the exclusive Founders badge and gets a shot at skipping the playoffs — and paid entries also earn a Free Banana Spin.',
       },
       {
         question: 'What do I win?',
-        answer: 'Everyone in the Founder Draft who entered with a PAID pass gets a Free Banana Spin and unlocks the exclusive Founders badge. Free entries are welcome in the draft too — they just don\'t earn the rewards.',
+        answer: 'Being in the Founder Draft gets you:\n\n• Founders badge — everyone in the draft (paid OR free) unlocks the exclusive Founders badge.\n\n• A shot at skipping the playoffs — outscore the founder in your league and you\'re entered into a draw against everyone who beat them across all Founder leagues; one winner is picked to skip straight to the finals. Open to everyone in the draft.\n\n• Free Banana Spin — paid entries get a free spin on the Banana Wheel.\n\nThe only thing a free entry misses is the Free Banana Spin — the badge and the skip-the-playoffs shot are for everyone.',
       },
       {
         question: 'How do I get in?',
@@ -156,10 +156,6 @@ export const mockFAQSections: FAQSection[] = [
       {
         question: 'I joined but don\'t see the founders — did I miss it?',
         answer: 'Check once your draft is FULL (10/10) — the founders and the FOUNDER sticker only show after the draft fills, not the moment you join. If they\'re there, you\'re in. If they\'re NOT there once it\'s full, you joined a different draft and missed it this week — try again next week.',
-      },
-      {
-        question: 'Is there an extra perk?',
-        answer: 'Yes — outscore the founder in your Founder league and you\'re entered into a draw with everyone else who beat them across all Founder leagues. One winner is picked to skip straight to the finals.',
       },
     ],
   },
