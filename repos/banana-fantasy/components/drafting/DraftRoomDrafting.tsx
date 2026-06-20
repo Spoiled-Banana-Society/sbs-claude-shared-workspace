@@ -403,7 +403,7 @@ export function DraftRoomDrafting({
                   ⏸ Paused till 5am PT — you can still make picks
                 </div>
               ) : (
-                <div className="text-center text-[11px] mt-1 px-3 text-white/40">
+                <div className="text-center text-[12px] mt-1 px-3 text-white/65">
                   Drafting pauses daily 10pm–5am PT · you can still pick during that time
                 </div>
               )

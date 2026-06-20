@@ -2671,6 +2671,7 @@ function DraftRoomContent() {
               serverWaitProgress={serverWaitProgress}
               randomizingProgressFromStore={randomizingProgressFromStore}
               user={user}
+              userWallet={walletParam}
               visibleDraftType={visibleDraftType}
               controls={bannerControls}
               usersMap={draftRoomUsers}
