@@ -7,8 +7,10 @@ import { NextResponse } from 'next/server';
 // ─── CORS ────────────────────────────────────────────────────────────────
 
 const ALLOWED_ORIGINS = [
-  'https://sbsfantasy.com',
-  'https://www.sbsfantasy.com',
+  // Apex + ANY sbsfantasy.com subdomain (www, staging, launch domain). Must
+  // stay in sync with middleware.ts — both guards 403 disallowed origins, and
+  // a domain missing here silently breaks any route that calls handleCors().
+  /^https:\/\/([a-z0-9-]+\.)?sbsfantasy\.com$/,
   /^https:\/\/banana-fantasy-.*\.vercel\.app$/,
   'http://localhost:3000',
   'http://localhost:3001',

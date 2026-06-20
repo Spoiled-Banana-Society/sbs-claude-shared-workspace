@@ -93,7 +93,8 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       return;
     }
     case 'promo-new-user': {
-      surfaces.showToast('Welcome bonus ready — claim your free spin', '/promos');
+      // No start-of-session toast for new users (Boris): the welcome lands as a
+      // bell notification only — no transient popup the moment they sign in.
       surfaces.pushNotif(
         'Welcome bonus ready!',
         'Your new-user free spin is waiting on the promos page.',
