@@ -6,6 +6,7 @@ import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
 import { FounderPill } from '@/components/drafting/FounderPill';
 import { getDraftTypeColor } from '@/lib/draftTypes';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
+import { slowDraftActiveSecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import type { DraftState } from '@/lib/draftStore';
 
 export type Draft = DraftState;
@@ -232,11 +233,31 @@ export function DraftRow({
               // this speed, the value is almost certainly a pre-sync
               // default that syncLiveDrafts will overwrite on its next
               // poll (<= 3s). Render a quiet placeholder until then.
+              // SLOW picks pause overnight (10pm–5am PT), so the raw
+              // pickEndTimestamp − now includes the skipped paused hours and
+              // reads as a huge ~27000s+ value → it would wrongly stick on
+              // "Syncing…". Use the pause-aware remaining for slow (matches the
+              // in-room clock); fast stays raw wall-clock.
+              const nowSec = Math.floor(Date.now() / 1000);
+              const isSlow = draft.draftSpeed !== 'fast';
+              // During the overnight pause the slow clock is frozen — show the
+              // pause copy instead of a static number (matches the in-room copy).
+              if (isSlow && isSlowDraftNightPause(nowSec)) {
+                return <span className="text-banana/80 font-medium text-[11px] sm:text-sm whitespace-nowrap">⏸ Paused till 5am PT</span>;
+              }
               const remaining = draft.pickEndTimestamp
-                ? Math.max(0, draft.pickEndTimestamp - Date.now() / 1000)
+                ? (isSlow
+                    ? slowDraftActiveSecondsUntil(nowSec, draft.pickEndTimestamp)
+                    : Math.max(0, draft.pickEndTimestamp - nowSec))
                 : (draft.timeRemaining ?? 30);
-              const expectedPickLength = draft.draftSpeed === 'fast' ? 30 : 28800;
-              const looksUnconfirmed = remaining > expectedPickLength * 0.95;
+              const expectedPickLength = isSlow ? 28800 : 30;
+              // Fast: a value within 5% of full is almost certainly a pre-sync
+              // default → brief placeholder. Slow: an 8h pick legitimately sits
+              // near-full for ~24min, so 5% would falsely read "Syncing…"; only
+              // a value ABOVE the max pick length (raw/unsynced) is unconfirmed.
+              const looksUnconfirmed = isSlow
+                ? remaining > expectedPickLength + 2
+                : remaining > expectedPickLength * 0.95;
               if (looksUnconfirmed) {
                 return <span className="text-white/30 text-[11px] sm:text-sm">Syncing…</span>;
               }
