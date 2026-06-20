@@ -143,7 +143,7 @@ export function CashOutModal({
   onVerified,
 }: CashOutModalProps) {
   const privy = usePrivy();
-  const { login: triggerLogin, logout: triggerLogout } = useAuth();
+  const { login: triggerLogin, logout: triggerLogout, isEmbeddedWallet } = useAuth();
   const [step, setStep] = useState<Step>('intro');
   // True when our backend rejected the request because the Privy access token
   // was missing or invalid. Switches the error UI from "Try Again" to a
@@ -856,10 +856,14 @@ export function CashOutModal({
               <li>• Sign in or create your Coinbase account</li>
               <li>• Verify ID and link your payout method (first time only)</li>
               <li>• Tap <strong>Cash out now</strong> to confirm the amount</li>
-              <li>
-                • Your wallet (MetaMask / Coinbase Wallet) will pop up to approve sending USDC. Tap{' '}
-                <strong>Sign / Confirm</strong> in your wallet to finish.
-              </li>
+              {isEmbeddedWallet ? (
+                <li>• That&apos;s it — your cash is on its way. Nothing else to approve.</li>
+              ) : (
+                <li>
+                  • Your wallet (MetaMask / Coinbase Wallet) will pop up to approve sending USDC. Tap{' '}
+                  <strong>Sign / Confirm</strong> in your wallet to finish.
+                </li>
+              )}
             </ul>
           </div>
 
