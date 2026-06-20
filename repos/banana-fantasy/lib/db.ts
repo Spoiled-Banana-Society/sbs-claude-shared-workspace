@@ -15,6 +15,7 @@ export const spinWheel = db.spinWheel;
 export const getWheelHistory = db.getWheelHistory;
 export const createPurchase = db.createPurchase;
 export const verifyPurchase = db.verifyPurchase;
+export const notifyPassPurchased = db.notifyPassPurchased;
 export const getPurchaseHistory = db.getPurchaseHistory;
 export const createWithdrawal = db.createWithdrawal;
 export const getWithdrawalsByUser = db.getWithdrawalsByUser;

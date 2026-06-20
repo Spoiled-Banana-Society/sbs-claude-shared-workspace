@@ -1036,6 +1036,30 @@ export async function createPurchase(
 }
 
 /**
+ * Fire a real-time server bell the moment a draft-pass purchase confirms (Boris:
+ * every successful buy gets a bell). Idempotent per purchase via `dedupeId`
+ * (a txHash or purchaseId), so a retry / double-call can't double-bell. Best
+ * effort — never throws into the purchase path.
+ */
+export async function notifyPassPurchased(userId: string, quantity: number, dedupeId: string): Promise<void> {
+  if (!Number.isInteger(quantity) || quantity <= 0 || !userId) return;
+  try {
+    await createNotification(userId.toLowerCase(), {
+      type: 'purchase_complete',
+      title: quantity === 1 ? 'Draft pass purchased' : `${quantity} draft passes purchased`,
+      message: quantity === 1
+        ? 'Your draft pass is ready — jump into a draft!'
+        : `Your ${quantity} draft passes are ready — jump into a draft!`,
+      link: '/draft',
+      dedupeKey: `pass-buy-${dedupeId}`,
+      icon: 'ticket',
+    });
+  } catch (err) {
+    console.warn('[notifyPassPurchased] failed:', err);
+  }
+}
+
+/**
  * Bumps mint promo (Buy 10 → Spin) and buy-bonus promo (Buy 2 → 1 Free)
  * progress for a wallet that just minted N passes. Runs inside the caller's
  * transaction. Returns milestones earned per promo so the caller can react
@@ -1494,6 +1518,9 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
   // Always nudge devices to refetch promos so mint progress (e.g. 9/10) syncs
   // in real-time on every purchase, not just at a milestone.
   pushStreamEventBg(prePurchase.userId, 'notification', { source: 'purchase' });
+
+  // Bell: every successful pass buy gets a real-time confirmation (Boris).
+  await notifyPassPurchased(prePurchase.userId, prePurchase.quantity, purchaseId);
 
   return txResult;
 }
@@ -3279,16 +3306,25 @@ export async function unlockBadge(
     // ping, so the bell shows up live on every device.
     const badge = BADGE_BY_ID[badgeId];
     if (badge) {
+      // Show the ACTUAL count they hit, not the badge's hover-range. Ripeness
+      // unlocks pass the real `paidCount` (computeAndStoreRipeness) — so the bell
+      // reads "19 paid drafts completed this season" instead of "10–19 paid
+      // drafts" (the range is just info for how to earn it, per Boris). Badges
+      // without a count fall back to the badge's description.
+      const paidCount = typeof source?.paidCount === 'number' ? (source.paidCount as number) : null;
+      const message = paidCount !== null
+        ? `${paidCount} paid draft${paidCount === 1 ? '' : 's'} completed this season.`
+        : badge.description;
       try {
         await createNotification(userId, {
           type: 'promo',
           title: `Badge unlocked: ${badge.label}`,
-          message: badge.description,
+          message,
           link: '/profile?tab=badges',
           dedupeKey: `badge-${badgeId}`,
           icon: 'award',
         });
-      } catch { /* best-effort; the toast below still delivers the moment */ }
+      } catch { /* best-effort */ }
     }
     // TOAST — fast RTDB push to the user's event stream (real-time, transient).
     pushStreamEventBg(userId, 'badge-unlock', {

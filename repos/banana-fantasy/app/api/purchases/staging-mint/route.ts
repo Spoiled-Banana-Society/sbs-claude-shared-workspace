@@ -8,7 +8,7 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { writeDraftPassMetadata } from '@/lib/nftCardServer';
 import { recountFromInventory } from '@/lib/passLedger';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
-import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
+import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
 import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 
@@ -111,6 +111,9 @@ export async function POST(req: Request) {
         metadata: { source: 'staging_mint_button', mintedOnChain: true },
       });
     }
+
+    // Bell: real-time confirmation for every successful pass buy (Boris).
+    await notifyPassPurchased(userId, quantity, txHash);
 
     // Note: we deliberately do NOT call reconcilePassesForWallet here.
     // The reconciler reads on-chain ownership via Alchemy's NFT indexer,

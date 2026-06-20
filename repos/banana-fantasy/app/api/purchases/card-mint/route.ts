@@ -28,7 +28,7 @@ import { acquireAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { recountFromInventory } from '@/lib/passLedger';
 import { parsePermitSignature } from '@/lib/onchain/usdcPermit';
 import { buildActivityEventDoc, logActivityEvent } from '@/lib/activityEvents';
-import { incrementMintPromos, incrementReferralPromos } from '@/lib/db';
+import { incrementMintPromos, incrementReferralPromos, notifyPassPurchased } from '@/lib/db';
 import { feeForQty, FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { runInBackground } from '@/lib/serverBackground';
@@ -466,6 +466,9 @@ export async function POST(req: Request) {
     } else {
       await logActivityEvent(activityInput);
     }
+
+    // Bell: real-time confirmation for every successful pass buy (Boris).
+    await notifyPassPurchased(userId, quantity, mintResult.txHash);
 
     // 5b. Reward activity event → shows live in the admin LiveActivity feed.
     if (rewardEarned > 0) {
