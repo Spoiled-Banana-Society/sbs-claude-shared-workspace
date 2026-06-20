@@ -4,6 +4,7 @@ const FALLBACK_ADMIN_WALLETS = [
   '0x438bbe98eed1dd2df244b007dab0583cc9be72e0', // Boris
   '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
   '0xbd2e09c009a7834cd32f9fa8a87073c5b3083f11', // Richard test wallet (MetaMask 'r8')
+  '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
 ];
 
 function normalizeWallet(value: string): string {
