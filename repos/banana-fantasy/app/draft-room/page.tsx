@@ -2926,6 +2926,13 @@ function DraftRoomContent() {
                       console.warn('[Leave] Refund pass failed:', err);
                     }
                     draftStore.removeDraft(draftId);
+                    // Actually leaving (pass returned) = forget this draft's
+                    // per-draft sort + the first-time-default marker, so a future
+                    // re-join starts fresh and honors your default sort again.
+                    try {
+                      localStorage.removeItem(`draftSort:${draftId}`);
+                      localStorage.removeItem(`sortDefaultApplied:${draftId}`);
+                    } catch { /* ignore */ }
                     window.location.href = '/drafting';
                   } catch (err) {
                     console.error('Failed to leave draft:', err);
