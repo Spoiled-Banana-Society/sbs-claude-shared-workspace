@@ -67,19 +67,51 @@ function fireCelebration(segment: WheelSegment) {
   }
 }
 
-function getPrizeEmoji(segment: WheelSegment): string {
-  if (segment.id === 'jackpot') return '🎰';
-  if (segment.id === 'hof') return '🏆';
-  if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return '🍌';
-  if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return '🔥';
-  if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 5) return '⭐';
-  return '🎉';
+// Clean, minimal Apple-style prize icons — our own marks, not emojis. Each
+// tier is distinct and tier-colored: Jackpot = trophy, HOF = star, draft hauls
+// = a stack of passes (more layers for bigger hauls, +sparkle at 20).
+function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: number }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', style: { color: segment.color }, 'aria-hidden': true as const };
+  if (segment.id === 'jackpot') {
+    return (
+      <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 4h10v4.5a5 5 0 0 1-10 0V4z" fill="currentColor" fillOpacity={0.15} />
+        <path d="M7 5.5H4.2v1.8a3 3 0 0 0 3 3M17 5.5h2.8v1.8a3 3 0 0 1-3 3" />
+        <path d="M12 13.5v2.5M9.2 20h5.6M10 20l.4-4h3.2l.4 4" />
+      </svg>
+    );
+  }
+  if (segment.id === 'hof') {
+    return (
+      <svg {...common} fill="currentColor">
+        <path d="M12 2.6l2.85 5.78 6.38.93-4.62 4.5 1.09 6.35L12 17.56 5.92 20.16l1.09-6.35-4.62-4.5 6.38-.93z" />
+      </svg>
+    );
+  }
+  // Draft passes: stacked cards (1 / 5 / 10 / 20 → 1 / 2 / 3 / 3+sparkle layers).
+  const val = typeof segment.prizeValue === 'number' ? segment.prizeValue : 1;
+  const layers = val >= 10 ? 3 : val >= 5 ? 2 : 1;
+  return (
+    <svg {...common} fill="currentColor">
+      {Array.from({ length: layers }).map((_, i) => {
+        const off = (layers - 1 - i) * 2.6;
+        const front = i === layers - 1;
+        return (
+          <g key={i} transform={`translate(${off}, ${-off})`}>
+            <rect x="3.5" y="7" width="16" height="11" rx="2.4" opacity={front ? 1 : 0.4} />
+            {front && <rect x="3.5" y="10.2" width="16" height="1.4" fill="#000" fillOpacity={0.35} />}
+          </g>
+        );
+      })}
+      {val >= 20 && <path d="M20 3l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />}
+    </svg>
+  );
 }
 
 function getPrizeMessage(segment: WheelSegment): string {
-  if (segment.id === 'jackpot') return 'You hit the JACKPOT! 🎰';
-  if (segment.id === 'hof') return 'You won a Hall of Fame draft! 🏛️';
-  if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win! 🍌';
+  if (segment.id === 'jackpot') return 'You hit the JACKPOT!';
+  if (segment.id === 'hof') return 'You won a Hall of Fame draft!';
+  if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20) return 'Massive win!';
   if (typeof segment.prizeValue === 'number' && segment.prizeValue >= 10) return 'Big win!';
   return 'Added to your balance';
 }
@@ -96,29 +128,23 @@ function isHugeWin(segment: WheelSegment): boolean {
   return segment.id === 'jackpot' || (typeof segment.prizeValue === 'number' && segment.prizeValue >= 20);
 }
 
-// Rain the prize itself down the screen — banana for big draft hauls, 🎰 for
-// jackpot, 🏆 for HOF, etc. (uses the same emoji as the result card).
+// Rain clean tier-colored confetti down the screen (no emojis) — heavier for
+// the top tier. Color matches the prize so each win feels distinct.
 function rainPrizes(segment: WheelSegment) {
-  const emoji = getPrizeEmoji(segment);
-  let shapes: ReturnType<typeof confetti.shapeFromText>[] | undefined;
-  try {
-    shapes = [confetti.shapeFromText({ text: emoji, scalar: 4 })];
-  } catch {
-    shapes = undefined; // older confetti without emoji shapes — fall back to default
-  }
   const huge = isHugeWin(segment);
+  const colors = [segment.color, '#ffffff'];
   // Keep raining for as long as the music celebrates (big-four outro is long).
   const end = Date.now() + (huge ? 5200 : 3600);
   const tick = () => {
     confetti({
-      particleCount: huge ? 12 : 7,
+      particleCount: huge ? 14 : 8,
       startVelocity: 0,            // no launch — just let them fall
       gravity: huge ? 0.9 : 0.7,
       ticks: 320,
       spread: 0,
       origin: { x: Math.random(), y: -0.12 }, // drop in from above the top edge
-      scalar: huge ? 4 : 3,
-      ...(shapes ? { shapes } : {}),
+      scalar: huge ? 1.7 : 1.3,
+      colors,
     });
     if (Date.now() < end) setTimeout(tick, huge ? 90 : 130);
   };
@@ -661,14 +687,14 @@ export function BananaWheel({ spinsAvailable, onSpin, onSpinComplete, onSpecialD
               />
 
               <div
-                className="relative text-6xl mb-6"
+                className="relative mb-6 flex justify-center"
                 style={{ animation: 'bounceIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
               >
-                {getPrizeEmoji(wonSegment)}
+                <PrizeIcon segment={wonSegment} size={68} />
               </div>
 
               <p className="text-[#32d74b] text-sm font-semibold tracking-wide uppercase mb-2">
-                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' ? '🔥 LEGENDARY WIN!' : 'You Won!'}
+                {wonSegment.id === 'jackpot' || wonSegment.id === 'hof' ? 'LEGENDARY WIN!' : 'You Won!'}
               </p>
 
               <h3
