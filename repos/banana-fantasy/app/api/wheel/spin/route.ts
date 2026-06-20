@@ -19,6 +19,7 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
 import { claimSpinIndex, getCurrentPeriod } from '@/lib/wheelPeriod';
+import { deriveSpinOutcome } from '@/lib/wheelMerkle';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
 
 const WHEEL_SPINS_SUBCOLLECTION = 'wheelSpins';
@@ -205,6 +206,9 @@ export async function POST(req: Request) {
       allowForcedResult && typeof body.forceResult === 'string' ? body.forceResult : null;
     let segment: typeof segments[number];
     let index: number;
+    // For the VRF-period path: the segment we derived BEFORE the tx, so the tx's
+    // atomic claim can assert it landed on the same outcome (concurrent-spin guard).
+    let peekedSegmentId: string | null = null;
 
     // If a VRF + Merkle period is currently active, claim a spin index inside
     // the same transaction that decrements `wheelSpins`. The outcome is
@@ -236,9 +240,20 @@ export async function POST(req: Request) {
         seed,
       ));
     } else {
-      // Outcome derived inside the user-balance transaction below.
-      segment = segments[0];
-      index = 0;
+      // Period path: derive the REAL deterministic outcome NOW. deriveSpinOutcome
+      // is pure (salt + vrf + spinIndex → segment), so the prize, the wheel's
+      // landing angle, the free-draft credit, the on-chain mint, AND the activity
+      // feed below are all built from the ACTUAL result — not a "1 Draft"
+      // placeholder (the bug that made every period spin pay 1 Draft). The
+      // transaction below atomically CLAIMS this same spinIndex and re-derives
+      // the identical outcome; it asserts they match (rare concurrent-spin guard).
+      if (!currentPeriod!.salt || !currentPeriod!.vrfRandomness) {
+        throw new ApiError(500, `Wheel period ${currentPeriod!.periodNumber} missing salt/vrf`);
+      }
+      const peek = deriveSpinOutcome(currentPeriod!.salt, currentPeriod!.vrfRandomness, currentPeriod!.spinCount);
+      segment = peek.segment;
+      index = peek.segmentIndex;
+      peekedSegmentId = peek.segment.id;
     }
 
     const segmentCenter = index * segmentAngle + segmentAngle / 2;
@@ -305,6 +320,14 @@ export async function POST(req: Request) {
       // chosen above.
       if (usePeriod && currentPeriod) {
         const claim = await claimSpinIndex(currentPeriod.periodNumber, tx);
+        // The pre-tx peek built prize/angle/free-drafts/mint/activity from this
+        // exact outcome. The atomic claim MUST land on the same one. A mismatch
+        // means a concurrent spin took this index first → fail safe: throw so the
+        // whole tx rolls back (no spin consumed, no wrong award) and the user
+        // re-spins. On staging this effectively never happens (one spinner).
+        if (peekedSegmentId !== null && claim.segmentId !== peekedSegmentId) {
+          throw new ApiError(409, 'Spin slot was just taken — please spin again.');
+        }
         spinIndexInPeriod = claim.spinIndex;
         periodNumber = currentPeriod.periodNumber;
         const found = segments.find((s) => s.id === claim.segmentId);
