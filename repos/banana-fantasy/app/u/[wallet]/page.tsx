@@ -9,14 +9,24 @@ import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { UserSearchBox } from '@/app/components/marketplace/UserSearchBox';
 
-// Team card art. Uses a plain <img> (not next/image) so generated card URLs on
-// any host render without needing a next.config remotePatterns entry, and falls
-// back to the banana thumb if the image 404s.
+// Our generated card images (/api/og/team-card) live behind the staging
+// preview cookie, which the browser only sends SAME-ORIGIN. The stored imageUrl
+// is absolute (banana-fantasy-sbs.vercel.app), so on staging.sbsfantasy.com it
+// 404s cross-domain. Strip to a relative path so the request hits the current
+// origin WITH the cookie (and resolves correctly in prod too).
+function sameOrigin(url: string): string {
+  const i = url.indexOf('/api/og/');
+  return i >= 0 ? url.slice(i) : url;
+}
+
+// Team card art. Uses a plain <img> (not next/image) so the same-origin card
+// URL renders without a next.config remotePatterns entry, falling back to the
+// banana thumb only if the image genuinely 404s.
 function TeamThumb({ team }: { team: MarketplaceTeam }) {
   const [errored, setErrored] = useState(false);
-  const src = team.fillingWheelLevel
+  const src = sameOrigin(team.fillingWheelLevel
     ? buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)
-    : team.imageUrl || '';
+    : team.imageUrl || '');
 
   if (!src || errored) {
     return (

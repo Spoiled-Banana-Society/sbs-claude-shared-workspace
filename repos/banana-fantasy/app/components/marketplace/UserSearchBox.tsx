@@ -108,7 +108,6 @@ export function UserSearchBox({ className = '', autoFocus = false }: { className
                 <span className="w-7 h-7 rounded-full bg-bg-tertiary flex items-center justify-center text-sm">🍌</span>
               )}
               <span className="text-sm font-medium text-text-primary truncate">{u.username}</span>
-              {u.bananaNumber != null && <span className="ml-auto text-[10px] font-mono text-text-muted">#{u.bananaNumber}</span>}
             </button>
           ))}
         </div>
