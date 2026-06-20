@@ -72,7 +72,13 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // Team preview holders → let everything through to the real app.
   if (req.cookies.get(PRELAUNCH_COOKIE)?.value === '1') return null;
 
-  // Public: the API is fully sealed (nothing to probe).
+  // Card / OG images are PUBLIC by design — OpenSea, X/social previews, and
+  // Next.js's own <Image> optimizer all fetch them server-side with NO preview
+  // cookie. Gating them 404s every team card across the marketplace (Sell/Buy),
+  // My Teams, and elsewhere. They expose no private app data, so always allow.
+  if (pathname.startsWith('/api/og/')) return NextResponse.next();
+
+  // Public: the rest of the API is fully sealed (nothing to probe).
   if (pathname.startsWith('/api/')) {
     return new NextResponse('Not Found', { status: 404 });
   }
