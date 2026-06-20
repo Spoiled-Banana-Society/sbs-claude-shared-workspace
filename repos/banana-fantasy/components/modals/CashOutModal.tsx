@@ -765,7 +765,10 @@ export function CashOutModal({
             </div>
           </div>
 
-          {availableCount > 0 && (
+          {/* Only relevant when more than one option is shown (the "rates above"
+              comparison + the "extra" fast-rails fee note). With just the bank
+              option (No extra fee) it's confusing noise, so hide it. */}
+          {renderedQuotes.length > 1 && (
             <div className="rounded-xl bg-bg-tertiary/60 border border-bg-tertiary p-3 text-xs text-text-muted">
               <span className="text-text-primary font-medium">FYI:</span> rates above include
               Coinbase&apos;s conversion spread. Fees marked &quot;extra&quot; are fast-rails fees on top.
