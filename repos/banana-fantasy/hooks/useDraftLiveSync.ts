@@ -813,15 +813,16 @@ export function useDraftLiveSync({
       && engine.endOfTurnTimestamp > 0
       && !isSlowDraftPickLength(firebasePickLength ?? 0)
     ) {
-      value = Math.max(0, Math.floor((engine.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+      value = Math.max(0, Math.ceil((engine.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
     } else {
       value = engine.timeRemaining;
     }
     const raw = value ?? 0;
-    // Display cap: the backend adds a +1s grace to PickEndTime (so the clock
-    // reads a solid 30 instead of flashing 29), and the raw floor of that would
-    // briefly show pickLength+1 (e.g. 31). Cap to pickLength so it shows a clean
-    // 30. No-op for slow drafts (their pickLength window is hours).
+    // Display cap: the clock CEILs the remaining (so a 30s pick window reads a
+    // solid 30 → 0 instead of starting at 29). The only way ceil exceeds the
+    // window is a slightly-behind device clock making `pickEnd − now` read e.g.
+    // 30.4s → ceil 31. Cap to pickLength so it never flashes 31. No-op for slow
+    // drafts (their pickLength window is hours).
     if (firebasePickLength && firebasePickLength > 0) {
       return Math.min(raw, firebasePickLength);
     }

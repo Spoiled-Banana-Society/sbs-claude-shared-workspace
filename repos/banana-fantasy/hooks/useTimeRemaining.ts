@@ -56,7 +56,13 @@ export function useTimeRemaining(
           // endOfTurnTimestamp is in seconds (Unix timestamp), convert to milliseconds
           const timestampMs = endOfTurnTimestamp * 1000;
           const remaining = timestampMs - now;
-          setTimeRemaining(Math.max(0, Math.floor(remaining / 1000)));
+          // CEIL (not floor): the pick window is exactly pickLength seconds
+          // (pickEndTime = pickStart + pickLength). A fraction of a second has
+          // already elapsed by first paint, so floor would immediately read
+          // pickLength-1 (e.g. 29 for a 30s pick). Ceil shows the full clock —
+          // 30, 29, … 1, 0 — each number for its whole second. The caller caps
+          // to pickLength, so clock-skew can't make this read pickLength+1.
+          setTimeRemaining(Math.max(0, Math.ceil(remaining / 1000)));
         }
       } else {
         // No timestamps available
