@@ -26,8 +26,15 @@ function validClientWallet(w: unknown): string | null {
 }
 
 async function resolveWallet(req: Request, clientWallet: unknown): Promise<string> {
-  const user = await getPrivyUser(req);
-  if (user.walletAddress) return user.walletAddress.toLowerCase();
+  // Prefer the server-verified wallet. But a brand-new web2 user fires the name
+  // claim before Privy's token is ready, so getPrivyUser THROWS (no/again-unverifiable
+  // token) — catch that and fall back to the wallet the client holds (the same
+  // wallet the no-auth seed already used to create this user's doc). Scoped to
+  // that wallet's own name reservation, so the blast radius is just a name.
+  try {
+    const user = await getPrivyUser(req);
+    if (user.walletAddress) return user.walletAddress.toLowerCase();
+  } catch { /* token not ready yet — fall back to the client wallet below */ }
   const fallback = validClientWallet(clientWallet);
   if (fallback) return fallback;
   throw new ApiError(400, 'wallet required');

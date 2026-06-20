@@ -483,19 +483,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // firstLoginAt actually land instead of being skipped for the whole session.
     const run = async () => {
       try {
-        const token = await privyRef2.current.getAccessToken();
-        if (!token) { scheduleRetry(); return; }
-        // Pass the wallet the browser already holds. The server prefers its own
-        // Privy-resolved wallet, but falls back to this when Privy's User API
-        // hasn't propagated the fresh embedded wallet yet — so firstLoginAt +
-        // the new-user bells land on the first try instead of being skipped.
+        // Call immediately, even before Privy's token is ready — send the wallet
+        // the browser already holds so the server stamps firstLoginAt + the
+        // new-user bells via its client-wallet fallback on the FIRST try (this is
+        // why they were being skipped: the old code bailed here when the token
+        // wasn't ready yet, and never called). Token is attached when available.
+        let token: string | null = null;
+        try { token = await privyRef2.current.getAccessToken(); } catch { /* token not ready yet */ }
         const res = await fetch('/api/users/returning-check', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({ wallet: walletAddress }),
         });
         const data = await res.json().catch(() => null);
-        if (data?.reason === 'no-wallet') { scheduleRetry(); return; }
+        // Keep retrying while the server couldn't verify us yet, so the
+        // returning-PLAYER identity match eventually runs once the token is
+        // ready (firstLoginAt + bells already landed via the wallet fallback).
+        if (data?.reason === 'no-wallet' || data?.reason === 'unauth-fallback') { scheduleRetry(); return; }
         if (data?.returning) setIsBB3Holder(true);
         if (!cancelled) setWeb2Resolved(true);
       } catch {

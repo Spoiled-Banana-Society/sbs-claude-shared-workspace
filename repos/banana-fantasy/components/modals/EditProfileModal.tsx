@@ -35,8 +35,11 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
   }, [user]);
 
   const authHeaders = useCallback(async (): Promise<HeadersInit> => {
-    const token = await privy.getAccessToken();
-    return { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' };
+    // Never throw on a not-yet-ready token — the wallet in the request body lets
+    // the server fall back, so the call still goes through for a fresh web2 user.
+    let token: string | null = null;
+    try { token = await privy.getAccessToken(); } catch { /* token not ready yet */ }
+    return { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' };
   }, [privy]);
 
   // Live "username taken" check while typing. Ref the header getter so the

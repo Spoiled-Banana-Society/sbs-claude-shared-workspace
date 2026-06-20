@@ -147,10 +147,11 @@ export function OnboardingTutorial({ onComplete }: OnboardingTutorialProps) {
     // lands once the wallet propagates, instead of failing on the first beat.
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
-        const token = await privy.getAccessToken();
+        let token: string | null = null;
+        try { token = await privy.getAccessToken(); } catch { /* token not ready yet */ }
         const res = await fetch('/api/username', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token ?? ''}`, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({ name, wallet: user?.walletAddress }),
         });
         if (res.ok) { setNameError(null); return true; }

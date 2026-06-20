@@ -31,13 +31,19 @@ export async function POST(req: Request) {
   if (!isFirestoreConfigured()) return jsonError('Not configured', 503);
 
   try {
-    const { userId: did, walletAddress } = await getPrivyUser(req);
-    // Fallback to the client-supplied wallet when Privy's User API hasn't yet
-    // propagated a brand-new embedded wallet (the JWT still authenticates the
-    // user via `did`, so this only decides WHICH of the caller's own wallets we
-    // stamp firstLoginAt / new-user bells onto — the returning-player identity
-    // match below stays server-verified off `did`). This is the same trust the
-    // no-auth seed path already uses, and it's the one path that never fails.
+    // A brand-new web2 user fires this before Privy's token is ready, so
+    // getPrivyUser THROWS — catch it and fall back to the client-supplied wallet
+    // for stamping firstLoginAt + the new-user bells. The returning-player
+    // identity match below needs a server-verified `did`, so it simply no-ops
+    // when we couldn't authenticate (it re-runs on a later session once the
+    // token is ready). Same trust the no-auth seed path already uses.
+    let did = '';
+    let walletAddress: string | null = null;
+    try {
+      const u = await getPrivyUser(req);
+      did = u.userId;
+      walletAddress = u.walletAddress;
+    } catch { /* token not ready — fall back to the client wallet below */ }
     let body: { wallet?: string } = {};
     try { body = (await req.json()) as { wallet?: string }; } catch { /* no body */ }
     const clientWallet = typeof body.wallet === 'string' && /^0x[0-9a-fA-F]{40}$/.test(body.wallet)
@@ -116,6 +122,15 @@ export async function POST(req: Request) {
       const displayName = uname && !/^0x/i.test(uname) ? uname : bananaDefaultName(wallet);
       await ensureNamedReferralCode(wallet, displayName);
     } catch { /* non-fatal — referrals page also mints on demand */ }
+
+    // If we couldn't server-verify the user (token not ready → client-wallet
+    // fallback), we've already stamped firstLoginAt + fired the new-user bells
+    // above. Stop here WITHOUT doing the returning-player identity match or
+    // caching a negative result — the match needs a verified `did`, and a later
+    // session (token ready) re-runs this and does the real check.
+    if (!did) {
+      return json({ returning: false, reason: 'unauth-fallback' });
+    }
 
     if (userSnap.get('isReturningPlayer') === true) {
       return json({ returning: true, via: userSnap.get('returningVia') ?? 'unknown' });
