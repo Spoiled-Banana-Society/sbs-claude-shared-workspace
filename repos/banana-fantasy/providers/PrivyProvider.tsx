@@ -113,12 +113,13 @@ export function PrivyProvider({ children }: { children: ReactNode }) {
               walletList: ['base_account', 'metamask', 'coinbase_wallet'],
             },
             loginMethodsAndOrder: {
-              // Privy caps `primary` at 4 (it warns + can render oddly on mobile
-              // if you exceed it). Keep the 4 highest-priority methods primary
-              // and move the rest to overflow ("more options") so every login
-              // method stays available without the >4 warning.
-              primary: ['email', 'google', 'twitter', 'metamask'],
-              overflow: ['coinbase_wallet'],
+              // Coinbase Wallet is shown DIRECTLY (Boris: don't bury it under
+              // "More options"). That makes 5 primary methods — Privy soft-caps
+              // primary at 4 and warns it "can render oddly on mobile", so if the
+              // mobile login sheet looks cramped, move the lowest-priority method
+              // (twitter) back to overflow instead.
+              primary: ['email', 'google', 'twitter', 'metamask', 'coinbase_wallet'],
+              overflow: [],
             },
             embeddedWallets: {
               // Embedded (email/social) wallets sign SILENTLY — no Privy "Sign
