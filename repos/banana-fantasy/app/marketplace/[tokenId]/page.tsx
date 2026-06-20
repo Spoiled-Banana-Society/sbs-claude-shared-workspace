@@ -268,6 +268,31 @@ export default function NftDetailPage() {
     return activityItems;
   }, [activityItems, activityFilter]);
 
+  // Resolve the buyer/seller wallets in the sale history to usernames so rows
+  // read "from Boris" instead of raw hex. Guarded by `namesResolvedRef` (each
+  // wallet fetched once) so it never loops — Rule #0 safe.
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const namesResolvedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const wallets = Array.from(new Set(
+      activityItems.flatMap(i => [i.who, i.seller]).filter(Boolean) as string[],
+    )).map(w => w.toLowerCase());
+    const missing = wallets.filter(w => /^0x[0-9a-fA-F]{40}$/.test(w) && !namesResolvedRef.current.has(w));
+    if (missing.length === 0) return;
+    missing.forEach(w => namesResolvedRef.current.add(w));
+    let cancelled = false;
+    fetch(`/api/marketplace/resolve-users?wallets=${missing.join(',')}`)
+      .then(r => (r.ok ? r.json() : { names: {} }))
+      .then((d: { names?: Record<string, string> }) => { if (!cancelled && d.names) setNameMap(prev => ({ ...prev, ...d.names })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activityItems]);
+
+  const nameFor = (w?: string | null) => {
+    if (!w) return '';
+    return nameMap[w.toLowerCase()] || `${w.slice(0, 6)}…${w.slice(-4)}`;
+  };
+
   const ACTIVITY_PREVIEW = 5;
   const visibleActivity = activityExpanded ? filteredActivity : filteredActivity.slice(0, ACTIVITY_PREVIEW);
 
@@ -1626,8 +1651,8 @@ export default function NftDetailPage() {
                       const saleLabel = item.kind === 'sale' ? (iBought ? 'You bought' : iSold ? 'You sold' : 'Sold') : item.label;
                       const counterparty = iBought ? item.seller : item.who;
                       const whoLabel = item.kind === 'sale'
-                        ? (counterparty ? `${iBought ? 'from' : 'to'} ${counterparty.slice(0, 6)}…${counterparty.slice(-4)}` : null)
-                        : item.who ? `by ${item.who.slice(0, 6)}…${item.who.slice(-4)}` : null;
+                        ? (counterparty ? `${iBought ? 'from' : 'to'} ${nameFor(counterparty)}` : null)
+                        : item.who ? `by ${nameFor(item.who)}` : null;
                       return (
                         <div key={item.id} className="flex items-center justify-between p-3 rounded-xl bg-bg-primary border border-bg-tertiary">
                           <div className="flex items-center gap-3">

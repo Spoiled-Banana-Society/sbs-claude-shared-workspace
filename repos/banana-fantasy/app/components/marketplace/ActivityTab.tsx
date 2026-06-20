@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { ActivityEntry } from '@/hooks/useMarketplace';
@@ -45,6 +45,33 @@ export function ActivityTab({
   const shownActivities = actFilter === 'all'
     ? activities
     : activities.filter(a => FILTER_TYPES[actFilter].includes(a.type));
+
+  // Resolve the from/to wallet addresses to usernames so the feed reads
+  // "Boris → to Richard" instead of raw hex. Best-effort: any wallet without a
+  // username falls back to a short address. Fetch is guarded by `resolvedRef`
+  // (each wallet looked up once) so it never loops — Rule #0 safe.
+  const [nameMap, setNameMap] = useState<Record<string, string>>({});
+  const resolvedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const wallets = Array.from(new Set(
+      activities.flatMap(a => [a.walletAddress, a.counterparty]).filter(Boolean) as string[],
+    )).map(w => w.toLowerCase());
+    const missing = wallets.filter(w => /^0x[0-9a-fA-F]{40}$/.test(w) && !resolvedRef.current.has(w));
+    if (missing.length === 0) return;
+    missing.forEach(w => resolvedRef.current.add(w)); // mark first → no refetch loop
+    let cancelled = false;
+    fetch(`/api/marketplace/resolve-users?wallets=${missing.join(',')}`)
+      .then(r => (r.ok ? r.json() : { names: {} }))
+      .then((d: { names?: Record<string, string> }) => { if (!cancelled && d.names) setNameMap(prev => ({ ...prev, ...d.names })); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activities]);
+
+  const nameFor = (w?: string | null) => {
+    if (!w) return '';
+    const lw = w.toLowerCase();
+    return nameMap[lw] || `${w.slice(0, 6)}…${w.slice(-4)}`;
+  };
 
   return (
     <div className="space-y-8">
@@ -183,16 +210,17 @@ export function ActivityTab({
                           <span className={`text-xs font-semibold ${config.color}`}>{config.label}</span>
                           <Link href={`/marketplace/${activity.tokenId}`} className="text-text-primary text-sm font-mono hover:text-banana transition-colors truncate">{activity.teamName}</Link>
                         </div>
-                        {/* Both wallets shown, each clickable → that owner's teams. */}
+                        {/* Both people shown (username when set, else short
+                            address), each clickable → that owner's teams. */}
                         <p className="text-text-muted text-[11px] flex items-center gap-1 flex-wrap">
-                          <Link href={`/u/${activity.walletAddress}`} className="font-mono hover:text-banana transition-colors">
-                            {activity.walletAddress.slice(0, 6)}…{activity.walletAddress.slice(-4)}
+                          <Link href={`/u/${activity.walletAddress}`} className="hover:text-banana transition-colors">
+                            {nameFor(activity.walletAddress)}
                           </Link>
                           {activity.counterparty && (
                             <>
                               <span>{activity.type === 'buy' ? '← from' : (activity.type === 'sell' || activity.type === 'offer_accepted') ? '→ to' : '·'}</span>
-                              <Link href={`/u/${activity.counterparty}`} className="font-mono hover:text-banana transition-colors">
-                                {activity.counterparty.slice(0, 6)}…{activity.counterparty.slice(-4)}
+                              <Link href={`/u/${activity.counterparty}`} className="hover:text-banana transition-colors">
+                                {nameFor(activity.counterparty)}
                               </Link>
                             </>
                           )}

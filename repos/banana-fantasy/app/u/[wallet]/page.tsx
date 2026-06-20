@@ -1,13 +1,40 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useMyNfts } from '@/hooks/useMarketplace';
+import type { MarketplaceTeam } from '@/lib/opensea';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { UserSearchBox } from '@/app/components/marketplace/UserSearchBox';
+
+// Team card art. Uses a plain <img> (not next/image) so generated card URLs on
+// any host render without needing a next.config remotePatterns entry, and falls
+// back to the banana thumb if the image 404s.
+function TeamThumb({ team }: { team: MarketplaceTeam }) {
+  const [errored, setErrored] = useState(false);
+  const src = team.fillingWheelLevel
+    ? buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)
+    : team.imageUrl || '';
+
+  if (!src || errored) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center">
+        <SbsPassThumb label={`#${team.tokenId}`} size={150} roster={team.roster} />
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={`Team #${team.tokenId}`}
+      onError={() => setErrored(true)}
+      className="absolute inset-0 w-full h-full object-contain"
+    />
+  );
+}
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
 // A username is 3–20 chars of letters/numbers/_.- (matches lib/usernames).
@@ -113,23 +140,7 @@ export default function UserTeamsPage() {
                   className="group rounded-2xl border border-bg-tertiary bg-bg-secondary overflow-hidden hover:border-banana/40 transition-colors"
                 >
                   <div className="relative aspect-[4/5] bg-[#0d0d12]">
-                    {team.fillingWheelLevel ? (
-                      <Image
-                        src={buildTieredDraftPassUrl(team.tokenId, team.fillingWheelLevel)}
-                        alt={`Pass #${team.tokenId}`}
-                        fill sizes="(max-width: 640px) 50vw, 25vw" className="object-contain"
-                      />
-                    ) : team.imageUrl ? (
-                      <Image
-                        src={team.imageUrl}
-                        alt={`Team #${team.tokenId}`}
-                        fill sizes="(max-width: 640px) 50vw, 25vw" className="object-contain"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <SbsPassThumb label={`#${team.tokenId}`} size={150} roster={team.roster} />
-                      </div>
-                    )}
+                    <TeamThumb team={team} />
                     <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
                       {team.isJackpot && <span className="px-2 py-0.5 bg-error text-white text-[9px] font-bold uppercase rounded-full">JP</span>}
                       {team.isHof && <span className="px-2 py-0.5 bg-hof text-white text-[9px] font-bold uppercase rounded-full">HOF</span>}
