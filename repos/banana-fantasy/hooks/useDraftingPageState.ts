@@ -831,10 +831,13 @@ export function useDraftingPageState() {
         // Monotonic: ignore a snapshot that's behind what we already show.
         if (typeof existing.enginePickNumber === 'number' && pickNumber < existing.enginePickNumber) return;
 
-        // Let the draft-room tab own writes while it's live (it has full engine
-        // state) — avoid a tug-of-war with the in-room flow.
-        const hb = localStorage.getItem(`draft-room-ws:${draftId}`);
-        if (hb && Date.now() - Number(hb) < 10_000) return;
+        // NOTE: we intentionally do NOT bail when the draft room is open on this
+        // device. This RTDB push is the SAME authoritative source the room reads,
+        // and the monotonic guard above makes it forward-only — so letting it
+        // through keeps the lobby's pick number in lockstep with the room (it was
+        // lagging a few seconds when the room was open, because the slow poll/WS
+        // paths defer to the room). The poll + WS paths still defer (they can
+        // write stale values); only this fast, monotonic push drives the row live.
 
         const isYourTurn = !!wallet
           && typeof info.currentDrafter === 'string'
@@ -854,6 +857,12 @@ export function useDraftingPageState() {
           patch.timeRemaining = isYourTurn
             ? Math.max(0, Math.ceil(info.pickEndTime - Date.now() / 1000))
             : undefined;
+        }
+        // DIAGNOSTIC: capture when the lobby applies a FORWARD pick from the RTDB
+        // push, so we can confirm it now flips in lockstep with the room (it was
+        // ~2s late, waiting on the 3s poll while the room held the heartbeat).
+        if (pickNumber !== existing.enginePickNumber) {
+          clientLog('lobby-pick', 'rtdb.applied', { draftId, pickNumber, prev: existing.enginePickNumber ?? null });
         }
         draftStore.updateDraft(draftId, patch);
       }),
