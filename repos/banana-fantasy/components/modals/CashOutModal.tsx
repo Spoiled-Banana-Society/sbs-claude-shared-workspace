@@ -649,6 +649,17 @@ export function CashOutModal({
     // amount is below its cash-out minimum), there's nothing to pick — show a
     // clear reason instead of a dead, disabled "Continue" button.
     const availableCount = quotes.filter((q) => q.available).length;
+    // Default to bank-only. Coinbase caps ACH/bank cash-outs per week, but
+    // SELLING to the Coinbase USD balance is uncapped — so we only surface the
+    // Coinbase-balance (and crypto-account) option as an OVERFLOW valve when the
+    // bank route isn't available for THIS withdrawal: over the weekly bank cap
+    // (Coinbase returns the ACH quote as unavailable), amount below the bank
+    // minimum, or no bank linked yet. When bank works, it's the only choice —
+    // keeps the normal flow to one obvious "cash out to bank" path.
+    const bankAvailable = quotes.some((q) => q.method === 'ACH_BANK_ACCOUNT' && q.available);
+    const renderedQuotes = quotes
+      .filter((q) => q.available)
+      .filter((q) => (bankAvailable ? q.method === 'ACH_BANK_ACCOUNT' : true));
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
@@ -660,12 +671,7 @@ export function CashOutModal({
           <div>
             <p className="text-sm font-semibold text-text-primary mb-3">Pick how you want to receive it</p>
             <div className="space-y-2">
-              {quotes
-                // Only render methods that returned a successful quote.
-                // Coinbase rejects unsupported (country, asset, payment-method)
-                // combos with available:false — hiding them keeps the UI
-                // clean instead of surfacing raw "InvalidRequest" errors.
-                .filter((q) => q.available)
+              {renderedQuotes
                 .map((q) => {
                   const fee = q.totalFee ?? 0;
                   const isFree = fee < 0.01;
