@@ -152,6 +152,19 @@ body {
     box-shadow: 0 0 20px rgba(251, 191, 36, 0.3), 0 0 40px rgba(251, 191, 36, 0.1);
   }
 
+  .glow-founder {
+    box-shadow: 0 0 20px rgba(6, 182, 212, 0.35), 0 0 40px rgba(6, 182, 212, 0.12);
+  }
+
+  /* Founder pill — celebratory pulsing cyan glow so it never reads "mellow". */
+  @keyframes founder-pulse {
+    0%, 100% { box-shadow: 0 0 8px rgba(6,182,212,0.55), 0 0 16px rgba(6,182,212,0.25); transform: scale(1); }
+    50% { box-shadow: 0 0 16px rgba(6,182,212,0.95), 0 0 34px rgba(6,182,212,0.5); transform: scale(1.06); }
+  }
+  .founder-pill {
+    animation: founder-pulse 1.5s ease-in-out infinite;
+  }
+
   /* Badge pulse — gentle scale + glow throb for legendary badges. The
      filter:drop-shadow uses currentColor so the calling element can set
      its own color via inline style. */

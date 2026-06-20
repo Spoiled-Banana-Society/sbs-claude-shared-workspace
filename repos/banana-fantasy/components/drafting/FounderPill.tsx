@@ -75,14 +75,20 @@ export function FounderPill(props: FounderPillProps) {
   const isFounder = persistedFounder === true || (persistedFounder === null && optimisticEligible);
   if (!isFounder) return null;
 
-  // Plain orange wordmark — no background, no border (circle), no glow.
-  const sizing = props.size === 'md' ? 'text-[13px]' : 'text-[11px]';
+  // Celebratory cyan pill — glowing, pulsing, with a crown. Distinct from the
+  // PRO/HOF/JP type pills so a Founder Draft instantly stands out.
+  const md = props.size === 'md';
+  const sizing = md ? 'text-[12px] px-2.5 py-1 gap-1.5' : 'text-[10px] px-2 py-0.5 gap-1';
+  const crown = md ? 'w-3.5 h-3.5' : 'w-3 h-3';
 
   return (
     <span
-      className={`${sizing} font-bold uppercase tracking-wider`}
-      style={{ color: props.color ?? '#ffffff' }}
+      className={`founder-pill inline-flex items-center ${sizing} rounded-full font-black uppercase tracking-wider text-black`}
+      style={{ background: 'linear-gradient(90deg, #67e8f9 0%, #06b6d4 100%)' }}
     >
+      <svg className={`${crown} fill-black`} viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 7l4 4 5-7 5 7 4-4-1.6 11H4.6L3 7zm1.8 13h14.4v1.6H4.8V20z" />
+      </svg>
       Founder
     </span>
   );
