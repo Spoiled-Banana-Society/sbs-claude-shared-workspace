@@ -133,16 +133,17 @@ export default function RankingsPage() {
     if (!confirm('Reset rankings to ADP order? Your custom order will be lost.')) return;
     setResettingRankings(true);
     try {
-      // DELETE the saved doc on the Go side. Next GET auto-seeds from
-      // current ADP, which is exactly what we want for "reset to default."
-      await Rankings.removeRankings(walletAddress);
-      const fresh = await Rankings.getRankings(walletAddress);
-      const list = Array.isArray(fresh) ? (fresh as GoRankingItem[]) : [];
-      const adapted = [...list]
-        .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-        .map(adaptRankingItem);
-      setRankings(adapted);
-      setSavedAt(Date.now());
+      // The Go API has no DELETE for rankings (returns 405), so "reset to
+      // current ADP" = re-sort the current list by its ADP and save THAT order.
+      // RANK is the list position, so this makes RANK match ADP exactly — which
+      // is the live default order. Slots with no ADP (0 / N/A) sink to the end.
+      const byAdp = [...rankings].sort((a, b) => {
+        const aa = a.adp > 0 ? a.adp : Number.MAX_SAFE_INTEGER;
+        const bb = b.adp > 0 ? b.adp : Number.MAX_SAFE_INTEGER;
+        return aa - bb;
+      });
+      setRankings(byAdp);
+      persistRankings(byAdp);
     } catch (err) {
       console.error('Failed to reset rankings:', err);
     } finally {
