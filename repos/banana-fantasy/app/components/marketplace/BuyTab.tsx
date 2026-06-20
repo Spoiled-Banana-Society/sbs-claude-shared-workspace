@@ -619,6 +619,7 @@ export function BuyTab({
                       onChange={onSetPaymentMethod}
                       isEmbeddedWallet={isEmbeddedWallet}
                       usdcBalance={userUsdcBalance}
+                      requiredAmount={selectedTeam?.price ?? 0}
                     />
                   </div>
 

@@ -1774,6 +1774,7 @@ export default function NftDetailPage() {
                       onChange={setPaymentMethod}
                       isEmbeddedWallet={isEmbeddedWallet}
                       usdcBalance={user?.usdcBalance ?? null}
+                      requiredAmount={price ?? 0}
                     />
                   </div>
 
@@ -2103,6 +2104,7 @@ export default function NftDetailPage() {
                       onChange={setOfferPaymentMethod}
                       isEmbeddedWallet={isEmbeddedWallet}
                       usdcBalance={user?.usdcBalance ?? null}
+                      requiredAmount={offerAmountNum}
                     />
                   </div>
 
