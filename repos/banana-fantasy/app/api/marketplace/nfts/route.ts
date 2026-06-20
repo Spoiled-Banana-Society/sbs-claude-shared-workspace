@@ -11,7 +11,6 @@ import {
 } from '@/lib/opensea';
 import { getTeamsForTokens, getTeamForToken, teamDataToTraits, mergeTraits, getOwnerOnchainTokenIds } from '@/lib/marketplace/teamData';
 import { ogImageFromTeam, resolveTokenImage } from '@/lib/nftCardServer';
-import { buildDraftPassUrl } from '@/lib/nftCard';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { getRecentCachedListings } from '@/lib/marketplace/listingCache';
 import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
@@ -220,9 +219,18 @@ export async function GET(req: Request) {
         docs.forEach((d, k) => {
           const id = ids[i + k];
           const x = d.exists ? (d.data() as Record<string, unknown>) : null;
-          ogByToken.set(id, x?.status === 'team' && x?.image ? String(x.image) : buildDraftPassUrl(id));
-          if (x?.status === 'team' && typeof x?.leagueNumber === 'number') {
-            leagueByToken.set(id, x.leagueNumber as number);
+          // Only cache a REAL team card from the index. If the index hasn't
+          // stamped this token as a team (stale/missing on staging), leave it
+          // unset so the loop below falls back to ogImageFromTeam — which builds
+          // the real card from the backend roster for a drafted team (and only
+          // grey pre-reveal art for a genuinely undrafted pass). Previously we
+          // stuffed grey here unconditionally, so drafted teams missing from the
+          // index wrongly showed the grey pass.
+          if (x?.status === 'team' && x?.image) {
+            ogByToken.set(id, String(x.image));
+            if (typeof x?.leagueNumber === 'number') {
+              leagueByToken.set(id, x.leagueNumber as number);
+            }
           }
         });
       }
