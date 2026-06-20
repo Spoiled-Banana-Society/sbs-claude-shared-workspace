@@ -86,7 +86,9 @@ export function eventNotificationContent(
           ? 'Your card fees added up to $25 — a free draft is on us. Tap to play.'
           : `Your card fees earned you ${count} free drafts — on us. Tap to play.`,
         link: '/drafting',
-        icon: 'ticket',
+        // 'gift' = a FREE draft (earned/won), distinct from a PURCHASED pass
+        // ('ticket'). Matches the wheel-win free-draft bell (Boris 2026-06-20).
+        icon: 'gift',
       };
     }
     case 'promo-daily-drafts':
