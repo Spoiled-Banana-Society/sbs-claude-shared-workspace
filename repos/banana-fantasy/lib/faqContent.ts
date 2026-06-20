@@ -151,7 +151,11 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How do I get in?',
-        answer: 'There\'s no scheduled room — at exactly 6 PM PT, join a draft. Drafts fill fast in the rush, and only the one the founders actually land in counts. Once it fills, you\'ll see the founders\' wallet in your draft and the FOUNDER tag in the room.',
+        answer: 'There\'s no scheduled room — at exactly 6 PM PT, join a draft. Drafts fill fast in the rush, and only the one the founders actually land in counts.\n\nYou won\'t know right away: while your draft is still filling, nothing shows (it\'s hidden so it can\'t be gamed). Once your draft FILLS (all 10 seats), the founders and the FOUNDER sticker appear if you landed in the right one.',
+      },
+      {
+        question: 'I joined but don\'t see the founders — did I miss it?',
+        answer: 'Check once your draft is FULL (10/10) — the founders and the FOUNDER sticker only show after the draft fills, not the moment you join. If they\'re there, you\'re in. If they\'re NOT there once it\'s full, you joined a different draft and missed it this week — try again next week.',
       },
       {
         question: 'Is there an extra perk?',
