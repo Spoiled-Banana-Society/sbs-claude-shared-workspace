@@ -1113,49 +1113,11 @@ function DraftRoomContent() {
       .then((prefs) => {
         if (cancelled) return;
         setAutoDraft(prefs.autoDraft);
-        const sortOrder = (prefs.sortBy || 'ADP').toUpperCase();
-        let newSort = sortOrder === 'RANK' ? 'rank' as const : 'adp' as const;
-
-        // Device-local last choice for this draft wins over the (possibly stale)
-        // server value AND the global-default override below — it's what the
-        // user explicitly left it on.
-        let savedSort: 'adp' | 'rank' | null = null;
-        try {
-          const v = localStorage.getItem(`draftSort:${draftId}`);
-          if (v === 'adp' || v === 'rank') savedSort = v;
-        } catch { /* ignore */ }
-        if (savedSort) newSort = savedSort;
-
-        // First-time entry into this draft: if the per-draft sortBy is still
-        // the system default 'ADP' AND the user's global default is 'rank',
-        // apply 'rank' and push it to the Go API so it sticks. localStorage
-        // marker stops the override from firing on subsequent reloads —
-        // otherwise the in-draft ADP toggle would never persist. Only mark
-        // applied when we actually apply the override — marking on the else
-        // path races with the initial 'adp' default returned before the user
-        // preference has truly loaded.
-        const appliedKey = `sortDefaultApplied:${draftId}`;
-        const alreadyApplied = typeof window !== 'undefined' && localStorage.getItem(appliedKey) === '1';
-        if (
-          !savedSort
-          && !alreadyApplied
-          && defaultSortPreferenceLoaded
-          && defaultSortPreference === 'rank'
-          && newSort === 'adp'
-        ) {
-          newSort = 'rank';
-          draftApi.updateSortPreference(walletParam, draftId, 'RANK').catch((err) => reportClientError({
-            source: LOG_SOURCES.draft.SORT_PERSIST_FAILED,
-            message: err instanceof Error ? err.message : String(err),
-            route: 'draft-room',
-            actor: walletParam,
-            context: { draftId, target: 'RANK', reset: true },
-          }));
-          try { localStorage.setItem(appliedKey, '1'); } catch {}
-        }
-
-        setSortPreference(newSort);
-        engine.setAutoPickSortPreference(newSort);
+        // NOTE: sort order is owned by the two effects below (per-draft
+        // localStorage memory + global-default application), NOT the server
+        // sortBy here — its read/write endpoints don't round-trip, and reading
+        // it here raced with the global-preference load, leaving re-joined
+        // drafts stuck on ADP.
         const initialMissed = prefs.numPicksMissedConsecutive || 0;
         setMissedPicksCount(initialMissed);
         // Seed engine counter from server on mount so a page refresh
@@ -1202,7 +1164,27 @@ function DraftRoomContent() {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveMode, draftId, walletParam, defaultSortPreferenceLoaded, defaultSortPreference]);
+  }, [isLiveMode, draftId, walletParam]);
+
+  // Sort order, owned in one place and race-proof:
+  //  1) If you've toggled ADP/Rank in THIS draft, that choice is remembered
+  //     (localStorage `draftSort:{draftId}`) and always wins.
+  //  2) Otherwise (first-time entry, or after you left + re-joined, which clears
+  //     the per-draft memory) apply your global default — reactively, so it
+  //     lands even if the preference finished loading AFTER the draft did.
+  useEffect(() => {
+    if (!isLiveMode || !draftId || !defaultSortPreferenceLoaded) return;
+    try {
+      const saved = localStorage.getItem(`draftSort:${draftId}`);
+      if (saved === 'adp' || saved === 'rank') return; // your in-draft choice wins
+    } catch { /* ignore */ }
+    setSortPreference(defaultSortPreference);
+    engine.setAutoPickSortPreference(defaultSortPreference);
+    if (walletParam) {
+      draftApi.updateSortPreference(walletParam, draftId, defaultSortPreference.toUpperCase()).catch(() => { /* best-effort mirror */ });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, draftId, defaultSortPreferenceLoaded, defaultSortPreference]);
 
   // Re-sync server-authoritative preferences after each pick. Without this,
   // autoDraft / missedPicksCount / engine.airplaneMode only load once on
