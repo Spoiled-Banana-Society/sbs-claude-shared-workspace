@@ -8,8 +8,13 @@ import type { NextRequest } from 'next/server';
  */
 
 const ALLOWED_ORIGINS = [
-  'https://sbsfantasy.com',
-  'https://www.sbsfantasy.com',
+  // Apex + ANY sbsfantasy.com subdomain (www, staging, the launch domain, etc.).
+  // Without staging.sbsfantasy.com here, every POST /api/* from the staging
+  // domain was 403'd at the middleware before reaching the route — which broke
+  // returning-check (firstLoginAt + bells), the username claim, metadata, etc.
+  // for users on that domain (GETs were unaffected: browsers omit the Origin
+  // header on same-origin GETs, so the seed still ran).
+  /^https:\/\/([a-z0-9-]+\.)?sbsfantasy\.com$/,
   /^https:\/\/.*\.vercel\.app$/,
   'http://localhost:3000',
   'http://localhost:3001',

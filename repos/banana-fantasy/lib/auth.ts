@@ -271,63 +271,16 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
       if (qToken && qToken.length >= 20) token = qToken;
     } catch { /* malformed URL → fall through to the 401 below */ }
   }
-  // TEMP DIAG — record EVERY outcome (no-token / verification-failure / success)
-  // of the auth gate for the new-user routes, to a readable Firestore doc.
-  // Set up before the token check so the no-token case is captured too. REMOVE after.
-  const diagPath = (() => { try { return new URL(req.url).pathname; } catch { return '?'; } })();
-  const isDiagRoute = /returning-check|\/api\/username|user\/metadata|owners/.test(diagPath);
-  const writeDiag = async (row: Record<string, unknown>) => {
-    if (!isDiagRoute) return;
-    try {
-      const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
-      await getAdminFirestore().collection('_gpudiag').add({
-        path: diagPath, at: new Date().toISOString(),
-        authHeaderPresent: !!authHeader, tokenLen: token.length, ...row,
-      });
-    } catch { /* never block auth on the diagnostic */ }
-  };
+  if (!token) throw new ApiError(401, 'Missing authorization token');
 
-  if (!token) {
-    await writeDiag({ stage: 'no-token' });
-    throw new ApiError(401, 'Missing authorization token');
-  }
-
-  let user: { userId: string; walletAddress: string | null };
-  try {
-    user = await verifyPrivyJwt(token);
-  } catch (err) {
-    let claims: Record<string, unknown> = { decoded: false };
-    try {
-      const { payload, header } = decodeJwt(token);
-      claims = {
-        decoded: true,
-        aud: typeof payload.aud === 'string' ? payload.aud : JSON.stringify(payload.aud ?? null),
-        iss: payload.iss ?? null,
-        exp: payload.exp ?? null,
-        now: Math.floor(Date.now() / 1000),
-        kid: header.kid ?? null,
-        alg: header.alg ?? null,
-      };
-    } catch { /* token unparseable */ }
-    await writeDiag({
-      stage: 'verify-threw',
-      error: err instanceof ApiError ? err.message : String(err),
-      serverAppId: (() => { try { return getPrivyAppId(); } catch { return '?'; } })(),
-      serverIssuer: process.env.PRIVY_JWT_ISSUER ?? '(unset)',
-      ...claims,
-    });
-    throw err;
-  }
+  const user = await verifyPrivyJwt(token);
 
   // JWTs from social-login Privy sessions don't carry the wallet claim.
   // Fall back to the Privy User API so every downstream check gets the wallet.
-  const jwtWallet = user.walletAddress;
-  let apiWallet: string | null = null;
   if (!user.walletAddress) {
-    apiWallet = await fetchWalletFromPrivyUserApi(user.userId);
+    const apiWallet = await fetchWalletFromPrivyUserApi(user.userId);
     if (apiWallet) user.walletAddress = apiWallet;
   }
-  await writeDiag({ stage: 'ok', did: user.userId, jwtWallet: jwtWallet ?? 'NULL', apiWallet: apiWallet ?? 'NULL', final: user.walletAddress ?? 'NULL' });
 
   // Enforce bans at the auth gate — every authenticated API request checks
   // the wallet's banned flag. Cached 30s per instance to keep overhead low.
