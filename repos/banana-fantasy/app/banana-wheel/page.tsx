@@ -35,6 +35,9 @@ export default function BananaWheelPage() {
   // resolves a few seconds after the wheel stops.
   const [specialWin, setSpecialWin] = React.useState<{ kind: 'jackpot' | 'hof'; spinId: string | null; startedAt: number } | null>(null);
   const [specialDraftStatus, setSpecialDraftStatus] = React.useState<{ count: number; draftRoomUrl: string | null } | null>(null);
+  // Wheel prize odds now live behind the "i" by the title (not a big discouraging
+  // panel on the page). Transparent (one tap), framed as "every spin wins".
+  const [showOdds, setShowOdds] = React.useState(false);
   const specialWalletAddr = (user?.walletAddress || user?.id || '').toLowerCase();
   React.useEffect(() => {
     if (!specialWin || !specialWalletAddr) return;
@@ -355,7 +358,19 @@ export default function BananaWheelPage() {
     <div className="w-full px-4 sm:px-8 lg:px-12 py-4">
       {/* Page Header */}
       <div className="text-center mb-6" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>
-        <h1 className="text-[28px] font-semibold text-white tracking-tight mb-1">Banana Wheel</h1>
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <h1 className="text-[28px] font-semibold text-white tracking-tight">Banana Wheel</h1>
+          <button
+            type="button"
+            onClick={() => setShowOdds(true)}
+            aria-label="Prize odds"
+            className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-white/25 text-white/60 hover:text-white hover:border-white/50 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current" aria-hidden="true">
+              <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 4.5a1.3 1.3 0 110 2.6 1.3 1.3 0 010-2.6zM13.3 18h-2.6v-7h2.6v7z" />
+            </svg>
+          </button>
+        </div>
         <p className="text-white text-[14px]">Spin to win Free Drafts and Jackpot/HOF Entries</p>
       </div>
 
@@ -382,26 +397,7 @@ export default function BananaWheelPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
         {/* LEFT column on desktop (order-1); mobile bottom (order-3) */}
         <div className="flex flex-col gap-4 order-3 lg:order-1">
-          {/* Prizes on Wheel */}
-          <div
-            className="rounded-2xl p-6 backdrop-blur-md"
-            style={{
-              background: 'rgba(20, 20, 20, 0.7)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
-              fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
-            }}
-          >
-            <h3 className="text-[16px] font-semibold text-white mb-4 tracking-tight">Prizes on Wheel</h3>
-            <div className="space-y-3.5 text-[14px]">
-              {prizeSummary.map((item) => (
-                <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
-                  <span className="font-semibold" style={{ color: item.color }}>{item.label}</span>
-                  <span className="font-semibold tabular-nums" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Prizes on Wheel moved into the "i" popover by the title (Boris 2026-06-20). */}
 
           {/* What Are These? */}
           <div
@@ -558,6 +554,35 @@ export default function BananaWheelPage() {
           onGenerateReferralCode={promosQuery.generateReferralCode}
         />
       </section>
+
+      {/* Prize-odds popover (opened by the "i" next to the title). Transparent
+          odds, one tap, framed as "every spin wins". */}
+      {showOdds && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setShowOdds(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl p-6"
+            style={{ background: 'rgba(20,20,20,0.96)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-[17px] font-semibold text-white tracking-tight">Prizes on Wheel</h3>
+              <button type="button" onClick={() => setShowOdds(false)} aria-label="Close" className="text-white/40 hover:text-white transition-colors text-[20px] leading-none">×</button>
+            </div>
+            <p className="text-white/55 text-[13px] mb-4 leading-relaxed">Every spin wins at least 1 draft — with a shot at more, plus HOF &amp; Jackpot.</p>
+            <div className="space-y-3.5 text-[14px]">
+              {prizeSummary.map((item) => (
+                <div key={`${item.label}-${item.probability}`} className="flex justify-between items-baseline">
+                  <span className="font-semibold" style={{ color: item.color }}>{item.label}</span>
+                  <span className="font-semibold tabular-nums" style={{ color: item.color }}>{(item.probability * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
