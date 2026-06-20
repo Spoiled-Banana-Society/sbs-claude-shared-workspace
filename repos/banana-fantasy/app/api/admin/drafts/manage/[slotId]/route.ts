@@ -29,6 +29,7 @@ import { requireAdmin } from '@/lib/adminAuth';
 import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
+import { createNotification } from '@/lib/queueNotifications';
 
 const PROTECTED_DOC_IDS = new Set(['draftTracker']);
 const STATE_SUBCOLS = ['info', 'summary', 'playerState', 'rosters', 'connectionList', 'sortOrders'];
@@ -81,6 +82,12 @@ export async function DELETE(
       return jsonError(`Draft not found: ${slotId}`, 404);
     }
 
+    // League # for the refund bell — the GLOBAL number (DisplayName "BBB #N"),
+    // never the slot-id counter. Captured before we delete the doc below.
+    const draftData = doc.data() as Record<string, unknown>;
+    const dnMatch = /(\d+)/.exec(String(draftData?.DisplayName ?? ''));
+    const leagueLabel = dnMatch ? `League #${dnMatch[1]}` : 'your draft';
+
     // 1) ADMIN force-refund every token. Mirrors Go's RemoveTokenFromLeague
     // (restore to validDraftTokens, clear league fields) but WITHOUT the
     // user-facing "can't leave a full draft" guard — the team is allowed to
@@ -116,6 +123,16 @@ export async function DELETE(
 
         leaveResults.push({ ownerId, tokenId, ok: true, status: 200 });
         logger.info('admin.drafts.manage.delete.refund', { requestId, slotId, ownerId, tokenId, ok: true });
+
+        // Real-time bell — fired ONLY here (the rare team-only delete+refund),
+        // never on any normal flow. dedupeKey → exactly one bell per token.
+        await createNotification(ownerId, {
+          type: 'system',
+          title: 'Draft pass refunded',
+          message: `Your draft pass for ${leagueLabel} was refunded — it's back in your account.`,
+          dedupeKey: `pass-refund-${slotId}-${tokenId}`,
+          icon: '💸',
+        });
       } catch (e) {
         leaveResults.push({
           ownerId,
