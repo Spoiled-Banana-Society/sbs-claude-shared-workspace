@@ -12,7 +12,7 @@ import { FounderPill } from '@/components/drafting/FounderPill';
 import * as draftApi from '@/lib/draftApi';
 import { leaveDraft } from '@/lib/api/leagues';
 import { subscribeDraftDisplayName, subscribeDraftNumPlayers, subscribeDraftRandomizeStartAt } from '@/lib/api/firebase';
-import { setLeagueNumberInCache } from '@/hooks/useLeagueNumberForSlot';
+import { setLeagueNumberInCache, useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
 import { bananaDefaultName } from '@/utils/helpers';
@@ -165,7 +165,8 @@ function DraftRoomContent() {
     clientLog('league#', 'draftroom.subs.start', { draftId });
     const unsub = subscribeDraftDisplayName(draftId, (name) => {
       clientLog('league#', 'draftroom.handler.fired', { draftId, name });
-      setContestName(name);
+      // User-facing always reads "League #N", never the internal "BBB #N".
+      setContestName(draftStore.normalizeContestName(name));
       const m = /^BBB\s*#(\d+)$/i.exec(name);
       if (m) {
         clientLog('league#', 'draftroom.handler.parsed', { draftId, n: Number(m[1]) });
@@ -203,7 +204,13 @@ function DraftRoomContent() {
   // it never spins to a wrong type. For pre-launch batches the hook
   // returns ready=true immediately, so existing UX is unchanged for old
   // batches. See docs/proof system overview in /how-it-works#fairness.
+  // Resolve the GLOBAL league number (DisplayName-backed) for this slot. The
+  // slot-id counter drifts from the global number once slow drafts run, so the
+  // proof/batch lookup must use this, not parseDraftNumber(slotId). Falls back
+  // to the slot parse only until the real number resolves (pre-fill).
+  const resolvedLeagueNumber = useLeagueNumberForSlot(draftId || undefined);
   const batchInfo = (() => {
+    if (resolvedLeagueNumber) return locateDraft(resolvedLeagueNumber);
     const candidates = [draftId, urlDraftId].filter(Boolean) as string[];
     for (const id of candidates) {
       const n = parseDraftNumber(id);

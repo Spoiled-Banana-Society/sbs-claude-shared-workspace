@@ -141,7 +141,7 @@ export function AdminDraftManage({ enabled }: Props) {
               value={queryInput}
               onChange={(e) => setQueryInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
-              placeholder="2024-fast-draft-…  or  BBB #1201"
+              placeholder="2024-fast-draft-…  or  League #1201"
               className="w-full bg-zinc-800 border border-white/10 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/30"
             />
           </label>

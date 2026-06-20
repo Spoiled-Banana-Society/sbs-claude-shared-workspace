@@ -5,6 +5,7 @@ export const runtime = 'nodejs';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { normalizeContestName } from '@/lib/draftStore';
 
 interface FeedDraft {
   draftId: string;
@@ -160,7 +161,7 @@ export async function GET(req: Request) {
         draftId: String(globalNumber), // proof URL = /proof/{globalNum}
         draftNumber: globalNumber,
         level,
-        displayName: dn || `BBB #${globalNumber}`,
+        displayName: normalizeContestName(dn) || `League #${globalNumber}`,
         speed: c.speed,
         filledAt,
       });

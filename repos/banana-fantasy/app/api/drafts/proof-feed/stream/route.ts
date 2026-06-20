@@ -1,5 +1,6 @@
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
+import { normalizeContestName } from '@/lib/draftStore';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -164,7 +165,7 @@ export async function GET(req: Request) {
         draftId: String(globalNumber),
         draftNumber: globalNumber,
         level,
-        displayName: dn || `BBB #${globalNumber}`,
+        displayName: normalizeContestName(dn) || `League #${globalNumber}`,
         speed: c.speed,
         filledAt,
       });
