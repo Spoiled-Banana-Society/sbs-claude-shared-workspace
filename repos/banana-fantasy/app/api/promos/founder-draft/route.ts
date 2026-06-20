@@ -6,7 +6,8 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getPrivyUser } from '@/lib/auth';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { recordFounderDraftJoin, markFounderDraft } from '@/lib/db';
+import { markFounderDraft } from '@/lib/db';
+import { creditFounderDraft } from '@/lib/founderGrant';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
@@ -105,8 +106,12 @@ export async function POST(req: Request) {
       founderWallet: schedule.founderWallet,
       scheduleAt: schedule.at,
     });
-    const promo = await recordFounderDraftJoin(walletAddress, draftId);
-    return json({ promo }, 200);
+    // Grant the founder reward — badge to all humans + a +1 wheel spin to every
+    // PAID, non-founder participant. creditFounderDraft only acts once the draft
+    // is FULL (10 seats) and is race-safe + idempotent (single source of truth,
+    // no claimable promo → no double-spin). The client POSTs this on fill.
+    const credit = await creditFounderDraft(draftId, info.draftOrder, 'on-fill');
+    return json({ ok: true, credit }, 200);
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
     logger.error(LOG_SOURCES.promo.FOUNDER_DRAFT_FAILED, { err, actor: actorWallet });

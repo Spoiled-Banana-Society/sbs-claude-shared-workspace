@@ -11,6 +11,7 @@ import { useLeagues } from '@/hooks/useLeagues';
 import { useGameweek } from '@/hooks/useStandings';
 import { useTeamNicknames } from '@/hooks/useTeamNicknames';
 import { useMyNfts, useNotOwnedLeagues } from '@/hooks/useMarketplace';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
 import type { League, ContestType } from '@/types';
 import type { MarketplaceTeam } from '@/lib/opensea';
 
@@ -67,6 +68,10 @@ export default function StandingsPage() {
     }
     return m;
   }, [myNfts]);
+  // Which of my teams came from a Founder Draft (one batched check).
+  const founderTeamIds = useFounderTeams(
+    myNfts.map(n => ({ tokenId: n.tokenId, owner: user?.walletAddress ?? null, leagueId: n.leagueId })),
+  );
 
   const leaguesQueryRaw = useLeagues({ userId: user?.id, status: 'completed' });
   // Hide teams with no roster data (incomplete/corrupted drafts)
@@ -456,6 +461,7 @@ export default function StandingsPage() {
                         onRename={setNickname}
                         walletAddress={user?.walletAddress}
                         marketplaceTeam={nftByLeague.get(league.id) ?? null}
+                        isFounder={founderTeamIds.has(nftByLeague.get(league.id)?.tokenId ?? '')}
                         onListed={(tokenId, orderHash, price) => { patchMyNftListing(tokenId, { orderHash, price }); setTimeout(() => refetchMyNfts(), 12000); }}
                         onCancelled={(tokenId) => { patchMyNftListing(tokenId, null); setTimeout(() => refetchMyNfts(), 12000); }}
                       />

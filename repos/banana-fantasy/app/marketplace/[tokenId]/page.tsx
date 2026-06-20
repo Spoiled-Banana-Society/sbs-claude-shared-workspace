@@ -11,6 +11,7 @@ import { friendlyTxError } from '@/lib/marketplace/txErrors';
 import { bananaDefaultName } from '@/utils/helpers';
 import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwnerOfOffer, notifyOffererOfAcceptance } from '@/hooks/useMarketplace';
 import { useListTeam } from '@/hooks/useListTeam';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
@@ -188,6 +189,11 @@ export default function NftDetailPage() {
   }, [selectedWallet, sendTransaction]);
 
   const [nft, setNft] = useState<NftDetail | null>(null);
+  // Founder-draft team? (one batched check; team leagueId == founder draftId)
+  const founderTeamIds = useFounderTeams(
+    tokenId ? [{ tokenId, owner: nft?.owner ?? null, leagueId: nft?.team?.leagueId ?? null }] : [],
+  );
+  const isFounderTeam = founderTeamIds.has(tokenId);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Wheel-won JP/HOF level for a pass still in a filling round — drives the
@@ -1160,9 +1166,9 @@ export default function NftDetailPage() {
               </div>
             )}
 
-            {/* Type Badge */}
-            {draftType !== 'pro' && (
-              <div className="absolute top-4 left-4">
+            {/* Type + Founder badges */}
+            {(draftType !== 'pro' || isFounderTeam) && (
+              <div className="absolute top-4 left-4 flex items-center gap-2">
                 {draftType === 'jackpot' && (
                   <span className="px-4 py-1.5 bg-error text-white text-xs font-bold uppercase rounded-full shadow-lg">
                     JACKPOT
@@ -1171,6 +1177,11 @@ export default function NftDetailPage() {
                 {draftType === 'hof' && (
                   <span className="px-4 py-1.5 bg-hof text-white text-xs font-bold uppercase rounded-full shadow-lg">
                     HOF
+                  </span>
+                )}
+                {isFounderTeam && (
+                  <span className="px-4 py-1.5 text-white text-xs font-bold uppercase rounded-full shadow-lg" style={{ background: '#06b6d4' }}>
+                    Founder
                   </span>
                 )}
               </div>

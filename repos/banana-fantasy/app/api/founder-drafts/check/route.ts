@@ -1,12 +1,11 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
-import { runInBackground } from '@/lib/serverBackground';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 import { getSearchParam, json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { isFounderDraftMarked, markFounderDraft, unlockBadge } from '@/lib/db';
-import { grantFounderDraftSpins } from '@/lib/founderGrant';
+import { isFounderDraftMarked, markFounderDraft } from '@/lib/db';
+import { creditFounderDraft } from '@/lib/founderGrant';
 import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -52,51 +51,6 @@ async function fetchSchedule(): Promise<FounderSchedule> {
 }
 
 /**
- * Credit every human drafter in a Founder Draft. Bot owners (ids that
- * start with "bot-") are skipped. Each call to recordFounderDraftJoin is
- * idempotent — re-credits are no-ops via the founderHistory dedupe, so
- * we always re-run the loop instead of gating on a `creditedAt` flag.
- * That keeps things self-healing if any individual write failed.
- */
-async function creditAllDrafters(
-  draftId: string,
-  draftOrder: { ownerId: string }[],
-): Promise<{ humans: string[]; results: Array<{ wallet: string; ok: boolean; reason?: string }> }> {
-  const out = {
-    humans: [] as string[],
-    results: [] as Array<{ wallet: string; ok: boolean; reason?: string }>,
-  };
-  if (!isFirestoreConfigured()) return out;
-  const db = getAdminFirestore();
-  const ref = db.collection('founderDrafts').doc(draftId);
-  const snap = await ref.get();
-  if (!snap.exists) return out;
-
-  const humans = draftOrder
-    .map(o => (o?.ownerId || '').toLowerCase())
-    .filter(o => o && !o.startsWith('bot-'));
-  out.humans = humans;
-
-  for (const wallet of humans) {
-    // Founders League badge — PLAYING in a founder draft earns it for EVERYONE
-    // (any pass type, incl. the founder). Idempotent + fires its own bell on
-    // first unlock. waitUntil-backed so it survives the response.
-    runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
-    out.results.push({ wallet, ok: true });
-  }
-
-  // The Free Banana Spin is granted DIRECTLY (paid-only, founder EXCLUDED) by
-  // grantFounderDraftSpins — race-safe + idempotent, sent straight to the wheel
-  // with a real-time bell. NOT a claimable promo (no promo box). The old
-  // claimable founder-draft promo credit was removed (Boris 2026-06-16) so
-  // there's exactly one path and no duplicate spins.
-  runInBackground('founder-spins', grantFounderDraftSpins(draftId, 'auto-fill'));
-
-  await ref.set({ creditedAt: new Date().toISOString() }, { merge: true });
-  return out;
-}
-
-/**
  * GET /api/founder-drafts/check?draftId=X[&debug=1]
  *
  * Source-of-truth check for whether a draft is a Founder Draft. Reads from
@@ -125,11 +79,10 @@ export async function GET(req: Request) {
 
   try {
     if (await isFounderDraftMarked(draftId)) {
+      // Safety-net credit (idempotent, only acts once the draft is full). The
+      // primary trigger is the on-fill POST /api/promos/founder-draft.
       const info = await fetchDraftInfo(draftId);
-      let credit;
-      if (info?.draftOrder) {
-        credit = await creditAllDrafters(draftId, info.draftOrder);
-      }
+      const credit = info?.draftOrder ? await creditFounderDraft(draftId, info.draftOrder) : undefined;
       return json({ isFounder: true, source: 'persisted', ...(debug ? { credit } : {}) }, 200);
     }
 
@@ -146,7 +99,7 @@ export async function GET(req: Request) {
       founderWallet: schedule.founderWallet,
       scheduleAt: schedule.at,
     });
-    const credit = await creditAllDrafters(draftId, info.draftOrder);
+    const credit = await creditFounderDraft(draftId, info.draftOrder);
     return json({ isFounder: true, source: 'auto-promoted', ...(debug ? { credit } : {}) }, 200);
   } catch (err) {
     if (debug) {

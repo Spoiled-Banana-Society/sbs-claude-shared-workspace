@@ -7,6 +7,8 @@ import { useNftOffers, type MyNftOffer } from '@/hooks/useMarketplace';
 import type { CollectionStats, MarketplaceTeam } from '@/lib/opensea';
 import { isDraftingOpen, hasSeasonStarted } from '@/lib/draftTypes';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
+import { FounderTeamBadge } from '@/components/marketplace/FounderTeamBadge';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 
 type SuccessType = 'buy' | 'sell' | 'list';
@@ -112,6 +114,10 @@ export function SellTab({
   // from the marketplace index overlay.
   const [teamSearch, setTeamSearch] = useState('');
   const [leagueSearch, setLeagueSearch] = useState('');
+  // Which of my teams came from a Founder Draft (one batched check).
+  const founderTeamIds = useFounderTeams(
+    myNfts.map(t => ({ tokenId: t.tokenId, owner: t.ownerAddress, leagueId: t.leagueId })),
+  );
   // Inventory view toggle. DEFAULT = drafted TEAMS (the thing people actually
   // sell). Passes live behind toggles, split paid vs free, plus an All view.
   // A "pass" = an NFT with no backend roster record (hasBackendRecord === false);
@@ -231,6 +237,7 @@ export function SellTab({
                       ) : (
                         <span className="px-3 py-1 bg-pro text-white text-[10px] font-bold uppercase rounded-full">PRO</span>
                       )}
+                      {founderTeamIds.has(team.tokenId) && <FounderTeamBadge />}
                     </div>
                   </div>
 

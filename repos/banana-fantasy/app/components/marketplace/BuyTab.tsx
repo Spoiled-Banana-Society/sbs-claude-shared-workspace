@@ -8,6 +8,8 @@ import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { hasSeasonStarted } from '@/lib/draftTypes';
 import { MultiChipSearch } from '@/components/ui/MultiChipSearch';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
+import { FounderTeamBadge } from '@/components/marketplace/FounderTeamBadge';
+import { useFounderTeams } from '@/hooks/useFounderTeams';
 import { useAuth } from '@/hooks/useAuth';
 
 type ViewFilter = 'listed' | 'all' | 'top' | 'pro' | 'jackpot' | 'hof' | 'passes';
@@ -119,6 +121,10 @@ export function BuyTab({
     : listingsLoading;
   const canLoadMore = (viewFilter === 'listed' && hasMore && !listingsLoading) || (viewFilter !== 'listed' && allNftsHasMore && !allNftsLoading);
   const sweepTeams = deduplicatedTeams.filter(team => sweepSelected.has(team.tokenId) && team.price != null);
+  // Which of the shown teams came from a Founder Draft (one batched check).
+  const founderTeamIds = useFounderTeams(
+    deduplicatedTeams.map(t => ({ tokenId: t.tokenId, owner: t.ownerAddress, leagueId: t.leagueId })),
+  );
   const sweepTotal = sweepTeams.reduce((sum, team) => sum + (team.price || 0), 0);
 
   return (
@@ -323,6 +329,7 @@ export function BuyTab({
                   {team.rank >= 1 && team.rank <= 10 && (
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${team.rank === 1 ? 'bg-yellow-500/20 text-yellow-400' : team.rank === 2 ? 'bg-gray-400/20 text-gray-300' : team.rank === 3 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/10 text-white/60'}`}>#{team.rank}</span>
                   )}
+                  {founderTeamIds.has(team.tokenId) && <FounderTeamBadge />}
                 </div>
 
               </div>

@@ -27,6 +27,8 @@ interface TeamCardProps {
   /** Kept for prop compatibility — listing is handled in the marketplace, not here. */
   onListed?: (tokenId: string, orderHash: string, price: number) => void;
   onCancelled?: (tokenId: string) => void;
+  /** True when this team was drafted in a Founder Draft → show the FOUNDER pill. */
+  isFounder?: boolean;
 }
 
 const typeConfig = {
@@ -36,7 +38,7 @@ const typeConfig = {
   regular: { label: 'Pro', pill: 'bg-pro', border: 'border-purple-500/25', bg: 'bg-white/[0.02]', text: 'text-pro' },
 };
 
-export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam }: TeamCardProps) {
+export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, walletAddress, marketplaceTeam, isFounder }: TeamCardProps) {
   const unreadCount = useUnreadChatCount(league.id, walletAddress);
 
   const mt = marketplaceTeam;
@@ -140,6 +142,9 @@ export function TeamCard({ league, onOpenModal, index = 0, nickname, onRename, w
         {/* Tier badge top-left (+ Listed indicator if on sale) */}
         <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 pointer-events-none">
           <span className={`text-[9px] font-bold uppercase tracking-wider text-white px-2.5 py-1 rounded-full ${config.pill}`}>{config.label}</span>
+          {isFounder && (
+            <span className="text-[9px] font-bold uppercase tracking-wider text-white px-2.5 py-1 rounded-full" style={{ background: '#06b6d4' }}>Founder</span>
+          )}
           {isListed && (
             <span className="text-[9px] font-bold uppercase tracking-wider text-green-400 bg-green-500/15 border border-green-500/25 px-2 py-1 rounded-full">
               Listed{typeof mt?.price === 'number' ? ` $${mt.price.toFixed(2)}` : ''}

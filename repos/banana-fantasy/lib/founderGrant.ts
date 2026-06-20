@@ -16,13 +16,15 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { resolveDraftPassType } from '@/lib/db';
+import { resolveDraftPassType, unlockBadge } from '@/lib/db';
 import { createNotification } from '@/lib/queueNotifications';
 import { buildActivityEventDoc, addActivityEventToTx } from '@/lib/activityEvents';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 
 const FOUNDER_DRAFTS_COLLECTION = 'founderDrafts';
 const USERS_COLLECTION = 'v2_users';
+const FULL_DRAFT_SEATS = 10; // a draft is "full" at 10 seats
 const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function goApiBase(): string {
@@ -66,9 +68,13 @@ export async function grantFounderDraftSpins(
   const db = getAdminFirestore();
   const ref = db.collection(FOUNDER_DRAFTS_COLLECTION).doc(draftId);
 
-  // Must be a filled draft — participants come from the Go API draftOrder.
+  // Must be a FILLED draft (all 10 seats) — participants come from the Go API
+  // draftOrder. Gating on a full draft prevents the partial-fill race where an
+  // early grant claims the lock against a half-empty room and permanently locks
+  // out players who join seconds later.
   const participants = await fetchParticipants(draftId);
   if (participants.length === 0) return { ok: false, skipped: 'no-participants' };
+  if (participants.length < FULL_DRAFT_SEATS) return { ok: false, skipped: 'not-full' };
 
   // Atomically CLAIM the grant so concurrent callers can't double-spin.
   const claim = await db.runTransaction(async (tx) => {
@@ -126,4 +132,37 @@ export async function grantFounderDraftSpins(
   );
   logger.info('founder.grant.done', { draftId, granted, skippedFree, failed, actorLabel });
   return { ok: failed === 0, granted, skippedFree, failed };
+}
+
+/**
+ * Credit a Founder Draft once it has FILLED (all 10 seats):
+ *  - Founders League badge to every human (any pass type, incl. the founder).
+ *  - +1 wheel spin to every PAID, non-founder participant (via grantFounderDraftSpins).
+ * Idempotent + race-safe (the spin grant atomically claims the lock; the badge
+ * unlock is idempotent). The SINGLE credit path — used by both the on-fill POST
+ * and the read-side check as a safety net. No claimable promo (no double-spin).
+ */
+export async function creditFounderDraft(
+  draftId: string,
+  draftOrder: { ownerId?: string }[],
+  actorLabel = 'auto-fill',
+): Promise<{ credited: boolean; reason?: string }> {
+  if (!isFirestoreConfigured() || !draftId) return { credited: false, reason: 'no-firestore' };
+  const db = getAdminFirestore();
+  const ref = db.collection(FOUNDER_DRAFTS_COLLECTION).doc(draftId);
+  const snap = await ref.get();
+  if (!snap.exists) return { credited: false, reason: 'not-marked' };
+
+  // Wait for the draft to FILL before crediting anyone (badge or spin).
+  if ((draftOrder?.length ?? 0) < FULL_DRAFT_SEATS) return { credited: false, reason: 'not-full' };
+
+  const humans = draftOrder
+    .map((o) => (o?.ownerId || '').toLowerCase())
+    .filter((o) => o && !o.startsWith('bot-'));
+  for (const wallet of humans) {
+    runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
+  }
+  runInBackground('founder-spins', grantFounderDraftSpins(draftId, actorLabel));
+  await ref.set({ creditedAt: new Date().toISOString() }, { merge: true });
+  return { credited: true };
 }
