@@ -8,6 +8,8 @@ import type { MarketplaceTeam } from '@/lib/opensea';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 import { UserSearchBox } from '@/app/components/marketplace/UserSearchBox';
+import { UserPopover } from '@/components/social/UserPopover';
+import { useAuth } from '@/hooks/useAuth';
 
 // Our generated card images (/api/og/team-card) live behind the staging
 // preview cookie, which the browser only sends SAME-ORIGIN. The stored imageUrl
@@ -100,9 +102,11 @@ export default function UserTeamsPage() {
 
   const wallet = resolved?.wallet ?? null;
   const { data: teams, isLoading } = useMyNfts(wallet);
+  const { user } = useAuth();
 
   const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : '';
   const displayName = resolved?.username || shortWallet;
+  const isSelf = !!wallet && (user?.walletAddress || '').toLowerCase() === wallet;
 
   const headerBusy = resolving || (!resolved && !notFound && looksLookupable(idParam));
 
@@ -120,6 +124,13 @@ export default function UserTeamsPage() {
                 ? <>Teams owned by <span className="font-mono text-banana">{displayName}</span></>
                 : 'Find a user'}
           </h1>
+          {resolved && wallet && !isSelf && (
+            <UserPopover walletAddress={wallet} username={resolved.username || undefined}>
+              <span className="px-4 py-2 rounded-full border border-banana/40 text-banana text-sm font-semibold hover:bg-banana/10 transition-colors cursor-pointer whitespace-nowrap">
+                + Add friend
+              </span>
+            </UserPopover>
+          )}
           <div className="sm:ml-auto w-full sm:w-96">
             <UserSearchBox />
           </div>

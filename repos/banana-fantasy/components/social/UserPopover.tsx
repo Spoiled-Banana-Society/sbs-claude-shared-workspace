@@ -376,6 +376,14 @@ export function UserPopover({ walletAddress, username, pfpUrl, children, side = 
                 Message
               </button>
             )}
+            {!composing && (
+              <button
+                onClick={() => { router.push(`/u/${walletAddress}`); setOpen(false); }}
+                className="w-full px-3 py-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.10] text-white/80 hover:text-white text-sm font-medium transition-colors"
+              >
+                View teams
+              </button>
+            )}
 
             {/* Inline compose box — the "little box they can write in". */}
             {!isSelf && !!myWallet && composing && (

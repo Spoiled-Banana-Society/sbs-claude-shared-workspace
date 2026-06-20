@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { UserPopover } from '@/components/social/UserPopover';
 import type { ActivityEntry } from '@/hooks/useMarketplace';
 import type { MarketplaceTeam } from '@/lib/opensea';
 
@@ -211,17 +212,18 @@ export function ActivityTab({
                           <Link href={`/marketplace/${activity.tokenId}`} className="text-text-primary text-sm font-mono hover:text-banana transition-colors truncate">{activity.teamName}</Link>
                         </div>
                         {/* Both people shown (username when set, else short
-                            address), each clickable → that owner's teams. */}
+                            address). Tap → popover: Add Friend / Message / View
+                            teams. */}
                         <p className="text-text-muted text-[11px] flex items-center gap-1 flex-wrap">
-                          <Link href={`/u/${activity.walletAddress}`} className="hover:text-banana transition-colors">
-                            {nameFor(activity.walletAddress)}
-                          </Link>
+                          <UserPopover walletAddress={activity.walletAddress} username={nameMap[activity.walletAddress.toLowerCase()]}>
+                            <span className="hover:text-banana transition-colors cursor-pointer">{nameFor(activity.walletAddress)}</span>
+                          </UserPopover>
                           {activity.counterparty && (
                             <>
                               <span>{activity.type === 'buy' ? '← from' : (activity.type === 'sell' || activity.type === 'offer_accepted') ? '→ to' : '·'}</span>
-                              <Link href={`/u/${activity.counterparty}`} className="hover:text-banana transition-colors">
-                                {nameFor(activity.counterparty)}
-                              </Link>
+                              <UserPopover walletAddress={activity.counterparty} username={nameMap[activity.counterparty.toLowerCase()]}>
+                                <span className="hover:text-banana transition-colors cursor-pointer">{nameFor(activity.counterparty)}</span>
+                              </UserPopover>
                             </>
                           )}
                         </p>
