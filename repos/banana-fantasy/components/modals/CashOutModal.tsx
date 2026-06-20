@@ -648,15 +648,11 @@ export function CashOutModal({
     // When Coinbase returns no usable payout method (almost always because the
     // amount is below its cash-out minimum), there's nothing to pick — show a
     // clear reason instead of a dead, disabled "Continue" button.
+    // Show every payout option Coinbase returns as available (bank + Coinbase
+    // balance + crypto). Default selection still prefers bank.
     const availableQuotes = quotes.filter((q) => q.available);
     const availableCount = availableQuotes.length;
-    // When bank (ACH) is available, show ONLY the bank option and hide the
-    // Coinbase-balance / crypto options. They reappear as a fallback only when
-    // bank isn't available for this amount (over the weekly cap, etc.).
-    const bankAvailable = availableQuotes.some((q) => q.method === 'ACH_BANK_ACCOUNT');
-    const renderedQuotes = bankAvailable
-      ? availableQuotes.filter((q) => q.method === 'ACH_BANK_ACCOUNT')
-      : availableQuotes;
+    const renderedQuotes = availableQuotes;
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Withdraw" size="md">
         <div className="space-y-5">
