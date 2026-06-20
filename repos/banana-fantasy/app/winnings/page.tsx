@@ -266,10 +266,13 @@ export default function PrizesPage() {
                     )}
                   </div>
 
-                  {/* What the balance can be used for — an OPTION alongside card. */}
-                  <p className="mt-4 text-[11px] text-text-muted leading-relaxed border-t border-white/[0.06] pt-3">
-                    Instead of paying by card, you can use your balance to buy teams in the marketplace or draft passes — a draft pass needs the full $25, so balance only covers one when it&apos;s $25+.
-                  </p>
+                  {/* What the balance can be used for — web2 only (web3 pays from
+                      their wallet directly, so the card-vs-balance framing N/A). */}
+                  {isEmbeddedWallet && (
+                    <p className="mt-4 text-[11px] text-text-muted leading-relaxed border-t border-white/[0.06] pt-3">
+                      Instead of paying by card, you can use your balance to buy teams in the marketplace or draft passes — a draft pass needs the full $25, so balance only covers one when it&apos;s $25+.
+                    </p>
+                  )}
                 </div>
 
                 {/* ---- Winnings ---- */}
