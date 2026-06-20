@@ -17,6 +17,8 @@ import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/list
 import { logger } from '@/lib/logger';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 import { resolveTokenImage } from '@/lib/nftCardServer';
+import { bananaDefaultName } from '@/utils/helpers';
+import { isPlaceholderName } from '@/lib/api/owner';
 import { classifyToken } from '@/lib/nftPassClassify';
 
 export const dynamic = 'force-dynamic';
@@ -259,11 +261,16 @@ export async function GET(req: Request) {
       await enrichWithTimeout;
 
       for (const listing of listings) {
-        const profile = ownerProfiles.get(listing.ownerAddress.toLowerCase());
-        if (profile) {
-          if (profile.name) listing.owner = profile.name;
-          if (profile.pfp) listing.ownerPfp = profile.pfp;
+        const addr = (listing.ownerAddress || '').toLowerCase();
+        const profile = ownerProfiles.get(addr);
+        // Floor to the canonical Banana handle unless the Go name is a real,
+        // user-chosen one — never the raw-wallet base or a placeholder.
+        if (addr) {
+          listing.owner = profile?.name && !isPlaceholderName(profile.name, addr)
+            ? profile.name
+            : bananaDefaultName(addr);
         }
+        if (profile?.pfp) listing.ownerPfp = profile.pfp;
       }
     } catch { /* enrichment failed — continue with raw data */ }
 

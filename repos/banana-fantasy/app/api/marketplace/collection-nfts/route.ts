@@ -8,6 +8,8 @@ import {
   type MarketplaceTeam,
   type OpenSeaNft,
 } from '@/lib/opensea';
+import { bananaDefaultName } from '@/utils/helpers';
+import { isPlaceholderName } from '@/lib/api/owner';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { getCollectionListings } from '@/lib/marketplace/collectionListings';
 
@@ -163,11 +165,15 @@ export async function GET(req: Request) {
         }),
       );
       for (const team of teams) {
-        const profile = ownerProfiles.get(team.ownerAddress.toLowerCase());
-        if (profile) {
-          if (profile.name) team.owner = profile.name;
-          if (profile.pfp) team.ownerPfp = profile.pfp;
-        }
+        if (!team.ownerAddress) continue;
+        const addr = team.ownerAddress.toLowerCase();
+        const profile = ownerProfiles.get(addr);
+        // Floor to the canonical Banana handle unless the Go name is a real,
+        // user-chosen one — never the raw-wallet base or a placeholder.
+        team.owner = profile?.name && !isPlaceholderName(profile.name, addr)
+          ? profile.name
+          : bananaDefaultName(addr);
+        if (profile?.pfp) team.ownerPfp = profile.pfp;
       }
     } catch { /* enrichment failed */ }
 

@@ -2,6 +2,8 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import type { MarketplaceTeam } from '@/lib/opensea';
+import { bananaDefaultName } from '@/utils/helpers';
+import { isPlaceholderName } from '@/lib/api/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +49,7 @@ export async function GET(req: Request) {
             weeklyAvg: 0,
             playoffOdds: 0,
             price: null,
-            owner: wallet ? `${wallet.slice(0, 6)}...${wallet.slice(-4)}` : '',
+            owner: wallet ? bananaDefaultName(wallet) : '',
             ownerAddress: wallet,
             ownerPfp: null,
             roster: [],
@@ -75,7 +77,11 @@ export async function GET(req: Request) {
           const profile = await res.json();
           for (const p of passes) {
             if (p.ownerAddress !== addr) continue;
-            if (profile?.pfp?.displayName) p.owner = profile.pfp.displayName;
+            // Only override the Banana base with a REAL Go name (never a
+            // placeholder / raw wallet); base already = bananaDefaultName.
+            if (profile?.pfp?.displayName && !isPlaceholderName(profile.pfp.displayName, addr)) {
+              p.owner = profile.pfp.displayName;
+            }
             if (profile?.pfp?.imageUrl) p.ownerPfp = profile.pfp.imageUrl;
           }
         } catch { /* skip */ }

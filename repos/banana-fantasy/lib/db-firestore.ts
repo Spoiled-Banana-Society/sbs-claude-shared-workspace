@@ -3454,8 +3454,14 @@ export async function getUserDisplayBatch(userIds: string[]): Promise<Record<str
     const data = snaps[i].exists ? (snaps[i].data() as User) : null;
     const id = userIds[i];
     const u = (data?.username || '').trim();
-    // A username equal to the raw wallet means the user never set one.
-    const username = u && u.toLowerCase() !== id ? u : null;
+    // Null out any non-real name so every caller's `username || …banana` fallback
+    // works: the raw wallet, the seeded `User-0x…` placeholder (createUser), or
+    // any raw 0x… form. Without this the marketplace/profile showed "User-0xc0d1".
+    const username = u
+      && u.toLowerCase() !== id
+      && !/^user-0x[0-9a-f]/i.test(u)
+      && !/^0x[0-9a-f]{6,}/i.test(u)
+      ? u : null;
     const existingNumber = typeof data?.bananaNumber === 'number' ? data.bananaNumber : null;
     out[id] = {
       username,

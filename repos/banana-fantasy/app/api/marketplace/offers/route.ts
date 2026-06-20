@@ -6,6 +6,8 @@ import {
   COLLECTION_SLUG,
   type OfferData,
 } from '@/lib/opensea';
+import { bananaDefaultName } from '@/utils/helpers';
+import { isPlaceholderName } from '@/lib/api/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,11 +131,14 @@ export async function GET(req: Request) {
       );
 
       for (const offer of offers) {
-        const profile = profiles.get(offer.offererAddress.toLowerCase());
-        if (profile) {
-          if (profile.name) offer.offererName = profile.name;
-          if (profile.pfp) offer.offererPfp = profile.pfp;
-        }
+        const addr = offer.offererAddress.toLowerCase();
+        const profile = profiles.get(addr);
+        // Always floor to the canonical Banana handle unless the Go name is a
+        // real, user-chosen one — never the raw-wallet base or a placeholder.
+        offer.offererName = profile?.name && !isPlaceholderName(profile.name, addr)
+          ? profile.name
+          : bananaDefaultName(addr);
+        if (profile?.pfp) offer.offererPfp = profile.pfp;
       }
     } catch { /* enrichment failed — continue with raw data */ }
 
