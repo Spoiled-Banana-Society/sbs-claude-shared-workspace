@@ -101,8 +101,13 @@ export default function UserTeamsPage() {
   }, [idParam, isWallet]);
 
   const wallet = resolved?.wallet ?? null;
-  const { data: teams, isLoading } = useMyNfts(wallet);
+  const { data: allOwned, isLoading } = useMyNfts(wallet);
   const { user } = useAuth();
+
+  // "Teams owned by" should show real drafted teams only — hide plain undrafted
+  // draft passes (no backend record). Wheel-won JP/HOF specials still mid-fill
+  // are the exception (surfaced via fillingWheelLevel) and stay visible.
+  const teams = allOwned.filter(t => t.hasBackendRecord || t.fillingWheelLevel);
 
   const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : '';
   const displayName = resolved?.username || shortWallet;
