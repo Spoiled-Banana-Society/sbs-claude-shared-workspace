@@ -2,7 +2,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import { Tooltip } from '../ui/Tooltip';
 import { Contest } from '@/types';
 
@@ -25,15 +24,13 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
 
   return (
     <div className="relative flex items-center justify-center py-10">
-      {/* Main Content - glossy 3D panel */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="panel-3d rounded-3xl p-10 max-w-3xl w-full"
+      {/* Main Content - Centered card */}
+      <div
+        className="relative glass-card rounded-3xl p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana"
       >
+
         {/* Top Left - Info button */}
-        <div className="absolute left-6 top-6 z-10">
+        <div className="absolute left-6 top-6">
           <Tooltip content="Contest Details">
             <button
               onClick={onDetails}
@@ -59,16 +56,12 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
         </div>
 
         {/* Contest Info */}
-        <div className="relative z-[1] text-center space-y-4 mt-4">
+        <div className="text-center space-y-4 mt-4">
           <h3 className="text-3xl font-bold text-white">{contest.name}</h3>
           {/* Prize Pool */}
           <div className="flex items-center justify-center gap-2">
-            <span className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-banana drop-shadow-[0_2px_12px_rgba(251,191,36,0.35)]">
-              {formatCurrency(contest.prizePool)}
-            </span>
-            <span className="text-sm text-white/50 font-medium leading-tight text-left">
-              Guaranteed<br />Prize Pool
-            </span>
+            <span className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-banana drop-shadow-lg">{formatCurrency(contest.prizePool)}</span>
+            <span className="text-sm text-white/50 font-medium leading-tight text-left">Guaranteed<br/>Prize Pool</span>
           </div>
 
           {/* 1st Place & Entry */}
@@ -86,31 +79,21 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="relative z-[1] flex flex-col sm:flex-row justify-center items-center gap-4 mt-10">
-          <motion.button
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-10">
+          <button
             onClick={onEnter}
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.985 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-            className="btn-3d btn-obsidian rim-chromatic w-full sm:w-[200px] py-4 text-xl font-bold tracking-wide"
+            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"
           >
-            <span>Enter</span>
-          </motion.button>
-          <motion.div
-            whileHover={{ scale: 1.04 }}
-            whileTap={{ scale: 0.985 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-            className="w-full sm:w-[200px]"
+            Enter
+          </button>
+          <Link
+            href="/buy-drafts?buy=1"
+            className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana text-banana transition-all duration-200 hover:bg-banana hover:text-black hover:scale-105 text-center"
           >
-            <Link
-              href="/buy-drafts?buy=1"
-              className="btn-3d btn-muted flex items-center justify-center w-full py-4 text-xl font-bold tracking-wide text-center"
-            >
-              <span>Buy</span>
-            </Link>
-          </motion.div>
+            Buy
+          </Link>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
