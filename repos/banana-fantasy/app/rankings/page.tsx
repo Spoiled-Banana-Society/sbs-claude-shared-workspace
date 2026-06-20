@@ -8,7 +8,6 @@ import { PositionLimitsPanel } from '@/components/rankings/PositionLimitsPanel';
 import { DefaultSortToggle } from '@/components/rankings/DefaultSortToggle';
 import { DraftSectionLinks } from '@/components/layout/DraftSectionLinks';
 import { useAuth } from '@/hooks/useAuth';
-import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 import { Rankings } from '@/utils/api';
 
 // Position color mapping
@@ -64,10 +63,6 @@ function adaptRankingItem(item: GoRankingItem): TeamPosition {
 
 export default function RankingsPage() {
   const { walletAddress } = useAuth();
-  // Once a user customizes their rankings, drafts they join should open in
-  // THEIR order, not ADP. We flip this default sort preference to 'rank' on any
-  // edit (and back to 'adp' on reset) — the draft room reads it on entry.
-  const sortPref = useAutoPickSortPreference();
   const [rankings, setRankings] = useState<TeamPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -118,8 +113,6 @@ export default function RankingsPage() {
   const playerIdFor = (pos: TeamPosition) => pos.id || `${pos.team}-${pos.position}`;
   const persistRankings = (next: TeamPosition[]) => {
     if (!walletAddress) return;
-    // Customizing = they want their own order to drive their drafts by default.
-    if (sortPref.preference !== 'rank') sortPref.setPreference('rank');
     setSavingRankings(true);
     const payload = {
       ranking: next.map((pos, i) => ({
@@ -138,8 +131,6 @@ export default function RankingsPage() {
   const resetRankingsToDefault = async () => {
     if (!walletAddress) return;
     if (!confirm('Reset rankings to ADP order? Your custom order will be lost.')) return;
-    // Back to a clean default → drafts open in ADP order again.
-    if (sortPref.preference !== 'adp') sortPref.setPreference('adp');
     setResettingRankings(true);
     try {
       // DELETE the saved doc on the Go side. Next GET auto-seeds from
@@ -280,12 +271,7 @@ export default function RankingsPage() {
         <p className="text-text-secondary">Draft team positions, not players. Each week you score the highest-scoring player at that position.</p>
       </div>
 
-      <DefaultSortToggle
-        preference={sortPref.preference}
-        loaded={sortPref.loaded}
-        saving={sortPref.saving}
-        onChange={sortPref.setPreference}
-      />
+      <DefaultSortToggle />
       <PositionLimitsPanel />
 
       {/* CSV Controls + save status */}

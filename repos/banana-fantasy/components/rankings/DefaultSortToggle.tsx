@@ -1,17 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useAutoPickSortPreference, type SortPreference } from '@/hooks/useAutoPickSortPreference';
-
-interface DefaultSortToggleProps {
-  /** Controlled mode — when provided, the parent owns the preference so it
-   *  stays in sync with edits made elsewhere on the page (e.g. customizing
-   *  rankings flips this to 'rank' automatically). Omit for standalone use. */
-  preference?: SortPreference;
-  loaded?: boolean;
-  saving?: boolean;
-  onChange?: (pref: SortPreference) => void;
-}
+import { useAutoPickSortPreference } from '@/hooks/useAutoPickSortPreference';
 
 /**
  * Toggle for the user's default auto-pick sort order.
@@ -21,13 +11,8 @@ interface DefaultSortToggleProps {
  * The user can still flip ADP/Rank within a draft; this only sets the
  * initial value when joining a new draft.
  */
-export function DefaultSortToggle(props: DefaultSortToggleProps = {}) {
-  const own = useAutoPickSortPreference();
-  const controlled = props.onChange !== undefined;
-  const preference = controlled ? (props.preference ?? 'adp') : own.preference;
-  const loaded = controlled ? (props.loaded ?? true) : own.loaded;
-  const saving = controlled ? (props.saving ?? false) : own.saving;
-  const setPreference = controlled ? props.onChange! : own.setPreference;
+export function DefaultSortToggle() {
+  const { preference, loaded, saving, setPreference } = useAutoPickSortPreference();
 
   return (
     <div className="mb-6 rounded-xl border border-white/10 bg-bg-secondary px-4 py-3">
