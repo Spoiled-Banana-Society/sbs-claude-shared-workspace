@@ -44,7 +44,11 @@ export function seededRandomFloat(seed: string): number {
   const slice = hash.subarray(0, FLOAT_BYTES);
   let value = 0;
   for (const byte of slice) {
-    value = (value << 8) + byte;
+    // `* 256`, NOT `<< 8`: JS bit-shift is 32-bit, so accumulating FLOAT_BYTES=6
+    // (48-bit) bytes overflowed after 4 bytes — `value` went tiny/negative and the
+    // roll was ~0, so pickWeighted ALWAYS returned the first wedge (wheel paid
+    // 1 Draft 100% of the time). Multiplication stays exact up to 2^53 (53-bit safe).
+    value = value * 256 + byte;
   }
   return value / FLOAT_DIVISOR;
 }
