@@ -6,7 +6,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useRealTimeDraftInfo } from '@/hooks/useRealTimeDraftInfo';
 import { useDraftWebSocket } from '@/hooks/useDraftWebSocket';
 import { useTimeRemaining } from '@/hooks/useTimeRemaining';
-import { isSlowDraftPickLength, isSlowDraftNightPause } from '@/utils/slowDraftClock';
+import { isSlowDraftPickLength, isSlowDraftNightPause, slowDraftActiveSecondsUntil } from '@/utils/slowDraftClock';
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
@@ -814,6 +814,19 @@ export function useDraftLiveSync({
       && !isSlowDraftPickLength(firebasePickLength ?? 0)
     ) {
       value = Math.max(0, Math.ceil((engine.endOfTurnTimestamp * 1000 - Date.now()) / 1000));
+    } else if (
+      engine.draftStatus === 'active'
+      && engine.endOfTurnTimestamp > 0
+      && isSlowDraftPickLength(firebasePickLength ?? 0)
+    ) {
+      // SLOW draft, Firebase not live yet on this device: compute from the SAME
+      // shared server pickEndTime (engine.endOfTurnTimestamp, identical to the
+      // Firebase value) using the SAME pause-aware active-window math the
+      // Firebase path uses — so mobile and desktop match instead of falling to
+      // the per-device raw engine.timeRemaining. Produces the identical number
+      // as branch 1, so there's no jump when Firebase goes live. FAST drafts are
+      // untouched (they keep the branch above).
+      value = slowDraftActiveSecondsUntil(Math.floor(Date.now() / 1000), engine.endOfTurnTimestamp);
     } else {
       value = engine.timeRemaining;
     }

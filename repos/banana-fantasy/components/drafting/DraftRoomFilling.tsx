@@ -27,6 +27,9 @@ interface DraftRoomFillingProps {
   serverWaitProgress: number;
   randomizingProgressFromStore: number;
   user?: UserLike | null;
+  /** The logged-in user's wallet — used to resolve their OWN lobby avatar via
+   *  the server-clean usersMap (banana fallback) instead of a raw web2 pfp URL. */
+  userWallet?: string;
   visibleDraftType: DraftType | null;
   controls?: React.ReactNode;
   usersMap?: DraftRoomUsersMap;
@@ -40,10 +43,16 @@ export function DraftRoomFilling({
   serverWaitProgress,
   randomizingProgressFromStore,
   user,
+  userWallet,
   visibleDraftType,
   controls,
   usersMap,
 }: DraftRoomFillingProps) {
+  // The user's OWN server-clean avatar (banana fallback). web2/Gmail logins
+  // expose a raw Google pfp URL on `user.profilePicture` that can render a
+  // glitchy/blank image during filling — prefer the same usersMap source the
+  // other players use so the self box shows the banana consistently.
+  const selfImageUrl = usersMap?.[userWallet?.toLowerCase() ?? '']?.imageUrl || user?.profilePicture || '/banana-profile.png';
   const isRandomizing = waitingForServer || isRandomizingFromStore;
   const randomizingProgress = Math.max(serverWaitProgress, randomizingProgressFromStore);
   const myName = user?.username && !user.username.startsWith('0x') ? user.username : 'You';
@@ -145,7 +154,7 @@ export function DraftRoomFilling({
                   {isUser && isFilled ? (
                     <div className="flex justify-center">
                       <AvatarWithBadge
-                        imageUrl={user?.profilePicture || '/banana-profile.png'}
+                        imageUrl={selfImageUrl}
                         alt="You"
                         size={avatarSize}
                         equippedBadge={user?.equippedBadge}
