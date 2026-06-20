@@ -13,6 +13,7 @@ import { useNftOffers, useTokenSaleHistory, logActivity, notifySeller, notifyOwn
 import { useListTeam } from '@/hooks/useListTeam';
 import { useNotifications } from '@/components/NotificationCenter';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
+import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { BASE_SEPOLIA, getUsdcBalance } from '@/lib/contracts/bbb4';
 import type { Address } from 'viem';
 import type { DraftType, OfferData } from '@/lib/opensea';
@@ -202,6 +203,7 @@ export default function NftDetailPage() {
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
   const [offerExpiration, setOfferExpiration] = useState(7);
+  const [offerPaymentMethod, setOfferPaymentMethod] = useState<'card' | 'usdc'>('usdc');
   const [showCustomExpiry, setShowCustomExpiry] = useState(false);
   const [customExpiryAmount, setCustomExpiryAmount] = useState('');
   const [customExpiryUnit, setCustomExpiryUnit] = useState<'hours' | 'days'>('hours');
@@ -684,6 +686,23 @@ export default function NftDetailPage() {
     setOfferError(null);
 
     try {
+      // Card path: buy the USDC for the offer via MoonPay first, then the offer
+      // is created/escrowed once it lands (createOffer handles the approval).
+      if (offerPaymentMethod === 'card') {
+        const fundRes = await fundWallet({
+          address: walletAddress,
+          options: { chain: BASE_SEPOLIA, amount: String(amount), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+        });
+        if (fundRes.status === 'cancelled') { setOfferStep('input'); return; }
+        const requiredUsdc = BigInt(Math.ceil(amount * 1e6));
+        const start = Date.now();
+        while (Date.now() - start < 300_000) {
+          const bal = await getUsdcBalance(walletAddress as Address);
+          if (bal >= requiredUsdc) break;
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+
       const { createOffer } = await import('@/lib/marketplace/offer');
       const { ethers } = await import('ethers');
 
@@ -777,7 +796,7 @@ export default function NftDetailPage() {
       setOfferError(friendlyTxError(err, 'Failed to create offer. Please try again.'));
       setOfferStep('input');
     }
-  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, tokenId, sendTx, refetchOffers, nft]);
+  }, [walletAddress, selectedWallet, offerAmount, offerExpiration, offerPaymentMethod, fundWallet, tokenId, sendTx, refetchOffers, nft]);
 
   const handleAcceptOffer = useCallback(async (offer: OfferData) => {
     if (!walletAddress || !selectedWallet) return;
@@ -1750,55 +1769,12 @@ export default function NftDetailPage() {
                   {/* Payment Method */}
                   <div className="mb-4">
                     <label className="block text-text-secondary text-sm mb-3">Payment Method</label>
-                    <div className="grid gap-3 grid-cols-2">
-                      <button
-                        onClick={() => setPaymentMethod('card')}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          paymentMethod === 'card'
-                            ? 'border-banana bg-banana/10'
-                            : 'border-bg-tertiary hover:border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <svg className="w-6 h-4" viewBox="0 0 24 16" fill="none">
-                            <rect width="24" height="16" rx="2" fill="#1A1F71"/>
-                            <path d="M9.5 10.5L10.5 5.5H12L11 10.5H9.5Z" fill="white"/>
-                            <path d="M15.5 5.5C15 5.5 14.5 5.7 14.3 6L12 10.5H13.7L14 9.7H16L16.2 10.5H17.7L16.5 5.5H15.5ZM14.5 8.5L15.2 6.7L15.6 8.5H14.5Z" fill="white"/>
-                            <path d="M8 5.5L6 10.5H7.5L7.8 9.5H9.5L9.8 10.5H11.3L9.3 5.5H8ZM8 8.3L8.5 6.7L9 8.3H8Z" fill="white"/>
-                          </svg>
-                          <svg className="w-8 h-5" viewBox="0 0 32 20" fill="none">
-                            <rect width="32" height="20" rx="2" fill="#EB001B"/>
-                            <circle cx="12" cy="10" r="6" fill="#EB001B"/>
-                            <circle cx="20" cy="10" r="6" fill="#F79E1B"/>
-                            <path d="M16 5.5C17.5 6.7 18.5 8.2 18.5 10C18.5 11.8 17.5 13.3 16 14.5C14.5 13.3 13.5 11.8 13.5 10C13.5 8.2 14.5 6.7 16 5.5Z" fill="#FF5F00"/>
-                          </svg>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'card' ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          Card
-                        </span>
-                        <p className="text-text-muted text-[10px] mt-1">Powered by MoonPay</p>
-                      </button>
-                      <button
-                        onClick={() => setPaymentMethod('usdc')}
-                        className={`p-4 rounded-xl border-2 transition-all ${
-                          paymentMethod === 'usdc'
-                            ? 'border-banana bg-banana/10'
-                            : 'border-bg-tertiary hover:border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center justify-center gap-2 mb-2">
-                          <span className="text-lg font-bold text-text-primary">$</span>
-                        </div>
-                        <span className={`text-sm font-medium ${paymentMethod === 'usdc' ? 'text-text-primary' : 'text-text-secondary'}`}>
-                          {isEmbeddedWallet ? 'Balance' : 'USDC'}
-                        </span>
-                        {user?.usdcBalance != null && (
-                          <p className="text-text-muted text-[10px] mt-1">
-                            {isEmbeddedWallet ? `$${user.usdcBalance.toFixed(2)}` : `Balance: $${user.usdcBalance.toFixed(2)}`}
-                          </p>
-                        )}
-                      </button>
-                    </div>
+                    <PaymentMethodSquares
+                      value={paymentMethod}
+                      onChange={setPaymentMethod}
+                      isEmbeddedWallet={isEmbeddedWallet}
+                      usdcBalance={user?.usdcBalance ?? null}
+                    />
                   </div>
 
                   {/* Error display */}
@@ -2117,6 +2093,17 @@ export default function NftDetailPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Payment Method — Card funds the offer via MoonPay, then it escrows */}
+                  <div className="mb-4">
+                    <label className="block text-text-secondary text-sm mb-2">Pay with</label>
+                    <PaymentMethodSquares
+                      value={offerPaymentMethod}
+                      onChange={setOfferPaymentMethod}
+                      isEmbeddedWallet={isEmbeddedWallet}
+                      usdcBalance={user?.usdcBalance ?? null}
+                    />
                   </div>
 
                   {/* Summary */}
