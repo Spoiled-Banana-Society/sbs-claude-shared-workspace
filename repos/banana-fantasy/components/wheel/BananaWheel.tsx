@@ -93,27 +93,19 @@ function PrizeIcon({ segment, size = 60 }: { segment: WheelSegment; size?: numbe
       </svg>
     );
   }
-  // Draft wins = ticket/pass. Fan a stack for bigger hauls; sparkle at 20.
+  // Draft wins = a clean notched admission ticket. Bigger hauls escalate with
+  // sparkles rather than a busy stack (the headline already says "5 Drafts").
   const val = typeof segment.prizeValue === 'number' ? segment.prizeValue : 1;
-  const layers = val >= 10 ? 3 : val >= 2 ? 2 : 1;
-  const recenter = (layers - 1) * 1.3;
+  const sparkle = (cx: number, cy: number, r: number) =>
+    `M${cx} ${cy - r}l${r * 0.32} ${r * 0.68} ${r * 0.68} ${r * 0.32}-${r * 0.68} ${r * 0.32}-${r * 0.32} ${r * 0.68}-${r * 0.32}-${r * 0.68}-${r * 0.68}-${r * 0.32} ${r * 0.68}-${r * 0.32}z`;
   return (
     <svg {...common} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-      <g transform={`translate(${-recenter} ${recenter})`}>
-        {Array.from({ length: layers }).map((_, i) => {
-          const front = i === layers - 1;
-          const dx = i * 2.6;
-          return (
-            <g key={i} transform={`translate(${dx} ${-dx})`} opacity={front ? 1 : 0.4}>
-              <rect x="4.5" y="8.5" width="13.5" height="8" rx="2" />
-              {front && <line x1="13.2" y1="8.7" x2="13.2" y2="16.3" strokeDasharray="1.3 1.6" />}
-            </g>
-          );
-        })}
-      </g>
-      {val >= 20 && (
-        <path d="M19.6 3l.55 1.5 1.5.55-1.5.55L19.6 7l-.55-1.5L17.55 5l1.5-.55z" fill="currentColor" stroke="none" />
-      )}
+      {/* Notched ticket body (single clean side-notch per edge) */}
+      <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z" fill="currentColor" fillOpacity={0.1} />
+      {/* Perforation line */}
+      <path d="M13 6.5v2M13 11v2M13 15.5v2" />
+      {val >= 10 && <path d={sparkle(20.5, 3.8, 2.4)} fill="currentColor" stroke="none" />}
+      {val >= 20 && <path d={sparkle(3.6, 3.2, 1.7)} fill="currentColor" stroke="none" />}
     </svg>
   );
 }
