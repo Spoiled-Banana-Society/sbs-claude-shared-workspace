@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
@@ -9,47 +9,97 @@ import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
+// A username is 3–20 chars of letters/numbers/_.- (matches lib/usernames).
+const USERNAME_RE = /^[a-zA-Z0-9_.-]{3,20}$/;
+const looksLookupable = (s: string) => WALLET_RE.test(s) || USERNAME_RE.test(s);
 
-// Public read-only view of every team a wallet owns. Reached by clicking a
-// wallet in the marketplace Activity feed, or by typing one into the lookup box.
-export default function WalletTeamsPage() {
+// Public read-only view of every team a person owns. Reached by clicking a
+// person in the marketplace Activity feed, or by typing a username/wallet into
+// the lookup box. The URL segment can be a wallet OR a username — we resolve a
+// username to its wallet before loading teams.
+export default function UserTeamsPage() {
   const params = useParams();
   const router = useRouter();
-  const walletParam = (Array.isArray(params?.wallet) ? params.wallet[0] : params?.wallet) ?? '';
-  const wallet = decodeURIComponent(walletParam).toLowerCase();
-  const valid = WALLET_RE.test(wallet);
+  const raw = (Array.isArray(params?.wallet) ? params.wallet[0] : params?.wallet) ?? '';
+  const idParam = decodeURIComponent(raw).trim();
 
-  const { data: teams, isLoading } = useMyNfts(valid ? wallet : null);
+  const isWallet = WALLET_RE.test(idParam);
+
+  // Resolve whatever's in the URL to a wallet (+ display name). A wallet
+  // resolves to itself; a username is looked up server-side.
+  const [resolved, setResolved] = useState<{ wallet: string; username: string | null } | null>(
+    isWallet ? { wallet: idParam.toLowerCase(), username: null } : null,
+  );
+  const [resolving, setResolving] = useState(!isWallet && USERNAME_RE.test(idParam));
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isWallet) {
+      setResolved({ wallet: idParam.toLowerCase(), username: null });
+      setResolving(false);
+      setNotFound(false);
+      // Also fetch the display name so the header can show it.
+      fetch(`/api/marketplace/resolve-user?q=${encodeURIComponent(idParam)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d?.wallet) setResolved({ wallet: d.wallet, username: d.username ?? null }); })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }
+    if (!USERNAME_RE.test(idParam)) { setResolving(false); setNotFound(false); return; }
+    setResolving(true);
+    setNotFound(false);
+    fetch(`/api/marketplace/resolve-user?q=${encodeURIComponent(idParam)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return;
+        if (d?.wallet) setResolved({ wallet: d.wallet, username: d.username ?? idParam });
+        else setNotFound(true);
+        setResolving(false);
+      })
+      .catch(() => { if (!cancelled) { setNotFound(true); setResolving(false); } });
+    return () => { cancelled = true; };
+  }, [idParam, isWallet]);
+
+  const wallet = resolved?.wallet ?? null;
+  const { data: teams, isLoading } = useMyNfts(wallet);
   const [lookup, setLookup] = useState('');
 
-  const short = valid ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
+  const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : '';
+  const displayName = resolved?.username || shortWallet;
 
   const goLookup = () => {
     const w = lookup.trim();
-    if (WALLET_RE.test(w)) router.push(`/u/${w.toLowerCase()}`);
+    if (looksLookupable(w)) router.push(`/u/${encodeURIComponent(WALLET_RE.test(w) ? w.toLowerCase() : w)}`);
   };
+
+  const headerBusy = resolving || (!resolved && !notFound && looksLookupable(idParam));
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8">
       <div className="max-w-6xl mx-auto">
         <Link href="/marketplace" className="text-text-muted text-sm hover:text-text-primary transition-colors">← Back to Marketplace</Link>
 
-        {/* Wallet lookup — type any 0x address to view its teams. */}
+        {/* People lookup — type a username or wallet to view their teams. */}
         <div className="mt-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
-            {valid ? <>Teams owned by <span className="font-mono text-banana">{short}</span></> : 'Look up a wallet'}
+            {headerBusy
+              ? 'Loading…'
+              : resolved
+                ? <>Teams owned by <span className="font-mono text-banana">{displayName}</span></>
+                : 'Find a user'}
           </h1>
           <div className="sm:ml-auto flex items-center gap-2">
             <input
               value={lookup}
               onChange={(e) => setLookup(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') goLookup(); }}
-              placeholder="Paste a wallet (0x…)"
-              className="w-full sm:w-80 rounded-full bg-black/30 border border-white/[0.10] focus:border-banana/50 px-4 py-2.5 text-sm font-mono text-text-primary outline-none transition-colors"
+              placeholder="Username or wallet"
+              className="w-full sm:w-80 rounded-full bg-black/30 border border-white/[0.10] focus:border-banana/50 px-4 py-2.5 text-sm text-text-primary outline-none transition-colors"
             />
             <button
               onClick={goLookup}
-              disabled={!WALLET_RE.test(lookup.trim())}
+              disabled={!looksLookupable(lookup.trim())}
               className="px-5 py-2.5 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
             >
               View
@@ -57,14 +107,20 @@ export default function WalletTeamsPage() {
           </div>
         </div>
 
-        {!valid ? (
-          <p className="text-text-muted text-sm py-12 text-center">Enter a valid wallet address (0x followed by 40 characters) to see all the teams it owns.</p>
+        {headerBusy ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {[...Array(8)].map((_, i) => <div key={i} className="aspect-[4/5] bg-bg-tertiary rounded-2xl animate-pulse" />)}
+          </div>
+        ) : notFound ? (
+          <p className="text-text-muted text-sm py-12 text-center">No user found for “{idParam}”. Try a different username or wallet.</p>
+        ) : !resolved ? (
+          <p className="text-text-muted text-sm py-12 text-center">Enter a username or wallet to see all the teams that person owns.</p>
         ) : isLoading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
             {[...Array(8)].map((_, i) => <div key={i} className="aspect-[4/5] bg-bg-tertiary rounded-2xl animate-pulse" />)}
           </div>
         ) : teams.length === 0 ? (
-          <p className="text-text-muted text-sm py-12 text-center">This wallet doesn’t own any teams.</p>
+          <p className="text-text-muted text-sm py-12 text-center">This user doesn’t own any teams.</p>
         ) : (
           <>
             <p className="text-text-muted text-sm mb-4">{teams.length} {teams.length === 1 ? 'team' : 'teams'}</p>

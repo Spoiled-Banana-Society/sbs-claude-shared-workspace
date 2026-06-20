@@ -188,12 +188,12 @@ export function BuyTab({
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Look up any wallet's teams. */}
+          {/* Look up any user's teams (by username or wallet). */}
           <Link
             href="/u"
             className="px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center gap-2 bg-bg-secondary border border-bg-tertiary text-text-secondary hover:text-text-primary whitespace-nowrap"
           >
-            🔍 Look up a wallet
+            🔍 Look up a user
           </Link>
           <button
             onClick={onToggleSweepMode}

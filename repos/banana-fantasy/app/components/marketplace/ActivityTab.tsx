@@ -128,8 +128,8 @@ export function ActivityTab({
             </div>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Look up any wallet's teams. */}
-            <Link href="/u" className="text-xs font-semibold text-banana hover:brightness-110 transition-all">🔍 Look up a wallet</Link>
+            {/* Look up any user's teams (by username or wallet). */}
+            <Link href="/u" className="text-xs font-semibold text-banana hover:brightness-110 transition-all">🔍 Look up a user</Link>
             <div className="flex items-center gap-1 p-1 rounded-xl bg-bg-tertiary/60">
               {([['all', 'All'], ['sales', 'Sales'], ['listings', 'Listings'], ['offers', 'Offers']] as const).map(([key, label]) => (
                 <button
