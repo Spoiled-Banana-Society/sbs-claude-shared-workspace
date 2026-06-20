@@ -67,7 +67,7 @@ function UsdcMark() {
   // Minimal grey dollar coin — bigger than the card marks since it's the whole
   // box's single icon, so it reads clearly and fills its box.
   return (
-    <svg viewBox="0 0 24 24" className={`${MARK} h-[38px]`} aria-hidden="true">
+    <svg viewBox="0 0 24 24" className={`${MARK} h-[28px]`} aria-hidden="true">
       <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" strokeWidth="1.6" />
       <path
         d="M12 5.4v13.2M14.9 8.2c-.55-.8-1.65-1.25-3-1.25-1.8 0-3.05.85-3.05 2.15 0 1.2.95 1.75 3.05 2.15 2.1.4 3.1.95 3.1 2.2 0 1.3-1.3 2.2-3.1 2.2-1.45 0-2.6-.55-3.15-1.35"
@@ -136,11 +136,12 @@ export function PaymentMethodSquares({ value, onChange, isEmbeddedWallet, usdcBa
   // marks so it reads clearly and fills its half of the row.
   const usdcBox = (
     <button type="button" onClick={() => onChange('usdc')} className={box(value === 'usdc')}>
-      <div className="flex h-full flex-col items-center justify-center gap-2">
-        <span className="flex h-10 items-center">
+      <div className="flex h-full flex-col items-center justify-center gap-1.5">
+        <span className="flex h-7 items-center">
           <UsdcMark />
         </span>
-        <span className="text-base font-semibold leading-none">{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
+        <span className="text-lg font-semibold leading-none">{isEmbeddedWallet ? 'Balance' : 'USDC'}</span>
+        {!isEmbeddedWallet && <span className="text-text-muted text-[11px] leading-none">on Base</span>}
         <span className="text-text-muted text-xs leading-none">{usdcBalance != null ? `$${usdcBalance.toFixed(2)}` : ' '}</span>
       </div>
     </button>
