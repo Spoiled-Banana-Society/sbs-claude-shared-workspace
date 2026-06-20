@@ -2,29 +2,40 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import { usePrivy } from '@privy-io/react-auth';
 import { useAuth } from '@/hooks/useAuth';
 
+// Mirror of useAuth's saved-profile key. A cached profile means this device has
+// logged in before (a returning user) — they never see the creating screen.
+const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
+function hasCachedProfile(): boolean {
+  if (typeof window === 'undefined') return false;
+  try { return !!localStorage.getItem(USER_PROFILE_KEY); } catch { return false; }
+}
+
 /**
- * Clean, branded "Creating your account" screen shown ONLY while a genuinely
- * NEW user's account is being set up (the ~2-3s after a fresh web2 signup where
- * Privy builds the embedded wallet + we seed the account). Replaces the bare
- * grey loading skeleton with a clear message.
+ * Clean, branded "Creating your account" screen shown ONLY during the grey
+ * window of a genuinely NEW signup: Privy is authenticated but our account
+ * object hasn't loaded yet (the embedded wallet is being created + the account
+ * seeded), and there's no cached profile on this device.
  *
- * Self-gating + safe by design:
- *   - shows only when `isNewUser` is true (returning users never see it — they
- *     fall back to the normal skeleton), and
- *   - auto-dismisses after a hard timeout so it can never get stuck if some
- *     auth state never settles (iOS Safari storage edge cases).
+ * Why this trigger (not `isNewUser`): `isNewUser` only flips true AFTER the
+ * owner lookup returns — i.e. at the END of the grey window — so it was always
+ * too late. `authenticated && !user` is exactly the grey window; `!cached`
+ * keeps returning users from ever seeing it. Hard 8s timeout so it can never
+ * stick if some auth state never settles (iOS Safari storage edge cases).
  */
 export function CreatingAccountOverlay() {
-  const { isLoggedIn, isNewUser, isLoading, isBalanceLoaded } = useAuth();
-  const resolving = isLoading || (isLoggedIn && !isBalanceLoaded);
-  const show = isLoggedIn && isNewUser && resolving;
+  const privy = usePrivy();
+  const { isLoggedIn } = useAuth(); // isLoggedIn === !!user
+  const [cached] = useState(hasCachedProfile);
+
+  const show = privy.ready && privy.authenticated && !isLoggedIn && !cached;
 
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
     if (!show) { setTimedOut(false); return; }
-    const t = setTimeout(() => setTimedOut(true), 6000);
+    const t = setTimeout(() => setTimedOut(true), 8000);
     return () => clearTimeout(t);
   }, [show]);
 
