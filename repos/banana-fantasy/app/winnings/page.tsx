@@ -238,29 +238,20 @@ export default function PrizesPage() {
                         Already in your connected wallet — it&apos;s yours to spend or move anytime.
                       </p>
                     ) : hasBalance ? (
-                      isEligible ? (
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <button
-                            onClick={() => setCashOutModal({ isOpen: true })}
-                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                          >
-                            Cash out to bank
-                          </button>
-                          <p className="text-[11px] text-text-muted ml-auto text-right">
-                            Sent to your Coinbase, then your bank
-                          </p>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <button
-                            onClick={() => setShowVerifyModal(true)}
-                            className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
-                          >
-                            Verify to cash out
-                          </button>
-                          <p className="text-[11px] text-text-muted">One-time check, ~2 min</p>
-                        </div>
-                      )
+                      // Balance is the user's OWN wallet money (team sales,
+                      // transferred winnings) — no KYC gate. They can cash it out
+                      // or spend it freely. Verification only applies to Winnings.
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button
+                          onClick={() => setCashOutModal({ isOpen: true })}
+                          className="inline-flex items-center justify-center px-6 py-3 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] text-black font-semibold text-sm transition-all"
+                        >
+                          Cash out to bank
+                        </button>
+                        <p className="text-[11px] text-text-muted ml-auto text-right">
+                          Sent to your Coinbase, then your bank
+                        </p>
+                      </div>
                     ) : (
                       <p className="text-sm text-text-muted">Team sales &amp; transferred winnings land here.</p>
                     )}
