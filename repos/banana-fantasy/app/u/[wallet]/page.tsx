@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useMyNfts } from '@/hooks/useMarketplace';
 import { buildTieredDraftPassUrl } from '@/lib/nftCard';
 import { SbsPassThumb } from '@/components/marketplace/SbsPassThumb';
+import { UserSearchBox } from '@/app/components/marketplace/UserSearchBox';
 
 const WALLET_RE = /^0x[0-9a-fA-F]{40}$/;
 // A username is 3–20 chars of letters/numbers/_.- (matches lib/usernames).
@@ -19,7 +20,6 @@ const looksLookupable = (s: string) => WALLET_RE.test(s) || USERNAME_RE.test(s);
 // username to its wallet before loading teams.
 export default function UserTeamsPage() {
   const params = useParams();
-  const router = useRouter();
   const raw = (Array.isArray(params?.wallet) ? params.wallet[0] : params?.wallet) ?? '';
   const idParam = decodeURIComponent(raw).trim();
 
@@ -63,15 +63,9 @@ export default function UserTeamsPage() {
 
   const wallet = resolved?.wallet ?? null;
   const { data: teams, isLoading } = useMyNfts(wallet);
-  const [lookup, setLookup] = useState('');
 
   const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : '';
   const displayName = resolved?.username || shortWallet;
-
-  const goLookup = () => {
-    const w = lookup.trim();
-    if (looksLookupable(w)) router.push(`/u/${encodeURIComponent(WALLET_RE.test(w) ? w.toLowerCase() : w)}`);
-  };
 
   const headerBusy = resolving || (!resolved && !notFound && looksLookupable(idParam));
 
@@ -89,21 +83,8 @@ export default function UserTeamsPage() {
                 ? <>Teams owned by <span className="font-mono text-banana">{displayName}</span></>
                 : 'Find a user'}
           </h1>
-          <div className="sm:ml-auto flex items-center gap-2">
-            <input
-              value={lookup}
-              onChange={(e) => setLookup(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') goLookup(); }}
-              placeholder="Username or wallet"
-              className="w-full sm:w-80 rounded-full bg-black/30 border border-white/[0.10] focus:border-banana/50 px-4 py-2.5 text-sm text-text-primary outline-none transition-colors"
-            />
-            <button
-              onClick={goLookup}
-              disabled={!looksLookupable(lookup.trim())}
-              className="px-5 py-2.5 rounded-full bg-banana hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed text-black font-semibold text-sm transition-all"
-            >
-              View
-            </button>
+          <div className="sm:ml-auto w-full sm:w-96">
+            <UserSearchBox />
           </div>
         </div>
 
