@@ -273,44 +273,55 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
   }
   if (!token) throw new ApiError(401, 'Missing authorization token');
 
-  const user = await verifyPrivyJwt(token);
+  // TEMP DIAG — record success OR failure of JWT verification for the new-user
+  // auth routes, to a readable Firestore doc. Captures the token's claims +
+  // exact failure reason vs. the server's expected app/issuer. REMOVE after.
+  const diagPath = (() => { try { return new URL(req.url).pathname; } catch { return '?'; } })();
+  const isDiagRoute = /returning-check|\/api\/username|user\/metadata|owners/.test(diagPath);
+  const writeDiag = async (row: Record<string, unknown>) => {
+    if (!isDiagRoute) return;
+    try {
+      const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
+      await getAdminFirestore().collection('_gpudiag').add({ path: diagPath, at: new Date().toISOString(), ...row });
+    } catch { /* never block auth on the diagnostic */ }
+  };
+
+  let user: { userId: string; walletAddress: string | null };
+  try {
+    user = await verifyPrivyJwt(token);
+  } catch (err) {
+    let claims: Record<string, unknown> = { decoded: false };
+    try {
+      const { payload, header } = decodeJwt(token);
+      claims = {
+        decoded: true,
+        aud: typeof payload.aud === 'string' ? payload.aud : JSON.stringify(payload.aud ?? null),
+        iss: payload.iss ?? null,
+        exp: payload.exp ?? null,
+        now: Math.floor(Date.now() / 1000),
+        kid: header.kid ?? null,
+        alg: header.alg ?? null,
+      };
+    } catch { /* token unparseable */ }
+    await writeDiag({
+      stage: 'verify-threw',
+      error: err instanceof ApiError ? err.message : String(err),
+      serverAppId: (() => { try { return getPrivyAppId(); } catch { return '?'; } })(),
+      serverIssuer: process.env.PRIVY_JWT_ISSUER ?? '(unset)',
+      ...claims,
+    });
+    throw err;
+  }
 
   // JWTs from social-login Privy sessions don't carry the wallet claim.
-  // Fall back to the Privy User API so every downstream check (verification
-  // doc key, ban check, audit logging) gets the wallet — without this, all
-  // writes happen under did:privy:… and reads under the wallet, and they
-  // never reconcile.
+  // Fall back to the Privy User API so every downstream check gets the wallet.
   const jwtWallet = user.walletAddress;
   let apiWallet: string | null = null;
   if (!user.walletAddress) {
     apiWallet = await fetchWalletFromPrivyUserApi(user.userId);
     if (apiWallet) user.walletAddress = apiWallet;
   }
-
-  // TEMP DIAG (new-web2 wallet resolution). Writes to a readable Firestore doc
-  // exactly what getPrivyUser saw for the auth'd new-user routes, so we can see
-  // why returning-check / username get a null wallet while another request
-  // resolves it. REMOVE after debugging.
-  try {
-    const path = new URL(req.url).pathname;
-    if (/returning-check|\/api\/username|user\/metadata|owners/.test(path)) {
-      const { payload } = decodeJwt(token);
-      const la = Array.isArray(payload.linked_accounts)
-        ? (payload.linked_accounts as Array<{ type?: string }>).map((a) => a?.type).join(',')
-        : 'none';
-      const { getAdminFirestore } = await import('@/lib/firebaseAdmin');
-      await getAdminFirestore().collection('_gpudiag').add({
-        path,
-        did: user.userId,
-        jwtWallet: jwtWallet ?? 'NULL',
-        apiWallet: apiWallet ?? 'NULL',
-        final: user.walletAddress ?? 'NULL',
-        jwtLinkedTypes: la,
-        aud: typeof payload.aud === 'string' ? payload.aud : JSON.stringify(payload.aud ?? null),
-        at: new Date().toISOString(),
-      });
-    }
-  } catch { /* never block auth on the diagnostic */ }
+  await writeDiag({ stage: 'ok', did: user.userId, jwtWallet: jwtWallet ?? 'NULL', apiWallet: apiWallet ?? 'NULL', final: user.walletAddress ?? 'NULL' });
 
   // Enforce bans at the auth gate — every authenticated API request checks
   // the wallet's banned flag. Cached 30s per instance to keep overhead low.
