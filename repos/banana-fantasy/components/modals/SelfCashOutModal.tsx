@@ -194,7 +194,7 @@ export function SelfCashOutModal({
               <li><span className="text-banana font-bold">2.</span> In Coinbase, tap <strong>Send &amp; Receive → Receive</strong>, pick <strong>USDC</strong>, and choose the <strong className="text-banana">Base</strong> network. ⚠️ The network MUST be Base — picking the wrong one loses your funds.</li>
               <li><span className="text-banana font-bold">3.</span> Copy the address Coinbase shows you and paste it below.</li>
               <li><span className="text-banana font-bold">4.</span> Hit send — your USDC arrives in your Coinbase account in seconds (we cover the network fee).</li>
-              <li><span className="text-banana font-bold">5.</span> In Coinbase, <strong>Sell</strong> that USDC for USD, then <strong>Cash out</strong> to your linked bank (1–3 business days).</li>
+              <li><span className="text-banana font-bold">5.</span> In Coinbase, <strong>Sell</strong> that USDC for USD, then <strong>Cash out</strong> — to your bank (1–3 business days, free) or <strong>instantly</strong> to a debit card (small Coinbase fee).</li>
             </ol>
           </div>
 
@@ -255,7 +255,7 @@ export function SelfCashOutModal({
             <p className="text-text-primary font-semibold text-sm">Last steps — in Coinbase</p>
             <ol className="space-y-2 text-text-secondary text-xs leading-relaxed">
               <li><span className="text-banana font-bold">1.</span> Once the USDC shows up, tap <strong>Sell</strong> and convert it to USD.</li>
-              <li><span className="text-banana font-bold">2.</span> Tap <strong>Cash out</strong> and send the USD to your linked bank (1–3 business days). First time, you&apos;ll link your bank.</li>
+              <li><span className="text-banana font-bold">2.</span> Tap <strong>Cash out</strong> — pick your bank (1–3 business days, free) or an <strong>instant</strong> debit-card payout (small fee). First time, you&apos;ll link your payout method.</li>
             </ol>
           </div>
           <button onClick={close} className="w-full py-3 rounded-xl bg-bg-tertiary text-text-primary font-semibold text-sm hover:bg-bg-elevated transition-colors">Done</button>
