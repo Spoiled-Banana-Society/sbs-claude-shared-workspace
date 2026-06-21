@@ -196,11 +196,11 @@ export function SelfCashOutModal({
           <div className="rounded-xl bg-bg-tertiary/50 border border-bg-tertiary p-4 space-y-3">
             <p className="text-text-primary font-semibold text-sm">How to cash out to your bank</p>
             <ol className="space-y-2.5 text-text-secondary text-xs leading-relaxed list-none">
-              <li><span className="text-banana font-bold">1.</span> Create a free account at <a href="https://www.coinbase.com/signup" target="_blank" rel="noopener noreferrer" className="text-banana underline">coinbase.com</a> (or open the Coinbase app) and verify your ID.</li>
-              <li><span className="text-banana font-bold">2.</span> In Coinbase, tap <strong>Send &amp; Receive → Receive</strong>, pick <strong>USDC</strong>, and choose the <strong className="text-banana">Base</strong> network. ⚠️ The network MUST be Base — picking the wrong one loses your funds.</li>
+              <li><span className="text-banana font-bold">1.</span> Create a free account at <a href="https://www.coinbase.com/signup" target="_blank" rel="noopener noreferrer" className="text-banana underline">coinbase.com</a> (or the Coinbase app) and verify your ID.</li>
+              <li><span className="text-banana font-bold">2.</span> In Coinbase, search for <strong>USDC</strong> and tap it, then tap <strong>Transfer → Receive crypto</strong> and pick the <strong className="text-banana">Base</strong> network. ⚠️ The network MUST be Base — picking the wrong one loses your funds.</li>
               <li><span className="text-banana font-bold">3.</span> Copy the address Coinbase shows you and paste it below.</li>
-              <li><span className="text-banana font-bold">4.</span> Hit send — your USDC arrives in your Coinbase account in seconds (we cover the network fee).</li>
-              <li><span className="text-banana font-bold">5.</span> In Coinbase, <strong>Sell</strong> that USDC for USD, then <strong>Cash out</strong> — to your bank (1–3 business days, free) or <strong>instantly</strong> to a debit card (small Coinbase fee).</li>
+              <li><span className="text-banana font-bold">4.</span> Hit send — your USDC lands in your Coinbase account in seconds (we cover the network fee).</li>
+              <li><span className="text-banana font-bold">5.</span> In Coinbase, tap <strong>Cash out → Withdraw</strong> to your bank — and you&apos;re done (1–3 business days, free).</li>
             </ol>
           </div>
 
