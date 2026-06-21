@@ -138,9 +138,10 @@ export function DraftRow({
         {/* Speed column — abbreviated on mobile ("30s" / "8h"). Hidden on mobile
             for Founder rows to give the FOUNDER tag room. */}
         <div className={`sm:w-16 flex-shrink-0 text-center ${isFounder ? 'hidden sm:block' : ''}`}>
-          {isYourTurn && draft.draftSpeed !== 'fast' && isSlowDraftNightPause(Math.floor(Date.now() / 1000)) ? (
-            // Overnight pause (10pm–5am PT): show the pause state here; the
-            // status column keeps showing the (frozen) time remaining.
+          {effectiveLive.displayPhase === 'drafting' && draft.draftSpeed !== 'fast' && isSlowDraftNightPause(Math.floor(Date.now() / 1000)) ? (
+            // Overnight pause (10pm–5am PT): the whole slow draft is frozen, so
+            // show the pause state on EVERY in-progress slow row (not just when
+            // it's your turn). The status column still shows your time / picks away.
             <span className="text-banana/80 text-[10px] sm:text-xs font-medium whitespace-nowrap" title="Slow-draft clock pauses 10pm–5am PT — resumes 5am PT">
               <span className="sm:hidden">⏸</span>
               <span className="hidden sm:inline">⏸ Paused</span>
