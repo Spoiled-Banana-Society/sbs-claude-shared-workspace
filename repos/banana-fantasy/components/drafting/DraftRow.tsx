@@ -135,8 +135,9 @@ export function DraftRow({
           )}
         </div>
 
-        {/* Speed column — abbreviated on mobile ("30s" / "8h"). */}
-        <div className="sm:w-16 flex-shrink-0 text-center">
+        {/* Speed column — abbreviated on mobile ("30s" / "8h"). Hidden on mobile
+            for Founder rows to give the FOUNDER tag room. */}
+        <div className={`sm:w-16 flex-shrink-0 text-center ${isFounder ? 'hidden sm:block' : ''}`}>
           <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
             <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
             <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
