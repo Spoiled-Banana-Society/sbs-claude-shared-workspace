@@ -36,6 +36,9 @@ interface SelfCashOutModalProps {
   isEmbeddedWallet: boolean;
   /** Called after KYC completes so the parent can refetch eligibility. */
   onVerified?: () => void;
+  /** Copy-review preview: skip the KYC/jurisdiction preflight and render the
+   *  tutorial form directly. No real withdrawal is possible. */
+  previewMode?: boolean;
 }
 
 /**
@@ -55,6 +58,7 @@ export function SelfCashOutModal({
   walletAddress,
   isEmbeddedWallet,
   onVerified,
+  previewMode = false,
 }: SelfCashOutModalProps) {
   const { getAccessToken } = usePrivy();
   const { sendTransaction } = useSendTransaction();
@@ -74,11 +78,13 @@ export function SelfCashOutModal({
   // Run the KYC/jurisdiction preflight whenever the modal opens.
   useEffect(() => {
     if (!isOpen) return;
-    setStep('checking');
     setTxHash(null);
     setErrorMsg(null);
     setConfirmed(false);
     setAmount(balanceUsdc > 0 ? String(Math.floor(balanceUsdc * 100) / 100) : '');
+    // Copy-review preview: skip the preflight network call and show the form.
+    if (previewMode) { setStep('form'); return; }
+    setStep('checking');
     let cancelled = false;
     (async () => {
       try {
@@ -98,7 +104,7 @@ export function SelfCashOutModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen, balanceUsdc, getAccessToken]);
+  }, [isOpen, balanceUsdc, getAccessToken, previewMode]);
 
   const amountNum = Number(amount);
   const amountValid = Number.isFinite(amountNum) && amountNum > 0 && amountNum <= balanceUsdc + 1e-9;
