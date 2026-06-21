@@ -82,7 +82,10 @@ export async function POST(req: Request) {
         const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
         const todayPT = ptDate(Date.now());
         const eventDayPT = ptDate(eventMs);
-        const key = new Date(eventMs).toISOString().slice(0, 10);
+        // Key on the event timestamp (to the minute), not just the date, so if
+        // the admin CHANGES the scheduled time the bell re-fires for the new
+        // time on the user's next load (still once-per-time — no spam).
+        const key = new Date(eventMs).toISOString().slice(0, 16);
         // Day-OF bell fires on login (Wed). The day-BEFORE "tomorrow" ping is
         // NOT on login anymore — it's a single 6PM-PT broadcast to all users
         // (/api/crons/founder-teaser) so it doesn't get buried in the launch-day
