@@ -1,3 +1,5 @@
+import { isProd } from './envGates';
+
 const FALLBACK_ADMIN_WALLETS = [
   '0xc0f982492c323fcd314af56d6c1a35cc9b0fc31e',
   '0x27fe00a5a1212e9294b641ba860a383783016c67',
@@ -24,6 +26,11 @@ export function getAdminWalletAllowlist(): string[] {
     process.env.ADMIN_WALLET_ADDRESSES || process.env.NEXT_PUBLIC_ADMIN_WALLET_ADDRESSES,
   );
   if (configured.length > 0) return configured;
+  // In PROD, never fall back to the dev/test wallet list — require
+  // ADMIN_WALLET_ADDRESSES to be set explicitly. A forgotten var then fails
+  // SAFE (no admins, caught instantly in QA) instead of silently granting prod
+  // admin to test wallets (e.g. Richard's 'r8'). Staging keeps the fallback.
+  if (isProd()) return [];
   return [...FALLBACK_ADMIN_WALLETS];
 }
 

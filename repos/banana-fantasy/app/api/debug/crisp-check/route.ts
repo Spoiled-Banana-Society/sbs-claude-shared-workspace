@@ -6,8 +6,11 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { getCrispCredentials, listConversations } from '@/lib/crispApi';
+import { isProd } from '@/lib/envGates';
 
 export async function GET() {
+  // Temp staging diagnostic — never reachable in prod.
+  if (isProd()) return NextResponse.json({ error: 'Not Found' }, { status: 404 });
   const creds = getCrispCredentials();
   const tier = (process.env.CRISP_TIER ?? 'user').trim();
 
