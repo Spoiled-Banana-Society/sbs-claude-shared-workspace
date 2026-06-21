@@ -250,7 +250,7 @@ export function DraftRow({
               // During the overnight pause the slow clock is frozen — show the
               // pause copy instead of a static number (matches the in-room copy).
               if (isSlow && isSlowDraftNightPause(nowSec)) {
-                return <span className="text-banana/80 font-medium text-[11px] sm:text-sm whitespace-nowrap">⏸ Paused till 5am PT</span>;
+                return <span className="text-banana/80 font-medium text-[11px] sm:text-sm whitespace-nowrap">⏸ Paused until 5am PT</span>;
               }
               const remaining = draft.pickEndTimestamp
                 ? (isSlow

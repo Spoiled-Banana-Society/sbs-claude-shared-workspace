@@ -290,7 +290,7 @@ export function DraftRoomDrafting({
                             fontSize: '12px',
                             margin: '2px auto 0px auto',
                             textAlign: 'center',
-                            color: '#fbbf24',
+                            color: 'rgba(255,255,255,0.65)',
                           }}>
                             ⏸ Paused
                           </div>
@@ -399,8 +399,8 @@ export function DraftRoomDrafting({
 
             {isSlowDraft && (
               isSlowDraftPaused ? (
-                <div className="text-center text-[13px] font-semibold mt-1 px-3" style={{ color: '#fbbf24' }}>
-                  ⏸ Clock paused till 5am PT — you can still make picks
+                <div className="text-center text-[12px] mt-1 px-3 text-white/65">
+                  ⏸ Clock paused until 5am PT — you can still make picks
                 </div>
               ) : (
                 <div className="text-center text-[12px] mt-1 px-3 text-white/65">
