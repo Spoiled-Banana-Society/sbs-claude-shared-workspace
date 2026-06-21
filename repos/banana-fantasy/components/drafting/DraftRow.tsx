@@ -3,9 +3,10 @@
 import React from 'react';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { VerifiedBadge } from '@/components/ui/VerifiedBadge';
-import { FounderPill } from '@/components/drafting/FounderPill';
+import { FounderTag } from '@/components/drafting/FounderTag';
 import { getDraftTypeColor } from '@/lib/draftTypes';
 import { useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
+import { useIsFounderDraft } from '@/hooks/useIsFounderDraft';
 import { slowDraftActiveSecondsUntil, isSlowDraftNightPause } from '@/utils/slowDraftClock';
 import type { DraftState } from '@/lib/draftStore';
 
@@ -40,6 +41,7 @@ export function DraftRow({
 }: DraftRowProps) {
   const resolvedType = draft.type || draft.draftType || draft.specialType || null;
   const isRevealed = resolvedType !== null;
+  const isFounder = useIsFounderDraft(draft.id);
   const accentColor = isRevealed ? getDraftTypeColor(resolvedType) : '#888';
   // Live-resolved global league number — single source of truth from
   // the doc's DisplayName via /api/drafts/{slotId}/league-number.
@@ -150,7 +152,10 @@ export function DraftRow({
           {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37) || (effectiveLive.displayPhase === 'filling' && effectiveLive.playerCount >= 10)) ? (
             <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
-            <>
+            // On a Founder row, the type + verified badges hide on MOBILE so the
+            // FOUNDER tag takes the slot (keeps the tight row from overflowing).
+            // Desktop still shows type + verified + FOUNDER.
+            <span className={`${isFounder ? 'hidden sm:flex' : 'flex'} items-center gap-1 sm:gap-1.5`}>
               <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
                 <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
                 <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
@@ -178,11 +183,11 @@ export function DraftRow({
                   </>
                 );
               })()}
-            </>
+            </span>
           ) : (
             <span className="text-white/30 text-[10px] sm:text-sm italic">Unrevealed</span>
           )}
-          {draft.id && <FounderPill draftId={draft.id} size="sm" />}
+          {isFounder && <FounderTag size="sm" />}
         </div>
 
         {/* Pick / Round column — only meaningful once the draft is actively
