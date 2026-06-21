@@ -152,10 +152,10 @@ export function DraftRow({
           {!isSpecial && (effectiveLive.displayPhase === 'randomizing' || effectiveLive.displayPhase === 'pre-spin-countdown' || (effectiveLive.displayPhase === 'draft-starting' && effectiveLive.countdown != null && effectiveLive.countdown > 37) || (effectiveLive.displayPhase === 'filling' && effectiveLive.playerCount >= 10)) ? (
             <span className="text-banana text-[10px] sm:text-sm font-semibold animate-pulse">Revealing...</span>
           ) : isRevealed ? (
-            // On a Founder row, the type + verified badges hide on MOBILE so the
-            // FOUNDER tag takes the slot (keeps the tight row from overflowing).
-            // Desktop still shows type + verified + FOUNDER.
-            <span className={`${isFounder ? 'hidden sm:flex' : 'flex'} items-center gap-1 sm:gap-1.5`}>
+            // Type + verified always show (PRO/HOF/JP stays visible even on a
+            // Founder row). On mobile we make room for the FOUNDER tag by hiding
+            // the round/pick column instead (see below).
+            <span className="flex items-center gap-1 sm:gap-1.5">
               <span className="text-[11px] sm:text-sm font-semibold whitespace-nowrap" style={{ color: accentColor }}>
                 <span className="sm:hidden">{resolvedType === 'jackpot' ? 'JP' : resolvedType === 'hof' ? 'HOF' : 'PRO'}</span>
                 <span className="hidden sm:inline">{resolvedType === 'jackpot' ? 'JACKPOT' : resolvedType === 'hof' ? 'HALL OF FAME' : 'PRO'}</span>
@@ -192,8 +192,9 @@ export function DraftRow({
 
         {/* Pick / Round column — only meaningful once the draft is actively
             picking. Stays empty (dash) for filling / pre-spin / randomizing
-            so the column width is reserved and rows stay aligned. */}
-        <div className="sm:w-24 flex-shrink-0 flex items-center justify-center">
+            so the column width is reserved and rows stay aligned. On MOBILE we
+            hide it for Founder rows to make room for the FOUNDER tag. */}
+        <div className={`sm:w-24 flex-shrink-0 ${isFounder ? 'hidden sm:flex' : 'flex'} items-center justify-center`}>
           {effectiveLive.displayPhase === 'drafting' && draft.enginePickNumber && draft.enginePickNumber > 0 ? (
             <span className="text-white/60 text-[11px] sm:text-sm whitespace-nowrap tabular-nums">
               R{Math.ceil(draft.enginePickNumber / 10)} P{draft.enginePickNumber}
