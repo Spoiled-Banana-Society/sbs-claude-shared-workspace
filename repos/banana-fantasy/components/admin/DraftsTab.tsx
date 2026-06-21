@@ -17,6 +17,7 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 import { AdminDraftManage } from '@/components/admin/AdminDraftManage';
+import { BotFillPanel } from '@/components/admin/BotFillPanel';
 import { SubTabBar, useSubTab, type SubTabItem } from '@/components/admin/SubTabBar';
 
 type DraftsSub = 'active' | 'completed' | 'spectate' | 'founder' | 'manage';
@@ -41,7 +42,7 @@ export function DraftsTab({ enabled }: { enabled: boolean }) {
       {sub === 'completed' && <CompletedDraftsList enabled={enabled} />}
       {sub === 'spectate' && <SpectateBrowser enabled={enabled} />}
       {sub === 'founder' && <FounderScheduleEditor enabled={enabled} />}
-      {sub === 'manage' && <AdminDraftManage enabled={enabled} />}
+      {sub === 'manage' && <><AdminDraftManage enabled={enabled} /><BotFillPanel /></>}
     </div>
   );
 }
