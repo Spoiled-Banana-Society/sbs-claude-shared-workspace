@@ -78,6 +78,24 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // My Teams, and elsewhere. They expose no private app data, so always allow.
   if (pathname.startsWith('/api/og/')) return NextResponse.next();
 
+  // Internal server-to-server callers authenticate via a shared secret, NOT
+  // the preview cookie — the public prelaunch seal must let them through or
+  // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
+  // (filled + on-the-clock, fast + slow) died the moment PRELAUNCH_MODE flipped
+  // on, because the onDraftFilled / onPickAdvance Cloud Functions POST with no
+  // cookie. Vercel crons are cookieless too. These routes still run their OWN
+  // in-route auth, so allowing them past the seal exposes nothing.
+  if (pathname.startsWith('/api/')) {
+    const internalSecret = process.env.NOTIFICATIONS_INTERNAL_SECRET;
+    const cronSecret = process.env.CRON_SECRET;
+    const authedInternal =
+      !!internalSecret && req.headers.get('x-internal-secret') === internalSecret;
+    const authedCron =
+      (!!cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`) ||
+      !!req.headers.get('x-vercel-cron');
+    if (authedInternal || authedCron) return null; // proceed to normal /api handling
+  }
+
   // Public: the rest of the API is fully sealed (nothing to probe).
   if (pathname.startsWith('/api/')) {
     return new NextResponse('Not Found', { status: 404 });
