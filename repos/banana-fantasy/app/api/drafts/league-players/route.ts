@@ -4,6 +4,12 @@ import { getAdminApp } from '@/lib/firebaseAdmin';
 const DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
+// Env-driven so prod reads its OWN RTDB. Staging keeps this exact URL when
+// NEXT_PUBLIC_DATABASE_URL is unset, so staging is unchanged. Trailing slash
+// stripped so `${RTDB_URL}/drafts/...` is always well-formed.
+const RTDB_URL = (process.env.NEXT_PUBLIC_DATABASE_URL
+  || 'https://sbs-staging-env-default-rtdb.firebaseio.com').replace(/\/$/, '');
+
 /** Normalize the server's draft-type strings (human or short code) → the UI
  *  short code. Returns undefined for anything unrecognized so callers keep
  *  their existing value instead of clobbering it with a bad type. */
@@ -59,7 +65,7 @@ export async function GET(req: NextRequest) {
   try {
     const app = getAdminApp();
     const token = await app.options.credential?.getAccessToken();
-    const infoUrl = `https://sbs-staging-env-default-rtdb.firebaseio.com/drafts/${encodeURIComponent(draftId)}/realTimeDraftInfo.json`;
+    const infoUrl = `${RTDB_URL}/drafts/${encodeURIComponent(draftId)}/realTimeDraftInfo.json`;
     const res = await fetch(`${infoUrl}?access_token=${token?.access_token}`, { cache: 'no-store' });
     if (res.ok) {
       const val = await res.json();
@@ -90,7 +96,7 @@ export async function GET(req: NextRequest) {
 
     // Step 1b — if realTimeDraftInfo was absent (filling phase), read numPlayers separately.
     if (rtdbPlayers === 0 && rtdbOk) {
-      const numUrl = `https://sbs-staging-env-default-rtdb.firebaseio.com/drafts/${encodeURIComponent(draftId)}/numPlayers.json`;
+      const numUrl = `${RTDB_URL}/drafts/${encodeURIComponent(draftId)}/numPlayers.json`;
       const numRes = await fetch(`${numUrl}?access_token=${token?.access_token}`, { cache: 'no-store' });
       if (numRes.ok) {
         const numVal = await numRes.json();

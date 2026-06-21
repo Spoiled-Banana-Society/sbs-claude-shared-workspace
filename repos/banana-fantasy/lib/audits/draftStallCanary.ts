@@ -64,7 +64,7 @@ export async function runDraftStallCanary(nowMs: number): Promise<StallFinding[]
       databaseURL?: string;
       credential?: { getAccessToken(): Promise<{ access_token: string }> };
     };
-    const dbUrl = opts.databaseURL || STAGING_RTDB_URL;
+    const dbUrl = opts.databaseURL || process.env.NEXT_PUBLIC_DATABASE_URL || STAGING_RTDB_URL;
     const token = opts.credential ? await opts.credential.getAccessToken().catch(() => null) : null;
     let keys: string[] = [];
     if (token?.access_token) {
