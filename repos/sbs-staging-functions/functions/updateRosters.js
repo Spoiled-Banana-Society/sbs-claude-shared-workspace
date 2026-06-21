@@ -65,6 +65,18 @@ function cleanName(n) {
   return String(n).replace(ROMAN_SUFFIX, "").trim();
 }
 
+// Scoped fixes for entries Rolling Insights still has wrong (team|base -> {bad:good}).
+// RI lists a defensive player as the TEN QB1 and mis-names DeVonta Smith on PHI.
+// Applied to the parsed roster so every cron run self-corrects them.
+const NAME_FIX = {
+  "TEN|QB": { "Jihad Ward": "Cam Ward" },
+  "PHI|WR": { "Devin Smith": "DeVonta Smith" },
+};
+function applyNameFix(ab, base, list) {
+  const fix = NAME_FIX[`${ab}|${base}`];
+  return fix ? list.map((n) => fix[n] || n) : list;
+}
+
 // "1": {player}, "2": {player} -> ["..", ".."] in numeric depth order.
 function flatten(m) {
   if (!m) return [];
@@ -125,7 +137,12 @@ async function updateRosters({ db } = {}) {
     for (let i = 0; i < depth; i++) {
       for (const col of [wr1, wr2, wr3]) if (i < col.length) wr.push(col[i]);
     }
-    roster[ab] = { QB: flatten(pos.QB), RB: flatten(pos.RB), TE: flatten(pos.TE), WR: wr };
+    roster[ab] = {
+      QB: applyNameFix(ab, "QB", flatten(pos.QB)),
+      RB: applyNameFix(ab, "RB", flatten(pos.RB)),
+      TE: applyNameFix(ab, "TE", flatten(pos.TE)),
+      WR: applyNameFix(ab, "WR", wr),
+    };
   }
 
   // 3. Patch the season player map.
