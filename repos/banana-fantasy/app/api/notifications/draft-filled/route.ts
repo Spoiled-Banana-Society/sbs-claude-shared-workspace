@@ -34,6 +34,31 @@ async function queueDraftLabel(draftId: string): Promise<string | null> {
   }
 }
 
+/**
+ * Re-read the draft's authoritative DisplayName ("BBB #<cumulative>") fresh.
+ * The Go fill writes numPlayers=10 to RTDB (which fires onDraftFilled) BEFORE
+ * it sets the DisplayName (leagues.go), so the name the Cloud Function passes
+ * can be empty at the fill instant — which made the alert fall back to the
+ * per-speed SLOT number ("#3" instead of the real "#36"). A short retry lets
+ * the cumulative number land before we render. Best-effort: returns undefined
+ * if it never appears (copy then stays generic, never a wrong number).
+ */
+async function resolveDisplayName(draftId: string): Promise<string | undefined> {
+  if (!isFirestoreConfigured()) return undefined;
+  const db = getAdminFirestore();
+  for (let i = 0; i < 3; i++) {
+    try {
+      const snap = await db.doc(`drafts/${draftId}`).get();
+      const dn = snap.exists ? (snap.data()?.DisplayName as string | undefined) : undefined;
+      if (dn && /\d/.test(dn)) return dn;
+    } catch {
+      /* transient — retry */
+    }
+    if (i < 2) await new Promise((r) => setTimeout(r, 700));
+  }
+  return undefined;
+}
+
 const INTERNAL_SECRET = process.env.NOTIFICATIONS_INTERNAL_SECRET;
 
 /**
@@ -128,7 +153,12 @@ export async function POST(req: NextRequest) {
       // route — any watcher triggers it, order exists by then) with the
       // guaranteed backstop at close (refresh-draft route).
     })());
-    const event = { type: 'draft.filled' as const, draftId, draftName: queueLabel ?? draftName };
+    // Prefer the queue label (Jackpot/HOF), then the fresh authoritative
+    // DisplayName ("BBB #<cumulative>"), then whatever the Cloud Function
+    // passed. This is what makes the alert show the real cumulative league
+    // number instead of the per-speed slot number.
+    const freshName = await resolveDisplayName(draftId);
+    const event = { type: 'draft.filled' as const, draftId, draftName: queueLabel ?? freshName ?? draftName };
 
     // One bad recipient (e.g. a dedup-store hiccup) must not sink the batch.
     const reports = await Promise.all(
