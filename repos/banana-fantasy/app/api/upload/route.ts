@@ -2,6 +2,8 @@ import { getAdminApp } from '@/lib/firebaseAdmin';
 import { getStorage } from 'firebase-admin/storage';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
+import { getPrivyUser } from '@/lib/auth';
+import { ApiError } from '@/lib/api/errors';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,13 +14,24 @@ export async function POST(req: Request) {
   const rateLimited = rateLimit(req, RATE_LIMITS.general);
   if (rateLimited) return rateLimited;
 
+  // The target wallet comes from the verified Privy token, NOT the form body —
+  // otherwise anyone could overwrite any user's public profile picture.
+  let wallet: string;
+  try {
+    const user = await getPrivyUser(req);
+    if (!user.walletAddress) return jsonError('wallet required', 401);
+    wallet = user.walletAddress;
+  } catch (err) {
+    if (err instanceof ApiError) return jsonError(err.message, err.status);
+    return jsonError('auth failed', 401);
+  }
+
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
-    const wallet = formData.get('wallet') as string | null;
 
-    if (!file || !wallet) {
-      return jsonError('file and wallet are required', 400);
+    if (!file) {
+      return jsonError('file is required', 400);
     }
 
     if (file.size > MAX_SIZE) {

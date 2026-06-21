@@ -130,8 +130,13 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
       try {
         const formData = new FormData();
         formData.append('file', pendingFile);
-        formData.append('wallet', user.walletAddress);
-        const res = await fetch('/api/upload', { method: 'POST', body: formData });
+        let uploadToken = '';
+        try { uploadToken = (await privy.getAccessToken()) || ''; } catch { /* token not ready */ }
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: uploadToken ? { Authorization: `Bearer ${uploadToken}` } : undefined,
+          body: formData,
+        });
         if (res.ok) {
           const data = await res.json();
           pic = data.url;

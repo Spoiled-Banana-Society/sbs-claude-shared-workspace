@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
 import { UserPopover } from '@/components/social/UserPopover';
 import { getTruncatedAccountName } from '@/utils/helpers';
 
@@ -46,6 +47,7 @@ export function DraftRoomChat({
       return [];
     }
   });
+  const { getAccessToken } = usePrivy();
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const myWallet = (walletAddress || '').toLowerCase();
@@ -127,10 +129,12 @@ export function DraftRoomChat({
     setIsSending(true);
     setInputValue('');
     try {
+      const token = await getAccessToken();
+      if (!token) throw new Error('not authenticated');
       const res = await fetch(`/api/chat/${encodeURIComponent(draftId)}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress, username, text }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username, text }),
       });
       if (!res.ok) throw new Error(`send failed (${res.status})`);
     } catch (err) {
