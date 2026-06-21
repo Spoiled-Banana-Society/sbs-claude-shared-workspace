@@ -751,7 +751,7 @@ export function BuyPassesModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
-      <div className="space-y-3.5">
+      <div className="space-y-2.5">
 
         {/* ═══ PHASE 1: PURCHASE ═══ */}
         {phase === 'purchase' && (
@@ -998,7 +998,9 @@ export function BuyPassesModal({
               <div className="rounded-2xl bg-bg-primary/60 border border-bg-tertiary p-4 space-y-2.5">
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-text-secondary">{quantity} draft pass{quantity !== 1 ? 'es' : ''} × $25</span>
-                  <span className="text-text-primary font-mono tabular-nums">${totalPrice}</span>
+                  <span className="text-banana text-xl font-bold tabular-nums">
+                    {paymentMethod === 'usdc' && usdcTotal ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
+                  </span>
                 </div>
                 {paymentMethod === 'usdc' && user?.usdcBalance != null && (
                   <div className="flex items-center justify-between text-sm">
@@ -1008,12 +1010,6 @@ export function BuyPassesModal({
                     </span>
                   </div>
                 )}
-                <div className="border-t border-bg-tertiary pt-2.5 flex items-center justify-between">
-                  <span className="text-text-primary font-semibold">Total</span>
-                  <span className="text-banana text-2xl font-bold tabular-nums">
-                    {paymentMethod === 'usdc' && usdcTotal ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
-                  </span>
-                </div>
               </div>
               {paymentMethod === 'usdc' && user?.usdcBalance != null && user.usdcBalance < totalPrice && flowStep === 'idle' && (
                 <div className="bg-banana/[0.06] border border-banana/10 rounded-xl p-3">
