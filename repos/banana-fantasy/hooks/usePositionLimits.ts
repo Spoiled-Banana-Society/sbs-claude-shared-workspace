@@ -113,8 +113,8 @@ export function usePositionLimits(): UsePositionLimitsResult {
     void persist(DEFAULT_POSITION_LIMITS);
   }, [persist]);
 
-  // Sanity: ensure callers only see the exact 5 known positions even if
-  // someone passes a foreign key in.
+  // Sanity: ensure callers only see the exact known positions (QB/RB1/RB2/
+  // WR1/WR2/TE/DST) even if someone passes a foreign key in.
   void POSITIONS;
 
   return { limits, loaded, saving, setLimit, setAll, resetToDefaults };

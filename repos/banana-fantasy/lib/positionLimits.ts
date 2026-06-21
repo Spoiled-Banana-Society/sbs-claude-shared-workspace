@@ -7,17 +7,19 @@
 // When every position is at its cap, the picker relaxes and grabs BPA so
 // the draft never stalls — caps block, they never force fills.
 
-import { POSITION_COLORS } from '@/lib/draftRoomConstants';
-
-export type Position = 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
-export const POSITIONS: readonly Position[] = Object.keys(POSITION_COLORS) as Position[];
+// Caps are per TIERED slot — RB1/RB2 and WR1/WR2 are limited separately, since
+// the draft pool has those as distinct positions (a team's WR1 ≠ its WR2).
+export type Position = 'QB' | 'RB1' | 'RB2' | 'WR1' | 'WR2' | 'TE' | 'DST';
+export const POSITIONS: readonly Position[] = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'DST'];
 
 export type PositionLimits = Record<Position, number>;
 
 export const DEFAULT_POSITION_LIMITS: PositionLimits = {
   QB: 3,
-  RB: 7,
-  WR: 7,
+  RB1: 4,
+  RB2: 1,
+  WR1: 4,
+  WR2: 1,
   TE: 3,
   DST: 3,
 };

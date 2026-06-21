@@ -24,6 +24,13 @@ export function positionFromPlayerId(id: string): string {
   return pos.replace(/[0-9]/g, '');
 }
 
+/** Extracts the TIERED slot position: "DAL-WR1" → "WR1", "KC-QB" → "QB".
+ *  Used by the auto-draft caps, which limit each tier (WR1/WR2/RB1/RB2)
+ *  separately rather than lumping all WRs/RBs together. */
+export function slotFromPlayerId(id: string): string {
+  return id.split('-')[1] || '';
+}
+
 /** Returns hex color for a position (handles WR1/WR2 → WR, RB1/RB2 → RB) */
 export function getPositionColorHex(pos: string): string {
   const base = pos.replace(/[0-9]/g, '');

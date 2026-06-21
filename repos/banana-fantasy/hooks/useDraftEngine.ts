@@ -6,6 +6,7 @@ import {
   DRAFT_PLAYERS,
   TOTAL_PICKS,
   positionFromPlayerId,
+  slotFromPlayerId,
 } from '@/lib/draftRoomConstants';
 import type { PlayerData, DraftPick, PositionRoster } from '@/lib/draftRoomConstants';
 import type { RealTimeDraftInfo, LastPickInfo } from '@/hooks/useRealTimeDraftInfo';
@@ -820,11 +821,17 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     positionLimits: PositionLimits = DEFAULT_POSITION_LIMITS,
   ): string => {
     const isAtCap = (playerId: string): boolean => {
-      const pos = positionFromPlayerId(playerId) as Position;
-      const cap = positionLimits[pos];
+      // Caps are per TIERED slot (WR1/WR2/RB1/RB2 limited separately).
+      const slot = slotFromPlayerId(playerId) as Position;
+      const cap = positionLimits[slot];
       if (typeof cap !== 'number') return false;
-      const rosterPos = pos as keyof PositionRoster;
-      return (playerRoster[rosterPos]?.length ?? 0) >= cap;
+      // The roster array is keyed by BASE position (QB/RB/WR/...), so count only
+      // the entries that match this exact tiered slot.
+      const basePos = positionFromPlayerId(playerId) as keyof PositionRoster;
+      const haveOfSlot = (playerRoster[basePos] ?? []).filter(
+        (pid) => slotFromPlayerId(pid) === slot,
+      ).length;
+      return haveOfSlot >= cap;
     };
     const sortByMetric = (a: PlayerData, b: PlayerData) =>
       sortBy === 'adp' ? a.adp - b.adp : a.rank - b.rank;

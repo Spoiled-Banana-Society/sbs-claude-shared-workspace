@@ -11,10 +11,10 @@ import {
   totalCap,
   type Position,
 } from '@/lib/positionLimits';
-import { POSITION_COLORS } from '@/lib/draftRoomConstants';
+import { getPositionColorHex } from '@/lib/draftRoomConstants';
 
 const HELP_COPY =
-  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Only works while you have the draft open. Manual picks are never restricted. Defaults: QB:3 RB:7 WR:7 TE:3 DST:3.';
+  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Only works while you have the draft open. Manual picks are never restricted. Defaults: QB:3 RB1:4 RB2:1 WR1:4 WR2:1 TE:3 DST:3.';
 
 export function PositionLimitsPanel() {
   const { limits, loaded, saving, setLimit, resetToDefaults } = usePositionLimits();
@@ -38,7 +38,7 @@ export function PositionLimitsPanel() {
         <div className="flex items-center gap-3">
           <span className="text-text-primary font-semibold">Auto-draft position limits</span>
           <span className="text-xs text-text-muted">
-            {loaded ? `QB ${limits.QB} · RB ${limits.RB} · WR ${limits.WR} · TE ${limits.TE} · DST ${limits.DST}` : 'loading…'}
+            {loaded ? POSITIONS.map(p => `${p} ${limits[p]}`).join(' · ') : 'loading…'}
           </span>
         </div>
         <svg
@@ -61,7 +61,7 @@ export function PositionLimitsPanel() {
         <div className="border-t border-white/10 px-4 py-4 space-y-4">
           <p className="text-xs text-text-muted leading-relaxed">{HELP_COPY}</p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
             {POSITIONS.map(pos => (
               <div
                 key={pos}
@@ -70,7 +70,7 @@ export function PositionLimitsPanel() {
                 <div className="flex items-center gap-2">
                   <span
                     className="inline-block w-2 h-2 rounded-full"
-                    style={{ background: POSITION_COLORS[pos] }}
+                    style={{ background: getPositionColorHex(pos) }}
                     aria-hidden
                   />
                   <span className="text-sm font-bold text-text-primary">{pos}</span>
