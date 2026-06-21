@@ -238,6 +238,15 @@ export default function MarketplacePage() {
     };
   }, []);
 
+  // Bail out of a card buy that's stuck waiting on MoonPay funds (user backed
+  // out) — stops the funds-polling loop and closes the modal.
+  const cancelBuy = useCallback(() => {
+    cancelledRef.current = true;
+    setCardFlowStep('idle');
+    setBuyStep('confirm');
+    setShowBuyModal(false);
+  }, []);
+
   const { data: collectionStats, isLoading: statsLoading } = useCollectionStats();
 
   const sortMap: Record<string, { sort: string; direction: string }> = {
@@ -612,6 +621,7 @@ export default function MarketplacePage() {
     }
 
     setTxError(null);
+    cancelledRef.current = false; // fresh attempt — clear any prior cancel
     setCardFlowStep('funding');
     setBuyStep('processing');
 
@@ -1081,6 +1091,7 @@ export default function MarketplacePage() {
           onNavigateToTeam={(tokenId) => navigateToTeam(tokenId)}
           onMakeOffer={(tokenId) => navigateToTeam(tokenId, '?offer=true')}
           onCloseBuyModal={() => setShowBuyModal(false)}
+          onCancelBuy={cancelBuy}
           onSetPaymentMethod={setPaymentMethod}
           onHandleBuy={handleBuy}
         />

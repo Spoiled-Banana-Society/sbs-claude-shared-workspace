@@ -200,6 +200,15 @@ export default function NftDetailPage() {
   // tier-styled card art so the detail/listing page matches the Sell grid.
   const [fillingLevel, setFillingLevel] = useState<'hof' | 'jackpot' | null>(null);
   const [buyStep, setBuyStep] = useState<'confirm' | 'processing' | 'complete'>('confirm');
+  // Set true to abort a card buy that's stuck waiting on MoonPay funds (user
+  // bailed). The funds-polling loop checks it so the user can close the modal.
+  const cancelBuyRef = useRef(false);
+  const cancelBuy = useCallback(() => {
+    cancelBuyRef.current = true;
+    setCardFlowStep('idle');
+    setBuyStep('confirm');
+    setShowBuyModal(false);
+  }, []);
   const [txError, setTxError] = useState<string | null>(null);
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'usdc'>('card');
@@ -219,6 +228,13 @@ export default function NftDetailPage() {
   const [ownerListPrice, setOwnerListPrice] = useState('');
   const [offerStep, setOfferStep] = useState<'input' | 'processing' | 'complete'>('input');
   const [offerError, setOfferError] = useState<string | null>(null);
+  // Bail out of a card-funded offer stuck waiting on MoonPay funds.
+  const cancelOfferRef = useRef(false);
+  const cancelOffer = useCallback(() => {
+    cancelOfferRef.current = true;
+    setOfferStep('input');
+    setShowOfferModal(false);
+  }, []);
 
   // Accept offer state
   const [acceptingOfferHash, setAcceptingOfferHash] = useState<string | null>(null);
@@ -628,6 +644,7 @@ export default function NftDetailPage() {
       setBuyStep('processing');
 
       try {
+        cancelBuyRef.current = false;
         const result = await fundWallet({
           address: walletAddress,
           options: {
@@ -638,7 +655,8 @@ export default function NftDetailPage() {
           },
         });
 
-        if (result.status === 'cancelled') {
+        if (cancelBuyRef.current || result.status === 'cancelled') {
+          cancelBuyRef.current = false;
           setCardFlowStep('idle');
           setBuyStep('confirm');
           return;
@@ -651,6 +669,7 @@ export default function NftDetailPage() {
         const maxWait = 300_000;
 
         while (Date.now() - startTime < maxWait) {
+          if (cancelBuyRef.current) { cancelBuyRef.current = false; setCardFlowStep('idle'); setBuyStep('confirm'); return; }
           const balance = await getUsdcBalance(walletAddress as Address);
           if (balance >= requiredUsdc) break;
           await new Promise(r => setTimeout(r, 3000));
@@ -695,14 +714,16 @@ export default function NftDetailPage() {
       // Card path: buy the USDC for the offer via MoonPay first, then the offer
       // is created/escrowed once it lands (createOffer handles the approval).
       if (offerPaymentMethod === 'card') {
+        cancelOfferRef.current = false;
         const fundRes = await fundWallet({
           address: walletAddress,
           options: { chain: BASE_SEPOLIA, amount: String(amount), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
         });
-        if (fundRes.status === 'cancelled') { setOfferStep('input'); return; }
+        if (cancelOfferRef.current || fundRes.status === 'cancelled') { cancelOfferRef.current = false; setOfferStep('input'); return; }
         const requiredUsdc = BigInt(Math.ceil(amount * 1e6));
         const start = Date.now();
         while (Date.now() - start < 300_000) {
+          if (cancelOfferRef.current) { cancelOfferRef.current = false; setOfferStep('input'); return; }
           const bal = await getUsdcBalance(walletAddress as Address);
           if (bal >= requiredUsdc) break;
           await new Promise(r => setTimeout(r, 3000));
@@ -1727,12 +1748,27 @@ export default function NftDetailPage() {
       {showBuyModal && nft?.listing && price !== null && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => buyStep === 'confirm' && setShowBuyModal(false)}
+          onClick={() => {
+            if (buyStep === 'confirm') setShowBuyModal(false);
+            // Stuck waiting on MoonPay funds → tapping the backdrop bails out.
+            else if (buyStep === 'processing' && cardFlowStep !== 'buying') cancelBuy();
+          }}
         >
           <div
-            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md"
+            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative"
             onClick={e => e.stopPropagation()}
           >
+            {/* Escape hatch while waiting on card funds (can't cancel mid-purchase). */}
+            {buyStep === 'processing' && cardFlowStep !== 'buying' && (
+              <button
+                type="button"
+                onClick={cancelBuy}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {buyStep === 'confirm' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">
@@ -1958,12 +1994,26 @@ export default function NftDetailPage() {
       {showOfferModal && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => offerStep === 'input' && setShowOfferModal(false)}
+          onClick={() => {
+            if (offerStep === 'input') setShowOfferModal(false);
+            else if (offerStep === 'processing') cancelOffer();
+          }}
         >
           <div
-            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md"
+            className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative"
             onClick={e => e.stopPropagation()}
           >
+            {/* Escape hatch while a card-funded offer waits on MoonPay funds. */}
+            {offerStep === 'processing' && (
+              <button
+                type="button"
+                onClick={cancelOffer}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {offerStep === 'input' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">

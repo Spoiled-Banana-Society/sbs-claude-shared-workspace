@@ -64,6 +64,7 @@ interface BuyTabProps {
   onNavigateToTeam: (tokenId: string) => void;
   onMakeOffer: (tokenId: string) => void;
   onCloseBuyModal: () => void;
+  onCancelBuy: () => void;
   onSetPaymentMethod: (method: PaymentMethod) => void;
   onHandleBuy: () => void;
 }
@@ -110,6 +111,7 @@ export function BuyTab({
   onNavigateToTeam,
   onMakeOffer,
   onCloseBuyModal,
+  onCancelBuy,
   onSetPaymentMethod,
   onHandleBuy,
 }: BuyTabProps) {
@@ -550,9 +552,24 @@ export function BuyTab({
       {showBuyModal && selectedTeam && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => buyStep === 'confirm' && onCloseBuyModal()}
+          onClick={() => {
+            if (buyStep === 'confirm') onCloseBuyModal();
+            // Stuck waiting on MoonPay funds → tapping the backdrop bails out.
+            else if (buyStep === 'processing' && cardFlowStep !== 'buying') onCancelBuy();
+          }}
         >
-          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md" onClick={event => event.stopPropagation()}>
+          <div className="bg-bg-secondary border border-bg-tertiary rounded-2xl w-full max-w-md relative" onClick={event => event.stopPropagation()}>
+            {/* Escape hatch while waiting on card funds (can't cancel mid-purchase). */}
+            {buyStep === 'processing' && cardFlowStep !== 'buying' && (
+              <button
+                type="button"
+                onClick={onCancelBuy}
+                aria-label="Cancel"
+                className="absolute top-3 right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-white/10 transition-colors"
+              >
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+              </button>
+            )}
             {buyStep === 'confirm' && (
               <>
                 <div className="flex items-center justify-between p-6 border-b border-bg-tertiary">
