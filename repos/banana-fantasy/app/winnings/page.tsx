@@ -12,6 +12,7 @@ import type { PrizeHistoryItem } from '@/types';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { hasSeasonStarted } from '@/lib/draftTypes';
 
 export default function PrizesPage() {
   const { isLoggedIn, setShowLoginModal, user, isEmbeddedWallet } = useAuth();
@@ -30,6 +31,10 @@ export default function PrizesPage() {
   const [showVerifyModal, setShowVerifyModal] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
+  // Hide the whole Winnings section until the season starts — no prizes exist
+  // pre-season, so it's just a confusing empty $0 card. Auto-shows at kickoff.
+  // (Balance stays — team sales / transfers can happen anytime.)
+  const showWinnings = hasSeasonStarted();
 
   // The on-chain USDC sitting in the user's wallet (Privy embedded wallet for
   // web2, their external wallet for web3) — team-sale proceeds, leftover mint
@@ -233,7 +238,7 @@ export default function PrizesPage() {
                   Winnings (prizes we're holding, on the cards). No longer
                   summed into one misleading "available" number. Winnings is
                   dormant ($0) until the season produces prizes. */}
-              <div className="grid gap-3 sm:grid-cols-2 mb-3">
+              <div className={`grid gap-3 ${showWinnings ? 'sm:grid-cols-2' : ''} mb-3`}>
 
                 {/* ---- Balance ---- */}
                 <div className="rounded-3xl border border-white/[0.06] bg-gradient-to-br from-banana/[0.10] via-banana/[0.04] to-transparent p-6 sm:p-8">
@@ -282,7 +287,8 @@ export default function PrizesPage() {
                   )}
                 </div>
 
-                {/* ---- Winnings ---- */}
+                {/* ---- Winnings (hidden until the season starts) ---- */}
+                {showWinnings && (
                 <div className="rounded-3xl border border-white/[0.06] bg-white/[0.02] p-6 sm:p-8">
                   <p className="text-[13px] font-medium text-text-muted">Winnings</p>
                   <p className="mt-2 text-4xl sm:text-5xl font-semibold tracking-tight text-banana">
@@ -325,11 +331,12 @@ export default function PrizesPage() {
                     )}
                   </div>
                 </div>
+                )}
               </div>
 
               {/* Pre-verify nudge / verified pill when nothing is actionable
                   yet, so KYC is already done by the time they win. */}
-              {!hasBalance && !hasWinnings && !hasPrizeError && (
+              {showWinnings && !hasBalance && !hasWinnings && !hasPrizeError && (
                 <div className="mb-3">
                   {isEligible ? (
                     <div className="inline-flex items-center gap-2 rounded-full bg-success/10 border border-success/30 px-3 py-1.5">
@@ -351,7 +358,7 @@ export default function PrizesPage() {
                 </div>
               )}
 
-              {needsW9 && (
+              {showWinnings && needsW9 && (
                 <div className="mb-3 flex items-center justify-between gap-2 rounded-xl bg-bg-tertiary/60 border border-bg-tertiary px-3 py-2">
                   <span className="text-sm text-text-primary">W9 (US tax form, $2k+ withdrawn)</span>
                   {eligibility?.w9Completed ? (
@@ -362,7 +369,7 @@ export default function PrizesPage() {
                 </div>
               )}
 
-              {withdrawSuccess && (
+              {showWinnings && withdrawSuccess && (
                 <div className={`mb-3 rounded-xl px-4 py-3 text-xs ${
                   withdrawSuccess.startsWith('✗')
                     ? 'bg-error/10 border border-error/30 text-error'
@@ -376,7 +383,7 @@ export default function PrizesPage() {
                   not competing with the headline number. Coinbase /
                   Robinhood pattern: pending is information, never
                   visual weight. With ETA so users know when it lands. */}
-              {inFlightBalance > 0 && (() => {
+              {showWinnings && inFlightBalance > 0 && (() => {
                 // Honest ETA: 24h from when the withdrawal was actually
                 // REQUESTED (its createdAt), not from page render — the
                 // old version said "arrives tomorrow" forever, even for
@@ -416,6 +423,7 @@ export default function PrizesPage() {
           );
         })()}
 
+      {showWinnings && (
       <section>
         {hasPrizeError && (
           <div className="text-center py-12 rounded-2xl border border-error/20 bg-error/5">
@@ -551,6 +559,7 @@ export default function PrizesPage() {
         })()}
 
       </section>
+      )}
 
       <WithdrawModal
         isOpen={withdrawModal.isOpen}
