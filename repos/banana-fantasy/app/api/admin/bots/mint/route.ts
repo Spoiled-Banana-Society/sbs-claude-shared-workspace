@@ -4,7 +4,7 @@ export const maxDuration = 300;
 
 import { NextRequest } from 'next/server';
 import { ethers } from 'ethers';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     return jsonError('Not available in this environment', 403);
   }
   try {
-    await requireAdmin(req);
+    await requireBotAuth(req);
     if (!isAdminMintConfigured()) {
       return jsonError('Admin mint not configured (BBB4_OWNER_PRIVATE_KEY missing)', 503);
     }

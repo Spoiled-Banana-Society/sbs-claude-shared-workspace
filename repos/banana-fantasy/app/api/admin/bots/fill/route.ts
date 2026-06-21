@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 import { NextRequest } from 'next/server';
-import { requireAdmin } from '@/lib/adminAuth';
+import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     return jsonError('Not available in this environment', 403);
   }
   try {
-    await requireAdmin(req);
+    await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
 
     const body = await parseBody(req);
