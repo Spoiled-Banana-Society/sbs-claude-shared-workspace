@@ -1026,6 +1026,10 @@ export function BuyPassesModal({
             </div>
             )}
 
+            {/* Pinned action bar — stays stuck to the bottom of the modal so the
+                Buy button is always visible without scrolling, even on shorter
+                screens (the modal body scrolls above it). */}
+            <div className="sticky bottom-0 -mx-6 -mb-6 mt-1 px-6 pt-3 pb-5 bg-bg-secondary/95 backdrop-blur border-t border-bg-tertiary/60">
             {/* Transient "not enough USDC" notice — sits above the Buy button,
                 clears on close/change, re-checks live each tap. */}
             {flowStep === 'idle' && usdcShortfall && (
@@ -1078,6 +1082,7 @@ export function BuyPassesModal({
                 Try again
               </button>
             )}
+            </div>
           </>
         )}
 
