@@ -628,7 +628,7 @@ export default function MarketplacePage() {
     try {
       const result = await fundWallet({
         address: walletAddress,
-        options: { chain: BASE_SEPOLIA, amount: String(price), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+        options: { chain: BASE_SEPOLIA, amount: String(price), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
       });
 
       if (result.status === 'cancelled') {
@@ -853,7 +853,7 @@ export default function MarketplacePage() {
       try {
         const result = await fundWallet({
           address: walletAddress,
-          options: { chain: BASE_SEPOLIA, amount: String(sweepTotal), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+          options: { chain: BASE_SEPOLIA, amount: String(sweepTotal), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
         });
         if (result.status === 'cancelled') {
           setSweepStep('confirm');

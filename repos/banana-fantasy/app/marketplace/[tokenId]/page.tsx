@@ -651,6 +651,7 @@ export default function NftDetailPage() {
             chain: BASE_SEPOLIA,
             amount: String(buyPrice),
             asset: 'USDC',
+            defaultFundingMethod: 'card',
             card: { preferredProvider: 'moonpay' },
           },
         });
@@ -717,7 +718,7 @@ export default function NftDetailPage() {
         cancelOfferRef.current = false;
         const fundRes = await fundWallet({
           address: walletAddress,
-          options: { chain: BASE_SEPOLIA, amount: String(amount), asset: 'USDC', card: { preferredProvider: 'moonpay' } },
+          options: { chain: BASE_SEPOLIA, amount: String(amount), asset: 'USDC', defaultFundingMethod: 'card', card: { preferredProvider: 'moonpay' } },
         });
         if (cancelOfferRef.current || fundRes.status === 'cancelled') { cancelOfferRef.current = false; setOfferStep('input'); return; }
         const requiredUsdc = BigInt(Math.ceil(amount * 1e6));
