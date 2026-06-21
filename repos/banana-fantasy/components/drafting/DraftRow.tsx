@@ -138,10 +138,19 @@ export function DraftRow({
         {/* Speed column — abbreviated on mobile ("30s" / "8h"). Hidden on mobile
             for Founder rows to give the FOUNDER tag room. */}
         <div className={`sm:w-16 flex-shrink-0 text-center ${isFounder ? 'hidden sm:block' : ''}`}>
-          <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
-            <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
-            <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
-          </span>
+          {isYourTurn && draft.draftSpeed !== 'fast' && isSlowDraftNightPause(Math.floor(Date.now() / 1000)) ? (
+            // Overnight pause (10pm–5am PT): show the pause state here; the
+            // status column keeps showing the (frozen) time remaining.
+            <span className="text-banana/80 text-[10px] sm:text-xs font-medium whitespace-nowrap" title="Slow-draft clock pauses 10pm–5am PT — resumes 5am PT">
+              <span className="sm:hidden">⏸</span>
+              <span className="hidden sm:inline">⏸ Paused</span>
+            </span>
+          ) : (
+            <span className="text-white/50 text-xs sm:text-sm whitespace-nowrap">
+              <span className="sm:hidden">{draft.draftSpeed === 'fast' ? '30s' : '8h'}</span>
+              <span className="hidden sm:inline">{draft.draftSpeed === 'fast' ? '30 sec' : '8 hour'}</span>
+            </span>
+          )}
         </div>
 
         {/* Draft type column (PRO / HOF / JACKPOT + Verified badge).
@@ -247,11 +256,10 @@ export function DraftRow({
               // in-room clock); fast stays raw wall-clock.
               const nowSec = Math.floor(Date.now() / 1000);
               const isSlow = draft.draftSpeed !== 'fast';
-              // During the overnight pause the slow clock is frozen — show the
-              // pause copy instead of a static number (matches the in-room copy).
-              if (isSlow && isSlowDraftNightPause(nowSec)) {
-                return <span className="text-banana/80 font-medium text-[11px] sm:text-sm whitespace-nowrap">⏸ Paused until 5am PT</span>;
-              }
+              // During the overnight pause we STILL show the time remaining here
+              // (the pause state shows in the speed column). For slow,
+              // slowDraftActiveSecondsUntil returns the active budget, which
+              // doesn't tick down while paused — so the clock simply freezes.
               const remaining = draft.pickEndTimestamp
                 ? (isSlow
                     ? slowDraftActiveSecondsUntil(nowSec, draft.pickEndTimestamp)

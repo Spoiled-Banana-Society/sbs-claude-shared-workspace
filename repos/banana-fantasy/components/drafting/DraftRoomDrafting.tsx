@@ -285,14 +285,15 @@ export function DraftRoomDrafting({
 
                       {isCurrent && engine.draftStatus !== 'completed' ? (
                         isSlowDraftPaused ? (
-                          <div style={{
-                            fontWeight: 'bold',
-                            fontSize: '12px',
-                            margin: '2px auto 0px auto',
-                            textAlign: 'center',
-                            color: 'rgba(255,255,255,0.65)',
-                          }}>
-                            ⏸ Paused
+                          // Paused overnight: still show the (frozen) time
+                          // remaining, with a small pause marker below it.
+                          <div style={{ margin: '2px auto 0px auto', textAlign: 'center' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '16px', color: 'rgba(255,255,255,0.85)' }}>
+                              {formatTime(bestTimeRemaining)}
+                            </div>
+                            <div style={{ fontWeight: 600, fontSize: '10px', color: '#fbbf24', marginTop: '1px' }}>
+                              ⏸ Paused · 5am PT
+                            </div>
                           </div>
                         ) : (
                           <div style={{
