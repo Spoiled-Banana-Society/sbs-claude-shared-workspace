@@ -68,6 +68,22 @@ export default function BananaWheelPage() {
         link: '/drafting',
         ...(spinId ? { dedupeKey: `spin-win-${spinId}` } : {}),
       });
+      // A few seconds AFTER the congrats bell, a reminder to make sure Draft
+      // Alerts are on — JP/HOF wheel drafts are slow (8 hrs/pick), so missing
+      // the start or a pick is costly. Sent to everyone (neutral "make sure"
+      // copy reads fine whether they're already on or off); deduped per spin so
+      // it fires once. pushNotification persists server-side + renders locally.
+      setTimeout(() => {
+        if (cancelled) return;
+        pushNotification({
+          type: kind === 'jackpot' ? 'jackpot_queue' : 'hof_queue',
+          title: 'Make sure your Draft Alerts are on',
+          message: `Your ${label} Draft (from the Wheel) is a slow draft (8 hrs/pick) — turn on Draft Alerts so you don't miss the start or a pick.`,
+          link: '/profile?tab=notifications',
+          icon: '🔔',
+          ...(spinId ? { dedupeKey: `spin-alerts-${spinId}` } : {}),
+        });
+      }, 6000);
     };
     const poll = () => {
       fetchJson<Record<string, { rounds?: Array<{ roundId: number; status: string; draftId?: string | null; members: Array<{ wallet: string }> }> }>>('/api/queues')

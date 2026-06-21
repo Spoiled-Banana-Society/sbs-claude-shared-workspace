@@ -35,18 +35,35 @@ function leagueLabel(name: string | undefined): string | null {
   return n ? `League #${n}` : null;
 }
 
+/**
+ * Wheel-won Jackpot/HOF specials carry the tier in their name ("Jackpot Draft …",
+ * "HOF Draft …" / "Hall of Fame … (from Wheel)"). Regular drafts are "BBB #N" with
+ * no tier word, so this matches ONLY the wheel specials — which get their own copy.
+ */
+function wheelTier(name: string | undefined): 'Jackpot' | 'HOF' | null {
+  const n = (name ?? '').toLowerCase();
+  if (n.includes('jackpot')) return 'Jackpot';
+  if (n.includes('hall of fame') || n.includes('hof')) return 'HOF';
+  return null;
+}
+
 export function renderMessage(event: NotifEvent): RenderedMessage {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || DEFAULT_APP_URL;
   const url = `${appUrl}/draft-room?id=${event.draftId}`;
   const name = event.draftName?.trim() || '';
+  // Wheel-won JP/HOF specials get their own copy (they carry the tier in the name).
+  const tier = wheelTier(name);
   // "League #<cumulative>" from the display name's number; for a queue draft the
   // name is "Jackpot Draft"/"HOF Draft" (no number) so we use it verbatim.
   const subject = leagueLabel(name) ?? (name || null);
 
   if (event.type === 'draft.filled') {
-    // Fires the moment numPlayers hits 10 (see onDraftFilled in
-    // ~/sbs-staging-functions/functions/index.js) — i.e. when the draft
-    // *fills*. The visible line is just "League #<n> filled".
+    // Fires the moment numPlayers hits 10 (see onDraftFilled) — i.e. when the
+    // draft *fills*. Wheel specials say "Jackpot/HOF Draft started — from the
+    // Wheel"; regular drafts say "League #<n> filled".
+    if (tier) {
+      return { title: `${tier} Draft started — from the Wheel`, body: 'Tap to join your draft.', url };
+    }
     return {
       title: subject ? `${subject} filled` : 'Your draft filled',
       body: 'Tap to join the draft.',
@@ -54,8 +71,15 @@ export function renderMessage(event: NotifEvent): RenderedMessage {
     };
   }
 
-  // draft.your_turn — visible line is just "You're on the clock — League #<n>".
+  // draft.your_turn — "You're on the clock — League #<n>", or the wheel-special line.
   const timer = timerCopy(event.pickLengthSeconds);
+  if (tier) {
+    return {
+      title: `You're on the clock — ${tier} Draft (from the Wheel)`,
+      body: timer ? `Tap to pick. ${timer} before it auto-drafts.` : 'Tap to pick.',
+      url,
+    };
+  }
   return {
     title: subject ? `You're on the clock — ${subject}` : "You're on the clock",
     body: timer ? `Tap to pick. ${timer} before it auto-drafts.` : 'Tap to pick.',
