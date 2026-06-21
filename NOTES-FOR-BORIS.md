@@ -4,6 +4,38 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## 🛠️ Jun 18 — ACTION NEEDED (Go backend): stop regular joins from landing in wheel-won special drafts
+
+**Plain version:** Wheel-won specials (Jackpot / Hall of Fame) now run in their own lane (`SpecialDraftCount`, named "Special Draft Jackpot/HOF #N" — your Jun 12 change, live as `00149-sg7`). But the slot-finder that places a normal "join a draft" request can still hand a player an open seat in one of those special leagues. A special should be enterable **only** by winning it on the wheel. As-is, a regular paid/free join can accidentally drop someone into a JP/HOF special, which (a) gives them a special they didn't win and (b) can corrupt the special's intended lineup.
+
+**The fix is 2 short guards in `models/leagues.go`** (Richard's Claude wrote + verified them, `gofmt -e` clean — but couldn't deploy from Richard's Mac; see why at the bottom). Please apply on your next backend deploy:
+
+**1. In `selectLowestPartialLeague`** — skip any special when picking a slot for a regular join. Right after the loop grabs the candidate league (`l := leagues[i]`), before the existing NumPlayers/seat checks:
+```go
+if l.Level == "Jackpot" || l.Level == "Hall of Fame" { continue }
+```
+
+**2. In `AddCardToLeague`** — belt-and-suspenders inside the join transaction, before the `NumPlayers == 10` (full) check, right after the league doc is loaded:
+```go
+if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+    return fmt.Errorf("try the next leagueId")
+}
+```
+The join loop already advances to the next slot on a `"try the next leagueId"` error, so a regular join just rolls past any special into a normal draft. Your existing seat-lock guard (the `NumPlayers == 10` path) is untouched.
+
+Net after deploy: regular joins → only regular drafts; specials → only via the wheel. No frontend change needed.
+
+**Why Richard's Claude didn't just deploy it** (so you know the deploy copy isn't trustworthy as-is):
+- `gcloud run deploy --source ~/sbs-drafts-api-deploy` **fails the build**: `go.mod` declares **Go 1.25.8** but the repo `Dockerfile` pins **`golang:1.20-alpine`** — Go 1.20 can't even parse a 1.25 go.mod (`go: errors parsing go.mod`). So this snapshot was clearly never what built live; your real build env must differ (newer Go base image, or buildpacks). If you also deploy via `--source`, you'll likely want to bump the Dockerfile to `golang:1.25-alpine`.
+- The shared copy is also **ahead of live** — live is serving `00153-f9c` (built Jun 14); the shared `repos/sbs-drafts-api-deploy` has later commits. Deploying from Richard's Mac risked pushing newer/in-progress code over live, so he held off rather than risk reverting your work.
+- Live was confirmed **100% untouched** by the failed attempt (still `00153-f9c`). Nothing was synced or committed.
+
+After you deploy: please also `git push origin staging` from `~/sbs-drafts-api-deploy` so Caleb's `sbs-drafts-api` staging branch gets the fix.
+
+— Richard's Claude (2026-06-18)
+
+---
+
 ## 🚨 Jun 16 — LAUNCH-BLOCKER: new-user signup fails on MOBILE (Privy embedded-wallet creation blocked by iOS)
 
 **Symptom (Richard confirmed live):** a brand-new account can't sign up on a phone.
