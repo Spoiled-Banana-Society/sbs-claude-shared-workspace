@@ -9,6 +9,8 @@ import { initializeApp, getApps, cert, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { getDatabase, type Database as RtdbDatabase } from 'firebase-admin/database';
 
+import { isProd } from './envGates';
+
 const STAGING_RTDB_URL = 'https://sbs-staging-env-default-rtdb.firebaseio.com';
 
 let _app: App | null = null;
@@ -55,9 +57,15 @@ function getServiceAccount(): object | null {
 
   // 2) Hardcoded staging fallback (works on Vercel where env vars sometimes
   //    end up corrupted across deploys / re-encrypting / re-imports).
-  const fallback = tryParseServiceAccount(STAGING_SA_B64);
-  if (fallback && fallback.project_id) {
-    return fallback;
+  //    PROD GUARD: never use the staging SA in prod — if prod's
+  //    FIREBASE_SERVICE_ACCOUNT_JSON is missing we must FAIL (return null,
+  //    caught in QA) rather than silently write prod traffic to the STAGING
+  //    Firebase project. Staging is unchanged (isProd() false there).
+  if (!isProd()) {
+    const fallback = tryParseServiceAccount(STAGING_SA_B64);
+    if (fallback && fallback.project_id) {
+      return fallback;
+    }
   }
 
   console.warn('[firebaseAdmin] Could not load a usable service account from env or fallback');
@@ -120,5 +128,8 @@ export function getAdminDatabase(): RtdbDatabase {
  * Check if Firestore is configured (service account available).
  */
 export function isFirestoreConfigured(): boolean {
-  return !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON || !!STAGING_SA_B64;
+  // In prod, the staging hardcoded SA doesn't count — only a real prod env var
+  // means "configured" (matches getServiceAccount's prod guard). Staging
+  // unchanged (isProd() false → the hardcoded SA still counts).
+  return !!process.env.FIREBASE_SERVICE_ACCOUNT_JSON || (!isProd() && !!STAGING_SA_B64);
 }
