@@ -7,6 +7,7 @@ import { logger } from '@/lib/logger';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { withAdminWalletLock } from '@/lib/onchain/adminWalletLock';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
+import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { recountFromInventory } from '@/lib/passLedger';
 import { recordCronHeartbeat } from '@/lib/cronHeartbeat';
 
@@ -71,7 +72,17 @@ export async function GET(req: Request) {
     if (attempts >= MAX_ATTEMPTS) continue; // already flagged for manual handling
 
     const userId = String(data.userId ?? '').toLowerCase();
-    const quantity = Number(data.quantity ?? 0);
+    // Card-mint records write `quantity`; wheel-win records write `count`.
+    // Read both so wheel failures aren't discarded as "invalid". (Without this,
+    // every wheel-mint failure was silently closed and the user never got their
+    // won pass.)
+    const quantity = Number(data.quantity ?? data.count ?? 0);
+    // Wheel wins are FREE passes; card purchases are PAID. Detect wheel records
+    // by their spinId/reason so re-minted passes get the right type + origin.
+    const isWheel = !!data.spinId || String(data.reason ?? '').startsWith('wheel_spin');
+    const jphofKind: 'jackpot' | 'hof' | null =
+      data.kind === 'jackpot' || data.kind === 'hof' ? data.kind : null;
+    const passType: 'free' | 'paid' = isWheel ? 'free' : 'paid';
     if (!WALLET_REGEX.test(userId) || !Number.isInteger(quantity) || quantity <= 0) {
       await doc.ref.set({ resolved: true, resolvedReason: 'invalid_record', resolvedAt: FieldValue.serverTimestamp() }, { merge: true });
       results.push({ id: doc.id, userId, status: 'skipped_invalid' });
@@ -93,10 +104,49 @@ export async function GET(req: Request) {
       const mintResult = await withAdminWalletLock('fulfill-failed-mints', () =>
         reserveTokensToWallet({ to: userId, count: quantity }),
       );
+      // Wheel passes need their on-chain origin recorded (and the JP/HOF Level
+      // trait) so the marketplace classifies them correctly — the spin route
+      // does this on the happy path; recovery must too.
+      if (isWheel) {
+        try {
+          await recordPassOrigins({
+            tokenIds: mintResult.tokenIds,
+            origin: 'spin_reward',
+            ownerAtMint: userId,
+            txHash: mintResult.txHash,
+            reason: String(data.reason ?? `wheel_spin:${data.spinId ?? doc.id}`),
+            level: jphofKind ?? undefined,
+          });
+        } catch (e) {
+          logger.warn('fulfill-failed-mints.record_origin_failed', { userId, err: (e as Error).message });
+        }
+      }
       try {
-        await registerMintedTokens(userId, mintResult.tokenIds, 'paid');
+        await registerMintedTokens(userId, mintResult.tokenIds, passType);
       } catch (e) {
         logger.warn('fulfill-failed-mints.register_failed', { userId, err: (e as Error).message });
+      }
+      // A recovered JP/HOF special isn't done at "minted" — the live wheel path
+      // also queues the pass into a filling round and seats the winner. Mirror
+      // that here so the winner actually lands in their special-draft lobby.
+      if (jphofKind) {
+        const jphofTokenId = mintResult.tokenIds[0];
+        if (jphofTokenId) {
+          try {
+            const { joinQueueWithToken } = await import('@/lib/db');
+            const { joinedRoundId } = await joinQueueWithToken(userId, jphofKind, jphofTokenId);
+            if (joinedRoundId !== null) {
+              const { ensureSpecialDraftSeat } = await import('@/lib/specialDraft');
+              await ensureSpecialDraftSeat(jphofKind, joinedRoundId, userId);
+            }
+          } catch (qErr) {
+            logger.warn('fulfill-failed-mints.jphof_queue_failed', { userId, err: (qErr as Error).message });
+          }
+          try {
+            const { refreshOpenSeaTokens } = await import('@/lib/opensea');
+            await refreshOpenSeaTokens([jphofTokenId]);
+          } catch { /* best-effort; OpenSea re-pulls on its own */ }
+        }
       }
       try {
         await recountFromInventory(userId);
