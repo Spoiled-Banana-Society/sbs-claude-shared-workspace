@@ -10,7 +10,6 @@ import { isSlowDraftPickLength, isSlowDraftNightPause, slowDraftActiveSecondsUnt
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import * as draftApi from '@/lib/draftApi';
 import * as draftStore from '@/lib/draftStore';
-import { isStagingMode, getStagingApiUrl } from '@/lib/staging';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { logger } from '@/lib/logger';
@@ -255,14 +254,16 @@ export function useDraftLiveSync({
     joinAndFill();
   }, [isLiveMode, draftId, walletParam, speedParam, passTypeParam, setDraftId]);
 
-  const handleLiveDraft = useCallback((playerId: string) => {
+  const handleLiveDraft = useCallback((playerId: string, isAuto = false) => {
     // Manual-pick / airplane auto-off side effects are handled at the
     // page level (app/draft-room/page.tsx → onDraftPlayer prop) because
     // the airplane icon in live mode reads from the page's `autoDraft`
     // state, which this hook can't touch. Here we just mark the pick as
     // manual so the engine's consecutive-timeout counter resets when the
     // pick echoes back through Firebase.
-    engine.markManualPick();
+    // isAuto=true is an AIRPLANE auto-pick — don't mark it manual (that would
+    // reset the strike counter and flag the user as active).
+    if (!isAuto) engine.markManualPick();
     if (!isLiveMode) {
       engine.draftPlayer(playerId);
       return;

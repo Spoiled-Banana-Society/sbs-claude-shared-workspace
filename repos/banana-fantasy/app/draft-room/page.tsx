@@ -880,18 +880,22 @@ function DraftRoomContent() {
   }, []);
 
   useEffect(() => {
-    // In LIVE mode, the server's Cloud Task makes the autopick (queue → rank → ADP,
-    // same priority the client used). Client submission is intentionally skipped so
-    // the user's pick still fires when their device is off. Local-mode drafts keep
-    // the immediate client-side draft so the practice flow continues to work without
-    // a backend.
+    // Airplane mode auto-picks the INSTANT it's your turn — both live and local,
+    // so it rips through your picks instead of burning the full clock each time
+    // (critical for slow drafts). LIVE: submit to the server via handleLiveDraft
+    // with isAuto=true (so it isn't treated as a manual pick); the server's
+    // timeout auto-pick stays the fallback for when your device is OFF. LOCAL:
+    // update engine state directly for the practice flow.
     if (!engine.airplaneMode || !engine.isUserTurn || phase !== 'drafting' || engine.draftStatus !== 'active') return;
-    if (isLiveMode) return;
 
     const timeoutId = setTimeout(() => {
       const pickId = engine.getAutoPickPlayer();
       if (!pickId) return;
-      engine.draftPlayer(pickId);
+      if (isLiveMode) {
+        handleLiveDraft(pickId, true);
+      } else {
+        engine.draftPlayer(pickId);
+      }
     }, 0);
 
     return () => clearTimeout(timeoutId);

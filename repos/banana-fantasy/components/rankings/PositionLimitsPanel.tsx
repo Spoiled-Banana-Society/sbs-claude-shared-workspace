@@ -14,7 +14,7 @@ import {
 import { getPositionColorHex } from '@/lib/draftRoomConstants';
 
 const HELP_COPY =
-  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Only works while you have the draft open. Manual picks are never restricted. Defaults: QB:3 RB1:4 RB2:1 WR1:4 WR2:1 TE:3 DST:3.';
+  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Only works while you have the draft open. Manual picks are never restricted. Defaults: QB:3 RB1:4 RB2:2 WR1:4 WR2:2 TE:3 DST:2.';
 
 /** True if a draft room is open right now (cross-tab heartbeat, fresh < 10s).
  *  Used to warn that toggling caps won't change a draft you're already in. */
