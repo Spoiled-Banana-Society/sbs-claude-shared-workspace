@@ -394,14 +394,16 @@ export default function BananaWheelPage() {
         `lg:order-N` for desktop. Items inside each wrapper keep DOM order on
         both breakpoints.
       */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start lg:items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr_320px] gap-4 items-start">
         {/* LEFT column on desktop (order-1); mobile bottom (order-3) */}
         <div className="flex flex-col gap-4 order-3 lg:order-1">
           {/* Prizes on Wheel moved into the "i" popover by the title (Boris 2026-06-20). */}
 
-          {/* What Are These? — flex-1 so its bottom lines up with the right column (Boris 2026-06-20). */}
+          {/* What Are These? — hugs its content (no forced stretch; the wheel+Spin
+              center column is taller than the right column, so stretching here just
+              created empty space — Boris 2026-06-20). */}
           <div
-            className="rounded-2xl p-6 backdrop-blur-md lg:flex-1"
+            className="rounded-2xl p-6 backdrop-blur-md"
             style={{
               background: 'rgba(20, 20, 20, 0.7)',
               border: '1px solid rgba(255, 255, 255, 0.08)',
