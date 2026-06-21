@@ -18,17 +18,22 @@ export const draftPassPricing = {
 export const FREE_DRAFT_CREDIT_CENTS = draftPassPricing.pricePerPass * 100; // $25 → 2500¢
 
 // qty → measured real card cost, in cents (debit, US).
+// +$1 (100¢) added to every tier on 2026-06-21: PayPal/Venmo (via MoonPay) cost
+// ~$1 more than debit card / Apple Pay, and we can't see which method the buyer
+// picked (Privy brokers the MoonPay popup; the method/fee never reaches us), so
+// we apply the higher figure uniformly. Base measured debit values (pre-bump)
+// were 363/505/548/598/743/886/1031/1175/1319/1463.
 const CARD_FEE_CENTS_BY_QTY: Record<number, number> = {
-  1: 363,
-  2: 505,
-  3: 548,
-  4: 598,
-  5: 743,
-  6: 886,
-  7: 1031,
-  8: 1175,
-  9: 1319,
-  10: 1463,
+  1: 463,
+  2: 605,
+  3: 648,
+  4: 698,
+  5: 843,
+  6: 986,
+  7: 1131,
+  8: 1275,
+  9: 1419,
+  10: 1563,
 };
 
 // Steady marginal card cost per extra draft above the measured range (the
