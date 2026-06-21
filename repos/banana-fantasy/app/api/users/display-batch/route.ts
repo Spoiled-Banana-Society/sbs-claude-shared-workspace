@@ -10,7 +10,7 @@ import type { Ripeness } from '@/types';
 import { bananaDefaultName } from '@/utils/helpers';
 
 const MAX_BATCH = 30;
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 // Server-side fetches must explicitly target the staging Go API. The
 // shared `getDraftsApiUrl()` reads `isStagingMode()` which is window-only

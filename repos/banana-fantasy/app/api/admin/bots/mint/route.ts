@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { ethers } from 'ethers';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
+import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
@@ -39,7 +40,7 @@ const BOT_COLLECTION = 'botWallets';
 const MAX_PER_CALL = 10;
 
 export async function POST(req: NextRequest) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!testHelpersEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   try {

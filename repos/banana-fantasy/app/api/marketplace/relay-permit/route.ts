@@ -5,6 +5,7 @@ import { createPublicClient, http, type Address, type Hex } from 'viem';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { paymentsEnabled } from '@/lib/envGates';
 import { BASE, BASE_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS, USDC_ABI } from '@/lib/contracts/bbb4';
 import { getAdminWalletAddress, isAdminMintConfigured, submitUsdcPermit } from '@/lib/onchain/adminMint';
 import { OPENSEA_CONDUIT_ADDRESS } from '@/lib/onchain/relaySeaport';
@@ -28,7 +29,7 @@ const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_
  * The signature itself is the user's consent; we only relay it.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!paymentsEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {

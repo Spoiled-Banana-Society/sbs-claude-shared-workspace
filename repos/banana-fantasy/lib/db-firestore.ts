@@ -180,7 +180,9 @@ function buildSeedUser(userId: string): {
   // hardcodes a shared code which used to leak everyone's referrals to the
   // first-seeded user.
   const code = buildPerUserReferralCode(userId);
-  const link = `https://banana-fantasy-sbs.vercel.app?ref=${code}`;
+  // Env-driven so prod referral links use the prod domain. Falls back to the
+  // staging URL when NEXT_PUBLIC_SITE_URL is unset (staging) — unchanged there.
+  const link = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://banana-fantasy-sbs.vercel.app'}?ref=${code}`;
   const referralPromo = promos.find((p) => p.type === 'referral');
   if (referralPromo) {
     referralPromo.modalContent.inviteCode = code;
@@ -711,7 +713,7 @@ export async function generateReferralCode(userId: string, username?: string) {
   return ensureNamedReferralCode(userId, username);
 }
 
-const REFERRAL_SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
+const REFERRAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://banana-fantasy-sbs.vercel.app';
 
 /** Strip a display name down to a clean code: letters+digits only, max 16. */
 function sanitizeRefName(name: string): string {

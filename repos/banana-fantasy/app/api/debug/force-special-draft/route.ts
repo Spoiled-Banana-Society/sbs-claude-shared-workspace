@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { isProd, testHelpersEnabled } from '@/lib/envGates';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
@@ -17,7 +18,7 @@ import { logger } from '@/lib/logger';
  * Body: { type: 'jackpot' | 'hof', slot: number }
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (isProd() || !testHelpersEnabled()) {
     return jsonError('Forbidden — staging only', 403);
   }
 

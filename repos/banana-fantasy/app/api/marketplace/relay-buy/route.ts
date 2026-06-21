@@ -6,6 +6,7 @@ import { FieldValue, type DocumentReference } from 'firebase-admin/firestore';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { paymentsEnabled } from '@/lib/envGates';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { BASE, BASE_RPC_URL, BASE_SEPOLIA_USDC_ADDRESS, USDC_ABI } from '@/lib/contracts/bbb4';
 import {
@@ -76,7 +77,7 @@ async function waitForAdminUsdc(adminWallet: Address, min: bigint, timeoutMs = 3
  * If fulfillment fails after the pull, the buyer is refunded automatically.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!paymentsEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {

@@ -4,6 +4,7 @@ export const maxDuration = 120;
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
+import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { countSpendableTokens } from '@/lib/passLedger';
@@ -30,7 +31,7 @@ const GO_API = (
 const MAX_FILL = 10;
 
 export async function POST(req: NextRequest) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!testHelpersEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   try {

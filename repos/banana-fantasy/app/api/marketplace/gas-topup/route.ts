@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { paymentsEnabled } from '@/lib/envGates';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { BASE, BASE_RPC_URL } from '@/lib/contracts/bbb4';
 import { getAdminWalletAddress, isAdminMintConfigured, sendEthFromAdmin } from '@/lib/onchain/adminMint';
@@ -50,7 +51,7 @@ function dayKey(): string {
  * targets, hard per-send cap, daily per-wallet cap.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!paymentsEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {

@@ -6,6 +6,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { paymentsEnabled } from '@/lib/envGates';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import {
   BASE,
@@ -65,7 +66,7 @@ const publicClient = createPublicClient({ chain: BASE, transport: http(BASE_RPC_
  * Staging-only during soak — promote to prod after a verification pass.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  if (!paymentsEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {

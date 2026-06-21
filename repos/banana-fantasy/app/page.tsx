@@ -18,7 +18,6 @@ import { useModalStack } from '@/hooks/useModalStack';
 import { useContests } from '@/hooks/useContests';
 import { usePromos } from '@/hooks/usePromos';
 import { useNewPromoNotification } from '@/hooks/useNewPromoNotification';
-import { isStagingMode as _isStagingMode } from '@/lib/staging';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useToast } from '@/components/ui/Toast';
@@ -171,8 +170,8 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* Staging Mint Button */}
-      {_isStagingMode() && user?.id && (
+      {/* Staging Mint Button — staging only; never renders in prod */}
+      {process.env.NEXT_PUBLIC_ENVIRONMENT === 'staging' && user?.id && (
         <section className="mb-4 flex justify-center">
           <StagingMintButton userId={user.id} onMinted={(data) => {
             // Apply the new draftPasses count from the mint response immediately —

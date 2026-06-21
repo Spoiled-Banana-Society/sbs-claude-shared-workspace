@@ -3,7 +3,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { ApiError } from '@/lib/api/errors';
 import { logger } from '@/lib/logger';
 
-const STAGING_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const STAGING_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 /**
  * POST /api/queues/reassign-pass
