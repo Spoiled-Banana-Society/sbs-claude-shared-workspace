@@ -17,7 +17,7 @@ export type PositionLimits = Record<Position, number>;
 export const DEFAULT_POSITION_LIMITS: PositionLimits = {
   QB: 3,
   RB1: 4,
-  RB2: 2,
+  RB2: 1,
   WR1: 4,
   WR2: 2,
   TE: 3,
