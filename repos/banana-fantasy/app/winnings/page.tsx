@@ -11,6 +11,7 @@ import { VerificationModal } from '@/components/modals/VerificationModal';
 import type { PrizeHistoryItem } from '@/types';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 
 export default function PrizesPage() {
   const { isLoggedIn, setShowLoginModal, user, isEmbeddedWallet } = useAuth();
@@ -85,6 +86,21 @@ export default function PrizesPage() {
       router.replace('/winnings');
     }
   }, [searchParams, router]);
+
+  // Admin-only preview: `?previewCashout=<amount>` opens the cash-out module
+  // (the Coinbase step-by-step) with a fake balance, so we can review and
+  // iterate the tutorial copy without real on-chain funds or a web2 login.
+  // Gated to admin wallets — invisible to everyone else.
+  useEffect(() => {
+    const p = searchParams?.get('previewCashout');
+    if (!p) return;
+    if (!isWalletAdmin(user?.walletAddress ?? user?.id)) return;
+    const amount = Number(p) > 0 ? Number(p) : 50;
+    setCashOutModal({
+      isOpen: true,
+      prize: { id: 'preview', type: 'win', contestName: 'Preview', amount, status: 'pending' } as PrizeHistoryItem,
+    });
+  }, [searchParams, user?.walletAddress, user?.id]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
