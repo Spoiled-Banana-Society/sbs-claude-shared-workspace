@@ -1,4 +1,4 @@
-import { getQueueStatus } from '@/lib/db';
+import { getQueueStatus, isSpecialDraftStarted } from '@/lib/db';
 
 /**
  * Shared "is this wheel-won pass still sellable?" check.
@@ -24,7 +24,7 @@ function canonId(id: string): string {
   try { return BigInt(id).toString(); } catch { return id; }
 }
 
-type QueueRound = { status?: string; members?: Array<{ tokenId?: string; wallet?: string }> };
+type QueueRound = { status?: string; draftId?: string; members?: Array<{ tokenId?: string; wallet?: string }> };
 type Queues = Partial<Record<'jackpot' | 'hof', { rounds?: QueueRound[] }>>;
 
 export interface WheelPassLockResult {
@@ -42,7 +42,13 @@ export async function checkWheelPassLock(tokenId: string | null | undefined): Pr
     for (const round of queues[type]?.rounds || []) {
       const member = (round.members || []).find(m => m.tokenId && canonId(String(m.tokenId)) === ident);
       if (!member) continue;
-      const locked = round.status !== 'filling' || (round.members || []).length >= 10;
+      let locked = round.status !== 'filling' || (round.members || []).length >= 10;
+      // The queue `status`/count can lag the real draft (e.g. staging fill-bots
+      // seat the Go league directly). If the Go draft has actually STARTED, the
+      // pass is locked regardless of what the queue says.
+      if (!locked && round.draftId && (await isSpecialDraftStarted(round.draftId))) {
+        locked = true;
+      }
       return { locked, wallet: member.wallet ?? '', tokenId: String(member.tokenId) };
     }
   }

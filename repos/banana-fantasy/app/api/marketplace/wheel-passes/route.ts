@@ -29,10 +29,17 @@ export async function GET(req: Request) {
     for (const type of ['jackpot', 'hof'] as const) {
       const snap = await db.collection('v2_queues').doc(type).get();
       if (!snap.exists) continue;
-      const queue = snap.data() as { rounds?: Array<{ status: string; members: Array<{ wallet: string; tokenId?: string }> }> };
+      const queue = snap.data() as { rounds?: Array<{ status: string; draftId?: string; members: Array<{ wallet: string; tokenId?: string }> }> };
       for (const round of queue.rounds || []) {
         if (round.status !== 'filling') continue; // sellable window only
         if ((round.members || []).length >= 10) continue; // full = locked, even pre-status-flip
+        // The queue `status` can lag the real draft (e.g. fill-bots seat the Go
+        // league directly), so confirm with the Go engine: once the draft has
+        // actually STARTED it's no longer a sellable filling lobby — skip it.
+        if (round.draftId) {
+          const { isSpecialDraftStarted } = await import('@/lib/db');
+          if (await isSpecialDraftStarted(round.draftId)) continue;
+        }
         const lobbyCount = (round.members || []).length;
         for (const m of round.members || []) {
           if (!m.tokenId) continue; // only wheel-minted NFT slots

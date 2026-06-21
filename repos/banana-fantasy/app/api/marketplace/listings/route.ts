@@ -333,6 +333,22 @@ export async function POST(req: Request) {
       const tokenId = nftItem?.identifierOrCriteria;
       const offerer = String(body.parameters.offerer ?? '').toLowerCase();
 
+      // Hard lock: a team whose draft is IN PROGRESS (started but not finished)
+      // can't be listed — the roster is locked while drafting, and the seat
+      // can't swap to a buyer mid-draft. The queue's "filling" status can lag the
+      // real draft (e.g. staging fill-bots seat the Go league directly), so this
+      // checks the Go engine authoritatively. Fail-open on errors.
+      if (tokenId) {
+        try {
+          const { getLiveSpecialDraftLock } = await import('@/lib/db');
+          const liveDraftId = await getLiveSpecialDraftLock(String(tokenId));
+          if (liveDraftId) {
+            logger.info('marketplace.list_blocked_in_draft', { tokenId: String(tokenId), offerer, draftId: liveDraftId });
+            return jsonError("You can't sell a team while its draft is in progress.", 403);
+          }
+        } catch { /* fail-open — a flaky check must not block legitimate listings */ }
+      }
+
       // EXCEPTION to the free-pass block: a wheel-won JP/HOF pass that's still in a
       // FILLING queue round is intentionally sellable now (the whole point of the
       // feature) even though it's a free pass. Mirrors the client (SellTab surfaces

@@ -2109,6 +2109,67 @@ export async function markQueueRoundDrafting(
  * JP/HOF pass that hasn't drafted and is therefore sellable while filling. Tokens
  * that aren't in a filling round (drafted, or never queued) are simply omitted.
  */
+/**
+ * Authoritative draft progress for a special (wheel) draftId, straight from the
+ * Go engine. The queue round's `status`/member-count can LAG behind reality
+ * (e.g. staging fill-bots seat the Go league directly without touching the
+ * queue), so trusting the queue alone wrongly keeps a live draft's pass
+ * "sellable". `state/info` returns a plain string until the draft initializes,
+ * then JSON with currentDrafter/pickNumber once it starts. Best ball is 15
+ * rounds, so total picks = seats × 15; complete once pickNumber reaches that.
+ * Fail-OPEN (not started) so a flaky Go check never wrongly locks a sale.
+ */
+async function fetchGoDraftProgress(draftId: string): Promise<{ started: boolean; complete: boolean }> {
+  if (!draftId) return { started: false, complete: false };
+  const base = (
+    process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
+    process.env.STAGING_DRAFTS_API_URL ||
+    'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
+  ).trim();
+  try {
+    const res = await fetch(`${base}/draft/${encodeURIComponent(draftId)}/state/info`, { cache: 'no-store' });
+    if (!res.ok) return { started: false, complete: false };
+    const txt = await res.text();
+    if (!txt || !txt.trim().startsWith('{')) return { started: false, complete: false }; // "draft state not yet initialized"
+    const d = JSON.parse(txt) as { currentDrafter?: string; pickNumber?: number; draftStartTime?: number; draftOrder?: unknown[] };
+    const started = !!d.currentDrafter || !!d.draftStartTime || (typeof d.pickNumber === 'number' && d.pickNumber >= 1);
+    const seats = Array.isArray(d.draftOrder) && d.draftOrder.length > 0 ? d.draftOrder.length : QUEUE_MAX;
+    const complete = typeof d.pickNumber === 'number' && d.pickNumber >= seats * 15;
+    return { started, complete };
+  } catch {
+    return { started: false, complete: false };
+  }
+}
+
+/** True if the special draft has actually begun drafting (incl. completed). */
+export async function isSpecialDraftStarted(draftId: string): Promise<boolean> {
+  return (await fetchGoDraftProgress(draftId)).started;
+}
+
+/**
+ * If the token is currently seated in a special (wheel) draft that is MID-DRAFT
+ * (started but not complete), returns that draftId — meaning it must NOT be
+ * sold or bought (the roster is locked while drafting). Returns null otherwise:
+ * an undrafted/still-filling pass sells via the wheel path, and a COMPLETED team
+ * sells via the normal drafted-team path.
+ */
+export async function getLiveSpecialDraftLock(tokenId: string): Promise<string | null> {
+  const want = String(tokenId);
+  const db = getAdminFirestore();
+  for (const type of ['jackpot', 'hof'] as const) {
+    const snap = await db.collection(QUEUES_COLLECTION).doc(type).get();
+    if (!snap.exists) continue;
+    const queue = snap.data() as DraftQueue;
+    for (const round of queue.rounds || []) {
+      if (!round.draftId) continue;
+      if (!(round.members || []).some((m) => String(m.tokenId) === want)) continue;
+      const { started, complete } = await fetchGoDraftProgress(round.draftId);
+      if (started && !complete) return round.draftId;
+    }
+  }
+  return null;
+}
+
 export async function getFillingWheelPassLevels(
   tokenIds: string[],
 ): Promise<Record<string, 'jackpot' | 'hof'>> {
@@ -2124,15 +2185,16 @@ export async function getFillingWheelPassLevels(
     for (const round of queue.rounds || []) {
       // Sellable window = the round is still FILLING. A filling round gets its
       // Go-API draftId assigned up front (the slot follows the NFT while filling),
-      // so draftId presence does NOT mean "already drafted" — gate on status only.
-      // The pass stops being sellable when status leaves 'filling' (draft starts).
-      // The member-count check covers the instant between the 10th seat landing
-      // and the status flip — a full round is never sellable.
+      // so draftId presence does NOT mean "already drafted".
       if (round.status !== 'filling') continue;
       if ((round.members || []).length >= QUEUE_MAX) continue;
-      for (const m of round.members) {
-        if (m.tokenId && want.has(String(m.tokenId))) result[String(m.tokenId)] = type;
-      }
+      const matched = (round.members || []).filter((m) => m.tokenId && want.has(String(m.tokenId)));
+      if (matched.length === 0) continue;
+      // The queue `status` can lag the real draft (e.g. fill-bots), so confirm
+      // with the Go engine: once the draft has actually STARTED it's no longer a
+      // sellable filling lobby — drop it.
+      if (round.draftId && (await isSpecialDraftStarted(round.draftId))) continue;
+      for (const m of matched) result[String(m.tokenId)] = type;
     }
   }
   return result;
