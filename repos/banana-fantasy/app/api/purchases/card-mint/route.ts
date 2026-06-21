@@ -237,11 +237,28 @@ export async function POST(req: Request) {
         }
       }
 
-      // 1b. VERIFY the allowance is in place BEFORE pulling any money. If a race
-      //     left it short, stop cleanly — the user is NOT charged — instead of
-      //     letting transferFrom revert with a scary error.
-      if ((await readAllowance()) < value) {
-        logger.warn('card-mint.allowance_not_set', { userId, quantity, permitTxHash });
+      // 1b. VERIFY the allowance is in place BEFORE pulling any money. The permit
+      //     receipt above is already confirmed successful, so the allowance IS set
+      //     on-chain — but the very next read can land on a lagging Alchemy replica
+      //     (read-after-write across the RPC node pool) and return a stale 0,
+      //     producing a FALSE "Approval didn't go through" 409 (caught 2026-06-21:
+      //     a Venmo mint failed here while the allowance was provably set to the
+      //     exact price). Retry the read briefly so a stale replica can catch up
+      //     before treating it as a real failure. This only returns OK once the
+      //     allowance has ACTUALLY reached `value`, so it can never wave through an
+      //     unpaid mint — it just rides out RPC lag.
+      let confirmedAllowance = await readAllowance();
+      for (let i = 0; confirmedAllowance < value && i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 600));
+        confirmedAllowance = await readAllowance();
+      }
+      if (confirmedAllowance < value) {
+        logger.warn('card-mint.allowance_not_set', {
+          userId,
+          quantity,
+          permitTxHash,
+          allowance: confirmedAllowance.toString(),
+        });
         return jsonError('Approval didn’t go through — please tap Buy again. You were NOT charged.', 409);
       }
 

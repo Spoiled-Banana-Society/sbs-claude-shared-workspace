@@ -221,7 +221,19 @@ export async function POST(req: Request) {
           return jsonError(`Permit failed: ${(err as Error).message}`, 400);
         }
       }
-      if ((await readAllowance()) < price) {
+      // The permit receipt is confirmed above, so the allowance IS set on-chain —
+      // but an immediate re-read can hit a lagging Alchemy replica and return a
+      // stale 0 (read-after-write across the RPC pool), a FALSE "Approval didn't go
+      // through" 409. Retry briefly so a stale replica catches up; only returns OK
+      // once the allowance actually reaches `price`, so it can't wave through an
+      // unpaid buy. (Mirror of the card-mint fix, 2026-06-21.)
+      let confirmedAllowance = await readAllowance();
+      for (let i = 0; confirmedAllowance < price && i < 4; i++) {
+        await new Promise((r) => setTimeout(r, 600));
+        confirmedAllowance = await readAllowance();
+      }
+      if (confirmedAllowance < price) {
+        logger.warn('relay-buy.allowance_not_set', { buyerAddress, orderHash, allowance: confirmedAllowance.toString() });
         return jsonError('Approval didn’t go through — please tap Buy again. You were NOT charged.', 409);
       }
 
