@@ -340,7 +340,7 @@ export default function DraftingPage() {
               (Boris 2026-06-15), so promos own the spacing now — pushed well
               down when there's an active draft so the lobby stays the focus. */}
           {(promosQuery.promos?.length ?? 0) > 0 && (
-            <div className={`lg:hidden ${activeDrafts.length > 0 ? 'mt-48' : 'mt-9'}`}>
+            <div className={`lg:hidden ${activeDrafts.length > 0 ? 'mt-32' : 'mt-9'}`}>
               <PromoCarousel
                 heading="Promos"
                 promos={promosQuery.promos ?? []}
