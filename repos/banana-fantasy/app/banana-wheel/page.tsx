@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 
 const BananaWheel = dynamic(() => import('@/components/wheel/BananaWheel').then(m => ({ default: m.BananaWheel })), {
@@ -38,6 +38,13 @@ export default function BananaWheelPage() {
   // Wheel prize odds now live behind the "i" by the title (not a big discouraging
   // panel on the page). Transparent (one tap), framed as "every spin wins".
   const [showOdds, setShowOdds] = React.useState(false);
+  // Friendly "we're getting your prize ready" popup for when a won prize's
+  // delivery needed retries (or got stuck). No web3 wording is shown — see
+  // /api/wheel/pending-delivery.
+  const [delivery, setDelivery] = React.useState<'pending' | 'stuck' | null>(null);
+  const deliveryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingDismissedRef = useRef(false);
+  const watchRef = useRef<() => void>(() => {});
   const specialWalletAddr = (user?.walletAddress || user?.id || '').toLowerCase();
   React.useEffect(() => {
     if (!specialWin || !specialWalletAddr) return;
@@ -226,6 +233,12 @@ export default function BananaWheelPage() {
       }
 
       if (!user || !segment) return;
+      // Any win that delivers a prize on-chain: start watching for a delayed
+      // delivery so we can reassure the user if it needs retries.
+      const isDeliverableWin =
+        (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number' && segment.prizeValue > 0) ||
+        (segment.prizeType === 'custom' && (segment.prizeValue === 'jackpot' || segment.prizeValue === 'hof'));
+      if (isDeliverableWin) watchRef.current();
       if (segment.prizeType === 'draft_pass' && typeof segment.prizeValue === 'number') {
         const expectedDraftPasses = (user.draftPasses ?? 0) + segment.prizeValue;
         updateUser({ freeDrafts: (user.freeDrafts || 0) + segment.prizeValue });
@@ -275,6 +288,71 @@ export default function BananaWheelPage() {
     },
     [updateUser, user, refreshBalance, refreshBalanceUntil, queryClient],
   );
+
+  // ── Delayed-prize delivery watch ────────────────────────────────────────
+  // Polls /api/wheel/pending-delivery so a prize whose delivery needed retries
+  // shows a reassuring popup instead of silently missing.
+  const pollDeliveryOnce = useCallback(async (): Promise<'pending' | 'stuck' | 'none'> => {
+    const w = (user?.walletAddress || user?.id || '').toLowerCase();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(w)) return 'none';
+    try {
+      const res = await fetchJson<{ status: 'pending' | 'stuck' | 'none' }>(
+        `/api/wheel/pending-delivery?wallet=${w}`,
+      );
+      return res?.status ?? 'none';
+    } catch {
+      return 'none';
+    }
+  }, [user?.walletAddress, user?.id]);
+
+  const watchDelivery = useCallback(() => {
+    if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current);
+    pendingDismissedRef.current = false;
+    let ticks = 0;
+    let sawPending = false;
+    const stop = () => {
+      if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current);
+      deliveryTimerRef.current = null;
+    };
+    const tick = async () => {
+      ticks += 1;
+      const status = await pollDeliveryOnce();
+      if (status === 'pending') {
+        sawPending = true;
+        if (!pendingDismissedRef.current) setDelivery('pending');
+      } else if (status === 'stuck') {
+        setDelivery('stuck'); // always surface — auto-recovery gave up
+        stop();
+        return;
+      } else if (sawPending) {
+        setDelivery(null); // was pending, now delivered
+        stop();
+        return;
+      }
+      if (ticks >= 15) stop(); // ~60s window
+    };
+    void tick();
+    deliveryTimerRef.current = setInterval(() => { void tick(); }, 4000);
+  }, [pollDeliveryOnce]);
+
+  // Keep the ref that handleSpinComplete calls pointed at the latest watcher.
+  useEffect(() => { watchRef.current = watchDelivery; }, [watchDelivery]);
+  // Clean up the poll timer on unmount.
+  useEffect(() => () => { if (deliveryTimerRef.current) clearInterval(deliveryTimerRef.current); }, []);
+
+  // On load / wallet ready: if a prize is already mid-delivery (e.g. the user
+  // reloaded), reflect it. Rule #0: deps are a stable scalar; the watcher is
+  // reached via ref, not the dep array.
+  const mountCheckRef = useRef(pollDeliveryOnce);
+  useEffect(() => { mountCheckRef.current = pollDeliveryOnce; }, [pollDeliveryOnce]);
+  useEffect(() => {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(specialWalletAddr)) return;
+    void (async () => {
+      const status = await mountCheckRef.current();
+      if (status === 'pending') { setDelivery('pending'); watchRef.current(); }
+      else if (status === 'stuck') setDelivery('stuck');
+    })();
+  }, [specialWalletAddr]);
 
   const prizeSummary = useMemo(() => {
     const summary = new Map<string, { label: string; color: string; probability: number }>();
@@ -581,6 +659,52 @@ export default function BananaWheelPage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delayed-prize delivery popup. Reassures the user when a won prize is
+          taking a moment to arrive (or, rarely, got stuck and a human's on it).
+          Deliberately NO web3 wording. */}
+      {delivery && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-sm rounded-2xl p-6 text-center"
+            style={{ background: 'rgba(20,20,20,0.96)', border: '1px solid rgba(251,191,36,0.25)', boxShadow: '0 8px 40px rgba(0,0,0,0.6)', fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}
+          >
+            <div className="text-4xl mb-3">🍌</div>
+            {delivery === 'pending' ? (
+              <>
+                <div className="mx-auto mb-4 h-8 w-8 rounded-full border-2 border-banana/30 border-t-banana animate-spin" />
+                <h3 className="text-[17px] font-semibold text-white tracking-tight mb-2">Getting your prize ready…</h3>
+                <p className="text-[14px] text-white/70 leading-relaxed mb-5">
+                  Hang tight — this can take a minute. You don&apos;t need to do anything; your prize will show up automatically.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { pendingDismissedRef.current = true; setDelivery(null); }}
+                  className="w-full rounded-xl py-2.5 text-[15px] font-semibold text-black"
+                  style={{ background: '#fbbf24' }}
+                >
+                  Got it
+                </button>
+              </>
+            ) : (
+              <>
+                <h3 className="text-[17px] font-semibold text-white tracking-tight mb-2">We&apos;re on it</h3>
+                <p className="text-[14px] text-white/70 leading-relaxed mb-5">
+                  Your prize is taking longer than usual to arrive. Don&apos;t worry — our team has been alerted and will make sure you get it. Nothing needed on your end.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDelivery(null)}
+                  className="w-full rounded-xl py-2.5 text-[15px] font-semibold text-black"
+                  style={{ background: '#fbbf24' }}
+                >
+                  Got it
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
