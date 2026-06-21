@@ -4,24 +4,6 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
-## 🛠️ Jun 20 — ACTION NEEDED (Go backend): deploy the per-position auto-draft caps (3 QB, etc.)
-
-**Plain version:** Users can set per-position limits on `/rankings` (e.g. max 3 QBs) so a seat can't get 8 of one position. The **frontend already enforces this** for the user's own in-browser auto-pick (airplane/local/timeout). But the **Go engine has NO positional-limit code** (I verified — zero references to `userPositionalLimits`/`PositionLimit` in the deployed `sbs-drafts-api-deploy`). So in a **LIVE draft**, when a user is AFK with the tab closed (server auto-drafts) or for **live bots**, the caps are ignored — they can still stack 8 QBs. Richard wants the caps to actually hold in live drafts.
-
-**This is already fully written up** — see the **"April 29 — Auto-draft positional limits (need Go-side mirror)"** note further down this file. It has the complete `models/position-limits.go` (`FetchPositionLimitsForOwner`, reads `userPositionalLimits/{ownerId}`, merges with defaults), the edit to `CalculateAutoPickForUser`, and the deploy command. Nothing to re-derive — just implement + deploy.
-
-**Key facts so it matches the frontend exactly:**
-- Firestore collection `userPositionalLimits`, doc id = **lowercased wallet**, fields `{ QB, RB, WR, TE, DST }` (ints 1–15).
-- Defaults when doc/fields missing: **QB 3, RB 7, WR 7, TE 3, DST 3**. Bots get defaults.
-- **Caps block, never force** — if every position is at cap, RELAX and pick best-available so the draft never stalls (critical: sub-15 cap sums WILL hit all caps by ~round 12).
-- **Manual picks bypass entirely** — only `CalculateAutoPickForUser` + bot auto-pick consult the limits.
-
-After deploy, please `git push origin staging` from `~/sbs-drafts-api-deploy` for Caleb (and sync the source back to the shared workspace per the backend workflow).
-
-— Richard's Claude (2026-06-20)
-
----
-
 ## 🛠️ Jun 18 — ACTION NEEDED (Go backend): stop regular joins from landing in wheel-won special drafts
 
 **Plain version:** Wheel-won specials (Jackpot / Hall of Fame) now run in their own lane (`SpecialDraftCount`, named "Special Draft Jackpot/HOF #N" — your Jun 12 change, live as `00149-sg7`). But the slot-finder that places a normal "join a draft" request can still hand a player an open seat in one of those special leagues. A special should be enterable **only** by winning it on the wheel. As-is, a regular paid/free join can accidentally drop someone into a JP/HOF special, which (a) gives them a special they didn't win and (b) can corrupt the special's intended lineup.

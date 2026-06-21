@@ -14,7 +14,7 @@ import {
 import { POSITION_COLORS } from '@/lib/draftRoomConstants';
 
 const HELP_COPY =
-  'Caps how many of each position the auto-drafter can pick when you go AFK or use airplane mode. Manual picks are never restricted. Defaults: QB:3 RB:7 WR:7 TE:3 DST:3.';
+  'Caps how many of each position the auto-drafter picks for you — but only while you keep the draft open on this device (airplane mode, or this tab auto-picking on your behalf). If you close the app or tab mid-draft, picks are made for you without these limits. Manual picks are never restricted. Defaults: QB:3 RB:7 WR:7 TE:3 DST:3.';
 
 export function PositionLimitsPanel() {
   const { limits, loaded, saving, setLimit, resetToDefaults } = usePositionLimits();
