@@ -8,6 +8,7 @@ import {
   DEFAULT_POSITION_LIMITS,
   LIMIT_BOUNDS,
   POSITIONS,
+  readLimitsEnabled,
   type Position,
 } from '@/lib/positionLimits';
 
@@ -26,12 +27,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'walletAddress required' }, { status: 400 });
     }
     if (!isFirestoreConfigured()) {
-      return NextResponse.json({ walletAddress, limits: DEFAULT_POSITION_LIMITS, persisted: false });
+      return NextResponse.json({ walletAddress, limits: DEFAULT_POSITION_LIMITS, enabled: true, persisted: false });
     }
     const db = getAdminFirestore();
     const snap = await db.collection(COLLECTION).doc(walletAddress).get();
-    const limits = applyDefaults(snap.exists ? snap.data() : null);
-    return NextResponse.json({ walletAddress, limits, persisted: snap.exists });
+    const data = snap.exists ? snap.data() : null;
+    const limits = applyDefaults(data);
+    return NextResponse.json({ walletAddress, limits, enabled: readLimitsEnabled(data), persisted: snap.exists });
   } catch (err) {
     logger.error('[user-positional-limits GET] error', { err });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });
@@ -77,8 +79,11 @@ export async function POST(req: NextRequest) {
       limits[pos] = v;
     }
 
+    // Master on/off. Optional in the body; defaults ON. Only `false` disables.
+    const enabled = body.enabled === false ? false : true;
+
     if (!isFirestoreConfigured()) {
-      return NextResponse.json({ ok: true, limits, persisted: false });
+      return NextResponse.json({ ok: true, limits, enabled, persisted: false });
     }
 
     const db = getAdminFirestore();
@@ -86,11 +91,12 @@ export async function POST(req: NextRequest) {
       {
         walletAddress,
         ...limits,
+        enabled,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true },
     );
-    return NextResponse.json({ ok: true, limits, persisted: true });
+    return NextResponse.json({ ok: true, limits, enabled, persisted: true });
   } catch (err) {
     logger.error('[user-positional-limits POST] error', { err });
     return NextResponse.json({ error: 'Internal error' }, { status: 500 });

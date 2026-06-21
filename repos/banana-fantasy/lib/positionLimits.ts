@@ -24,6 +24,18 @@ export const DEFAULT_POSITION_LIMITS: PositionLimits = {
   DST: 3,
 };
 
+/** Master on/off for the auto-draft caps. When off, the auto-picker ignores
+ *  all position caps (pure best-available / queue). Default ON. The setting is
+ *  read by the draft engine when the draft room loads, so flipping it does NOT
+ *  change a draft you're already in — only drafts you enter afterward. */
+export const DEFAULT_LIMITS_ENABLED = true;
+
+/** Reads the enabled flag from a stored doc / API payload. Defaults ON unless
+ *  explicitly stored as false. */
+export function readLimitsEnabled(partial: Partial<Record<string, unknown>> | null | undefined): boolean {
+  return partial?.enabled === false ? false : true;
+}
+
 export const TOTAL_DRAFT_ROUNDS = 15;
 
 /** Min/max each cap can be set to via the rankings UI. */

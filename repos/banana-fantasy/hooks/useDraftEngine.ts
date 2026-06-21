@@ -819,8 +819,10 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     _round: number,
     sortBy: 'adp' | 'rank' = 'adp',
     positionLimits: PositionLimits = DEFAULT_POSITION_LIMITS,
+    capsEnabled: boolean = true,
   ): string => {
     const isAtCap = (playerId: string): boolean => {
+      if (!capsEnabled) return false; // user turned auto-draft position limits off
       // Caps are per TIERED slot (WR1/WR2/RB1/RB2 limited separately).
       const slot = slotFromPlayerId(playerId) as Position;
       const cap = positionLimits[slot];
@@ -857,7 +859,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
   // User's per-wallet limits (loaded from Firestore via usePositionLimits).
   // Falls back to defaults until loaded or for non-wallet contexts.
-  const { limits: userLimits } = usePositionLimits();
+  const { limits: userLimits, enabled: userLimitsEnabled } = usePositionLimits();
 
   // ==================== AIRPLANE MODE FUNCTIONS ====================
 
@@ -865,8 +867,8 @@ export function useDraftEngine(mode: DraftMode = 'local') {
   const getAutoPickPlayer = useCallback((): string => {
     const rosterKey = mode === 'live' ? walletAddress : (currentDrafter?.name || '');
     const roster = rosters[rosterKey] || createEmptyRoster();
-    return autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits);
-  }, [mode, walletAddress, currentDrafter, rosters, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, autoPickForPlayer, userLimits]);
+    return autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits, userLimitsEnabled);
+  }, [mode, walletAddress, currentDrafter, rosters, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, autoPickForPlayer, userLimits, userLimitsEnabled]);
 
   /** Called by the page when user manually picks a player */
   const markManualPick = useCallback(() => {
@@ -1049,11 +1051,11 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     }
 
     const roster = rosters[currentDrafter?.name || ''] || createEmptyRoster();
-    const pickId = autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits);
+    const pickId = autoPickForPlayer(roster, queuedPlayers, availablePlayers, currentRound, autoPickSortPreference, userLimits, userLimitsEnabled);
     if (pickId) {
       draftPlayer(pickId);
     }
-  }, [mode, isUserTurn, timeRemaining, draftStatus, rosters, currentDrafter, queuedPlayers, availablePlayers, currentRound, autoPickForPlayer, autoPickSortPreference, draftPlayer, airplaneMode, userLimits]);
+  }, [mode, isUserTurn, timeRemaining, draftStatus, rosters, currentDrafter, queuedPlayers, availablePlayers, currentRound, autoPickForPlayer, autoPickSortPreference, draftPlayer, airplaneMode, userLimits, userLimitsEnabled]);
 
   // ==================== LOCAL MODE BOT AUTO-PICK ====================
   useEffect(() => {
