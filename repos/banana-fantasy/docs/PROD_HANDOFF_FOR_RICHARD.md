@@ -113,6 +113,16 @@ How this satisfies the golden rules:
 11. **Reset the draft counter** for a clean `#1` (staging has a `/staging/reset-draft-counter` route; prod equivalent).
 12. **Private QA** behind `PRELAUNCH_BYPASS_KEY` (mobile + desktop): mint → join → draft → admin loads → returning-vs-new-user check works. **Then flip `PRELAUNCH_MODE=false`.**
 
+### ALSO NEEDED (don't forget these — they complete the full picture)
+- **Deploy the prod FRONTEND itself.** The current `sbs-prod` deploy is just the countdown. To get the real app onto `sbs-prod`, push the code to the **`production` branch** → `sbs-prod` rebuilds with the full app. It stays **private** because `PRELAUNCH_MODE=true` is still set. Do this *after* the prod env vars (step 6) are in, so the build has correct config. (This is what carries ALL the code changes from §2 into prod.)
+- **DNS / domain:** confirm **sbsfantasy.com is attached to the `sbs-prod` Vercel project** (so the domain serves the real app at launch, not a stale project). If it currently points elsewhere, that's a domain-move step.
+- **Privy:** confirm the Privy app **allows the `sbsfantasy.com` domain** (auth breaks on a domain Privy doesn't recognize). Privy cert for `privy.sbsfantasy.com` was issued — re-verify it's live.
+- **Drops (decisions already made):** Coinbase/CDP is being dropped (don't set `CDP_API_KEY_*`); OneSignal push is being dropped (don't set `ONESIGNAL_*` — notifications go via email/TG/Discord; verified safe, push just skips). These are "don't set those env vars," not work.
+- **Optional, low-priority code (not blockers):** tighten CORS (`middleware.ts` `*.vercel.app` wildcard is broad for prod); env-drive the admin pfp bucket (`users-aggregate` uses `sbs-staging-pfps`). Skip unless time allows.
+
+### Sequencing note
+Steps 1–6 (Redis → queue → backends → Functions → env vars) + the frontend deploy can all happen **with the contract (step 7) deferred** — the contract isn't a prerequisite for the rest. Only `NEXT_PUBLIC_BBB4_CONTRACT`, the BatchProof deploy, and live mint-testing actually wait on the contract. So Richard can build the whole backend/frontend foundation first and do the contract when the hot wallet is ready.
+
 ---
 
 ## 7. DATA SAFETY — exactly how "don't delete / don't tangle" works
