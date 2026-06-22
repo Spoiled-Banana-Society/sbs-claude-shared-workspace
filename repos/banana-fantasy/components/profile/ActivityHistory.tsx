@@ -164,7 +164,18 @@ function describe(e: LiveActivityEvent): string {
   }
 }
 
-export function ActivityHistory({ userId }: { userId: string | null }) {
+export function ActivityHistory({
+  userId,
+  filterTypes,
+  title = 'Activity History',
+  emptyText = 'Your purchases, wins, and promo claims will show up here.',
+}: {
+  userId: string | null;
+  /** If set, only these event types are shown (e.g. a promo-only feed on the Promos tab). */
+  filterTypes?: ActivityEventType[];
+  title?: string;
+  emptyText?: string;
+}) {
   const url = userId ? `/api/user/activity/stream?userId=${encodeURIComponent(userId.toLowerCase())}` : null;
   const { events, isConnected, error } = useActivityStream(url);
 
@@ -196,17 +207,24 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
   // unrelated activity from other flows.
   const isFrozen = spinRevealFrozenUntil > 0 && Date.now() < spinRevealFrozenUntil;
   const visibleEvents = useMemo(() => {
-    if (!isFrozen) return events;
+    // Optional type filter — e.g. the Promos tab passes the promo-relevant
+    // types so it only shows spins/claims/buys/wins, not every draft action.
+    let evs = events;
+    if (filterTypes && filterTypes.length) {
+      const allowed = new Set<ActivityEventType>(filterTypes);
+      evs = evs.filter((e) => allowed.has(e.type));
+    }
+    if (!isFrozen) return evs;
     // Hide spin-related events arriving during the freeze window so
     // the wheel can land before the activity feed reveals the prize.
-    return events.filter((e) => {
+    return evs.filter((e) => {
       if (e.type !== 'spin_won' && e.type !== 'pass_granted') return true;
       const ms = e.createdAt ?? Date.parse(e.createdAtIso);
       // Events older than the freeze start are normal history — show them.
       const freezeStartedAt = spinRevealFrozenUntil - 6000; // ~SPIN_DURATION_MS + buffer
       return ms < freezeStartedAt;
     });
-  }, [events, isFrozen, spinRevealFrozenUntil]);
+  }, [events, isFrozen, spinRevealFrozenUntil, filterTypes]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, LiveActivityEvent[]>();
@@ -223,7 +241,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
   return (
     <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest">Activity History</h3>
+        <h3 className="text-white/40 text-[11px] font-semibold uppercase tracking-widest">{title}</h3>
         <div className="flex items-center gap-1.5 text-[10px] text-white/30">
           <span className={`inline-block w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-white/20'}`} />
           {isConnected ? 'Live' : 'Connecting…'}
@@ -232,7 +250,7 @@ export function ActivityHistory({ userId }: { userId: string | null }) {
 
       {visibleEvents.length === 0 ? (
         <p className="text-white/30 text-xs py-6 text-center">
-          Your purchases, wins, and promo claims will show up here.
+          {emptyText}
         </p>
       ) : (
         <div className="space-y-4">

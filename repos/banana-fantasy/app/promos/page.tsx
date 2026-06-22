@@ -11,6 +11,7 @@ import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
+import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo, PromoType } from '@/types';
 
 // ─── Type → visual treatment ─────────────────────────────────────────
@@ -37,7 +38,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'first-purchase':     { accent: '#fbbf24', label: 'First Buy' },
 };
 
-type FilterKey = 'all' | 'claimable' | 'active' | 'locked';
+type FilterKey = 'all' | 'claimable' | 'active' | 'locked' | 'activity';
 
 function formatTimeRemaining(endTime?: string): string {
   if (!endTime) return '';
@@ -302,6 +303,7 @@ export default function PromosPage() {
             ['claimable', 'Claimable', claimableCount],
             ['active',    'In progress', null],
             ['locked',    'Locked',    null],
+            ['activity',  'Activity',  null],
           ] as [FilterKey, string, number | null][]).map(([key, label, count]) => (
             <button
               key={key}
@@ -322,7 +324,7 @@ export default function PromosPage() {
       </div>
 
       {/* ── Loading state ──────────────────────────────────────────────── */}
-      {promosQuery.isLoading && visiblePromos.length === 0 && (
+      {filter !== 'activity' && promosQuery.isLoading && visiblePromos.length === 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-52 rounded-2xl bg-white/[0.02] animate-pulse" />
@@ -331,7 +333,7 @@ export default function PromosPage() {
       )}
 
       {/* ── Empty filter state ─────────────────────────────────────────── */}
-      {!promosQuery.isLoading && filteredPromos.length === 0 && visiblePromos.length > 0 && (
+      {filter !== 'activity' && !promosQuery.isLoading && filteredPromos.length === 0 && visiblePromos.length > 0 && (
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center">
           <p className="text-white/45 text-sm">Nothing in this filter.</p>
           <button onClick={() => setFilter('all')} className="text-banana text-xs mt-3 hover:underline">
@@ -340,8 +342,21 @@ export default function PromosPage() {
         </div>
       )}
 
+      {/* ── Activity tab — the full-picture hub. Reuses the profile
+          ActivityHistory feed (SSE, real-time), filtered to promo-relevant
+          events: spins won, promos claimed, passes bought, drafts won — each
+          timestamped. Same styling language as the cards. ──────────────────── */}
+      {filter === 'activity' && (
+        <ActivityHistory
+          userId={user?.id ?? null}
+          filterTypes={['spin_won', 'promo_claimed', 'pass_purchased', 'pass_granted', 'draft_won']}
+          title="Your Promo Activity"
+          emptyText="Spins you win, promos you claim, passes you buy, and drafts you win show up here."
+        />
+      )}
+
       {/* ── Promo grid ─────────────────────────────────────────────────── */}
-      {filteredPromos.length > 0 && (
+      {filter !== 'activity' && filteredPromos.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredPromos.map(promo => (
             <PromoCard
