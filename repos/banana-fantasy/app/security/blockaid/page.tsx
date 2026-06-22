@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 const SUBMISSION_FIELDS = [
   { label: 'Project', value: 'Spoiled Banana Society (SBS)' },
   { label: 'Contract', value: 'BBB4 Draft Pass NFT' },
-  { label: 'Contract Address', value: '0x781B2E6fE9A615C2680A51Ef88f309ddC2e0D73F' },
+  { label: 'Contract Address', value: '0xadf5b9b46616de6d073F226e7b7C532aE2CFFB80' },
   { label: 'Chain', value: 'Base (8453)' },
   { label: 'Token Standard', value: 'ERC-721' },
   { label: 'Contract Type', value: 'Draft Pass NFT (Game Access Token)' },

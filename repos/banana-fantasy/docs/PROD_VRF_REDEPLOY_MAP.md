@@ -68,6 +68,36 @@
 
 ---
 
+## 📺 EVERY UI PLACEMENT + REAL-TIME MECHANISM (verified 2026-06-22)
+Every item reads **unchanged code** → recreated `system_config` + fresh round/period data. Listed so the build confirms each still works post-redeploy.
+
+| Where | System | Shows | Update mechanism |
+|---|---|---|---|
+| `components/drafting/BatchProofBanner` (on `app/draft/page.tsx:374`) | Draft | round verified status | **poll 30s** (`/api/batches/*`) |
+| Draft-info modal **VRF tab** (`draft/page.tsx:339`) | Draft | the VRF/proof seal | on-open fetch |
+| `components/drafting/SlotMachineOverlay` | Draft | **slot-machine reveal** of draft type + `VerifiedBadge` → `/proof/[draftId]` | renders on reveal; type = VRF-committed outcome |
+| `components/ui/VerifiedBadge` | Draft | "Chainlink VRF verification active" seal; **interactive (clickable proof) once the round's VRF commit lands**, non-interactive before | state-driven |
+| `components/drafting/BatchRandomnessLoading` | Draft | the "waiting for VRF" state ("once per 10,000 drafts…") | **status-driven** (handles VRF-pending gracefully — NOT a broken flow) |
+| `components/drafting/LobbyProofBadge` | Draft | lobby proof badge | — |
+| `app/proof-feed/page.tsx` + `/api/drafts/proof-feed/stream` | Draft | public live verified feed | **SSE**, gated on VRF-commit |
+| `app/proof/[draftId]/page.tsx` | Draft | full per-draft VRF + salt-commit proof | fetch |
+| `components/wheel/WheelProofBanner` | Wheel | "X/100000 verified, sealed by VRF+Merkle" | **poll 30s** (`/api/wheel/period`) |
+| `components/wheel/BananaWheel` / `SpinWheel` | Wheel | the spin | instant return, lazy proof |
+| `app/spin-proof/[spinId]/page.tsx` | Wheel | **per-spin VRF reveal** (salt/vrf/merkleRoot/proof + verified status) | fetch `/api/wheel/proof/{spinId}` |
+| `app/wheel-result/[spinId]`, `app/wheel-batches` | Wheel | result/share + batch feed | — |
+| `components/promos/JackpotWinnerCycle` | Jackpot | **winner-picker animation → lands on the server's recorded VRF winner** (`winnerIdxOverride`) | server draw record |
+| Bell + `components/profile/ActivityHistory` | Jackpot/Wheel | `promo-jackpot-hit` / `spin_won` events | **ping** (dedupeKey, once) + activity SSE |
+
+## 🐛 THE "ALWAYS PAYS 1 DRAFT" WHEEL BUG — fixed, must stay fixed
+Commit `7b4d927` (2026-06-20). **Bug:** the VRF-period path set `segment = segments[0]` (= "1 Draft") as a placeholder and built prize/free-drafts/mint/landing-angle/**activity** from it before deriving the real outcome → every period spin paid "1 Draft". **Fix:** derive the REAL outcome **before** the tx with `deriveSpinOutcome(salt, vrf, spinIndex)`; the tx re-derives + asserts a match (409 on concurrent mismatch). **In unchanged code — won't regress.** Guard: if a period lacks `salt`/`vrfRandomness` the spin **throws 500** (never silently pays "1 Draft").
+
+## ⚠️ THE LIVE REQUIREMENT — period/round must reach the VRF-fulfilled state
+Wheel period lifecycle (`wheelPeriod.ts:32`): `requested → fulfilled → active → closed → revealed`. `salt`/`vrfRandomness` are null until Chainlink VRF fulfills.
+- **Spins** need `active` (`deriveSpinOutcome` needs salt+vrf) — else 500.
+- **Jackpot draw** (`getSealedDrawSeed`) needs `status==='active' && salt && vrfRandomness` — else falls back to draftId-only (never blocks).
+- **VerifiedBadge / proof pages** go "live" (clickable, verified) once the round/period VRF commit lands; before that the UI shows the graceful "waiting for randomness" state.
+→ **After deploying the wheel contract + VRF, open the period and CONFIRM it reaches `active` (VRF fulfilled + merkle committed) before going live.** Same for the draft round's first VRF commit.
+
 ## 🚀 REDEPLOY ORDER (so every flow reproduces identically)
 1. **Chainlink VRF: create + fund 2 subscriptions** — #1 draft/reveal, #2 wheel. (Jackpot uses #2.)
 2. **Deploy draft contracts** → admin `deploy-batch-proof-vrf-commit` (+ merkle) with sub #1 → writes `system_config/batchProof` + `batchProofMerkle` + `merkleRoundState`. Round size stays **10,000**.
