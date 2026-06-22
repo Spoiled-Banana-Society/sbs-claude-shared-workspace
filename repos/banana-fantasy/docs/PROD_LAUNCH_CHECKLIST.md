@@ -7,6 +7,104 @@
 
 ---
 
+## 🆕 SESSION UPDATE — 2026-06-21 (read FIRST; supersedes a few items below)
+
+A full re-audit + live verification this session. These CORRECT or ADD to the phases below — apply them where noted.
+
+### ⚙️ PROD-PREP EXECUTED (on `main`, build-verified, NOT deployed yet)
+- ✅ **Env-flag split DONE** — new `lib/envGates.ts` (`paymentsEnabled` / `testHelpersEnabled` / `isProd`). 4 money routes → `paymentsEnabled()`; faucet + 4 debug routes → hard prod block (`isProd()`); 3 bot routes → `testHelpersEnabled()`; StagingMintButton hidden in prod. Backward-compatible (staging unchanged). **Prod env to set: `PAYMENTS_ENABLED=true`; leave `TEST_HELPERS_ENABLED` unset.**
+- ✅ **Bare staging URLs env-driven DONE** — 12 direct-use consts wrapped (9 Go-API → `NEXT_PUBLIC_STAGING_DRAFTS_API_URL`; 3 site → `NEXT_PUBLIC_SITE_URL`, incl. `deploy-bbb4v2` baseURI). Fallback-defaults correctly left alone (founderGrant/draftApi/messages/4 admin routes were already env-driven). **Prod env to set: `NEXT_PUBLIC_STAGING_DRAFTS_API_URL`=prod Go API, `NEXT_PUBLIC_SITE_URL`=https://sbsfantasy.com.**
+- ⬜ Remaining URL bits (lower priority): `db-json:240` (mock db, not prod) + coinbase redirect fallbacks (moot — Coinbase dropping). [`db-firestore:183` referral link now FIXED — see below.]
+
+#### ✅ ADDED 2026-06-21 (continued session — all build-verified, staging byte-identical)
+- ✅ **Season year → 2026 DONE + DEPLOYED** (Go rev `00158-gkf`, traffic routed, live-smoke-tested: real draft created `2026-paid-draft-6`, both bots same league = no empty-league spawn). One `seasonYear` const in `models/leagues.go` drives all 3 draft-id spots (can't half-change); dead `currentSeason` synced to 2026. Player data already 2026 (`playerStats2026`). **→ SUPERSEDES the "Season year = 2024 BIGGEST blocker" item below — RESOLVED.** StartDate/EndDate left at 2024 = deferred (only matters at scoring; real: contest starts **Sept 4** = NFL wk1, ends wk17). **Prod: hit `/staging/reset-draft-counter` so prod drafts start at #1.**
+- ✅ **Backend-URL prod-gated fallback DONE** (`lib/staging.ts`): `isProd() ? '' : <staging default>` → a forgotten `NEXT_PUBLIC_STAGING_*` in prod FAILS LOUD in QA instead of silently serving prod off the staging backend. Staging byte-identical (isProd false in staging).
+- ✅ **BBB4 deploy route prod-ready** (`admin/deploy-bbb4v2`): staging-only lock → allows prod (still admin + wallet-lock gated); name/symbol env-driven. **🔑 Prod collection name = "Banana Best Ball IV"** (Boris) → set `BBB4_COLLECTION_NAME='Banana Best Ball IV'` (+ optional `BBB4_COLLECTION_SYMBOL`). **CONTRACT VERSION PROVEN:** on-chain runtime bytecode of staging `0x781B…` (the `bbb4-staging` OpenSea collection) is a **verbatim substring of the repo deploy artifact** → prod deploys the byte-IDENTICAL V2 contract. **Zero "old version" risk.**
+- ✅ **Hardcoded-staging sweep DONE:** referral link (`db-firestore:183`) + `sync-cloud-errors` project/services env-driven (staging unchanged). All other Go-API URLs + the 5 admin routes confirmed **already** env-driven. Coinbase staging fallback = harmless `getOrigin` edge case.
+- ✅ **HOT WALLET / TREASURY architecture (verified from `SBSDraftPassBBB4V2.sol`):** contract is `Ownable`; `reserveTokens` (EVERY free/paid mint) is `onlyOwner` + auto-signed by the relay → **the owner MUST be a hot EOA, NOT a Gnosis Safe** (a Safe can't auto-sign every mint → minting would stop). `withdrawUSDC()` sends to `owner()`; the skim cron then sweeps hot wallet → `COLD_TREASURY_ADDRESS`. **Prod setup:** new hot EOA = contract owner (key in Vercel **Sensitive**, fund with **Base ETH**, it deploys → becomes owner); **Gnosis Safe = treasury** → set `COLD_TREASURY_ADDRESS`=Safe. **Never import the hot key into a wallet app (EIP-7702 risk).**
+- 🆕 **New prod env vars introduced this session:** `BBB4_COLLECTION_NAME` (="Banana Best Ball IV"), `BBB4_COLLECTION_SYMBOL` (optional), `CLOUD_ERROR_SYNC_SERVICES` (prod Cloud Run service names, comma-sep) — all default to staging values when unset, so staging is unchanged.
+- ⚠️ **Vercel DASHBOARD security settings DON'T carry to prod (per-project):** the render-loop self-DDoS mitigation Boris added in the staging Vercel dashboard (Attack Challenge Mode / Firewall rule / Spend limit) is NOT in `vercel.json`, so the `sbs-prod` project won't inherit it. **Re-apply the same Firewall/Security/Spend settings on the prod Vercel project.** (The CODE-side isolation — per-IP rate limiting in `lib/rateLimit.ts` + the `useRef` render-loop guard + `render-loop-guard.spec.ts` — DOES carry automatically.)
+- ✅ **prod-prep batch SHIPPED to staging** (`sbs-frontend-v2/main` `092e75e4`, on top of Richard's `70f83f58`; merge preserved his upload-auth). All 30 files build-verified + live; staging-safe no-ops.
+
+1. ✅ **Token double-spend (concurrent-join) bug — FIXED + DEPLOYED to staging** (Go rev `00157-cnt`, validated with 4× concurrency tests: one pass → one league, guard fires). The fix lives in `~/sbs-drafts-api-deploy/models/leagues.go` (`AddCardToLeague` — pass-claim now atomic inside the seat transaction). **→ Carry this source to prod** (it's in the deploy dir already). *This was a real, recurring bug — the one that "split a pass across drafts."*
+
+2. 🔴 **ENV-FLAG CONFLICT — sharpens Phase 6/7 (verified in code).** The **same** flag `NEXT_PUBLIC_ENVIRONMENT === 'staging'` gates BOTH the **real money routes that MUST work in prod** (`purchases/card-mint`, `marketplace/relay-buy`, `marketplace/relay-permit`, `marketplace/gas-topup` — they 403 unless env==='staging') AND the **test/abuse routes that MUST be off in prod** (`purchases/staging-mint` faucet, `admin/bots/*`, `admin/deploy-bbb4v2`, `debug/*`).
+   → **Do NOT just set `NEXT_PUBLIC_ENVIRONMENT=production`** (Phase 6 line 96) — that **403s all card payments + marketplace**. **Split the flag first** (do on `main`, test on staging): `PAYMENTS_ENABLED='true'` (on staging+prod) for the 4 money routes, and `TEST_HELPERS_ENABLED='true'` (staging only, OFF in prod) for the faucet/bots/debug routes. This also makes Phase 7's "isStagingMode hard-true" rewrite cleaner.
+
+3. **Coinbase FULLY droppable (VERIFIED)** → drop `CDP_API_KEY_ID`/`CDP_API_KEY_SECRET`. **Buy/onramp uses MoonPay** (`BuyPassesModal.tsx:91` "Card path = MoonPay only; Coinbase Onramp dormant"); **withdraw is self-custody USDC**. Coinbase touches nothing live — zero breakage.
+
+   **🔑 PROD MINT POLICY (Boris, 06-21):** prod has **NO free/staging mint for users — anywhere.** Specifically:
+   - ✅ **Users: paid mint only** — pay ($25 USDC/card) → real on-chain mint (`card-mint` + USDC). Stays (in `PAYMENTS_ENABLED`).
+   - ❌ **Remove the free faucet entirely:** `purchases/staging-mint` route **and** the `StagingMintButton` on `app/page.tsx:175` (currently shown via always-true `isStagingMode()`). No button, no route — a real user must never get a free pass.
+   - ✅ **Admins keep grant, admin-gated:** `admin/grant-drafts` (`requireAdmin`, `reserveTokensToWallet`), `admin/bulk-grant`, `admin/grant-prize`, `admin/send-usdc` — all `requireAdmin`. STAY in prod, locked to the admin allowlist.
+   - **🔑 PASS MODEL (verified):** EVERY pass — free OR paid — is a **real Base NFT** minted via `reserveTokensToWallet` → `BBB4.reserveTokens` (`adminMint.ts:143`). `passType ('free'|'paid')` is just a TAG applied by `registerMintedTokens` (`reconcilePasses.ts:248`); the mint is identical. Wheel free wins mint a real free Base NFT (`wheel/spin/route.ts:427,470`). Paid purchase mints a real paid Base NFT. **Admin grant requirement (Boris):** admins must be able to grant BOTH free and paid real Base NFTs to self/others. `grant-drafts:124` hardcodes `'free'` today → add a `passType` (free|paid) param (ONLY change needed — the mint is the same `reserveTokensToWallet`; no new logic, no risk).
+
+4. **OneSignal push being DROPPED** (→ email/TG/Discord only) → drop `ONESIGNAL_*` from prod env. **VERIFIED SAFE:** the notification dispatch (`lib/notifications/dispatch.ts:20` `Promise.allSettled` + `channels.ts` "never throw — failures come back as a value") runs every channel **independently** — push being unconfigured returns `skip('not configured')` and **cannot block email/TG/Discord**. So for prod: simply **don't set the OneSignal vars** → push skips, draft alerts deliver via email/TG/Discord, and the staging 403 log-spam disappears. No code removal strictly required; zero risk to alerts.
+   - **Coinbase removal (offramp) — VERIFIED SAFE too:** withdrawals are **self-custody USDC sends** (`SelfCashOutModal` + `/api/withdraw/preflight` + signed USDC transfer; `prizes/withdraw:116` = "direct (non-Coinbase) offramp"). The CDP `sell-session` is a separate removable feature — dropping `CDP_API_KEY_*` won't break withdrawals. 🔎 **Confirm:** the *buy/onramp* (funding USDC) may still use Coinbase Onramp — decide if that stays or also moves.
+
+5. **3 randomness systems — get each right (they bit before; code is fixed, config is new):**
+   - **Draft** type distribution = VRF + Merkle, own contract → covered by Phases 3/4/9.
+   - **Wheel spins** = VRF + Merkle, **a SEPARATE contract**, one season-long 100k-spin period (`wheel_periods`, sharded leaves). **ADD to Phase 3/4:** deploy the prod wheel contract + its own Chainlink sub + a fresh season period.
+   - **Jackpot-hit promo = the "different" one — NO own contract.** Winner = `sha256(wheel period salt + vrf + 'jp-draw:'+draftId) % paidEntrants`; proof = on-chain **receipt tx** signed by the owner wallet. **It rides on the prod WHEEL VRF period** → set up wheel VRF **before** jackpot draws work. Dependency order: Draft VRF → Wheel VRF → jackpot works for free.
+
+6. **More leaked secrets to rotate (add to Phase 0):** `INFURA_API_KEY` + `ONESIGNAL_REST_API_KEY` are baked **literally in the Go `Dockerfile`** (in git) → rotate + move to Secret Manager. Also `RI_TOKEN` hardcoded in the staging Functions (`updateRosters.js`).
+
+7. **WS server (recommend for prod):** the draft *list* page still opens authenticated WS connections (bypassing `wsEnabled=false`), making the WS server a 2nd autopick engine that can race the canonical one. **Cleanest: don't run the prod WS service** (frontend falls back to the 2.5s poll — zero UX impact), or gate that draft-list connection. Re-evaluate Phase 5's WS deploy with this.
+
+8. **Admin in prod (your ask): ✅ ships automatically** with the frontend — just set `ADMIN_WALLET_ADDRESSES` / `NEXT_PUBLIC_ADMIN_WALLET_ADDRESSES` to the real prod admins (Phase 6) and confirm admin routes load behind the wall (Phase 11).
+
+9. **Privy custom domain** (`privy.sbsfantasy.com`, Phase 10) was *awaiting cert* as of 2026-06-18 — **re-verify it's issued now**: `curl -sS -o /dev/null -w "%{ssl_verify_result}\n" https://privy.sbsfantasy.com/` (0 = done).
+
+10. **Deferred-but-real (your call):** `eligibility` route leaks KYC/geo/Persona-ID with no auth (add auth); `referrals` page white-screens on a backend 500 (3-line guard). Neither is launch-blocking; handle during prod-build testing.
+
+### ✅ FULL VERIFICATION PASS — 2026-06-21 (2 agents + my own checks + live deploys; every doc claim re-checked)
+
+#### ❌ STALE — no longer true; do NOT chase
+- **Phase 6 `DRAFTS_API_SERVICE_KEY` ("11 routes 503 without it")** — zero refs in current `lib/`/`app/api` (Caleb auth reverted). Not required.
+- **Phase 7 "wheel-odds discrepancy"** — NOT a bug. `lib/api/config.ts:11-18` weights sum to 100; intentional, separate from draft-type 1/5/94.
+- **Phase 9 "no VRF restart endpoint exists"** — STALE: a cold-open route DOES exist (`staging/staging.go:36` `merkle-open-next-round` → `PreOpenNextMerkleRound`). Full restart still needs the manual pointer reset + `batch_proofs` delete around it.
+
+#### 🔴 STILL REAL — confirmed against current code (line refs corrected)
+- **Season year = 2024 → ✅ RESOLVED + DEPLOYED 2026-06-21 (see ADDED block above; Go rev `00158-gkf`, live-tested).** ~~`constants/contests.go:3` `currentSeason="2024"`;~~ — historical refs below kept for context only: `models/leagues.go:234,328,362` key `2024-…-draft`; StartDate/EndDate `:239-240` = 2024 NFL schedule; `staging/staging.go` uses `2025-…`. **And the draft engine REQUIRES `playerStats2026`** (`owner/owner.go:342`, `models/players.go:77,92,130`, `draft-state.go:360,425`) → **live mismatch:** players read 2026, leagues keyed 2024. Set ALL season refs to 2026/dynamic + load `playerStats2026` in prod Firestore.
+- **Env-flag (money routes 403 in prod):** `card-mint:68`, `relay-buy:79`, `relay-permit:31`, `gas-topup:53` all `403 unless NEXT_PUBLIC_ENVIRONMENT==='staging'`; **`.env.production:26` sets it to `prod`** → all 4 money routes 403 in prod today. **Split the flag** (`PAYMENTS_ENABLED` vs `TEST_HELPERS_ENABLED`). THE keystone.
+- **USDC treasury = zero address** (`lib/api/config.ts:32`, throws `:57-63`) → set to prod Gnosis Safe.
+- **`isStagingMode()` hard-returns true** — line moved to `lib/staging.ts:28-49` (doc said 18-39). Prod rewrite needed.
+- **`.env.production:16` `NEXT_PUBLIC_DATABASE_URL` → staging RTDB** (+ `firebaseAdmin.ts:76` falls back to staging). Repoint to prod.
+- **Env-key mismatch:** code reads `NEXT_PUBLIC_APP_ID` (`lib/api/firebase.ts:44`) but `.env.production:20` sets `NEXT_PUBLIC_FIREBASE_APP_ID`. Align or Firebase app id is empty.
+- **Leaked staging SA** inlined `lib/firebaseAdmin.ts:20` (doc said :19). Rotate + remove (Phase 0).
+- **`StagingMintButton` on home** (`app/page.tsx:175`) gated only by `isStagingMode()` → shows in prod. Gate by env.
+- **`app/api/upload/route.ts:8`** bucket = staging; **`crons/sync-cloud-errors/route.ts:61`** PROJECT_ID = staging. Repoint.
+- **Owner routes no auth** (`owner/use-pass:32`, `refund-pass`, `team-nicknames:14` — comment admits "tighten before prod"). Add auth.
+- **`purchases/create`+`verify` present** (delete), **`debug/crisp-check`**+**`admin/revoke-7702`** present (remove).
+- **No automated prize pipeline** — only admin `grant-prize`/`bulk-grant`/`import-winners`; winners see $0 until manual. Decide.
+- **Draft-list page still opens WS** (`useDraftingPageState.ts:1262`, hardcoded staging WS `:1202`) — don't run prod WS, or gate it.
+
+#### 🆕 NEW staging leaks NOT in the 06-18 body (found this pass — important)
+- **⚠️ `admin/deploy-bbb4v2/route.ts:18` `BASE_URI = banana-fantasy-sbs.vercel.app/api/nft/metadata/`** → `setBaseURI` at `:86`. **If the prod contract is deployed via this route UNEDITED, prod NFTs get STAGING metadata URLs.** Edit BASE_URI to prod before the contract deploy.
+- **Bare-const staging URLs (no env override → need code edits):** `lib/draftApi.ts:13`, `lib/founderGrant.ts:28`, `lib/friends.ts:289` (staging Go API); `app/api/referrals/route.ts:21` + `lib/db-firestore.ts:714` `REFERRAL_SITE_URL` + `coinbase/{sell,buy}-session` redirects (staging site URL). The `NEXT_PUBLIC_*_URL || staging` ones self-heal from env; **these bare consts do not.**
+- **40+** `sbs-drafts-api-staging` fallbacks total (doc said ~14) — audit all before flip.
+- (Good news: **no** `w5wydprnbq`/`sbs-prod-env` hardcoded Go-host fallback found — the "silently hits old prod" class is contained to leaving `NEXT_PUBLIC_DRAFTS_API_URL` unset.)
+
+#### ✅ CONFIRMED GOOD (independently re-verified)
+- **Token double-spend fix present & correct** in `sbs-drafts-api-deploy/models/leagues.go:358,383,425,435,438` (atomic seat+claim; reads-before-writes valid).
+- **3 randomness systems exactly as described:** draft = VRF+Merkle own contract (`batchproof/`, `system_config/batchProofMerkle`); wheel = SEPARATE contract+period (`system_config/wheelProof`, `BananaWheelProof.sol`, `wheel_periods`); jackpot-hit = wheel period salt + receipt tx, **no own contract** (`lib/jackpotDrawProof.ts:65-70,117`), legacy `sha256('jp-draw:'+draftId)` is fallback ONLY. Dependency order (Draft VRF → Wheel VRF → jackpot) confirmed.
+- **SLOT-0 floor fixes present** (`capture-draft-data:75,78`, `notification-counts:409,412`, proof-feed paths are `app/api/drafts/proof-feed/route.ts:89` + `/stream:105` — doc path was wrong).
+- **`contracts/*.sol` present:** `SBSDraftPassBBB4V2`, `BBB4BatchProofMerkle`, `BBB4BatchProofVRFCommit`, `BananaWheelProof`, `BananaWheelAssignmentJournal`.
+
+#### 🔎 DEPLOYMENT REALITY (verified live via gcloud/gh)
+- **Prod backends already EXIST** in `sbs-prod-env`: `sbs-drafts-api` + `sbs-drafts-server` (running OLD retired code — old `/league/batchProgress`→404). Launch = **redeploy current code onto them** with prod env, not build from scratch.
+- **`production` branch is BEHIND `main`** (`fadf36…` vs `70f83f…`) → push `production`→`main` HEAD at launch (incl. the token fix once on main).
+- **`~/sbs-drafts-api-deploy` has a `.git` again** (re-init'd 06-20 21:15) — MEMORY says it was reset to a plain folder; reconcile git state before deploy. Working tree has the token fix regardless.
+
+**Prod infra ALREADY in place (verified live 2026-06-21 — check these off):**
+- ✅ Prod **VPC connector** `prod-drafts-vpc` = READY (Phase 1).
+- ✅ Prod **Secret Manager** `sbs-prod-config` + `redis-url-prod` exist (Phase 1).
+- ✅ **Privy cert ISSUED** — `privy.sbsfantasy.com` TLS OK (`ssl_verify=0`) (Phase 10 — was "pending 06-18", now done).
+- ✅ **`sbsfantasy.com` → Vercel** (76.76.21.21, HTTP 200, serving the wall) (Phase 10 DNS — done).
+- 🔎 Prod **Redis instance** — `redis-url-prod` secret exists but the instance didn't list; confirm it's READY before the WS deploy (Phase 1).
+
+---
+
 ## ENVIRONMENT TOPOLOGY (the system, for reference)
 
 | | Staging | Production |

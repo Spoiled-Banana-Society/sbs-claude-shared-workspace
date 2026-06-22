@@ -286,7 +286,7 @@ export async function rejectOrRemove(myWallet: string, otherWallet: string): Pro
 
 // ─── User profile resolution ───────────────────────────────────────────────
 
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function getServerDraftsApiUrl(): string {
   return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');

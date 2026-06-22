@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
+import { isProd, testHelpersEnabled } from '@/lib/envGates';
 import { isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
@@ -32,7 +33,9 @@ const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
  * free mints in prod.
  */
 export async function POST(req: Request) {
-  if (process.env.NEXT_PUBLIC_ENVIRONMENT !== 'staging') {
+  // Free-mint faucet: HARD-blocked in prod (can never run there, regardless of
+  // any flag), and otherwise off unless TEST_HELPERS_ENABLED / staging.
+  if (isProd() || !testHelpersEnabled()) {
     return jsonError('Not available in this environment', 403);
   }
   if (!isAdminMintConfigured()) {

@@ -7,7 +7,9 @@ import { ApiError } from '@/lib/api/errors';
 
 export const dynamic = 'force-dynamic';
 
-const BUCKET_NAME = 'sbs-staging-env.firebasestorage.app';
+// Env-driven so prod uses its own bucket; staging keeps this exact bucket when
+// UPLOAD_BUCKET is unset (so staging uploads are unchanged).
+const BUCKET_NAME = process.env.UPLOAD_BUCKET || 'sbs-staging-env.firebasestorage.app';
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
 export async function POST(req: Request) {

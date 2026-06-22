@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
  */
 
 const REFERRAL_CODES_COLLECTION = 'v2_referral_codes';
-const SITE_URL = 'https://banana-fantasy-sbs.vercel.app';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://banana-fantasy-sbs.vercel.app';
 
 type RewardState = string;
 interface HistoryEntry {

@@ -57,7 +57,7 @@ type RosterState = Record<
 // Hardcoded to the staging Cloud Run service. This whole Vercel project
 // (banana-fantasy-sbs) only ever talks to staging; NEXT_PUBLIC_DRAFTS_API_URL
 // can be set to the prod URL for other reasons, so we don't trust it here.
-const STAGING_DRAFTS_API_URL = 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
+const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
 
 function getServerDraftsApiUrl(): string {
   return (process.env.STAGING_DRAFTS_API_URL || STAGING_DRAFTS_API_URL).replace(/\/$/, '');

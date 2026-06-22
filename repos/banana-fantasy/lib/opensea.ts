@@ -10,7 +10,7 @@ import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 export const BBB4_CONTRACT: string = BBB4_CONTRACT_ADDRESS;
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 export const OPENSEA_API_BASE = 'https://api.opensea.io';
-export const COLLECTION_SLUG = 'bbb4-staging';
+export const COLLECTION_SLUG = process.env.NEXT_PUBLIC_OPENSEA_COLLECTION_SLUG || 'bbb4-staging';
 export const OPENSEA_CHAIN = 'base';
 
 /**
