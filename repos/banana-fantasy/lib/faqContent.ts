@@ -7,7 +7,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What is Best Ball fantasy football?',
-        answer: 'Best Ball is a set-it-and-forget-it fantasy format. After you draft your team, the platform automatically starts your highest-scoring players each week. No lineup management, no waivers, no trades to worry about - just draft and watch your team compete all season.',
+        answer: 'Best Ball is a set it and forget it fantasy format. After you draft your team, the platform automatically starts your highest scoring players each week. No lineup management, no waivers, no trades to worry about - just draft and watch your team compete all season.',
       },
       {
         question: 'How does Best Ball scoring work?',
@@ -25,7 +25,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What are Team Positions?',
-        answer: 'Instead of drafting players like Patrick Mahomes, you draft Team Positions — e.g. "KC QB" or "DAL WR1". Each week you automatically score the top performer at that slot for that team. Example: you draft DAL WR1 — if CeeDee Lamb drops 28 that week, you get 28; if a different Cowboy is their top receiver that week, you get HIS points instead. You always get the team\'s best at that slot.\n\nSlots come in tiers: WR1 is a team\'s top WR each week and WR2 is their 2nd-best — same with RB1 and RB2. So you can roster DAL WR1 and PHI WR2 and stack the best receivers and backs from across the league.',
+        answer: 'Instead of drafting players like Patrick Mahomes, you draft Team Positions — e.g. "KC QB" or "DAL WR1". Each week you automatically score the top performer at that slot for that team. Example: you draft DAL WR1 — if CeeDee Lamb drops 28 that week, you get 28, but if George Pickens goes for 37, you\'d get his points instead.\n\nThere\'s also WR2, RB2, and so on — WR2 just means the team\'s second-highest scorer at that position that week (same with RB2). So you can roster DAL WR1 and PHI WR2 and stack the best receivers and backs from across the league.',
       },
       {
         question: 'Why draft Team Positions instead of players?',
@@ -33,7 +33,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How does this add strategy?',
-        answer: 'Team Positions add a unique strategic layer. You\'re evaluating team depth, offensive systems, and coaching tendencies instead of just individual talent. A team with a great backup QB might be more valuable than one without.',
+        answer: 'Team Positions add a unique strategic layer. You\'re evaluating team depth, offensive systems, and coaching tendencies instead of just individual talent. A team with two great WRs might be more valuable than one with a single elite receiver.',
       },
     ],
   },
@@ -43,7 +43,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Is this like a traditional 12-man redraft league?',
-        answer: 'No — it\'s a tournament, not a season-long league with your buddies. You draft a 10-person team-position roster against 9 strangers, and your team then plays all season on cumulative points. Weeks 1-14 are the regular season in that 10-team pod; the top finishers advance into playoff pods (Weeks 15-16) and then the Week 17 finals, all competing for one big shared, guaranteed prize pool. Enter as many drafts (= as many teams) as you want — more teams, more shots at the prizes.',
+        answer: 'No — it\'s a tournament, not a season-long league. You draft a 10-position roster against 9 other players, and your team plays all season on cumulative points. Weeks 1-14 are the regular season in your 10-team pod; the top 2 finishers advance into the playoff pods (Weeks 15-16) and then the Week 17 finals, all competing for one big guaranteed prize pool. Enter as many drafts as you want — each draft is another team, and another shot at the prizes.',
       },
       {
         question: 'How does a draft work?',
@@ -79,7 +79,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'What is a Jackpot Draft?',
-        answer: 'Jackpot Drafts are the rarest draft type — just 1% of all drafts. Win your league in a Jackpot draft and you skip straight to the Week 17 finals, bypassing both playoff rounds (Weeks 15 and 16). Landing one is huge: it\'s a guaranteed deep playoff run from day one, while everyone else still has to fight through the bracket to get there.',
+        answer: 'Jackpot Drafts are the rarest draft type — just 1% of all drafts. Finish 1st in a Jackpot draft and you skip straight to the Week 17 finals, bypassing both playoff rounds (Weeks 15 and 16). 2nd place still advances to the playoffs like any other league. Landing one is huge: 1st place gets a guaranteed spot in the finals from day one, while everyone else still has to fight through the bracket to get there.',
       },
       {
         question: 'How do I get into a Jackpot Draft?',
@@ -125,7 +125,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'How do HOF playoffs work?',
-        answer: 'HOF has its own playoff track. Weeks 1-14 are the cumulative regular season in your HOF pod, and only the 1st-place team advances out of that pod (it\'s tougher than a regular league). Weeks 15-17 are the HOF playoffs, also cumulative. HOF prizes are paid on top of the regular tournament prizes, and they\'re guaranteed (GTD).',
+        answer: 'HOF leagues play the regular tournament like everyone else — the top 2 in your HOF pod (Weeks 1-14) advance to the regular playoffs. On top of that, only the 1st-place team also advances into a separate HOF playoff track (Weeks 15-17, also cumulative) that pays a bonus prize pool on top of the regular tournament prizes.',
       },
       {
         question: 'What are the odds of getting a HOF draft?',
@@ -165,11 +165,11 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How does the tournament structure work?',
-        answer: 'Weeks 1-14 — Regular season in your 10-team pod. Scoring is CUMULATIVE: your team stacks points every week, and the top 2 in your pod advance to the playoffs.\nWeek 15 — a fresh pod of 10, top 2 advance.\nWeek 16 — another fresh pod of 10, top 2 advance.\nWeek 17 — Finals pod plays for the grand prize.\n\nJackpot winners skip straight to the finals. HOF leagues run their own parallel playoff track (Weeks 15-17, 1st place advances from the 1-14 pod). All prizes are guaranteed (GTD).',
+        answer: 'Weeks 1-14 — Regular season in your 10-team pod. Scoring is CUMULATIVE: your team stacks points every week, and the top 2 in your pod advance to the playoffs.\nWeek 15 — a fresh pod of 10, top 2 advance.\nWeek 16 — another fresh pod of 10, top 2 advance.\nWeek 17 — Finals pod plays for the grand prize.\n\nJackpot winners skip straight to the finals. HOF leagues run their own parallel playoff track (Weeks 15-17, 1st place advances from the 1-14 pod).',
       },
       {
         question: 'What can I win?',
-        answer: 'The guaranteed prize pool — shown as an example on the contest screen, and it only grows as more teams enter — pays out across the finals (1st place takes the biggest share), per-league winners, weekly top-scorer prizes, and a separate HOF bonus pool. Everything is paid in cash (USDC) to your account.',
+        answer: 'The guaranteed prize pool — shown as an example on the contest screen, and it only grows as more teams enter — pays out across the finals (1st place takes the biggest share), per-league winners, weekly top-scorer prizes, and a separate HOF bonus pool.',
       },
       {
         question: 'Are there weekly prizes?',
@@ -263,7 +263,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What payment methods are accepted?',
-        answer: 'Debit card, or pay directly with USDC on Base.',
+        answer: 'Debit card, PayPal, Venmo, Apple Pay, or pay directly with USDC on Base.',
       },
       {
         question: 'How do I get USDC on Base to pay with crypto?',
@@ -337,7 +337,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Who is behind Banana Best Ball?',
-        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021. We\'re passionate about combining fantasy sports with cutting-edge technology to create a more fair, liquid, and exciting experience.',
+        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021. We\'re passionate about combining fantasy sports with cutting-edge technology to create a more fun and exciting experience.',
       },
       {
         question: 'What makes SBS different?',

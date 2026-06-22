@@ -23,10 +23,10 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
   };
 
   return (
-    <div className="relative flex items-center justify-center py-10">
+    <div className="relative flex items-center justify-center py-4 sm:py-10">
       {/* Main Content - Centered card */}
       <div
-        className="relative glass-card rounded-3xl p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana"
+        className="relative glass-card rounded-3xl p-6 sm:p-10 max-w-3xl w-full ring-1 ring-banana/40 glow-banana"
       >
 
         {/* Top Left - Info button */}
@@ -79,7 +79,7 @@ export function ContestCard({ contest, onEnter, onDetails }: ContestCardProps) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-10">
+        <div className="flex flex-col sm:flex-row justify-center items-center gap-3 mt-6 sm:mt-10">
           <button
             onClick={onEnter}
             className="w-full sm:w-[200px] py-4 text-xl font-bold rounded-full border-2 border-banana bg-banana text-black transition-all duration-200 hover:brightness-110 hover:scale-105"

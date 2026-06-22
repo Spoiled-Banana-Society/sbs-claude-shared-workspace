@@ -142,7 +142,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className="w-full px-4 sm:px-8 lg:px-12 pt-16 flex flex-col min-h-[calc(100vh-64px)]">
+    <div className="w-full px-4 sm:px-8 lg:px-12 pt-4 sm:pt-16 pb-28 lg:pb-8 flex flex-col min-h-[calc(100vh-64px)]">
       {/* Get-the-App + First-Purchase nudges, in one responsive row: side by
           side on desktop, stacked on mobile, centered when only one shows.
           Each ×-dismissible. The First-Purchase promo CARD in the carousel

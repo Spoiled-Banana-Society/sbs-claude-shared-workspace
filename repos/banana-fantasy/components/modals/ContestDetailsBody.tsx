@@ -154,7 +154,7 @@ export function ContestDetailsBody({ contest }: { contest: Contest }) {
         </div>
         <p className="text-text-secondary text-xs mt-3 pt-3 border-t border-bg-elevated leading-relaxed">
           <span className="text-banana font-medium">{formatCurrency(contest.prizePool)} guaranteed minimum.</span>{' '}
-          The pool shown is an example. It grows as more teams enter. Enter as many drafts as you want. More teams, more paths to the playoffs.{' '}
+          The prize pool shown is an example. It grows as more teams enter. Enter as many drafts as you want. More teams, more paths to the playoffs.{' '}
           <span className="text-banana font-medium">1st and 2nd advance to the playoffs</span> for the grand prize.
         </p>
       </div>
