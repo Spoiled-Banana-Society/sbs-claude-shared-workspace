@@ -4,7 +4,7 @@ const fetch = require("node-fetch");
 
 admin.initializeApp();
 
-const DRAFTS_API_URL = "https://sbs-drafts-api-staging-652484219017.us-central1.run.app";
+const DRAFTS_API_URL = process.env.DRAFTS_API_URL || "https://sbs-drafts-api-staging-652484219017.us-central1.run.app";
 
 function stagingApiHeaders() {
   const headers = { "Content-Type": "application/json" };
