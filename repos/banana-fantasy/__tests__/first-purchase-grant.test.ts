@@ -61,6 +61,15 @@ describe('First-purchase bonus math', () => {
       expect(computeMintProgress(4, 10, 6)).toEqual({ progressCurrent: 10, milestonesEarned: 1 });
     });
 
+    it('does NOT double-count on the NEXT purchase after a full-bar landing (the extra-spin bug)', () => {
+      // After an exact-multiple landing, progressCurrent is stored as `max` (10)
+      // for the full-bar display. The next purchase must NOT re-count that
+      // already-earned milestone. Buying another 10 → exactly 1 more, not 2.
+      expect(computeMintProgress(10, 10, 10)).toEqual({ progressCurrent: 10, milestonesEarned: 1 });
+      // A partial buy from the full-bar state earns 0 (the 10 was a full cycle).
+      expect(computeMintProgress(10, 10, 3)).toEqual({ progressCurrent: 3, milestonesEarned: 0 });
+    });
+
     it('first-purchase and mint promo advance together off the SAME quantity', () => {
       const qty = 6;
       const firstPurchase = computeFirstPurchaseGrant(false, qty);

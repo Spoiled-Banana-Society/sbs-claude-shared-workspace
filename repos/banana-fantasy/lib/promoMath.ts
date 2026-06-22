@@ -81,8 +81,15 @@ export interface MintProgress {
  * multiple of `max` shows a full bar (max) rather than 0.
  */
 export function computeMintProgress(current: number, max: number, quantity: number): MintProgress {
-  const newTotal = (current || 0) + quantity;
-  const milestonesEarned = Math.floor(newTotal / max);
+  const safeCurrent = current || 0;
+  const newTotal = safeCurrent + quantity;
+  // Milestones crossed by THIS purchase = the DELTA. Subtracting
+  // Math.floor(safeCurrent / max) keeps the count correct even when `current`
+  // was previously stored as `max` (the full-bar display value we set on an
+  // exact-multiple landing). Without the subtraction, that stored `max`
+  // re-counted the already-awarded milestone and handed out an EXTRA spin on
+  // the next purchase (the "buy 10 sometimes gives an extra spin" bug).
+  const milestonesEarned = Math.floor(newTotal / max) - Math.floor(safeCurrent / max);
   const remainder = newTotal % max;
   const progressCurrent = milestonesEarned > 0 && remainder === 0 ? max : remainder;
   return { progressCurrent, milestonesEarned };

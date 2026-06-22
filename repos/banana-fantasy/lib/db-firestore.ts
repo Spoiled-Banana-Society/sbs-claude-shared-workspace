@@ -1135,7 +1135,11 @@ async function _incrementMintPromosInTx(
     const bbMax = buyBonusPromo.progressMax || 2;
     const bbCurrent = buyBonusPromo.progressCurrent || 0;
     const bbNewTotal = bbCurrent + quantity;
-    const bbNewlyEarned = Math.floor(bbNewTotal / bbMax);
+    // DELTA, not absolute — same fix as computeMintProgress. Subtracting
+    // Math.floor(bbCurrent / bbMax) prevents a stored `bbMax` (the full-bar
+    // value on an exact-multiple landing) from re-counting the already-awarded
+    // milestone and granting an extra bonus on the next purchase.
+    const bbNewlyEarned = Math.floor(bbNewTotal / bbMax) - Math.floor(bbCurrent / bbMax);
     const bbRemainder = bbNewTotal % bbMax;
     buyBonusPromo.progressCurrent = (bbNewlyEarned > 0 && bbRemainder === 0) ? bbMax : bbRemainder;
     if (bbNewlyEarned > 0) {
