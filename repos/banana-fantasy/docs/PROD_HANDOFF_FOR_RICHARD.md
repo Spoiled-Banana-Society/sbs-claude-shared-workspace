@@ -73,40 +73,46 @@ This is what makes prod identical to staging. Every value below was pulled live 
 
 ## 3.5 🔑 FRONTEND ENV-VAR PARITY CHECKLIST (Vercel `sbs-prod`) — AUTHORITATIVE
 
-> This is the **complete list of every env var STAGING (`banana-fantasy`) has set** (pulled live `2026-06-21` via `npx vercel env ls`). **Prod must have all of them.** The whole "make prod identical to staging" problem reduces to: set every var below on `sbs-prod`. **Default rule = COPY THE STAGING VALUE VERBATIM.** Only the vars flagged 🔶 or 🔐 get a different value. To re-pull the live list anytime: `cd ~/banana-fantasy && npx vercel env ls`.
+> This is the **complete list of every env var STAGING (`banana-fantasy`) has set** (pulled live `2026-06-21` via `npx vercel env ls`). **Prod must have all of them** *except the few marked ⏭️ DEAD/SKIP* (verified 0 code reads on 2026-06-21). The whole "make prod identical to staging" problem reduces to: set every var below on `sbs-prod`. **Default rule = COPY THE STAGING VALUE VERBATIM.** Only the vars flagged 🔶 or 🔐 get a different value. To re-pull the live list anytime: `cd ~/banana-fantasy && npx vercel env ls`. *Every line below was cross-checked against actual `process.env.*` reads in the code on 2026-06-21.*
 >
 > ⚠️ Do NOT set the 🔶 behavior/infra vars until the prod backend is deployed and its URLs exist — the frontend's fail-loud guards (`isProd()`) will (correctly) error otherwise. Flip `NEXT_PUBLIC_ENVIRONMENT=prod` **last**.
 
 **🔶 PROD-SPECIFIC — must point at prod infra / define the env (NEVER reuse the staging value):**
 - `NEXT_PUBLIC_ENVIRONMENT` → `prod` *(flip LAST)*
-- Firebase (all → `sbs-prod-env`): `NEXT_PUBLIC_PROJECT_ID`, `NEXT_PUBLIC_DATABASE_URL`, `NEXT_PUBLIC_AUTH_DOMAIN`, `NEXT_PUBLIC_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_APP_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_MESSAGING_SENDER_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`
-- Backend URLs (→ the new `-prod` services, set after they deploy): `NEXT_PUBLIC_STAGING_DRAFTS_API_URL`, `NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL`, and the legacy `NEXT_PUBLIC_DRAFTS_API_URL` / `NEXT_PUBLIC_DRAFT_SERVER_URL` / `NEXT_PUBLIC_SBS_API_URL` *(verify which are still read; set to prod URLs to be safe)*
+- Firebase (all → `sbs-prod-env`): `NEXT_PUBLIC_PROJECT_ID`, `NEXT_PUBLIC_DATABASE_URL`, `NEXT_PUBLIC_AUTH_DOMAIN`, `NEXT_PUBLIC_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_APP_ID`, `NEXT_PUBLIC_MESSAGING_SENDER_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`
+- Backend URLs (→ the new `-prod` services, set after they deploy). **Active (verified read):** `NEXT_PUBLIC_STAGING_DRAFTS_API_URL` (read in 39 files — the big one), `NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL`, `NEXT_PUBLIC_SBS_API_URL` (10 files). Also set `UPLOAD_BUCKET` (prod GCS bucket) — read by the upload route, not in staging Vercel because staging falls back to its default.
 - On-chain (prod contract + wallets): `NEXT_PUBLIC_BBB4_BATCH_PROOF_ADDRESS` (prod BBB4 contract), `BBB4_OWNER_PRIVATE_KEY` (prod hot wallet — server-only, NEVER `NEXT_PUBLIC`), `COLD_TREASURY_ADDRESS` (prod Gnosis Safe)
 - `ALCHEMY_WEBHOOK_SIGNING_KEY` → the signing key of the **prod** Alchemy Transfer webhook (see §3.6)
-- `WHEEL_JPHOF_MINT_PASS` → verify against prod wheel/merkle config (don't blind-copy if it encodes a staging round)
 
-**🔐 INTERNAL SHARED SECRETS — generate FRESH for prod, and set the SAME value on the prod backend (Cloud Run) where it's read. Don't reuse staging's:**
-- `ADMIN_API_KEY` (also on Go API + WS), `DRAFTS_API_SERVICE_KEY` (also on Go API — frontend 503s without it), `CRON_SECRET`, `NOTIFICATIONS_INTERNAL_SECRET`, `BOT_ADMIN_SECRET`, `NFT_REFRESH_SECRET`
+**⏭️ DEAD / SKIP — set in staging Vercel but 0 reads in current code (do NOT bother setting; they'd do nothing):**
+- `DRAFTS_API_SERVICE_KEY` — leftover from Caleb's reverted Go-auth layer; **not read anywhere now.** (Earlier drafts of this doc wrongly called it "critical / frontend 503s" — that was the reverted code. Ignore it unless/until the Go auth layer is re-enabled, at which point it'd go on both Go API + Vercel.)
+- `NEXT_PUBLIC_DRAFTS_API_URL`, `NEXT_PUBLIC_DRAFT_SERVER_URL` — legacy URL vars, superseded by the `…STAGING…` ones above (0 reads).
+- `NEXT_PUBLIC_FIREBASE_APP_ID` — duplicate of `NEXT_PUBLIC_APP_ID` (code reads `NEXT_PUBLIC_APP_ID`; this one is 0 reads).
+- `DISCORD_WEBHOOK_URL` — 0 reads in frontend (draft alerts deliver via `DISCORD_BOT_TOKEN`, not this); likely an ops/alert webhook. Copy only if you specifically use it.
+
+**🔐 INTERNAL SHARED SECRETS — generate FRESH for prod, and set the SAME value on the prod backend (Cloud Run) where the matching service reads it. Don't reuse staging's:**
+- `ADMIN_API_KEY` (also on Go API + WS), `CRON_SECRET`, `NOTIFICATIONS_INTERNAL_SECRET`, `BOT_ADMIN_SECRET`, `NFT_REFRESH_SECRET`
 
 **✅ COPY VERBATIM — external third-party service creds; the same account serves prod (this IS "exactly what staging is"):**
 - RPC/onchain: `NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL` *(Base — confirmed; reuse is fine. Optional: separate Alchemy app for prod to isolate rate limits)*, `NEXT_PUBLIC_OPENSEA_API_KEY`, `OPENSEA_API_KEY`, `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `CDP_API_KEY_ID`, `CDP_API_KEY_SECRET`
 - Auth: `PRIVY_APP_ID`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_APP_SECRET` — ⚠️ **see §3.6: the prod domain (sbsfantasy.com) MUST be added to the Privy app's allowed origins, or new-user login breaks** (this is the "private-gate / new-user email" bug — §7.5)
 - Email: `RESEND_API_KEY`, `POSTMARK_SERVER_TOKEN`, `EMAIL_FROM`
-- Notifications/social: `ONESIGNAL_REST_API_KEY`, `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `DISCORD_WEBHOOK_URL`, `NEXT_PUBLIC_DISCORD_INVITE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `TELEGRAM_WEBHOOK_SECRET`, `X_BEARER_TOKEN`
-- KYC (⚠️ point their webhooks at the prod domain — §3.6): `PERSONA_API_KEY`, `PERSONA_WEBHOOK_SECRET`, `NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID`, `NEXT_PUBLIC_PERSONA_TEMPLATE_ID_BASIC`, `NEXT_PUBLIC_PERSONA_TEMPLATE_ID_KYC`, `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_WORKFLOW_ID`
+- Draft-alert channels + social (Boris confirmed Discord/Telegram/email alerts are used): `ONESIGNAL_REST_API_KEY`, `NEXT_PUBLIC_ONESIGNAL_APP_ID`, `DISCORD_BOT_TOKEN` (delivers Discord alerts), `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` (the "Connect Discord" OAuth link — needs §3.6 redirect), `NEXT_PUBLIC_DISCORD_INVITE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `TELEGRAM_WEBHOOK_SECRET`, `X_BEARER_TOKEN`
+- KYC — **Didit is the ACTIVE provider** (`/api/verify/*`): `DIDIT_API_KEY`, `DIDIT_WEBHOOK_SECRET`, `DIDIT_WORKFLOW_ID` (⚠️ point the Didit webhook at the prod domain — §3.6). **Persona = legacy/inert** (server `PERSONA_API_KEY` is 0 reads; only a dormant modal/webhook remain): `PERSONA_WEBHOOK_SECRET`, `NEXT_PUBLIC_PERSONA_ENVIRONMENT_ID`, `NEXT_PUBLIC_PERSONA_TEMPLATE_ID_BASIC`, `NEXT_PUBLIC_PERSONA_TEMPLATE_ID_KYC` — copy for parity if you want, but **no Persona dashboard setup is needed** (Boris confirmed Persona isn't used).
+- Feature flag: `WHEEL_JPHOF_MINT_PASS` — simple on/off (`'1'` enables the wheel JP/HOF mint pass; off/unset otherwise). Copy staging's value verbatim; it does NOT encode any merkle round.
 - Support/observability: `CRISP_KEY`, `CRISP_IDENTIFIER`, `CRISP_TIER`, `SENTRY_AUTH_TOKEN`, `NEXT_PUBLIC_SENTRY_DSN`
 
-**Already set on `sbs-prod`** (per §1.B): `ADMIN_WALLET_ADDRESSES` + `NEXT_PUBLIC_ADMIN_WALLET_ADDRESSES`, `BBB4_COLLECTION_NAME`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `PRELAUNCH_MODE`, `PRELAUNCH_BYPASS_KEY`, `NEXT_PUBLIC_LAUNCH_AT`.
+**Already set on `sbs-prod`** (per §1.B): `ADMIN_WALLET_ADDRESSES` + `NEXT_PUBLIC_ADMIN_WALLET_ADDRESSES`, `BBB4_COLLECTION_NAME`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_APP_URL`, `PRELAUNCH_MODE`, `PRELAUNCH_BYPASS_KEY`, `NEXT_PUBLIC_LAUNCH_AT`. **Also set behavior flips at the end:** `PAYMENTS_ENABLED=true`, and leave `TEST_HELPERS_ENABLED` unset (faucet/bots stay off in prod). *(Optional allowlist extensions `NEXT_PUBLIC_RETURNING_WALLET_ADDRESSES` / `NEXT_PUBLIC_SWITCH_WALLET_ADDRESSES` are unset in staging too — leave unset; returning detection runs off `existing-players.json`, see §7.7.)*
 
-**Sanity gate before flipping `NEXT_PUBLIC_ENVIRONMENT=prod`:** `npx vercel env ls` on `sbs-prod` and diff the NAME set against staging's — every staging name must be present. A missing name = a silent fallback (e.g. Alchemy → public Base node → rate-limited on launch day). Missing-name is the failure mode, not wrong-value.
+**Sanity gate before flipping `NEXT_PUBLIC_ENVIRONMENT=prod`:** `npx vercel env ls` on `sbs-prod` and diff the NAME set against staging's — every staging name **except the ⏭️ DEAD ones** must be present. A missing name = a silent fallback (e.g. Alchemy → public Base node → rate-limited on launch day). Missing-name is the failure mode, not wrong-value.
 
 ## 3.6 🌐 EXTERNAL-SERVICE DOMAIN/WEBHOOK ALLOWLISTS (the non-env-var half)
 
 A few third-party services gate by **domain or webhook URL**, configured in *their* dashboard — copying the env var is necessary but not sufficient. At cutover, in each provider's console add/point to **sbsfantasy.com**:
 - **Privy** — add `sbsfantasy.com` to Allowed origins/domains (else new-user login silently fails — the §7.5 bug). Same app ID is fine *if* the domain is added; otherwise a separate prod Privy app.
 - **Alchemy** — create/point the **Transfer webhook** at the **prod contract + prod webhook URL** (`https://sbsfantasy.com/api/...`); its signing key → `ALCHEMY_WEBHOOK_SIGNING_KEY`. (Backstop only — `reconcilePasses` is source of truth — so not launch-blocking.)
-- **Persona / Didit (KYC)** — point their webhook URLs at the prod domain.
-- **Discord OAuth** — add the prod domain to the app's redirect URIs (if social login/link uses it).
+- **Didit (KYC — the active provider)** — point the Didit webhook at the prod domain. *(Persona = not used; skip.)*
+- **Discord** — add the prod domain to the app's OAuth2 redirect URIs, so the "Connect Discord" notification-link button works on the live site. *(Telegram bot linking is token-based, no redirect URI to set.)*
 - **WalletConnect** — add the prod domain to the project's allowlist if enforced.
 
 ---
@@ -145,7 +151,7 @@ How this satisfies the golden rules:
 3. **Deploy Go API** → new service `sbs-drafts-api-prod` from `~/sbs-drafts-api-deploy`, port 7070, timeout 300, **no VPC**, min1/max100, 1cpu/512Mi, with the Go API env vars (§3). Verify traffic → new revision + health (`/league/batchProgress` → 200).
 4. **Deploy WS** → `sbs-drafts-server-prod` from `~/SBS-Football-Drafts-main`, port 8000, timeout 3600, `--vpc-connector prod-drafts-vpc`, prod Redis, WS env vars (§3).
 5. **Deploy the 6 Functions** → `sbs-prod-env`.
-6. **Wire frontend prod env vars** (Vercel `sbs-prod`) to the new backend URLs + the rest: `NEXT_PUBLIC_STAGING_DRAFTS_API_URL`=new prod Go API, `NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL`=new prod WS, the **prod Firebase** vars (`NEXT_PUBLIC_PROJECT_ID`, `_DATABASE_URL`, `_AUTH_DOMAIN`, `_STORAGE_BUCKET`, `_FIREBASE_API_KEY`, `_APP_ID`, `_MESSAGING_SENDER_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`), `UPLOAD_BUCKET`, `DRAFTS_API_SERVICE_KEY`, and the behavior flips **last**: `NEXT_PUBLIC_ENVIRONMENT=prod` + `PAYMENTS_ENABLED=true` (leave `TEST_HELPERS_ENABLED` unset). *(Set the behavior flips only once the backend URLs are in, or prod's fail-loud guards will (correctly) fail.)*
+6. **Wire frontend prod env vars** (Vercel `sbs-prod`) to the new backend URLs + the rest: `NEXT_PUBLIC_STAGING_DRAFTS_API_URL`=new prod Go API, `NEXT_PUBLIC_STAGING_DRAFT_SERVER_URL`=new prod WS, the **prod Firebase** vars (`NEXT_PUBLIC_PROJECT_ID`, `_DATABASE_URL`, `_AUTH_DOMAIN`, `_STORAGE_BUCKET`, `_FIREBASE_API_KEY`, `_APP_ID`, `_MESSAGING_SENDER_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`), `UPLOAD_BUCKET`, `NEXT_PUBLIC_SBS_API_URL`, and the behavior flips **last**: `NEXT_PUBLIC_ENVIRONMENT=prod` + `PAYMENTS_ENABLED=true` (leave `TEST_HELPERS_ENABLED` unset). *(Set the behavior flips only once the backend URLs are in, or prod's fail-loud guards will (correctly) fail.)* **Full per-var checklist: §3.5.**
 7. **Contract** (Boris does the wallet part): new **hot EOA owner wallet** → key into `sbs-prod` Vercel `BBB4_OWNER_PRIVATE_KEY` (Sensitive) → fund with Base ETH → run the `deploy-bbb4v2` admin route (deploys "Banana Best Ball IV") → set `NEXT_PUBLIC_BBB4_CONTRACT` + `NEXT_PUBLIC_BBB4_BATCH_PROOF_ADDRESS` → set `COLD_TREASURY_ADDRESS` = a Gnosis Safe. **Owner MUST be a hot EOA (not the Safe)** — `reserveTokens` (every mint) is `onlyOwner` and auto-signed; a Safe can't auto-sign. The Safe is the **treasury** (skim cron sweeps the hot wallet → Safe).
 8. **VRF** — create + **fund (LINK)** the prod Chainlink subscriptions (draft + a separate wheel one); add the prod Merkle/wheel contracts as consumers (after contract deploy).
 9. **Rotate the leaked staging keys** (Phase 0): the staging Firebase SA is hardcoded in `lib/firebaseAdmin.ts` (`STAGING_SA_B64`) AND `.env.production` is committed → both leak it in git history. Rotate the SA in GCP, review `.env.production`, gitignore + untrack it. *(The code already guards prod from USING the staging SA; rotation closes the leak. Staging-blast-radius, not a prod blocker.)*
