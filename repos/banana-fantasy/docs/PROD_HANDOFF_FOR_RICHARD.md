@@ -157,7 +157,7 @@ Steps 1–6 (Redis → queue → backends → Functions → env vars) + the fron
 
 ## 7.6 ✅ Two staging features shipped this session — prod-ready (carry via the code at cutover)
 
-Both are on `main`, build-verified, staging-safe, and (being code) come to prod automatically when you build the prod frontend — **no separate prod work, just include them in the cutover whenever you build.** *(Boris is verifying both on staging; treat as good-to-ship once he confirms.)*
+Both are on `main`, build-verified, staging-safe, and (being code) come to prod automatically when you build the prod frontend — **no separate prod work, just include them in the cutover whenever you build.** *(✅ Boris checked both on staging — confirmed working & good. Cleared to ship to prod at the cutover.)*
 1. **Promo extra-spin fix** (`lib/promoMath.ts` + `lib/db-firestore.ts`): the "Buy 10 → Spin" and "buy-bonus" promos were awarding an **extra** spin/bonus on a purchase that followed an exact-multiple landing (the full-bar value `max` was stored and re-counted). Fixed by counting the milestone **delta**; added a regression unit test. Self-heals existing inflated progress going forward.
 2. **Promos "Activity" tab** (`components/profile/ActivityHistory.tsx` + `app/promos/page.tsx`): a real-time promo-history tab (after "Locked") showing spins won / promos claimed / passes bought / drafts won, timestamped. Reuses the existing profile activity feed (SSE) with a new `filterTypes` prop — no new data/infra, fully backward-compatible.
 
