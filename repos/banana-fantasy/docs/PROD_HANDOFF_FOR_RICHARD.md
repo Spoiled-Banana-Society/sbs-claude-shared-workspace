@@ -163,6 +163,45 @@ Both are on `main`, build-verified, staging-safe, and (being code) come to prod 
 
 ---
 
+## 7.7 🔁 RETURNING USERS + the OG BADGE — what must be in place (currently INCOMPLETE for prod)
+
+Returning-user recognition on first login (so they see the right UX + unlock the **OG badge**) depends on **data + detection** that is **not ready for prod**. Two gaps — both must be closed, or returning players (especially BBB1/BBB2-only and web2/Gmail) get the **new-user** experience and **never get the OG badge.**
+
+### Gap A — the returning-user data is EMPTY in prod → run the imports
+Detection reads two Firestore collections. **Verified 2026-06-21: both are EMPTY in `sbs-prod-env`** while staging has them populated:
+- **`web2_social_identities`** — email / X-handle ↔ old account (covers **web2 / Gmail** returning users). Populated by **`~/pull-web2-users.sh`**.
+- **`bbb3_holders`** — past NFT-holder snapshot. Populated by **`scripts/snapshot-bbb3-holders.mjs`**.
+
+→ **Run both imports pointed at prod.** The source is the old-prod user data (already in `sbs-prod-env`), but the *collections the returning-check reads* were only populated in staging. Without this, web2/Gmail returning users + all snapshot-based detection show as brand-new.
+*(The live on-chain check at login catches currently-held NFTs client-side, but the snapshot + `web2_social_identities` are what make detection reliable server-side — which is what the OG badge needs.)*
+
+### Gap B — detection is BBB3-ONLY; it must cover BBB1 + BBB2 + BBB3
+The returning check only knows the **BBB3** contract:
+```
+lib/returningUsers.ts:21  BBB3_CONTRACT_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7'   (Eth mainnet)
+```
+So a player who played **BBB1 or BBB2 but not BBB3 is NOT detected as returning** → new-user UX + **no OG badge.** The OG badge is exactly this:
+```
+lib/badges/awards.ts:28   Award the OG badge to returning players — anyone who played a past SBS season
+                          → unlockBadge(userId, 'og', { source: 'past-player' })
+```
+**To cover all past seasons (needed for the OG badge to be correct):**
+1. **Get the BBB1 + BBB2 contract addresses** (Eth mainnet, same shape as BBB3's). *(Boris has these.)*
+2. Extend the **client on-chain check** (`hooks/useAuth.tsx`) **and** the **server-side `isReturningWallet`** (`lib/returningUsers.ts`) to check **all three** contracts (BBB1 + BBB2 + BBB3).
+3. **Snapshot BBB1 + BBB2 holders** into Firestore (like `bbb3_holders`, via a BBB1/BBB2 version of `snapshot-bbb3-holders.mjs`) so server-side detection + the OG badge see them.
+*(This affects STAGING too — staging is also BBB3-only today — so building it on `main` fixes both, and it carries to prod with the code.)*
+
+### What ALREADY works (no code needed — only Gaps A/B)
+- **First-login surfaces** are all built + correctly gated: the **download-app banner** (every user, mobile + desktop), the **first-purchase promo** (returning BB players see it immediately — `promoFilter.ts:69`), and the **new-to-USDC web3 ping** (web3-login users). They just need detection to correctly flag returning-vs-new.
+- **The OG badge award path** (`awards.ts`) fires off returning status — so once Gap A (data) + Gap B (BBB1/2/3 coverage) are done, **OG unlocks for all past-season players automatically.**
+
+### Net for "returning users just work" in prod
+1. **Import** `web2_social_identities` + `bbb3_holders` into prod (Gap A).
+2. **Extend detection to BBB1 + BBB2 + BBB3** + snapshot those holders (Gap B — needs the two contract addresses from Boris).
+Until both are done, returning users are mis-flagged as new and miss the OG badge.
+
+---
+
 ## 8. ⚙️ WHAT RICHARD MUST SET UP so his Claude can help with prod
 
 Two separate guardrails block Claude from touching prod (both are intentional):
