@@ -138,22 +138,6 @@ export default function StandingsPage() {
 
   const { nicknames, setNickname } = useTeamNicknames();
 
-  // Have we gotten a FIRST definitive answer for the leagues query yet? Latches
-  // true once the first fetch cycle settles and never resets. The skeleton/empty
-  // toggle keys off THIS, not the constantly-flipping isValidating: for an account
-  // with no teams, mergedLeagues stays 0, so every background revalidation
-  // (focus / interval / stream refetch) used to bounce isValidating true→false and
-  // flip the UI skeleton↔empty = the flicker. We require a fetch to have actually
-  // started (isValidating seen true) before latching, so we never mark "resolved"
-  // in the brief gap after auth resolves but before the first fetch kicks off
-  // (which would flash the empty state).
-  const teamsFetchSeenRef = React.useRef(false);
-  const [teamsResolved, setTeamsResolved] = useState(false);
-  React.useEffect(() => {
-    if (leaguesQuery.isValidating) { teamsFetchSeenRef.current = true; return; }
-    if (teamsFetchSeenRef.current && !authLoading) setTeamsResolved(true);
-  }, [leaguesQuery.isValidating, authLoading]);
-
   const [viewMode, setViewMode] = useState<ViewMode>('myteams');
 
   // Switch to My Teams when auth loads (isLoggedIn starts false, becomes true after auth)
@@ -429,13 +413,14 @@ export default function StandingsPage() {
             </>
           )}
 
-          {/* Loading skeleton — show until the FIRST leagues answer settles
-              (teamsResolved). Deliberately NOT keyed on isValidating: that flips
-              on every background revalidation and, for a no-teams account, would
-              re-show the skeleton and flicker skeleton↔empty. The card-grid
-              skeleton matches the page so a refresh never flashes the empty state
-              before teams load. */}
-          {mergedLeagues.length === 0 && !teamsResolved && (
+          {/* Loading skeleton — show only when we don't YET have a leagues answer
+              (auth still rehydrating, or the query has no cached/resolved data).
+              Keyed on hasData (NOT isLoading/isValidating): hasData survives
+              navigation via the module cache, so entering this page from another
+              page — where the query already resolved — shows the empty/data state
+              immediately instead of flashing the skeleton. And it never flips back
+              to skeleton on a background revalidation (the old flicker). */}
+          {mergedLeagues.length === 0 && (authLoading || !leaguesQuery.hasData) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 sm:gap-5 mb-8">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="rounded-2xl overflow-hidden border border-white/[0.06] bg-white/[0.02]">
@@ -522,10 +507,10 @@ export default function StandingsPage() {
             </div>
           )}
 
-          {/* Empty state — once the first leagues answer has settled (teamsResolved)
-              and there are still no teams. Keyed on the latch, not isValidating, so a
-              background revalidation doesn't bounce this back to the skeleton. */}
-          {mergedLeagues.length === 0 && teamsResolved && (
+          {/* Empty state — once auth has resolved AND we have a real leagues answer
+              (hasData) that's still empty. Keyed on hasData so it shows instantly on
+              navigation (cached answer) and never bounces back to the skeleton. */}
+          {mergedLeagues.length === 0 && !authLoading && leaguesQuery.hasData && (
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center mb-8">
               <div className="text-4xl mb-4">🏈</div>
               <p className="text-white/50 font-medium mb-2">No teams yet</p>

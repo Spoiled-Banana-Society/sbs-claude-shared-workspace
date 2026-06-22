@@ -212,14 +212,27 @@ function timeAgo(iso: string): string {
 
 // ─── Hook ────────────────────────────────────────────────────────────────
 
+// Last-known notification list per wallet, kept at module scope so navigating
+// between pages (each a fresh useNotifications instance) shows the cached list
+// immediately instead of flashing the empty state before the refetch lands.
+const _notifCacheByWallet = new Map<string, Notification[]>();
+
 export function useNotifications() {
-  const { walletAddress } = useAuth();
+  const { walletAddress, isLoading: authLoading } = useAuth();
   const { show } = useToast();
   // Soft client-side navigation for toast "View" — a hard window.location
   // reload forced a full Privy re-hydration, which could bounce a freshly
   // logged-in account back to logged-out (caught by Boris 2026-06-10).
   const router = useRouter();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>(
+    () => _notifCacheByWallet.get(walletAddress ?? '') ?? [],
+  );
+  // True once the list has loaded for this wallet — seeded from the module cache
+  // so navigating back to the bell / notifications page (already fetched once)
+  // shows the list immediately instead of flashing "No notifications" first.
+  const [hasLoaded, setHasLoaded] = useState<boolean>(
+    () => _notifCacheByWallet.has(walletAddress ?? ''),
+  );
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
 
   // Current notification ids (kept in a ref) so markAllRead can flag them
@@ -307,6 +320,11 @@ export function useNotifications() {
         }
       }
       currentIdsRef.current = mapped.map((n) => n.id);
+      // We have a real answer now — cache it (survives navigation) and flag loaded
+      // BEFORE the unchanged-signature early-return below, so hasLoaded flips true
+      // even when a poll returns an identical list.
+      _notifCacheByWallet.set(w, mapped);
+      setHasLoaded(true);
 
       // Mobile poll-driven toast: iOS suspends the websocket, so the live
       // event stream (which normally drives toasts) barely reaches mobile.
@@ -361,7 +379,10 @@ export function useNotifications() {
   // pushNotification() helper. Deps: walletAddress only (stable scalar).
   useEffect(() => {
     _setNotificationWallet(walletAddress ?? null);
-    if (!walletAddress) { setNotifications([]); return; }
+    // No wallet: clear. Only flag "loaded" once auth has actually resolved to
+    // logged-out — during the brief auth-rehydrate window we keep hasLoaded false
+    // so a logged-in user sees a skeleton, not a "No notifications" flash.
+    if (!walletAddress) { setNotifications([]); if (!authLoading) setHasLoaded(true); return; }
     refetchRef.current();
     // Mobile PWAs suspend the realtime websocket, so live pings can be minutes
     // late there — poll tightly on mobile so the bell stays near-real-time
@@ -369,7 +390,7 @@ export function useNotifications() {
     const isMobile = typeof navigator !== 'undefined' && /iphone|ipad|ipod|android/i.test(navigator.userAgent);
     const poll = setInterval(() => refetchRef.current(), isMobile ? 5_000 : 30_000);
     return () => clearInterval(poll);
-  }, [walletAddress]);
+  }, [walletAddress, authLoading]);
 
   // Real-time: refetch on any user-event stream ping, coalesced to one refetch
   // per ~300ms burst (fast enough to feel instant, still storm-safe — the
@@ -530,7 +551,7 @@ export function useNotifications() {
     });
   }, []);
 
-  return { notifications: visible, unreadCount, markAsRead, markAllRead, addNotification, clearAll, prefs, toggleCategory };
+  return { notifications: visible, unreadCount, markAsRead, markAllRead, addNotification, clearAll, prefs, toggleCategory, hasLoaded };
 }
 
 // ─── Bell Icon Button ────────────────────────────────────────────────────

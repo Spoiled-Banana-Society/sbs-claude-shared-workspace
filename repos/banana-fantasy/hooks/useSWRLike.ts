@@ -34,6 +34,11 @@ export interface UseSWRLikeResult<T> {
   error: unknown;
   isLoading: boolean;
   isValidating: boolean;
+  /** True once a real answer exists — either cached from a prior fetch (survives
+   *  navigation via the module cache) or a completed fetch this mount. Lets a
+   *  consumer avoid flashing a skeleton when the data is already known (e.g.
+   *  navigating back to a page whose query resolved earlier). */
+  hasData: boolean;
   mutate: () => Promise<void>;
   usingMockData: boolean;
 }
@@ -74,6 +79,10 @@ export function useSWRLike<T>(
   const [data, setData] = useState<T>(() => (cached?.data ?? null) ?? options.fallbackData);
   const [error, setError] = useState<unknown>(() => cached?.error ?? null);
   const [isValidating, setIsValidating] = useState<boolean>(false);
+  // True once we have a real answer. Seeds from the module/localStorage cache so
+  // a navigation back to this page (cache already populated) is hasData=true on
+  // the very first render — no skeleton flash before the empty/data state.
+  const [hasData, setHasData] = useState<boolean>(() => cached != null);
 
   const isFirstLoadRef = useRef(true);
   const controllerRef = useRef<AbortController | null>(null);
@@ -106,11 +115,13 @@ export function useSWRLike<T>(
       }
       setData(next);
       setError(null);
+      setHasData(true);
     } catch (err) {
       if (ctrl.signal.aborted) return;
       cache.set(key, { data: fallbackRef.current, error: err, updatedAt: Date.now() });
       setData(fallbackRef.current);
       setError(err);
+      setHasData(true); // a completed (if failed) fetch still means we have an answer
     } finally {
       if (controllerRef.current === ctrl) {
         controllerRef.current = null;
@@ -170,6 +181,7 @@ export function useSWRLike<T>(
     error,
     isLoading,
     isValidating,
+    hasData,
     mutate: runFetch,
     usingMockData,
   };
