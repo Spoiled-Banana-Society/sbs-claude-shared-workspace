@@ -163,42 +163,51 @@ Both are on `main`, build-verified, staging-safe, and (being code) come to prod 
 
 ---
 
-## 7.7 🔁 RETURNING USERS + the OG BADGE — what must be in place (currently INCOMPLETE for prod)
+## 7.7 🔁 RETURNING USERS + the OG BADGE — what must be in place for prod
 
-Returning-user recognition on first login (so they see the right UX + unlock the **OG badge**) depends on **data + detection** that is **not ready for prod**. Two gaps — both must be closed, or returning players (especially BBB1/BBB2-only and web2/Gmail) get the **new-user** experience and **never get the OG badge.**
+> **⚠️ CORRECTION — ignore any earlier "BBB1 / BBB2 / BBB3 contract" thread.** An earlier draft asked for BBB1 + BBB2 contract addresses and a holder-snapshot to extend detection. **That work is NOT needed and should be ignored.** All-seasons wallet detection + the OG badge already work in the code (see below). **The ONLY returning-users task for prod is the one web2 email/Google mirror in the "⚠️ The ONE real gap" section** — a single script, run once at cutover.
 
-### Gap A — the returning-user data is EMPTY in prod → run the imports
-Detection reads two Firestore collections. **Verified 2026-06-21: both are EMPTY in `sbs-prod-env`** while staging has them populated:
-- **`web2_social_identities`** — email / X-handle ↔ old account (covers **web2 / Gmail** returning users). Populated by **`~/pull-web2-users.sh`**.
-- **`bbb3_holders`** — past NFT-holder snapshot. Populated by **`scripts/snapshot-bbb3-holders.mjs`**.
+Returning-user recognition on first login (right UX + the **OG badge**) is **mostly already handled in the code** and carries to prod automatically. There is **ONE real prod data gap** (web2/email identities). Read this carefully — an earlier draft of this doc overstated the work; the correction is below.
 
-→ **Run both imports pointed at prod.** The source is the old-prod user data (already in `sbs-prod-env`), but the *collections the returning-check reads* were only populated in staging. Without this, web2/Gmail returning users + all snapshot-based detection show as brand-new.
-*(The live on-chain check at login catches currently-held NFTs client-side, but the snapshot + `web2_social_identities` are what make detection reliable server-side — which is what the OG badge needs.)*
-
-### Gap B — detection is BBB3-ONLY; it must cover BBB1 + BBB2 + BBB3
-The returning check only knows the **BBB3** contract:
+### ✅ All-seasons coverage already ships in the code (BBB1 + BBB2 + BBB3)
+Detection is **NOT BBB3-only.** The backbone is a bundled wallet snapshot of **every player from every Banana Best Ball season (2022 → 2025)** — BBB1, BBB2, BBB3 included:
 ```
-lib/returningUsers.ts:21  BBB3_CONTRACT_ADDRESS = '0x2BfF6f4284774836d867CEd2e9B96c27aAee55B7'   (Eth mainnet)
+lib/data/existing-players.json     1,745 wallets, all seasons   (a CODE file — ships to prod with the repo)
+lib/returningUsers.ts:65           PAST_PLAYER_SET  ← built from that file
+lib/returningUsers.ts:73           isPastPlayer()   ← checks PAST_PLAYER_SET
+lib/returningUsers.ts:87           isReturningWalletSync()  ← allowlist OR PAST_PLAYER_SET
+lib/badges/awards.ts:33            OG badge gates on isPastPlayer()  → unlockBadge(userId,'og')
 ```
-So a player who played **BBB1 or BBB2 but not BBB3 is NOT detected as returning** → new-user UX + **no OG badge.** The OG badge is exactly this:
-```
-lib/badges/awards.ts:28   Award the OG badge to returning players — anyone who played a past SBS season
-                          → unlockBadge(userId, 'og', { source: 'past-player' })
-```
-**To cover all past seasons (needed for the OG badge to be correct):**
-1. **Get the BBB1 + BBB2 contract addresses** (Eth mainnet, same shape as BBB3's). *(Boris has these.)*
-2. Extend the **client on-chain check** (`hooks/useAuth.tsx`) **and** the **server-side `isReturningWallet`** (`lib/returningUsers.ts`) to check **all three** contracts (BBB1 + BBB2 + BBB3).
-3. **Snapshot BBB1 + BBB2 holders** into Firestore (like `bbb3_holders`, via a BBB1/BBB2 version of `snapshot-bbb3-holders.mjs`) so server-side detection + the OG badge see them.
-*(This affects STAGING too — staging is also BBB3-only today — so building it on `main` fixes both, and it carries to prod with the code.)*
+Because `existing-players.json` is bundled in the repo, **wallet-based returning detection + the OG badge already work in prod the moment the code deploys.** No BBB1/BBB2/BBB3 contract addresses needed, no holder snapshot to run, no code change.
+*(`BBB3_CONTRACT_ADDRESS` in `returningUsers.ts:21` is only a supplementary live on-chain check for someone who acquired a BBB3 NFT *after* the snapshot was frozen. Bonus, not the backbone.)*
 
-### What ALREADY works (no code needed — only Gaps A/B)
-- **First-login surfaces** are all built + correctly gated: the **download-app banner** (every user, mobile + desktop), the **first-purchase promo** (returning BB players see it immediately — `promoFilter.ts:69`), and the **new-to-USDC web3 ping** (web3-login users). They just need detection to correctly flag returning-vs-new.
-- **The OG badge award path** (`awards.ts`) fires off returning status — so once Gap A (data) + Gap B (BBB1/2/3 coverage) are done, **OG unlocks for all past-season players automatically.**
+### ⚠️ The ONE real gap — web2/email identities are EMPTY in prod
+Web2/Gmail returning users get a **fresh Privy embedded wallet** that is NOT their old wallet, so the wallet snapshot can't match them. They're matched by email/handle via a flattened index in Firestore that login reads as `email:<lowercased>` / `x:<handle>` doc IDs (`app/api/users/returning-check/route.ts:171-180`):
+```
+web2_social_identities    ← email / X-handle ↔ old wallet.   VERIFIED 2026-06-21: EMPTY in sbs-prod-env
+```
+**Staging already has this collection, fully built and proven working.** The cleanest fix is to **mirror staging's finished collection into prod** rather than rebuild it from raw old-prod `socialUsers` (which is keyed differently and would have to be re-flattened — silent-failure risk if the key format is off by a space/case).
+
+→ **Run the ready script (DRY-RUN first, then `--go`):**
+```
+# from ~/banana-fantasy — supply the PROD service account, run prod write from your OWN shell (`!`)
+PROD_SA_B64=$(cat <prod-sa>.json | base64) node scripts/mirror-web2-identities-to-prod.mjs        # preview
+PROD_SA_B64=$(cat <prod-sa>.json | base64) node scripts/mirror-web2-identities-to-prod.mjs --go    # execute
+```
+The script copies staging `web2_social_identities` → prod **verbatim** (idempotent merge; hard-guards source==sbs-staging-env, dest==sbs-prod-env; data-only — writes one read-only-by-the-app collection, touches no accounts/money). ~503 docs.
+
+**Realistic expectation (X-login was removed — `providers/PrivyProvider.tsx:115`, Boris 2026-06-20):** of the 503 old web2 users, **~346 logged in with Google/email** and carry an email → they match on return and get returning UX + OG badge. The **~157 X-only** users have **no email on file** and X is no longer a login method, so they **cannot be auto-detected** when they sign up fresh with Gmail. That's an inherent consequence of removing X login — **identical in staging today**, not a mirror bug. The `x:` docs are still copied (harmless; login simply never reads them) in case X-link matching is wired in later.
+
+*(`bbb3_holders` is also empty in prod but is redundant — `existing-players.json` already covers BBB3 wallets. Importing it is optional belt-and-suspenders, not required.)*
+
+### What ALREADY works (no code needed)
+- **Wallet-based returning detection + OG badge** — covered by `existing-players.json` (all seasons), in the code. ✅
+- **First-login surfaces** — download-app banner (all users, mobile + desktop), first-purchase promo (`promoFilter.ts:69`), new-to-USDC web3 ping (web3-login users). All built + correctly gated.
 
 ### Net for "returning users just work" in prod
-1. **Import** `web2_social_identities` + `bbb3_holders` into prod (Gap A).
-2. **Extend detection to BBB1 + BBB2 + BBB3** + snapshot those holders (Gap B — needs the two contract addresses from Boris).
-Until both are done, returning users are mis-flagged as new and miss the OG badge.
+1. **Code deploy alone** → every wallet-based past player (BBB1/2/3) is detected + gets the OG badge. Nothing to do.
+2. **One mirror** → run `scripts/mirror-web2-identities-to-prod.mjs --go` once at cutover so web2 Google/email returning users are recognized too.
+That's it — **no contract addresses, no new detection code, no rebuild.**
 
 ---
 
