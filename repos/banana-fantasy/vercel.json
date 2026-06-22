@@ -15,10 +15,6 @@
       "schedule": "*/2 * * * *"
     },
     {
-      "path": "/api/crons/skim-bbb4-usdc",
-      "schedule": "0 * * * *"
-    },
-    {
       "path": "/api/crons/sync-cloud-errors",
       "schedule": "*/5 * * * *"
     },

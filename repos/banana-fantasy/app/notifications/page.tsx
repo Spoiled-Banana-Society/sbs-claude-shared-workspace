@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNotifications, type NotificationType, type NotificationCategory, CATEGORY_LABELS } from '@/components/NotificationCenter';
+import { useNotifications, type NotificationType } from '@/components/NotificationCenter';
 import { NotificationIcon } from '@/components/NotificationIcons';
 
 const TYPE_CONFIG: Record<NotificationType, { emoji: string; color: string; label: string }> = {
@@ -57,26 +57,20 @@ const fadeIn = {
   }),
 };
 
-type FilterKey = 'all' | 'unread' | NotificationType;
+type FilterKey = 'all' | 'unread';
 
 export default function NotificationsPage() {
-  const { notifications, unreadCount, markAsRead, markAllRead, prefs, toggleCategory } = useNotifications();
+  const { notifications, unreadCount, markAsRead, markAllRead, hasLoaded } = useNotifications();
   const [filter, setFilter] = useState<FilterKey>('all');
-  const [showPrefs, setShowPrefs] = useState(false);
 
-  const filtered = useMemo(() => {
-    if (filter === 'all') return notifications;
-    if (filter === 'unread') return notifications.filter(n => !n.read);
-    return notifications.filter(n => n.type === filter);
-  }, [notifications, filter]);
+  const filtered = useMemo(
+    () => (filter === 'unread' ? notifications.filter(n => !n.read) : notifications),
+    [notifications, filter],
+  );
 
   const filters: { key: FilterKey; label: string }[] = [
     { key: 'all', label: `All (${notifications.length})` },
     { key: 'unread', label: `Unread (${unreadCount})` },
-    { key: 'draft_starting', label: '🏈 Drafts' },
-    { key: 'promo', label: '🎁 Promos' },
-    { key: 'referral', label: '🔗 Referrals' },
-    { key: 'system', label: '📢 System' },
   ];
 
   return (
@@ -95,61 +89,18 @@ export default function NotificationsPage() {
               {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up 🍌'}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="px-3 py-1.5 bg-banana/10 text-banana text-xs font-bold rounded-lg hover:bg-banana/20 transition-colors"
-              >
-                Mark all read
-              </button>
-            )}
+          {unreadCount > 0 && (
             <button
-              onClick={() => setShowPrefs(!showPrefs)}
-              className={`p-1.5 rounded-lg transition-colors ${showPrefs ? 'bg-banana/20 text-banana' : 'bg-white/5 text-white/30 hover:bg-white/10 hover:text-white/50'}`}
-              title="Notification settings"
+              onClick={markAllRead}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-banana/10 text-banana text-xs font-bold rounded-lg border border-banana/20 hover:bg-banana/20 transition-colors"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
               </svg>
+              Mark all read
             </button>
-          </div>
+          )}
         </motion.div>
-
-        {/* Category Preferences */}
-        {showPrefs && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4"
-          >
-            <p className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-3">Notification Categories</p>
-            <div className="space-y-2">
-              {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => toggleCategory(cat)}
-                  className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-white/[0.04] transition-colors"
-                >
-                  <span className="text-sm text-white/70">
-                    {CATEGORY_LABELS[cat].emoji} {CATEGORY_LABELS[cat].label}
-                  </span>
-                  <div className={`w-9 h-5 rounded-full transition-colors relative ${prefs[cat] ? 'bg-banana' : 'bg-white/10'}`}>
-                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${prefs[cat] ? 'left-[18px]' : 'left-0.5'}`} />
-                  </div>
-                </button>
-              ))}
-            </div>
-            <Link
-              href="/profile?tab=notifications"
-              className="mt-3 flex items-center justify-between rounded-lg border border-banana/20 bg-banana/[0.06] px-3 py-2 text-sm text-banana hover:bg-banana/10 transition-colors"
-            >
-              <span>🔔 Draft alert channels — push, email, Telegram, Discord</span>
-              <span aria-hidden>→</span>
-            </Link>
-          </motion.div>
-        )}
 
         {/* Filters */}
         <motion.div
@@ -175,6 +126,20 @@ export default function NotificationsPage() {
 
         {/* Notification List */}
         <div className="space-y-1.5">
+          {!hasLoaded && notifications.length === 0 ? (
+            // Loading skeleton — never flash "No notifications" before the list loads
+            <div className="space-y-1.5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex gap-3 sm:gap-4 p-4 rounded-xl border border-white/[0.04] bg-white/[0.02]">
+                  <div className="w-9 h-9 rounded-full bg-white/[0.05] animate-pulse flex-shrink-0" />
+                  <div className="flex-1 min-w-0 space-y-2 py-1">
+                    <div className="h-3.5 w-1/3 bg-white/[0.06] rounded animate-pulse" />
+                    <div className="h-3 w-2/3 bg-white/[0.04] rounded animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <AnimatePresence mode="popLayout">
             {filtered.length === 0 ? (
               <motion.div
@@ -259,6 +224,7 @@ export default function NotificationsPage() {
               })
             )}
           </AnimatePresence>
+          )}
         </div>
       </div>
     </div>
