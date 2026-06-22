@@ -134,6 +134,35 @@ Steps 1–6 (Redis → queue → backends → Functions → env vars) + the fron
 
 ---
 
+## 7.5 🚨 CRITICAL: the new-user / Privy flow MUST work while prod is PRIVATE (the "lost-a-whole-day" bug)
+
+**This is the #1 thing to get right — it cost Boris a full day on staging, and it's *masked by the private gate*, so it's easy to miss until real users hit it.**
+
+**What happened (staging, June 2026):** with `PRELAUNCH_MODE=true` (private), `middleware.ts` `handlePrelaunch()` returned **404 for EVERY `/api/` route** for any caller without the `sbs_preview` bypass cookie. **Server-to-server callers have no cookie** → the notification webhooks (`onDraftFilled`/`onPickAdvance` Functions) and Vercel crons all 404'd → draft alerts, welcome notifications, and parts of the **new-user (Gmail/email) signup flow** silently broke. Browsers with the bypass cookie worked, so it looked fine in QA.
+
+**The fix is in code (carries to prod):** `handlePrelaunch` now lets authenticated server-to-server callers through BEFORE the blanket 404 — webhooks via `x-internal-secret === NOTIFICATIONS_INTERNAL_SECRET`, crons via `Authorization: Bearer ${CRON_SECRET}` or the `x-vercel-cron` header.
+
+**⚠️ Prod is ALSO private during QA/countdown — so this gate is active in prod. To avoid re-breaking it:**
+1. **Set `NOTIFICATIONS_INTERNAL_SECRET` and `CRON_SECRET` on the prod Vercel project.** The fix depends on them — if unset, webhooks/crons 404 behind the seal and new-user notifications + draft alerts silently die again.
+2. **The prod Firebase Functions must POST to the prod API with the `x-internal-secret` header** (mirror staging) so they clear the gate.
+3. **Any NEW internal/webhook `/api` route must carry one of those auth headers** or it 404s whenever prelaunch is on.
+
+**Plus the Privy social-login wallet resolution (fresh Gmail/email users):**
+- A brand-new social user's Privy embedded wallet appears a beat *after* login. `lib/auth.ts` re-resolves it via the Privy User API with a short negative-cache TTL so firstLogin/welcome-bell/username don't get stuck on a stale `null`. (In code → carries to prod.)
+- **Set `PRIVY_APP_SECRET` on EVERY backend that does auth** (Vercel + Go services), not just one — the User API fallback needs it, or social-login users 403. (`feedback_privy_social_login_fallback`.)
+
+**🔴 MUST-DO in the private QA pass (before flipping prod public):** test the **full new-user flow on prod behind the bypass key, on BOTH desktop and mobile, with a FRESH Gmail login.** Confirm: wallet resolves, the welcome bell + free-spin banner appear, username claims, and draft alerts fire. **It must work EXACTLY like staging does now.** This is exactly what broke before and is hidden by the private gate — so it's the single most important thing to verify.
+
+---
+
+## 7.6 ✅ Two staging features shipped this session — prod-ready (carry via the code at cutover)
+
+Both are on `main`, build-verified, staging-safe, and (being code) come to prod automatically when you build the prod frontend — **no separate prod work, just include them in the cutover whenever you build.** *(Boris is verifying both on staging; treat as good-to-ship once he confirms.)*
+1. **Promo extra-spin fix** (`lib/promoMath.ts` + `lib/db-firestore.ts`): the "Buy 10 → Spin" and "buy-bonus" promos were awarding an **extra** spin/bonus on a purchase that followed an exact-multiple landing (the full-bar value `max` was stored and re-counted). Fixed by counting the milestone **delta**; added a regression unit test. Self-heals existing inflated progress going forward.
+2. **Promos "Activity" tab** (`components/profile/ActivityHistory.tsx` + `app/promos/page.tsx`): a real-time promo-history tab (after "Locked") showing spins won / promos claimed / passes bought / drafts won, timestamped. Reuses the existing profile activity feed (SSE) with a new `filterTypes` prop — no new data/infra, fully backward-compatible.
+
+---
+
 ## 8. ⚙️ WHAT RICHARD MUST SET UP so his Claude can help with prod
 
 Two separate guardrails block Claude from touching prod (both are intentional):
