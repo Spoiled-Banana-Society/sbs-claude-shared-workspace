@@ -16,7 +16,7 @@ import type { Contest } from '@/types';
 type Tab = 'how' | 'contest' | 'faq';
 
 const HOW = [
-  { t: '10 Players', d: 'Join a lobby — the draft starts instantly when it fills.' },
+  { t: '10 Players', d: 'Join a lobby — the draft starts instantly when 10 people join.' },
   { t: 'Snake Draft', d: 'Fast (30s) or slow (8hr) picks — your choice.' },
   { t: 'Team Positions', d: 'Draft “DAL WR1” and each week you get the highest-scoring Dallas wide receiver. CeeDee scores 22? You get 22. Pickens drops 30? You get 30 — always the top performer.' },
   { t: 'Best Ball', d: 'No managing needed. Draft once, best scorers auto-selected weekly.' },
