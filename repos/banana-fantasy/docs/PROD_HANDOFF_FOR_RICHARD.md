@@ -157,7 +157,8 @@ How this satisfies the golden rules:
 9. **Rotate the leaked staging keys** (Phase 0): the staging Firebase SA is hardcoded in `lib/firebaseAdmin.ts` (`STAGING_SA_B64`) AND `.env.production` is committed → both leak it in git history. Rotate the SA in GCP, review `.env.production`, gitignore + untrack it. *(The code already guards prod from USING the staging SA; rotation closes the leak. Staging-blast-radius, not a prod blocker.)*
 10. **Seed `playerStats2026`** into prod Firestore (the new app already reads this collection).
 11. **Reset the draft counter** for a clean `#1` (staging has a `/staging/reset-draft-counter` route; prod equivalent).
-12. **Private QA** behind `PRELAUNCH_BYPASS_KEY` (mobile + desktop): mint → join → draft → admin loads → returning-vs-new-user check works. **Then flip `PRELAUNCH_MODE=false`.**
+12. **Mirror web2 returning-user identities into prod** — run `scripts/mirror-web2-identities-to-prod.mjs --go` once (Boris supplies the prod SA; full detail in §7.7). Without it, web2/Gmail returning players are mis-flagged as brand-new and miss the OG badge. *(Wallet-based returning detection + OG badge already work from the code — this only adds the email/Google matches.)*
+13. **Private QA** behind `PRELAUNCH_BYPASS_KEY` (mobile + desktop): mint → join → draft → admin loads → returning-vs-new-user check works (test a known web2 returner from step 12). **Then flip `PRELAUNCH_MODE=false`.**
 
 ### ALSO NEEDED (don't forget these — they complete the full picture)
 - **Deploy the prod FRONTEND itself.** The current `sbs-prod` deploy is just the countdown. To get the real app onto `sbs-prod`, push the code to the **`production` branch** → `sbs-prod` rebuilds with the full app. It stays **private** because `PRELAUNCH_MODE=true` is still set. Do this *after* the prod env vars (step 6) are in, so the build has correct config. (This is what carries ALL the code changes from §2 into prod.)
