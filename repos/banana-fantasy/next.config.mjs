@@ -34,6 +34,20 @@ const nextConfig = {
         hostname: '*.vercel.app',
         pathname: '/api/og/**',
       },
+      {
+        // Same og card images when the build serves the custom launch domain
+        // (NEXT_PUBLIC_SITE_URL=https://sbsfantasy.com → og URLs point here).
+        // Without these the optimizer 400s every card → black marketplace tiles.
+        protocol: 'https',
+        hostname: 'sbsfantasy.com',
+        pathname: '/api/og/**',
+      },
+      {
+        // www + staging.sbsfantasy.com (same build, custom subdomains).
+        protocol: 'https',
+        hostname: '**.sbsfantasy.com',
+        pathname: '/api/og/**',
+      },
     ],
   },
   async redirects() {
