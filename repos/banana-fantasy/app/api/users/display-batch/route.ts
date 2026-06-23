@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { getUserDisplayBatch } from '@/lib/db';
+import { getUserDisplayBatch, healUserPfpFromLegacy } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { Ripeness } from '@/types';
 import { bananaDefaultName } from '@/utils/helpers';
@@ -112,9 +112,19 @@ export async function POST(req: Request) {
     const goApiResults = await Promise.all(needsGoApi.map(async w => {
       const pfp = await fetchGoApiPfp(w);
       const dn = pfp?.displayName?.trim();
+      const imageUrl = pfp?.imageUrl || null;
+      // Heal-on-read: cache this legacy Go-API pfp into v2_users so the NEXT
+      // load reads it from Firestore (fast/reliable) instead of re-hitting the
+      // flaky Go API every time — the root cause of avatars flickering back to
+      // the banana. Awaited (not fire-and-forget) so the write finishes inside
+      // this serverless request; a post-response promise isn't guaranteed to
+      // run on Vercel. try/catch so a heal failure never breaks the batch.
+      if (imageUrl) {
+        try { await healUserPfpFromLegacy(w, imageUrl); } catch { /* next load retries Go API */ }
+      }
       return [w, {
         displayName: dn && dn.toLowerCase() !== w ? dn : null,
-        imageUrl: pfp?.imageUrl || null,
+        imageUrl,
       }] as const;
     }));
     const goApiData = Object.fromEntries(goApiResults);

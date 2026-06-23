@@ -3593,6 +3593,32 @@ export async function getUserDisplayBatch(userIds: string[]): Promise<Record<str
   return out;
 }
 
+/**
+ * Heal-on-read: persist a legacy Go-API pfp into v2_users so future
+ * display-batch reads hit the fast/reliable Firestore source instead of the
+ * flaky Go API `/owner/{wallet}` call. Only ever called for wallets that had NO
+ * v2_users.profilePicture (display-batch's fallback condition). Safe to write
+ * unconditionally: profile EDITS now also mirror the pfp into v2_users (see
+ * /api/user/metadata), and every edit updates the Go API too, so the Go value
+ * is never staler than v2 — healing it in is idempotent for current users and
+ * a one-time backfill for legacy ones. No frozen-avatar risk.
+ *
+ * merge:true never disturbs other fields. A partial doc (pfp but no username)
+ * is fine: ensureUserSeeded keys on `username`, not doc existence, so the user
+ * is still fully seeded on their first real login (same as the badges/activity
+ * co-located merge-writers). Fire-and-forget at the call site — a failed heal
+ * just means the next load re-tries the Go API, never a broken response.
+ */
+export async function healUserPfpFromLegacy(userId: string, profilePicture: string): Promise<void> {
+  const pfp = (profilePicture || '').trim();
+  if (!pfp) return;
+  const db = getAdminFirestore();
+  await db.collection(USERS_COLLECTION).doc(userId.toLowerCase()).set(
+    { profilePicture: pfp },
+    { merge: true },
+  );
+}
+
 // ── Persona Verification ──────────────────────────────────────────────
 
 export interface VerifiedIdentityAddress {

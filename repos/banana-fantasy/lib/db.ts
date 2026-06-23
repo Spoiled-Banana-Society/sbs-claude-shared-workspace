@@ -58,5 +58,6 @@ export const equipBadge = db.equipBadge;
 export const computeAndStoreRipeness = db.computeAndStoreRipeness;
 export const getEquippedBadgesBatch = db.getEquippedBadgesBatch;
 export const getUserDisplayBatch = db.getUserDisplayBatch;
+export const healUserPfpFromLegacy = db.healUserPfpFromLegacy;
 export const incrementMintPromos = db.incrementMintPromos;
 export const incrementReferralPromos = db.incrementReferralPromos;

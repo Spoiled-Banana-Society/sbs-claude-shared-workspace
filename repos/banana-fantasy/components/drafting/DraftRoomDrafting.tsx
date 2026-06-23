@@ -520,6 +520,7 @@ export function DraftRoomDrafting({
                   draftOrder={engine.draftOrder}
                   rosters={engine.rosters}
                   picks={engine.picks}
+                  playerStatsById={engine.playerStatsById}
                   userDraftPosition={engine.userDraftPosition}
                   initialPlayer={rosterViewPlayer}
                   userProfilePicture={user?.profilePicture ?? undefined}
@@ -642,15 +643,21 @@ export function DraftRoomDrafting({
                   {(() => {
                     const userRoster = engine.rosters[viewedName];
                     const positionKeys = ['QB', 'RB', 'WR', 'TE', 'DST'] as const;
-                    // Build a lookup for pick details (bye, adp, pick#) from static data
-                    // Use ALL_POSITIONS (never mutated) instead of engine.availablePlayers (which removes picked players)
+                    // Build a lookup for pick details (bye, adp, pick#).
+                    // ADP/bye come from engine.playerStatsById — the LIVE server
+                    // values (same source as the available list + results page),
+                    // which include already-picked players. Fall back to the
+                    // static ALL_POSITIONS only if the live map lacks the id
+                    // (e.g. before the server payload arrives). This is the fix
+                    // for the roster panel showing a stale hardcoded ADP.
                     const pickLookup: Record<string, { bye: number; adp: number; pick: number }> = {};
                     for (const p of engine.picks) {
                       if (p.ownerIndex === engine.userDraftPosition) {
+                        const live = engine.playerStatsById?.[p.playerId];
                         const player = ALL_POSITIONS.find(ap => ap.playerId === p.playerId);
                         pickLookup[p.playerId] = {
-                          bye: player?.byeWeek || 0,
-                          adp: player?.adp || player?.rank || 0,
+                          bye: live?.byeWeek ?? player?.byeWeek ?? 0,
+                          adp: live?.adp ?? player?.adp ?? player?.rank ?? 0,
                           pick: p.pickNumber || 0,
                         };
                       }

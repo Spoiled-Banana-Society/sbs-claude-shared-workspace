@@ -1087,6 +1087,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         if (updates.profilePicture && updates.profilePicture !== prev.profilePicture) {
           updateOwnerPfpImage(prev.walletAddress, updates.profilePicture).catch(() => {});
+          // ALSO mirror the pfp into v2_users so the draft-room board/roster read
+          // it from the fast/reliable Firestore source (display-batch) instead of
+          // the flaky Go API. Keeps the avatar current on every edit → never
+          // stale or frozen. Best-effort like the Go sync above.
+          fetch('/api/user/metadata', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: prev.walletAddress,
+              profilePicture: updates.profilePicture,
+            }),
+          }).catch(() => {});
         }
         // nflTeam lives in v2_users (Go API doesn't model it). Sync via
         // /api/user/metadata so it survives logout.

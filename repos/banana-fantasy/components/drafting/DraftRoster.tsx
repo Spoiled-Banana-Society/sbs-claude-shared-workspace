@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { POSITION_COLORS, ALL_POSITIONS } from '@/lib/draftRoomConstants';
 import type { PositionRoster, DraftPick } from '@/lib/draftRoomConstants';
-import type { DraftPlayer } from '@/hooks/useDraftEngine';
+import type { DraftPlayer, PlayerStat } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { getTruncatedAccountName } from '@/utils/helpers';
 
@@ -11,6 +11,9 @@ interface DraftRosterProps {
   draftOrder: DraftPlayer[];
   rosters: Record<string, PositionRoster>;
   picks: DraftPick[];
+  /** Live ADP/bye/rank per player from the engine (server source). Preferred
+   *  over the static ALL_POSITIONS so the roster tab never shows a stale ADP. */
+  playerStatsById?: Record<string, PlayerStat>;
   userDraftPosition: number;
   initialPlayer?: string; // Pre-select a specific player's roster
   userProfilePicture?: string;
@@ -21,7 +24,7 @@ interface DraftRosterProps {
 
 const POSITION_KEYS: (keyof PositionRoster)[] = ['QB', 'RB', 'WR', 'TE', 'DST'];
 
-export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness }: DraftRosterProps) {
+export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness }: DraftRosterProps) {
   const [selectedPlayer, setSelectedPlayer] = useState(
     initialPlayer || draftOrder[userDraftPosition]?.name || draftOrder[0]?.name || ''
   );
@@ -56,7 +59,17 @@ export function DraftRoster({ draftOrder, rosters, picks, userDraftPosition, ini
   };
 
   const getPlayerData = (playerId: string) => {
-    return ALL_POSITIONS.find(p => p.playerId === playerId);
+    const base = ALL_POSITIONS.find(p => p.playerId === playerId);
+    // Prefer LIVE server ADP/bye/rank (matches the board + results page); fall
+    // back to the static baseline only when the live map lacks this id.
+    const live = playerStatsById?.[playerId];
+    if (!live) return base;
+    return {
+      ...(base ?? { playerId, team: '', position: '', playersFromTeam: [] as string[] }),
+      adp: live.adp,
+      rank: live.rank,
+      byeWeek: live.byeWeek,
+    };
   };
 
   return (

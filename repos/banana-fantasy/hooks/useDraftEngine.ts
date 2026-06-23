@@ -199,12 +199,28 @@ function generateDraftSummary(draftOrder: DraftPlayer[]): DraftSummarySlot[] {
   return slots;
 }
 
+/** Per-player ADP/bye/rank lookup. Live (server) values override the static
+ *  ALL_POSITIONS baseline — see `playerStatsById` below. */
+export type PlayerStat = { adp: number; byeWeek: number; rank: number };
+
+// Static baseline derived from the bundled ALL_POSITIONS file. Used only before
+// the server payload arrives (filling/local mode); replaced by live server data
+// in initializeFromServer so the roster panel never reads a stale hardcoded ADP.
+const STATIC_STATS_BY_ID: Record<string, PlayerStat> = Object.fromEntries(
+  ALL_POSITIONS.map((p) => [p.playerId, { adp: p.adp, byeWeek: p.byeWeek, rank: p.rank }]),
+);
+
 export function useDraftEngine(mode: DraftMode = 'local') {
   const [draftOrder, setDraftOrder] = useState<DraftPlayer[]>([]);
   const [userDraftPosition, setUserDraftPosition] = useState(0);
   const [picks, setPicks] = useState<DraftPick[]>([]);
   const [currentPickNumber, setCurrentPickNumber] = useState(1);
   const [availablePlayers, setAvailablePlayers] = useState<PlayerData[]>(ALL_POSITIONS);
+  // Live ADP/bye/rank for EVERY player (including already-picked ones), so the
+  // roster panel/tab show the SAME ADP as the live board + results page instead
+  // of the static ALL_POSITIONS file (which must be hand-regenerated and drifts).
+  // Seeded with the static baseline; overwritten by the server payload below.
+  const [playerStatsById, setPlayerStatsById] = useState<Record<string, PlayerStat>>(STATIC_STATS_BY_ID);
   const [queuedPlayers, setQueuedPlayers] = useState<PlayerData[]>([]);
   const [rosters, setRosters] = useState<Record<string, PositionRoster>>({});
   const [timeRemaining, setTimeRemaining] = useState(30);
@@ -371,6 +387,19 @@ export function useDraftEngine(mode: DraftMode = 'local') {
         playersFromTeam: p.stats.playersFromTeam || [],
       }));
     setAvailablePlayers(available);
+
+    // Build the live per-player stats map from the FULL ranking list (NOT the
+    // available-only filter above) — picked players carry an ownerAddress but
+    // still have their real stats here. This is the single source the roster
+    // views read ADP/bye from, so a picked player's ADP always matches the
+    // live board. Falls back to the static baseline for any id the server omits.
+    const liveStats: Record<string, PlayerStat> = { ...STATIC_STATS_BY_ID };
+    for (const p of playerRankings) {
+      const id = p.playerStateInfo.playerId || p.playerId;
+      if (!id) continue;
+      liveStats[id] = { adp: p.stats.adp, byeWeek: p.stats.byeWeek, rank: p.ranking.rank };
+    }
+    setPlayerStatsById(liveStats);
 
     // Build picks from summary — filter on playerId (not ownerAddress!) because the server
     // pre-populates ownerAddress for ALL 150 slots (assigned drafter), but only sets playerId
@@ -1091,6 +1120,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     draftOrder,
     userDraftPosition,
     availablePlayers,
+    playerStatsById,
     queuedPlayers,
     rosters,
     timeRemaining,
