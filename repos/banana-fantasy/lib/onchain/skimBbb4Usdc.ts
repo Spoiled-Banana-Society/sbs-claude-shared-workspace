@@ -27,7 +27,10 @@ import {
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
-const COLD_TREASURY_DEFAULT = '0xC0F982492c323Fcd314af56d6c1A35Cc9b0fC31E';
+// Withdrawal destination. The `COLD_TREASURY_ADDRESS` env var overrides this
+// (it's the authoritative source); the constant is the fallback. Richard's
+// chosen treasury (set 2026-06-22).
+const COLD_TREASURY_DEFAULT = '0xB726598Da099D31014222f2f60A944715D8a9327';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
 /** Thrown when env isn't configured (missing key / bad treasury). Carries an
