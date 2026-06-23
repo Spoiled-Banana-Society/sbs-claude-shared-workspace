@@ -5,6 +5,7 @@ import { savePersonaVerification } from '@/lib/db-firestore';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { isProd } from '@/lib/envGates';
 
 const DIDIT_WEBHOOK_SECRET = process.env.DIDIT_WEBHOOK_SECRET || '';
 
@@ -34,8 +35,16 @@ function verifyDiditSignature(
   timestampHeader: string,
 ): boolean {
   if (!DIDIT_WEBHOOK_SECRET) {
-    console.warn('[Didit Webhook] No webhook secret configured — verification skipped');
-    return true; // Fail-open in dev where secret isn't set
+    // FAIL CLOSED in prod: with no secret we can't verify Didit's signature, and
+    // accepting an unsigned body would let anyone POST a fake "KYC approved" for
+    // any wallet → bypass the withdrawal/KYC gate. Reject. (Local dev, where the
+    // secret legitimately isn't set, still fails open so KYC can be tested.)
+    if (isProd()) {
+      console.error('[Didit Webhook] No DIDIT_WEBHOOK_SECRET in PROD — REJECTING (cannot verify; unsigned KYC would be spoofable). Set the secret in the Vercel dashboard.');
+      return false;
+    }
+    console.warn('[Didit Webhook] No webhook secret configured — verification skipped (dev only)');
+    return true;
   }
 
   if (!signatureHeader || !timestampHeader) {
