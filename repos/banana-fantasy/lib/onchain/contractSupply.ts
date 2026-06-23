@@ -62,14 +62,21 @@ export async function currentMaxTokenId(): Promise<number> {
 
 /**
  * True if this token id is a real on-chain token: a CANONICAL integer id (no
- * leading zeros) in 1..supply+margin. Requiring the canonical form is what stops
+ * leading zeros) in 0..supply+margin. Requiring the canonical form is what stops
  * a leftover leading-zero ghost doc ("043") from being counted a SECOND time
  * alongside the real "43" — both pass the numeric range, only "43" is canonical.
+ *
+ * Floor is 0, NOT 1: this BBB4 contract was deployed WITHOUT reserving token #0
+ * (verified 2026-06-22: ownerOf(0) is a real drafter, not the owner wallet), so
+ * token #0 is a genuine player team — the first drafter of league #1. A `>= 1`
+ * floor silently dropped that team (9 of 10 shown). The canonical `String(n)===s`
+ * check still rejects "" (Number("")===0 but "0"!=="") and "00", so only the
+ * exact id "0" is accepted — no empty/ghost id leaks in.
  */
 export function isRealToken(tokenId: string | number, maxId: number): boolean {
   const s = String(tokenId).trim();
   const n = Number(s);
-  return Number.isInteger(n) && n >= 1 && n <= maxId && String(n) === s;
+  return Number.isInteger(n) && n >= 0 && n <= maxId && String(n) === s;
 }
 
 /**
@@ -78,8 +85,14 @@ export function isRealToken(tokenId: string | number, maxId: number): boolean {
  * sliced; those pass numeric range checks but collide with / get dropped against
  * the canonical "43" everywhere we key by id (marketplace_index, owner sets,
  * league ownership). Always run a decoded id through this so the same on-chain
- * token has exactly ONE key — keeping counts and team/pass status accurate. */
+ * token has exactly ONE key — keeping counts and team/pass status accurate.
+ *
+ * Token #0 is valid (see isRealToken — this contract didn't reserve it). We must
+ * still reject EMPTY/missing input: `Number('')` is 0 in JS, so a blank id would
+ * otherwise canonicalize to a fake "0". Guard the empty string explicitly first. */
 export function canonTokenId(raw: string | number | null | undefined): string | null {
-  const n = Number(String(raw ?? '').trim());
-  return Number.isInteger(n) && n > 0 ? String(n) : null;
+  const s = String(raw ?? '').trim();
+  if (s === '') return null; // empty / null / undefined = not a token (avoid Number('')===0)
+  const n = Number(s);
+  return Number.isInteger(n) && n >= 0 ? String(n) : null;
 }
