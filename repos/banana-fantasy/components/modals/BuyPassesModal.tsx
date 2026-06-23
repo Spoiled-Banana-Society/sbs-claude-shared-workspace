@@ -1084,7 +1084,7 @@ export function BuyPassesModal({
                 <div className="border-t border-bg-tertiary pt-2.5 flex items-center justify-between">
                   <span className="text-text-primary font-semibold">Total</span>
                   <span className="text-banana text-2xl font-bold tabular-nums">
-                    {paymentMethod === 'usdc' && usdcTotal ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
+                    {paymentMethod === 'usdc' && usdcTotal && !isWeb2 ? `${formatUnits(usdcTotal, 6)} USDC` : `$${totalPrice}`}
                   </span>
                 </div>
               </div>

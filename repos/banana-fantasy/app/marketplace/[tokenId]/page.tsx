@@ -2071,13 +2071,13 @@ export default function NftDetailPage() {
                     )}
                     <div>
                       <h3 className="text-text-primary font-semibold font-mono">{teamName}</h3>
-                      <p className="text-text-muted text-xs">Token #{tokenId}</p>
+                      <p className="text-text-muted text-xs">{isEmbeddedWallet ? '#' : 'Token #'}{tokenId}</p>
                     </div>
                   </div>
 
                   {/* Offer Amount */}
                   <div className="mb-4">
-                    <label className="block text-text-secondary text-sm mb-2">Your Offer (USDC)</label>
+                    <label className="block text-text-secondary text-sm mb-2">Your Offer{isEmbeddedWallet ? '' : ' (USDC)'}</label>
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted text-lg font-mono">$</span>
                       <input
@@ -2228,7 +2228,9 @@ export default function NftDetailPage() {
                     Submit Offer
                   </button>
                   <p className="text-center text-text-muted text-xs mt-3">
-                    Your USDC will be held in escrow until the offer is accepted or expires.
+                    {isEmbeddedWallet
+                      ? 'Your offer is held securely until it’s accepted or expires.'
+                      : 'Your USDC will be held in escrow until the offer is accepted or expires.'}
                   </p>
                 </div>
               </>
