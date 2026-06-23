@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWallets, useSignTypedData, useSendTransaction, type SignTypedDataParams } from '@privy-io/react-auth';
+import { useWallets, useSignTypedData, useSendTransaction, useConnectWallet, type SignTypedDataParams } from '@privy-io/react-auth';
 import {
   createPublicClient,
   encodeFunctionData,
@@ -91,6 +91,12 @@ function normalizeMintError(error: unknown): string {
 export function useMintDraftPass(): UseMintDraftPassResult {
   const { wallets, ready: walletsReady } = useWallets();
   const { walletAddress } = useAuth();
+  // Privy connect trigger — used ONLY to re-establish a mobile external wallet's
+  // WalletConnect signing session at mint time (PWA case: linked after SIWE login
+  // but no live session AND no injected provider). Ref-held (render-loop rule).
+  const { connectWallet } = useConnectWallet();
+  const connectWalletRef = useRef(connectWallet);
+  connectWalletRef.current = connectWallet;
   // Ref pattern (CLAUDE.md render-loop rule): keep the mint callback's deps to
   // stable values — `show` may churn per render and must not re-create `mint`.
   const { show } = useToast();
@@ -142,6 +148,10 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   walletsReadyRef.current = walletsReady;
   const selectedWalletRef = useRef(selectedWallet);
   selectedWalletRef.current = selectedWallet;
+  // Auth address in a ref so mint() can read it without taking walletAddress as a
+  // dep (keeps the callback stable — render-loop rule).
+  const walletAddressRef = useRef(walletAddress);
+  walletAddressRef.current = walletAddress;
 
   const onChainAddress = selectedWallet?.address ?? walletAddress;
 
@@ -208,21 +218,78 @@ export function useMintDraftPass(): UseMintDraftPassResult {
       setTxHash(null);
       setMintStep('idle');
 
-      // Wait briefly for the wallet to be ready rather than hard-failing on a
-      // transient. Reads the live refs so a stale captured `selectedWallet`
-      // (e.g. null right after the MoonPay detour on mobile) can't block a mint
-      // that's actually ready a beat later.
+      // Diagnostic backstop — captures the exact wallet state at mint entry so a
+      // mobile stall is pinpointable from the logs (no console needed).
+      clientLog('payment', 'mint_wallet_state', {
+        walletsReady: walletsReadyRef.current,
+        hasSelected: !!selectedWalletRef.current,
+        selectedType: selectedWalletRef.current?.walletClientType,
+        selectedAddr: selectedWalletRef.current?.address,
+      });
+
+      // Resolve a usable wallet OBJECT to sign with (not Privy's `ready` flag,
+      // which can stay false on mobile while a wallet exists). Wait briefly for
+      // useWallets() to populate.
       let activeWallet = selectedWalletRef.current;
-      if (!walletsReadyRef.current || !activeWallet) {
+      if (!activeWallet) {
         const readyStart = Date.now();
-        while (Date.now() - readyStart < 8000) {
+        while (Date.now() - readyStart < 6000) {
           await new Promise((r) => setTimeout(r, 250));
-          if (walletsReadyRef.current && selectedWalletRef.current) break;
+          if (selectedWalletRef.current) break;
         }
         activeWallet = selectedWalletRef.current;
       }
-      if (!walletsReadyRef.current || !activeWallet) {
-        const message = 'Wallet not ready — please wait a moment and try again.';
+
+      // Mobile fallback: the mobile login uses SIWE / WalletConnect, which
+      // AUTHENTICATES the user (sets walletAddress) but does NOT add a wallet to
+      // Privy's useWallets() — so on mobile MetaMask (in-app browser) activeWallet
+      // is null even though a usable injected provider (window.ethereum) is right
+      // there. Sign through it directly. (Root-caused 2026-06-22: mint_wallet_state
+      // logged walletsReady:true, hasSelected:false on every mobile attempt.)
+      const injected = typeof window !== 'undefined'
+        ? (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
+        : undefined;
+      if (!activeWallet && injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_injected_fallback', { addr: walletAddressRef.current });
+        activeWallet = {
+          address: walletAddressRef.current,
+          walletClientType: 'injected',
+          getEthereumProvider: async () => injected,
+        } as unknown as NonNullable<typeof activeWallet>;
+      }
+
+      // PWA / WalletConnect fallback: with NO injected provider (regular mobile
+      // browser or installed PWA — NOT MetaMask's in-app browser), the injected
+      // path above can't help. The wallet is linked but its WalletConnect signing
+      // session didn't survive SIWE login, so re-open the connect flow to
+      // re-establish it, then wait for the signer to appear.
+      //   SAFETY: only runs when there's STILL no wallet (no useWallets entry AND
+      //   no injected provider). Card / embedded / desktop / in-app-browser flows
+      //   all already have a wallet here → they never enter this block (zero
+      //   regression). If the user cancels or it can't connect, we fall through to
+      //   the same "wallet not connected" error below — never worse than today.
+      if (!activeWallet && walletAddressRef.current) {
+        clientLog('payment', 'mint_wc_reconnect_start', { hasInjected: !!injected });
+        try {
+          connectWalletRef.current();
+          const reconnectStart = Date.now();
+          while (Date.now() - reconnectStart < 30000) {
+            await new Promise((r) => setTimeout(r, 300));
+            if (selectedWalletRef.current) break;
+          }
+          activeWallet = selectedWalletRef.current;
+          clientLog('payment', 'mint_wc_reconnect_result', {
+            recovered: !!activeWallet,
+            walletType: activeWallet?.walletClientType ?? null,
+          });
+        } catch (e) {
+          clientLog('payment', 'mint_wc_reconnect_threw', { err: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      if (!activeWallet) {
+        clientLog('payment', 'mint_no_wallet', { hasInjected: !!injected, authAddr: walletAddressRef.current });
+        const message = 'Wallet not connected — please reconnect your wallet and try again.';
         setError(message);
         setMintStep('error');
         throw new Error(message);
@@ -476,7 +543,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         setIsMinting(false);
       }
     },
-    [publicClient, walletsReady, refreshContractState, selectedWallet]
+    [publicClient, refreshContractState, selectedWallet]
   );
 
   return {
