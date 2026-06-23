@@ -40,7 +40,13 @@ const DRAFT_PICK_COUNT = 150;
 // until REAL 2026 drafts complete, then evolves from those going forward.
 // A playerState doc's updateTime is the time of its final pick (it's never
 // written again once a draft completes), so it's a reliable "completed at".
-const ADP_CUTOFF = new Date("2026-06-20T08:00:00Z");
+//
+// Bumped 2026-06-23 12:10Z: the team finished pre-launch test drafting, so the
+// cutoff moved from the 06-20 seed-launch to "now". Every draft up to this
+// point (all of it test/bot traffic behind the prelaunch wall) is excluded;
+// ADP holds at the clean seed and only REAL drafts completed from here on
+// shape it. Richard's call — count from the very next draft onward.
+const ADP_CUTOFF = new Date("2026-06-23T12:10:00Z");
 
 // Same team / position keys prod uses (stat.js).
 const TEAMS = [
