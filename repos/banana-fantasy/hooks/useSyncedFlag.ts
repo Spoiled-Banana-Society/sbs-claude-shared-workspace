@@ -43,9 +43,18 @@ function loadState(wallet: string): Promise<void> {
       if (res.ok) {
         const json = await res.json();
         _state = (json.state as Record<string, FlagValue>) || {};
+        // Mark the store server-authoritative ONLY on a real 200. A failed/404
+        // read (e.g. cookieless mobile cold-start behind the prelaunch wall, or a
+        // network blip on app-resume) must NOT flip _loaded true with an EMPTY
+        // _state — that resolves every flag to its DEFAULT (onboardingComplete →
+        // false) and re-traps a user who already finished onboarding into the
+        // tutorial on every return-to-app. Leaving _loaded false keeps the read on
+        // the per-wallet cache, which holds their real value. (Root cause of the
+        // recurring "tutorial keeps popping up after I leave and come back" —
+        // surfaced when the site went private/walled. 2026-06-22.)
+        _loaded = true;
       }
-    } catch { /* degrade to cache/defaults */ }
-    _loaded = true;
+    } catch { /* network fail — keep _loaded/_state as-is; read falls back to cache */ }
     notify();
   })();
   // Clear when done so a later reload (focus / real-time ping) actually refetches.
