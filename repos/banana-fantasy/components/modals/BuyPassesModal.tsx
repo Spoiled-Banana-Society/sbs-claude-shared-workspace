@@ -415,6 +415,27 @@ export function BuyPassesModal({
     setCardPaymentCommitted(false); // re-arm each attempt; only the card path flips it true after payment
 
     if (paymentMethod === 'usdc') {
+      // Mobile MetaMask (external wallet) in Safari: signing the purchase over the
+      // SDK relay is unreliable AND shows an anonymous-origin "deceptive request"
+      // warning (the request shows a relay session id, not sbsfantasy.com). Hand
+      // off to MetaMask's OWN in-app browser, where the wallet is injected
+      // (reliable, no relay) and the request shows the real sbsfantasy.com origin
+      // → no scam warning, correct $25 cap. They do one quick injected connect
+      // there, then buy; /buy-drafts?buy=1 lands them straight back on this screen.
+      //   SCOPED TIGHT (zero regression): only external-wallet logins (email /
+      //   embedded users sign silently and must NOT be sent away), only on mobile,
+      //   and only when MetaMask is NOT already injected — so desktop extension
+      //   users and anyone already inside MetaMask's browser keep the normal flow.
+      //   Card payments never reach this branch. LOGIN is untouched.
+      const isMobileDevice = typeof navigator !== 'undefined' &&
+        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const injectedMetaMask = typeof window !== 'undefined' &&
+        !!(window as unknown as { ethereum?: { isMetaMask?: boolean } }).ethereum?.isMetaMask;
+      if (loggedInWithWallet && isMobileDevice && !injectedMetaMask && typeof window !== 'undefined') {
+        clientLog('payment', 'usdc_buy_deeplink_to_metamask', { wallet: walletAddress, quantity });
+        window.location.href = `https://metamask.app.link/dapp/${window.location.host}/buy-drafts?buy=1`;
+        return;
+      }
       try {
         // Pre-flight balance check (LIVE on-chain read each tap) — without it, a
         // user with too little USDC signs, the server transferFrom reverts, and

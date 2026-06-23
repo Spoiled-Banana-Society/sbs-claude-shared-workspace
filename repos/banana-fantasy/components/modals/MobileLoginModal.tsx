@@ -1,6 +1,7 @@
 'use client';
 import { logger } from '@/lib/logger';
 import { clientLog } from '@/lib/clientLog';
+import { setExternalSigner } from '@/lib/externalSigner';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -241,6 +242,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         walletClientType: 'metamask',
         connectorType: 'wallet_connect_v2',
       });
+      // Stash the proven MetaMask SDK provider so the mint flow can sign with it
+      // even after Privy's useWallets() drops the wallet on mobile (see externalSigner).
+      setExternalSigner(provider, address, 'metamask');
       mmMark('privy_login_complete');
 
       if (mmSettled) return;
@@ -277,7 +281,11 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   };
 
   // Coinbase Wallet / Base Account — use SDK directly (bypass Privy's connectWallet modal)
-  // Same pattern as MetaMask: SDK handles connection, then SIWE via Privy
+  // Same pattern as MetaMask: SDK handles connection, then SIWE via Privy.
+  // NOTE: temporarily not surfaced on mobile (button removed 2026-06-22) — kept
+  // intact so it can be cleanly re-added later. eslint-disable keeps the build
+  // green while it has no caller.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleCoinbaseLogin = () => {
     const provider = baseProviderRef.current;
     if (!provider) {
@@ -418,6 +426,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
           walletClientType: 'coinbase_wallet',
           connectorType: 'wallet_connect_v2',
         });
+        // Stash the proven Coinbase/Base provider for the mint flow (same reason
+        // as MetaMask above — Privy's useWallets() is empty on mobile SIWE).
+        setExternalSigner(provider, address, 'coinbase');
         cbMark('privy_login_complete');
 
         if (cbSettled) return;
@@ -542,14 +553,12 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
                 <span className="text-white text-[14px] font-medium">MetaMask</span>
               </button>
 
-              {/* Coinbase Wallet — direct Base Account SDK (no Privy modal) */}
-              <button
-                onClick={handleCoinbaseLogin}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06] active:bg-white/[0.08] transition-colors"
-              >
-                <Image src="/coinbase-wallet.png" alt="Coinbase Wallet" width={32} height={32} className="rounded-lg" />
-                <span className="text-white text-[14px] font-medium">Coinbase Wallet</span>
-              </button>
+              {/* Coinbase Wallet intentionally removed from mobile (2026-06-22):
+                  its mobile Safari flow has the same out-of-browser fragility as
+                  MetaMask but isn't a clean deeplink fix (its login uses Coinbase's
+                  Base Account passkey wallet, not the Coinbase Wallet app browser —
+                  deeplinking there risks an address mismatch). MetaMask-only on
+                  mobile for launch. Handler kept below for a future clean re-add. */}
             </div>
           )}
 

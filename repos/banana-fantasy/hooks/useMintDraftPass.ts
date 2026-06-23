@@ -23,6 +23,7 @@ import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { clientLog } from '@/lib/clientLog';
+import { connectMetaMaskFresh } from '@/lib/metamaskSigner';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useToast } from '@/components/ui/Toast';
 import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
@@ -250,6 +251,43 @@ export function useMintDraftPass(): UseMintDraftPassResult {
           walletClientType: 'injected',
           getEthereumProvider: async () => injected,
         } as unknown as NonNullable<typeof activeWallet>;
+      }
+
+      // Mobile MetaMask fresh-connect fallback (the main mobile case).
+      // On mobile, login signs in via MetaMask's SDK in one connect→sign burst
+      // over a LIVE relay (works), but Privy never registers it in useWallets()
+      // and there's no window.ethereum in a normal browser, so both paths above
+      // miss. Reusing the post-login provider FAILS: by purchase time the relay
+      // socket is dead (app backgrounded during login) and mobile Safari often
+      // reloaded the tab on return (root-caused 2026-06-22: `mint_started` fired
+      // but MetaMask opened with "nothing to approve" and the request hung).
+      // So establish a BRAND-NEW MetaMask connection right here — the same proven
+      // burst login uses — so the signature requested a moment later round-trips
+      // over a fresh, live relay.
+      //   SAFETY: only runs when there's STILL no wallet (no useWallets entry AND
+      //   no injected provider). Card / embedded / desktop / MetaMask-in-app-browser
+      //   flows all already have a wallet here → they never enter this block (zero
+      //   regression). On failure / address mismatch we fall through to the same
+      //   "reconnect" error below — never worse than today.
+      if (!activeWallet && !injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_mm_fresh_connect_start', {});
+        const fresh = await connectMetaMaskFresh();
+        const matches = !!fresh &&
+          fresh.address.toLowerCase() === walletAddressRef.current.toLowerCase();
+        clientLog('payment', 'mint_mm_fresh_connect_result', {
+          connected: !!fresh,
+          matches,
+          addr: fresh?.address ?? null,
+        });
+        if (fresh && matches) {
+          activeWallet = {
+            address: fresh.address,
+            // NOT 'privy' → routes through the external-wallet signing branch
+            // (getEthereumProvider → ensureBaseNetwork → eth_signTypedData_v4).
+            walletClientType: 'metamask',
+            getEthereumProvider: async () => fresh.provider,
+          } as unknown as NonNullable<typeof activeWallet>;
+        }
       }
 
       if (!activeWallet) {
