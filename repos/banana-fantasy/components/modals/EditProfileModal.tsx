@@ -26,14 +26,20 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
   const [checkingName, setCheckingName] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Initialize the form when the modal OPENS (or the account changes) — NOT on
+  // every background `user` refresh. The balance SSE swaps in a new `user`
+  // object every few seconds; depending on the whole `user` here meant each
+  // refresh reset the preview to the saved pfp, wiping an in-progress selection
+  // (= nothing, for a user with no pfp yet) ~1s after they picked an image.
   useEffect(() => {
-    if (user) {
+    if (isOpen && user) {
       setUsername(user.username);
       setProfilePicturePreview(user.profilePicture || null);
       setPendingFile(null);
       setNameError(null);
     }
-  }, [user]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, user?.id]);
 
   const authHeaders = useCallback(async (): Promise<HeadersInit> => {
     // Never throw on a not-yet-ready token — the wallet in the request body lets
