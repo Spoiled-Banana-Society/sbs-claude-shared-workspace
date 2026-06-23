@@ -76,8 +76,9 @@ export function BuyPassesModal({
   // close/reopen — the card path opens MoonPay externally and a remount
   // mid-flow used to wipe the user's progress indicator. See lib/purchaseFlow.ts.
   const flow = useSyncExternalStore(subscribePurchaseFlow, getPurchaseFlow, getPurchaseFlow);
-  const { quantity, flowStep, flowError, phase, mintedCount, joinError, isJoiningDraft } = flow;
+  const { quantity, flowStep, flowError, phase, mintedCount, joinError, isJoiningDraft, cardPaymentCommitted } = flow;
   const setQuantity = (q: number) => setPurchaseFlow({ quantity: q });
+  const setCardPaymentCommitted = (b: boolean) => setPurchaseFlow({ cardPaymentCommitted: b });
   const setFlowStep = (s: FlowStep) => setPurchaseFlow({ flowStep: s });
   const setFlowError = (e: string | null) => setPurchaseFlow({ flowError: e });
   const setPhase = (p: ModalPhase) => setPurchaseFlow({ phase: p });
@@ -411,6 +412,7 @@ export function BuyPassesModal({
     });
 
     setUsdcShortfall(null);
+    setCardPaymentCommitted(false); // re-arm each attempt; only the card path flips it true after payment
 
     if (paymentMethod === 'usdc') {
       try {
@@ -536,6 +538,11 @@ export function BuyPassesModal({
         setFlowStep('idle');
         return;
       }
+
+      // Payment is COMMITTED — the user has paid and USDC is inbound. From here
+      // on they are never out money: any error just means "finish from balance",
+      // so the error UI shows a reassuring notice instead of a scary failure.
+      setCardPaymentCommitted(true);
 
       // Confirm the USDC actually landed before minting — event-driven via the
       // on-chain Transfer subscription (instant once it settles), no polling.
@@ -971,11 +978,13 @@ export function BuyPassesModal({
                   </div>
                 )}
 
-                {flowStep === 'error' && mintPaymentPending ? (
-                  // Payment succeeded, delivery pending — reassure, don't alarm.
+                {flowStep === 'error' && (mintPaymentPending || cardPaymentCommitted) ? (
+                  // Payment is confirmed (card/PayPal charged, USDC inbound) — the
+                  // user is NOT out money even if the mint hiccupped. Reassure +
+                  // point them to the one-tap finish, never the scary error.
                   <div className="rounded-xl border border-banana/40 bg-banana/[0.08] px-4 py-3">
-                    <p className="text-banana font-semibold text-sm text-center">Payment received — pass on its way</p>
-                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">It will land in your account shortly.</p>
+                    <p className="text-banana font-semibold text-sm text-center">Payment received — your funds are in your wallet</p>
+                    <p className="text-text-secondary text-xs text-center mt-1 leading-relaxed">Your draft pass is on its way. If it&apos;s not there in a minute, tap Buy to finish — no new charge.</p>
                   </div>
                 ) : flowStep === 'error' && (flowError || mintError) ? (
                   <div className="text-sm text-red-400 text-center">

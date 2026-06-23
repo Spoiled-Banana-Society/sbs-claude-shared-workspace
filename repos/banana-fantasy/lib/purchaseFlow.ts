@@ -31,6 +31,11 @@ export interface PurchaseFlowState {
   joinError: string | null;
   isJoiningDraft: boolean;
   waitingForUsdcStartedAt: number | null;
+  /** Card/PayPal/Apple Pay payment has been CONFIRMED (the user paid and USDC is
+   *  inbound). Once true, the user is never out money — any later error just
+   *  means "finish from your balance", so we show a reassuring notice instead of
+   *  the alarming "something went wrong". Reset at the start of every attempt. */
+  cardPaymentCommitted: boolean;
 }
 
 const initialState: PurchaseFlowState = {
@@ -42,6 +47,7 @@ const initialState: PurchaseFlowState = {
   joinError: null,
   isJoiningDraft: false,
   waitingForUsdcStartedAt: null,
+  cardPaymentCommitted: false,
 };
 
 let state: PurchaseFlowState = { ...initialState };
