@@ -142,6 +142,10 @@ export function useMintDraftPass(): UseMintDraftPassResult {
   walletsReadyRef.current = walletsReady;
   const selectedWalletRef = useRef(selectedWallet);
   selectedWalletRef.current = selectedWallet;
+  // Auth address in a ref so mint() can read it without taking walletAddress as a
+  // dep (keeps the callback stable — render-loop rule).
+  const walletAddressRef = useRef(walletAddress);
+  walletAddressRef.current = walletAddress;
 
   const onChainAddress = selectedWallet?.address ?? walletAddress;
 
@@ -217,23 +221,39 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         selectedAddr: selectedWalletRef.current?.address,
       });
 
-      // We only need a usable WALLET OBJECT to sign — NOT Privy's `ready` flag.
-      // On mobile (esp. external MetaMask) `useWallets().ready` can stay false
-      // even when a perfectly usable wallet is present; gating on it left mobile
-      // users stuck in a silent wait → dead-feeling Buy button (caught 2026-06-22:
-      // logs showed mint() never reaching `mint_started`). So wait only for the
-      // wallet object to appear, then proceed — the signature step surfaces a
-      // clear error if the wallet genuinely isn't usable.
+      // Resolve a usable wallet OBJECT to sign with (not Privy's `ready` flag,
+      // which can stay false on mobile while a wallet exists). Wait briefly for
+      // useWallets() to populate.
       let activeWallet = selectedWalletRef.current;
       if (!activeWallet) {
         const readyStart = Date.now();
-        while (Date.now() - readyStart < 8000) {
+        while (Date.now() - readyStart < 6000) {
           await new Promise((r) => setTimeout(r, 250));
           if (selectedWalletRef.current) break;
         }
         activeWallet = selectedWalletRef.current;
       }
+
+      // Mobile fallback: the mobile login uses SIWE / WalletConnect, which
+      // AUTHENTICATES the user (sets walletAddress) but does NOT add a wallet to
+      // Privy's useWallets() — so on mobile MetaMask (in-app browser) activeWallet
+      // is null even though a usable injected provider (window.ethereum) is right
+      // there. Sign through it directly. (Root-caused 2026-06-22: mint_wallet_state
+      // logged walletsReady:true, hasSelected:false on every mobile attempt.)
+      const injected = typeof window !== 'undefined'
+        ? (window as unknown as { ethereum?: { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> } }).ethereum
+        : undefined;
+      if (!activeWallet && injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_injected_fallback', { addr: walletAddressRef.current });
+        activeWallet = {
+          address: walletAddressRef.current,
+          walletClientType: 'injected',
+          getEthereumProvider: async () => injected,
+        } as unknown as NonNullable<typeof activeWallet>;
+      }
+
       if (!activeWallet) {
+        clientLog('payment', 'mint_no_wallet', { hasInjected: !!injected, authAddr: walletAddressRef.current });
         const message = 'Wallet not connected — please reconnect your wallet and try again.';
         setError(message);
         setMintStep('error');
