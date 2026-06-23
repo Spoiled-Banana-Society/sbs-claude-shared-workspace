@@ -86,6 +86,14 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // attributes), exactly like `/api/og/`, so always allow.
   if (pathname.startsWith('/api/nft/')) return NextResponse.next();
 
+  // Webhook callbacks are PUBLIC endpoints (Alchemy on-chain transfers, Persona
+  // KYC) that external services POST to with NO cookie — but each route VERIFIES
+  // ITS OWN HMAC SIGNATURE and rejects anything unsigned (confirmed 2026-06-22:
+  // persona uses PERSONA_WEBHOOK_SECRET, alchemy uses x-alchemy-signature). So the
+  // wall is not their security; sealing them just drops legit signed events.
+  // Allow them through to their own auth, same as /api/og/.
+  if (pathname.startsWith('/api/webhooks/')) return NextResponse.next();
+
   // Internal server-to-server callers authenticate via a shared secret, NOT
   // the preview cookie — the public prelaunch seal must let them through or
   // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
