@@ -20,6 +20,7 @@ import { resolveTokenImage } from '@/lib/nftCardServer';
 import { bananaDefaultName } from '@/utils/helpers';
 import { isPlaceholderName } from '@/lib/api/owner';
 import { classifyToken } from '@/lib/nftPassClassify';
+import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +74,18 @@ export async function GET(req: Request) {
     }
 
     const listingsData = await listingsRes.json();
-    const orders: OpenSeaListing[] = listingsData.listings ?? [];
+    // The `bbb4-staging` OpenSea collection STILL contains the OLD pre-swap
+    // contract's tokens, so this collection-level endpoint returns old-contract
+    // orders too (ghost passes like #245/#176/#560 that don't exist on the current
+    // contract — only ids 0..supply do). Keep ONLY orders whose NFT contract is the
+    // CURRENT BBB4 contract. Precise + future-proof: an old token whose id later
+    // overlaps the new range still can't sneak in (different contract address).
+    const orders: OpenSeaListing[] = ((listingsData.listings ?? []) as OpenSeaListing[]).filter((o) => {
+      const nftOffer = o.protocol_data?.parameters?.offer?.find(
+        (item: { itemType: number }) => item.itemType === 2 || item.itemType === 3,
+      ) as { token?: string } | undefined;
+      return nftOffer?.token?.toLowerCase() === BBB4_CONTRACT.toLowerCase();
+    });
 
     // Extract token IDs from listings to batch-fetch NFT metadata
     const tokenIds = orders.map(o => {
@@ -225,9 +237,14 @@ export async function GET(req: Request) {
       ));
     }
 
-    // Deduplicate — keep only the first (most recent) listing per team
+    // Deduplicate — keep only the first (most recent) listing per team. ALSO drop
+    // any ghost/old-era token id (above the current contract supply): defense for
+    // the cache-overlay path, which carries only a tokenId (no contract address),
+    // so a stale pre-swap cached listing can't leak through as a buyable pass.
+    const maxId = await currentMaxTokenId();
     const seen = new Set<string>();
     const listings = allListings.filter(listing => {
+      if (!isRealToken(String(listing.tokenId), maxId)) return false;
       if (seen.has(listing.name)) return false;
       seen.add(listing.name);
       return true;
