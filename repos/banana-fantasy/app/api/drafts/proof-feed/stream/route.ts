@@ -352,8 +352,13 @@ async function getEarliestMerkleDraftNumber(db: FirebaseFirestore.Firestore): Pr
       .get();
     if (snap.empty) return null;
     const data = snap.docs[0].data() as { firstBatchNumber?: number };
-    if (!data.firstBatchNumber) return null;
-    return (data.firstBatchNumber - 1) * 100 + 1;
+    // firstBatchNumber === 0 is VALID after a clean-slate reset (launch round
+    // starts at batch 0). The old `!data.firstBatchNumber` treated 0 as missing →
+    // returned null → the real-time feed short-circuited to "No drafts have filled
+    // yet" even though drafts had filled (2026-06-22 falsy-zero bug). Only a truly
+    // absent value disqualifies; clamp ≥ 0 so league #1 (slot draft-0) is included.
+    if (data.firstBatchNumber == null) return null;
+    return Math.max(0, (data.firstBatchNumber - 1) * 100 + 1);
   } catch {
     return null;
   }
