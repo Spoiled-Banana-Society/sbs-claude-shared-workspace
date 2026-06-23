@@ -1,6 +1,7 @@
 'use client';
 import { logger } from '@/lib/logger';
 import { clientLog } from '@/lib/clientLog';
+import { setExternalSigner } from '@/lib/externalSigner';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
@@ -241,6 +242,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
         walletClientType: 'metamask',
         connectorType: 'wallet_connect_v2',
       });
+      // Stash the proven MetaMask SDK provider so the mint flow can sign with it
+      // even after Privy's useWallets() drops the wallet on mobile (see externalSigner).
+      setExternalSigner(provider, address, 'metamask');
       mmMark('privy_login_complete');
 
       if (mmSettled) return;
@@ -418,6 +422,9 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
           walletClientType: 'coinbase_wallet',
           connectorType: 'wallet_connect_v2',
         });
+        // Stash the proven Coinbase/Base provider for the mint flow (same reason
+        // as MetaMask above — Privy's useWallets() is empty on mobile SIWE).
+        setExternalSigner(provider, address, 'coinbase');
         cbMark('privy_login_complete');
 
         if (cbSettled) return;

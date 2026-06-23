@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useWallets, useSignTypedData, useSendTransaction, useConnectWallet, type SignTypedDataParams } from '@privy-io/react-auth';
+import { useWallets, useSignTypedData, useSendTransaction, type SignTypedDataParams } from '@privy-io/react-auth';
 import {
   createPublicClient,
   encodeFunctionData,
@@ -23,6 +23,7 @@ import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { clientLog } from '@/lib/clientLog';
+import { getExternalSigner } from '@/lib/externalSigner';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useToast } from '@/components/ui/Toast';
 import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
@@ -91,12 +92,6 @@ function normalizeMintError(error: unknown): string {
 export function useMintDraftPass(): UseMintDraftPassResult {
   const { wallets, ready: walletsReady } = useWallets();
   const { walletAddress } = useAuth();
-  // Privy connect trigger — used ONLY to re-establish a mobile external wallet's
-  // WalletConnect signing session at mint time (PWA case: linked after SIWE login
-  // but no live session AND no injected provider). Ref-held (render-loop rule).
-  const { connectWallet } = useConnectWallet();
-  const connectWalletRef = useRef(connectWallet);
-  connectWalletRef.current = connectWallet;
   // Ref pattern (CLAUDE.md render-loop rule): keep the mint callback's deps to
   // stable values — `show` may churn per render and must not re-create `mint`.
   const { show } = useToast();
@@ -258,32 +253,35 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         } as unknown as NonNullable<typeof activeWallet>;
       }
 
-      // PWA / WalletConnect fallback: with NO injected provider (regular mobile
-      // browser or installed PWA — NOT MetaMask's in-app browser), the injected
-      // path above can't help. The wallet is linked but its WalletConnect signing
-      // session didn't survive SIWE login, so re-open the connect flow to
-      // re-establish it, then wait for the signer to appear.
+      // Mobile SDK-provider fallback (the main mobile case): the mobile login
+      // signs in through the wallet's OWN SDK (MetaMask SDK / Coinbase Base SDK)
+      // and stashes that exact, proven EIP-1193 provider in externalSigner — but
+      // Privy NEVER registers it as a useWallets() entry on SIWE, and on a regular
+      // mobile browser there's no window.ethereum either, so both paths above miss.
+      // Reuse the stashed provider directly: it's the same object that just signed
+      // the login, so it can deeplink to the wallet and sign the permit. The
+      // downstream external-wallet branch switches it to Base before signing.
       //   SAFETY: only runs when there's STILL no wallet (no useWallets entry AND
-      //   no injected provider). Card / embedded / desktop / in-app-browser flows
-      //   all already have a wallet here → they never enter this block (zero
-      //   regression). If the user cancels or it can't connect, we fall through to
-      //   the same "wallet not connected" error below — never worse than today.
+      //   no injected provider) AND the stashed signer matches the logged-in
+      //   address. Card / embedded / desktop / in-app-browser flows all already
+      //   have a wallet here → they never enter this block (zero regression).
       if (!activeWallet && walletAddressRef.current) {
-        clientLog('payment', 'mint_wc_reconnect_start', { hasInjected: !!injected });
-        try {
-          connectWalletRef.current();
-          const reconnectStart = Date.now();
-          while (Date.now() - reconnectStart < 30000) {
-            await new Promise((r) => setTimeout(r, 300));
-            if (selectedWalletRef.current) break;
-          }
-          activeWallet = selectedWalletRef.current;
-          clientLog('payment', 'mint_wc_reconnect_result', {
-            recovered: !!activeWallet,
-            walletType: activeWallet?.walletClientType ?? null,
-          });
-        } catch (e) {
-          clientLog('payment', 'mint_wc_reconnect_threw', { err: e instanceof Error ? e.message : String(e) });
+        const ext = getExternalSigner();
+        const matches = !!ext &&
+          ext.address.toLowerCase() === walletAddressRef.current.toLowerCase();
+        clientLog('payment', 'mint_sdk_provider_fallback', {
+          hasStashed: !!ext,
+          matches,
+          walletType: ext?.walletType ?? null,
+        });
+        if (ext && matches) {
+          activeWallet = {
+            address: ext.address,
+            // NOT 'privy' → routes through the external-wallet signing branch
+            // (getEthereumProvider → ensureBaseNetwork → eth_signTypedData_v4).
+            walletClientType: ext.walletType,
+            getEthereumProvider: async () => ext.provider,
+          } as unknown as NonNullable<typeof activeWallet>;
         }
       }
 
