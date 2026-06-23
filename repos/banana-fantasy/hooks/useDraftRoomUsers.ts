@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useSWRLike } from '@/hooks/useSWRLike';
 import { subscribeIdentityChange } from '@/lib/identityBus';
 import type { Ripeness } from '@/types';
@@ -119,5 +119,25 @@ export function useDraftRoomUsers(walletsRaw: (string | undefined | null)[]): Dr
     return subscribeIdentityChange((w) => { if (set.has(w)) void mutateRef.current(); });
   }, [walletsKey]);
 
-  return data;
+  // Sticky avatars: once we've resolved a real pfp for a wallet, never let a
+  // later poll downgrade it back to null (which renders as the default banana).
+  // The /api/users/display-batch fallback hits the Go API with a 4s timeout; a
+  // single slow/failed poll returns imageUrl:null as a SUCCESSFUL 200, which
+  // used to blink every board + top-strip avatar back to bananas every ~30s for
+  // the rest of the draft. We keep the last-known-good imageUrl per wallet.
+  // Trade-off: if a user clears their pfp mid-draft it stays until reload —
+  // acceptable; a flicker-to-banana on every poll is far worse during a live
+  // draft. Only imageUrl is made sticky; name/badge/ripeness pass through live
+  // (displayName is never null from the API, so it can't get stuck).
+  const stickyPfpRef = useRef<Record<string, string>>({});
+  return useMemo(() => {
+    const out: DraftRoomUsersMap = {};
+    for (const w of Object.keys(data)) {
+      const next = data[w];
+      const img = next.imageUrl ?? stickyPfpRef.current[w] ?? null;
+      if (img) stickyPfpRef.current[w] = img;
+      out[w] = { ...next, imageUrl: img };
+    }
+    return out;
+  }, [data]);
 }
