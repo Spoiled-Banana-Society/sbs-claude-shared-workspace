@@ -85,10 +85,21 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
   const extendedPromos = [...sortedPromos, ...sortedPromos, ...sortedPromos];
   const startOffset = sortedPromos.length; // Start at the middle copy
 
-  // Reset carousel position when promos re-sort (e.g., after minting)
+  // Snap back to the first promo ONLY when the ORDER / claim state actually
+  // changes — a new claim becomes available, a promo is added/removed, or the
+  // sort reorders (e.g. after minting). NOT on every parent re-render: the parent
+  // hands down a NEW `promos` array reference on each refetch/poll even when the
+  // content is identical, and depending on that raw reference yanked the user
+  // back to promo #1 a second after they swiped (mobile bug). A stable signature
+  // of the sorted id-order + claim state fires the reset only on a REAL change,
+  // so a manual swipe sticks until refresh or a genuine reorder/claim — matching
+  // desktop. (Progress ticking up within the same order does NOT snap back.)
+  const orderSignature = sortedPromos
+    .map((p) => `${p.id}:${p.claimable ? 1 : 0}:${p.claimCount ?? 0}`)
+    .join('|');
   useEffect(() => {
     setCurrentIndex(startOffset);
-  }, [promos, startOffset]);
+  }, [orderSignature, startOffset]);
 
   // Timer tick for countdown updates
   useEffect(() => {
