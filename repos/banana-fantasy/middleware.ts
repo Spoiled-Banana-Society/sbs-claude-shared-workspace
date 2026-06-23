@@ -94,6 +94,24 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // Allow them through to their own auth, same as /api/og/.
   if (pathname.startsWith('/api/webhooks/')) return NextResponse.next();
 
+  // Crisp support webhook — Crisp's servers POST cookieless when the SBS team
+  // replies (and on new visitor messages), which fires the "SBS team replied"
+  // bell via createNotification. It lives at /api/crisp/webhook (NOT under
+  // /api/webhooks/), so the seal was 404'ing it → support-reply bells silently
+  // stopped the moment PRELAUNCH_MODE went on (worked fine before the wall). The
+  // route verifies its OWN HMAC (x-crisp-signature vs CRISP_WEBHOOK_SECRET), so
+  // the wall is not its security — allow it, same as the other webhooks.
+  if (pathname.startsWith('/api/crisp/')) return NextResponse.next();
+
+  // More cookieless external webhooks that self-verify (caught 2026-06-22 auditing
+  // what the wall silently blocks). Exact paths so sibling routes stay sealed:
+  //  • Didit KYC results → /api/verify/webhook (verifies DIDIT_WEBHOOK_SECRET /
+  //    X-Signature-V2). Sealed = verification status never updates.
+  //  • Telegram bot updates → /api/notifications/telegram/webhook (account-linking
+  //    /start token is itself the secret). Sealed = Telegram linking can't complete.
+  if (pathname === '/api/verify/webhook') return NextResponse.next();
+  if (pathname === '/api/notifications/telegram/webhook') return NextResponse.next();
+
   // Internal server-to-server callers authenticate via a shared secret, NOT
   // the preview cookie — the public prelaunch seal must let them through or
   // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
