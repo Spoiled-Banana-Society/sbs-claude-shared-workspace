@@ -108,8 +108,12 @@ function AppContent({ children }: { children: React.ReactNode }) {
         <main className="pb-20 md:pb-0">{children}</main>
         {!isDraftRoom && <MobileTabBar />}
         <EditProfileModal isOpen={showEditProfile} onClose={() => setShowEditProfile(false)} />
-        {showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
-        {showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
+        {/* NEVER show the onboarding tutorial in the draft room (or the prelaunch
+            landing) — a new user who buys + joins a draft fast still has
+            showOnboarding=true, which used to render the full-screen tutorial on
+            top of the live draft. Gate it on !isDraftRoom like the header/tab bar. */}
+        {!isDraftRoom && showOnboarding && <OnboardingTutorial onComplete={() => setShowOnboarding(false)} />}
+        {!isDraftRoom && showTutorial && <OnboardingTutorial onComplete={() => setShowTutorial(false)} />}
         <CrispChat />
         {/* Fires in-app notis for new friend requests / messages. Renders
             nothing; runs app-wide incl. the draft room. */}
