@@ -239,7 +239,12 @@ export function DraftRoomDrafting({
                       {isUserCard ? (
                         <div className="flex justify-center">
                           <AvatarWithBadge
-                            imageUrl={user?.profilePicture || '/banana-profile.png'}
+                            // Prefer the live user pfp, but fall back to the
+                            // polled usersMap (display-batch) — a long-running
+                            // draft tab loaded before the user set their pfp has
+                            // a stale user.profilePicture, while usersMap refreshes
+                            // every 30s and carries the new avatar.
+                            imageUrl={user?.profilePicture || usersMap?.[playerData?.name?.toLowerCase() ?? '']?.imageUrl || '/banana-profile.png'}
                             alt="You"
                             size={48}
                             equippedBadge={user?.equippedBadge}

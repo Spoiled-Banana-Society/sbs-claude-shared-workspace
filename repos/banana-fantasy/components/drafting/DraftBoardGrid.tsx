@@ -89,8 +89,11 @@ export function DraftBoardGrid({
                 : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
 
+          // For "you", fall back to the polled usersMap when the live
+          // userProfilePicture is stale (draft tab opened before the pfp was set).
+          const selfMapUser = player?.isYou && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
           const avatarUrl = player?.isYou
-            ? (userProfilePicture || '/banana-profile.png')
+            ? (userProfilePicture || selfMapUser?.imageUrl || '/banana-profile.png')
             : (resolvedUser?.imageUrl || '/banana-profile.png');
           const badge = player?.isYou
             ? userEquippedBadge
