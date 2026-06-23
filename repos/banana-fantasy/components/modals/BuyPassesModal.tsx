@@ -799,10 +799,10 @@ export function BuyPassesModal({
           <h3 className="text-text-primary text-lg font-bold">Opening MetaMask…</h3>
           <div className="space-y-1.5 max-w-[300px]">
             <p className="text-text-muted text-sm leading-relaxed">
-              Wait for MetaMask to load, buy your pass there, then come back to draft.
+              It takes a few seconds to load our site in MetaMask&apos;s browser. Mint a Draft Pass there, then return to the app to draft.
             </p>
             <p className="text-text-muted/60 text-xs leading-relaxed">
-              On desktop, USDC on Base is instant — no extra steps.
+              Desktop works perfectly for minting with USDC.
             </p>
           </div>
           <button
