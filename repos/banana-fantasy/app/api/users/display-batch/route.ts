@@ -29,15 +29,33 @@ interface OwnerResponse {
 }
 
 async function fetchGoApiPfp(wallet: string): Promise<OwnerPfp | null> {
-  try {
-    const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const body = (await res.json()) as OwnerResponse;
-    return body.pfp ?? null;
-  } catch (err) {
-    logger.warn('users.display-batch.go-api-failed', { wallet, err });
-    return null;
+  // Edited PFPs live in the Go API owner record (NOT v2_users.profilePicture),
+  // so this call is what surfaces a user's custom avatar in the draft room. A
+  // single transient failure (flaky phone network, brief Go API hiccup) used to
+  // silently null the PFP — and because the batch still returns 200, the outer
+  // hook's retry never recovered it, so the avatar fell back to the banana for
+  // the whole load (Boris's PFP missing on mobile / sometimes desktop). Retry
+  // transient failures here, with a per-attempt timeout so one slow call can't
+  // stall the whole batch.
+  const MAX = 3;
+  for (let attempt = 0; attempt < MAX; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    try {
+      const res = await fetch(`${getServerDraftsApiUrl()}/owner/${wallet}`, { cache: 'no-store', signal: ctrl.signal });
+      if (res.ok) {
+        const body = (await res.json()) as OwnerResponse;
+        return body.pfp ?? null;
+      }
+      // non-OK (e.g. 5xx / 429) → treat as transient, fall through to retry
+    } catch (err) {
+      if (attempt === MAX - 1) logger.warn('users.display-batch.go-api-failed', { wallet, err });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < MAX - 1) await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
   }
+  return null;
 }
 
 interface UserDisplay {
