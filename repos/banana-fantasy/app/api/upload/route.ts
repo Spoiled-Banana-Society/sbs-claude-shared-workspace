@@ -7,9 +7,12 @@ import { ApiError } from '@/lib/api/errors';
 
 export const dynamic = 'force-dynamic';
 
-// Env-driven so prod uses its own bucket; staging keeps this exact bucket when
-// UPLOAD_BUCKET is unset (so staging uploads are unchanged).
-const BUCKET_NAME = process.env.UPLOAD_BUCKET || 'sbs-staging-env.firebasestorage.app';
+// Env-driven so prod can override; defaults to the REAL pfp bucket. The old
+// default `sbs-staging-env.firebasestorage.app` does NOT exist — every upload
+// 404'd and the client silently fell back to saving a giant base64 blob as the
+// pfp (which then 500s the Go API and won't render in the draft room). The
+// actual bucket is `sbs-staging-pfps` (public-read via IAM, uniform access).
+const BUCKET_NAME = process.env.UPLOAD_BUCKET || 'sbs-staging-pfps';
 const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
 export async function POST(req: Request) {
@@ -63,15 +66,17 @@ export async function POST(req: Request) {
       },
     });
 
-    // Make publicly accessible
-    await fileRef.makePublic();
-
-    // Get public URL
+    // Do NOT call fileRef.makePublic() here. The bucket uses uniform
+    // bucket-level access, so per-object ACL writes (makePublic) THROW
+    // ("Cannot use ACL API ... uniform bucket-level access is enabled") and
+    // used to fail the entire upload. Objects are already public-read via the
+    // bucket's IAM policy (allUsers → roles/storage.objectViewer), so the
+    // public URL below works directly.
     const publicUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${filename}`;
 
     return json({ url: publicUrl }, 200);
   } catch (err) {
     console.error('[upload] Error:', err);
-    return jsonError('Upload failed', 500);
+    return jsonError(`Upload failed: ${(err as Error)?.message ?? 'unknown'}`, 500);
   }
 }

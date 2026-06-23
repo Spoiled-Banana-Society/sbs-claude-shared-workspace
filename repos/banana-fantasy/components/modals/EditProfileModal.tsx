@@ -133,6 +133,7 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
 
     // Upload custom image to Firebase Storage if user selected a file
     if (pendingFile && user?.walletAddress) {
+      let uploaded = false;
       try {
         const formData = new FormData();
         formData.append('file', pendingFile);
@@ -146,9 +147,18 @@ export function EditProfileModal({ isOpen, onClose }: EditProfileModalProps) {
         if (res.ok) {
           const data = await res.json();
           pic = data.url;
+          uploaded = true;
         }
       } catch {
-        // Upload failed — keep local preview for desktop, won't sync to mobile
+        // fall through to the failure handler below
+      }
+      if (!uploaded) {
+        // NEVER save the raw base64 preview as the pfp — a multi-hundred-KB data
+        // URL bloats Firestore, 500s the Go API pfp endpoint, and won't render in
+        // the draft room. Surface the failure and let the user retry instead.
+        setNameError('Couldn’t upload your image — please try again.');
+        setSaving(false);
+        return;
       }
     }
 
