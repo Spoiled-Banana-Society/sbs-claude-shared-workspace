@@ -283,7 +283,10 @@ async function tryMerkleRoundFallback(
       openedAt?: number;
       merkleRootCommittedAt?: number;
     } | undefined;
-    if (!round?.firstBatchNumber) return null;
+    // firstBatchNumber === 0 is VALID (clean-slate launch round starts at batch
+    // 0). `!round?.firstBatchNumber` treated 0 as missing → the per-draft "Verify"
+    // proof page broke after the wipe (2026-06-22 falsy-zero bug, same as the feed).
+    if (round?.firstBatchNumber == null) return null;
 
     // Bounds check: this batch must fall within the round's window.
     const lastBatchInRound = round.firstBatchNumber + 100 - 1;
