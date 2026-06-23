@@ -117,29 +117,6 @@ export function MobileLoginModal({ isOpen, onClose, switchMode = false }: Mobile
   };
 
   const handleMetaMaskLogin = async () => {
-    // Mobile Safari (no injected MetaMask): the SDK-relay path is unreliable for
-    // the LATER purchase signature, and it surfaces an anonymous-origin
-    // "deceptive request" warning (the request shows a relay session UUID, not
-    // sbsfantasy.com, so MetaMask/Blockaid can't verify the site). Route the user
-    // into MetaMask's OWN in-app browser instead: there the wallet is injected
-    // (reliable, no relay) AND every request shows the real sbsfantasy.com origin
-    // → no scam warning, correct $25 cap. We deeplink to the user's CURRENT path
-    // so they resume exactly where they were (e.g. /buy-drafts?buy=1 lands them
-    // straight on the buy screen). If MetaMask is already injected (we're inside
-    // its in-app browser, or a desktop extension), fall through to the normal
-    // SDK/injected connect — that path works.
-    const injectedMetaMask =
-      typeof window !== 'undefined' &&
-      !!(window as unknown as { ethereum?: { isMetaMask?: boolean } }).ethereum?.isMetaMask;
-    if (!injectedMetaMask && typeof window !== 'undefined') {
-      clientLog('metamask#', 'deeplink_to_inapp_browser', {
-        path: window.location.pathname,
-      });
-      const target = `${window.location.host}${window.location.pathname}${window.location.search}`;
-      window.location.href = `https://metamask.app.link/dapp/${target}`;
-      return;
-    }
-
     setWalletStatus('connecting');
     setConnectingWallet('metamask');
     setWalletError('');
