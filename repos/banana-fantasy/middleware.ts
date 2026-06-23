@@ -78,6 +78,22 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // My Teams, and elsewhere. They expose no private app data, so always allow.
   if (pathname.startsWith('/api/og/')) return NextResponse.next();
 
+  // NFT token metadata + card images are PUBLIC by design: OpenSea, wallets, and
+  // marketplace indexers fetch tokenURI (`/api/nft/metadata/<id>`) and the card
+  // art server-side with NO preview cookie. Sealing them blanks EVERY NFT image
+  // on OpenSea (caught 2026-06-22: the first minted Draft Pass showed no image —
+  // metadata 404'd cookieless). They expose only public NFT data (name, image,
+  // attributes), exactly like `/api/og/`, so always allow.
+  if (pathname.startsWith('/api/nft/')) return NextResponse.next();
+
+  // Webhook callbacks are PUBLIC endpoints (Alchemy on-chain transfers, Persona
+  // KYC) that external services POST to with NO cookie — but each route VERIFIES
+  // ITS OWN HMAC SIGNATURE and rejects anything unsigned (confirmed 2026-06-22:
+  // persona uses PERSONA_WEBHOOK_SECRET, alchemy uses x-alchemy-signature). So the
+  // wall is not their security; sealing them just drops legit signed events.
+  // Allow them through to their own auth, same as /api/og/.
+  if (pathname.startsWith('/api/webhooks/')) return NextResponse.next();
+
   // Internal server-to-server callers authenticate via a shared secret, NOT
   // the preview cookie — the public prelaunch seal must let them through or
   // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
