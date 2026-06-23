@@ -9,6 +9,22 @@ const FALLBACK_ADMIN_WALLETS = [
   '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
 ];
 
+// CURATED prod admin list — the real founder/team wallets ONLY (no test wallets
+// like 'r8'). Used in prod when ADMIN_WALLET_ADDRESSES isn't set. Added 2026-06-22
+// because the Vercel CLI can't write env values from automation (it kept saving an
+// empty string → empty allowlist → Boris/Richard lost admin on the launch env).
+// These are public addresses; access still requires signing with the private key,
+// so listing them in code is no weaker than the env var. The env var still
+// OVERRIDES this list when set.
+const PROD_ADMIN_WALLETS = [
+  '0xc0f982492c323fcd314af56d6c1a35cc9b0fc31e',
+  '0x27fe00a5a1212e9294b641ba860a383783016c67',
+  '0x438bbe98eed1dd2df244b007dab0583cc9be72e0', // Boris
+  '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
+  '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
+  '0xb65a135785eb4c375c2b540a6484e6eb60657fe6', // Boris (b65a13)
+];
+
 function normalizeWallet(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -26,11 +42,12 @@ export function getAdminWalletAllowlist(): string[] {
     process.env.ADMIN_WALLET_ADDRESSES || process.env.NEXT_PUBLIC_ADMIN_WALLET_ADDRESSES,
   );
   if (configured.length > 0) return configured;
-  // In PROD, never fall back to the dev/test wallet list — require
-  // ADMIN_WALLET_ADDRESSES to be set explicitly. A forgotten var then fails
-  // SAFE (no admins, caught instantly in QA) instead of silently granting prod
-  // admin to test wallets (e.g. Richard's 'r8'). Staging keeps the fallback.
-  if (isProd()) return [];
+  // In PROD, use the CURATED prod list (real team wallets, no test wallets) — NOT
+  // the dev fallback (which includes test wallets like 'r8'). Previously returned
+  // [] to force ADMIN_WALLET_ADDRESSES, but that var can't be written via the
+  // Vercel CLI from automation (saves empty) → locked the team out of admin. The
+  // curated list is safe (no test wallets) and the env var still overrides above.
+  if (isProd()) return [...PROD_ADMIN_WALLETS];
   return [...FALLBACK_ADMIN_WALLETS];
 }
 

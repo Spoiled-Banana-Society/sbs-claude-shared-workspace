@@ -4,7 +4,6 @@
 // SWITCH_WALLET_ADDRESSES (or NEXT_PUBLIC_SWITCH_WALLET_ADDRESSES) env var
 // — comma-separated — to grant switching to a specific wallet without
 // giving it admin access.
-import { isProd } from './envGates';
 
 const FALLBACK_SWITCH_WALLETS = [
   '0xc0f982492c323fcd314af56d6c1a35cc9b0fc31e',
@@ -27,6 +26,8 @@ const FALLBACK_SWITCH_WALLETS = [
   '0x7095fc9ff349559763b7abbaad7732baa7eca4e9', // Boris
   '0x9a74bc5c793f9d0197635f6d83ef0fdbf325e17b', // Boris
   '0xf3d51c38864324d59edb350cebf0bf698b6662db', // Boris
+  '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
+  '0xb65a135785eb4c375c2b540a6484e6eb60657fe6', // Boris (b65a13)
 ];
 
 function normalizeWallet(value: string): string {
@@ -46,10 +47,10 @@ export function getSwitchWalletAllowlist(): string[] {
     process.env.SWITCH_WALLET_ADDRESSES || process.env.NEXT_PUBLIC_SWITCH_WALLET_ADDRESSES,
   );
   if (configured.length > 0) return configured;
-  // In PROD, never fall back to the dev/test wallet list — require
-  // SWITCH_WALLET_ADDRESSES explicitly (else the feature is simply off, which
-  // is safe). Staging keeps the fallback (isProd() false).
-  if (isProd()) return [];
+  // Use the team wallet list in prod too — these are all Boris's / the team's own
+  // wallets (switching is between YOUR OWN wallets, not impersonation), and the
+  // SWITCH_WALLET_ADDRESSES env var can't be written via the Vercel CLI from
+  // automation (saves empty → feature silently off). The env var still overrides.
   return [...FALLBACK_SWITCH_WALLETS];
 }
 
