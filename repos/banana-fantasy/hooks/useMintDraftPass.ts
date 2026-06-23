@@ -23,7 +23,7 @@ import { buildUsdcPermitTypedData } from '@/lib/onchain/usdcPermit';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { clientLog } from '@/lib/clientLog';
-import { getExternalSigner } from '@/lib/externalSigner';
+import { connectMetaMaskFresh } from '@/lib/metamaskSigner';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
 import { useToast } from '@/components/ui/Toast';
 import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
@@ -253,34 +253,39 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         } as unknown as NonNullable<typeof activeWallet>;
       }
 
-      // Mobile SDK-provider fallback (the main mobile case): the mobile login
-      // signs in through the wallet's OWN SDK (MetaMask SDK / Coinbase Base SDK)
-      // and stashes that exact, proven EIP-1193 provider in externalSigner — but
-      // Privy NEVER registers it as a useWallets() entry on SIWE, and on a regular
-      // mobile browser there's no window.ethereum either, so both paths above miss.
-      // Reuse the stashed provider directly: it's the same object that just signed
-      // the login, so it can deeplink to the wallet and sign the permit. The
-      // downstream external-wallet branch switches it to Base before signing.
+      // Mobile MetaMask fresh-connect fallback (the main mobile case).
+      // On mobile, login signs in via MetaMask's SDK in one connect→sign burst
+      // over a LIVE relay (works), but Privy never registers it in useWallets()
+      // and there's no window.ethereum in a normal browser, so both paths above
+      // miss. Reusing the post-login provider FAILS: by purchase time the relay
+      // socket is dead (app backgrounded during login) and mobile Safari often
+      // reloaded the tab on return (root-caused 2026-06-22: `mint_started` fired
+      // but MetaMask opened with "nothing to approve" and the request hung).
+      // So establish a BRAND-NEW MetaMask connection right here — the same proven
+      // burst login uses — so the signature requested a moment later round-trips
+      // over a fresh, live relay.
       //   SAFETY: only runs when there's STILL no wallet (no useWallets entry AND
-      //   no injected provider) AND the stashed signer matches the logged-in
-      //   address. Card / embedded / desktop / in-app-browser flows all already
-      //   have a wallet here → they never enter this block (zero regression).
-      if (!activeWallet && walletAddressRef.current) {
-        const ext = getExternalSigner();
-        const matches = !!ext &&
-          ext.address.toLowerCase() === walletAddressRef.current.toLowerCase();
-        clientLog('payment', 'mint_sdk_provider_fallback', {
-          hasStashed: !!ext,
+      //   no injected provider). Card / embedded / desktop / MetaMask-in-app-browser
+      //   flows all already have a wallet here → they never enter this block (zero
+      //   regression). On failure / address mismatch we fall through to the same
+      //   "reconnect" error below — never worse than today.
+      if (!activeWallet && !injected && walletAddressRef.current) {
+        clientLog('payment', 'mint_mm_fresh_connect_start', {});
+        const fresh = await connectMetaMaskFresh();
+        const matches = !!fresh &&
+          fresh.address.toLowerCase() === walletAddressRef.current.toLowerCase();
+        clientLog('payment', 'mint_mm_fresh_connect_result', {
+          connected: !!fresh,
           matches,
-          walletType: ext?.walletType ?? null,
+          addr: fresh?.address ?? null,
         });
-        if (ext && matches) {
+        if (fresh && matches) {
           activeWallet = {
-            address: ext.address,
+            address: fresh.address,
             // NOT 'privy' → routes through the external-wallet signing branch
             // (getEthereumProvider → ensureBaseNetwork → eth_signTypedData_v4).
-            walletClientType: ext.walletType,
-            getEthereumProvider: async () => ext.provider,
+            walletClientType: 'metamask',
+            getEthereumProvider: async () => fresh.provider,
           } as unknown as NonNullable<typeof activeWallet>;
         }
       }
