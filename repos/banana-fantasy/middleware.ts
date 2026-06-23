@@ -78,6 +78,14 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // My Teams, and elsewhere. They expose no private app data, so always allow.
   if (pathname.startsWith('/api/og/')) return NextResponse.next();
 
+  // NFT token metadata + card images are PUBLIC by design: OpenSea, wallets, and
+  // marketplace indexers fetch tokenURI (`/api/nft/metadata/<id>`) and the card
+  // art server-side with NO preview cookie. Sealing them blanks EVERY NFT image
+  // on OpenSea (caught 2026-06-22: the first minted Draft Pass showed no image —
+  // metadata 404'd cookieless). They expose only public NFT data (name, image,
+  // attributes), exactly like `/api/og/`, so always allow.
+  if (pathname.startsWith('/api/nft/')) return NextResponse.next();
+
   // Internal server-to-server callers authenticate via a shared secret, NOT
   // the preview cookie — the public prelaunch seal must let them through or
   // every webhook silently 404s. Caught 2026-06-20: ALL draft notifications
