@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
@@ -119,6 +120,9 @@ export function BuyPassesModal({
   const [referralCode, setReferralCode] = useState('');
   const [referralState, setReferralState] = useState<'idle' | 'applying' | 'applied' | 'error'>('idle');
   const [referralMsg, setReferralMsg] = useState<string | null>(null);
+  // Mobile MetaMask USDC buy: interstitial shown before handing off to MetaMask's
+  // in-app browser, so the user understands the (MetaMask-side) few-second load.
+  const [showMetaMaskHandoff, setShowMetaMaskHandoff] = useState(false);
   const applyReferral = async () => {
     const code = referralCode.trim();
     const userId = walletAddress || user?.id;
@@ -432,8 +436,14 @@ export function BuyPassesModal({
       const injectedMetaMask = typeof window !== 'undefined' &&
         !!(window as unknown as { ethereum?: { isMetaMask?: boolean } }).ethereum?.isMetaMask;
       if (loggedInWithWallet && isMobileDevice && !injectedMetaMask && typeof window !== 'undefined') {
-        clientLog('payment', 'usdc_buy_deeplink_to_metamask', { wallet: walletAddress, quantity });
-        window.location.href = `https://metamask.app.link/dapp/${window.location.host}/buy-drafts?buy=1`;
+        // Don't jump to MetaMask instantly — show an interstitial first so the
+        // user knows what's happening (MetaMask takes a few seconds to open its
+        // in-app browser). The actual deeplink fires from the interstitial's
+        // button tap (a fresh user gesture → more reliable app-open than an
+        // auto-redirect). Copy lives on OUR screen because we can't write to
+        // MetaMask's own loading screen.
+        clientLog('payment', 'usdc_buy_deeplink_prompt', { wallet: walletAddress, quantity });
+        setShowMetaMaskHandoff(true);
         return;
       }
       try {
@@ -779,6 +789,39 @@ export function BuyPassesModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={modalTitle} size="lg">
+      {/* MetaMask handoff interstitial — sets expectations BEFORE the hop, since
+          MetaMask's own loading screen (the few-second wait) is its app UI we
+          can't write to. The deeplink fires from this button (fresh tap = more
+          reliable app-open). Stays up if the user pops back to Safari mid-wait. */}
+      {showMetaMaskHandoff && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-2xl bg-bg-primary/95 backdrop-blur-sm px-6 text-center">
+          <Image src="/metamask.png" alt="MetaMask" width={52} height={52} className="rounded-xl" />
+          <h3 className="text-text-primary text-lg font-bold">Opening MetaMask…</h3>
+          <div className="space-y-1.5 max-w-[300px]">
+            <p className="text-text-muted text-sm leading-relaxed">
+              Wait for MetaMask to load, buy your pass there, then come back to draft.
+            </p>
+            <p className="text-text-muted/60 text-xs leading-relaxed">
+              On desktop, USDC on Base is instant — no extra steps.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              clientLog('payment', 'usdc_buy_deeplink_to_metamask', { wallet: walletAddress, quantity });
+              window.location.href = `https://metamask.app.link/dapp/${window.location.host}/buy-drafts?buy=1`;
+            }}
+            className="mt-1 w-full max-w-[300px] rounded-xl bg-banana py-3.5 text-black font-bold text-[15px] active:brightness-95"
+          >
+            Open MetaMask
+          </button>
+          <button
+            onClick={() => setShowMetaMaskHandoff(false)}
+            className="text-text-muted text-xs underline-offset-2 hover:underline"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <div className="space-y-3.5">
 
         {/* ═══ PHASE 1: PURCHASE ═══ */}
