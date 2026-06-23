@@ -165,7 +165,17 @@ export function useListTeam(walletAddress: string | null): UseListTeamResult {
         }).catch(() => {});
       }
     } catch (e) {
-      setError(friendlyTxError(e, 'Couldn’t cancel the listing. Please try again.'));
+      // Timing race: OpenSea hasn't indexed a just-created listing yet (web2 /
+      // embedded wallets are a beat slower), so the cancel route can't find the
+      // order and 404s with "Order not found". That's not a real failure — the
+      // listing IS live, it just isn't queryable for ~30-60s. Show a clear
+      // wait-and-retry message instead of a scary generic "couldn't" error.
+      const msg = e instanceof Error ? e.message : '';
+      if (/not found|not yet|indexed|already been cancelled/i.test(msg)) {
+        setError('Your listing is still registering on OpenSea — please wait a minute and try again.');
+      } else {
+        setError(friendlyTxError(e, 'Couldn’t cancel the listing. Please try again.'));
+      }
       throw e;
     } finally {
       setBusy(false);

@@ -112,6 +112,19 @@ function formatExpiresIn(endTimeSec?: string): string | null {
   return `${mins}m`;
 }
 
+// How long a listing stays live before OpenSea expires it. The user picks one;
+// the value flows into the Seaport order's endTime at sign time. OpenSea caps
+// listings at ~6 months, so 90 days is comfortably inside that.
+const LISTING_DURATIONS: Array<{ label: string; seconds: number }> = [
+  { label: '1 day', seconds: 1 * 24 * 3600 },
+  { label: '3 days', seconds: 3 * 24 * 3600 },
+  { label: '7 days', seconds: 7 * 24 * 3600 },
+  { label: '14 days', seconds: 14 * 24 * 3600 },
+  { label: '30 days', seconds: 30 * 24 * 3600 },
+  { label: '90 days', seconds: 90 * 24 * 3600 },
+];
+const DEFAULT_LISTING_SECONDS = 30 * 24 * 3600;
+
 export default function NftDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -226,6 +239,7 @@ export default function NftDetailPage() {
   // Owner-side listing controls (list / cancel for the team's owner).
   const { listTeam, cancelTeam, busy: listBusy, error: listError } = useListTeam(walletAddress);
   const [ownerListPrice, setOwnerListPrice] = useState('');
+  const [listDurationSeconds, setListDurationSeconds] = useState(DEFAULT_LISTING_SECONDS);
   const [offerStep, setOfferStep] = useState<'input' | 'processing' | 'complete'>('input');
   const [offerError, setOfferError] = useState<string | null>(null);
   // Bail out of a card-funded offer stuck waiting on MoonPay funds.
@@ -346,7 +360,7 @@ export default function NftDetailPage() {
     const p = parseFloat(ownerListPrice);
     if (!Number.isFinite(p) || p <= 0) return;
     try {
-      const res = await listTeam(tokenId, p, 30 * 24 * 3600); // default 30-day listing
+      const res = await listTeam(tokenId, p, listDurationSeconds);
       setOwnerListPrice('');
       // Optimistically show it as listed; delay the reconciling refetch so a
       // stale OpenSea read can't overwrite this before it has indexed.
@@ -356,12 +370,12 @@ export default function NftDetailPage() {
           order_hash: res.orderHash,
           protocol_address: '',
           price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
-          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600) } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + listDurationSeconds) } },
         },
       } : prev);
       setTimeout(() => fetchNft(), 12000);
     } catch { /* listError surfaces the message */ }
-  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft, walletAddress]);
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, listTeam, tokenId, fetchNft, walletAddress, listDurationSeconds]);
 
   const handleOwnerCancel = useCallback(async () => {
     const orderHash = nft?.listing?.order_hash;
@@ -386,7 +400,7 @@ export default function NftDetailPage() {
     if (!orderHash) return;
     try {
       await cancelTeam(tokenId, orderHash);
-      const res = await listTeam(tokenId, p, 30 * 24 * 3600);
+      const res = await listTeam(tokenId, p, listDurationSeconds);
       setOwnerListPrice('');
       setNft(prev => prev ? {
         ...prev,
@@ -394,7 +408,7 @@ export default function NftDetailPage() {
           order_hash: res.orderHash,
           protocol_address: '',
           price: { current: { value: String(Math.round(res.price * 1e6)), decimals: 6 } },
-          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + 30 * 24 * 3600) } },
+          protocol_data: { parameters: { offerer: walletAddress ?? '', endTime: String(Math.floor(Date.now() / 1000) + listDurationSeconds) } },
         },
       } : prev);
       setTimeout(() => fetchNft(), 12000);
@@ -404,7 +418,7 @@ export default function NftDetailPage() {
       // the old listing — reconcile from chain so it doesn't show a phantom price.
       fetchNft();
     }
-  }, [isLoggedIn, setShowLoginModal, ownerListPrice, nft, cancelTeam, listTeam, tokenId, fetchNft, walletAddress]);
+  }, [isLoggedIn, setShowLoginModal, ownerListPrice, nft, cancelTeam, listTeam, tokenId, fetchNft, walletAddress, listDurationSeconds]);
 
   useEffect(() => {
     fetchNft();
@@ -1401,6 +1415,16 @@ export default function NftDetailPage() {
                       className="flex-1 bg-transparent text-text-primary placeholder:text-text-muted focus:outline-none font-mono"
                     />
                   </div>
+                  <select
+                    value={listDurationSeconds}
+                    onChange={e => setListDurationSeconds(Number(e.target.value))}
+                    aria-label="Listing duration"
+                    className="bg-bg-tertiary/60 border border-bg-tertiary rounded-xl px-3 py-2.5 text-text-primary text-sm focus:outline-none focus:border-banana/50 cursor-pointer"
+                  >
+                    {LISTING_DURATIONS.map(({ label, seconds }) => (
+                      <option key={seconds} value={seconds}>{label}</option>
+                    ))}
+                  </select>
                   <button
                     onClick={handleOwnerList}
                     disabled={listBusy || !ownerListPrice || parseFloat(ownerListPrice) <= 0}
@@ -1409,7 +1433,9 @@ export default function NftDetailPage() {
                     {listBusy ? 'Listing…' : 'List for Sale'}
                   </button>
                 </div>
-                <p className="text-text-muted text-[11px] mt-2">Lists for 30 days · only a 1% OpenSea fee · you keep the rest.</p>
+                <p className="text-text-muted text-[11px] mt-2">
+                  Lists for {LISTING_DURATIONS.find(d => d.seconds === listDurationSeconds)?.label ?? '30 days'} · only a 1% OpenSea fee · you keep the rest.
+                </p>
                 {listError && <p className="text-error text-xs mt-2">{listError}</p>}
                 {bestOffer && (
                   <p className="text-text-secondary text-xs mt-2">
