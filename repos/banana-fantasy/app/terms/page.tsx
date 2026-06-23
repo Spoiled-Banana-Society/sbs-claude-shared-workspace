@@ -94,10 +94,6 @@ function buildSections(): Section[] {
             technical failure that prevented participation in a draft. Entry fees collected from Draft Pass purchases fund
             the prize pools for each contest.
           </p>
-          <p>
-            The Platform charges a <strong>rake</strong> (service fee) on each draft entry, which is disclosed on the draft
-            lobby page before you join. Prize pool distributions are displayed before draft entry.
-          </p>
         </>
       ),
     },
@@ -108,14 +104,7 @@ function buildSections(): Section[] {
         <>
           <p>
             Prizes are distributed according to the payout structure displayed for each contest type.
-            The Platform offers several prize mechanisms:
           </p>
-          <ul>
-            <li><strong>Standard Payouts:</strong> Based on final standings at the end of the NFL season.</li>
-            <li><strong>Jackpot Drafts:</strong> Special high-value prize pools triggered within batches of 100 drafts.</li>
-            <li><strong>Hall of Fame (HOF) Entries:</strong> Bonus competition entries awarded within draft batches.</li>
-            <li><strong>Banana Wheel Prizes:</strong> Instant prizes from the Banana Wheel spin feature.</li>
-          </ul>
           <p>
             Prizes are credited to your account balance. Withdrawals are subject to identity verification and
             processing times. We reserve the right to withhold prizes pending investigation of potential Terms violations.
@@ -234,11 +223,6 @@ function buildSections(): Section[] {
                 team@sbsfantasy.com
               </a>{' '}
               with a detailed description. We will attempt to resolve the dispute informally within thirty (30) days.
-            </li>
-            <li>
-              <strong>Binding Arbitration:</strong> If informal resolution fails, the dispute shall be resolved by binding
-              arbitration administered by a mutually agreed-upon arbitration service. The arbitration shall be conducted
-              in English. The arbitrator&apos;s decision shall be final and enforceable in any court of competent jurisdiction.
             </li>
             <li>
               <strong>Class Action Waiver:</strong> You agree that disputes will be resolved on an individual basis.
