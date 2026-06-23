@@ -208,21 +208,33 @@ export function useMintDraftPass(): UseMintDraftPassResult {
       setTxHash(null);
       setMintStep('idle');
 
-      // Wait briefly for the wallet to be ready rather than hard-failing on a
-      // transient. Reads the live refs so a stale captured `selectedWallet`
-      // (e.g. null right after the MoonPay detour on mobile) can't block a mint
-      // that's actually ready a beat later.
+      // Diagnostic backstop — captures the exact wallet state at mint entry so a
+      // mobile stall is pinpointable from the logs (no console needed).
+      clientLog('payment', 'mint_wallet_state', {
+        walletsReady: walletsReadyRef.current,
+        hasSelected: !!selectedWalletRef.current,
+        selectedType: selectedWalletRef.current?.walletClientType,
+        selectedAddr: selectedWalletRef.current?.address,
+      });
+
+      // We only need a usable WALLET OBJECT to sign — NOT Privy's `ready` flag.
+      // On mobile (esp. external MetaMask) `useWallets().ready` can stay false
+      // even when a perfectly usable wallet is present; gating on it left mobile
+      // users stuck in a silent wait → dead-feeling Buy button (caught 2026-06-22:
+      // logs showed mint() never reaching `mint_started`). So wait only for the
+      // wallet object to appear, then proceed — the signature step surfaces a
+      // clear error if the wallet genuinely isn't usable.
       let activeWallet = selectedWalletRef.current;
-      if (!walletsReadyRef.current || !activeWallet) {
+      if (!activeWallet) {
         const readyStart = Date.now();
         while (Date.now() - readyStart < 8000) {
           await new Promise((r) => setTimeout(r, 250));
-          if (walletsReadyRef.current && selectedWalletRef.current) break;
+          if (selectedWalletRef.current) break;
         }
         activeWallet = selectedWalletRef.current;
       }
-      if (!walletsReadyRef.current || !activeWallet) {
-        const message = 'Wallet not ready — please wait a moment and try again.';
+      if (!activeWallet) {
+        const message = 'Wallet not connected — please reconnect your wallet and try again.';
         setError(message);
         setMintStep('error');
         throw new Error(message);
@@ -476,7 +488,7 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         setIsMinting(false);
       }
     },
-    [publicClient, walletsReady, refreshContractState, selectedWallet]
+    [publicClient, refreshContractState, selectedWallet]
   );
 
   return {
