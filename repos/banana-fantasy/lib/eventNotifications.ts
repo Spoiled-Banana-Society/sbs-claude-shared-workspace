@@ -94,8 +94,8 @@ export function eventNotificationContent(
     case 'promo-daily-drafts':
       return {
         type: 'promo',
-        title: 'Daily promo complete!',
-        message: 'You finished 4 drafts today — claim your free spin.',
+        title: '4 Drafts in 24 Hours complete!',
+        message: 'You finished 4 paid drafts in time — claim your free spin.',
         link: '/promos',
         dedupeKey: `promo-daily-${draftId}`,
         icon: 'calendar',
