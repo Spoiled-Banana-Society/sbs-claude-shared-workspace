@@ -580,55 +580,21 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
     const wallet = walletAddressRef.current;
     if (wallet && pickData.ownerAddress.toLowerCase() === wallet) {
-      if (userPickedManuallyRef.current) {
-        consecutiveTimeoutsRef.current = 0;
-        logger.info('[Airplane] Manual pick — counter reset to 0', { pickNum: pickData.pickNum, wallet });
-        reportClientEvent({
-          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-          message: '[Airplane] manual pick — engine counter reset to 0',
-          route: 'useDraftEngine.processPick',
-          actor: wallet,
-          context: { event: 'manual_pick_counter_reset', pickNum: pickData.pickNum },
-        }, { skipThrottle: true });
-      } else {
-        consecutiveTimeoutsRef.current += 1;
-        logger.info('[Airplane] Server auto-pick — counter incremented', {
-          counter: consecutiveTimeoutsRef.current,
-          pickNum: pickData.pickNum,
-          wallet,
-        });
-        reportClientEvent({
-          source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-          message: `[Airplane] server auto-pick — engine counter ${consecutiveTimeoutsRef.current}`,
-          route: 'useDraftEngine.processPick',
-          actor: wallet,
-          context: {
-            event: 'autopick_counter_increment',
-            counter: consecutiveTimeoutsRef.current,
-            pickNum: pickData.pickNum,
-          },
-        }, { skipThrottle: true });
-        if (consecutiveTimeoutsRef.current >= 2) {
-          logger.info('[Airplane] setAirplaneMode(true) — source=consecutive-timeouts', {
-            counter: consecutiveTimeoutsRef.current,
-            pickNum: pickData.pickNum,
-            wallet,
-          });
-          reportClientEvent({
-            source: LOG_SOURCES.draft.AIRPLANE_TRACE,
-            message: '[Airplane] engine setAirplaneMode(true) via consecutive-timeouts',
-            route: 'useDraftEngine.processPick',
-            actor: wallet,
-            context: {
-              event: 'engine_set_airplane_true',
-              counter: consecutiveTimeoutsRef.current,
-              pickNum: pickData.pickNum,
-              trigger: 'consecutive-timeouts',
-            },
-          }, { skipThrottle: true });
-          setAirplaneMode(true);
-        }
-      }
+      // BUG 1 FIX (multi-device airplane): do NOT infer a "missed pick" from
+      // this device's local userPickedManuallyRef. That flag is only set on the
+      // device that actually tapped the player, so when a user had the same
+      // draft open on both desktop and phone, a MANUAL pick made on desktop
+      // arrived at the phone looking like a server auto-pick. The phone then
+      // incremented its own counter and, after two such picks, wrongly flipped
+      // itself into airplane mode and started auto-drafting for the user.
+      //
+      // The server's numPicksMissedConsecutive is device-independent and resets
+      // on any manual pick from ANY device. It is mirrored into the engine after
+      // every pick by the post-pick preferences sync in page.tsx (via
+      // setConsecutiveTimeouts / setAirplaneMode), so it is now the single
+      // source of truth for the counter and airplane state. The local counter is
+      // still reset instantly on the tapping device by markManualPick() for snappy
+      // feedback; here we only clear the manual flag as housekeeping.
       userPickedManuallyRef.current = false;
     }
 
