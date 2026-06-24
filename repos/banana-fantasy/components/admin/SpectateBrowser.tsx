@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 interface ActiveDraft {
   draftId: string;
@@ -13,6 +14,9 @@ interface ActiveDraft {
   pickNumber: number;
   currentDrafter: string;
   filling: boolean;
+  numPlayers?: number;
+  maxPlayers?: number;
+  members?: string[];
 }
 
 interface QueueRound {
@@ -107,6 +111,16 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     if (filter === 'hof') return (d.level ?? '').toLowerCase().includes('hall of fame') || d.level === 'HOF';
     return true;
   });
+
+  // Resolve banana names for everyone in a filling lobby (+ the current drafter)
+  // so the "who's in" band shows real identities, not raw hex. useDraftRoomUsers
+  // dedupes + builds a stable cache key, so re-deriving this list each render is
+  // free (no extra fetches unless the wallet set actually changes).
+  const memberWallets = useMemo(
+    () => filtered.flatMap(d => [...(d.members ?? []), d.currentDrafter]).filter(Boolean),
+    [filtered],
+  );
+  const users = useDraftRoomUsers(memberWallets);
 
   return (
     <div className="space-y-4">
@@ -224,8 +238,8 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
               <th className="px-4 py-3 font-medium">Draft</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Speed</th>
-              <th className="px-4 py-3 font-medium">Pick</th>
-              <th className="px-4 py-3 font-medium">On the clock</th>
+              <th className="px-4 py-3 font-medium">Pick / Filling</th>
+              <th className="px-4 py-3 font-medium">On the clock / In lobby</th>
               <th className="px-4 py-3 font-medium text-right">Watch</th>
             </tr>
           </thead>
@@ -256,13 +270,35 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                   <td className="px-4 py-3 text-gray-300 capitalize">{d.speed}</td>
                   <td className="px-4 py-3 text-gray-300">
                     {d.filling ? (
-                      <span className="text-yellow-400">Filling</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-yellow-400 transition-all duration-500"
+                            style={{ width: `${Math.min(100, ((d.numPlayers ?? 0) / (d.maxPlayers || 10)) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-yellow-400 text-xs whitespace-nowrap">{d.numPlayers ?? 0}/{d.maxPlayers || 10}</span>
+                      </div>
                     ) : (
                       <span>P{d.pickNumber}/150</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-400 text-xs">
-                    {d.currentDrafter ? <WalletLink wallet={d.currentDrafter} /> : '—'}
+                    {d.filling ? (
+                      d.members && d.members.length > 0 ? (
+                        <div className="flex flex-wrap gap-x-2 gap-y-1 max-w-[280px]">
+                          {d.members.map(w => (
+                            <WalletLink key={w} wallet={w} displayName={users[w.toLowerCase()]?.displayName} />
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-gray-600">waiting for players…</span>
+                      )
+                    ) : (
+                      d.currentDrafter
+                        ? <WalletLink wallet={d.currentDrafter} displayName={users[d.currentDrafter.toLowerCase()]?.displayName} />
+                        : '—'
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex items-center gap-1.5">
@@ -273,14 +309,23 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       >
                         {copiedId === d.draftId ? '✓ Copied' : 'Copy link'}
                       </button>
-                      <a
-                        href={`/spectate/${d.draftId}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
-                      >
-                        Spectate ↗
-                      </a>
+                      {d.filling ? (
+                        <span
+                          className="inline-flex items-center px-3 py-1 rounded-md border border-white/10 text-gray-500 text-xs font-medium cursor-default"
+                          title="The live board opens once this draft fills to 10 and starts"
+                        >
+                          Starts at 10
+                        </span>
+                      ) : (
+                        <a
+                          href={`/spectate/${d.draftId}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
+                        >
+                          Spectate ↗
+                        </a>
+                      )}
                     </div>
                   </td>
                 </tr>

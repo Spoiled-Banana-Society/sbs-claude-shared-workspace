@@ -31,6 +31,11 @@ interface ActiveDraft {
   pickNumber: number;
   currentDrafter: string;
   filling: boolean;
+  /** How many seats are taken right now (X of maxPlayers). */
+  numPlayers: number;
+  maxPlayers: number;
+  /** Wallets of everyone who has joined so far (for the spectate "who's in" band). */
+  members: string[];
 }
 
 interface DraftInfoResponse {
@@ -111,7 +116,24 @@ export async function GET(req: Request) {
         const info = infoResults[i];
         const docExists = !!snap?.exists;
         if (!docExists && !info) return null;
-        const data = snap?.exists ? (snap.data() as { Level?: string; DisplayName?: string } | undefined) : undefined;
+        const data = snap?.exists
+          ? (snap.data() as {
+              Level?: string;
+              DisplayName?: string;
+              NumPlayers?: number; numPlayers?: number;
+              MaxPlayers?: number; maxPlayers?: number;
+              // Firestore stores Go field names (capitalized); accept the
+              // json-tag variant too in case any doc was written differently.
+              CurrentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
+              currentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
+            } | undefined)
+          : undefined;
+        const rawMembers = data?.CurrentUsers ?? data?.currentUsers ?? [];
+        const members = Array.isArray(rawMembers)
+          ? rawMembers.map(u => (u?.OwnerId ?? u?.ownerId ?? '')).filter(Boolean)
+          : [];
+        const maxPlayers = Number(data?.MaxPlayers ?? data?.maxPlayers ?? 10) || 10;
+        const numPlayers = Number(data?.NumPlayers ?? data?.numPlayers ?? members.length) || members.length;
         const pickNumber = info?.pickNumber ?? 0;
         // Completed signal: pickNumber has reached 150 AND there's no
         // active pick in flight (currentPickEndTime null/missing). Matches
@@ -127,6 +149,9 @@ export async function GET(req: Request) {
           currentDrafter: info?.currentDrafter ?? '',
           filling: !info,
           completed,
+          numPlayers,
+          maxPlayers,
+          members,
         };
       })
       .filter((d): d is Categorized => d !== null);
