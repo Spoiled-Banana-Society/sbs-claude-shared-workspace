@@ -10,13 +10,16 @@ import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 export const BBB4_CONTRACT: string = BBB4_CONTRACT_ADDRESS;
 export const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 export const OPENSEA_API_BASE = 'https://api.opensea.io';
-// MUST be the CURRENT contract's OpenSea collection — `banana-best-ball-iv` is
-// `0xadf5b9b4…` (11 tokens). The old default `bbb4-staging` is the DEAD contract
-// `0x781b…` (758 tokens) and leaked ghost teams/passes from a prior era into the
-// marketplace, My Teams, Exposure, everywhere (2026-06-22). Collection queries are
-// contract-scoped by this slug; never point it at an old collection. Per-contract
-// + supply backstops in the listings route catch any cached stragglers regardless.
-export const COLLECTION_SLUG = process.env.NEXT_PUBLIC_OPENSEA_COLLECTION_SLUG || 'banana-best-ball-iv';
+// MUST be the CURRENT contract's OpenSea collection. Verified 2026-06-23 against
+// OpenSea's contract→collection lookup: contract `0xadf5b9b4…` maps to the slug
+// `banana-best-ball-4` (owner `0xccdF79…`). The earlier guess `banana-best-ball-iv`
+// does NOT exist on OpenSea (returns "Collection not found") → the Buy grid found
+// zero listings. The old default `bbb4-staging` is the DEAD contract `0x781b…` and
+// leaked ghost teams/passes from a prior era into the marketplace, My Teams,
+// Exposure, everywhere. Collection queries are contract-scoped by this slug; never
+// point it at an old collection. Per-contract + supply backstops in the listings
+// route catch any cached stragglers regardless.
+export const COLLECTION_SLUG = process.env.NEXT_PUBLIC_OPENSEA_COLLECTION_SLUG || 'banana-best-ball-4';
 export const OPENSEA_CHAIN = 'base';
 
 /**
