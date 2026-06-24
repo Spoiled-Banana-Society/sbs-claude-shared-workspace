@@ -71,53 +71,61 @@ export async function GET(req: Request) {
     if (!isFirestoreConfigured()) throw new ApiError(503, 'Firestore not configured');
 
     const db = getAdminFirestore();
-    const [trackerSnap, recentSnap] = await Promise.all([
-      db.collection('drafts').doc('draftTracker').get(),
-      // Read a recent draft doc to pull the season year prefix from. Real
-      // doc IDs look like "2024-fast-draft-722" — never trust the calendar
-      // year for the prefix; the season name lives in the data.
-      db.collection('drafts').orderBy('__name__', 'desc').limit(20).get().catch(() => null),
-    ]);
+    const trackerSnap = await db.collection('drafts').doc('draftTracker').get();
     const filled = Number(
       (trackerSnap.data() as { FilledLeaguesCount?: number } | undefined)?.FilledLeaguesCount ?? 0,
     );
-    if (filled <= 0) return json({ drafts: [] }, 200);
+    // NOTE: do NOT early-return when filled<=0. After a clean-slate reset the
+    // very first draft is slot 0 and can be FILLING before anything completes —
+    // that's exactly a case we must still surface.
 
-    const sampleDraftId = recentSnap?.docs.map(d => d.id).find(id => /^\d{4}-(fast|slow)-draft-\d+$/.test(id));
-    const yearPrefix = sampleDraftId ? sampleDraftId.split('-')[0] : '2024';
+    // Draft doc IDs look like "{year}-{fast|slow}-draft-{N}". A naive lookup
+    // misses the filling draft for two reasons, so we mirror the proven
+    // proof-feed route here instead of guessing:
+    //   1. The year prefix can't be derived from the calendar OR from an
+    //      orderBy('__name__') query (that needs a descending index the DB
+    //      doesn't have, so it silently fails) — try the last few season years.
+    //   2. The `draft-N` is a PER-SPEED slot counter that drifts from the global
+    //      FilledLeaguesCount (fast/slow have separate counters; special drafts
+    //      push it ahead) — scan a buffer ABOVE and below `filled`, not `+1`.
+    const currentYear = new Date().getUTCFullYear();
+    const yearPrefixes = [currentYear, currentYear - 1, currentYear - 2].map(String);
     const apiBase = getServerDraftsApiUrl();
 
+    const SLOT_AHEAD = 15;
     const candidates: { id: string; speed: 'fast' | 'slow'; num: number }[] = [];
-    for (const speed of SPEEDS) {
-      for (let i = 0; i < PROBE_DEPTH; i++) {
-        const num = filled - i + 1; // include the currently-filling draft (filled+1)
-        if (num <= 0) break;
-        candidates.push({ id: `${yearPrefix}-${speed}-draft-${num}`, speed, num });
+    for (let num = filled + SLOT_AHEAD; num >= Math.max(0, filled - PROBE_DEPTH); num--) {
+      for (const speed of SPEEDS) {
+        for (const year of yearPrefixes) {
+          candidates.push({ id: `${year}-${speed}-draft-${num}`, speed, num });
+        }
       }
     }
 
-    // Probe both Firestore (for Level/DisplayName) and the Go API (for
-    // pickNumber/currentDrafter) in one parallel sweep.
-    const [docSnaps, infoResults] = await Promise.all([
-      Promise.all(
-        candidates.map(c => db.collection('drafts').doc(c.id).get().catch(() => null)),
-      ),
-      Promise.all(
-        candidates.map(c =>
-          fetchJson<DraftInfoResponse>(`${apiBase}/draft/${encodeURIComponent(c.id)}/state/info`),
-        ),
-      ),
-    ]);
+    // Step 1 — read every candidate doc (cheap, batched). The vast majority of
+    // candidate IDs (wrong year / non-existent slot) simply don't exist; only
+    // real drafts survive. This is the source for Level / DisplayName / members.
+    const docSnaps = await Promise.all(
+      candidates.map(c => db.collection('drafts').doc(c.id).get().catch(() => null)),
+    );
+    const existing: { c: { id: string; speed: 'fast' | 'slow'; num: number }; snap: NonNullable<(typeof docSnaps)[number]> }[] = [];
+    candidates.forEach((c, i) => {
+      const snap = docSnaps[i];
+      if (snap?.exists) existing.push({ c, snap });
+    });
+
+    // Step 2 — only for docs that REALLY exist, ask the Go API whether they're
+    // mid-draft (pickNumber / currentDrafter). A filling draft 404s here (state
+    // isn't created until it starts) — that 404 is exactly our filling signal.
+    const infoResults = await Promise.all(
+      existing.map(x => fetchJson<DraftInfoResponse>(`${apiBase}/draft/${encodeURIComponent(x.c.id)}/state/info`)),
+    );
 
     type Categorized = ActiveDraft & { completed: boolean };
-    const drafts: Categorized[] = candidates
-      .map((c, i): Categorized | null => {
-        const snap = docSnaps[i];
+    const drafts: Categorized[] = existing
+      .map(({ c, snap }, i): Categorized | null => {
         const info = infoResults[i];
-        const docExists = !!snap?.exists;
-        if (!docExists && !info) return null;
-        const data = snap?.exists
-          ? (snap.data() as {
+        const data = snap.data() as {
               Level?: string;
               DisplayName?: string;
               NumPlayers?: number; numPlayers?: number;
@@ -126,8 +134,7 @@ export async function GET(req: Request) {
               // json-tag variant too in case any doc was written differently.
               CurrentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
               currentUsers?: Array<{ OwnerId?: string; ownerId?: string }>;
-            } | undefined)
-          : undefined;
+            } | undefined;
         const rawMembers = data?.CurrentUsers ?? data?.currentUsers ?? [];
         const members = Array.isArray(rawMembers)
           ? rawMembers.map(u => (u?.OwnerId ?? u?.ownerId ?? '')).filter(Boolean)
