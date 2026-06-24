@@ -521,7 +521,10 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     const refRewardsEarned = refHistory.reduce((s, e) => {
       const r = e.rewards;
       if (!r) return s;
-      return s + [r.verified, r.bought1, r.bought10].filter((x) => x === 'claimed' || x === 'claim').length;
+      // Spins are earned ONLY from the friend's Draft Pass purchases
+      // (bought1/4/10). Verifying earns the referrer nothing, so it must NOT
+      // be counted here (that was the misleading "1 spin" on verify).
+      return s + [r.bought1, r.bought4, r.bought10].filter((x) => x === 'claimed' || x === 'claim').length;
     }, 0);
 
     return (
@@ -595,7 +598,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                 // Sort by reward status: claim first, pending second, claimed last
                 const getOrder = (entry: typeof a) => {
                   if (!entry.rewards) return 2;
-                  const statuses = [entry.rewards.verified, entry.rewards.bought1, entry.rewards.bought10];
+                  const statuses = [entry.rewards.verified, entry.rewards.bought1, entry.rewards.bought4, entry.rewards.bought10];
                   if (statuses.some(s => s === 'claim')) return 0;
                   if (statuses.some(s => s === 'pending')) return 1;
                   return 2;
@@ -622,7 +625,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
                       );
                     })()}
                     {entry.draftsPurchased !== undefined && (
-                      <span className="text-text-muted text-xs">{Math.min(entry.draftsPurchased, 10)} drafts purchased</span>
+                      <span className="text-text-muted text-xs">{Math.min(entry.draftsPurchased, 10)} Draft Passes</span>
                     )}
                   </div>
                   {/* Verify gate as a milestone-style row: label left, status

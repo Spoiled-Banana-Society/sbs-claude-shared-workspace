@@ -123,16 +123,27 @@ export function eventNotificationContent(
         icon: 'gift',
       };
     case 'referral-milestone': {
-      const m =
-        payload.milestone === 'verified' ? 'verified their X account' :
-        payload.milestone === 'bought1' ? 'bought their first draft' :
-        payload.milestone === 'bought10' ? 'bought 10 drafts' :
-        'hit a milestone';
+      // This generic event is ONLY emitted for the 'verified' milestone, and
+      // verifying pays the REFERRER nothing — it's informational progress. The
+      // referrer's Free Spin comes ONLY when their friend buys a Draft Pass
+      // (those fire a separate, named bell via notifyReferrerOfMilestones). So
+      // DON'T tell them to "claim your free spin" here.
+      if (payload.milestone === 'verified') {
+        return {
+          type: 'promo',
+          title: 'Your referral is in!',
+          message: "A friend you referred verified their X and took their spin. You'll earn a Free Spin when they buy a Draft Pass.",
+          link: '/promos?promo=3',
+          dedupeKey: `referral-verified-${userId}`,
+          icon: 'users',
+        };
+      }
+      // Defensive fallback (mints normally use the named bell, not this event).
       return {
         type: 'promo',
-        title: 'Referral free spin!',
-        message: `A friend you referred ${m}. Claim your free spin.`,
-        link: '/promos',
+        title: 'Referral Free Spin!',
+        message: 'A friend you referred bought a Draft Pass — claim your Free Spin.',
+        link: '/promos?promo=3',
         dedupeKey: `referral-${payload.milestone ?? 'x'}-${userId}`,
         icon: 'users',
       };

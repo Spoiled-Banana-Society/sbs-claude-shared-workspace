@@ -209,19 +209,25 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       return;
     }
     case 'referral-milestone': {
-      // Friend identity is NOT in the event payload — it lives in
-      // authenticated /api/promos. The toast/bell copy is intentionally
-      // generic; users open /promos to see which friend triggered it.
-      const milestoneLabel =
-        event.milestone === 'verified' ? 'verified their X account' :
-        event.milestone === 'bought1' ? 'bought their first draft' :
-        event.milestone === 'bought10' ? 'bought 10 drafts' :
-        'hit a milestone';
-      surfaces.showToast(`A referred friend ${milestoneLabel} — free spin earned!`, '/promos');
+      // Only emitted for the 'verified' milestone — verifying pays the REFERRER
+      // nothing (informational). Their Free Spin comes ONLY when the friend buys
+      // a Draft Pass (that fires a separate named bell). So no "claim" here.
+      if (event.milestone === 'verified') {
+        surfaces.showToast('A friend you referred verified their X and took their spin.', '/promos?promo=3');
+        surfaces.pushNotif(
+          'Your referral is in!',
+          "A friend you referred verified their X and took their spin. You'll earn a Free Spin when they buy a Draft Pass.",
+          '/promos?promo=3',
+          `referral-verified-${event.eventId}`,
+        );
+        return;
+      }
+      // Defensive fallback (mints normally fire the named bell, not this event).
+      surfaces.showToast('A friend you referred bought a Draft Pass — claim your Free Spin!', '/promos?promo=3');
       surfaces.pushNotif(
-        'Referral free spin!',
-        `A friend you referred ${milestoneLabel}. Claim your free spin.`,
-        '/promos',
+        'Referral Free Spin!',
+        'A friend you referred bought a Draft Pass — claim your Free Spin.',
+        '/promos?promo=3',
         `referral-${event.eventId}`,
       );
       return;
