@@ -50,7 +50,17 @@ export function DraftPlayerList({
     if (typeof custom === 'number' && custom > 0) return custom;
     return player.byeWeek;
   };
-  const [filter, setFilter] = useState<PositionFilter>('ALL');
+  // Multi-select position filter: empty set = show all (the "ALL" chip).
+  // Toggling a position adds/removes it; ALL clears the set.
+  type Pos = Exclude<PositionFilter, 'ALL'>;
+  const [activePositions, setActivePositions] = useState<Set<Pos>>(new Set());
+  const togglePosition = (pos: Pos) =>
+    setActivePositions(prev => {
+      const next = new Set(prev);
+      if (next.has(pos)) next.delete(pos);
+      else next.add(pos);
+      return next;
+    });
   const [sortField, setSortFieldRaw] = useState<SortField>(sortPreference ?? 'adp');
   useEffect(() => {
     if (sortPreference && sortPreference !== sortField) {
@@ -78,9 +88,9 @@ export function DraftPlayerList({
       );
     }
 
-    // Apply position filter
-    if (filter !== 'ALL') {
-      players = players.filter(p => positionFromPlayerId(p.playerId) === filter);
+    // Apply position filter (multi-select — keep players in ANY selected position)
+    if (activePositions.size > 0) {
+      players = players.filter(p => activePositions.has(positionFromPlayerId(p.playerId) as Pos));
     }
 
     // Apply sort
@@ -95,7 +105,7 @@ export function DraftPlayerList({
 
     return players;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availablePlayers, filter, sortField, searchQuery, userRankMap, userStatsMap]);
+  }, [availablePlayers, activePositions, sortField, searchQuery, userRankMap, userStatsMap]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
@@ -192,13 +202,13 @@ export function DraftPlayerList({
                 {/* Position filter buttons */}
                 {POSITION_FILTERS.map(pos => {
                   const posColor = pos !== 'ALL' ? (POSITION_COLORS[pos] || '#888') : '#555';
-                  const isActive = filter === pos;
+                  const isActive = pos !== 'ALL' && activePositions.has(pos as Pos);
 
                   if (pos === 'ALL') {
                     return (
                       <button
                         key={pos}
-                        onClick={() => setFilter(pos)}
+                        onClick={() => setActivePositions(new Set())}
                         style={{
                           flex: 1,
                           display: 'flex',
@@ -207,7 +217,7 @@ export function DraftPlayerList({
                           alignItems: 'center',
                           height: 32,
                           borderRadius: 5,
-                          background: '#555',
+                          background: activePositions.size === 0 ? '#555' : '#1a1a1a',
                           fontSize: 12,
                           fontWeight: 'bold',
                           color: '#fff',
@@ -223,7 +233,7 @@ export function DraftPlayerList({
                   return (
                     <button
                       key={pos}
-                      onClick={() => setFilter(pos)}
+                      onClick={() => togglePosition(pos as Pos)}
                       style={{
                         flex: 1,
                         display: 'flex',
