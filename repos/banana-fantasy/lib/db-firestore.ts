@@ -2870,42 +2870,9 @@ function jackpotSpinReward(position: number): number {
   return 1;
 }
 
-/**
- * Deterministically pick the JP winner index (0..9) from the draftId.
- * Same draftId always resolves to the same index, so every drafter who
- * calls recordJackpotHit can independently agree on who won. Eventually
- * this should derive from the same VRF seed used for slot derivation;
- * for now sha256(draftId) is fine on staging.
- */
-function jackpotWinnerIndex(draftId: string): number {
-  const hash = crypto.createHash('sha256').update(draftId).digest();
-  // Use the first 4 bytes as a uint32 to keep modulo bias negligible.
-  const n = hash.readUInt32BE(0);
-  return n % 10;
-}
-
-/**
- * Look up the draft order from the Go API and return the ownerId at the
- * given index. Used to gate recordJackpotHit so only the deterministically
- * picked winner gets credited.
- */
-async function getDraftWinnerOwner(draftId: string, winnerIndex: number): Promise<string | null> {
-  try {
-    const baseUrl = (
-      process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL ||
-      process.env.STAGING_DRAFTS_API_URL ||
-      'https://sbs-drafts-api-staging-652484219017.us-central1.run.app'
-    ).replace(/\/$/, '');
-    const res = await fetch(`${baseUrl}/draft/${encodeURIComponent(draftId)}/state/info`);
-    if (!res.ok) return null;
-    const data = (await res.json()) as { draftOrder?: { ownerId?: string }[] };
-    const order = Array.isArray(data?.draftOrder) ? data.draftOrder : [];
-    const winner = order[winnerIndex];
-    return typeof winner?.ownerId === 'string' ? winner.ownerId.toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
+// (Legacy jackpotWinnerIndex + getDraftWinnerOwner helpers removed 2026-06-24 —
+// they only fed the retired recordJackpotHit path. The VRF draw winner is now
+// derived in awardJackpotDraw via deriveDrawWinnerIdx over the PAID list.)
 
 /**
  * Resolve the position-in-batch for the JP draft. Prefer reading the
@@ -3056,7 +3023,12 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
   }
 
   const { createNotification } = await import('@/lib/queueNotifications');
-  for (const w of humans) {
+  // PAID entrants only. The spin draw, the draw bell, the "watch the draw"
+  // video link AND the Jackpot Club badge all go to the paid drafters who were
+  // actually in the draw — free-pass seats earn nothing from the jackpot promo
+  // (Boris 2026-06-24). winnerWallet is always a member of `paid`, so the winner
+  // is always included.
+  for (const w of paid) {
     const isWinner = w === winnerWallet;
     // Badge unlock SILENT here — we send the one combined/draw noti below.
     const newlyBadged = await unlockBadge(w, 'jackpot-club', { source: 'jackpot-draw', draftId }, { silent: true }).catch(() => false);
@@ -3107,80 +3079,25 @@ async function creditJackpotWinnerPromo(userId: string, draftId: string, display
     (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
     tx.set(promoRef, stripUndefined(promo), { merge: true });
   });
-  pushStreamEventBg(userId, 'promo-jackpot-hit', { draftId, awardedCount: reward });
+  // Live refetch ONLY (no bell). This pushes the just-credited spins to the
+  // winner's open session in real time so their claimable count updates without
+  // a reload. The winner's single bell — "You Won N Free Spins!" — is sent by
+  // awardJackpotDraw; firing 'promo-jackpot-hit' here too would persist a
+  // duplicate "Jackpot Hit!" bell (Boris 2026-06-24).
+  pushStreamEventBg(userId, 'notification', { source: 'jackpot-draw-credit' });
 }
 
-export async function recordJackpotHit(userId: string, draftId: string, passType?: string): Promise<Promo | null> {
-  // Free-pass drafts earn NO promo credit — only paid drafts count toward the
-  // jackpot-hit promo. The draft token is stamped with the chosen pass type
-  // (source of truth) — use it, falling back to the client value only when the
-  // stamp can't be read, so a free draft can never sneak past as paid.
-  // Credit only a real PAID participant of this draft (see promoCreditAllowed).
-  // The winner re-derivation below is an additional jackpot-specific gate.
-  if (!(await promoCreditAllowed(userId, draftId, passType, 'jackpot'))) return null;
-  const db = getAdminFirestore();
-  await ensureUserSeeded(userId);
-
-  // Only 1 of the 10 drafters wins, per the promo rules. Pick the winner
-  // deterministically from sha256(draftId). Every drafter calls this
-  // endpoint when their slot machine reveals JACKPOT, but the gate below
-  // makes sure only the picked winner's promo gets credited.
-  const winnerIndex = jackpotWinnerIndex(draftId);
-  const winnerOwnerId = await getDraftWinnerOwner(draftId, winnerIndex);
-  if (winnerOwnerId === null) {
-    // Couldn't fetch draft order — bail rather than risk crediting wrong wallet.
-    return null;
-  }
-  if (winnerOwnerId !== userId.toLowerCase()) {
-    // Caller is in the JP draft but isn't the picked winner. No credit.
-    return null;
-  }
-
-  const position = await getCurrentBatchPosition();
-  const reward = jackpotSpinReward(position);
-
-  const promoRef = db
-    .collection(USERS_COLLECTION)
-    .doc(userId)
-    .collection(PROMOS_SUBCOLLECTION)
-    .doc(JACKPOT_HIT_PROMO_ID);
-
-  return db.runTransaction(async (tx) => {
-    const promoSnap = await tx.get(promoRef);
-    if (!promoSnap.exists) return { promo: null, justAdded: false, awarded: 0 };
-
-    const promo = deepClone(promoSnap.data() as Promo);
-    if (promo.type !== 'jackpot') return { promo: null, justAdded: false, awarded: 0 };
-
-    const history = promo.modalContent.jackpotHistory || [];
-
-    // Already recorded this draft → no-op, no event push.
-    if (history.some(h => h.draftName === draftId)) {
-      return { promo, justAdded: false, awarded: 0 };
-    }
-
-    history.unshift({
-      date: new Date().toISOString(), // full ISO → modal shows date + time
-      draftName: draftId,
-      amount: reward,
-    });
-    promo.modalContent.jackpotHistory = history;
-    promo.progressCurrent = 1;
-    promo.claimable = true;
-    promo.claimCount = (promo.claimCount || 0) + reward;
-    (promo as unknown as Record<string, unknown>).updatedAt = new Date().toISOString();
-
-    tx.set(promoRef, stripUndefined(promo), { merge: true });
-    return { promo: deepClone(promo), justAdded: true, awarded: reward };
-  }).then(({ promo, justAdded, awarded }) => {
-    // Push only when the jackpot was newly credited to this user. The
-    // gate above (winnerOwnerId !== userId) ensures only the actual
-    // winner reaches this code path.
-    if (justAdded) {
-      pushStreamEventBg(userId, 'promo-jackpot-hit', { draftId, awardedCount: awarded });
-    }
-    return promo;
-  });
+export async function recordJackpotHit(_userId: string, _draftId: string, _passType?: string): Promise<Promo | null> {
+  // RETIRED 2026-06-24 — no-op. The Jackpot Hit promo is now credited
+  // EXCLUSIVELY by the VRF draw path `awardJackpotDraw` (paid-only winner draw,
+  // on-chain receipt, single "You Won N Free Spins!" bell, real-time credit).
+  // This legacy per-drafter path picked the winner with a DIFFERENT algorithm
+  // (sha256(draftId) % 10 over ALL seats, paid or free) and wrote history under
+  // a DIFFERENT dedupe key, so running it alongside the draw could credit a
+  // SECOND winner — or double-credit the same one. Neutered to a hard no-op so
+  // the now-vestigial /api/promos/jackpot-hit route (and any stale clients still
+  // POSTing to it during a deploy) can never double-award.
+  return null;
 }
 
 // ── Founder Draft promo ──

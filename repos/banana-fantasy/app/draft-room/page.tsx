@@ -2026,36 +2026,12 @@ function DraftRoomContent() {
     });
   }, [firebaseRtdb.data?.type, specialTypeParam, draftId, urlDraftId]);
 
-  // Jackpot-hit promo POST. Fires whenever the resolved draftType is
-  // 'jackpot' for a paid draft — independent of whether the user was on
-  // the page during the slot-machine animation. Idempotent via
-  // localStorage promo-jackpot:* + the server's draftId dedupe.
-  useEffect(() => {
-    if (!isLiveMode || draftType !== 'jackpot') return;
-    const id = draftId || urlDraftId;
-    if (!id || !isPaidDraft) return;
-    const promoUserId = user?.id || walletParam?.toLowerCase();
-    if (!promoUserId) return;
-    const jackpotKey = `promo-jackpot:${id}`;
-    if (localStorage.getItem(jackpotKey)) return;
-    localStorage.setItem(jackpotKey, '1');
-    fetch('/api/promos/jackpot-hit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: promoUserId, draftId: id, passType: passTypeParam || draftStore.getDraft(id)?.passType || 'paid' }),
-    }).catch(err => {
-      console.error('[Promo] Jackpot tracking failed:', err);
-      reportClientError({
-        source: LOG_SOURCES.draft.PROMO_JACKPOT_HIT_FAILED,
-        message: err instanceof Error ? err.message : String(err),
-        route: 'draft-room',
-        actor: walletParam,
-        context: { draftId: id, promoUserId },
-        stack: err instanceof Error ? err.stack : undefined,
-      });
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftType, draftId, urlDraftId, isLiveMode, isPaidDraft, walletParam, user?.id]);
+  // Jackpot-hit promo crediting is owned ENTIRELY by the server-side VRF draw
+  // (`awardJackpotDraw`, fired on reveal-complete + the marketplace close
+  // backstop): it randomizes a winner from the PAID entrants only, credits the
+  // spins in real time, posts the on-chain receipt and sends the single bell.
+  // The old per-drafter POST to /api/promos/jackpot-hit was removed 2026-06-24 —
+  // running it alongside the draw could credit a second/duplicate winner.
 
   // Founder Draft promo POST. Fires once the draft is past filling.
   // Server validates that the draft actually qualifies (within window
