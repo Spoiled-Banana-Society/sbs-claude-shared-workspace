@@ -7,6 +7,7 @@ import type { DraftPlayer } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 import { getTruncatedAccountName } from '@/utils/helpers';
+import { useSelfPfp } from '@/hooks/useSelfPfp';
 
 interface DraftBoardGridProps {
   draftOrder: DraftPlayer[];
@@ -36,6 +37,16 @@ export function DraftBoardGrid({
   userDisplayName,
 }: DraftBoardGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Durable self avatar: prefer the live auth pfp, then the polled usersMap
+  // entry for our own slot, then the last-known-good pfp persisted to
+  // localStorage. Survives Privy rehydration + mobile tab backgrounding, so
+  // our own avatar never blanks out to the banana once we've seen it once.
+  const selfPlayer = draftOrder.find((p) => p?.isYou);
+  const selfMapImageUrl = selfPlayer?.name
+    ? usersMap?.[selfPlayer.name.toLowerCase()]?.imageUrl
+    : undefined;
+  const selfPfp = useSelfPfp(userProfilePicture, selfMapImageUrl);
 
   // Chunk picks into rounds of 10
   const rounds: DraftSummarySlot[][] = [];
@@ -89,11 +100,8 @@ export function DraftBoardGrid({
                 : getTruncatedAccountName(resolvedUser?.displayName || player.name, player.name))
             : slot.ownerName;
 
-          // For "you", fall back to the polled usersMap when the live
-          // userProfilePicture is stale (draft tab opened before the pfp was set).
-          const selfMapUser = player?.isYou && player?.name ? usersMap?.[player.name.toLowerCase()] : null;
           const avatarUrl = player?.isYou
-            ? (userProfilePicture || selfMapUser?.imageUrl || '/banana-profile.png')
+            ? (selfPfp || '/banana-profile.png')
             : (resolvedUser?.imageUrl || '/banana-profile.png');
           const badge = player?.isYou
             ? userEquippedBadge

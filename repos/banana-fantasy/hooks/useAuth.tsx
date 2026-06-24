@@ -12,12 +12,16 @@ import { BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { isReturningWalletSync, BBB3_CONTRACT_ADDRESS } from '@/lib/returningUsers';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { rememberSelfPfp, SELF_PFP_KEY } from '@/hooks/useSelfPfp';
 
 const USER_PROFILE_KEY = 'banana-fantasy-user-profile';
 const USER_BALANCE_KEY = 'banana-fantasy-user-balance';
 const USER_STORAGE_KEYS = [
   USER_PROFILE_KEY,
   USER_BALANCE_KEY,
+  // Durable self-avatar cache — clear on logout so the next account on this
+  // browser doesn't inherit the previous user's pfp.
+  SELF_PFP_KEY,
   // NOTE: 'banana-active-drafts' intentionally NOT cleared on logout
   // so filling/in-progress drafts persist across login sessions
   'banana-completed-drafts',
@@ -657,6 +661,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
           setUser(merged);
+          // Warm the durable self-pfp cache so the draft room shows our avatar
+          // immediately even on a cold mobile load / before the poll returns.
+          rememberSelfPfp(merged.profilePicture);
           setIsNewUser(false);
           setShowOnboarding(false);
           // Lazy-load the equipped badge + ripeness tier from our own backend
@@ -711,6 +718,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
           };
           setUser(fallbackUser);
+          rememberSelfPfp(fallbackUser.profilePicture);
           if (isNotFound) {
             setIsNewUser(true);
             setShowOnboarding(true);
@@ -1080,6 +1088,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profilePicture: updated.profilePicture,
         nflTeam: updated.nflTeam,
       });
+      // Keep the durable self-pfp cache in lockstep with edits.
+      rememberSelfPfp(updated.profilePicture);
       // Sync profile changes to Go API backend (best-effort, don't block UI)
       if (prev.walletAddress) {
         if (updates.username && updates.username !== prev.username) {

@@ -22,6 +22,7 @@ import { draftBandBackground, draftBandShadow, draftStatusColor } from '@/lib/dr
 import { useDraftEngine } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
+import { useSelfPfp } from '@/hooks/useSelfPfp';
 import { UserPopover } from '@/components/social/UserPopover';
 
 interface UserLike {
@@ -100,6 +101,16 @@ export function DraftRoomDrafting({
   usersMap,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Durable self avatar: live auth pfp → polled usersMap (our slot) →
+  // last-known-good pfp persisted in localStorage. Keeps our own avatar from
+  // blanking to the banana during Privy rehydration or after a mobile tab is
+  // backgrounded (both live sources go briefly empty there).
+  const selfPlayer = engine.draftOrder.find((p) => p?.isYou);
+  const selfMapImageUrl = selfPlayer?.name
+    ? usersMap?.[selfPlayer.name.toLowerCase()]?.imageUrl
+    : undefined;
+  const selfPfp = useSelfPfp(user?.profilePicture, selfMapImageUrl);
 
   useEffect(() => {
     try {
@@ -239,12 +250,10 @@ export function DraftRoomDrafting({
                       {isUserCard ? (
                         <div className="flex justify-center">
                           <AvatarWithBadge
-                            // Prefer the live user pfp, but fall back to the
-                            // polled usersMap (display-batch) — a long-running
-                            // draft tab loaded before the user set their pfp has
-                            // a stale user.profilePicture, while usersMap refreshes
-                            // every 30s and carries the new avatar.
-                            imageUrl={user?.profilePicture || usersMap?.[playerData?.name?.toLowerCase() ?? '']?.imageUrl || '/banana-profile.png'}
+                            // Durable self pfp (see useSelfPfp at top): live auth
+                            // pfp → polled usersMap → localStorage cache, so it
+                            // never blanks to the banana on reload / mobile.
+                            imageUrl={selfPfp || '/banana-profile.png'}
                             alt="You"
                             size={48}
                             equippedBadge={user?.equippedBadge}
