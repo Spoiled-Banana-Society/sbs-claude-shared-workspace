@@ -1,13 +1,17 @@
 'use client';
 
 import React from 'react';
-import { useAuth } from '@/hooks/useAuth';
 import { promoAwardsSpin } from '@/lib/promoMath';
 
-// Short "what's a spin?" explainer shown on spin-awarding promo cards for
-// NEW users only — anyone who hasn't spun the Banana Wheel yet and isn't a
-// returning BB3 player. Self-gates (no prop threading): once the user takes
-// their first spin (user.hasSpunWheel flips true) it disappears everywhere.
+// Short "what's a spin?" explainer shown on spin-awarding promo cards.
+//
+// Boris 2026-06-24: this copy now stays on EVERY spin-awarding promo box,
+// ALWAYS, for ALL users — new AND returning, even after they've taken their
+// first spin. (Previously it self-gated off for BB3 returning players and for
+// anyone who'd already spun, which made it vanish from every box once a user
+// completed the new-user promo.) The new-user promo BOX itself still leaves
+// after claim via the separate promo filter — that's unchanged; this only
+// governs the tagline inside the spin promos that remain.
 //
 // Pass the promo title so it only renders on spin promos, and a className so
 // each surface can colour it for its card (light vs dark).
@@ -18,11 +22,7 @@ export function SpinExplainer({
   promoTitle?: string;
   className?: string;
 }) {
-  const { user, isBB3Holder } = useAuth();
-
   if (!promoAwardsSpin(promoTitle)) return null;
-  if (isBB3Holder) return null; // returning players already know
-  if (user?.hasSpunWheel) return null; // they've spun — no need to explain
 
   return (
     <span className={className}>

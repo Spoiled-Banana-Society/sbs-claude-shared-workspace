@@ -634,7 +634,9 @@ export async function claimPromo(userId: string, promoId: string) {
       void createNotification(userId, {
         type: 'promo',
         title: 'Promo Claimed!',
-        message: `You earned ${result.spinsAdded} ${isBuyBonus ? 'free draft' : 'wheel spin'}${result.spinsAdded !== 1 ? 's' : ''}!`,
+        message: isBuyBonus
+          ? `You earned ${result.spinsAdded} free draft pass${result.spinsAdded !== 1 ? 'es' : ''}!`
+          : `You earned ${result.spinsAdded} wheel spin${result.spinsAdded !== 1 ? 's' : ''}!`,
         link: isBuyBonus ? '/drafting' : '/banana-wheel',
         icon: isBuyBonus ? 'ticket' : 'spin',
       });
@@ -1048,10 +1050,10 @@ export async function notifyPassPurchased(userId: string, quantity: number, dedu
   try {
     await createNotification(userId.toLowerCase(), {
       type: 'purchase_complete',
-      title: quantity === 1 ? 'Draft pass purchased' : `${quantity} draft passes purchased`,
+      title: quantity === 1 ? 'Draft Pass purchased' : `${quantity} Draft Passes purchased`,
       message: quantity === 1
-        ? 'Your draft pass is ready — jump into a draft!'
-        : `Your ${quantity} draft passes are ready — jump into a draft!`,
+        ? 'Your Draft Pass is ready — jump into a draft!'
+        : `Your ${quantity} Draft Passes are ready — jump into a draft!`,
       link: '/draft',
       dedupeKey: `pass-buy-${dedupeId}`,
       icon: 'ticket',

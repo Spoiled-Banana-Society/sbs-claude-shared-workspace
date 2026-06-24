@@ -174,12 +174,15 @@ export async function POST(req: Request) {
     });
 
     try {
-      const title = count > 0 ? 'Free Drafts Granted!' : 'Drafts Adjusted';
-      const message = mintOnChain
-        ? `We just minted ${count} free draft pass NFT${count !== 1 ? 's' : ''} to your wallet.`
-        : count > 0
-          ? `You received ${count} free draft${count !== 1 ? 's' : ''}. You now have ${newFreeDrafts} total.`
-          : `An admin adjusted your free drafts by ${count}. You now have ${newFreeDrafts} total.`;
+      // Plain "Draft Pass" language for EVERY user (web2 + web3) — never any
+      // mint / NFT / crypto / wallet jargon. Singular vs plural on count.
+      const isOne = count === 1;
+      const title = count > 0
+        ? `Free Draft ${isOne ? 'Pass' : 'Passes'} Granted`
+        : 'Draft Passes Adjusted';
+      const message = count > 0
+        ? `The SBS Team sent you ${isOne ? 'a Free Draft Pass' : `${count} Free Draft Passes`} to your account.`
+        : `An admin adjusted your Draft Passes by ${count}. You now have ${newFreeDrafts} total.`;
       await db.collection('marketplace_notifications').add({
         wallet: targetWallet,
         type: 'promo',

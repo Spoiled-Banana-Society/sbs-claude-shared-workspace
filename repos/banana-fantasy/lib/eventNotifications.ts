@@ -81,10 +81,10 @@ export function eventNotificationContent(
       const count = payload.awardedCount ?? 1;
       return {
         type: 'promo',
-        title: count === 1 ? 'Free draft earned!' : `${count} free drafts earned!`,
+        title: count === 1 ? 'Draft Pass earned' : `${count} Draft Passes earned`,
         message: count === 1
-          ? 'Your card fees added up to $25 — a free draft is on us. Tap to play.'
-          : `Your card fees earned you ${count} free drafts — on us. Tap to play.`,
+          ? 'Your card fees added up to $25 — a Draft Pass is on us. Tap to play.'
+          : `Your card fees earned you ${count} Draft Passes — on us. Tap to play.`,
         link: '/drafting',
         // 'gift' = a FREE draft (earned/won), distinct from a PURCHASED pass
         // ('ticket'). Matches the wheel-win free-draft bell (Boris 2026-06-20).
@@ -116,7 +116,7 @@ export function eventNotificationContent(
     case 'first-purchase-unlocked':
       return {
         type: 'promo',
-        title: 'First Purchase Bonus 🍌',
+        title: 'First Purchase Bonus',
         message: 'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,

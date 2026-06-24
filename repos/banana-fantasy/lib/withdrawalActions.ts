@@ -131,7 +131,7 @@ export async function markWithdrawalPaid(opts: {
   if (userId && amount > 0) {
     createNotification(userId, {
       type: 'withdrawal_paid',
-      title: `💸 $${amount.toLocaleString()} sent to your wallet`,
+      title: `$${amount.toLocaleString()} sent to your wallet`,
       message: 'Your withdrawal is complete. USDC has been delivered on Base.',
       link: '/winnings',
       dedupeKey: `wd-paid-${id}`,

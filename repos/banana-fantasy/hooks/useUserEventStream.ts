@@ -149,15 +149,15 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       const count = event.awardedCount ?? 1;
       surfaces.showToast(
         count === 1
-          ? '🎁 You earned a free draft — your card fees covered it!'
-          : `🎁 You earned ${count} free drafts — your card fees covered them!`,
+          ? 'You earned a Draft Pass — your card fees covered it!'
+          : `You earned ${count} Draft Passes — your card fees covered them!`,
         '/drafting',
       );
       surfaces.pushNotif(
-        count === 1 ? 'Free draft earned!' : `${count} free drafts earned!`,
+        count === 1 ? 'Draft Pass earned' : `${count} Draft Passes earned`,
         count === 1
-          ? 'Your card fees added up to $25 — a free draft is on us. Tap to play.'
-          : `Your card fees earned you ${count} free drafts — on us. Tap to play.`,
+          ? 'Your card fees added up to $25 — a Draft Pass is on us. Tap to play.'
+          : `Your card fees earned you ${count} Draft Passes — on us. Tap to play.`,
         '/drafting',
         `promo-card-free-draft-${event.eventId}`,
       );

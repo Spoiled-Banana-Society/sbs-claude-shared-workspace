@@ -171,7 +171,7 @@ export async function POST(req: Request) {
           // prize id so a retried import can't double-notify.
           await createNotification(row.wallet, {
             type: 'prize_won',
-            title: `🏆 You won $${row.amount.toLocaleString()}!`,
+            title: `You won $${row.amount.toLocaleString()}!`,
             message: `${row.contestName} — your winnings are ready on the Winnings page.`,
             link: '/winnings',
             dedupeKey: `prize-won-${prizeId}`,
