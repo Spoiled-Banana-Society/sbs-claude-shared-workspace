@@ -145,7 +145,19 @@ async function updateADP({ db } = {}) {
 
   await mapRef.set(statsMap);
 
-  return { playersUpdated, draftsCounted, draftsSkipped, draftsBeforeCutoff, playersMissing };
+  // After ADP is fresh, make every untouched user's default rankings track it
+  // (skips anyone who genuinely customized). Wrapped so a failure here never
+  // fails the ADP update itself.
+  let rerank = null;
+  try {
+    const { rerankToFollowAdp } = require("./rerankRankings");
+    rerank = await rerankToFollowAdp({ db });
+  } catch (err) {
+    console.error("[updateADP] rerankToFollowAdp failed (ADP still updated):", err);
+    rerank = { error: String(err && err.message ? err.message : err) };
+  }
+
+  return { playersUpdated, draftsCounted, draftsSkipped, draftsBeforeCutoff, playersMissing, rerank };
 }
 
 module.exports = { updateADP };
