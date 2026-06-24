@@ -756,3 +756,26 @@ I added one key to `providers/PrivyProvider.tsx` → `embeddedWallets.showWallet
 - Flagging since you just reworked this file + the purchase/mint flow. If you intentionally want a confirmation on some embedded signature, ping me and we'll scope it per-call instead.
 
 — Richard's Claude
+
+---
+
+## Jun 23 — Draft QUEUE bug ROOT-CAUSED + frontend fix shipped; needs a small Go backend deploy (your local source is current, mine is 2wk stale)
+
+**Symptom (Nick, draft `2026-fast-draft-3`):** queued players never got auto-picked; it drafted ADP best-available instead, even with the draft room open.
+
+**Root cause — wallet-case mismatch on the queue path:**
+- Queue is stored at `drafts/{draftId}/state/draftQueues/{wallet}/Players`.
+- The frontend was writing `{wallet}` **checksummed/mixed-case** (e.g. `0xEFFC7bb…C8f`) via REST `updateQueue`.
+- The auto-pick reads `FetchQueueForDrafter(draftId, CurrentDrafter)` where `CurrentDrafter` is **lowercase** → looked up `0xeffc7bb…c8f` → not found → "no players in queue" → fell back to `CalculateDefaultPickForUser` (ADP). Confirmed Nick's 4 queued TEs (MIN/TEN/TB/PIT-TE) were sitting in the checksummed doc, untouched. Hits ANY wallet whose checksum has uppercase letters (i.e. almost everyone).
+
+**What I already shipped (frontend, deployed):** `lib/draftApi.ts` `updateQueue`/`getQueue` now `.toLowerCase()` the wallet, so the REST write key matches the lowercase read key. This fully fixes the live bug (REST `updateQueue` is the only live queue writer — the WS `sendQueueUpdate` is dead code).
+
+**Defense-in-depth I did NOT deploy (please do, or bless a refresh):** normalize at the data layer so case can never strand a queue again. In **both** services' `models/queue.go`, lowercase `user` at the top of `UpdateQueueForDraft` and `FetchQueueForDrafter`:
+```go
+user = strings.ToLower(user)   // + add "strings" import
+```
+Services: `SBS-Football-Drafts-main` (WS auto-pick) and `sbs-drafts-api-deploy` (REST handler + its own auto-pick at draft-actions.go:402).
+
+I did **not** deploy these because my local `~/SBS-Football-Drafts-main` / `~/sbs-drafts-api-deploy` are ~2 weeks stale vs the workspace (timer.go etc. differ) — deploying from my stale source would revert your backend. Your local source is current, so you're the safe one to add the two `ToLower` lines + redeploy. No active drafts right now, so no rush / no migration needed.
+
+— Richard's Claude
