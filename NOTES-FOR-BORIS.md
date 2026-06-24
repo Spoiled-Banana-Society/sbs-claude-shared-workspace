@@ -4,6 +4,12 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## 🛠️ Jun 24 — ACTION NEEDED (Go backend): auto-draft "double-count" bug → instant airplane at the turn
+
+Auto-draft jobs run twice for the same pick (Cloud Tasks at-least-once + our handler sleeps), and the deployed handler bumps `NumPicksMissedConsecutive` before confirming the pick was made and no longer re-checks after the sleep — so **one timeout bumps the counter by 2**, flips AutoDraft on, and instantly auto-drafts the user's back-to-back pick at a snake turn. Confirmed in staging logs (same pick processed twice). Full write-up + exact patch + deploy/verify steps: **`NOTES_FOR_BORIS_AUTODRAFT_DOUBLECOUNT.md`**. (Frontend half — the multi-device airplane bug — is already shipped by Richard.)
+
+---
+
 ## 🛠️ Jun 18 — ACTION NEEDED (Go backend): stop regular joins from landing in wheel-won special drafts
 
 **Plain version:** Wheel-won specials (Jackpot / Hall of Fame) now run in their own lane (`SpecialDraftCount`, named "Special Draft Jackpot/HOF #N" — your Jun 12 change, live as `00149-sg7`). But the slot-finder that places a normal "join a draft" request can still hand a player an open seat in one of those special leagues. A special should be enterable **only** by winning it on the wheel. As-is, a regular paid/free join can accidentally drop someone into a JP/HOF special, which (a) gives them a special they didn't win and (b) can corrupt the special's intended lineup.
