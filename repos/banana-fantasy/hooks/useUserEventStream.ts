@@ -164,10 +164,10 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       return;
     }
     case 'promo-daily-drafts': {
-      surfaces.showToast('4 Drafts Daily complete — free spin earned!', '/promos');
+      surfaces.showToast('4 Drafts in 24 Hours complete — free spin earned!', '/promos');
       surfaces.pushNotif(
-        'Daily promo complete!',
-        'You finished 4 drafts today — claim your free spin.',
+        '4 Drafts in 24 Hours complete!',
+        'You finished 4 paid drafts in time — claim your free spin.',
         '/promos',
         `promo-daily-${event.eventId}`,
       );

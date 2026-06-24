@@ -91,8 +91,8 @@ export const mockPromos: Promo[] = [
   {
     id: '1',
     type: 'daily-drafts',
-    title: '4 Drafts Daily → FREE SPIN',
-    description: 'Complete 4 drafts today for a spin',
+    title: '4 Drafts in 24 Hours → FREE SPIN',
+    description: 'Complete 4 paid drafts in 24 hours for a Free Spin',
     ctaText: 'Start Drafting',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
@@ -102,8 +102,8 @@ export const mockPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: '4 Drafts Daily → FREE SPIN',
-      explanation: 'Complete 4 drafts within 24 hours to earn a free Banana Wheel spin. Your 24-hour timer starts when you begin your first draft. Once you complete 4 drafts, your progress and timer reset so you can earn another spin!',
+      title: '4 Drafts in 24 Hours → FREE SPIN',
+      explanation: '• Complete 4 paid drafts within 24 hours to earn a Free Banana Spin.\n• Your 24-hour clock starts the moment your first paid draft fills.\n• Hit 4 in time and the clock resets instantly for a fresh run — no limit, every 4 paid drafts earns another Spin.\n• If 24 hours pass before you reach 4, your progress toward the spin resets to 0 and the clock restarts when your next paid draft fills.\n• Paid drafts only.',
     },
   },
   {

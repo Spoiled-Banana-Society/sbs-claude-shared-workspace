@@ -7,17 +7,19 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 
 const TWITTER_LINKS_COLLECTION = 'v2_twitter_links';
 
-async function requireAuthenticatedWallet(req: Request, walletAddress: string) {
-  // Verify the Privy access token is valid (proves the caller is logged in).
-  // Wallet comparison is intentionally skipped: Privy JWTs don't carry a
-  // wallet claim, the userId is a Privy DID (not a wallet), and v2_users is
-  // keyed by walletAddress — so we can't look the wallet up either. Proper
-  // anti-sybil here requires @privy-io/server-auth → PrivyClient.getUser()
-  // to fetch linkedAccounts; deferred until that dep is added.
-  await getPrivyUser(req);
+async function requireAuthenticatedUser(req: Request, walletAddress: string): Promise<string> {
+  // Verify the Privy access token (proves the caller is logged in) AND return
+  // the Privy userId (a DID) — the stable per-PERSON identifier. We key the
+  // anti-sybil check on this, NOT the wallet: one real person can hold several
+  // wallets (an embedded Privy wallet PLUS a connected MetaMask, and the app
+  // prioritizes the external one), so the derived wallet changes for the same
+  // human — which used to false-trigger "this X is already linked to a
+  // different account" and disconnect legit users. The person (DID) is stable.
+  const { userId } = await getPrivyUser(req);
   if (!walletAddress) {
     throw new ApiError(400, 'walletAddress is required');
   }
+  return userId;
 }
 
 export async function POST(req: Request) {
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
     const twitterId = requireString(body.twitterId, 'twitterId');
     const twitterHandle = requireString(body.twitterHandle, 'twitterHandle');
     const walletAddress = requireString(body.walletAddress, 'walletAddress').toLowerCase();
-    await requireAuthenticatedWallet(req, walletAddress);
+    const privyUserId = await requireAuthenticatedUser(req, walletAddress);
 
     const db = getAdminFirestore();
     const linkRef = db.collection(TWITTER_LINKS_COLLECTION).doc(twitterId);
@@ -41,22 +43,48 @@ export async function POST(req: Request) {
 
     if (linkSnap.exists) {
       const existing = linkSnap.data()!;
-      // Same wallet — already verified, return success
-      if (existing.walletAddress === walletAddress) {
-        return json({ verified: true, handle: existing.twitterHandle, newUserPromoClaimed: existing.newUserPromoClaimed ?? false });
+      const existingPersonId = existing.privyUserId as string | undefined;
+
+      if (existingPersonId) {
+        // Modern record — decide by PERSON (Privy DID), not wallet.
+        if (existingPersonId === privyUserId) {
+          // Same person reconnecting their OWN X (new device / added a wallet).
+          // Always allow; refresh the stored wallet/handle so they stay current.
+          if (existing.walletAddress !== walletAddress || existing.twitterHandle !== twitterHandle) {
+            await linkRef.update({ walletAddress, twitterHandle, relinkedAt: new Date().toISOString() });
+          }
+          return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: existing.newUserPromoClaimed ?? false });
+        }
+        // A DIFFERENT person trying to use an X already owned by someone else →
+        // block. This is the real anti-sybil case ("one X = one person, ever").
+        return json(
+          { verified: false, error: 'This X account is already linked to a different account. One account per person — if you have more than one account you are NOT eligible to win prizes.' },
+          400,
+        );
       }
-      // Different wallet — anti-sybil block
-      return json(
-        { verified: false, error: 'This X account is already linked to a different account. One account per person — if you have more than one account you are NOT eligible to win prizes.' },
-        400,
-      );
+
+      // LEGACY record (created before we stored the person-ID). We can't know
+      // who originally linked it — but the caller just OAuth'd this exact X, so
+      // they control that X account (you can't OAuth an X you don't own). Trust
+      // them, adopt the link, and BACKFILL the person-ID so it's protected by
+      // the person check from now on. newUserPromoClaimed is preserved (it lives
+      // on this twitterId record), so the promo still can't be claimed twice
+      // with the same X regardless of which account holds the link.
+      await linkRef.update({
+        privyUserId,
+        walletAddress,
+        twitterHandle,
+        backfilledAt: new Date().toISOString(),
+      });
+      return json({ verified: true, handle: twitterHandle, newUserPromoClaimed: existing.newUserPromoClaimed ?? false });
     }
 
-    // New link — store mapping
+    // New link — store mapping, now keyed to the PERSON via privyUserId.
     await linkRef.set({
       twitterId,
       twitterHandle,
       walletAddress,
+      privyUserId,
       linkedAt: new Date().toISOString(),
       newUserPromoClaimed: false,
     });
@@ -150,7 +178,7 @@ export async function PATCH(req: Request) {
 
     const body = await parseBody(req);
     const walletAddress = requireString(body.walletAddress, 'walletAddress').toLowerCase();
-    await requireAuthenticatedWallet(req, walletAddress);
+    await requireAuthenticatedUser(req, walletAddress);
 
     const db = getAdminFirestore();
     const snapshot = await db

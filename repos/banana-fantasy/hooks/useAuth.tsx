@@ -1208,7 +1208,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // linkTwitter() redirects to Twitter — when user returns, privy.user updates
   // with the new linkedAccount, which our effect above detects and verifies.
   const handleLinkTwitter = useCallback(() => {
-    if (!privyAvailable || !walletAddress) return;
+    // Don't silently no-op when we're not ready yet — that invisible failure
+    // (user taps Connect, NOTHING happens, no error, no spinner) was a top
+    // cause of "I can't connect my X" reports. Always give feedback.
+    if (!privyAvailable) {
+      setTwitterError('Sign-in is still loading — give it a second and tap Connect again.');
+      return;
+    }
+    if (!walletAddress) {
+      setTwitterError('Finishing sign-in — give it a second, then tap Connect again.');
+      return;
+    }
     setIsTwitterLinking(true);
     setTwitterError(null);
     try {
