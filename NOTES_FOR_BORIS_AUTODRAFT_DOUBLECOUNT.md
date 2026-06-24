@@ -18,9 +18,20 @@ sleep**. So both copies of the job bump the counter → **one timeout pushes the
 counter up by 2** → `AutoDraft` flips on → and at a **snake turn** (your two
 back-to-back picks) the second pick fires **instantly with no clock**.
 
-**Fix:** after the sleep, re-fetch draft state and bail if the pick already
-advanced — *before* touching the counter. This restores a guard that an older
-version of this handler had and the current deployed version dropped.
+**Fix — two layers (do BOTH):**
+- **(A) Re-check after the sleep:** re-fetch draft state and bail if the pick
+  already advanced, *before* touching the counter. Restores a guard an older
+  version of this handler had and the current deployed version dropped. Catches
+  the common case (the duplicate almost always wakes after the first advanced).
+- **(B) Per-pick idempotency key:** add a `LastMissedPickNum` field and only
+  count a miss **once per pick number**. Closes the residual hairline window
+  where two copies wake at the same instant — even then both write
+  `counter = prev+1` for the *same* pick, so last-write-wins converges to
+  `prev+1`, never `prev+2`. Together → ~99%.
+
+Neither layer changes pick-making or draft advancement or the
+persist-before-`ProcessNewPick` ordering, so nothing else regresses (see the
+"Can this break anything?" box below).
 
 ---
 
@@ -88,9 +99,11 @@ the counter. It happens in basically every draft that has any auto-picks.
 
 ## The fix
 
-In `draft-actions/draft-actions.go`, inside the timer-expiry `else` branch,
-**right after the `time.Sleep` block and BEFORE `userInfo.NumPicksMissedConsecutive++`**,
-add a re-fetch + re-check:
+Two files: the handler in `draft-actions/draft-actions.go` (Layers A + B) and a
+one-line struct field in `models/draft-actions.go` (shown after the handler
+block). Inside the timer-expiry `else` branch, **right after the `time.Sleep`
+block**, add the re-check (Layer A) and replace the bare
+`userInfo.NumPicksMissedConsecutive++` with the idempotent count (Layer B):
 
 ```go
 		// Wait until PickEndTime before processing the pick
@@ -129,23 +142,72 @@ add a re-fetch + re-check:
 		realTimeDraftInfo = latest
 		// >>> END ADDED BLOCK <<<
 
-		userInfo.NumPicksMissedConsecutive++
-		// ... rest unchanged (>=2 -> AutoDraft=true, UpdateSortForDrafter, ProcessNewPick)
+			// >>> LAYER B: per-pick idempotency key (replaces the bare
+			// NumPicksMissedConsecutive++). Re-fetch the sort doc so we see any
+			// increment a sibling run already persisted, then count this miss
+			// only ONCE per pick number. Even if two runs wake at the same
+			// instant and both bump, both write counter=prev+1 for the SAME
+			// pick → last-write-wins converges to prev+1, never prev+2. This is
+			// the part that closes the hairline simultaneous-wake window.
+			userInfo = models.FetchSortForDrafter(draftId, ownerId)
+			if userInfo.LastMissedPickNum != currentPickNumber {
+				userInfo.NumPicksMissedConsecutive++
+				userInfo.LastMissedPickNum = currentPickNumber
+				if userInfo.NumPicksMissedConsecutive >= 2 {
+					userInfo.AutoDraft = true
+				}
+				// Persist BEFORE ProcessNewPick (unchanged ordering) so the
+				// next-pick scheduler goroutine reads the updated counter —
+				// keeps the snake-turn instant behavior the refactor wanted.
+				if err = models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
+					fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
+				}
+			}
+			// >>> END LAYER B <<<
+
+			err = models.ProcessNewPick(draftId, calculatedPick, false)
+			// ... rest unchanged (transient-vs-benign error handling)
+```
+
+**Plus the one-line struct change** in `models/draft-actions.go`:
+
+```go
+type SortByObj struct {
+	SortBy                    string `json:"sortBy"`
+	AutoDraft                 bool   `json:"autoDraft"`
+	NumPicksMissedConsecutive int    `json:"numPicksMissedConsecutive"`
+	LastMissedPickNum         int    `json:"lastMissedPickNum"` // ADD — per-pick idempotency key for the miss counter
+}
 ```
 
 That's the whole fix. It does **not** change the persist-before-`ProcessNewPick`
 ordering, so the snake-turn instant-auto behavior the refactor wanted is
-preserved for the *legit* run; only the *duplicate* run is stopped before it
-can double-count.
+preserved for the *legit* run; the *duplicate* run is stopped early by Layer A,
+and the simultaneous-wake corner is neutralized by Layer B.
 
-### Optional belt-and-suspenders (only if you want it bulletproof)
+---
 
-The re-check closes the overwhelming majority of cases (a redelivered job
-almost always wakes after the first has advanced). There's still a theoretical
-hair-line window if two copies wake in the same instant and both re-fetch
-before either advances. To fully eliminate it you'd tie the counter increment
-to the success of `ProcessNewPick` inside a transaction — bigger change, not
-needed for launch. The simple re-check matches the prior known-good behavior.
+## Can this break anything? (short answer: no)
+
+- **New struct field is additive & backward-compatible.** Existing Firestore
+  `sortOrders` docs have no `lastMissedPickNum` → Go decodes it as `0`. Pick 0
+  never exists, so the first real miss for any pick (`N >= 1`) always counts.
+  `FetchSortForDrafter`/`UpdateSortForDrafter` marshal the whole struct, so the
+  field round-trips with no other code changes.
+- **It can only PREVENT over-counting; it never blocks a legit count.** Pick
+  numbers are monotonic, so the legit miss for pick N is always counted (when
+  `LastMissedPickNum < N`); only *duplicate* runs of the same pick are skipped.
+- **Pick-making and draft advancement are untouched.** `ProcessNewPick` still
+  runs exactly as before; whichever run wins makes the pick. We only changed how
+  the *miss counter* is bumped.
+- **No real pick gets skipped.** The legit run sees the pick hasn't advanced
+  (it's the one about to advance it), so Layer A passes and it proceeds.
+- **Re-reads fail the same way the handler already does** (the top of the
+  handler already calls `GetRealTimeDraftInfoForDraft`); worst case is the
+  pre-existing "pick rolls again," never a silently eaten pick.
+- **Don't reset `LastMissedPickNum` on a manual pick.** `submitPick` resetting
+  `NumPicksMissedConsecutive=0` is enough; leaving `LastMissedPickNum` alone is
+  harmless because later picks always have a higher number.
 
 ---
 
