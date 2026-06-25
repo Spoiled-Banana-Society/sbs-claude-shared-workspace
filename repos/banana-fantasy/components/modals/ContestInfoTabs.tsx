@@ -11,9 +11,11 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { mockFAQSections } from '@/lib/faqContent';
 import { ContestDetailsBody } from './ContestDetailsBody';
+import { DraftProofExplainerContent } from '@/components/drafting/DraftProofExplainerContent';
+import { ProofFeedLive } from '@/components/drafting/ProofFeedLive';
 import type { Contest } from '@/types';
 
-type Tab = 'how' | 'contest' | 'faq';
+type Tab = 'how' | 'contest' | 'faq' | 'vrf';
 
 const HOW = [
   { t: '10 Players', d: 'Join a lobby — the draft starts instantly when 10 people join.' },
@@ -35,7 +37,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
     <div>
       {/* tab bar */}
       <div className="inline-flex max-w-full overflow-x-auto banner-no-scrollbar items-center gap-1 rounded-full bg-white/[0.05] p-1 mb-5">
-        {([['contest', 'Contest'], ['how', 'How it Works'], ['faq', 'FAQ']] as [Tab, string][]).map(([k, label]) => (
+        {([['contest', 'Contest'], ['how', 'How it Works'], ['faq', 'FAQ'], ['vrf', 'Verified Fair']] as [Tab, string][]).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)} className={`shrink-0 px-3.5 py-1.5 rounded-full text-[12.5px] font-semibold transition-colors ${tab === k ? 'bg-white text-black' : 'text-white/55 hover:text-white/85'}`}>{label}</button>
         ))}
       </div>
@@ -90,6 +92,20 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Verified Fair — identical VRF explainer + the SAME real-time live feed
+          desktop shows (the (i) banner modal + /proof-feed), now in-tab so every
+          user (incl. mobile, where the desktop sidebar card is hidden) gets it.
+          ProofFeedLive's SSE only connects while this tab is mounted. */}
+      {tab === 'vrf' && (
+        <div className="space-y-6">
+          <DraftProofExplainerContent />
+          <div>
+            <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-3">Live draft feed</p>
+            <ProofFeedLive />
+          </div>
         </div>
       )}
     </div>
