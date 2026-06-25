@@ -157,9 +157,12 @@ function UserRow({ user, returning }: { user: AdminUser; returning: boolean }) {
         <WalletLink wallet={user.walletAddress} bare className="hover:text-banana" />
       </td>
       <td className="px-4 py-3 text-xs">
-        {returning ? (
-          <span className="inline-flex rounded-full px-2 py-0.5 border border-[#F3E216]/40 bg-[#F3E216]/10 text-[#F3E216]">
-            Returning
+        {/* Returning if the wallet is an on-chain BBB3 holder OR the
+            returning-check matched a past identity (email/social) — the latter
+            catches web2 OGs whose new wallet isn't on-chain from last year. */}
+        {(returning || user.isReturningPlayer) ? (
+          <span className="inline-flex rounded-full px-2 py-0.5 border border-[#F3E216]/40 bg-[#F3E216]/10 text-[#F3E216] whitespace-nowrap">
+            Returning{returning ? ' · on-chain' : (user.returningVia ? ` · ${user.returningVia}` : '')}
           </span>
         ) : (
           <span className="inline-flex rounded-full px-2 py-0.5 border border-gray-600/50 bg-gray-700/20 text-gray-300">

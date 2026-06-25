@@ -19,6 +19,8 @@ export interface AdminUser {
   username: string | null;
   email: string | null;
   createdAt: string | null;
+  isReturningPlayer: boolean;
+  returningVia: string | null;
   blueCheckVerified: boolean;
   banned: boolean;
   freeDrafts: number;

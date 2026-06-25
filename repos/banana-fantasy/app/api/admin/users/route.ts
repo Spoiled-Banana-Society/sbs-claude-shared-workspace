@@ -55,6 +55,11 @@ function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) 
       (typeof data.email === 'string' && data.email) ||
       null,
     createdAt: toIsoDate(data.createdAt),
+    // Returning-player flag from the returning-check (email/social/wallet match
+    // to an old-prod identity). This catches WEB2 returners that the on-chain
+    // BBB3-holders set misses (their new wallet isn't on-chain from last year).
+    isReturningPlayer: data.isReturningPlayer === true,
+    returningVia: typeof data.returningVia === 'string' ? data.returningVia : null,
     blueCheckVerified: data.blueCheckVerified === true || data.isBlueCheckVerified === true,
     banned: data.banned === true,
     freeDrafts: typeof data.freeDrafts === 'number' ? data.freeDrafts : 0,
