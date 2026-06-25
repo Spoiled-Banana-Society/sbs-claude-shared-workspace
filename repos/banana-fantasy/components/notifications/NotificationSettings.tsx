@@ -115,7 +115,7 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
   },
   discord: {
     label: 'Discord',
-    blurb: 'Pinged in the SBS Discord server.',
+    blurb: 'A DM from the SBS bot.',
     tile: { Icon: FaDiscord, grad: 'from-[#5865f2] to-[#4752c4]' },
   },
 };
@@ -770,7 +770,7 @@ export function NotificationSettings() {
                     )}
                     {id === 'discord' && on && DISCORD_INVITE_URL && (
                       <p className="text-[12px] leading-relaxed text-text-muted">
-                        Pings only reach you inside the SBS Discord —{' '}
+                        The bot can only DM you if you&apos;re in our server —{' '}
                         <a
                           href={DISCORD_INVITE_URL}
                           target="_blank"
