@@ -165,7 +165,12 @@ export async function GET(req: Request) {
 
     const sortNewestFirst = (a: Categorized, b: Categorized) => b.draftId.localeCompare(a.draftId);
     const active = drafts
-      .filter(d => !d.completed && (d.filling || (d.pickNumber > 0 && d.pickNumber <= 150)))
+      // A `filling` draft only counts as active once at least one person has
+      // joined — an empty 0/10 doc is a leftover lobby (e.g. someone joined
+      // then left; the doc persists) and shouldn't clutter Spectate. Drafts
+      // that have started drafting (pickNumber>0) always have members, so they
+      // show regardless. Admin-display only — no user/draft-logic impact.
+      .filter(d => !d.completed && ((d.filling && d.numPlayers > 0) || (d.pickNumber > 0 && d.pickNumber <= 150)))
       .sort(sortNewestFirst)
       .map(({ completed: _c, ...rest }) => rest);
     const completed = drafts
