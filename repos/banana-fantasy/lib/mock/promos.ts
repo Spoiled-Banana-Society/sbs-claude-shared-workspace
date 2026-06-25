@@ -103,7 +103,7 @@ export const mockPromos: Promo[] = [
     claimCount: 0,
     modalContent: {
       title: '4 Drafts in 24 Hours → FREE SPIN',
-      explanation: '• Complete 4 paid drafts within 24 hours to earn a Free Banana Spin.\n• Your 24-hour clock starts the moment your first paid draft fills.\n• Hit 4 in time and the clock resets instantly for a fresh run — no limit, every 4 paid drafts earns another Spin.\n• If 24 hours pass before you reach 4, your progress toward the spin resets to 0 and the clock restarts when your next paid draft fills.\n• Paid drafts only.',
+      explanation: '• Get into 4 paid drafts within 24 hours to earn a Free Banana Spin.\n• A draft counts as soon as it fills — not when it finishes.\n• Your 24-hour clock starts the moment your first paid draft fills.\n• Hit 4 in time and the clock resets instantly for a fresh run — no limit, every 4 paid drafts earns another Spin.\n• If 24 hours pass before you reach 4, your progress toward the spin resets to 0 and the clock restarts when your next paid draft fills.\n• Paid drafts only.',
     },
   },
   {
