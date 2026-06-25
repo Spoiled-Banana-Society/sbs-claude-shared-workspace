@@ -29,6 +29,15 @@ const nextConfig = {
         pathname: '/sbs-draft-token-images/**',
       },
       {
+        // Uploaded user profile pictures. Without this, any avatar rendered via
+        // next/image (header/profile, useNextImage=true) 400s and falls back to
+        // the banana. The draft room uses a plain <img> so it's unaffected, but
+        // these surfaces need the bucket path whitelisted.
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+        pathname: '/sbs-staging-pfps/**',
+      },
+      {
         // Our own /api/og/team-card obsidian card images (NFT card art).
         protocol: 'https',
         hostname: '*.vercel.app',

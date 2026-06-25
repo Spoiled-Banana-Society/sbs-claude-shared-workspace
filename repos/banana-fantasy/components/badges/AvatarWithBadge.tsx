@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { BadgeIcon } from './BadgeIcon';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
@@ -108,6 +108,7 @@ export function AvatarWithBadge({
   // mobile are the usual culprit: they can render the "?" without ever firing
   // onError, so onError alone isn't enough.
   const [imgLoaded, setImgLoaded] = useState(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
   // Reset both flags if the image URL changes (e.g. user updates pfp).
   useEffect(() => {
     setLoadFailed(false);
@@ -116,6 +117,22 @@ export function AvatarWithBadge({
 
   const isFallback = !imageUrl || loadFailed;
   const src = isFallback ? fallbackSrc : imageUrl;
+
+  // A browser does NOT fire `onLoad` for an image already in its cache (the
+  // <img> is `complete` before React attaches the handler). Without this, a
+  // cached PFP stays pinned at opacity:0 over the banana forever — every reload
+  // / mobile view shows the banana even though the URL is valid (the draft-room
+  // "everyone shows banana" bug). Read the element directly after render so a
+  // cached image is revealed immediately; onLoad/onError still cover the
+  // cache-miss (network) path.
+  useEffect(() => {
+    const el = imgRef.current;
+    if (!el || isFallback) return;
+    if (el.complete) {
+      if (el.naturalWidth > 0) setImgLoaded(true);
+      else setLoadFailed(true);
+    }
+  }, [src, isFallback]);
   const badgeSize = Math.min(badgeMax, Math.max(12, Math.round(size * badgeScale)));
   // Effective badge: the equipped one (if it's still a real catalog badge),
   // else the user's default banana = their highest unlocked ripeness tier
@@ -155,6 +172,7 @@ export function AvatarWithBadge({
     >
       {useNextImage ? (
         <Image
+          ref={imgRef}
           src={src}
           alt={alt}
           width={innerSize}
@@ -171,6 +189,7 @@ export function AvatarWithBadge({
       ) : (
         // eslint-disable-next-line @next/next/no-img-element
         <img
+          ref={imgRef}
           src={src}
           alt={alt}
           width={innerSize}
