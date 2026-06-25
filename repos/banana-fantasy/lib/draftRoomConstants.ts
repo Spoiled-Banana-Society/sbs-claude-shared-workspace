@@ -83,6 +83,19 @@ export function getPositionColor(pos: string) {
 }
 
 // ==================== SLOT MACHINE HELPERS ====================
+// One shared mixed combo per Pro spin. Computed on reel 0 and read by reels
+// 1 & 2 so the three independent generateReelItemsForReel calls stay in sync.
+let _proLandingCombo: DraftType[] = ['pro', 'jackpot', 'hof'];
+
+function makeProLandingCombo(): DraftType[] {
+  const pool: DraftType[] = ['pro', 'jackpot', 'hof']; // 'pro' renders as 🍌
+  let combo: DraftType[];
+  do {
+    combo = [0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]);
+  } while (combo[0] === combo[1] && combo[1] === combo[2]); // never 3-of-a-kind
+  return combo;
+}
+
 export function generateReelItemsForReel(resultType: DraftType, reelIndex: number, totalItems: number = 50): DraftType[] {
   const items: DraftType[] = [];
   for (let i = 0; i < totalItems; i++) {
@@ -93,9 +106,10 @@ export function generateReelItemsForReel(resultType: DraftType, reelIndex: numbe
   }
   const landingIndex = totalItems - 8;
   if (resultType === 'pro') {
-    // Pro = no 3-of-a-kind match. Show a mixed combo so it doesn't look like a win.
-    const proLandings: DraftType[] = ['pro', 'jackpot', 'hof'];
-    items[landingIndex] = proLandings[reelIndex];
+    // Pro = no 3-of-a-kind match. Show a randomized mixed combo (varies each
+    // spin) that's guaranteed never to be a triple, so it can't look like a win.
+    if (reelIndex === 0) _proLandingCombo = makeProLandingCombo();
+    items[landingIndex] = _proLandingCombo[reelIndex] ?? 'pro';
   } else {
     items[landingIndex] = resultType;
   }
