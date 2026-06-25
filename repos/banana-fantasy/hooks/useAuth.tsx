@@ -195,6 +195,43 @@ const MOCK_USER: User | null = MOCK_AUTH
   : null;
 
 const REFERRAL_CODE_KEY = 'banana-referral-code';
+// How long a captured referral code stays valid for attribution. Long enough to
+// cover click → (close tab / switch app) → sign up later, short enough that a
+// stale code on a shared device can't attribute an unrelated signup forever.
+const REFERRAL_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+// Durable referral-code storage. Previously this lived ONLY in sessionStorage,
+// which is per-tab and dies on tab close — so a referral link tapped in an
+// in-app browser (X/iMessage) then signed up in a different tab/app lost the
+// code, and the referrer never got credited (Boris 2026-06-25). Now we persist
+// to localStorage (survives tab close / navigation, same browser+origin) with a
+// TTL, and keep sessionStorage as the fast same-tab path. trackReferral is
+// idempotent server-side, so the existing "retry on every login when the user
+// has no referrer" logic now reliably attributes once the code is durable.
+function storeReferralCode(code: string) {
+  try { localStorage.setItem(REFERRAL_CODE_KEY, JSON.stringify({ code, ts: Date.now() })); } catch { /* storage blocked */ }
+  try { sessionStorage.setItem(REFERRAL_CODE_KEY, code); } catch { /* storage blocked */ }
+}
+function readReferralCode(): string | null {
+  // Same-tab value wins (freshest), then fall back to durable localStorage
+  // within the TTL window.
+  try { const ss = sessionStorage.getItem(REFERRAL_CODE_KEY); if (ss) return ss; } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem(REFERRAL_CODE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { code?: string; ts?: number };
+    if (parsed?.code && typeof parsed.ts === 'number' && Date.now() - parsed.ts < REFERRAL_TTL_MS) {
+      return parsed.code;
+    }
+    // Expired or malformed — drop it so it can't attribute later.
+    localStorage.removeItem(REFERRAL_CODE_KEY);
+  } catch { /* malformed JSON — ignore */ }
+  return null;
+}
+function clearReferralCode() {
+  try { localStorage.removeItem(REFERRAL_CODE_KEY); } catch { /* ignore */ }
+  try { sessionStorage.removeItem(REFERRAL_CODE_KEY); } catch { /* ignore */ }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const privy = usePrivy();
@@ -260,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const params = new URLSearchParams(window.location.search);
     const refCode = params.get('ref');
     if (refCode) {
-      sessionStorage.setItem(REFERRAL_CODE_KEY, refCode);
+      storeReferralCode(refCode);
     }
   }, []);
 
@@ -626,7 +663,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // here so we don't re-overwrite `referredBy` once it's set.
       const fireReferralTrack = (id: string, username: string) => {
         const refCode = typeof window !== 'undefined'
-          ? sessionStorage.getItem(REFERRAL_CODE_KEY)
+          ? readReferralCode()
           : null;
         if (!refCode) return;
         fetch('/api/referrals/track', {
@@ -638,8 +675,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             referredUsername: username,
           }),
         })
-          .then(() => sessionStorage.removeItem(REFERRAL_CODE_KEY))
-          .catch(() => { /* silent — referral tracking is best-effort */ });
+          .then(() => clearReferralCode())
+          .catch(() => { /* silent — referral tracking is best-effort; code stays for next-login retry */ });
       };
 
       // Try to fetch real SBS profile from backend

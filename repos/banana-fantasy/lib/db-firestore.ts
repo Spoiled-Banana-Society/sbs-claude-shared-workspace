@@ -502,7 +502,12 @@ export async function claimPromo(userId: string, promoId: string) {
     } else if (promo.type === 'referral' && promo.modalContent.referralHistory) {
       for (const entry of promo.modalContent.referralHistory) {
         if (!entry.rewards) continue;
-        const keys: Array<keyof NonNullable<typeof entry.rewards>> = ['verified', 'bought1', 'bought10'];
+        // Must list EVERY paid milestone in the 1→4→10 ladder. 'bought4' was
+        // missing here, so a friend hitting 4 lifetime passes fired + rang the
+        // bell but threw "Nothing to claim" on claim and got stuck (Boris
+        // 2026-06-25). 'verified' never reaches 'claim' (it goes straight to
+        // 'claimed' on verify), so listing it is harmless.
+        const keys: Array<keyof NonNullable<typeof entry.rewards>> = ['verified', 'bought1', 'bought4', 'bought10'];
         for (const k of keys) {
           if (entry.rewards[k] === 'claim') {
             entry.rewards[k] = 'claimed';
