@@ -2,7 +2,8 @@ import { rateLimit, RATE_LIMITS } from "@/lib/rateLimit";
 export const dynamic = "force-dynamic";
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
-import { recordPick10 } from '@/lib/db';
+import { recordPick10, notifyPick10FounderSkip } from '@/lib/db';
+import { isFounderDraftLive } from '@/lib/founderGrant';
 import { getPrivyUser } from '@/lib/auth';
 
 export async function POST(req: Request) {
@@ -33,6 +34,17 @@ export async function POST(req: Request) {
     const draftName = typeof body.draftName === 'string' ? body.draftName : draftId;
     // Free-pass drafts earn no promo credit (server-enforced in recordPick10).
     const passType = typeof body.passType === 'string' ? body.passType : undefined;
+
+    // Founder Drafts: the Pick-10 spin does NOT stack on the Founder reward spin.
+    // This client call fires at fill and RACES the founder marking (and usually
+    // wins — the founder POST waits on a Privy token first), so the persisted
+    // marker may not exist yet. Check LIVE (schedule + draftOrder) to catch it,
+    // tell the drafter why (deduped with the chokepoint), and skip the credit.
+    // Fails open inside isFounderDraftLive, so a normal draft is never blocked.
+    if (await isFounderDraftLive(draftId)) {
+      void notifyPick10FounderSkip(userId, draftId);
+      return json({ promo: null, skipped: 'founder-draft' }, 200);
+    }
 
     const promo = await recordPick10(userId, draftId, draftName, passType);
     return json({ promo }, 200);

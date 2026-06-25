@@ -147,7 +147,7 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What do I win?',
-        answer: 'Being in the Founder Draft gets you:\n\n• Founders badge — everyone in the draft (paid OR free) unlocks the exclusive Founders badge.\n\n• A shot at skipping the playoffs — outscore the founder in your league and you\'re entered into a draw against everyone who beat them across all Founder leagues; one winner is picked to skip straight to the finals. Open to everyone in the draft.\n\n• Free Banana Spin — paid entries get a free spin on the Banana Wheel.\n\nThe only thing a free entry misses is the Free Banana Spin — the badge and the skip-the-playoffs shot are for everyone.',
+        answer: 'Being in the Founder Draft gets you:\n\n• Founders badge — everyone in the draft (paid OR free) unlocks the exclusive Founders badge.\n\n• A shot at skipping the playoffs — outscore the founder in your league and you\'re entered into a draw against everyone who beat them across all Founder leagues; one winner is picked to skip straight to the finals. Open to everyone in the draft.\n\n• Free Banana Spin — paid entries get a free spin on the Banana Wheel.\n\nThe only thing a free entry misses is the Free Banana Spin — the badge and the skip-the-playoffs shot are for everyone.\n\nNote: in a Founder Draft the Pick 10 spin doesn\'t apply — landing the last pick won\'t earn an extra spin, since paid entries already get the Founder Free Banana Spin.',
       },
       {
         question: 'How do I get in?',
@@ -183,7 +183,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'How do I earn Banana Wheel spins?',
-        answer: 'Earn spins by completing promotions like "Draft 3 times in a day", "Buy 10 draft passes" (1 spin per 10 passes), or participating in special events. Check the promotions section for current ways to earn spins.',
+        answer: 'Earn spins by completing promotions like "Draft 3 times in a day", "Buy 10 draft passes" (1 spin per 10 passes), landing the last pick (Pick 10) in a paid draft, or participating in special events. One exception: in a Founder Draft the Pick 10 spin doesn\'t apply — paid entries already get the Founder Free Banana Spin, so it doesn\'t stack. Check the promotions section for current ways to earn spins.',
       },
       {
         question: 'What prizes can I win on the Banana Wheel?',

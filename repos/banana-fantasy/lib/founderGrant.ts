@@ -16,7 +16,8 @@
 
 import { FieldValue } from 'firebase-admin/firestore';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { resolveDraftPassType, unlockBadge } from '@/lib/db';
+import { resolveDraftPassType, unlockBadge, isFounderDraftMarked } from '@/lib/db';
+import { isFounderDraft, EMPTY_SCHEDULE, type FounderSchedule } from '@/lib/founderDraft';
 import { createNotification } from '@/lib/queueNotifications';
 import { buildActivityEventDoc, addActivityEventToTx } from '@/lib/activityEvents';
 import { runInBackground } from '@/lib/serverBackground';
@@ -49,6 +50,83 @@ async function fetchParticipants(draftId: string): Promise<string[]> {
     return [];
   } finally {
     clearTimeout(timer);
+  }
+}
+
+interface FounderDraftInfo {
+  draftStartTime: number;
+  draftOrder: { ownerId: string }[];
+}
+
+/** Full draft info (start time + order) — `isFounderDraft` needs the start time,
+ *  which `fetchParticipants` drops. Returns null on any error/timeout. */
+async function fetchFounderDraftInfo(draftId: string): Promise<FounderDraftInfo | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const res = await fetch(`${goApiBase()}/draft/${encodeURIComponent(draftId)}/state/info`, {
+      cache: 'no-store',
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { draftStartTime?: number; draftOrder?: { ownerId?: string }[] };
+    return {
+      draftStartTime: Number(data.draftStartTime ?? 0),
+      draftOrder: (data.draftOrder ?? []).map((o) => ({ ownerId: (o?.ownerId ?? '') })),
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Read the founder schedule singleton. Returns EMPTY_SCHEDULE (inactive) on any error. */
+async function fetchFounderSchedule(): Promise<FounderSchedule> {
+  if (!isFirestoreConfigured()) return EMPTY_SCHEDULE;
+  try {
+    const db = getAdminFirestore();
+    const snap = await db.collection('founderSchedule').doc('next').get();
+    if (!snap.exists) return EMPTY_SCHEDULE;
+    const d = snap.data() as Partial<FounderSchedule> | undefined;
+    return {
+      at: typeof d?.at === 'string' ? d.at : '',
+      dayLabel: typeof d?.dayLabel === 'string' ? d.dayLabel : '',
+      founderWallet: typeof d?.founderWallet === 'string' ? d.founderWallet.toLowerCase() : '',
+      windowMinutes: Number.isFinite(d?.windowMinutes) ? Number(d!.windowMinutes) : 10,
+      active: d?.active === true,
+    };
+  } catch {
+    return EMPTY_SCHEDULE;
+  }
+}
+
+/**
+ * True when `draftId` is a Founder Draft, checked LIVE (not only the persisted
+ * marker). Needed to gate the Pick-10 spin on the client credit path: the
+ * client fires Pick-10 at fill and RACES the founder marking — and usually wins,
+ * because the founder POST waits on a Privy access token first. So at that
+ * instant the founderDrafts doc may not exist yet; we evaluate the schedule +
+ * draftOrder directly to catch it.
+ *
+ * Fast-path the persisted marker (founder drafts stay marked forever). On any
+ * error this FAILS OPEN (returns false) so a normal draft never loses its
+ * legitimate Pick-10 spin because the Go API or Firestore hiccuped.
+ */
+export async function isFounderDraftLive(draftId: string): Promise<boolean> {
+  if (!draftId) return false;
+  try {
+    if (await isFounderDraftMarked(draftId)) return true;
+  } catch { /* fall through to live eligibility */ }
+  try {
+    const [info, schedule] = await Promise.all([
+      fetchFounderDraftInfo(draftId),
+      fetchFounderSchedule(),
+    ]);
+    if (!info || !schedule.active) return false;
+    return isFounderDraft(info.draftStartTime, info.draftOrder, schedule);
+  } catch {
+    return false;
   }
 }
 

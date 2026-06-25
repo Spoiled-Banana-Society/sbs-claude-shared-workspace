@@ -2669,6 +2669,27 @@ export async function recordDraftCompletion(userId: string, draftId: string, pas
 
 const PICK10_PROMO_ID = '2';
 
+/**
+ * Best-effort heads-up to a slot-10 drafter that their Pick-10 spin did NOT
+ * apply because the draft was a Founder Draft (the Pick-10 spin doesn't stack
+ * on top of the Founder reward spin every paid participant already gets).
+ * Deduped per (draft, user) so the multiple Pick-10 credit paths — and the
+ * live gate in /api/promos/pick10 — can't double-notify. Shared by the
+ * chokepoint guard below and that route. Never throws.
+ */
+export async function notifyPick10FounderSkip(userId: string, draftId: string): Promise<void> {
+  try {
+    await createNotification(userId.toLowerCase(), {
+      type: 'founder_draft',
+      title: 'Pick 10 — Founder Draft',
+      message: "You landed Pick 10! In a Founder Draft the Pick 10 spin doesn't stack — you already earned a Free Banana Spin from the Founder reward. 🍌",
+      link: '/banana-wheel',
+      dedupeKey: `pick10-founder-skip-${draftId}-${userId.toLowerCase()}`,
+      icon: 'spin',
+    });
+  } catch { /* notification is best-effort — never block the credit path */ }
+}
+
 export async function recordPick10(userId: string, draftId: string, draftName: string, passType?: string, slot = 10): Promise<Promo | null> {
   // Free-pass drafts earn NO promo credit — only paid drafts count toward
   // Pick 10. The draft token is stamped with the chosen pass type (source of
@@ -2676,6 +2697,18 @@ export async function recordPick10(userId: string, draftId: string, draftName: s
   // be read, so a free draft can never sneak past as paid (the slot-10 bug).
   // Credit only a real PAID participant of this draft (see promoCreditAllowed).
   if (!(await promoCreditAllowed(userId, draftId, passType, 'pick-10'))) return null;
+  // Founder Drafts: the Pick-10 spin does NOT stack on top of the Founder Draft
+  // reward spin (granted to every paid participant in lib/founderGrant.ts), so
+  // suppress it and tell the drafter why. isFounderDraftMarked reads the
+  // persistent founderDrafts doc, which is written at fill — reliably present by
+  // the time the durable credit paths run (reveal-complete + draft-close
+  // backstop). The earlier client path races the marking and is gated live in
+  // /api/promos/pick10. Idempotent + deduped (the notification dedupe-keys on
+  // draft+user), so re-fires across paths are harmless.
+  if (await isFounderDraftMarked(draftId)) {
+    void notifyPick10FounderSkip(userId, draftId);
+    return null;
+  }
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
