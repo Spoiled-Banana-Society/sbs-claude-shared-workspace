@@ -13,6 +13,7 @@ import {
   useAdminUsers,
   type AdminUser,
 } from '@/hooks/admin/useAdminApi';
+import { bananaDefaultName } from '@/utils/helpers';
 
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
@@ -148,7 +149,7 @@ export function UserSearchInput({ value, onPick, onClear }: Props) {
                     className="flex w-full items-baseline gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-800"
                   >
                     <span className="font-medium text-white">
-                      {u.username || u.email || 'Unnamed'}
+                      {u.username || bananaDefaultName(u.walletAddress) || u.email || 'Unnamed'}
                     </span>
                     {u.email && u.username && (
                       <span className="text-xs text-gray-400">{u.email}</span>
