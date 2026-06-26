@@ -41,6 +41,17 @@ function isDraftInfoUpdateMessage(data: DraftingPageSocketMessage): data is Extr
   return data.type === 'draft_info_update';
 }
 
+// Lobby live-row websocket is RETIRED (2026-06-26). The lobby's pick number,
+// clock, your-turn state and type reveal are fully driven by the RTDB push
+// (subscribeRealTimeDraftInfo) — the authoritative, monotonic source the draft
+// room itself reads. The WS path only ever DEFERRED to RTDB and could write
+// stale values; worse, opening the socket woke the retired WS draft server's
+// per-pick timer, which auto-picked into Firestore-only (no RTDB write) and
+// desynced live drafts → freeze. Flag kept so the dead block can be deleted in a
+// follow-up. Flip true ONLY to resurrect the old path. (`as boolean` keeps the
+// type wide so the guarded block below isn't flagged unreachable.)
+const LOBBY_WS_ENABLED = false as boolean;
+
 function getSnakeDrafterIndex(pickNumber: number): number {
   const round = Math.ceil(pickNumber / 10);
   const posInRound = (pickNumber - 1) % 10;
@@ -1196,6 +1207,16 @@ export function useDraftingPageState() {
   getWsTokenRef.current = privyForWs.getAccessToken;
 
   useEffect(() => {
+    // Disabled (2026-06-26): never open lobby sockets — see LOBBY_WS_ENABLED note
+    // at top of file. Real-time lives in the RTDB push above; this socket only
+    // added stale data + woke the retired WS server's rogue auto-pick timer.
+    // Defensively close any straggler from a prior session, then bail.
+    {
+      const stale = wsConnectionsRef.current;
+      stale.forEach((ws) => { try { ws.close(); } catch { /* ignore */ } });
+      stale.clear();
+    }
+    if (!LOBBY_WS_ENABLED) return;
     if (!isLive || !user?.walletAddress) return;
 
     const wallet = user.walletAddress.trim().toLowerCase();
