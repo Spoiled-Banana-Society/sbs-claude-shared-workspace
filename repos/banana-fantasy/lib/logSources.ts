@@ -422,6 +422,49 @@ export function isTestNoiseError(e: {
   return TEST_MARKERS.test(hay);
 }
 
+/* ── Benign operational noise (expected, non-actionable) ───────────
+ * UNLIKE test noise, this is REAL production traffic — it's just expected
+ * control flow the code already handles gracefully, so it should never alarm
+ * in the admin feed or the badge. Only add a pattern here after confirming a
+ * genuine failure of the SAME subsystem surfaces through a DIFFERENT, still-
+ * visible error (so suppressing this can't hide a real problem). */
+const BENIGN_OPERATIONAL_NOISE: RegExp[] = [
+  // Filling-draft state reads: a draft's state/* docs (info, summary,
+  // playerState, rosters, draftQueues) are only created when the lobby FILLS
+  // to 10. Reads while it's still filling return a NotFound the caller falls
+  // back on — not a problem. A real "state vanished on an ACTIVE draft"
+  // surfaces via the pick engine (ProcessNewPick / wrong-owner) errors, which
+  // are NOT matched here, so this can never hide a freeze.
+  /code = NotFound[\s\S]*?\/drafts\/[^"]*?\/state\//i,
+];
+
+export function isBenignOperationalNoise(e: {
+  source?: string;
+  route?: string;
+  message?: string;
+  context?: Record<string, unknown>;
+}): boolean {
+  const hay = [
+    e.source ?? '',
+    e.route ?? '',
+    e.message ?? '',
+    e.context ? JSON.stringify(e.context) : '',
+  ].join(' ');
+  return BENIGN_OPERATIONAL_NOISE.some((p) => p.test(hay));
+}
+
+/** Either kind of suppressed noise — test traffic OR expected operational
+ *  noise. Use this anywhere we hide events from the actionable feed/badge. */
+export function isSuppressedLogNoise(e: {
+  source?: string;
+  route?: string;
+  message?: string;
+  actor?: string;
+  context?: Record<string, unknown>;
+}): boolean {
+  return isTestNoiseError(e) || isBenignOperationalNoise(e);
+}
+
 // Source dot-prefixes that don't equal their area name.
 const PREFIX_TO_AREA: Record<string, LogArea> = {
   ws: 'draft',

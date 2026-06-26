@@ -10,7 +10,7 @@ import {
   AdminApiError,
   type ErrorEventEntry,
 } from '@/hooks/admin/useAdminApi';
-import { logAreaForSource, logSeverity, isTestNoiseError, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
+import { logAreaForSource, logSeverity, isSuppressedLogNoise, explainError, type LogArea, type LogSeverity } from '@/lib/logSources';
 import { isResolutionActive } from '@/lib/errorGrouping';
 import { SentryIssues } from '@/components/admin/SentryIssues';
 import { WalletLink } from '@/components/admin/WalletLink';
@@ -219,10 +219,13 @@ function ErrorFeed({ enabled, onShowSentry }: { enabled: boolean; onShowSentry: 
       );
     });
 
-    // 2. split real vs test-suite traffic
+    // 2. split real vs suppressed noise (test-suite traffic + expected
+    //    operational noise like filling-draft state reads). Suppressed noise
+    //    is kept out of the actionable sections + counts so only things worth
+    //    fixing surface.
     const real: ErrorEventEntry[] = [];
     const test: ErrorEventEntry[] = [];
-    for (const e of filtered) (isTestNoiseError(e) ? test : real).push(e);
+    for (const e of filtered) (isSuppressedLogNoise(e) ? test : real).push(e);
 
     // 3. group + split out resolved (admin-marked-fixed) groups
     const cutoff = Date.now() - ACTIVE_WINDOW_MS;
