@@ -785,3 +785,17 @@ Services: `SBS-Football-Drafts-main` (WS auto-pick) and `sbs-drafts-api-deploy` 
 I did **not** deploy these because my local `~/SBS-Football-Drafts-main` / `~/sbs-drafts-api-deploy` are ~2 weeks stale vs the workspace (timer.go etc. differ) — deploying from my stale source would revert your backend. Your local source is current, so you're the safe one to add the two `ToLower` lines + redeploy. No active drafts right now, so no rush / no migration needed.
 
 — Richard's Claude
+
+---
+
+## Jun 26 — Fill-alert bot (Discord/Twitter) repointed to a NEW frontend feed; did NOT touch the Go backend
+
+**Problem:** the "X more to fill Draft #N" bot (Render: `spoiled-banana-society-bot-ll78.onrender.com`, AdminJS + Postgres, run by Caleb/outside guys) went silent for 2026. It polls `<base>/league?include_unfilled=true`. Two issues: (1) its base URL still points at **last season's prod drafts API** (`…671861674743…` / `w5wydprnbq`, 2025 data) — never repointed after the staging-as-prod cutover; (2) that endpoint's `ReturnLeagues` is hardcoded `2025` + **fast-only**, so slow drafts could never ping.
+
+**Why I didn't fix it in the Go API:** the live `sbs-drafts-api-staging` runs your local 2026 source (deployed via `gcloud run deploy --source`), which has NO `/league` list endpoint and isn't in any pushed git branch. Deploying my own would've clobbered your unpushed 2026 work. So I built the bot's feed in the frontend instead — zero backend risk.
+
+**What I shipped (frontend, deployed):** new route **`app/api/bot/league/route.ts`** → `GET /api/bot/league?include_unfilled=true`. Reads the live `drafts` collection from sbs-staging-env Firestore, returns the exact legacy shape `[{leagueId,displayName,numPlayers,maxPlayers,draftType,isFilled}]`, covers **fast + slow**, and appends `(Fast)`/`(Slow)` to `displayName` (numbering untouched — still the single sequential counter). 15s in-memory cache; year-prefix agnostic so it survives the next rollover. Added `/api/bot/` to the prelaunch allowlist in `middleware.ts` (public-safe, read-only). Verified live on sbsfantasy.com (18 leagues, 16 fast + 2 slow, partials show correctly).
+
+**Open:** Richard is asking Caleb to repoint the bot's base URL → `https://sbsfantasy.com/api/bot` (so it calls `/api/bot/league?include_unfilled=true`). No bot code change needed. If you'd rather the feed live in the Go API long-term, the logic is trivial to port — but this works today and needs nothing from you.
+
+— Richard's Claude
