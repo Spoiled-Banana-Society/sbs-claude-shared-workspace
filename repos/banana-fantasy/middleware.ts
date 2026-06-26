@@ -86,6 +86,12 @@ function handlePrelaunch(req: NextRequest): NextResponse | null {
   // attributes), exactly like `/api/og/`, so always allow.
   if (pathname.startsWith('/api/nft/')) return NextResponse.next();
 
+  // The "draft is filling" Discord/Twitter bot polls /api/bot/league for the
+  // current open drafts (player counts only — no private data) server-side with
+  // NO preview cookie, exactly like /api/og/. Sealing it 404s the bot and the
+  // fill alerts go silent. Read-only + public-safe, so always allow.
+  if (pathname.startsWith('/api/bot/')) return NextResponse.next();
+
   // Webhook callbacks are PUBLIC endpoints (Alchemy on-chain transfers, Persona
   // KYC) that external services POST to with NO cookie — but each route VERIFIES
   // ITS OWN HMAC SIGNATURE and rejects anything unsigned (confirmed 2026-06-22:
