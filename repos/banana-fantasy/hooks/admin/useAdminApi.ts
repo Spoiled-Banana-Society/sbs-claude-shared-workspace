@@ -873,6 +873,11 @@ export interface CrispConversationEntry {
   created_at: number;
   waiting_since?: number;
   url: string;
+  // Resolved server-side from our own Crisp webhook log: the best display name
+  // (falls back to nickname/email/Anonymous) and whether the LAST message was
+  // from the user (so it still needs a reply). Optional for backward-compat.
+  displayName?: string;
+  needsReply?: boolean;
 }
 
 export interface SupportResponse {

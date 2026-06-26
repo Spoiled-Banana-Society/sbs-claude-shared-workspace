@@ -98,8 +98,11 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
         ) : (
           <ul className="divide-y divide-white/[0.04]">
             {conversations.map((c) => {
-              const unread = unreadCount(c.unread);
-              const name = c.nickname || c.email || 'Anonymous';
+              // Prefer the server-resolved signals (from our webhook log):
+              // displayName fixes the "Anonymous" gap, needsReply replaces the
+              // flaky per-operator unread counter. Fall back for safety.
+              const needsReply = c.needsReply ?? (unreadCount(c.unread) > 0);
+              const name = c.displayName || c.nickname || c.email || 'Anonymous';
               return (
                 <li key={c.session_id}>
                   <a
@@ -121,9 +124,9 @@ export function SupportInbox({ enabled }: { enabled: boolean }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-white truncate">{name}</span>
-                        {unread > 0 && (
-                          <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-[#F3E216] text-black text-[10px] font-bold px-1.5">
-                            {unread}
+                        {needsReply && (
+                          <span className="inline-flex items-center rounded-full bg-[#F3E216] text-black text-[10px] font-bold px-1.5 h-[18px]">
+                            Needs reply
                           </span>
                         )}
                         {c.state === 'pending' && (
