@@ -101,6 +101,10 @@ export function DraftRoomDrafting({
   usersMap,
 }: DraftRoomDraftingProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Unread draft-room-chat messages, surfaced as a small badge on the Chat tab.
+  // Driven entirely by DraftRoomChat (which is always mounted + polling); reset
+  // to 0 whenever the Chat tab is the active tab.
+  const [chatUnread, setChatUnread] = useState(0);
 
   // Durable self avatar: live auth pfp → polled usersMap (our slot) →
   // last-known-good pfp persisted in localStorage. Keeps our own avatar from
@@ -469,6 +473,7 @@ export function DraftRoomDrafting({
                 activeTab={activeTab}
                 onTabChange={onTabChange}
                 queueCount={engine.queuedPlayers.length}
+                chatUnread={chatUnread}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
               />
@@ -554,6 +559,8 @@ export function DraftRoomDrafting({
                   username={user?.username ?? undefined}
                   draftId={draftId}
                   walletAddress={walletParam}
+                  isActive={activeTab === 'chat'}
+                  onUnreadChange={setChatUnread}
                 />
               </div>
             </div>

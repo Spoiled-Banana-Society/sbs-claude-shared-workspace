@@ -22,6 +22,14 @@ interface DraftRoomChatProps {
   username?: string;
   draftId?: string;
   walletAddress?: string;
+  // True while the Chat tab is the visible tab. When active, all messages are
+  // considered read (unread badge clears). Optional — omitting it disables the
+  // unread-count feature entirely, leaving chat behavior unchanged.
+  isActive?: boolean;
+  // Called with the current unread message count (messages from OTHERS that
+  // arrived while the Chat tab was not active). Lets the parent render a small
+  // badge on the Chat tab. Optional and side-effect-free for the chat itself.
+  onUnreadChange?: (count: number) => void;
 }
 
 export function DraftRoomChat({
@@ -30,6 +38,8 @@ export function DraftRoomChat({
   username = 'You',
   draftId,
   walletAddress,
+  isActive = false,
+  onUnreadChange,
 }: DraftRoomChatProps) {
   const cacheKey = draftId ? `chat:${draftId}` : null;
   // Seed from sessionStorage so a full page reload renders the last known
@@ -118,6 +128,45 @@ export function DraftRoomChat({
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Unread-count for the Chat tab badge. Purely a READ over `messages` (the
+  // same array the 2s poll already maintains) — it never mutates chat state,
+  // so it can't affect sending, history, or the draft. Behaviour:
+  //  - When the Chat tab is active → everything is read (badge = 0); we also
+  //    advance the read baseline to the newest message.
+  //  - When inactive → count messages from OTHERS newer than the last-read
+  //    baseline. Your own messages and system lines never count.
+  //  - On first run we set the baseline to the current newest message, so
+  //    pre-existing history never shows as unread (only messages that arrive
+  //    AFTER you're in the room count). The `setChatUnread` setter passed as
+  //    onUnreadChange is stable, and React no-ops when the value is unchanged,
+  //    so this introduces no render loop.
+  const lastReadIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onUnreadChange) return;
+    const newestId = messages.length ? messages[messages.length - 1].id : null;
+    if (isActive) {
+      lastReadIdRef.current = newestId;
+      onUnreadChange(0);
+      return;
+    }
+    if (lastReadIdRef.current === null) {
+      // Establish the baseline: existing messages are treated as already read.
+      lastReadIdRef.current = newestId;
+      onUnreadChange(0);
+      return;
+    }
+    const idx = messages.findIndex((m) => m.id === lastReadIdRef.current);
+    if (idx === -1) {
+      // Baseline message no longer in the window (rare). Re-baseline to newest
+      // rather than risk a misleading large count.
+      lastReadIdRef.current = newestId;
+      onUnreadChange(0);
+      return;
+    }
+    const unread = messages.slice(idx + 1).filter((m) => !m.isYou && !m.isSystem).length;
+    onUnreadChange(unread);
+  }, [messages, isActive, onUnreadChange]);
 
   const sendMessage = async () => {
     const text = inputValue.trim();
