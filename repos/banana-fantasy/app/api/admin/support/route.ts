@@ -4,41 +4,10 @@ export const dynamic = 'force-dynamic';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireAdmin } from '@/lib/adminAuth';
-import { listConversations, crispConversationUrl, crispInboxUrl } from '@/lib/crispApi';
-import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { listConversations, crispInboxUrl } from '@/lib/crispApi';
+import { lastMessageBySession, enrichSupportConversation } from '@/lib/crispSupport';
 import { getRequestId } from '@/lib/requestId';
 import { logger } from '@/lib/logger';
-
-// Ground-truth "who spoke last" per conversation, read from our own Crisp
-// webhook log (crisp_webhook_events — written by /api/crisp/webhook). This is
-// independent of Crisp's per-operator unread counter, which is keyed to the
-// API-token operator (not the human who reads/replies in the Crisp dashboard)
-// and therefore never clears for us. Map: sessionId -> latest {from, nickname}.
-async function lastMessageBySession(): Promise<Map<string, { from: string | null; nickname: string | null }>> {
-  const map = new Map<string, { from: string | null; nickname: string | null }>();
-  try {
-    const db = getAdminFirestore();
-    // Newest first; first time we see a sessionId is its latest event.
-    const snap = await db.collection('crisp_webhook_events').orderBy('at', 'desc').limit(500).get();
-    for (const doc of snap.docs) {
-      const d = doc.data();
-      const sid = typeof d.sessionId === 'string' ? d.sessionId : '';
-      if (!sid || map.has(sid)) continue;
-      map.set(sid, {
-        from: typeof d.from === 'string' ? d.from : null,
-        nickname: typeof d.nickname === 'string' && d.nickname ? d.nickname : null,
-      });
-    }
-  } catch {
-    // Non-fatal — fall back to Crisp's unread counter below.
-  }
-  return map;
-}
-
-function unreadOperatorCount(u: { operator?: number; visitor?: number } | number): number {
-  if (typeof u === 'number') return u;
-  return u?.operator ?? 0;
-}
 
 export async function GET(req: Request) {
   const requestId = getRequestId(req);
@@ -62,22 +31,9 @@ export async function GET(req: Request) {
 
     const lastBySession = await lastMessageBySession();
 
-    const enriched = conversations.map((c) => {
-      const rec = lastBySession.get(c.session_id);
-      // needsReply = the user spoke last (still awaiting our reply). Ground
-      // truth from our webhook log; if we have no record for this conversation
-      // (e.g. older than the log), fall back to Crisp's unread counter.
-      const needsReply = rec?.from
-        ? rec.from === 'user'
-        : unreadOperatorCount(c.unread) > 0;
-      const displayName = c.nickname || c.email || rec?.nickname || 'Anonymous';
-      return {
-        ...c,
-        url: crispConversationUrl(c.session_id),
-        displayName,
-        needsReply,
-      };
-    });
+    const enriched = conversations.map((c) =>
+      enrichSupportConversation(c, lastBySession.get(c.session_id)),
+    );
 
     // Apply the tab filter with OUR signals, not Crisp's flaky unread counter.
     const filtered = enriched.filter((c) => {

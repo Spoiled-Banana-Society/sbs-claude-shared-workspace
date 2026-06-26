@@ -10,6 +10,7 @@ import { getAdminFirestore, getAdminDatabase } from '@/lib/firebaseAdmin';
 import { fetchRecentErrors } from '@/lib/errorEvents';
 import { isTestNoiseError } from '@/lib/logSources';
 import { listConversations } from '@/lib/crispApi';
+import { lastMessageBySession, conversationNeedsReply } from '@/lib/crispSupport';
 import { getRequestId } from '@/lib/requestId';
 import { logger } from '@/lib/logger';
 
@@ -192,11 +193,18 @@ export async function GET(req: Request) {
 
 async function countSupport(): Promise<number> {
   try {
-    const { conversations } = await listConversations({ filterUnread: true });
-    return conversations.reduce((sum, c) => {
-      const unread = typeof c.unread === 'number' ? c.unread : (c.unread?.operator ?? 0);
-      return sum + (unread > 0 ? 1 : 0);
-    }, 0);
+    // SAME signal as the Support list (lib/crispSupport) so the sidebar badge
+    // and the Unread list can never disagree: count conversations where the
+    // user spoke last (still awaiting our reply), not Crisp's flaky unread
+    // counter. Fetch all and filter in-code rather than filter_unread.
+    const [{ conversations }, lastBySession] = await Promise.all([
+      listConversations({}),
+      lastMessageBySession(),
+    ]);
+    return conversations.reduce(
+      (sum, c) => sum + (conversationNeedsReply(c, lastBySession.get(c.session_id)) ? 1 : 0),
+      0,
+    );
   } catch { return 0; }
 }
 
