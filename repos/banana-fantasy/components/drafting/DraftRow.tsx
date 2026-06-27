@@ -123,10 +123,10 @@ export function DraftRow({
         <div className="sm:w-28 flex-shrink-0 flex items-center gap-1">
           {draft.joinedAt ? (
             <Tooltip content={`Joined ${formatRelativeTime(draft.joinedAt)}`}>
-              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName)}</span>
+              <span className="text-white/80 font-medium cursor-default whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
             </Tooltip>
           ) : (
-            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Room' : displayedLeagueName)}</span>
+            <span className="text-white/80 font-medium whitespace-nowrap text-xs sm:text-base">{wheelLabel ?? (effectiveLive.isFilling ? 'Draft Lobby' : displayedLeagueName)}</span>
           )}
           {draft.airplaneMode && (!isSpecial || draft.status === 'drafting') && (
             <Tooltip content="Auto-pick enabled">
