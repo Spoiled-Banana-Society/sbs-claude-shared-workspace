@@ -23,6 +23,7 @@ interface Standing { wallet: string; name: string; pfp: string | null; count: nu
 interface LeaderboardData {
   finalizesAtIso: string;
   totalPlayers: number;
+  tieForFirst?: boolean;
   top: Standing[];
   me: { rank: number | null; count: number; lifetime: number | null } | null;
 }
@@ -157,6 +158,17 @@ export function KingLeaderboard({ demoData }: { demoData?: LeaderboardData } = {
               Fill a paid draft to enter this week&apos;s race · {data.totalPlayers} competing
               {data.me.lifetime != null && data.me.lifetime > 0 ? ` · ${data.me.lifetime} paid drafts all-time` : ''}
             </p>
+          )}
+
+          {/* Only shown when there's an actual tie on paid-draft count at #1 —
+              explains how the crown is decided, in order. */}
+          {data.tieForFirst && (
+            <div className="mt-3 pt-2.5 border-t border-white/[0.06] text-text-muted text-[11px] leading-relaxed">
+              <span className="text-white/70 font-medium">Tied for #1?</span> The crown is decided by, in order:
+              <span className="block mt-0.5">1. Who reached the count first</span>
+              <span className="block">2. Whose first draft filled earliest</span>
+              <span className="block">3. Who joined that final draft&apos;s lobby first</span>
+            </div>
           )}
         </div>
       )}

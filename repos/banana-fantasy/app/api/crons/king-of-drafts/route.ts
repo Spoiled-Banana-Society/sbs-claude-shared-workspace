@@ -5,7 +5,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { unlockBadge, revokeBadge } from '@/lib/db';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
-import { lastClosedKingWeek, tallyKingDrafts, compareKing } from '@/lib/kingWeek';
+import { lastClosedKingWeek, tallyKingDrafts, rankKingContenders } from '@/lib/kingWeek';
+import { fetchDraftRosters } from '@/lib/kingRoster';
 import { logger } from '@/lib/logger';
 
 // Singleton doc tracking who currently holds the transient King badge.
@@ -55,9 +56,9 @@ export async function GET(req: Request) {
       .get();
 
     // Tally + rank using the SHARED helper (lib/kingWeek) so the crown matches
-    // the live leaderboard exactly. Winner = most paid drafts; ties go to
-    // whoever reached that count FIRST (earliest last-counting-draft).
-    const ranked = [...tallyKingDrafts(snap.docs, week.endIso).entries()].sort(compareKing);
+    // the live leaderboard exactly. Rules: most paid drafts → reached the count
+    // first → grinding longest → joined the final lobby first (never a wallet).
+    const ranked = await rankKingContenders(tallyKingDrafts(snap.docs, week.endIso), fetchDraftRosters);
     const winner: string | null = ranked.length ? ranked[0][0] : null;
     const best = ranked.length ? ranked[0][1].count : 0;
 

@@ -5,7 +5,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { getPublicUsers } from '@/lib/friends';
-import { currentKingWeek, tallyKingDrafts, compareKing } from '@/lib/kingWeek';
+import { currentKingWeek, tallyKingDrafts, rankKingContenders } from '@/lib/kingWeek';
+import { fetchDraftRosters } from '@/lib/kingRoster';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
@@ -25,7 +26,7 @@ import { logger } from '@/lib/logger';
 
 interface Standing { wallet: string; name: string; pfp: string | null; count: number; rank: number }
 
-let cache: { ts: number; weekStartIso: string; standings: Standing[]; totalPlayers: number } | null = null;
+let cache: { ts: number; weekStartIso: string; standings: Standing[]; totalPlayers: number; tieForFirst: boolean } | null = null;
 const CACHE_TTL_MS = 30_000;
 
 export async function GET(req: Request) {
@@ -47,11 +48,14 @@ export async function GET(req: Request) {
         .get();
 
       // Tally + rank via the SHARED helper (lib/kingWeek) — IDENTICAL basis +
-      // tiebreaker to the crowning cron, so "who's in first" here is exactly
-      // who gets crowned. Tie → whoever reached the count FIRST.
-      const sorted: [string, number][] = [...tallyKingDrafts(snap.docs, week.endIso).entries()]
-        .sort(compareKing)
-        .map(([wallet, t]) => [wallet, t.count]);
+      // tiebreakers to the crowning cron, so "who's in first" here is exactly
+      // who gets crowned. Rules: most paid drafts → reached the count first →
+      // grinding longest → joined the final lobby first.
+      const ranked = await rankKingContenders(tallyKingDrafts(snap.docs, week.endIso), fetchDraftRosters);
+      const sorted: [string, number][] = ranked.map(([wallet, t]) => [wallet, t.count]);
+      // Two or more people tied on paid-draft count at the top → a tiebreaker
+      // decides #1, so the UI should explain how. (false the rest of the time.)
+      const tieForFirst = sorted.length >= 2 && sorted[0][1] === sorted[1][1];
 
       const profileMap = await getPublicUsers(sorted.slice(0, 10).map(([w]) => w)).catch(() => new Map());
       const standings: Standing[] = sorted.map(([wallet, count], i) => {
@@ -65,7 +69,7 @@ export async function GET(req: Request) {
         };
       });
 
-      cache = { ts: now, weekStartIso, standings, totalPlayers: sorted.length };
+      cache = { ts: now, weekStartIso, standings, totalPlayers: sorted.length, tieForFirst };
     }
 
     const meEntry = me ? cache.standings.find((s) => s.wallet === me) ?? null : null;
@@ -80,6 +84,7 @@ export async function GET(req: Request) {
       weekStartIso,
       finalizesAtIso: week.endIso,
       totalPlayers: cache.totalPlayers,
+      tieForFirst: cache.tieForFirst,
       top: cache.standings.slice(0, 10),
       me: me
         ? { rank: meEntry?.rank ?? null, count: meEntry?.count ?? 0, lifetime }
