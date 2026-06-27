@@ -146,7 +146,9 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
         ? `League #${leagueNumber} (${label})`
         : `${rawName} (${label})`
       : `Draft Lobby (${label})`;
-    const displayName = oddsLine ? `${namePart}\n${oddsLine}` : namePart;
+    // Blank line between the name and the odds line (matches the original
+    // message spacing — two newlines render as a blank line in Discord).
+    const displayName = oddsLine ? `${namePart}\n\n${oddsLine}` : namePart;
 
     leagues.push({
       leagueId: String(d.LeagueId ?? doc.id),
