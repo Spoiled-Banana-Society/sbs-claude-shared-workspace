@@ -107,12 +107,15 @@ export function tallyKingDrafts(docs: KingEventDoc[], weekEndIso: string): Map<s
  *      the number wins").
  *   3. If they hit it in the SAME draft/instant: who's been grinding longest —
  *      EARLIEST first counting draft.
- *   4. Lowest wallet — final stable fallback, only when everything above ties,
- *      so the result is always deterministic.
+ * No wallet-based tiebreaker by design (Boris 2026-06-27): the winner is never
+ * decided by something arbitrary like a wallet address. Each draft_filled event
+ * is written with its own millisecond timestamp, so #2/#3 separate real
+ * contenders in practice; a perfect dead heat (identical count + same first AND
+ * last instant) is left tied rather than broken by wallet.
  */
 export function compareKing(a: [string, KingTally], b: [string, KingTally]): number {
   if (b[1].count !== a[1].count) return b[1].count - a[1].count;                          // count desc
   if (a[1].reachedAt !== b[1].reachedAt) return a[1].reachedAt < b[1].reachedAt ? -1 : 1; // reached count first
   if (a[1].firstAt !== b[1].firstAt) return a[1].firstAt < b[1].firstAt ? -1 : 1;         // grinding longest
-  return a[0] < b[0] ? -1 : 1;                                                            // stable fallback
+  return 0;                                                                               // perfect dead heat — never broken by wallet
 }
