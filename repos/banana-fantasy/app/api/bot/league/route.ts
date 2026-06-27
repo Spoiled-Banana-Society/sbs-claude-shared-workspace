@@ -116,7 +116,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const odds = computeOdds(trackerSnap.data() as Record<string, unknown> | undefined);
   const oddsLine =
     odds.hofPercent !== null && odds.jackpotPercent !== null
-      ? `✅ HOF - ${odds.hofPercent.toFixed(2)}% Jackpot - ${odds.jackpotPercent.toFixed(2)}%`
+      ? `HOF - ${odds.hofPercent.toFixed(2)}% Jackpot - ${odds.jackpotPercent.toFixed(2)}%`
       : null;
 
   const leagues: AbbrevLeague[] = [];
