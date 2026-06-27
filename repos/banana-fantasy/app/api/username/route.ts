@@ -63,6 +63,13 @@ export async function POST(req: Request) {
     if (!result.available) {
       return NextResponse.json({ error: result.reason || 'taken', reason: result.reason }, { status: 409 });
     }
+    // Refresh the referral code to the new name immediately (real-time) so it
+    // matches the username. Best-effort: never fail the rename if this hiccups —
+    // getPromos re-derives it on the next read regardless.
+    try {
+      const { ensureNamedReferralCode } = await import('@/lib/db');
+      await ensureNamedReferralCode(wallet);
+    } catch { /* non-fatal — referral self-heals on next promos read */ }
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });

@@ -5,7 +5,8 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { getPublicUsers } from '@/lib/friends';
-import { currentKingWeek } from '@/lib/kingWeek';
+import { currentKingWeek, tallyKingDrafts, rankKingContenders } from '@/lib/kingWeek';
+import { fetchDraftRosters } from '@/lib/kingRoster';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
@@ -25,7 +26,7 @@ import { logger } from '@/lib/logger';
 
 interface Standing { wallet: string; name: string; pfp: string | null; count: number; rank: number }
 
-let cache: { ts: number; weekStartIso: string; standings: Standing[]; totalPlayers: number } | null = null;
+let cache: { ts: number; weekStartIso: string; standings: Standing[]; totalPlayers: number; tieForFirst: boolean } | null = null;
 const CACHE_TTL_MS = 30_000;
 
 export async function GET(req: Request) {
@@ -46,19 +47,15 @@ export async function GET(req: Request) {
         .where('createdAtIso', '>=', weekStartIso)
         .get();
 
-      const counts = new Map<string, number>();
-      for (const doc of snap.docs) {
-        const e = doc.data() as { type?: string; userId?: string; createdAtIso?: string; metadata?: { passType?: string } };
-        if (e.type !== 'draft_filled') continue;
-        if (e.metadata?.passType !== 'paid') continue;
-        if ((e.createdAtIso ?? '') >= week.endIso) continue; // fills after Sun 11pm PT don't count
-        const wallet = (e.userId || '').toLowerCase();
-        if (!wallet || wallet.startsWith('bot-')) continue;
-        counts.set(wallet, (counts.get(wallet) ?? 0) + 1);
-      }
-
-      const sorted = [...counts.entries()]
-        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); // count desc, wallet asc (same tiebreak as the cron)
+      // Tally + rank via the SHARED helper (lib/kingWeek) — IDENTICAL basis +
+      // tiebreakers to the crowning cron, so "who's in first" here is exactly
+      // who gets crowned. Rules: most paid drafts → reached the count first →
+      // grinding longest → joined the final lobby first.
+      const ranked = await rankKingContenders(tallyKingDrafts(snap.docs, week.endIso), fetchDraftRosters);
+      const sorted: [string, number][] = ranked.map(([wallet, t]) => [wallet, t.count]);
+      // Two or more people tied on paid-draft count at the top → a tiebreaker
+      // decides #1, so the UI should explain how. (false the rest of the time.)
+      const tieForFirst = sorted.length >= 2 && sorted[0][1] === sorted[1][1];
 
       const profileMap = await getPublicUsers(sorted.slice(0, 10).map(([w]) => w)).catch(() => new Map());
       const standings: Standing[] = sorted.map(([wallet, count], i) => {
@@ -72,7 +69,7 @@ export async function GET(req: Request) {
         };
       });
 
-      cache = { ts: now, weekStartIso, standings, totalPlayers: sorted.length };
+      cache = { ts: now, weekStartIso, standings, totalPlayers: sorted.length, tieForFirst };
     }
 
     const meEntry = me ? cache.standings.find((s) => s.wallet === me) ?? null : null;
@@ -87,6 +84,7 @@ export async function GET(req: Request) {
       weekStartIso,
       finalizesAtIso: week.endIso,
       totalPlayers: cache.totalPlayers,
+      tieForFirst: cache.tieForFirst,
       top: cache.standings.slice(0, 10),
       me: me
         ? { rank: meEntry?.rank ?? null, count: meEntry?.count ?? 0, lifetime }
