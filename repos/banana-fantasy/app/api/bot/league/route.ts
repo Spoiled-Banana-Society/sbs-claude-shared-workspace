@@ -69,22 +69,33 @@ const CACHE_MS = 15_000;
 let cache: { at: number; data: AbbrevLeague[] } | null = null;
 
 interface Odds {
+  // Remaining specials in the current 100-batch (5 HOF + 1 Jackpot at batch
+  // start; each drops to 0 as its designated drafts fill).
+  hofRemaining: number;
+  jackpotRemaining: number;
+  // Odds = remaining ÷ slots-left. null once that special is hit (0 left).
   hofPercent: number | null;
   jackpotPercent: number | null;
 }
 
+const NO_ODDS: Odds = { hofRemaining: 0, jackpotRemaining: 0, hofPercent: null, jackpotPercent: null };
+
 /**
  * Current-batch HOF / Jackpot odds = remaining specials ÷ remaining slots in
  * the 100-draft batch. Mirrors the Go API (ReturnBatchProgress) and
- * lib/db-firestore.ts so the bot's odds always match the website's.
+ * lib/db-firestore.ts so the bot's odds always match the website's. Each
+ * special's % drops as its drafts get hit, goes null once it's fully hit, and
+ * resets when the next 100-batch starts (FilledLeaguesCount crosses the next
+ * multiple of 100 and the committed positions roll forward).
  */
 function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
-  if (!tracker) return { hofPercent: null, jackpotPercent: null };
+  if (!tracker) return NO_ODDS;
   const filled = Number(tracker.FilledLeaguesCount ?? 0) || 0;
-  if (filled <= 0) return { hofPercent: null, jackpotPercent: null };
+  if (filled <= 0) return NO_ODDS;
 
   const current = filled % BATCH_SIZE;
   const remainingSlots = BATCH_SIZE - current; // == BATCH_SIZE at a clean boundary
+  if (remainingSlots <= 0) return NO_ODDS;
   const batchStart = current === 0 ? filled - BATCH_SIZE : filled - current;
 
   const toIds = (v: unknown): number[] =>
@@ -96,11 +107,12 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
 
   const hofRemaining = Math.max(0, 5 - hitInBatch(hofIds));
   const jackpotRemaining = Math.max(0, 1 - hitInBatch(jpIds));
-  if (remainingSlots <= 0) return { hofPercent: null, jackpotPercent: null };
 
   return {
-    hofPercent: (hofRemaining / remainingSlots) * 100,
-    jackpotPercent: (jackpotRemaining / remainingSlots) * 100,
+    hofRemaining,
+    jackpotRemaining,
+    hofPercent: hofRemaining > 0 ? (hofRemaining / remainingSlots) * 100 : null,
+    jackpotPercent: jackpotRemaining > 0 ? (jackpotRemaining / remainingSlots) * 100 : null,
   };
 }
 
@@ -114,10 +126,13 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   ]);
 
   const odds = computeOdds(trackerSnap.data() as Record<string, unknown> | undefined);
-  const oddsLine =
-    odds.hofPercent !== null && odds.jackpotPercent !== null
-      ? `HOF - ${odds.hofPercent.toFixed(2)}% Jackpot - ${odds.jackpotPercent.toFixed(2)}%`
-      : null;
+  // Drop a special from the line once it's been hit (no "0.00%"), and omit the
+  // whole line once ALL specials in the batch are hit — it reappears on its own
+  // when the next 100-batch begins.
+  const oddsParts: string[] = [];
+  if (odds.hofPercent !== null) oddsParts.push(`HOF - ${odds.hofPercent.toFixed(2)}%`);
+  if (odds.jackpotPercent !== null) oddsParts.push(`Jackpot - ${odds.jackpotPercent.toFixed(2)}%`);
+  const oddsLine = oddsParts.length ? oddsParts.join(' ') : null;
 
   const leagues: AbbrevLeague[] = [];
   for (const doc of snap.docs) {
