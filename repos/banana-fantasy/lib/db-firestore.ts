@@ -308,7 +308,17 @@ function calcBuyBonusFreeDrafts(quantity: number): number {
 
 export async function getPromos(userId: string): Promise<Promo[]> {
   const db = getAdminFirestore();
-  await ensureUserSeeded(userId);
+  const userData = await ensureUserSeeded(userId);
+
+  // RETURNING-USER GUARD (2026-06-27): a player from a past BBB season is NOT
+  // eligible for the new-user bonus — unless an admin force-granted it
+  // (newUserPromoForced). Returning = the email/social returning-check flag OR
+  // the static past-players wallet list. The authoritative enforcement is in
+  // claimPromo (server-side); here we just hide it + keep it un-claimable.
+  const { isReturningWalletSync } = await import('@/lib/returningUsers');
+  const forcedNewUser = (userData as { newUserPromoForced?: boolean }).newUserPromoForced === true;
+  const newUserBlocked = !forcedNewUser
+    && ((userData as { isReturningPlayer?: boolean }).isReturningPlayer === true || isReturningWalletSync(userId));
 
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
 
@@ -443,12 +453,12 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     // doesn't carry claim state — the v2_twitter_links record's
     // newUserPromoClaimed is the source of truth (so the promo stays
     // claimable across Firestore re-seeds and resists race conditions).
-    if (promo.type === 'new-user' && hasVerifiedTwitter && !newUserPromoAlreadyClaimed) {
+    if (promo.type === 'new-user' && hasVerifiedTwitter && !newUserPromoAlreadyClaimed && !newUserBlocked) {
       promo.claimable = true;
       promo.claimCount = Math.max(promo.claimCount ?? 0, 1);
     }
     return promo;
-  });
+  }).filter((promo) => !(promo.type === 'new-user' && newUserBlocked)); // returning players never see the new-user promo (unless force-granted)
 }
 
 export async function claimPromo(userId: string, promoId: string) {
@@ -478,6 +488,20 @@ export async function claimPromo(userId: string, promoId: string) {
       }
       twitterLinkRef = twitterSnap.docs[0].ref;
       if (promo.type === 'new-user') {
+        // RETURNING-USER GUARD (2026-06-27): a past-season BBB player is NOT
+        // eligible for the new-user bonus — UNLESS an admin force-granted it
+        // (newUserPromoForced). Enforced HERE, inside the claim transaction, so
+        // it's authoritative and a hand-crafted client request can't bypass it.
+        // Returning = the email/social returning-check flag OR the static
+        // past-players wallet list. (newUserPromoForced is admin-only; no
+        // user-facing route writes it.)
+        const { isReturningWalletSync } = await import('@/lib/returningUsers');
+        const forced = (user as { newUserPromoForced?: boolean }).newUserPromoForced === true;
+        const isReturning = (user as { isReturningPlayer?: boolean }).isReturningPlayer === true
+          || isReturningWalletSync(userId);
+        if (isReturning && !forced) {
+          throw new ApiError(403, 'Returning players are not eligible for the new-user bonus');
+        }
         // Source of truth for the new-user claim is the twitter link doc, not
         // the promo doc (the promo's `claimable` is flipped on read by getPromos
         // and never persists, so trusting `promo.claimable` here would always
