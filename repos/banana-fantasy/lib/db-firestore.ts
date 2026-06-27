@@ -736,15 +736,26 @@ function sanitizeRefName(name: string): string {
  * for the new name — old codes stay in v2_referral_codes so links already
  * shared keep resolving to them.
  */
-export async function ensureNamedReferralCode(userId: string, displayName?: string) {
+export async function ensureNamedReferralCode(userId: string, _displayName?: string) {
   const db = getAdminFirestore();
   await ensureUserSeeded(userId);
 
-  const fallback = `Banana${userId.replace(/[^a-zA-Z0-9]/g, '').slice(-5)}`;
-  const base = sanitizeRefName(displayName || '') || sanitizeRefName(fallback);
-
   const userRef = db.collection(USERS_COLLECTION).doc(userId);
   const referralRef = userRef.collection('metadata').doc(REFERRAL_DOC);
+
+  // SECURITY (2026-06-27): the referral code is derived from the user's OWN
+  // claimed username — read server-side from their user doc, which claimUsername
+  // writes atomically on every name-set path — NOT from a client-supplied name.
+  // Trusting the passed name let a user mint a code for a name they don't own,
+  // squatting it and forcing the real username-owner onto "Name2" (the AceJohn
+  // bug). A user still on the default "User-…" placeholder falls back to their
+  // default Banana##### handle (the same name they see). `_displayName` is now
+  // ignored on purpose.
+  const defaultName = bananaDefaultName(userId.toLowerCase());
+  const userSnap = await userRef.get();
+  const stored = (userSnap.data()?.username as string | undefined) || '';
+  const ownName = stored && !stored.startsWith('User-') ? stored : defaultName;
+  const base = sanitizeRefName(ownName) || sanitizeRefName(defaultName);
 
   // Already minted for this exact name → reuse (no writes on the hot path).
   const metaSnap = await referralRef.get();

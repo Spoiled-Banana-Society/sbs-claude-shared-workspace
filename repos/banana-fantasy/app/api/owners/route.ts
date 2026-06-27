@@ -20,7 +20,15 @@ const API_BASE = process.env.NEXT_PUBLIC_SBS_API_URL || '';
  */
 async function enforceUniqueDisplayName(walletAddress: string, displayName: string): Promise<void> {
   const result = await claimUsername(displayName, walletAddress);
-  if (result.available) return;
+  if (result.available) {
+    // Name claimed → refresh the referral code to match it immediately
+    // (real-time). Best-effort; getPromos re-derives on next read regardless.
+    try {
+      const { ensureNamedReferralCode } = await import('@/lib/db');
+      await ensureNamedReferralCode(walletAddress);
+    } catch { /* non-fatal — referral self-heals on next promos read */ }
+    return;
+  }
   const reason = result.reason ?? 'taken';
   const status = reason === 'taken' || reason === 'reserved' ? 409 : 400;
   throw new ApiError(status, usernameErrorText(reason));
