@@ -5,7 +5,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
 import { getPublicUsers } from '@/lib/friends';
-import { currentKingWeek } from '@/lib/kingWeek';
+import { currentKingWeek, tallyKingDrafts, compareKing } from '@/lib/kingWeek';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
 import { logger } from '@/lib/logger';
 
@@ -46,19 +46,12 @@ export async function GET(req: Request) {
         .where('createdAtIso', '>=', weekStartIso)
         .get();
 
-      const counts = new Map<string, number>();
-      for (const doc of snap.docs) {
-        const e = doc.data() as { type?: string; userId?: string; createdAtIso?: string; metadata?: { passType?: string } };
-        if (e.type !== 'draft_filled') continue;
-        if (e.metadata?.passType !== 'paid') continue;
-        if ((e.createdAtIso ?? '') >= week.endIso) continue; // fills after Sun 11pm PT don't count
-        const wallet = (e.userId || '').toLowerCase();
-        if (!wallet || wallet.startsWith('bot-')) continue;
-        counts.set(wallet, (counts.get(wallet) ?? 0) + 1);
-      }
-
-      const sorted = [...counts.entries()]
-        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); // count desc, wallet asc (same tiebreak as the cron)
+      // Tally + rank via the SHARED helper (lib/kingWeek) — IDENTICAL basis +
+      // tiebreaker to the crowning cron, so "who's in first" here is exactly
+      // who gets crowned. Tie → whoever reached the count FIRST.
+      const sorted: [string, number][] = [...tallyKingDrafts(snap.docs, week.endIso).entries()]
+        .sort(compareKing)
+        .map(([wallet, t]) => [wallet, t.count]);
 
       const profileMap = await getPublicUsers(sorted.slice(0, 10).map(([w]) => w)).catch(() => new Map());
       const standings: Standing[] = sorted.map(([wallet, count], i) => {

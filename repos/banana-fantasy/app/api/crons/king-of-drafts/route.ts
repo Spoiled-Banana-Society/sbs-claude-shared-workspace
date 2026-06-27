@@ -5,7 +5,7 @@ import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
 import { unlockBadge, revokeBadge } from '@/lib/db';
 import { ACTIVITY_EVENTS_COLLECTION } from '@/lib/activityEvents';
-import { lastClosedKingWeek } from '@/lib/kingWeek';
+import { lastClosedKingWeek, tallyKingDrafts, compareKing } from '@/lib/kingWeek';
 import { logger } from '@/lib/logger';
 
 // Singleton doc tracking who currently holds the transient King badge.
@@ -54,32 +54,12 @@ export async function GET(req: Request) {
       .where('createdAtIso', '>=', sinceIso)
       .get();
 
-    const counts = new Map<string, number>();
-    for (const doc of snap.docs) {
-      const e = doc.data() as {
-        type?: string;
-        userId?: string;
-        createdAtIso?: string;
-        metadata?: { passType?: string };
-      };
-      if (e.type !== 'draft_filled') continue; // FILLED paid drafts only — not entries
-      if (e.metadata?.passType !== 'paid') continue; // free drafts don't count
-      if ((e.createdAtIso ?? '') >= week.endIso) continue; // after Sun 11pm PT close
-      const wallet = (e.userId || '').toLowerCase();
-      if (!wallet || wallet.startsWith('bot-')) continue;
-      counts.set(wallet, (counts.get(wallet) ?? 0) + 1);
-    }
-
-    // Winner = most paid drafts; ties broken deterministically (lowest wallet)
-    // so re-runs are stable.
-    let winner: string | null = null;
-    let best = 0;
-    for (const [wallet, n] of counts) {
-      if (n > best || (n === best && winner !== null && wallet < winner)) {
-        best = n;
-        winner = wallet;
-      }
-    }
+    // Tally + rank using the SHARED helper (lib/kingWeek) so the crown matches
+    // the live leaderboard exactly. Winner = most paid drafts; ties go to
+    // whoever reached that count FIRST (earliest last-counting-draft).
+    const ranked = [...tallyKingDrafts(snap.docs, week.endIso).entries()].sort(compareKing);
+    const winner: string | null = ranked.length ? ranked[0][0] : null;
+    const best = ranked.length ? ranked[0][1].count : 0;
 
     const stateRef = db.doc(KING_STATE_DOC);
     const prevSnap = await stateRef.get();
