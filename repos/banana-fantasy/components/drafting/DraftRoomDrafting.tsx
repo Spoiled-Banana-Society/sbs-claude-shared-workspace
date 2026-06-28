@@ -443,7 +443,12 @@ export function DraftRoomDrafting({
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {(() => {
-          const isCompleted = phase === 'drafting' && engine.draftStatus === 'completed';
+          // Spectators (zero-address wallet) own no team, so the wallet-keyed
+          // "Generating your team" card-ready wait never resolves and the bar
+          // hangs forever. Skip the overlay for spectators and leave them in
+          // the room — the board/roster tabs below are already populated with
+          // the completed draft for review.
+          const isCompleted = phase === 'drafting' && engine.draftStatus === 'completed' && !spectator;
           return (
           <div className="flex flex-1 overflow-hidden">
             {/* Main tab content (left) — tabs centered above player list */}
