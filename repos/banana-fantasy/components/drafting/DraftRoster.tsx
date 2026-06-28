@@ -119,7 +119,10 @@ export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userD
         {selectedDraftPlayer?.isYou ? (
           <div style={{ margin: '10px auto', display: 'flex', justifyContent: 'center' }}>
             <AvatarWithBadge
-              imageUrl={userProfilePicture || '/banana-profile.png'}
+              // Prefer your live auth pfp, then the same usersMap pfp everyone
+              // else resolves from (so "Your Team" never drops to the plain
+              // banana when the auth pic is momentarily empty), then default.
+              imageUrl={userProfilePicture || userFor(selectedDraftPlayer?.name)?.imageUrl || '/banana-profile.png'}
               alt="You"
               size={40}
               equippedBadge={userEquippedBadge}
