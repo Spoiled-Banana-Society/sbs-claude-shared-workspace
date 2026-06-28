@@ -939,6 +939,23 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       .sort((a, b) => a.pickNum - b.pickNum);
     const pickedIds = new Set(pickedEntries.map((pi) => pi.playerId));
 
+    // Stale-response guard: this rebuilds rosters/board/picks WHOLESALE from
+    // `summaryData`. If the summary is older than what we've already applied
+    // (e.g. a turn-start refresh whose fetch returns AFTER the user's own pick
+    // has already echoed in), applying it would drop that newer pick AND bump
+    // lastPickRef so the live feed never re-adds it → blank roster until a
+    // manual reload. Apply only when the summary is at least as current as the
+    // highest pick we've seen; a strictly-older one is never useful. ('===' the
+    // applied high-water mark still passes, so the missed-intermediate-pick
+    // heal keeps working — only strictly-stale responses are dropped.)
+    const summaryMaxPick = pickedEntries.length > 0
+      ? pickedEntries[pickedEntries.length - 1].pickNum
+      : 0;
+    if (summaryMaxPick < lastPickRef.current) {
+      logger.debug('[refreshSummaryPicks] Skipping stale summary (max', summaryMaxPick, '< applied', lastPickRef.current, ')');
+      return;
+    }
+
     setDraftSummary(prev => {
       const updated = prev.map((slot) => ({
         ...slot,
