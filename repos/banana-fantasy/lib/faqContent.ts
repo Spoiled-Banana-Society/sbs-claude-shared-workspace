@@ -266,19 +266,22 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'What payment methods are accepted?',
-        answer: 'Debit card, PayPal, Venmo, Apple Pay, or pay directly with USDC on Base.',
+        answer: 'Apple Pay, Venmo, PayPal, or debit card — quick and easy at checkout.',
+        audience: 'web2',
+      },
+      {
+        question: 'What payment methods are accepted?',
+        answer: 'Apple Pay, Venmo, PayPal, debit card, or pay directly with USDC on Base.',
+        audience: 'web3',
       },
       {
         question: 'How do I get USDC on Base to pay with crypto?',
         answer: 'If you already hold ETH or other crypto, you have a few easy options: swap it to USDC on Base in one step with Relay, move it through Coinbase and withdraw USDC on the Base network, or simply buy USDC directly on Coinbase or in MetaMask. Our step-by-step guide walks through each method - including your exact wallet address to send to.',
+        audience: 'web3',
         link: {
           label: 'How to get USDC on Base',
           href: '/get-usdc',
         },
-      },
-      {
-        question: 'How do withdrawals work?',
-        answer: 'Cash out to your bank account via Coinbase Offramp (ACH, 1-3 days) or withdraw USDC directly to your wallet on Base.',
       },
     ],
   },
@@ -288,7 +291,17 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Can I sell my drafted team?',
+        answer: 'Yes! You can sell your team on our marketplace any time during the season. Bad start? Sell and recoup some value. See a contender for sale? Buy your way in.',
+        audience: 'web2',
+        link: {
+          label: 'View Marketplace',
+          href: '/marketplace',
+        },
+      },
+      {
+        question: 'Can I sell my drafted team?',
         answer: 'Yes! Your teams are tradeable digital assets, so you can sell them on our marketplace at any time during the season. Bad start? Sell and recoup some value. See a contender for sale? Buy your way in.',
+        audience: 'web3',
         link: {
           label: 'View Marketplace',
           href: '/marketplace',
