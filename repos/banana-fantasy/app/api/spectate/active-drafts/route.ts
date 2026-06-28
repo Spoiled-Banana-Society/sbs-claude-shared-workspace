@@ -36,6 +36,8 @@ interface ActiveDraft {
   maxPlayers: number;
   /** Wallets of everyone who has joined so far (for the spectate "who's in" band). */
   members: string[];
+  /** When the draft started (Unix seconds). 0 if unknown. Used to sort newest-first. */
+  draftStartTime: number;
 }
 
 interface DraftInfoResponse {
@@ -43,6 +45,7 @@ interface DraftInfoResponse {
   currentDrafter: string;
   displayName: string;
   currentPickEndTime?: number | null;
+  draftStartTime?: number | null;
 }
 
 // Hardcoded staging — see comment in /api/spectate/draft-state/route.ts.
@@ -159,11 +162,22 @@ export async function GET(req: Request) {
           numPlayers,
           maxPlayers,
           members,
+          draftStartTime: Number(info?.draftStartTime ?? 0) || 0,
         };
       })
       .filter((d): d is Categorized => d !== null);
 
-    const sortNewestFirst = (a: Categorized, b: Categorized) => b.draftId.localeCompare(a.draftId);
+    // Newest-first by the actual draft start time. Fall back to the numeric
+    // slot in the draftId (parsed as a number — NOT a string compare, which
+    // wrongly puts "...-9" above "...-25") when a start time is missing.
+    const slotNum = (id: string): number => {
+      const m = id.match(/-(\d+)$/);
+      return m ? Number(m[1]) : 0;
+    };
+    const sortNewestFirst = (a: Categorized, b: Categorized) => {
+      if (b.draftStartTime !== a.draftStartTime) return b.draftStartTime - a.draftStartTime;
+      return slotNum(b.draftId) - slotNum(a.draftId);
+    };
     const active = drafts
       // A `filling` draft only counts as active once at least one person has
       // joined — an empty 0/10 doc is a leftover lobby (e.g. someone joined

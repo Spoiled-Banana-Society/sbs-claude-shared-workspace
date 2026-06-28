@@ -16,9 +16,25 @@ interface CompletedDraft {
   pickNumber: number;
   currentDrafter: string;
   filling: boolean;
+  /** When the draft started (Unix seconds). 0 if unknown. */
+  draftStartTime?: number;
 }
 
 const REFRESH_INTERVAL_MS = 10000;
+
+// "Jun 27, 2026 · 8:34 PM" — or em-dash when no start time is recorded.
+function formatDrafted(unixSeconds?: number): string {
+  if (!unixSeconds) return '—';
+  const d = new Date(unixSeconds * 1000);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
 
 function levelPillStyle(level: string | null): { bg: string; color: string; label: string } {
   if (!level) return { bg: '#a855f7', color: '#fff', label: 'PRO' };
@@ -107,12 +123,13 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
         <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm min-w-[640px]">
+        <table className="w-full text-left text-sm min-w-[760px]">
           <thead className="bg-white/[0.03] text-[11px] uppercase text-gray-500 tracking-wider">
             <tr>
               <th className="px-4 py-3 font-medium">Draft</th>
               <th className="px-4 py-3 font-medium">Type</th>
               <th className="px-4 py-3 font-medium">Speed</th>
+              <th className="px-4 py-3 font-medium">Drafted</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium text-right">View</th>
             </tr>
@@ -120,7 +137,7 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
           <tbody>
             {filtered.length === 0 && !loading && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
+                <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
                   No completed drafts.
                 </td>
               </tr>
@@ -142,6 +159,7 @@ export function CompletedDraftsList({ enabled }: { enabled: boolean }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-300 capitalize">{d.speed}</td>
+                  <td className="px-4 py-3 text-gray-400 whitespace-nowrap">{formatDrafted(d.draftStartTime)}</td>
                   <td className="px-4 py-3 text-green-400">Completed</td>
                   <td className="px-4 py-3 text-right">
                     <a
