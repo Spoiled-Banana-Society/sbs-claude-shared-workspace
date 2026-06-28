@@ -481,15 +481,22 @@ export interface DraftPassPurchase {
 }
 
 // FAQ types
+// Audience targeting for FAQ content. Omitted = 'all' (everyone sees it).
+// 'web3' = crypto-only (hidden from confirmed web2 / embedded-wallet users).
+// 'web2' = plain-language version shown ONLY to web2 users.
+export type FAQAudience = 'all' | 'web3' | 'web2';
+
 export interface FAQSection {
   id: string;
   title: string;
   items: FAQItem[];
+  audience?: FAQAudience;
 }
 
 export interface FAQItem {
   question: string;
   answer: string;
+  audience?: FAQAudience;
   link?: {
     label: string;
     href: string;

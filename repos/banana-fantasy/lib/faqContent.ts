@@ -206,6 +206,9 @@ export const mockFAQSections: FAQSection[] = [
   {
     id: 'base-usdc',
     title: 'New: Base using USDC',
+    // Crypto-only — hidden from confirmed web2 (embedded-wallet) users, who pay
+    // by card and never touch Base/USDC/gas/networks directly.
+    audience: 'web3',
     items: [
       {
         question: 'What changed from previous seasons?',

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { useWallets } from '@privy-io/react-auth';
 import { Card } from '@/components/ui/Card';
 import { mockFAQSections } from '@/lib/faqContent';
 
@@ -20,6 +21,23 @@ export default function FAQPage() {
       setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
     }
   }, []);
+
+  // Confirmed web2 user = signed in with an embedded (Privy) wallet and NO
+  // external wallet → they pay by card and never touch Base/USDC/gas. We use
+  // the actual wallet set (not loginMethod, which mis-flags social-login users
+  // who connected an external wallet). Default-safe: logged-out / not-ready /
+  // any external wallet → NOT web2 → full FAQ shown.
+  const { wallets, ready: walletsReady } = useWallets();
+  const isWeb2 = walletsReady && wallets.length > 0 && wallets.every((w) => w.walletClientType === 'privy');
+
+  // web2 → hide 'web3' (crypto) content; everyone else → hide 'web2'-only
+  // plain-language content. 'all' / untagged is always shown. Sections that end
+  // up empty after filtering their items are dropped.
+  const hideAudience = isWeb2 ? 'web3' : 'web2';
+  const visibleSections = mockFAQSections
+    .filter((section) => section.audience !== hideAudience)
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.audience !== hideAudience) }))
+    .filter((section) => section.items.length > 0);
 
   const toggleSection = (sectionId: string) => {
     setExpandedSection(expandedSection === sectionId ? null : sectionId);
@@ -71,7 +89,7 @@ export default function FAQPage() {
 
       {/* FAQ Sections */}
       <div className="space-y-4">
-        {mockFAQSections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.id} id={section.id}>
           <Card className="p-0 overflow-hidden">
             {/* Section Header */}
