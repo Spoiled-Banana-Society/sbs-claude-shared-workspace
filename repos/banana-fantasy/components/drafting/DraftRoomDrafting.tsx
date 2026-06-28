@@ -551,6 +551,7 @@ export function DraftRoomDrafting({
                   userName={user?.username ?? undefined}
                   userEquippedBadge={user?.equippedBadge}
                   userRipeness={user?.ripeness}
+                  usersMap={usersMap}
                 />
               )}
               {/* Keep chat mounted across tab switches and through draft

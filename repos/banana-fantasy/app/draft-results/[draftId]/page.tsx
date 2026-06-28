@@ -14,6 +14,8 @@ import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsi
 import { teamNoFromToken } from '@/lib/teamCardData';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { saveImageToDevice } from '@/lib/saveImage';
+import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
+import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -128,6 +130,12 @@ export default function DraftResultsPage() {
 
   const [allRosters, setAllRosters] = useState<Record<string, PlayerRoster>>({});
   const [playerKeys, setPlayerKeys] = useState<string[]>([]);
+  // Live identity (edited name/pfp/badge if set, on-brand Banana default
+  // otherwise) — the SAME source the in-draft roster uses, so names + avatars
+  // match across the draft room and this results page. Keyed by lowercase
+  // wallet; SWR-like with internal polling (safe re: render-loop rule — input
+  // is the stable playerKeys state array).
+  const usersMap = useDraftRoomUsers(playerKeys);
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [draftLevel, setDraftLevel] = useState('Pro');
   const [displayName, setDisplayName] = useState('');
@@ -359,6 +367,10 @@ export default function DraftResultsPage() {
     // Banana #N handle (NOT the raw wallet — that's what was leaking when
     // the backend's PFP.DisplayName defaults to ownerId on new accounts).
     if (key.startsWith('0x')) {
+      // Prefer the LIVE resolved name (picks up a freshly-edited username), then
+      // the results-API PFP name, then the on-brand Banana default. Never the wallet.
+      const live = usersMap[key.toLowerCase()]?.displayName;
+      if (live && !isPlaceholderName(live, key)) return live;
       if (r?.pfpDisplayName && !isPlaceholderName(r.pfpDisplayName, key)) {
         return r.pfpDisplayName;
       }
@@ -751,17 +763,25 @@ export default function DraftResultsPage() {
 
         {/* Profile + Position Counts Header (old prod style) */}
         <div className="text-center mb-4">
-          {/* Profile photo — use auth profile pic for current user, PFP from rosters for others */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={
-              (selectedPlayer.toLowerCase() === walletAddress.toLowerCase() && user?.profilePicture)
-                ? user.profilePicture
-                : roster.pfpImageUrl || '/banana-profile.png'
-            }
-            alt="Profile"
-            className="w-10 h-10 rounded-full border border-white/20 mx-auto mb-2 bg-white/5 object-cover"
-          />
+          {/* Profile photo — auth pic for the current user, else the live
+              resolved pfp (usersMap) then results-API PFP, then banana default.
+              AvatarWithBadge so it shows the equipped badge/ripeness and never
+              blanks — same component the in-draft roster uses. */}
+          <div className="flex justify-center mb-2">
+            <AvatarWithBadge
+              imageUrl={
+                (selectedPlayer.toLowerCase() === walletAddress.toLowerCase() && user?.profilePicture)
+                  ? user.profilePicture
+                  : (usersMap[selectedPlayer.toLowerCase()]?.imageUrl || roster.pfpImageUrl || '/banana-profile.png')
+              }
+              alt="Profile"
+              size={40}
+              equippedBadge={usersMap[selectedPlayer.toLowerCase()]?.equippedBadge}
+              ripeness={usersMap[selectedPlayer.toLowerCase()]?.ripeness}
+              useNextImage={false}
+              className=""
+            />
+          </div>
           <p className="text-white font-bold text-lg mb-3">
             {getPlayerLabel(selectedPlayer)}
           </p>

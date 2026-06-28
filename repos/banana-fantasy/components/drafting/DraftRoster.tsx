@@ -6,6 +6,7 @@ import type { PositionRoster, DraftPick } from '@/lib/draftRoomConstants';
 import type { DraftPlayer, PlayerStat } from '@/hooks/useDraftEngine';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import { getTruncatedAccountName } from '@/utils/helpers';
+import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
 
 interface DraftRosterProps {
   draftOrder: DraftPlayer[];
@@ -20,11 +21,16 @@ interface DraftRosterProps {
   userName?: string;
   userEquippedBadge?: string | null;
   userRipeness?: import('@/types').Ripeness | null;
+  /** Live wallet→identity map (edited name/pfp/badge if set, on-brand Banana
+   *  default otherwise) — same source the team-switcher tabs use. Lets OTHER
+   *  teams in the dropdown/header show their real name + pfp instead of a bare
+   *  Banana # default. Purely cosmetic; never affects roster/pick data. */
+  usersMap?: DraftRoomUsersMap;
 }
 
 const POSITION_KEYS: (keyof PositionRoster)[] = ['QB', 'RB', 'WR', 'TE', 'DST'];
 
-export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness }: DraftRosterProps) {
+export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userDraftPosition, initialPlayer, userProfilePicture, userName, userEquippedBadge, userRipeness, usersMap }: DraftRosterProps) {
   const [selectedPlayer, setSelectedPlayer] = useState(
     initialPlayer || draftOrder[userDraftPosition]?.name || draftOrder[0]?.name || ''
   );
@@ -36,16 +42,23 @@ export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userD
 
   const roster = rosters[selectedPlayer];
 
+  // Resolve a drafter's live identity (edited name/pfp/badge if set, else the
+  // on-brand Banana default) from the shared usersMap — same source the
+  // team-switcher tabs use. Self is handled separately (Your Team + own pfp).
+  const userFor = (wallet?: string) => (wallet ? usersMap?.[wallet.toLowerCase()] : undefined);
+
   // Find the display name for the selected player
   const selectedDraftPlayer = draftOrder.find(p => p.name === selectedPlayer);
-  // Never surface a wallet: prefer a real/resolved name, otherwise the
-  // on-brand Banana # default derived from the wallet.
+  const selectedUser = !selectedDraftPlayer?.isYou ? userFor(selectedDraftPlayer?.name || selectedPlayer) : undefined;
+  // Never surface a wallet: prefer the live resolved name (edited username when
+  // set), then any engine displayName, otherwise the on-brand Banana # default.
   const displayName = selectedDraftPlayer?.isYou && userName
     ? userName
-    : getTruncatedAccountName(
-        selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer,
-        selectedDraftPlayer?.name || selectedPlayer,
-      );
+    : (selectedUser?.displayName
+        || getTruncatedAccountName(
+            selectedDraftPlayer?.displayName || selectedDraftPlayer?.name || selectedPlayer,
+            selectedDraftPlayer?.name || selectedPlayer,
+          ));
 
   // Count players per position
   const positionCounts: Record<string, number> = {};
@@ -87,7 +100,9 @@ export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userD
         }}
       >
         {draftOrder.map(p => {
-          const shortLabel = p.isYou ? 'Your Team' : getTruncatedAccountName(p.displayName || p.name, p.name);
+          const shortLabel = p.isYou
+            ? 'Your Team'
+            : (userFor(p.name)?.displayName || getTruncatedAccountName(p.displayName || p.name, p.name));
           return (
             <option key={p.id} value={p.name} className="bg-[#1a1a24] font-bold">
               {shortLabel}
@@ -114,8 +129,20 @@ export function DraftRoster({ draftOrder, rosters, picks, playerStatsById, userD
             />
           </div>
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src="/banana-profile.png" alt="Player" style={{ width: 40, height: 40, borderRadius: '50%', margin: '10px auto', border: '1px solid #777' }} />
+          // Other teams: live pfp + badge from usersMap (edited or on-brand
+          // Banana default), same as the team-switcher tabs. Falls back to the
+          // default banana when identity hasn't resolved yet.
+          <div style={{ margin: '10px auto', display: 'flex', justifyContent: 'center' }}>
+            <AvatarWithBadge
+              imageUrl={selectedUser?.imageUrl || '/banana-profile.png'}
+              alt={displayName || 'Player'}
+              size={40}
+              equippedBadge={selectedUser?.equippedBadge}
+              ripeness={selectedUser?.ripeness}
+              useNextImage={false}
+              className=""
+            />
+          </div>
         )}
 
         {/* Display name */}
