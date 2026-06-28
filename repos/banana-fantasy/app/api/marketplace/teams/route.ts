@@ -59,12 +59,30 @@ export async function GET(req: Request) {
     if (hasTeam) {
       const one = await db.collection('marketplace_index').doc(teamParam!).get();
       snapDocs = one.exists ? [one as FirebaseFirestore.QueryDocumentSnapshot] : [];
+    } else if (hasLeague) {
+      // League search: drafted teams in that league. Wheel passes have no league,
+      // so they're (correctly) absent here.
+      snapDocs = (await db.collection('marketplace_index').where('leagueNumber', '==', Number(leagueParam)).limit(1000).get()).docs;
+    } else if (wantLevel) {
+      // HOF / JP filter: ONE level query returns both drafted teams AND the
+      // wheel-won draft passes at that level (the code filter below admits both).
+      snapDocs = (await db.collection('marketplace_index').where('level', '==', wantLevel).limit(1000).get()).docs;
     } else {
-      let q: FirebaseFirestore.Query = db.collection('marketplace_index');
-      if (hasLeague) q = q.where('leagueNumber', '==', Number(leagueParam));
-      else if (wantLevel) q = q.where('level', '==', wantLevel);
-      else q = q.where('status', '==', 'team'); // "All Teams" — only drafted teams
-      snapDocs = (await q.limit(1000).get()).docs;
+      // "All Teams": every drafted team PLUS the HOF/JP draft passes won from the
+      // wheel (NOT pro passes, NOT undrafted teams). Firestore has no OR across
+      // fields, so union three single-field queries and dedupe by token id:
+      //   • status=='team'  → all drafted teams (any level)
+      //   • level=='hof'    → hof teams (already covered) + hof wheel passes
+      //   • level=='jackpot'→ jp teams (already covered) + jp wheel passes
+      const col = db.collection('marketplace_index');
+      const [teamSnap, hofSnap, jpSnap] = await Promise.all([
+        col.where('status', '==', 'team').limit(1000).get(),
+        col.where('level', '==', 'hof').limit(1000).get(),
+        col.where('level', '==', 'jackpot').limit(1000).get(),
+      ]);
+      const byId = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+      for (const s of [teamSnap, hofSnap, jpSnap]) for (const d of s.docs) byId.set(d.id, d);
+      snapDocs = [...byId.values()];
     }
     const snap = { docs: snapDocs };
 
@@ -73,16 +91,22 @@ export async function GET(req: Request) {
     // so the marketplace counts + filters match exactly what's on-chain.
     const maxId = await currentMaxTokenId();
 
+    // What the marketplace shows: every DRAFTED TEAM, plus the HOF/JP draft
+    // passes won from the wheel. Pro passes and undrafted teams are NOT shown
+    // here (OpenSea shows every token; this is the curated drafted view).
+    const isWheelPass = (x: Record<string, unknown>) =>
+      x.status === 'pass' && (x.level === 'hof' || x.level === 'jackpot');
     const teams: MarketplaceTeam[] = snap.docs
       .map((d) => d.data())
-      .filter((x) => x.status === 'team' && (!wantLevel || x.level === wantLevel) && isRealToken(String(x.tokenId), maxId))
+      .filter((x) => (x.status === 'team' || isWheelPass(x)) && (!wantLevel || x.level === wantLevel) && isRealToken(String(x.tokenId), maxId))
       .map((x) => {
       const lvl = (x.level as DraftType) || 'pro';
       const tokenId = String(x.tokenId);
+      const isPass = x.status === 'pass';
       return {
         id: tokenId,
         tokenId,
-        name: `Team #${tokenId}`,
+        name: isPass ? `${lvl === 'hof' ? 'HOF' : 'Jackpot'} Draft Pass #${tokenId}` : `Team #${tokenId}`,
         draftType: lvl,
         isHof: lvl === 'hof',
         isJackpot: lvl === 'jackpot',

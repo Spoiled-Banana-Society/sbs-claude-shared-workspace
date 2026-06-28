@@ -12,12 +12,19 @@ import { BASE_RPC_URL, BBB4_CONTRACT_ADDRESS } from '@/lib/contracts/bbb4';
 let cache: { ts: number; max: number } | null = null;
 const TTL_MS = 5 * 60_000;
 const MARGIN = 50;
-// Public Base mainnet RPC — always-on fallback. The configured RPC
+// Public Base mainnet RPCs — always-on fallbacks. The configured RPC
 // (NEXT_PUBLIC_ALCHEMY_BASE_RPC_URL) can fail, be rate-limited, or point at the
 // wrong network, in which case totalSupply reads as 0 and the marketplace
 // wrongly HIDES the newest teams (their on-chain id exceeds the stale-low cap).
 // Seen 2026-06-13: League 4 teams 53/61/69 vanished while supply was really 77.
-const FALLBACK_RPC = 'https://mainnet.base.org';
+// 2026-06-28: a SINGLE stale-low public node (returning ~125 while the chain was
+// at 427) capped maxId and hid most recent teams — so we now read SEVERAL
+// independent public RPCs and take the MAX, which no single lagging node can cap.
+const FALLBACK_RPCS = [
+  'https://mainnet.base.org',
+  'https://base.llamarpc.com',
+  'https://base-rpc.publicnode.com',
+];
 
 async function readTotalSupply(rpc: string): Promise<number> {
   const res = await fetch(rpc, {
@@ -43,7 +50,7 @@ export async function currentMaxTokenId(): Promise<number> {
   // the truth is the highest value any source reports. A single stale-low node
   // can then never cap the supply low and hide real teams (League-4 bug,
   // 2026-06-13). Both run concurrently; failures resolve to 0 and are ignored.
-  const rpcs = BASE_RPC_URL === FALLBACK_RPC ? [BASE_RPC_URL] : [BASE_RPC_URL, FALLBACK_RPC];
+  const rpcs = [...new Set([BASE_RPC_URL, ...FALLBACK_RPCS])];
   const reads = await Promise.allSettled(rpcs.map((u) => readTotalSupply(u)));
   let supply = 0;
   for (const r of reads) if (r.status === 'fulfilled' && r.value > supply) supply = r.value;

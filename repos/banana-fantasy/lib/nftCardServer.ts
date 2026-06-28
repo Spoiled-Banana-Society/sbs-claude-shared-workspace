@@ -99,11 +99,16 @@ function playersFromAttributes(attrs: Array<{ tt: string; val: string }>): CardP
   return attrs
     .filter((a) => ROSTER_TRAIT.test(a.tt))
     .map((a) => {
-      const parts = a.val.trim().split(/\s+/);
-      const team = parts[0] || '';
-      const pos = parts.slice(1).join('') || a.tt;
-      const m = PLAYER_META.get(`${team}-${pos}`);
-      return { team, pos, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' as const };
+      const team = a.val.trim().split(/\s+/)[0] || '';
+      // KEY ON THE CANONICAL SLOT (a.tt = "RB1"/"WR1"/...), NOT the position
+      // re-parsed from the value. PLAYER_META is keyed `${team}-${slot}` and the
+      // trait_type is ALWAYS the exact slot; parsing it back out of the value
+      // string ("MIN RB1") was fragile — a value missing the slot digit ("MIN RB")
+      // produced "MIN-RB", missing PLAYER_META entirely → blank bye/ADP. Using
+      // a.tt makes the lookup bulletproof, so bye/ADP always resolve.
+      const slot = a.tt.toUpperCase();
+      const m = PLAYER_META.get(`${team}-${slot}`);
+      return { team, pos: slot, bye: m?.byeWeek ?? '-', adp: m?.adp ?? '-', pick: '-' as const };
     });
 }
 

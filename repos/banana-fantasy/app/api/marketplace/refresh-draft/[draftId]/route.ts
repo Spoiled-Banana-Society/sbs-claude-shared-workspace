@@ -64,14 +64,44 @@ async function writeFullDataImages(
     logger.warn('marketplace.refresh_draft_summary_failed', { draftId, error: String(err) });
     byOwner = new Map();
   }
+
+  // DURABLE FALLBACK (2026-06-28): the Go API summary above is EPHEMERAL and is
+  // evicted after a draft closes. When it's gone the capture used to bail —
+  // leaving the team out of marketplace_index AND its card stripped of
+  // ADP/bye/pick/team#/league#. The same pick list is persisted forever in
+  // Firestore drafts/{id}/state/summary, so fall back to it. Field names are
+  // PascalCase there (PlayerInfo/PlayerId/OwnerAddress/PickNum), numbered RB1/WR1.
+  if (byOwner.size === 0) {
+    try {
+      const doc = await db.collection('drafts').doc(draftId).collection('state').doc('summary').get();
+      const rows = (doc.data()?.Summary ?? []) as Array<{ PlayerInfo?: { PlayerId?: string; OwnerAddress?: string; PickNum?: number } }>;
+      for (const row of rows) {
+        const info = row?.PlayerInfo;
+        const owner = (info?.OwnerAddress || '').toLowerCase();
+        if (!owner || !info?.PlayerId) continue;
+        if (!byOwner.has(owner)) byOwner.set(owner, []);
+        byOwner.get(owner)!.push({ playerId: info.PlayerId, pickNum: Number(info.PickNum) || 0 });
+      }
+    } catch (err) {
+      logger.warn('marketplace.refresh_draft_firestore_fallback_failed', { draftId, error: String(err) });
+    }
+  }
   if (byOwner.size === 0) return { written: 0, eligible: 0 };
 
-  // Numeric league id (matches the Go-written LEAGUE-NAME "BBB #N" → N).
-  let leagueNo = draftId.replace(/\D/g, '');
+  // Numeric league id = the "BBB #N" display number. Prefer the Go info; fall
+  // back to the DURABLE Firestore state/info DisplayName so a late capture never
+  // gets the garbage draftId-digit fallback (e.g. "2026-fast-draft-24" → "202624").
+  let leagueNo = '';
   try {
     const info = await getDraftInfo(draftId);
-    leagueNo = (info.displayName || '').replace(/\D/g, '') || leagueNo;
-  } catch { /* keep draftId-derived */ }
+    leagueNo = (info.displayName || '').replace(/\D/g, '');
+  } catch { /* try Firestore next */ }
+  if (!leagueNo) {
+    try {
+      const infoDoc = await db.collection('drafts').doc(draftId).collection('state').doc('info').get();
+      leagueNo = String(infoDoc.data()?.DisplayName || '').replace(/\D/g, '');
+    } catch { /* leave blank → leagueNumber null */ }
+  }
 
   let written = 0;
   let eligible = 0;
