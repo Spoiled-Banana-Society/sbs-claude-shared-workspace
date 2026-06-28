@@ -359,7 +359,7 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Who is behind Banana Best Ball?',
-        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021 — and we\'ve paid out millions in prizes since. SBS was founded by brothers Boris and Richard Vagner, with Justin Herzig, a well-known name in the best ball community, as an advisor.',
+        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021 — and we\'ve paid out millions in prizes since. SBS was founded by two brothers, Boris and Richard Vagner. Justin Herzig, a well-known name in the best ball community, advises the team.',
       },
       {
         question: 'What makes SBS different?',
