@@ -129,10 +129,13 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   // Drop a special from the line once it's been hit (no "0.00%"), and omit the
   // whole line once ALL specials in the batch are hit — it reappears on its own
   // when the next 100-batch begins.
-  const oddsParts: string[] = [];
-  if (odds.hofPercent !== null) oddsParts.push(`HOF - ${odds.hofPercent.toFixed(2)}%`);
-  if (odds.jackpotPercent !== null) oddsParts.push(`Jackpot - ${odds.jackpotPercent.toFixed(2)}%`);
-  const oddsLine = oddsParts.length ? oddsParts.join(' ') : null;
+  const oddsParts: { label: string; pct: number }[] = [];
+  if (odds.hofPercent !== null) oddsParts.push({ label: `HOF - ${odds.hofPercent.toFixed(2)}%`, pct: odds.hofPercent });
+  if (odds.jackpotPercent !== null) oddsParts.push({ label: `Jackpot - ${odds.jackpotPercent.toFixed(2)}%`, pct: odds.jackpotPercent });
+  // Highest % first (so if Jackpot ever exceeds HOF it leads). Stable sort keeps
+  // HOF before Jackpot on a tie — the default ordering.
+  oddsParts.sort((a, b) => b.pct - a.pct);
+  const oddsLine = oddsParts.length ? oddsParts.map((p) => p.label).join(' ') : null;
 
   const leagues: AbbrevLeague[] = [];
   for (const doc of snap.docs) {
