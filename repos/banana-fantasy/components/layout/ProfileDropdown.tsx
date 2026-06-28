@@ -136,9 +136,11 @@ export function ProfileDropdown({ onEditProfile }: ProfileDropdownProps) {
             <p className="font-semibold text-text-primary">{user.username}</p>
             {user.xHandle && (
               <a
-                href={`https://x.com/${user.xHandle.replace('@', '')}`}
+                href={SBS_X_URL}
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="Follow SBS on X"
+                title="Follow @SBSFantasy on X"
                 className="text-sm text-pro hover:text-pro/80 transition-colors flex items-center gap-1"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
