@@ -282,41 +282,63 @@ export function useDraftLiveSync({
       }).catch((err) => {
         const msg = err?.message || '';
         const match = msg.match(/already picked (\S+)/);
-        const handledByAutopick = engine.airplaneMode && engine.isUserTurn && !!match;
-        if (handledByAutopick) {
+        if (match) {
+          // The pick was rejected because that player is already drafted —
+          // either a stale board (a missed live update) or a lost race on a
+          // simultaneous pick. Drop the player from the board immediately so
+          // it stops showing as available. The buttons stay live, so the
+          // user can pick someone else right away — a failed tap can NEVER
+          // strand them (this is why we never lock the UI). Applies to BOTH
+          // manual taps and airplane auto-picks; previously only airplane
+          // mode self-healed, so manual taps silently 400'd forever.
           const staleId = match[1];
-          logger.debug('[Airplane] Removing stale player and retrying:', staleId);
           engine.removeFromAvailable(staleId);
-          // Defer to next tick so removeFromAvailable settles before
-          // getAutoPickPlayer runs. Was 300ms — no longer visible.
-          setTimeout(() => {
-            const nextPick = engine.getAutoPickPlayer();
-            if (nextPick && draftId) {
-              logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
-              const retryPayload = engine.draftPlayer(nextPick);
-              if (retryPayload) {
-                draftApi.submitPickREST(draftId, walletParam, {
-                  playerId: retryPayload.playerId,
-                  displayName: retryPayload.displayName,
-                  team: retryPayload.team,
-                  position: retryPayload.position,
-                }).catch(e => {
-                  console.error('[Airplane] Retry failed:', e);
-                  // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
-                  reportClientError({
-                    source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
-                    message: e instanceof Error ? e.message : String(e),
-                    route: 'draft-room',
-                    actor: walletParam,
-                    context: { draftId, playerId: retryPayload.playerId, retry: true },
+          if (engine.airplaneMode && engine.isUserTurn) {
+            // Airplane auto-pick landed on a stale player → retry with the
+            // next best available on the next tick (after removal settles).
+            logger.debug('[Airplane] Stale player removed, retrying:', staleId);
+            setTimeout(() => {
+              const nextPick = engine.getAutoPickPlayer();
+              if (nextPick && draftId) {
+                logger.debug('[Airplane] Retrying auto-pick with:', nextPick);
+                const retryPayload = engine.draftPlayer(nextPick);
+                if (retryPayload) {
+                  draftApi.submitPickREST(draftId, walletParam, {
+                    playerId: retryPayload.playerId,
+                    displayName: retryPayload.displayName,
+                    team: retryPayload.team,
+                    position: retryPayload.position,
+                  }).catch(e => {
+                    console.error('[Airplane] Retry failed:', e);
+                    // Stale-player autopick retry ALSO failed → a real dropped pick. Critical.
+                    reportClientError({
+                      source: LOG_SOURCES.draft.AUTOPICK_SUBMIT_FAILED,
+                      message: e instanceof Error ? e.message : String(e),
+                      route: 'draft-room',
+                      actor: walletParam,
+                      context: { draftId, playerId: retryPayload.playerId, retry: true },
+                    });
                   });
-                });
+                }
               }
-            }
-          }, 0);
+            }, 0);
+          } else {
+            // Manual tap on an already-drafted player. The board has been
+            // healed above (player removed), so the user simply picks again.
+            // Log for visibility — no longer a silent dead-end.
+            logger.debug('[Pick] Removed already-drafted player from board:', staleId);
+            reportClientError({
+              source: LOG_SOURCES.draft.PICK_SUBMIT_UNHANDLED,
+              message: err instanceof Error ? err.message : String(err),
+              route: 'draft-room',
+              actor: walletParam,
+              context: { draftId, playerId: pickPayload.playerId, reason: 'stalePlayerRemoved', airplaneMode: engine.airplaneMode, isUserTurn: engine.isUserTurn },
+              stack: err instanceof Error ? err.stack : undefined,
+            });
+          }
         } else {
-          // Pick-submit failure that the autopick stale-player handler
-          // does not cover — surface it so we don't silently drop picks.
+          // Non-"already picked" failure (network / 5xx / etc.) — surface it
+          // so we don't silently drop picks.
           reportClientError({
             source: LOG_SOURCES.draft.PICK_SUBMIT_UNHANDLED,
             message: err instanceof Error ? err.message : String(err),
@@ -769,6 +791,49 @@ export function useDraftLiveSync({
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, engine.draftStatus]);
+
+  // ── Turn-start authoritative refresh ──────────────────────────────────
+  // Live state is built incrementally from a single Firebase `lastPick`
+  // field; RTDB can coalesce/skip an intermediate snapshot, which leaves an
+  // already-drafted player still showing as available (and the user's own
+  // pick missing from their roster — the "blank" roster). On YOUR turn no one
+  // else can pick, so the instant your turn starts we pull the full
+  // authoritative board + rosters from REST and rebuild from the source of
+  // truth. That makes a stale/ghost player impossible for the duration of
+  // your pick, and repairs your roster if a prior pick was missed.
+  //
+  // Safety:
+  //  • Fires EXACTLY ONCE per turn — guarded by lastTurnRefreshRef keyed on
+  //    the pick number, set synchronously before the fetch — so it can never
+  //    loop (RULE #0). Deps are scalars only; no Privy-derived callback.
+  //  • Additive / non-blocking: we never lock the UI. If the fetch fails we
+  //    keep the existing live state and the user can still pick.
+  const lastTurnRefreshRef = useRef<number>(0);
+  useEffect(() => {
+    if (!isLiveMode || !draftId) return;
+    if (engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+    if (!liveInitializedRef.current) return;
+    const pick = engine.currentPickNumber;
+    if (lastTurnRefreshRef.current === pick) return; // already refreshed this turn
+    lastTurnRefreshRef.current = pick;               // set before await → single-shot
+    draftApi.getDraftSummary(draftId).then(summary => {
+      if (summary.length > 0) {
+        engine.refreshSummaryPicks(summary);
+        logger.debug(`[TurnRefresh] pick ${pick}: synced ${countSummaryPicks(summary)} picks from REST`);
+      }
+    }).catch((err) => {
+      // Non-blocking: log and fall back to existing live state.
+      reportClientError({
+        source: LOG_SOURCES.draft.WATCHDOG_RESYNC_FAILED,
+        message: err instanceof Error ? err.message : String(err),
+        route: 'draft-room',
+        actor: walletParam,
+        context: { draftId, call: 'getDraftSummary', trigger: 'turnRefresh', pick },
+        stack: err instanceof Error ? err.stack : undefined,
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, draftId, engine.isUserTurn, engine.currentPickNumber, engine.draftStatus]);
 
   const retryLiveSync = useCallback(() => {
     if (loadLiveDataRetryTimeoutRef.current) {
