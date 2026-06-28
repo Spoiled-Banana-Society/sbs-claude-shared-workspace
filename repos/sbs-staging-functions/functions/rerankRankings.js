@@ -72,8 +72,25 @@ async function rerankToFollowAdp({ db, dryRun = false } = {}) {
   const adpKey = orderKey(adpOrder);
   const adpRanking = adpOrder.map((pid, i) => ({ PlayerId: pid, Rank: i + 1, Score: scoreMap[pid] || 0 }));
 
+  // Keep the GLOBAL default seed (SEASON_COLLECTION/rankings) in ADP order too.
+  // The Go API snapshots this exact doc into a user's per-user rankings the first
+  // time they enter a draft (and "Reset to ADP" deletes the per-user doc so it
+  // re-snapshots this one). If we only fixed the per-user docs, a brand-new
+  // joiner between hourly runs would inherit the FROZEN preseason order and show
+  // seed RANK instead of ADP until the next run swept them. Writing ADP order
+  // back here means every fresh snapshot is already ADP-ordered — no lag, no Go
+  // change. Match the existing on-disk shape exactly (top-level `Ranking`, lower-
+  // case {playerId, rank, score} entries) so this is a pure reorder/drop-in; we
+  // preserve every player and their score, only the order changes.
+  const adpSeedRanking = adpOrder.map((pid, i) => ({ playerId: pid, rank: i + 1, score: scoreMap[pid] || 0 }));
+  let seedUpdated = false;
+  if (!dryRun) {
+    await db.collection(SEASON_COLLECTION).doc("rankings").set({ Ranking: adpSeedRanking }, { merge: true });
+    seedUpdated = true;
+  }
+
   const ownerRefs = await db.collection("owners").listDocuments();
-  const rep = { docs: 0, updatedToAdp: 0, markedCustomized: 0, resumed: 0, customizedSkipped: 0, alreadyOnAdp: 0, empty: 0, dryRun };
+  const rep = { docs: 0, updatedToAdp: 0, markedCustomized: 0, resumed: 0, customizedSkipped: 0, alreadyOnAdp: 0, empty: 0, seedUpdated, dryRun };
   const CH = 300;
   for (let i = 0; i < ownerRefs.length; i += CH) {
     const refs = ownerRefs.slice(i, i + CH).map((r) => r.collection("drafts").doc("rankings"));
