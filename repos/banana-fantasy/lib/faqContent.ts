@@ -15,7 +15,13 @@ export const mockFAQSections: FAQSection[] = [
       },
       {
         question: 'Can I trade or drop players after drafting?',
+        answer: 'No trades or waivers in Best Ball - that\'s the beauty of it! However, you can sell your entire team on our marketplace any time during the season if you want out.',
+        audience: 'web2',
+      },
+      {
+        question: 'Can I trade or drop players after drafting?',
         answer: 'No trades or waivers in Best Ball - that\'s the beauty of it! However, because your teams are tradeable digital assets, you can sell your entire team on our marketplace at any time during the season if you want out.',
+        audience: 'web3',
       },
     ],
   },
