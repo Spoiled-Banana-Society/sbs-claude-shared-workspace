@@ -359,15 +359,17 @@ export const mockFAQSections: FAQSection[] = [
     items: [
       {
         question: 'Who is behind Banana Best Ball?',
-        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021. We\'re passionate about combining fantasy sports with cutting-edge technology to create a more fun and exciting experience.',
+        answer: 'Banana Best Ball is built by Spoiled Banana Society (SBS), founded in 2021 — and we\'ve paid out millions in prizes since. SBS was founded by brothers Boris and Richard Vagner, with Justin Herzig, a well-known name in the best ball community, as an advisor.',
       },
       {
         question: 'What makes SBS different?',
-        answer: 'We solve real problems in fantasy sports: Team Positions mean injuries don\'t kill your season. Tradeable teams mean you can buy/sell anytime. Guaranteed distribution means fair odds. It\'s fantasy sports evolved.',
+        answer: 'Three things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot or Hall of Fame, unlocking bonus spins and bigger prizes.\nFantasy sports, evolved.',
+        audience: 'web2',
       },
       {
-        question: 'Where can I learn more or get help?',
-        answer: 'Join our Discord community for support, strategy discussion, and announcements. Follow us on Twitter/X for updates. Links are in the footer.',
+        question: 'What makes SBS different?',
+        answer: 'Four things set us apart:\n• Team Positions — you draft a team\'s slot (like DAL WR1), so one player\'s injury never sinks your season.\n• Buy & Sell — your team is yours to trade on the marketplace anytime: sell a slow start, or buy your way into a contender.\n• Gamification — every draft can hit a Jackpot or Hall of Fame, unlocking bonus spins and bigger prizes.\n• First & only — we\'re the first and only on-chain fantasy drafting platform: provably fair, with teams you truly own.\nFantasy sports, evolved.',
+        audience: 'web3',
       },
     ],
   },
