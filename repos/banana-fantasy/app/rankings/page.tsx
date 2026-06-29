@@ -57,7 +57,13 @@ function adaptRankingItem(item: GoRankingItem): TeamPosition {
     byeWeek,
     adp,
     adpChange: 0,
-    depthChart: [],
+    // Same player pool the draft-room board shows ("Players from team").
+    // Keep the API's order — the lead name is the projected weekly scorer.
+    depthChart: (item.stats?.playersFromTeam ?? []).map((name, i) => ({
+      name,
+      status: i === 0 ? ('starter' as const) : ('backup' as const),
+      projectedPoints: 0,
+    })),
   };
 }
 
@@ -673,70 +679,32 @@ export default function RankingsPage() {
               </div>
             </div>
 
-            {/* Depth Chart Players */}
+            {/* Players from team — same pool the draft-room board shows. */}
             <div>
-              <h4 className="text-sm font-medium text-text-muted uppercase tracking-wider mb-1">Projected Scoring Order</h4>
-              <p className="text-text-muted text-xs mb-3">Ranked by projected points · You score the top performer each week</p>
+              <h4 className="text-sm font-medium text-text-muted uppercase tracking-wider mb-1">Players from team</h4>
+              <p className="text-text-muted text-xs mb-3">You score the top performer at this slot each week</p>
               <div className="space-y-2">
-                {(() => {
-                  // Sort by projected points, injured players at bottom
-                  const sorted = [...selectedPosition.depthChart].sort((a, b) => {
-                    if (a.status === 'injured' && b.status !== 'injured') return 1;
-                    if (b.status === 'injured' && a.status !== 'injured') return -1;
-                    return b.projectedPoints - a.projectedPoints;
-                  });
-                  // Get base position without number (WR1 -> WR, RB2 -> RB)
-                  const basePos = selectedPosition.position.replace(/[0-9]/g, '');
-                  // Track position number for non-injured
-                  let posRank = 0;
-
-                  return sorted.map((player, index) => {
-                    const isInjured = player.status === 'injured';
-                    if (!isInjured) posRank++;
-                    const projLabel = isInjured ? 'OUT' : `Proj ${basePos}${posRank}`;
-
-                    return (
-                      <div
-                        key={index}
-                        className={`flex items-center justify-between p-4 rounded-xl transition-colors ${
-                          isInjured
-                            ? 'bg-red-500/10 border border-red-500/20 opacity-60'
-                            : posRank === 1
-                            ? 'bg-banana/10 border border-banana/20'
-                            : 'bg-bg-tertiary border border-bg-elevated'
-                        }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                            isInjured
-                              ? 'bg-red-500/20 text-red-400'
-                              : posRank === 1
-                              ? 'bg-banana/20 text-banana'
-                              : 'bg-white/10 text-white/60'
-                          }`}>
-                            {isInjured ? '—' : posRank}
-                          </div>
-                          <div>
-                            <p className={`font-medium ${isInjured ? 'text-text-muted line-through' : 'text-text-primary'}`}>{player.name}</p>
-                            <p className={`text-xs font-medium ${
-                              isInjured
-                                ? 'text-red-400'
-                                : posRank === 1
-                                ? 'text-banana'
-                                : 'text-text-muted'
-                            }`}>
-                              {projLabel}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className={`font-medium ${isInjured ? 'text-text-muted' : 'text-text-primary'}`}>{player.projectedPoints.toFixed(1)}</p>
-                          <p className="text-xs text-text-muted">Proj Pts</p>
-                        </div>
+                {selectedPosition.depthChart.length === 0 ? (
+                  <p className="text-text-muted text-sm py-2">No players listed for this team yet.</p>
+                ) : (
+                  selectedPosition.depthChart.map((player, index) => (
+                    <div
+                      key={`${player.name}-${index}`}
+                      className={`flex items-center gap-3 p-4 rounded-xl transition-colors ${
+                        index === 0
+                          ? 'bg-banana/10 border border-banana/20'
+                          : 'bg-bg-tertiary border border-bg-elevated'
+                      }`}
+                    >
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                        index === 0 ? 'bg-banana/20 text-banana' : 'bg-white/10 text-white/60'
+                      }`}>
+                        {index + 1}
                       </div>
-                    );
-                  });
-                })()}
+                      <p className={`font-medium ${index === 0 ? 'text-text-primary' : 'text-text-secondary'}`}>{player.name}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
