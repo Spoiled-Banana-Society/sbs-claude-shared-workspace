@@ -92,14 +92,14 @@ export function BatchProgressIndicator() {
                 <span className={`text-base font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>{jackpotHit ? '✓' : jackpotRemaining}</span>
                 <span className="text-[11px] font-medium text-text-secondary">{jackpotHit ? 'Jackpot hit' : 'Jackpot left'}</span>
               </span>
-              {jackpotPct !== null && <span className="text-[10px] tabular-nums text-red-400/85">{fmtPct(jackpotPct)} chance next</span>}
+              {jackpotPct !== null && <span className="text-[10px] tabular-nums text-red-400/85">{fmtPct(jackpotPct)} shot</span>}
             </span>
             <span className="flex flex-col items-center gap-0.5">
               <span className="flex items-center gap-1.5">
                 <span className={`text-base font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>{allHofHit ? '✓' : hofRemaining}</span>
                 <span className="text-[11px] font-medium text-text-secondary">{allHofHit ? 'HOF hit' : 'HOF left'}</span>
               </span>
-              {hofPct !== null && <span className="text-[10px] tabular-nums text-banana/85">{fmtPct(hofPct)} chance next</span>}
+              {hofPct !== null && <span className="text-[10px] tabular-nums text-banana/85">{fmtPct(hofPct)} shot</span>}
             </span>
           </div>
 
@@ -128,7 +128,7 @@ export function BatchProgressIndicator() {
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">JP</span>
               {jackpotPct !== null && (
-                <span className="text-[8px] sm:text-[9px] font-semibold tabular-nums text-red-400/70">{fmtPct(jackpotPct)}</span>
+                <span className="text-[8px] sm:text-[9px] font-medium tabular-nums text-white/75">{fmtPct(jackpotPct)}</span>
               )}
             </span>
             <span className="inline-flex items-center gap-[2px]">
@@ -137,7 +137,7 @@ export function BatchProgressIndicator() {
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">HOF</span>
               {hofPct !== null && (
-                <span className="text-[8px] sm:text-[9px] font-semibold tabular-nums text-banana/70">{fmtPct(hofPct)}</span>
+                <span className="text-[8px] sm:text-[9px] font-medium tabular-nums text-white/75">{fmtPct(hofPct)}</span>
               )}
             </span>
           </div>

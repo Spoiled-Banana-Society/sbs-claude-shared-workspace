@@ -41,9 +41,10 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (autoHideRef.current) clearTimeout(autoHideRef.current);
     setIsVisible(true);
-    // Auto-dismiss fallback (scroll / tapping elsewhere also dismisses). Tuning
-    // this — 2s for now to feel it (Boris 2026-06-15).
-    autoHideRef.current = setTimeout(() => hideTooltip(), 2000);
+    // Auto-dismiss fallback (scroll / tapping elsewhere also dismisses). 4.5s so
+    // the copy lingers long enough to read on mobile, then clears (Boris 2026-06-29,
+    // bumped from 2s).
+    autoHideRef.current = setTimeout(() => hideTooltip(), 4500);
   };
 
   // Any scroll dismisses an open tooltip (covers the mobile "stuck while
