@@ -302,9 +302,18 @@ export function BadgeIcon({
     );
   }
 
+  // Native hover copy on the disc itself — a guaranteed backstop so every badge
+  // (e.g. the King-of-Drafts crown) shows its description on hover EVERYWHERE,
+  // even where the styled <Tooltip> is disabled (KingLeaderboard, catalog grid)
+  // or doesn't fire (tiny avatar-corner badge in the dense draft strip). Works
+  // with zero positioning/clip risk since the browser renders it.
+  const hoverCopy = unlocked ? badge.description : badge.criteria;
+  const titleText = hoverCopy ? `${badge.label} — ${hoverCopy}` : badge.label;
+
   const disc = (
     <span
       aria-label={badge.label}
+      title={titleText}
       style={{
         position: 'relative',
         display: 'inline-flex',
