@@ -64,9 +64,14 @@ interface AbbrevLeague {
 const LEAGUE_ID_RE = /^\d{4}-(fast|slow)-draft-\d+$/;
 const BATCH_SIZE = 100; // guaranteed distribution: 1 Jackpot + 5 HOF per 100
 
-// Short per-(warm-)instance cache so frequent polling doesn't hammer Firestore.
-const CACHE_MS = 15_000;
-let cache: { at: number; data: AbbrevLeague[] } | null = null;
+// DO NOT add an in-memory response cache here. This route had a 15s module-scope
+// cache; on Vercel that lives PER serverless instance, so with >1 warm instance
+// the bot's polls round-robin between a fresh snapshot and a stale one. A player
+// count that only ever increases while a draft fills then APPEARS to bounce
+// (8 -> 7 -> 8), and the Discord bot pings on every change → duplicate "X more
+// to fill" spam (reported 2026-06-28). Every read must reflect current Firestore
+// so the count is monotonic. Firestore load is bounded by the rate-limiter below
+// (600/min/IP) and a poll of ~35 docs is cheap.
 
 interface Odds {
   // Remaining specials in the current 100-batch (5 HOF + 1 Jackpot at batch
@@ -117,8 +122,6 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
 }
 
 async function loadLeagues(): Promise<AbbrevLeague[]> {
-  if (cache && Date.now() - cache.at < CACHE_MS) return cache.data;
-
   const db = getAdminFirestore();
   const [trackerSnap, snap] = await Promise.all([
     db.collection('drafts').doc('draftTracker').get(),
@@ -187,7 +190,6 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     a.leagueId.localeCompare(b.leagueId, undefined, { numeric: true }),
   );
 
-  cache = { at: Date.now(), data: leagues };
   return leagues;
 }
 
