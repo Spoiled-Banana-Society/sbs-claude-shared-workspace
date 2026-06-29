@@ -785,7 +785,27 @@ export async function ensureNamedReferralCode(userId: string, _displayName?: str
   const defaultName = bananaDefaultName(userId.toLowerCase());
   const userSnap = await userRef.get();
   const stored = (userSnap.data()?.username as string | undefined) || '';
-  const ownName = stored && !stored.startsWith('User-') ? stored : defaultName;
+  let ownName: string;
+  if (stored && !stored.startsWith('User-')) {
+    // A claimed new-system username — authoritative, and written in the SAME
+    // claim that calls this (POST /api/username), so it's race-safe on edit.
+    ownName = stored;
+  } else {
+    // No claimed username yet. RETURNING users carry their real name in the
+    // owners/Go-API DISPLAY store (owners.PFP.DisplayName), NOT v2_users.username,
+    // so the referral must mirror the DISPLAYED name — otherwise the header shows
+    // "RisBrian" while the link stays the default /r/Banana#####. Server-side read
+    // of their OWN owners doc (not a client-supplied name → no squatting vector);
+    // falls back to the Banana default when the display name is itself a
+    // placeholder (User-…/0x…/empty), i.e. a genuine new user who hasn't edited.
+    const ownerSnap = await db.collection('owners').doc(userId.toLowerCase()).get();
+    const ownerDisplay = (ownerSnap.data() as { PFP?: { DisplayName?: string } } | undefined)?.PFP?.DisplayName?.trim() || '';
+    const ownerIsReal = !!ownerDisplay
+      && !/^user-0x[0-9a-fA-F]/i.test(ownerDisplay)
+      && !/^0x[0-9a-fA-F]{4,}/.test(ownerDisplay)
+      && ownerDisplay.toLowerCase() !== userId.toLowerCase();
+    ownName = ownerIsReal ? ownerDisplay : defaultName;
+  }
   const base = sanitizeRefName(ownName) || sanitizeRefName(defaultName);
 
   // Already minted for this exact name → reuse (no writes on the hot path).
