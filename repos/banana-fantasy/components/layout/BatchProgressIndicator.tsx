@@ -126,7 +126,7 @@ export function BatchProgressIndicator() {
               <span className={`text-[10px] sm:text-[12px] font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>
                 {jackpotHit ? '\u2713' : jackpotRemaining}
               </span>
-              <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">JP</span>
+              <span className="text-[8px] sm:text-[9px] font-semibold text-white/65">JP</span>
               {jackpotPct !== null && (
                 <span className="text-[9px] sm:text-[10px] font-semibold tabular-nums text-red-400/90">{fmtPct(jackpotPct)}</span>
               )}
@@ -135,7 +135,7 @@ export function BatchProgressIndicator() {
               <span className={`text-[10px] sm:text-[12px] font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>
                 {allHofHit ? '\u2713' : hofRemaining}
               </span>
-              <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">HOF</span>
+              <span className="text-[8px] sm:text-[9px] font-semibold text-white/65">HOF</span>
               {hofPct !== null && (
                 <span className="text-[9px] sm:text-[10px] font-semibold tabular-nums text-banana/90">{fmtPct(hofPct)}</span>
               )}
