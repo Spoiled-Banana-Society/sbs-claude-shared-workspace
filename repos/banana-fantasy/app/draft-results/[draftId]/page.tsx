@@ -363,6 +363,9 @@ export default function DraftResultsPage() {
   // Get display name for a player key
   const getPlayerLabel = (key: string): string => {
     const r = allRosters[key];
+    // The viewer's OWN team reads "My Team" — same as the in-draft roster shows
+    // for yourself — instead of your own Banana #/handle.
+    if (walletAddress && key.toLowerCase() === walletAddress.toLowerCase()) return 'My Team';
     // Real wallets: prefer a user-chosen displayName; otherwise the on-brand
     // Banana #N handle (NOT the raw wallet — that's what was leaking when
     // the backend's PFP.DisplayName defaults to ownerId on new accounts).
