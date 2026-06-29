@@ -127,7 +127,10 @@ export async function ensureSpecialDraftSeat(
         const round = queues[type]?.rounds?.find(r => r.roundId === roundId);
         const members = round?.members?.length ? round.members : [{ wallet: w }];
         const wallets = await resolveSeatWallets(members);
-        const res = await goPost('/staging/create-special-draft', { type, wallets });
+        // Pass roundId so the Go create is IDEMPOTENT per round — a repeated/
+        // concurrent create for the same round resolves to the same draftId
+        // instead of spawning a second league / duplicate seat tokens.
+        const res = await goPost('/staging/create-special-draft', { type, wallets, roundId });
         if (!res.ok) {
           const text = await res.text().catch(() => '');
           throw new Error(`create-special-draft ${res.status}: ${text}`);
