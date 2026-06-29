@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useLayoutEffect, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 
 interface TooltipProps {
   content: React.ReactNode;
@@ -107,7 +108,14 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
       >
         {children}
       </div>
-      {isVisible && (
+      {isVisible && typeof document !== 'undefined' && createPortal(
+        // Rendered into <body> via a portal so the fixed-position tooltip can't
+        // be clipped or mis-anchored by an ancestor with overflow:hidden / a
+        // transform / a scroll container (e.g. the dense draft-strip cards —
+        // where an inline-rendered tooltip silently never painted, so the
+        // King-of-Drafts crown showed no hover copy). Coords are already
+        // viewport-based (getBoundingClientRect), so body is the correct anchor;
+        // appearance and positioning math are unchanged.
         <div
           ref={tooltipRef}
           // No whitespace-nowrap: content decides its own wrapping/max-width
@@ -116,7 +124,8 @@ export function Tooltip({ content, children, position = 'bottom', delay = 200 }:
           style={coords ? { top: coords.top, left: coords.left } : { top: 0, left: 0 }}
         >
           {content}
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
