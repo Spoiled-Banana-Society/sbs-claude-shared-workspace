@@ -42,7 +42,7 @@ export function FirstPurchaseBanner() {
         className="flex-1 text-left"
       >
         <p className="text-sm font-semibold text-text-primary">
-          First Purchase Bonus — every 4 passes = 1 free spin
+          First Purchase Free Spins — every 4 passes = 1 free spin
         </p>
         <p className="text-xs text-text-secondary">
           One-time offer on your first buy. Grab them in one transaction to stack the most spins.

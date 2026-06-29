@@ -64,7 +64,7 @@ export function FirstPurchasePromoModal() {
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-banana/15 text-3xl">
           🍌
         </div>
-        <h2 className="text-xl font-bold tracking-tight text-white">First Purchase Bonus</h2>
+        <h2 className="text-xl font-bold tracking-tight text-white">First Purchase Free Spins</h2>
         <p className="mt-3 text-sm leading-relaxed text-white/70">
           Nice run on your free drafts! Here&apos;s a one-time welcome gift: on your
           <span className="font-semibold text-banana"> first purchase</span>, every

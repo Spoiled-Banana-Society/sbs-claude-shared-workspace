@@ -176,11 +176,11 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
     case 'promo-first-purchase': {
       const count = event.awardedCount ?? 1;
       surfaces.showToast(
-        count === 1 ? 'First purchase bonus — free spin earned!' : `First purchase bonus — ${count} free spins earned!`,
+        count === 1 ? 'First purchase — free spin earned!' : `First purchase — ${count} free spins earned!`,
         '/promos',
       );
       surfaces.pushNotif(
-        'First purchase bonus!',
+        'First purchase free spins!',
         count === 1
           ? 'Your first purchase earned a free spin — claim it now.'
           : `Your first purchase earned ${count} free spins — claim them now.`,
@@ -198,7 +198,7 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       // the toast wasn't landing reliably during the post-draft loading beat, so
       // we roll with the bell + banner + box.
       surfaces.pushNotif(
-        'First Purchase Bonus 🍌',
+        'First Purchase Free Spins 🍌',
         'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
         '/buy-drafts',
         `first-purchase-unlocked-${event.eventId}`,

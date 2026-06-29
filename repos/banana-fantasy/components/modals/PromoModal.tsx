@@ -868,7 +868,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
     if (!isLoggedIn) {
       return (
         <div className="bg-bg-tertiary rounded-xl p-4 text-center">
-          <p className="text-text-secondary mb-3">Sign in to verify your Twitter/X and claim your bonus spin.</p>
+          <p className="text-text-secondary mb-3">Sign in to verify your Twitter/X and claim your Free Spin.</p>
           <Button onClick={() => { onClose(); setShowLoginModal(true); }}>Log In</Button>
         </div>
       );

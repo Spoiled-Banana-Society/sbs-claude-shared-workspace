@@ -104,7 +104,7 @@ export function eventNotificationContent(
       const count = payload.awardedCount ?? 1;
       return {
         type: 'promo',
-        title: 'First purchase bonus!',
+        title: 'First purchase free spins!',
         message: count === 1
           ? 'Your first purchase earned a free spin — claim it now.'
           : `Your first purchase earned ${count} free spins — claim them now.`,
@@ -116,7 +116,7 @@ export function eventNotificationContent(
     case 'first-purchase-unlocked':
       return {
         type: 'promo',
-        title: 'First Purchase Bonus',
+        title: 'First Purchase Free Spins',
         message: 'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,

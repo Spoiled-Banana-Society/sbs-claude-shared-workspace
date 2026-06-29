@@ -63,7 +63,7 @@ export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
 /**
  * Whether a promo awards a Banana Wheel spin (used to decide where to show the
  * first-time "what's a spin?" explainer). Spin promos all say "SPIN" in their
- * title (e.g. "Buy 10 → FREE SPIN", "First Purchase → BONUS SPINS").
+ * title (e.g. "Buy 10 → FREE SPIN", "First Purchase → FREE SPINS").
  */
 export function promoAwardsSpin(title: string | undefined): boolean {
   return !!title && /spin/i.test(title);

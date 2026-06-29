@@ -22,7 +22,7 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  'first-purchase', // "First Purchase → BONUS SPINS" — leads the not-yet-started
+  'first-purchase', // "First Purchase → FREE SPINS" — leads the not-yet-started
                     // group (claimable + in-progress promos still bubble above it)
   'new-user',
   'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin

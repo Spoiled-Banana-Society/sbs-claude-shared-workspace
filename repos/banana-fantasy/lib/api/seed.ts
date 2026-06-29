@@ -315,7 +315,7 @@ const seedPromos: Promo[] = [
   {
     id: '11',
     type: 'first-purchase',
-    title: 'First Purchase → BONUS SPINS',
+    title: 'First Purchase → FREE SPINS',
     description: 'Every 4 passes on your first buy = 1 spin',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
@@ -323,9 +323,9 @@ const seedPromos: Promo[] = [
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'First Purchase → BONUS SPINS',
+      title: 'First Purchase → FREE SPINS',
       explanation:
-        '• Your very first draft-pass purchase earns bonus Free Banana Spins — every 4 passes = 1 Free Banana Spin.\n• Buy 8 for 2, buy 12 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+        '• Your very first draft-pass purchase earns Free Banana Spins — every 4 passes = 1 Free Banana Spin.\n• Buy 8 for 2, buy 12 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
     },
   },
   {
