@@ -128,7 +128,7 @@ export function BatchProgressIndicator() {
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">JP</span>
               {jackpotPct !== null && (
-                <span className="text-[8px] sm:text-[9px] font-medium tabular-nums text-white/75">{fmtPct(jackpotPct)}</span>
+                <span className="text-[9px] sm:text-[10px] font-semibold tabular-nums text-red-400/90">{fmtPct(jackpotPct)}</span>
               )}
             </span>
             <span className="inline-flex items-center gap-[2px]">
@@ -137,7 +137,7 @@ export function BatchProgressIndicator() {
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">HOF</span>
               {hofPct !== null && (
-                <span className="text-[8px] sm:text-[9px] font-medium tabular-nums text-white/75">{fmtPct(hofPct)}</span>
+                <span className="text-[9px] sm:text-[10px] font-semibold tabular-nums text-banana/90">{fmtPct(hofPct)}</span>
               )}
             </span>
           </div>
