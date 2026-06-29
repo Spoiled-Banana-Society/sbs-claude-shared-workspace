@@ -97,8 +97,17 @@ export async function GET(req: Request) {
 
     const SLOT_AHEAD = 15;
     const candidates: { id: string; speed: 'fast' | 'slow'; num: number }[] = [];
-    for (let num = filled + SLOT_AHEAD; num >= Math.max(0, filled - PROBE_DEPTH); num--) {
-      for (const speed of SPEEDS) {
+    for (const speed of SPEEDS) {
+      // FAST drafts cluster around the high FilledLeaguesCount, so a window
+      // around `filled` catches the recent ones cheaply. SLOW (and wheel/special)
+      // drafts use their OWN low counters and live at small slot numbers (0,1,2,3…),
+      // so they must be probed from slot 0 — otherwise a growing FilledLeaguesCount
+      // pushes the floor (`filled - PROBE_DEPTH`) above them and they vanish from
+      // Spectate (exactly what happened: slow slots 0/1 dropped off once
+      // FilledLeaguesCount passed 30). Slow drafts are sparse, so probing from 0 is
+      // cheap. Admin-display only — no draft logic / user impact.
+      const floor = speed === 'slow' ? 0 : Math.max(0, filled - PROBE_DEPTH);
+      for (let num = filled + SLOT_AHEAD; num >= floor; num--) {
         for (const year of yearPrefixes) {
           candidates.push({ id: `${year}-${speed}-draft-${num}`, speed, num });
         }
