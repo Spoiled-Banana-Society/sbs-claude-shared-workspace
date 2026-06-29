@@ -449,6 +449,13 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
     }
+    // Stamp the force-grant so the CLIENT filter can show the new-user promo to a
+    // returning player (it otherwise hides any new-user promo when isBB3Holder).
+    // Claimed/spun hides still apply client-side — this only overrides the
+    // returning-player hide. Mirrors the server newUserBlocked override.
+    if (promo.type === 'new-user') {
+      promo.forced = forcedNewUser;
+    }
     // New-user promo unlocks the moment Twitter is verified. Promo doc itself
     // doesn't carry claim state — the v2_twitter_links record's
     // newUserPromoClaimed is the source of truth (so the promo stays

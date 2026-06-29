@@ -97,7 +97,11 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
     if (p.type === 'new-user') {
-      if (opts.isBB3Holder) return false;
+      // Returning (BB3) players don't see the new-user promo — UNLESS an admin
+      // force-granted it (p.forced, stamped server-side in getPromos). Claimed/
+      // spun still hide it below, so a force-granted promo correctly DISAPPEARS
+      // the moment they claim the spin or take their welcome wheel spin.
+      if (opts.isBB3Holder && !p.forced) return false;
       if (opts.newUserPromoClaimed) return false;
       if (opts.hasSpunWheel) return false; // welcome spin used → promo done forever
     }

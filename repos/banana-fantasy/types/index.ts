@@ -414,6 +414,10 @@ export interface Promo {
   claimCount?: number;
   completedDraftIds?: string[];
   isNew?: boolean;
+  /** New-user promo only: admin force-granted to a returning player. Lets the
+   *  client filter show it despite isBB3Holder (returning) hiding it normally.
+   *  Set server-side in getPromos; claimed/spun still hide it. */
+  forced?: boolean;
   modalContent: {
     title: string;
     explanation: string;
