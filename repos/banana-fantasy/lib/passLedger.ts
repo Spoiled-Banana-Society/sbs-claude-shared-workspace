@@ -44,7 +44,15 @@ export async function countSpendableTokens(wallet: string): Promise<InventoryCou
   let paid = 0;
   let free = 0;
   snap.forEach((doc) => {
-    const data = doc.data() as { PassType?: string; passType?: string };
+    const data = doc.data() as { PassType?: string; passType?: string; Level?: string; level?: string };
+    // HOF/Jackpot wheel passes are locked to their own special draft and are
+    // NOT spendable on a regular fast/slow league — exclude them so this count
+    // mirrors the Go engine's selectTokensByType (which now skips them too).
+    // Otherwise the freeDrafts mirror would over-report a pass the user can't
+    // actually use, and the use-pass gate would wave them into a join the engine
+    // then rejects. Empty/"Pro" = an ordinary spendable pass.
+    const lvl = String(data.Level ?? data.level ?? '').trim();
+    if (lvl === 'Hall of Fame' || lvl === 'Jackpot') return;
     const pt = String(data.PassType ?? data.passType ?? '').toLowerCase();
     if (pt === 'free') free += 1;
     else paid += 1;
