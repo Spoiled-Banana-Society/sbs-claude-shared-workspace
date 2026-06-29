@@ -343,6 +343,13 @@ export function BadgeIcon({
           background: GLASS_BG,
           boxShadow: GLASS_INSET,
           overflow: 'hidden',
+          // The inner content (esp. the crown/key OUTLINE svg with fill:none) is a
+          // flaky hover target — bare svg strokes don't reliably fire the tooltip's
+          // mouseenter or surface the native title. Make the whole glass+content
+          // non-interactive so the SOLID outer disc (which carries the title AND is
+          // the <Tooltip> trigger's child) is the hover target for every badge,
+          // exactly like the filled banana that already works. No layout change.
+          pointerEvents: 'none',
           ...sShape,
         }}
       >

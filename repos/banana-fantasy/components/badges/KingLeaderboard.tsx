@@ -82,7 +82,7 @@ export function KingLeaderboard({ demoData }: { demoData?: LeaderboardData } = {
     >
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
-          <BadgeIcon badge={BADGE_BY_ID['king-of-drafts']} size={28} unlocked showTooltip={false} />
+          <BadgeIcon badge={BADGE_BY_ID['king-of-drafts']} size={28} unlocked showTooltip />
           <h3 className="text-[15px] font-semibold text-white tracking-tight">King of Drafts</h3>
         </div>
         <span className="text-banana text-[12px] font-semibold tabular-nums">{timeLeftLabel(data.finalizesAtIso)}</span>
