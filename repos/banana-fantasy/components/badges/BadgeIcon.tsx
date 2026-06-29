@@ -313,7 +313,11 @@ export function BadgeIcon({
   const disc = (
     <span
       aria-label={badge.label}
-      title={titleText}
+      // Only when tooltips are enabled — respects call sites that intentionally
+      // turn copy OFF (e.g. the header profile avatar, where a hover tooltip
+      // covers the menu sections you're trying to click). showTooltip=false →
+      // no native title either.
+      title={showTooltip ? titleText : undefined}
       style={{
         position: 'relative',
         display: 'inline-flex',
