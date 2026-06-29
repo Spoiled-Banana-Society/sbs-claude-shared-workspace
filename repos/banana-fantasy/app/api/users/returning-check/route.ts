@@ -4,7 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser } from '@/lib/privyServer';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { ensureNamedReferralCode } from '@/lib/db';
+import { ensureNamedReferralCode, unlockBadge } from '@/lib/db';
 import { bananaDefaultName } from '@/utils/helpers';
 import { logger } from '@/lib/logger';
 
@@ -182,6 +182,23 @@ export async function POST(req: Request) {
       }
     }
 
+    // Web3 returning: the user comes back with the SAME wallet they played a
+    // past BBB season (1–3) with — no email/X link to match on. Check the
+    // logged-in wallet AND any linked external (non-Privy) wallet against the
+    // all-time past-players snapshot (isPastPlayer → existing-players.json:
+    // BBB 2022–2025, on-chain S2/S3 + prod Firestore). Either path → returning.
+    if (!matched) {
+      const { isPastPlayer } = await import('@/lib/returningUsers');
+      const walletCandidates = [wallet];
+      for (const a of accounts as Array<{ type: string; address?: string; wallet_client_type?: string }>) {
+        if (a.type === 'wallet' && a.address && a.wallet_client_type !== 'privy') {
+          walletCandidates.push(a.address.toLowerCase());
+        }
+      }
+      const pastWallet = walletCandidates.find((w) => isPastPlayer(w));
+      if (pastWallet) matched = { key: `wallet:${pastWallet}`, oldWallet: pastWallet };
+    }
+
     if (matched) {
       await userRef.set({
         isReturningPlayer: true,
@@ -193,6 +210,16 @@ export async function POST(req: Request) {
       // remove it — returning players get the returning sequence instead.
       await db.collection('marketplace_notifications')
         .doc(`${wallet}__welcome-new-user`).delete().catch(() => {});
+      // A returning player IS a past-season (BBB1–3) player, so they've earned
+      // the OG badge. The badge is seeded LOCKED for everyone — detection alone
+      // never flipped it, so OG sat locked until a manual admin grant. Unlock it
+      // here so returning detection and the OG grant happen in one breath.
+      // unlockBadge is idempotent (no-op if already unlocked) and fires its own
+      // durable bell + real-time toast, so re-runs never double-bell.
+      await unlockBadge(wallet, 'og', { source: 'past-player' }).catch((e) => {
+        logger.warn('users.returning_check.og_unlock_failed', { wallet, err: (e as Error).message });
+        return false;
+      });
       logger.info('users.returning_check.matched', { wallet, via: matched.key.split(':')[0] });
       return json({ returning: true, via: matched.key.split(':')[0] });
     }
