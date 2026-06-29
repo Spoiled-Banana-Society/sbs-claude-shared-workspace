@@ -39,6 +39,16 @@ export function BatchProgressIndicator() {
   const allHofHit = hofRemaining <= 0;
   const draftsLeft = batchEnd - currentDraft;
 
+  // Live chance-to-hit = remaining specials ÷ slots left in the 100-batch — the
+  // SAME formula the X/Discord bot + Go API (ReturnBatchProgress) use, so the
+  // dashboard always matches them. Derived from the exact values that drive the
+  // JP/HOF counts above, so the % moves ONLY when a draft's TYPE is determined
+  // (the count deduct), in lockstep with it — never on a partial fill. null once
+  // that special is hit (so it shows nothing instead of "0%").
+  const fmtPct = (p: number) => (p >= 10 ? `${Math.round(p)}%` : `${p.toFixed(1)}%`);
+  const jackpotPct = !jackpotHit && draftsLeft > 0 ? (jackpotRemaining / draftsLeft) * 100 : null;
+  const hofPct = !allHofHit && draftsLeft > 0 ? (hofRemaining / draftsLeft) * 100 : null;
+
   // ── "Heating up" — in the last 20 drafts of a batch, while a Jackpot and/or
   // HOF is STILL unclaimed, the counter glows so users know the odds are
   // climbing and it's time to draft. Color follows WHAT'S LEFT: red (JP only),
@@ -75,15 +85,21 @@ export function BatchProgressIndicator() {
             />
           </div>
 
-          {/* Specials still to drop this batch (the live hook) */}
-          <div className="mb-3 flex items-center justify-center gap-6">
-            <span className="flex items-center gap-1.5">
-              <span className={`text-base font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>{jackpotHit ? '✓' : jackpotRemaining}</span>
-              <span className="text-[11px] font-medium text-text-secondary">{jackpotHit ? 'Jackpot hit' : 'Jackpot left'}</span>
+          {/* Specials still to drop this batch (the live hook) + live chance-to-hit */}
+          <div className="mb-3 flex items-start justify-center gap-6">
+            <span className="flex flex-col items-center gap-0.5">
+              <span className="flex items-center gap-1.5">
+                <span className={`text-base font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>{jackpotHit ? '✓' : jackpotRemaining}</span>
+                <span className="text-[11px] font-medium text-text-secondary">{jackpotHit ? 'Jackpot hit' : 'Jackpot left'}</span>
+              </span>
+              {jackpotPct !== null && <span className="text-[10px] tabular-nums text-red-400/85">{fmtPct(jackpotPct)} chance next</span>}
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className={`text-base font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>{allHofHit ? '✓' : hofRemaining}</span>
-              <span className="text-[11px] font-medium text-text-secondary">{allHofHit ? 'HOF hit' : 'HOF left'}</span>
+            <span className="flex flex-col items-center gap-0.5">
+              <span className="flex items-center gap-1.5">
+                <span className={`text-base font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>{allHofHit ? '✓' : hofRemaining}</span>
+                <span className="text-[11px] font-medium text-text-secondary">{allHofHit ? 'HOF hit' : 'HOF left'}</span>
+              </span>
+              {hofPct !== null && <span className="text-[10px] tabular-nums text-banana/85">{fmtPct(hofPct)} chance next</span>}
             </span>
           </div>
 
@@ -100,22 +116,29 @@ export function BatchProgressIndicator() {
         {hot && (
           <div className="pointer-events-none absolute -inset-1 rounded-2xl" style={{ background: haloBg, boxShadow: haloShadow }} />
         )}
-        <div className="relative flex flex-col items-center w-[56px] sm:w-[72px] py-1 cursor-default">
+        <div className="relative flex flex-col items-center w-auto min-w-[56px] px-0.5 py-1 cursor-default">
           <span className="text-[13px] sm:text-[16px] font-semibold tabular-nums text-white/75 leading-tight">
             {currentDraft}<span className="text-white/40 font-normal">/{batchEnd}</span>
           </span>
-          <div className="flex items-center justify-center gap-[4px] sm:gap-[6px] leading-tight">
+          <div className="flex items-center justify-center gap-[5px] sm:gap-[8px] leading-tight whitespace-nowrap">
+            {/* JP: count + live chance-to-hit (% climbs as Pro drafts resolve, gone once hit) */}
             <span className="inline-flex items-center gap-[2px]">
               <span className={`text-[10px] sm:text-[12px] font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>
                 {jackpotHit ? '\u2713' : jackpotRemaining}
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">JP</span>
+              {jackpotPct !== null && (
+                <span className="text-[8px] sm:text-[9px] font-semibold tabular-nums text-red-400/70">{fmtPct(jackpotPct)}</span>
+              )}
             </span>
             <span className="inline-flex items-center gap-[2px]">
               <span className={`text-[10px] sm:text-[12px] font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>
                 {allHofHit ? '\u2713' : hofRemaining}
               </span>
               <span className="text-[8px] sm:text-[9px] font-semibold text-white/50">HOF</span>
+              {hofPct !== null && (
+                <span className="text-[8px] sm:text-[9px] font-semibold tabular-nums text-banana/70">{fmtPct(hofPct)}</span>
+              )}
             </span>
           </div>
         </div>
