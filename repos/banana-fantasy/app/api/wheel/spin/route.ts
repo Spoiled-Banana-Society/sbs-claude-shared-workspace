@@ -481,6 +481,26 @@ export async function POST(req: Request) {
           } catch (e) {
             logger.warn('wheel.spin.jphof_register_go_api_failed', { spinId, userId, err: (e as Error).message });
           }
+          // Stamp the special LEVEL on the spendable-pool doc so this wheel pass
+          // is LOCKED to its own special draft: the Go engine's selectTokensByType
+          // and our countSpendableTokens both skip HOF/Jackpot-level tokens, so it
+          // can never be spent to enter a regular fast/slow main-lobby draft (the
+          // bug that let a HOF wheel pass be drafted into a normal league). It
+          // stays sellable while the round is filling. A fresh wheel mint never
+          // collides, so the validDraftTokens doc id is the on-chain tokenId.
+          try {
+            const specialLevel = jphofKind === 'jackpot' ? 'Jackpot' : 'Hall of Fame';
+            await Promise.all(
+              res.tokenIds.map((tid) =>
+                db
+                  .collection('owners').doc(userId.toLowerCase())
+                  .collection('validDraftTokens').doc(String(tid))
+                  .set({ Level: specialLevel }, { merge: true }),
+              ),
+            );
+          } catch (e) {
+            logger.warn('wheel.spin.jphof_level_stamp_failed', { spinId, userId, kind: jphofKind, err: (e as Error).message });
+          }
           // Queue the pass by its tokenId so it enters a filling JP/HOF round,
           // then seat the winner in the round's REAL Go league right away —
           // the first winner's win creates the league (the lobby exists from
