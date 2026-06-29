@@ -1,12 +1,50 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
+import type { BatchProgress } from '@/lib/api/leagues';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
 const HOT_WINDOW = 20;       // heat starts when ≤ 20 drafts left this batch
 const JP_RED = '#ef4444';
 const HOF_GOLD = '#D4AF37';
+
+// How long after a draft FILLS its slot machine actually lands the type, so a
+// viewer here learns "JP/HOF hit?" at the exact same instant the drafter does —
+// never before. Measured from app/draft-room/page.tsx: spin starts at fill+15s
+// and runs a 6s animation → result at fill+21s. The dashboard's hold-timer is
+// armed when the fill arrives over SSE (~200ms after the real fill), so it lands
+// a hair AFTER 21s — in lockstep with the slot, guaranteed never early.
+const REVEAL_HOLD_MS = 21_000;
+
+/**
+ * Holds a value for `delayMs` after each change so the JP/HOF count + odds move
+ * when the slot machine REVEALS the draft type, not when the draft fills.
+ * The first non-null payload seeds instantly (no 21s blank on load / reload),
+ * and every later fill schedules its OWN independent reveal — so rapid fills
+ * each land 21s after themselves, in order, and the snapshot always converges
+ * to the live truth (self-healing). Display-only: never touches real data.
+ */
+function useDelayedReveal(value: BatchProgress | null, delayMs: number): BatchProgress | null {
+  const [revealed, setRevealed] = useState<BatchProgress | null>(value);
+  const seededRef = useRef(false);
+  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => {
+    if (!seededRef.current) {
+      if (value == null) return;       // still waiting for the first payload
+      seededRef.current = true;
+      setRevealed(value);              // first data shows immediately
+      return;
+    }
+    const captured = value;            // each fill reveals its OWN snapshot
+    const id = setTimeout(() => setRevealed(captured), delayMs);
+    timersRef.current.push(id);
+  }, [value, delayMs]);
+  // Cancel any pending reveals on unmount only (never on change → no collapse).
+  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
+  return revealed;
+}
 
 // Our own bolt glyph (no fire emoji). Solid for one color, red→gold gradient
 // when both Jackpot and HOF are still live.
@@ -29,25 +67,41 @@ function BoltIcon({ a, b }: { a: string; b: string }) {
 export function BatchProgressIndicator() {
   const { isLoggedIn } = useAuth();
   const { data } = useBatchProgress();
+  // Held-back copy: drives the JP/HOF count + odds so they move at the slot
+  // reveal (fill+21s), while X/100 below tracks the live fill instantly.
+  const revealed = useDelayedReveal(data, REVEAL_HOLD_MS);
 
   if (!isLoggedIn || !data) return null;
 
-  const { jackpotRemaining, hofRemaining, filledLeaguesCount } = data;
+  // ── LIVE (updates the instant a draft fills): the league number X/100 + the
+  // batch-fullness heat. Driven straight off the SSE push.
+  const filledLeaguesCount = data.filledLeaguesCount;
   const currentDraft = filledLeaguesCount;
   const batchEnd = filledLeaguesCount === 0 ? 100 : Math.ceil(filledLeaguesCount / 100) * 100;
+  const draftsLeft = batchEnd - currentDraft;
+
+  // ── REVEALED (held 21s, lands with the slot machine): JP/HOF counts + odds +
+  // hit ✓. Falls back to live until the first payload seeds. Both the numerator
+  // (remaining) AND the denominator (slots left) come from this same held
+  // snapshot, so the % only moves at the reveal — never on a bare fill.
+  const r = revealed ?? data;
+  const jackpotRemaining = r.jackpotRemaining;
+  const hofRemaining = r.hofRemaining;
+  const rFilled = r.filledLeaguesCount;
+  const rBatchEnd = rFilled === 0 ? 100 : Math.ceil(rFilled / 100) * 100;
+  const rDraftsLeft = rBatchEnd - rFilled;
   const jackpotHit = jackpotRemaining <= 0;
   const allHofHit = hofRemaining <= 0;
-  const draftsLeft = batchEnd - currentDraft;
 
   // Live chance-to-hit = remaining specials ÷ slots left in the 100-batch — the
   // SAME formula the X/Discord bot + Go API (ReturnBatchProgress) use, so the
-  // dashboard always matches them. Derived from the exact values that drive the
-  // JP/HOF counts above, so the % moves ONLY when a draft's TYPE is determined
-  // (the count deduct), in lockstep with it — never on a partial fill. null once
-  // that special is hit (so it shows nothing instead of "0%").
+  // dashboard always matches them. Computed off the REVEALED snapshot, so the %
+  // moves ONLY when a draft's TYPE is revealed by the slot (the count deduct),
+  // in lockstep with it — never on a bare fill. null once that special is hit
+  // (so it shows nothing instead of "0%").
   const fmtPct = (p: number) => (p >= 10 ? `${Math.round(p)}%` : `${p.toFixed(1)}%`);
-  const jackpotPct = !jackpotHit && draftsLeft > 0 ? (jackpotRemaining / draftsLeft) * 100 : null;
-  const hofPct = !allHofHit && draftsLeft > 0 ? (hofRemaining / draftsLeft) * 100 : null;
+  const jackpotPct = !jackpotHit && rDraftsLeft > 0 ? (jackpotRemaining / rDraftsLeft) * 100 : null;
+  const hofPct = !allHofHit && rDraftsLeft > 0 ? (hofRemaining / rDraftsLeft) * 100 : null;
 
   // ── "Heating up" — in the last 20 drafts of a batch, while a Jackpot and/or
   // HOF is STILL unclaimed, the counter glows so users know the odds are
