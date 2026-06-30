@@ -128,17 +128,32 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     db.collection('drafts').get(),
   ]);
 
-  const odds = computeOdds(trackerSnap.data() as Record<string, unknown> | undefined);
+  const trackerData = trackerSnap.data() as Record<string, unknown> | undefined;
+  const filledCount = Number(trackerData?.FilledLeaguesCount ?? 0) || 0;
+  const odds = computeOdds(trackerData);
+  // Pre-fill odds: the batch state as of ONE fill ago. Used ONLY for the draft
+  // that just filled, so its "0 more to fill" % equals what it showed at "1/2
+  // more to fill" — the % advances on the NEXT draft's countdown, never jumps on
+  // a draft's own completion (Boris 2026-06-29). While a draft is still filling
+  // it hasn't incremented FilledLeaguesCount, so the live odds are already its
+  // pre-fill odds; only the just-filled draft needs the −1 adjustment.
+  const oddsPreFill = computeOdds(
+    trackerData ? { ...trackerData, FilledLeaguesCount: filledCount - 1 } : undefined,
+  );
+
   // Drop a special from the line once it's been hit (no "0.00%"), and omit the
   // whole line once ALL specials in the batch are hit — it reappears on its own
-  // when the next 100-batch begins.
-  const oddsParts: { label: string; pct: number }[] = [];
-  if (odds.hofPercent !== null) oddsParts.push({ label: `HOF - ${odds.hofPercent.toFixed(2)}%`, pct: odds.hofPercent });
-  if (odds.jackpotPercent !== null) oddsParts.push({ label: `Jackpot - ${odds.jackpotPercent.toFixed(2)}%`, pct: odds.jackpotPercent });
-  // Highest % first (so if Jackpot ever exceeds HOF it leads). Stable sort keeps
-  // HOF before Jackpot on a tie — the default ordering.
-  oddsParts.sort((a, b) => b.pct - a.pct);
-  const oddsLine = oddsParts.length ? oddsParts.map((p) => p.label).join(' ') : null;
+  // when the next 100-batch begins. Highest % first (so if Jackpot ever exceeds
+  // HOF it leads); stable sort keeps HOF before Jackpot on a tie.
+  const buildOddsLine = (o: Odds): string | null => {
+    const parts: { label: string; pct: number }[] = [];
+    if (o.hofPercent !== null) parts.push({ label: `HOF - ${o.hofPercent.toFixed(2)}%`, pct: o.hofPercent });
+    if (o.jackpotPercent !== null) parts.push({ label: `Jackpot - ${o.jackpotPercent.toFixed(2)}%`, pct: o.jackpotPercent });
+    parts.sort((a, b) => b.pct - a.pct);
+    return parts.length ? parts.map((p) => p.label).join(' ') : null;
+  };
+  const oddsLine = buildOddsLine(odds);
+  const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
   const leagues: AbbrevLeague[] = [];
   for (const doc of snap.docs) {
@@ -167,9 +182,19 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
         ? `League #${leagueNumber} (${label})`
         : `${rawName} (${label})`
       : `Draft Lobby (${label})`;
+
+    // The just-filled draft (its league # == the current batch count) shows its
+    // PRE-fill odds, so "0 more to fill" reads the same JP/HOF % it showed at "2
+    // more" / "1 more to fill" — no jump on its own completion. Filling drafts
+    // already carry pre-fill odds (they haven't incremented the count yet), so
+    // they keep the live odds. Same line for Discord and X (both read this route).
+    const isLatestFill = isFilled && leagueNumber !== null && leagueNumber === filledCount;
+    const draftOdds = isLatestFill ? oddsPreFill : odds;
+    const draftOddsLine = isLatestFill ? oddsLinePreFill : oddsLine;
+
     // Blank line between the name and the odds line (matches the original
     // message spacing — two newlines render as a blank line in Discord).
-    const displayName = oddsLine ? `${namePart}\n\n${oddsLine}` : namePart;
+    const displayName = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
 
     leagues.push({
       leagueId: String(d.LeagueId ?? doc.id),
@@ -180,8 +205,8 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       isFilled,
       leagueNumber: isFilled ? leagueNumber : null,
       state: isFilled ? 'filled' : 'filling',
-      hofPercent: odds.hofPercent,
-      jackpotPercent: odds.jackpotPercent,
+      hofPercent: draftOdds.hofPercent,
+      jackpotPercent: draftOdds.jackpotPercent,
     });
   }
 
