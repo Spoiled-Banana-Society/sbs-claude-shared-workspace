@@ -160,6 +160,17 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     if (!LEAGUE_ID_RE.test(doc.id)) continue;
     const d = doc.data() as Record<string, unknown>;
 
+    // Skip wheel-won Jackpot/HOF lobbies — those run in their OWN lane (the
+    // SpecialDraftCount sequence, named "HOF/Jackpot #N (from Wheel)" /
+    // "Hall of Fame Draft #N") and shouldn't be announced; the bot only pings
+    // for regular drafts (Boris 2026-06-30). A wheel special has its special
+    // Level set WHILE filling AND a non-"BBB #" name; regular batch JP/HOF keep
+    // the "BBB #N" name and only get their special Level after the slot reveal,
+    // so this excludes only the wheel specials.
+    const lvl = String(d.Level ?? '').toLowerCase().trim();
+    const nm = String(d.DisplayName ?? '').trim();
+    if ((lvl === 'jackpot' || lvl === 'hall of fame') && !/^bbb\b/i.test(nm)) continue;
+
     const numPlayers = Number(d.NumPlayers ?? 0);
     // Skip empty slot docs that exist but nobody has joined — nothing to announce.
     if (!Number.isFinite(numPlayers) || numPlayers <= 0) continue;
