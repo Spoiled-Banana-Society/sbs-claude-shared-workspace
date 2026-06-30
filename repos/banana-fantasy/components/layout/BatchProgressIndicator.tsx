@@ -41,7 +41,22 @@ function useRevealGated(data: BatchProgress | null): RevealGated | null {
     for (const p of pending) {
       // +40ms so we re-render a hair AFTER the slot lands, never before.
       const delay = (p.atMs + offsetRef.current) - Date.now() + 40;
-      if (delay > 0 && delay < 130_000) timers.push(setTimeout(() => tick((t) => t + 1), delay));
+      if (delay > 0 && delay < 130_000) {
+        const reveal = p;
+        timers.push(setTimeout(() => {
+          // Proof-of-timing log: records that the header actually flipped this
+          // reveal, and how close the flip landed to the intended fill+21s
+          // moment (driftMs should be ~+40ms). Lets us verify, from logs, that
+          // the count/% moved at the slot reveal — not at fill. Display-only.
+          void import('@/lib/clientLog').then((m) => m.clientLog('jphof-reveal', 'BatchProgress.flip', {
+            revealAtMs: reveal.atMs,
+            firedAtMs: Date.now(),
+            driftMs: Date.now() - (reveal.atMs + offsetRef.current),
+            kind: reveal.jp ? 'jackpot' : reveal.hof ? 'hof' : 'pro',
+          })).catch(() => {});
+          tick((t) => t + 1);
+        }, delay));
+      }
     }
     return () => timers.forEach(clearTimeout);
   }, [data]);
