@@ -2961,13 +2961,16 @@ const BATCH_SIZE = 100;
  * Bonus tiers for the jackpot promo:
  *   • slot 1–25  → 10 spins (early-batch hit)
  *   • slot 26–50 → 5 spins
- *   • slot 51–100 → 1 spin (standard)
+ *   • slot 51–100 → 0 spins — NO bonus spin draw (Boris 2026-06-30). The jackpot
+ *     draft still functions (league winner → finals); only the bonus spins are
+ *     gated to the first 50 of each batch. awardJackpotDraw skips the entire draw
+ *     when this returns 0 (no winner, no credit, no bells, no receipt).
  * `position` is 1-indexed within the current batch (1..100).
  */
 function jackpotSpinReward(position: number): number {
   if (position >= 1 && position <= 25) return 10;
   if (position >= 26 && position <= 50) return 5;
-  return 1;
+  return 0;
 }
 
 // (Legacy jackpotWinnerIndex + getDraftWinnerOwner helpers removed 2026-06-24 —
@@ -3051,6 +3054,24 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
 
   const position = await getCurrentBatchPosition();
   const reward = jackpotSpinReward(position);
+
+  // Slots 51–100 of the batch award NO bonus spins (Boris 2026-06-30). Skip the
+  // spin draw entirely: no winner pick, no spin credit, NO bells, no on-chain
+  // draw receipt. Paid entrants KEEP the Jackpot Club badge (they were in a
+  // jackpot draft) — unlocked silently, no bell. The idempotency record is left
+  // `pending:true` (set by create() above) + flagged `noSpinDraw`, so every draw
+  // consumer (promo card "latest draw", proof feed, reveal modal, ensureDraw-
+  // Receipt) skips it — they all require `pending===false`. The jackpot draft
+  // itself is untouched; only the bonus-spin promo is gated to the first 50.
+  if (reward === 0) {
+    for (const w of paid) {
+      await unlockBadge(w, 'jackpot-club', { source: 'jackpot-draw', draftId }, { silent: true }).catch(() => {});
+    }
+    await drawRef.set({ noSpinDraw: true, reward: 0, position }, { merge: true });
+    logger.info('promo.jackpot_draw.no_spins', { context: { draftId, position, paidCount: paid.length } });
+    return null;
+  }
+
   const filledCount = await (async () => {
     try {
       const snap = await db.collection('drafts').doc('draftTracker').get();
