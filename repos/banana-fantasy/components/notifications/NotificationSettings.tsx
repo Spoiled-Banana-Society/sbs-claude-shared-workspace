@@ -88,6 +88,10 @@ interface Tile {
   grad: string;
   /** Dark glyph for light (banana) tiles, white otherwise. */
   dark?: boolean;
+  /** Clean monochrome treatment (white glyph on a dark outlined tile) — the
+   *  SBS-bot look. Used for the SBS event icons so they read as one clean
+   *  family; brand channels (Email/Telegram/Discord) keep their colors. */
+  mono?: boolean;
 }
 
 const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Tile }> = {
@@ -123,15 +127,15 @@ const CHANNEL_META: Record<ChannelId, { label: string; blurb?: string; tile: Til
 const EVENT_META: Record<EventId, { label: string; tile: Tile }> = {
   draftFilled: {
     label: 'Draft fills',
-    tile: { Icon: IoAmericanFootball, grad: 'from-[#fbbf24] to-[#f59e0b]', dark: true },
+    tile: { Icon: IoAmericanFootball, grad: '', mono: true },
   },
   pickFast: {
     label: 'My pick — fast draft',
-    tile: { Icon: IoFlash, grad: 'from-[#ff9f0a] to-[#f08000]' },
+    tile: { Icon: IoFlash, grad: '', mono: true },
   },
   pickSlow: {
     label: 'My pick — slow draft',
-    tile: { Icon: IoTime, grad: 'from-[#30d158] to-[#28b14c]' },
+    tile: { Icon: IoTime, grad: '', mono: true },
   },
 };
 const EVENT_ORDER: EventId[] = ['draftFilled', 'pickFast', 'pickSlow'];
@@ -706,7 +710,10 @@ export function NotificationSettings() {
                     {id === 'discord' && on && !linked && (
                       <TextAction onClick={connectDiscord}>Try connecting again</TextAction>
                     )}
-                    {id === 'discord' && isStandalonePWA && !linked && (
+                    {/* Discord mobile/first-time setup steps — HIDDEN for now
+                        (Boris 2026-06-30; may restore later). To bring it back,
+                        remove the `false &&` below. Code kept intact. */}
+                    {false && id === 'discord' && isStandalonePWA && !linked && (
                       // iOS PWA quirk: the OAuth tab is SFSafariViewController
                       // — a separate cookie jar from real Safari, so it can't
                       // see the user's Discord login session. The bottom-right
@@ -815,8 +822,17 @@ function Group({ children }: { children: React.ReactNode }) {
   return <div className="glass-card overflow-hidden">{children}</div>;
 }
 
-/** Apple-Settings colored icon tile: white (or dark) glyph on a tinted gradient. */
-function IconTile({ Icon, grad, dark }: Tile) {
+/** Apple-Settings colored icon tile: white (or dark) glyph on a tinted gradient.
+ *  `mono` tiles instead use the clean SBS-bot look — a white glyph on a dark,
+ *  thin-outlined tile — so the SBS event icons read as one minimal family. */
+function IconTile({ Icon, grad, dark, mono }: Tile) {
+  if (mono) {
+    return (
+      <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] border border-white/15 bg-[#0c0d11] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <Icon className="text-[15px] text-[#f4f4f4]" />
+      </div>
+    );
+  }
   return (
     <div
       className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[8px] bg-gradient-to-b ${grad} shadow-[0_1px_2px_rgba(0,0,0,0.4),inset_0_1px_0_rgba(255,255,255,0.25)]`}
