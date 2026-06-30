@@ -620,7 +620,13 @@ export function DraftRoomDrafting({
                                     <div className="flex items-center gap-2 min-w-0">
                                       <span className="text-white/20 text-[10px] flex-shrink-0">⠿</span>
                                       <span className="text-white/30 w-4 text-center flex-shrink-0">{i + 1}</span>
-                                      <span className="text-white/80 font-medium truncate">{player.playerId}</span>
+                                      <span className="text-white/80 font-medium truncate">
+                                        {player.playerId}
+                                        {(() => {
+                                          const bye = engine.playerStatsById?.[player.playerId]?.byeWeek ?? player.byeWeek;
+                                          return bye ? <span className="text-white/40 font-normal"> ({bye})</span> : null;
+                                        })()}
+                                      </span>
                                     </div>
                                     <span className="text-white/30 flex-shrink-0 ml-2">#{player.rank}</span>
                                   </div>
