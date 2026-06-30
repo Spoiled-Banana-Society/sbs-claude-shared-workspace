@@ -802,6 +802,39 @@ export function NotificationSettings() {
           </section>
         </div>
       )}
+
+      {/* SBS Draft Bot — for folks who don't want to enter yet but want to
+          watch how close drafts are to filling, so they can time their entry.
+          Plain link out to the X bot; touches no notification system/flow.
+          Lives in the shared component so it shows on the Draft Alerts page AND
+          the Profile › Notifications tab. */}
+      <p className="mb-2.5 ml-1 mt-9 text-[11px] font-semibold uppercase tracking-[0.09em] text-text-muted">
+        Track drafts live
+      </p>
+      <a
+        href="https://x.com/sbsdraftbot"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block glass-card transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-banana/40"
+      >
+        <div className="flex items-center gap-4 p-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/sbs-draft-bot.png"
+            alt="SBS Draft Bot"
+            className="h-14 w-14 shrink-0 rounded-2xl border border-white/10 object-cover"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold leading-tight text-white">Watch drafts fill, live</p>
+            <p className="mt-1 text-[12.5px] leading-snug text-text-muted">
+              Not ready to draft yet? <span className="text-white/80">@SBSDraftBot</span> posts every draft on X as it fills — see which are close and jump in at the right moment.
+            </p>
+          </div>
+          <span className="shrink-0 self-center whitespace-nowrap text-[13px] font-semibold text-banana group-hover:underline">
+            Follow&nbsp;→
+          </span>
+        </div>
+      </a>
     </div>
   );
 }
