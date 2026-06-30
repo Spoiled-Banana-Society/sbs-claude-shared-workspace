@@ -15,7 +15,7 @@ export default function ProofFeedPage() {
         <Link href="/drafting" className="text-banana hover:underline text-sm">← Drafting</Link>
         <h1 className="text-[28px] font-semibold text-white tracking-tight mt-2">Public draft feed</h1>
         <p className="text-white/60 text-sm mt-1">
-          Every draft on Banana Best Ball, publicly verifiable. Click any row to see the cryptographic proof.
+          Every draft on Banana Best Ball, publicly verifiable. Click any row to see the proof.
         </p>
       </div>
 

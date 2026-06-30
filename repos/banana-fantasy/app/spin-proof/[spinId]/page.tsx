@@ -129,7 +129,7 @@ export default function SpinProofPage() {
             <div className="rounded-2xl border border-white/10 bg-bg-secondary/60 backdrop-blur-md p-6 space-y-3">
               <h2 className="text-white text-sm font-semibold tracking-tight">Cryptographic chain of custody</h2>
               <p className="text-white/50 text-[12px]">
-                These on-chain transactions lock the outcome before any spin happens. Anyone can re-derive every result once the salt is revealed.
+                These transactions lock the outcome before any spin happens. Anyone can re-derive every result once the salt is revealed.
               </p>
 
               <div className="space-y-2 text-[12px]">
@@ -256,8 +256,8 @@ function AssignmentProofSection({ spinId }: { spinId: string }) {
       <p className="text-white/50 text-[12px] leading-relaxed">
         Confirms that <span className="font-mono text-white/70">{data.wallet?.slice(0, 6)}…{data.wallet?.slice(-4)}</span>{' '}
         was assigned spinIndex {data.spinIndex} in order. Every {data.batchSize ?? 100} spins,
-        the wallet→spinIndex assignments are bundled and committed on-chain — reordering
-        or skipping would be cryptographically visible.
+        the wallet→spinIndex assignments are bundled and committed — reordering
+        or skipping would be visible to anyone.
       </p>
 
       {data.pending && (
@@ -266,7 +266,7 @@ function AssignmentProofSection({ spinId }: { spinId: string }) {
           <p className="text-amber-100/80 leading-relaxed">
             This spin sits in the next pending batch (position{' '}
             <span className="font-mono">{data.positionInBatch}</span> of{' '}
-            <span className="font-mono">{data.batchSize}</span>). The on-chain commit
+            <span className="font-mono">{data.batchSize}</span>). The commit
             happens automatically as soon as the batch fills (every {data.batchSize} spins),
             typically within minutes. Refresh to recheck.
           </p>
@@ -293,7 +293,7 @@ function AssignmentProofSection({ spinId }: { spinId: string }) {
           <h3 className="text-white text-[12px] font-semibold mt-4">Assignment Merkle proof</h3>
           <div className="space-y-1.5 text-[11px] font-mono">
             <KVMono label="Leaf" value={data.proof.leaf} />
-            <KVMono label="On-chain root" value={data.proof.root} />
+            <KVMono label="Merkle root" value={data.proof.root} />
             <div className="text-white/40">Path ({data.proof.path.length} hashes)</div>
             {data.proof.path.map((h, i) => (
               <div key={i} className="text-white/60 truncate">{i}: {h}</div>

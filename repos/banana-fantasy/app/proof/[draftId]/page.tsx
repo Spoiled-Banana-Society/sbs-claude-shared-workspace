@@ -264,7 +264,7 @@ export default function ProofPage() {
           Provably Fair · League #{locator.draftNumber}
         </h1>
         <p className="text-sm text-white/60 mt-1">
-          Independently verifiable on Base mainnet.
+          Independently verifiable.
         </p>
         {proof && proof.status !== 'pre-launch' && (
           <div className="mt-3 flex items-center gap-2 flex-wrap">
@@ -313,10 +313,10 @@ export default function ProofPage() {
                 </div>
                 <p className="text-white/75 text-[13.5px] leading-relaxed">
                   {merkleVerified === 'verified'
-                    ? <>This draft&apos;s type was committed on Base before any draft filled. The Merkle proof below was verified in your browser against the on-chain root — no SBS trust required.</>
+                    ? <>This draft&apos;s type was committed before any draft filled. The Merkle proof below was verified in your browser against the committed root — no SBS trust required.</>
                     : merkleVerified === 'failed'
-                    ? <>The Merkle proof did not verify against the on-chain root. Treat this result as suspicious — please report.</>
-                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization is already committed on Base — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
+                    ? <>The Merkle proof did not verify against the committed root. Treat this result as suspicious — please report.</>
+                    : <>League #{locator.draftNumber} hasn&apos;t filled yet. The randomization is already committed — once your draft fills, the slot machine reveals your type along with a verifiable Merkle proof here.</>}
                 </p>
               </div>
               {merkleVerified === 'verified' && (
@@ -350,7 +350,7 @@ export default function ProofPage() {
           <section className="rounded-xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
             <h2 className="text-sm font-semibold text-white uppercase tracking-wider">On-chain commit</h2>
             <p className="text-xs text-white/55 leading-relaxed">
-              The randomization that determines this draft&apos;s type was published on Base mainnet before any draft filled. Anyone can read it directly from the contract — no SBS server involved.
+              The randomization that determines this draft&apos;s type was published before any draft filled. Anyone can read it directly from the contract — no SBS server involved.
             </p>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
               {proof?.merkleRoot && (
@@ -411,7 +411,7 @@ export default function ProofPage() {
             <h2 className="text-sm font-semibold text-white uppercase tracking-wider">Why this is real proof</h2>
             <ul className="text-xs text-white/60 space-y-1.5 leading-relaxed list-disc list-inside">
               <li><strong className="text-white/80">Chainlink VRF</strong> — the same oracle network Polymarket, Aave, and OpenSea use — supplied the randomness before any draft happened.</li>
-              <li>A cryptographic fingerprint (Merkle root) covering every draft type was published on Base mainnet before any draft filled. Outcomes are immutable from that moment on.</li>
+              <li>A fingerprint (Merkle root) covering every draft type was published before any draft filled. Outcomes are locked in from that moment on.</li>
               <li>When your draft fills, the result comes with a Merkle proof — verified in your browser in milliseconds, no SBS server involved.</li>
               <li>If SBS ever swapped a result, the in-browser verification would fail and show <span className="text-red-300">Verification failed</span>.</li>
             </ul>
@@ -472,7 +472,7 @@ export default function ProofPage() {
               This batch predates the provably-fair proof system.
             </p>
             <p className="text-xs text-white/50">
-              The 94/5/1 distribution constraint was enforced in code for this batch, but no cryptographic proof
+              The 94/5/1 distribution constraint was enforced in code for this batch, but no proof
               was published yet. Every batch from the rollout date forward carries a full verifiable proof anyone
               can independently verify here.
             </p>
@@ -485,8 +485,8 @@ export default function ProofPage() {
         {proof?.status === 'pending' && (
           <p className="text-sm text-white/70">
             {isVRF
-              ? 'Submitting requestRandomness to the Chainlink VRF coordinator. This page will update once the request lands on Base (typically within ~10 seconds of batch start).'
-              : 'Commit transaction is being submitted. This page will show the proof once the commit lands on Base (typically within ~10 seconds of batch start).'}
+              ? 'Submitting requestRandomness to the Chainlink VRF coordinator. This page will update once the request lands (typically within ~10 seconds of batch start).'
+              : 'Commit transaction is being submitted. This page will show the proof once the commit lands (typically within ~10 seconds of batch start).'}
           </p>
         )}
 
@@ -739,7 +739,7 @@ export default function ProofPage() {
 
                 <dt className="text-white/50">Source of trust</dt>
                 <dd className="text-emerald-300">
-                  ✓ Chainlink VRF coordinator · cryptographic proof verified
+                  ✓ Chainlink VRF · proof verified
                 </dd>
               </>
             )}
@@ -813,7 +813,7 @@ export default function ProofPage() {
             <>
               <li><strong className="text-white/80">Chainlink VRF</strong> is the same oracle network Polymarket, Aave, and OpenSea use to produce verifiable randomness.</li>
               <li>The randomness request is submitted before any draft in the batch fills — the timestamp is public.</li>
-              <li>Chainlink returns the random number with a cryptographic proof. The contract verifies the proof before accepting.</li>
+              <li>Chainlink returns the random number with a proof. The contract verifies the proof before accepting.</li>
               <li>The randomness is bound to the batch number permanently — it can&apos;t be retried.</li>
               <li>Slot derivation is deterministic; the recomputation above runs in your browser using the same algorithm we use server-side.</li>
             </>

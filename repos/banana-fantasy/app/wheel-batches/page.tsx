@@ -151,7 +151,7 @@ export default function WheelBatchesPage() {
         <Link href="/banana-wheel" className="text-banana hover:underline text-sm">← Banana Wheel</Link>
         <h1 className="text-[28px] font-semibold text-white tracking-tight mt-2">Public spin feed</h1>
         <p className="text-white/60 text-sm mt-1">
-          Every spin on the Banana Wheel, publicly verifiable. Click any row to see the cryptographic proof.
+          Every spin on the Banana Wheel, publicly verifiable. Click any row to see the proof.
         </p>
       </div>
 
@@ -168,7 +168,7 @@ export default function WheelBatchesPage() {
               </h2>
             </div>
             <p className="text-xs text-white/60 leading-relaxed">
-              All outcomes for this round were locked on Base mainnet before any spin happened. Click any tx to verify on BaseScan — no SBS server involved.
+              All outcomes for this round were locked in by Chainlink VRF before any spin happened. Click any tx to verify it yourself — no SBS server involved.
             </p>
             <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
               {period.merkleRoot && (
@@ -285,7 +285,7 @@ export default function WheelBatchesPage() {
           </div>
 
           {/* Assignment-batch commits — every 100 spins the wallet→
-              spinIndex assignments get bundled and committed on-chain.
+              spinIndex assignments get bundled and committed.
               Sits BELOW the live spin feed because it's a deeper-layer
               audit detail, not the primary feed. */}
           <AssignmentBatchesPanel periodNumber={period.periodNumber} />
@@ -355,12 +355,12 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
       <div className="flex items-center gap-2">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-banana animate-pulse" />
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-banana">
-          Wallet assignments · on-chain
+          Wallet assignments
         </h2>
       </div>
       <p className="text-xs text-white/60 leading-relaxed">
         Every {batchSize} spins, the wallet→spinIndex assignments are bundled into a
-        Merkle root and committed to Base mainnet. This creates a permanent, public
+        Merkle root and committed. This creates a permanent, public
         record of which wallet received which outcome — anyone can independently verify
         the order is honest, with no swapping or skipping possible after the fact.
       </p>
@@ -423,7 +423,7 @@ function AssignmentBatchesPanel({ periodNumber }: { periodNumber: number }) {
       {!contractAddress && (
         <p className="text-[11px] text-white/40">
           (Assignment-journal contract not yet deployed — journal entries are being
-          written; on-chain commits will backfill once Boris flips the contract address.)
+          written; commits will appear here once the contract is live.)
         </p>
       )}
     </section>
@@ -472,9 +472,9 @@ function BatchRow({
           target="_blank"
           rel="noreferrer"
           className="ml-auto inline-flex items-center gap-1 rounded-md border border-banana/30 bg-banana/[0.06] px-2 py-0.5 text-[10px] font-semibold text-banana hover:bg-banana/[0.12] hover:border-banana/60 transition-colors"
-          title={`Verify batch ${batch.batchIndex} on Base mainnet`}
+          title={`Verify batch ${batch.batchIndex}`}
         >
-          Verify on BaseScan ↗
+          Verify ↗
         </a>
       )}
     </div>
