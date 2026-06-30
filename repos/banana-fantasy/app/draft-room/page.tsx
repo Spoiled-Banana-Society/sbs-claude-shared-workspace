@@ -1472,8 +1472,16 @@ function DraftRoomContent() {
   // (i.e. it fired while the tab was visible). Shared with the AFK-return
   // handler below so we never re-ding a turn they actually heard.
   const heardTurnAlertPickRef = useRef<number | null>(null);
+  // Tracks the upcoming pick we've already played the "on deck" warning for, so
+  // a re-render while still on deck doesn't re-ding (fast drafts only).
+  const onDeckDingedPickRef = useRef<number | null>(null);
+
+  // SLOW drafts: ding the moment it's actually your turn (on the clock).
+  // Fast drafts are handled by the on-deck effect below — they ding the pick
+  // BEFORE yours so there's time to react, so they're skipped here.
   useEffect(() => {
     if (!isLiveMode || isMuted || phase !== 'drafting' || engine.draftStatus !== 'active') return;
+    if (!isSlowDraft) return;
     const currentDrafter = engine.currentDrafterAddress;
     const prevDrafter = prevDrafterRef.current;
     prevDrafterRef.current = currentDrafter;
@@ -1489,7 +1497,25 @@ function DraftRoomContent() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
+  }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus, isSlowDraft]);
+
+  // FAST drafts: ding when you go ON DECK (the pick before yours), not when
+  // you're already on the clock — a 30s pick clock leaves no time to react if
+  // we wait for your actual turn. turnsUntilUserPick === 1 means you pick next.
+  // We deliberately do NOT touch heardTurnAlertPickRef here: that ref drives the
+  // AFK-return "you're on the clock" replay, which should still fire when it
+  // genuinely becomes your turn. Driven off turnsUntilUserPick + currentPickNumber
+  // (both advance together each pick) so the on-deck transition is never missed.
+  useEffect(() => {
+    if (isSlowDraft) return;
+    if (!isLiveMode || isMuted || phase !== 'drafting' || engine.draftStatus !== 'active') return;
+    if (engine.turnsUntilUserPick !== 1) return;
+    const myPick = engine.currentPickNumber + 1; // the pick after the current one — yours
+    if (onDeckDingedPickRef.current === myPick) return;
+    onDeckDingedPickRef.current = myPick;
+    playYourTurnSound();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSlowDraft, isLiveMode, isMuted, phase, engine.draftStatus, engine.turnsUntilUserPick, engine.currentPickNumber]);
 
   // AFK audio recovery. Browsers suspend the AudioContext + can block HTML
   // audio while the tab is backgrounded, so a your-turn ding fired while the
