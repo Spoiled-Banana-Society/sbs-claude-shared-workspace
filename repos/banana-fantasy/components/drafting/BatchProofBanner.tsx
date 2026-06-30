@@ -133,7 +133,7 @@ export function BatchProofBanner({ display = 'card' }: { display?: 'card' | 'sea
         >
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400/80 animate-pulse" />
           <span className="text-[11px] tracking-wide">
-            Provably fair &middot; randomized by Chainlink VRF
+            Verified Fair &middot; randomized by Chainlink VRF
           </span>
           <span
             aria-hidden

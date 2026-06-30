@@ -107,11 +107,11 @@ export function ProofFeedLive() {
           <div className="flex items-center gap-2">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-300">
-              On-chain commit · live
+              Round locked · live
             </h2>
           </div>
           <p className="text-xs text-white/60 leading-relaxed">
-            All draft types for the upcoming round were locked on Base mainnet before any draft happened. Click any tx to verify on BaseScan — no SBS server involved.
+            All draft types for the upcoming round were locked in by Chainlink VRF before any draft happened. Click any tx to verify it yourself — no SBS server involved.
           </p>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-xs">
             {round.merkleRoot && (
@@ -191,7 +191,7 @@ export function ProofFeedLive() {
                                 rel="noopener noreferrer"
                                 className="text-banana hover:underline"
                               >
-                                On-chain receipt →
+                                Receipt →
                               </a>
                             </>
                           )}

@@ -70,7 +70,7 @@ export function WheelProofBanner() {
       ? 'Preparing round…'
       : 'Reveal pending';
   const sub = isActive
-    ? 'Outcomes + wallet assignments both committed on-chain.'
+    ? 'Outcomes + who gets them are both locked in.'
     : isPreparing
       ? 'Chainlink VRF randomizing the next round.'
       : 'Salt reveal coming.';

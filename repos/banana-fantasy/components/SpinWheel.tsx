@@ -405,7 +405,7 @@ export function SpinWheel({
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
                     </svg>
-                    Provably Fair
+                    Verified Fair
                     <motion.span
                       animate={{ rotate: verifyExpanded ? 180 : 0 }}
                       className="inline-block"
@@ -446,7 +446,7 @@ export function SpinWheel({
                             rel="noopener noreferrer"
                             className="block text-center text-[11px] text-banana hover:underline mt-2"
                           >
-                            Verify on-chain →
+                            Verify →
                           </a>
                         </div>
                       </motion.div>

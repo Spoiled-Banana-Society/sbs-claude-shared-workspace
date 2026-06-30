@@ -45,13 +45,13 @@ export function DraftProofExplainerContent({
   return (
     <div>
       <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-400 mb-3">
-        Provably Fair
+        Verified Fair
       </div>
       <h2 className="text-[22px] font-semibold text-white tracking-tight leading-tight">
         How draft types are verified
       </h2>
       <p className="text-white/55 text-[13.5px] mt-2 leading-snug">
-        Every draft&apos;s type was randomized by Chainlink VRF and committed to Base before any draft happened.
+        Every draft&apos;s type was randomized by Chainlink VRF and locked in before any draft happened.
       </p>
 
       <div className="mt-5 space-y-5">
@@ -67,27 +67,27 @@ export function DraftProofExplainerContent({
         />
         <Step
           num="3"
-          title="The full list was committed to Base"
-          body="A cryptographic fingerprint of every (position, draft type) pair was published on-chain before any draft happened. Outcomes are immutable after commit."
+          title="The full list was locked in up front"
+          body="Every draft type was locked in by Chainlink VRF before any draft happened — and can't be changed afterward."
         />
         <Step
           num="4"
           title="Every draft includes a proof"
-          body="When your draft fills, the result comes with a Merkle proof — verified in your browser in milliseconds. That's the green Verified ✓ badge."
+          body="When your draft fills, the result comes with its own proof — checked in your browser in milliseconds. That's the green Verified ✓ badge."
         />
       </div>
 
       <div className="mt-6 pt-5 border-t border-white/[0.07]">
         <p className="text-white/80 text-[13.5px] leading-relaxed">
           <span className="text-emerald-400 font-semibold">Trustless by design.</span>{' '}
-          Outcomes are cryptographically immutable from the moment of commit, and independently verifiable on-chain.
+          Outcomes are locked in from the start, and anyone can verify them.
         </p>
         {showFeedLink && (
           <a
             href="/proof-feed"
             className="inline-block mt-3 text-banana hover:underline text-[12px] font-medium"
           >
-            See on-chain proof →
+            See the proof →
           </a>
         )}
         {addr && (

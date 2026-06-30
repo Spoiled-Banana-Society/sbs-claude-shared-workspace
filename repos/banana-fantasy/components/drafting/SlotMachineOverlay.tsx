@@ -252,7 +252,7 @@ export function SlotMachineOverlay({
             </div>
             {rngSeedData && (
               <div className="mt-2 text-xs text-white/60">
-                {isVerifying ? 'Verifying fairness...' : isVerified ? 'Provably fair: verified' : 'Provably fair: pending'}
+                {isVerifying ? 'Verifying fairness...' : isVerified ? 'Verified fair' : 'Fairness pending'}
               </div>
             )}
             <p className="text-white/40 text-sm mt-2">Click anywhere or press X to close</p>
