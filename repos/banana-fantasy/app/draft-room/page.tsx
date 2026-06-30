@@ -144,6 +144,7 @@ function DraftRoomContent() {
     playWinSound,
     playYourTurnSound,
     playNewPickSound,
+    resumeAudio,
     cleanup: cleanupAudio,
   } = useDraftAudio();
 
@@ -1477,6 +1478,34 @@ function DraftRoomContent() {
     if (currentDrafter.toLowerCase() === walletParam.toLowerCase()) playYourTurnSound();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
+
+  // AFK audio recovery. Browsers suspend the AudioContext + can block HTML
+  // audio while the tab is backgrounded, so a your-turn ding fired while the
+  // user was away may have been silently swallowed. When they return (tab
+  // visible / window focused) we (1) resume the audio context so future ticks
+  // work, and (2) if it's STILL their live turn and the alert hasn't already
+  // fired for this pick, ding now so they don't sit on a dead clock. The
+  // per-pick guard keeps it to one ding even if they tab in and out.
+  const lastTurnAlertPickRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isLiveMode) return;
+    const onReturn = () => {
+      if (document.visibilityState !== 'visible') return;
+      resumeAudio();
+      if (isMuted || phase !== 'drafting' || engine.draftStatus !== 'active' || !engine.isUserTurn) return;
+      const pick = engine.currentPickNumber;
+      if (lastTurnAlertPickRef.current === pick) return;
+      lastTurnAlertPickRef.current = pick;
+      playYourTurnSound();
+    };
+    document.addEventListener('visibilitychange', onReturn);
+    window.addEventListener('focus', onReturn);
+    return () => {
+      document.removeEventListener('visibilitychange', onReturn);
+      window.removeEventListener('focus', onReturn);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode, isMuted, phase, engine.draftStatus, engine.isUserTurn, engine.currentPickNumber]);
 
   useEffect(() => {
     if (!isLiveMode || isMuted || phase !== 'drafting') return;
