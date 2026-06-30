@@ -10,6 +10,12 @@ const TRACKER_DOC = 'draftTracker';
 const STREAM_LIFETIME_MS = 55_000;
 const KEEPALIVE_INTERVAL_MS = 15_000;
 
+interface PendingReveal {
+  atMs: number;   // absolute epoch ms when this filled draft's slot reveals
+  jp: number;     // 1 if this draft is the batch Jackpot, else 0
+  hof: number;    // 1 if this draft is a batch HOF, else 0
+}
+
 interface BatchProgress {
   current: number;
   total: number;
@@ -17,7 +23,16 @@ interface BatchProgress {
   hofRemaining: number;
   filledLeaguesCount: number;
   batchStart: number;
+  pendingReveals?: PendingReveal[];
+  serverNowMs?: number;
 }
+
+// A draft's slot machine lands its TYPE at DraftStartTime-39s (= fill+21s). The
+// Go fill path records each batch fill's {Id, StartTime} in tracker.RecentFills,
+// so we can tell the dashboard which already-filled drafts haven't revealed yet
+// and exactly when they will — letting the JP/HOF count + odds move at the real
+// slot reveal instead of at fill, and stay correct across a hard refresh.
+const REVEAL_OFFSET_SEC = 39;
 
 /**
  * Compute BatchProgress from a tracker doc snapshot. Mirrors the math in
@@ -49,6 +64,28 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
     if (id > batchStart && id <= filled) hofsHit++;
   }
 
+  // Reveal-time gating: a filled draft whose slot hasn't landed yet (reveal
+  // time in the future) goes into pendingReveals so the dashboard can hold its
+  // JP/HOF deduction until the slot reveals it — instead of the instant it
+  // filled. Only batch drafts are in RecentFills; we only emit FUTURE reveals
+  // (past ones are already reflected in the counts above). The jp/hof flags are
+  // for ALREADY-FILLED drafts (unjoinable, revealing within ~21s), so this
+  // leaks no future positions. jackpotRemaining/hofRemaining are the EVENTUAL
+  // (all-filled) counts; the client adds the pending deductions back until each
+  // reveal lands.
+  const nowMs = Date.now();
+  const recent = Array.isArray(d.RecentFills) ? (d.RecentFills as Array<{ Id?: number; StartTime?: number }>) : [];
+  const pendingReveals: PendingReveal[] = [];
+  for (const rf of recent) {
+    const id = Number(rf?.Id ?? 0) || 0;
+    const st = Number(rf?.StartTime ?? 0) || 0;
+    if (id <= batchStart || id > filled || st <= 0) continue; // only this batch's fills
+    const atMs = (st - REVEAL_OFFSET_SEC) * 1000;
+    if (atMs <= nowMs) continue; // already revealed → already in the counts
+    pendingReveals.push({ atMs, jp: jpIds.includes(id) ? 1 : 0, hof: hofIds.includes(id) ? 1 : 0 });
+  }
+  pendingReveals.sort((a, b) => a.atMs - b.atMs);
+
   return {
     current,
     total: 100,
@@ -56,6 +93,8 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
     hofRemaining: Math.max(0, 5 - hofsHit),
     filledLeaguesCount: filled,
     batchStart,
+    pendingReveals,
+    serverNowMs: nowMs,
   };
 }
 

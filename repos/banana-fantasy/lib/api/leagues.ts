@@ -190,13 +190,31 @@ export async function getAllLeaderboards(
 /**
  * Batch progress for the guaranteed distribution system.
  */
+/**
+ * A batch draft that has FILLED but whose slot machine hasn't landed yet.
+ * The dashboard adds its JP/HOF deduction BACK until `atMs`, so a Jackpot/HOF
+ * never shows as hit before its slot reveal — refresh-proof, since this is
+ * recomputed server-side from shared state on every (re)connect.
+ */
+export interface PendingReveal {
+  atMs: number;   // absolute epoch ms (server clock) when this draft's slot reveals
+  jp: number;     // 1 if this filled draft is the Jackpot, else 0
+  hof: number;    // 1 if this filled draft is a HOF, else 0
+}
+
 export interface BatchProgress {
   current: number;
   total: number;
+  // EVENTUAL (all-filled) counts. The dashboard re-derives the "as revealed
+  // right now" view by adding back the deductions of any pendingReveals whose
+  // atMs is still in the future.
   jackpotRemaining: number;
   hofRemaining: number;
   batchStart: number;
   filledLeaguesCount: number;
+  // Reveal-time gating (optional; absent on the plain REST endpoint / old data).
+  pendingReveals?: PendingReveal[];
+  serverNowMs?: number;   // server clock at send time, for client skew correction
 }
 
 /**

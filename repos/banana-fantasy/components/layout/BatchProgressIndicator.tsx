@@ -10,40 +10,53 @@ const HOT_WINDOW = 20;       // heat starts when ≤ 20 drafts left this batch
 const JP_RED = '#ef4444';
 const HOF_GOLD = '#D4AF37';
 
-// How long after a draft FILLS its slot machine actually lands the type, so a
-// viewer here learns "JP/HOF hit?" at the exact same instant the drafter does —
-// never before. Measured from app/draft-room/page.tsx: spin starts at fill+15s
-// and runs a 6s animation → result at fill+21s. The dashboard's hold-timer is
-// armed when the fill arrives over SSE (~200ms after the real fill), so it lands
-// a hair AFTER 21s — in lockstep with the slot, guaranteed never early.
-const REVEAL_HOLD_MS = 21_000;
+interface RevealGated {
+  filledLeaguesCount: number;   // LIVE — ticks the instant a draft fills (X/100)
+  jackpotRemaining: number;     // REVEALED as of now — flips at the slot landing
+  hofRemaining: number;         // REVEALED as of now
+  revealedFilled: number;       // filled minus not-yet-revealed (drives the %)
+}
 
 /**
- * Holds a value for `delayMs` after each change so the JP/HOF count + odds move
- * when the slot machine REVEALS the draft type, not when the draft fills.
- * The first non-null payload seeds instantly (no 21s blank on load / reload),
- * and every later fill schedules its OWN independent reveal — so rapid fills
- * each land 21s after themselves, in order, and the snapshot always converges
- * to the live truth (self-healing). Display-only: never touches real data.
+ * Reveal-time gating. X/100 tracks the live fill, but the JP/HOF count + the %
+ * are held until each draft's slot machine actually lands its type
+ * (DraftStartTime-39s = fill+21s), using the absolute reveal times the server
+ * sends in `pendingReveals`. Because those times live in shared state and are
+ * recomputed on every (re)connect, this is REFRESH-PROOF — a reload re-derives
+ * the identical reveal moment, so a Jackpot/HOF can never show as hit early. It
+ * also stays correct under back-to-back fills (each has its own reveal time).
+ *
+ * `serverNowMs` corrects for client clock skew. We re-render exactly at each
+ * pending reveal so the count/% flip in lockstep with the slot. Display-only.
  */
-function useDelayedReveal(value: BatchProgress | null, delayMs: number): BatchProgress | null {
-  const [revealed, setRevealed] = useState<BatchProgress | null>(value);
-  const seededRef = useRef(false);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+function useRevealGated(data: BatchProgress | null): RevealGated | null {
+  const [, tick] = useState(0);
+  const offsetRef = useRef(0); // clientNow - serverNow, to defeat clock skew
+
   useEffect(() => {
-    if (!seededRef.current) {
-      if (value == null) return;       // still waiting for the first payload
-      seededRef.current = true;
-      setRevealed(value);              // first data shows immediately
-      return;
+    if (!data) return;
+    if (typeof data.serverNowMs === 'number') offsetRef.current = Date.now() - data.serverNowMs;
+    const pending = data.pendingReveals ?? [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (const p of pending) {
+      // +40ms so we re-render a hair AFTER the slot lands, never before.
+      const delay = (p.atMs + offsetRef.current) - Date.now() + 40;
+      if (delay > 0 && delay < 130_000) timers.push(setTimeout(() => tick((t) => t + 1), delay));
     }
-    const captured = value;            // each fill reveals its OWN snapshot
-    const id = setTimeout(() => setRevealed(captured), delayMs);
-    timersRef.current.push(id);
-  }, [value, delayMs]);
-  // Cancel any pending reveals on unmount only (never on change → no collapse).
-  useEffect(() => () => { timersRef.current.forEach(clearTimeout); }, []);
-  return revealed;
+    return () => timers.forEach(clearTimeout);
+  }, [data]);
+
+  if (!data) return null;
+  const serverNow = Date.now() - offsetRef.current;
+  const notYet = (data.pendingReveals ?? []).filter((p) => p.atMs > serverNow);
+  const jpBack = notYet.reduce((s, p) => s + (p.jp || 0), 0);
+  const hofBack = notYet.reduce((s, p) => s + (p.hof || 0), 0);
+  return {
+    filledLeaguesCount: data.filledLeaguesCount,
+    jackpotRemaining: data.jackpotRemaining + jpBack,
+    hofRemaining: data.hofRemaining + hofBack,
+    revealedFilled: data.filledLeaguesCount - notYet.length,
+  };
 }
 
 // Our own bolt glyph (no fire emoji). Solid for one color, red→gold gradient
@@ -67,27 +80,26 @@ function BoltIcon({ a, b }: { a: string; b: string }) {
 export function BatchProgressIndicator() {
   const { isLoggedIn } = useAuth();
   const { data } = useBatchProgress();
-  // Held-back copy: drives the JP/HOF count + odds so they move at the slot
-  // reveal (fill+21s), while X/100 below tracks the live fill instantly.
-  const revealed = useDelayedReveal(data, REVEAL_HOLD_MS);
+  // Reveal-gated view: X/100 live at fill; JP/HOF count + odds held until each
+  // draft's slot machine lands (refresh-proof, server-anchored reveal times).
+  const gated = useRevealGated(data);
 
-  if (!isLoggedIn || !data) return null;
+  if (!isLoggedIn || !data || !gated) return null;
 
   // ── LIVE (updates the instant a draft fills): the league number X/100 + the
   // batch-fullness heat. Driven straight off the SSE push.
-  const filledLeaguesCount = data.filledLeaguesCount;
+  const filledLeaguesCount = gated.filledLeaguesCount;
   const currentDraft = filledLeaguesCount;
   const batchEnd = filledLeaguesCount === 0 ? 100 : Math.ceil(filledLeaguesCount / 100) * 100;
   const draftsLeft = batchEnd - currentDraft;
 
-  // ── REVEALED (held 21s, lands with the slot machine): JP/HOF counts + odds +
-  // hit ✓. Falls back to live until the first payload seeds. Both the numerator
-  // (remaining) AND the denominator (slots left) come from this same held
-  // snapshot, so the % only moves at the reveal — never on a bare fill.
-  const r = revealed ?? data;
-  const jackpotRemaining = r.jackpotRemaining;
-  const hofRemaining = r.hofRemaining;
-  const rFilled = r.filledLeaguesCount;
+  // ── REVEALED (lands with the slot machine): JP/HOF counts + odds + hit ✓.
+  // Both the numerator (remaining) AND the denominator (slots left) come from
+  // the reveal-gated values, so the % only moves at the reveal — never on a bare
+  // fill — and a refresh can't reveal a special early.
+  const jackpotRemaining = gated.jackpotRemaining;
+  const hofRemaining = gated.hofRemaining;
+  const rFilled = gated.revealedFilled;
   const rBatchEnd = rFilled === 0 ? 100 : Math.ceil(rFilled / 100) * 100;
   const rDraftsLeft = rBatchEnd - rFilled;
   const jackpotHit = jackpotRemaining <= 0;
