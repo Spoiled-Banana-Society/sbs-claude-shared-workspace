@@ -1468,6 +1468,10 @@ function DraftRoomContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLiveMode, draftId, walletParam]);
 
+  // Tracks the pick number whose your-turn ding the user has ALREADY heard
+  // (i.e. it fired while the tab was visible). Shared with the AFK-return
+  // handler below so we never re-ding a turn they actually heard.
+  const heardTurnAlertPickRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isLiveMode || isMuted || phase !== 'drafting' || engine.draftStatus !== 'active') return;
     const currentDrafter = engine.currentDrafterAddress;
@@ -1475,7 +1479,15 @@ function DraftRoomContent() {
     prevDrafterRef.current = currentDrafter;
 
     if (!prevDrafter || !currentDrafter || prevDrafter === currentDrafter) return;
-    if (currentDrafter.toLowerCase() === walletParam.toLowerCase()) playYourTurnSound();
+    if (currentDrafter.toLowerCase() === walletParam.toLowerCase()) {
+      playYourTurnSound();
+      // Only count it as "heard" if the tab is actually in front. If it's
+      // hidden the ding was likely swallowed, so leave it unmarked and the
+      // AFK-return handler will ding once when they come back.
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        heardTurnAlertPickRef.current = engine.currentPickNumber;
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.currentDrafterAddress, isMuted, phase, engine.draftStatus]);
 
@@ -1483,10 +1495,11 @@ function DraftRoomContent() {
   // audio while the tab is backgrounded, so a your-turn ding fired while the
   // user was away may have been silently swallowed. When they return (tab
   // visible / window focused) we (1) resume the audio context so future ticks
-  // work, and (2) if it's STILL their live turn and the alert hasn't already
-  // fired for this pick, ding now so they don't sit on a dead clock. The
-  // per-pick guard keeps it to one ding even if they tab in and out.
-  const lastTurnAlertPickRef = useRef<number | null>(null);
+  // work, and (2) if it's STILL their live turn AND they never heard the ding
+  // for this pick, ding once so they don't sit on a dead clock. Gated on
+  // isUserTurn (never fires after the turn passes) and the heard-pick ref
+  // (never re-dings a turn they already heard, and never bursts on the
+  // visibilitychange+focus double-fire).
   useEffect(() => {
     if (!isLiveMode) return;
     const onReturn = () => {
@@ -1494,8 +1507,8 @@ function DraftRoomContent() {
       resumeAudio();
       if (isMuted || phase !== 'drafting' || engine.draftStatus !== 'active' || !engine.isUserTurn) return;
       const pick = engine.currentPickNumber;
-      if (lastTurnAlertPickRef.current === pick) return;
-      lastTurnAlertPickRef.current = pick;
+      if (heardTurnAlertPickRef.current === pick) return;
+      heardTurnAlertPickRef.current = pick;
       playYourTurnSound();
     };
     document.addEventListener('visibilitychange', onReturn);
