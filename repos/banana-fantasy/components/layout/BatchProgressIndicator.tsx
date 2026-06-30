@@ -173,14 +173,14 @@ export function BatchProgressIndicator() {
                 <span className={`text-base font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>{jackpotHit ? '✓' : jackpotRemaining}</span>
                 <span className="text-[11px] font-medium text-text-secondary">{jackpotHit ? 'Jackpot hit' : 'Jackpot left'}</span>
               </span>
-              {jackpotPct !== null && <span className="text-[13px] font-semibold tabular-nums text-red-400">{fmtPct(jackpotPct)} shot</span>}
+              {jackpotPct !== null && <span className="text-[13px] font-semibold tabular-nums text-red-400">{fmtPct(jackpotPct)}</span>}
             </span>
             <span className="flex flex-col items-center gap-0.5">
               <span className="flex items-center gap-1.5">
                 <span className={`text-base font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>{allHofHit ? '✓' : hofRemaining}</span>
                 <span className="text-[11px] font-medium text-text-secondary">{allHofHit ? 'HOF hit' : 'HOF left'}</span>
               </span>
-              {hofPct !== null && <span className="text-[13px] font-semibold tabular-nums text-banana">{fmtPct(hofPct)} shot</span>}
+              {hofPct !== null && <span className="text-[13px] font-semibold tabular-nums text-banana">{fmtPct(hofPct)}</span>}
             </span>
           </div>
 
@@ -193,7 +193,7 @@ export function BatchProgressIndicator() {
         </div>
       }
     >
-      <div className="relative flex items-center gap-1.5 mr-3 md:mr-4">
+      <div className="relative flex items-center gap-1.5 mr-1 md:mr-4">
         {hot && (
           <div className="pointer-events-none absolute -inset-1 rounded-2xl" style={{ background: haloBg, boxShadow: haloShadow }} />
         )}
