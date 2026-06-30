@@ -658,10 +658,11 @@ function DraftRoomContent() {
             const selectedResult = (stored?.draftType || 'pro') as DraftType;
             const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
             setDraftType(selectedResult);
+            const reelSeed = draftId || urlDraftId;
             const generatedReels = [
-              generateReelItemsForReel(reelResults[0], 0),
-              generateReelItemsForReel(reelResults[1], 1),
-              generateReelItemsForReel(reelResults[2], 2),
+              generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+              generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+              generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
             ];
             setAllReelItems(generatedReels);
             const animOffset = (elapsed - 15) * 1000;
@@ -710,10 +711,11 @@ function DraftRoomContent() {
               const selectedResult = (stored.draftType || draftType || 'pro') as DraftType;
               const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
               setDraftType(selectedResult);
+              const reelSeed = draftId || urlDraftId;
               const generatedReels = [
-                generateReelItemsForReel(reelResults[0], 0),
-                generateReelItemsForReel(reelResults[1], 1),
-                generateReelItemsForReel(reelResults[2], 2),
+                generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+                generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+                generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
               ];
               setAllReelItems(generatedReels);
               const animOffset = (elapsed - 15) * 1000;
@@ -834,10 +836,11 @@ function DraftRoomContent() {
       const selectedResult = (stored.draftType || draftType || 'pro') as DraftType;
       const reelResults: DraftType[] = [selectedResult, selectedResult, selectedResult];
       setDraftType(selectedResult);
+      const reelSeed = draftId || urlDraftId;
       const generatedReels = [
-        generateReelItemsForReel(reelResults[0], 0),
-        generateReelItemsForReel(reelResults[1], 1),
-        generateReelItemsForReel(reelResults[2], 2),
+        generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+        generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+        generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
       ];
       setAllReelItems(generatedReels);
       const animOffset = stored.preSpinStartedAt ? Math.max(0, Date.now() - stored.preSpinStartedAt - 3000) : 0;
@@ -2142,10 +2145,11 @@ function DraftRoomContent() {
         yourPosition: userDraftPosition >= 0 ? userDraftPosition + 1 : undefined,
       });
     }
+    const reelSeed = draftId || urlDraftId;
     setAllReelItems([
-      generateReelItemsForReel(reelResults[0], 0),
-      generateReelItemsForReel(reelResults[1], 1),
-      generateReelItemsForReel(reelResults[2], 2),
+      generateReelItemsForReel(reelResults[0], 0, 50, reelSeed),
+      generateReelItemsForReel(reelResults[1], 1, 50, reelSeed),
+      generateReelItemsForReel(reelResults[2], 2, 50, reelSeed),
     ]);
     setShowSlotMachine(true);
     slotActiveRef.current = true;

@@ -83,33 +83,85 @@ export function getPositionColor(pos: string) {
 }
 
 // ==================== SLOT MACHINE HELPERS ====================
+// The reveal must look IDENTICAL for every member of a given draft. The draft
+// type itself comes from the server (consistent), but the slot symbols used to
+// be rolled with Math.random() in each browser — so for a Pro draft one person
+// saw "🍌 JP HOF" and another saw "JP JP 🍌". Seeding every roll from the
+// shared draftId makes the whole reveal deterministic and identical for all
+// participants, while still looking random and varying from draft to draft.
+//
+// This PRNG is COSMETIC ONLY — it has no fairness/security role (the real,
+// provably-fair draft type is decided server-side via Chainlink VRF).
+function hashStringToSeed(str: string): number {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // One shared mixed combo per Pro spin. Computed on reel 0 and read by reels
 // 1 & 2 so the three independent generateReelItemsForReel calls stay in sync.
+// (Only used on the legacy no-seed path; the seeded path derives it directly.)
 let _proLandingCombo: DraftType[] = ['pro', 'jackpot', 'hof'];
 
-function makeProLandingCombo(): DraftType[] {
+function makeProLandingCombo(rand: () => number): DraftType[] {
   const pool: DraftType[] = ['pro', 'jackpot', 'hof']; // 'pro' renders as 🍌
   let combo: DraftType[];
   do {
-    combo = [0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]);
+    combo = [0, 1, 2].map(() => pool[Math.floor(rand() * pool.length)]);
   } while (combo[0] === combo[1] && combo[1] === combo[2]); // never 3-of-a-kind
   return combo;
 }
 
-export function generateReelItemsForReel(resultType: DraftType, reelIndex: number, totalItems: number = 50): DraftType[] {
+export function generateReelItemsForReel(
+  resultType: DraftType,
+  reelIndex: number,
+  totalItems: number = 50,
+  // The shared draft id. When provided, the entire reel is derived
+  // deterministically so every participant sees the same symbols. Omitted →
+  // falls back to Math.random (preserves old behavior for any other caller).
+  seed?: string,
+): DraftType[] {
+  // Per-reel filler stream: seeded by (draft, reel) so the three reels look
+  // independent from each other but are identical across every participant.
+  const fillerRand = seed
+    ? mulberry32(hashStringToSeed(`${seed}:reel:${reelIndex}`))
+    : Math.random;
+
   const items: DraftType[] = [];
   for (let i = 0; i < totalItems; i++) {
-    const rand = Math.random();
+    const rand = fillerRand();
     if (rand < 0.15) items.push('jackpot');
     else if (rand < 0.35) items.push('hof');
     else items.push('pro');
   }
   const landingIndex = totalItems - 8;
   if (resultType === 'pro') {
-    // Pro = no 3-of-a-kind match. Show a randomized mixed combo (varies each
-    // spin) that's guaranteed never to be a triple, so it can't look like a win.
-    if (reelIndex === 0) _proLandingCombo = makeProLandingCombo();
-    items[landingIndex] = _proLandingCombo[reelIndex] ?? 'pro';
+    // Pro = no 3-of-a-kind match. Show a mixed combo (never a triple, so it
+    // can't look like a win). With a seed, derive it from the SHARED draft id
+    // (same for all three reels, order-independent) so every participant lands
+    // on the identical symbols. Without a seed, keep the legacy shared-module
+    // behavior (combo computed on reel 0, read by reels 1 & 2).
+    if (seed) {
+      const combo = makeProLandingCombo(mulberry32(hashStringToSeed(`${seed}:combo`)));
+      items[landingIndex] = combo[reelIndex] ?? 'pro';
+    } else {
+      if (reelIndex === 0) _proLandingCombo = makeProLandingCombo(Math.random);
+      items[landingIndex] = _proLandingCombo[reelIndex] ?? 'pro';
+    }
   } else {
     items[landingIndex] = resultType;
   }
