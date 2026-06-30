@@ -79,9 +79,14 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
   for (const rf of recent) {
     const id = Number(rf?.Id ?? 0) || 0;
     const st = Number(rf?.StartTime ?? 0) || 0;
-    if (id <= batchStart || id > filled || st <= 0) continue; // only this batch's fills
-    const atMs = (st - REVEAL_OFFSET_SEC) * 1000;
-    if (atMs <= nowMs) continue; // already revealed → already in the counts
+    if (id <= batchStart || id > filled) continue; // only this batch's fills
+    // st<=0 is the provisional sentinel: the draft has FILLED but its slot
+    // isn't timed yet (the count moved atomically with this entry). Hold it with
+    // a far-future atMs so the JP/HOF deduction never shows early; the corrected
+    // push (with the real DraftStartTime) lands the actual reveal moment. For a
+    // timed entry, reveal = DraftStartTime-39s.
+    const atMs = st > 0 ? (st - REVEAL_OFFSET_SEC) * 1000 : nowMs + 3_600_000;
+    if (atMs <= nowMs) continue; // already revealed → already reflected in counts
     pendingReveals.push({ atMs, jp: jpIds.includes(id) ? 1 : 0, hof: hofIds.includes(id) ? 1 : 0 });
   }
   pendingReveals.sort((a, b) => a.atMs - b.atMs);
