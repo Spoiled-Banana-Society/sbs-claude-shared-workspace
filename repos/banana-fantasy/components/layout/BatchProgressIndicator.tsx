@@ -193,7 +193,7 @@ export function BatchProgressIndicator() {
         </div>
       }
     >
-      <div className="relative flex items-center gap-1.5 mr-1 md:mr-4">
+      <div className="relative flex items-center gap-1.5 mr-1 md:mr-3">
         {hot && (
           <div className="pointer-events-none absolute -inset-1 rounded-2xl" style={{ background: haloBg, boxShadow: haloShadow }} />
         )}
