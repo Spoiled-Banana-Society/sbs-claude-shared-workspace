@@ -78,21 +78,20 @@ export interface MintProgress {
  * Buy-10-style stacking progress. Extracted verbatim from the inline math in
  * _incrementMintPromosInTx so the "interconnection" behaviour (every purchase
  * advances the standing promos too) is covered by tests. Landing exactly on a
- * multiple of `max` shows a full bar (max) rather than 0.
+ * multiple of `max` ROLLS OVER to 0 — the promo repeats, and a bar stuck at
+ * 10/10 read as "done, can't earn again" (Boris 2026-07-01).
  */
 export function computeMintProgress(current: number, max: number, quantity: number): MintProgress {
   const safeCurrent = current || 0;
   const newTotal = safeCurrent + quantity;
   // Milestones crossed by THIS purchase = the DELTA. Subtracting
   // Math.floor(safeCurrent / max) keeps the count correct even when `current`
-  // was previously stored as `max` (the full-bar display value we set on an
-  // exact-multiple landing). Without the subtraction, that stored `max`
-  // re-counted the already-awarded milestone and handed out an EXTRA spin on
-  // the next purchase (the "buy 10 sometimes gives an extra spin" bug).
+  // was stored as `max` (the legacy full-bar display value from before the
+  // rollover change). Without the subtraction, that stored `max` re-counted
+  // the already-awarded milestone and handed out an EXTRA spin on the next
+  // purchase (the "buy 10 sometimes gives an extra spin" bug).
   const milestonesEarned = Math.floor(newTotal / max) - Math.floor(safeCurrent / max);
-  const remainder = newTotal % max;
-  const progressCurrent = milestonesEarned > 0 && remainder === 0 ? max : remainder;
-  return { progressCurrent, milestonesEarned };
+  return { progressCurrent: newTotal % max, milestonesEarned };
 }
 
 export interface CompletionGateInput {

@@ -445,6 +445,17 @@ export async function getPromos(userId: string): Promise<Promo[]> {
       promo.progressCurrent = 0;
       promo.timerEndTime = undefined;
     }
+    // Stacking promos (Buy-10 spin, buy-bonus) roll over at the milestone.
+    // Docs written before the rollover change (2026-07-01) stored a full bar
+    // (10/10) on an exact-multiple landing, which read as "done, can't earn
+    // again". Normalize those legacy values at read — no write; the milestone
+    // delta math in computeMintProgress handles either stored form.
+    if (promo.type === 'mint' || promo.type === 'buy-bonus') {
+      const stackMax = promo.progressMax || 0;
+      if (stackMax > 0 && (promo.progressCurrent || 0) >= stackMax) {
+        promo.progressCurrent = (promo.progressCurrent || 0) % stackMax;
+      }
+    }
     // Inject real twitterConnected status for promos that depend on it
     if (promo.type === 'new-user' || promo.type === 'tweet-engagement') {
       promo.modalContent.twitterConnected = hasVerifiedTwitter;
@@ -1209,8 +1220,9 @@ async function _incrementMintPromosInTx(
     // value on an exact-multiple landing) from re-counting the already-awarded
     // milestone and granting an extra bonus on the next purchase.
     const bbNewlyEarned = Math.floor(bbNewTotal / bbMax) - Math.floor(bbCurrent / bbMax);
-    const bbRemainder = bbNewTotal % bbMax;
-    buyBonusPromo.progressCurrent = (bbNewlyEarned > 0 && bbRemainder === 0) ? bbMax : bbRemainder;
+    // Rolls over at the milestone (2/2 → 0/2), same as computeMintProgress —
+    // the promo repeats, so a stuck full bar read as "done".
+    buyBonusPromo.progressCurrent = bbNewTotal % bbMax;
     if (bbNewlyEarned > 0) {
       buyBonusPromo.claimCount = (buyBonusPromo.claimCount || 0) + bbNewlyEarned;
       recalcPromoClaimable(buyBonusPromo);

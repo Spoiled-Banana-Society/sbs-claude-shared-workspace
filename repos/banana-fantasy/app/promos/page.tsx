@@ -438,14 +438,18 @@ interface PromoCardProps {
 function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickExpanded }: PromoCardProps) {
   const style = TYPE_STYLES[promo.type];
   const progressMax = promo.progressMax || 0;
-  const progressCurrent = isClaimed ? progressMax : (promo.progressCurrent || 0);
+  // Stacking promos (Buy-10 spin, buy-bonus) repeat: after claiming, the bar
+  // keeps showing the real rolled-over progress (0/10), never a full bar or a
+  // persistent "Claimed" — both read as "done, can't earn again".
+  const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
+  const progressCurrent = isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0);
   const progressPercent = progressMax > 0 ? Math.min(100, (progressCurrent / progressMax) * 100) : 0;
   const showProgress = progressMax > 0;
   const timeRemaining = promo.timerEndTime ? formatTimeRemaining(promo.timerEndTime) : '';
 
   // Single status indicator. Restrained — small dot + label, no pulsing.
   const isClaimedPersistent =
-    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10';
+    isClaimed && promo.type !== 'daily-drafts' && promo.type !== 'pick-10' && !isStacking;
 
   return (
     <button
