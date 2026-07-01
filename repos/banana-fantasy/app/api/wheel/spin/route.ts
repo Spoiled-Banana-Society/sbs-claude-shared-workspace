@@ -18,6 +18,7 @@ import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { isWheelJpHofPassEnabled } from '@/lib/featureFlags';
 import { recountFromInventory } from '@/lib/passLedger';
+import { unlockBadge } from '@/lib/db';
 import { claimSpinIndex, getCurrentPeriod } from '@/lib/wheelPeriod';
 import { deriveSpinOutcome } from '@/lib/wheelMerkle';
 import { writeJournalEntryTx } from '@/lib/wheelAssignmentJournal';
@@ -418,6 +419,19 @@ export async function POST(req: Request) {
       // server-persisted + cross-device ping) — server-firing it here either
       // spoils the reveal (too early) or lags it (delay guessing), and doing
       // both double-notified. One source, perfect timing.
+
+      // Club badge for a Jackpot/HOF wheel WIN — participation/achievement badge
+      // (Boris 2026-07-01): winning a JP/HOF draft pass on the wheel unlocks the
+      // matching club, same as being in a JP/HOF draft. `unlockBadge` (not
+      // silent) fires its own "Badge unlocked" bell + toast; idempotent, so it
+      // never double-bells and is safe alongside the later queue-draft-filled
+      // unlock. This is a SEPARATE celebratory bell from the win reveal (which
+      // the wheel page still fires client-side), so it doesn't spoil the spin.
+      if (jphofKind === 'jackpot') {
+        await unlockBadge(userId, 'jackpot-club', { source: 'wheel-jackpot', spinId }).catch(() => {});
+      } else if (jphofKind === 'hof') {
+        await unlockBadge(userId, 'hof-club', { source: 'wheel-hof', spinId }).catch(() => {});
+      }
 
       let mintTxHash: string | undefined;
       let mintedTokenIds: string[] = [];

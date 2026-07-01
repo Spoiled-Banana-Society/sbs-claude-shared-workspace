@@ -91,11 +91,21 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       .filter((w) => /^0x[0-9a-f]{40}$/.test(w) && !w.startsWith('bot-'));
 
     if (isJackpot) {
-      // ONE call handles everything: paid-only VRF-style winner draw, winner
-      // promo credit, draw record (for the modal replay + provably-fair
-      // display), Jackpot Club badges (silent) and the combined/draw notis —
-      // idempotent per draft via jackpot_draws create().
+      // Paid-only VRF winner draw + spins + winner promo + draw record. This
+      // ALSO unlocks Jackpot Club for the PAID entrants (silent — folded into
+      // the draw bell). Idempotent per draft via jackpot_draws create().
       await awardJackpotDraw(draftId, String(draftSnap.get('DisplayName') ?? draftId)).catch(() => {});
+      // Jackpot Club badge for ALL participants — free AND paid (Boris
+      // 2026-07-01). The club badge is a PARTICIPATION achievement, not a promo:
+      // everyone in the jackpot draft earns it (the spins/draw stay paid-only).
+      // Mirrors the HOF branch below. unlockBadge is idempotent, so the paid
+      // entrants already unlocked (silently) above are a no-op here (no double
+      // bell); the free entrants unlock now and get the "Badge unlocked" bell.
+      // Uses the authoritative Firestore Level + participant list — NOT the Go
+      // token level, which comes back empty for regular batch jackpot drafts.
+      await Promise.allSettled(wallets.map((w) =>
+        unlockBadge(w, 'jackpot-club', { source: 'draft-reveal', draftId }),
+      ));
     } else {
       await Promise.allSettled(wallets.map((w) =>
         unlockBadge(w, 'hof-club', { source: 'draft-reveal', draftId }),

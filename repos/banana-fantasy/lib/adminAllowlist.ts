@@ -7,6 +7,7 @@ const FALLBACK_ADMIN_WALLETS = [
   '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
   '0xbd2e09c009a7834cd32f9fa8a87073c5b3083f11', // Richard test wallet (MetaMask 'r8')
   '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
+  '0x93e2dc5642722688b2c5431cd7b3584cd97ee175', // Boris (heyooo / "Vag Bros")
 ];
 
 // CURATED prod admin list — the real founder/team wallets ONLY (no test wallets
@@ -23,6 +24,7 @@ const PROD_ADMIN_WALLETS = [
   '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
   '0xa13cfe7d8cab73feb372a3356fc13f9ad2d436ae', // Richard (active wallet)
   '0xb65a135785eb4c375c2b540a6484e6eb60657fe6', // Boris (b65a13)
+  '0x93e2dc5642722688b2c5431cd7b3584cd97ee175', // Boris (heyooo / "Vag Bros" — added 2026-07-01, MetaMask admin wallet locked out)
 ];
 
 function normalizeWallet(value: string): string {
