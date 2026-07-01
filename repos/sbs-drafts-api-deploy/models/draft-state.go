@@ -2,6 +2,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -538,6 +539,17 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 			counts.SpecialDraftCount++ // own lane — NOT the per-100 batch
 		} else {
 			counts.FilledLeaguesCount++
+			// Provisional reveal-anchor, recorded ATOMICALLY with the count so the
+			// batch dashboard holds this draft's JP/HOF deduction + odds from the
+			// instant the count moves — no flicker, and never revealed early (even
+			// across the up-to-120s VRF wait at a batch boundary). StartTime=0 is a
+			// "filled, slot not yet timed" sentinel; the real DraftStartTime is
+			// stamped in after the live node is written (see reveal-anchor stamp
+			// below). The batch-progress stream treats a 0-StartTime entry as held.
+			counts.RecentFills = append(counts.RecentFills, RecentFill{Id: counts.FilledLeaguesCount, StartTime: 0})
+			if len(counts.RecentFills) > 10 {
+				counts.RecentFills = counts.RecentFills[len(counts.RecentFills)-10:]
+			}
 		}
 		return tx.Set(trackerRef, &counts)
 	})
@@ -808,7 +820,7 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	if strings.ToLower(leagueInfo.DraftType) == "slow" {
 		firstPickInfo.PickEndTime = SlowDraftPickEndUnix(info.DraftStartTime, info.PickLength)
 	} else {
-		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength + 1
+		firstPickInfo.PickEndTime = info.DraftStartTime + info.PickLength
 	}
 
 	fmt.Printf("[league#] rtdb.write.start draftId=%s displayName=%q numPlayers=%d\n", draftId, leagueInfo.DisplayName, leagueInfo.NumPlayers)
@@ -822,9 +834,79 @@ func CreateLeagueDraftStateUponFilling(draftId string, draftType string) error {
 	}
 	fmt.Printf("[league#] rtdb.write.ok draftId=%s displayName=%q\n", draftId, leagueInfo.DisplayName)
 
+	// Reveal-anchor stamp: now that the live node is written and DraftStartTime is
+	// final, replace this draft's provisional (StartTime=0) RecentFills entry with
+	// its real DraftStartTime. The batch dashboard then reveals its JP/HOF
+	// deduction + odds exactly when the slot machine lands (DraftStartTime-39s =
+	// fill+21s). Runs AFTER the RTDB write so it never delays the draft start, and
+	// is best-effort/cosmetic — a failure just leaves the entry held (revealed
+	// late once it rolls out of the window), never early, and never affects the
+	// fill, picks, or VRF distribution. Only batch drafts have a provisional entry.
+	if !isSpecialDraft {
+		fillId := counts.FilledLeaguesCount
+		startTime := info.DraftStartTime
+		if rfErr := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+			doc, err := tx.Get(trackerRef)
+			if err != nil {
+				return err
+			}
+			var fresh DraftLeagueTracker
+			if err := doc.DataTo(&fresh); err != nil {
+				return err
+			}
+			found := false
+			for i := range fresh.RecentFills {
+				if fresh.RecentFills[i].Id == fillId {
+					fresh.RecentFills[i].StartTime = startTime
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Provisional entry already rolled out of the 10-deep window
+				// (only under an implausible burst). Re-add the real anchor so the
+				// reveal still gates correctly.
+				fresh.RecentFills = append(fresh.RecentFills, RecentFill{Id: fillId, StartTime: startTime})
+				if len(fresh.RecentFills) > 10 {
+					fresh.RecentFills = fresh.RecentFills[len(fresh.RecentFills)-10:]
+				}
+			}
+			return tx.Set(trackerRef, &fresh)
+		}); rfErr != nil {
+			fmt.Printf("[reveal-anchor] failed to stamp DraftStartTime for fill id=%d: %v\n", fillId, rfErr)
+		}
+	}
+
 	fmt.Printf("First pick info: %v\n for draft %s has created the real time draft info\n", firstPickInfo, draftId)
 
-	go scheduleAutoDraftTask(draftId, firstPickInfo.CurrentDrafter, 1, 1, firstPickInfo.PickEndTime)
+	// Build the auto-draft URL based on environment
+	autoDraftUrl, err := buildAutoDraftURL(draftId, firstPickInfo.CurrentDrafter)
+	if err != nil {
+		fmt.Printf("Error building auto-draft URL for draft %s, owner %s: %v\n", draftId, firstPickInfo.CurrentDrafter, err)
+		return err
+	}
+
+	// Create the payload
+	payload := map[string]interface{}{
+		"currentPickNumber": 1,
+		"currentRound":      1,
+		"isServerPick":      true,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		fmt.Printf("Error marshaling auto-draft payload for pick %d: %v\n", 1, err)
+		return err
+	}
+
+	// Create the cloud task
+	err = utils.CreateCloudTask(autoDraftUrl, string(payloadBytes), firstPickInfo.PickEndTime-2)
+	if err != nil {
+		fmt.Printf("Error scheduling auto-draft cloud task for draft %s, pick %d: %v\n", draftId, 1, err)
+		return err
+	}
+
+	fmt.Printf("Successfully scheduled auto-draft cloud task for draft %s, pick %d (round %d) at timestamp %d\n",
+		draftId, 1, 1, firstPickInfo.PickEndTime-5)
 
 	// DEFERRED: per-card Level write for JP/HOF drafts. Best-effort,
 	// run AFTER RTDB + Cloud Task have committed so a partial failure

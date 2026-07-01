@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
@@ -18,21 +17,9 @@ type LeagueResources struct{}
 func (lr *LeagueResources) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	if auth.AuthEnabled() {
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireServiceKey, auth.RequireWalletMatchesOwner)
-			r.Post("/{draftType}/owner/{ownerId}", lr.joinDraftLeagues)
-		})
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireServiceKey, auth.RequireWalletMatchesBodyOwner)
-			r.Post("/{draftId}/actions/leave", lr.RemoveUserFromDraft)
-		})
-	} else {
-		r.Post("/{draftType}/owner/{ownerId}", lr.joinDraftLeagues)
-		r.Post("/{draftId}/actions/leave", lr.RemoveUserFromDraft)
-	}
-
+	r.Post("/{draftType}/owner/{ownerId}", lr.joinDraftLeagues)
 	r.Get("/getGameweek", lr.ReturnGameweekToUser)
+	r.Post("/{draftId}/actions/leave", lr.RemoveUserFromDraft)
 	r.Get("/{draftId}/cards/{tokenId}", lr.ReturnDraftToken)
 	r.Get("/filledLeagues", lr.ReturnNumberOfFilledLeagues)
 	r.Get("/all/{ownerId}/draftTokenLeaderboard/gameweek/{gameweek}/orderBy/{orderBy}/level/{level}", lr.ReturnAllDraftTokenLeaderboard)
@@ -163,14 +150,12 @@ func (lr *LeagueResources) RemoveUserFromDraft(w http.ResponseWriter, r *http.Re
 	data, err := json.Marshal(req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -200,7 +185,6 @@ func (lr *LeagueResources) ReturnDraftToken(w http.ResponseWriter, r *http.Reque
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -230,7 +214,6 @@ func (lr *LeagueResources) ReturnNumberOfFilledLeagues(w http.ResponseWriter, r 
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -267,7 +250,6 @@ func (lr *LeagueResources) ReturnDraftLeagueLeaderboard(w http.ResponseWriter, r
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -301,7 +283,6 @@ func (lr *LeagueResources) ReturnAllDraftTokenLeaderboard(w http.ResponseWriter,
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -340,7 +321,6 @@ func (lr *LeagueResources) ReturnGameweekToUser(w http.ResponseWriter, r *http.R
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -372,7 +352,6 @@ func (lr *LeagueResources) ReturnHallOfFameLeaderboard(w http.ResponseWriter, r 
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
 
@@ -393,6 +372,6 @@ func (lr *LeagueResources) ReturnBatchProgress(w http.ResponseWriter, r *http.Re
 	_, err = w.Write(data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 }
+

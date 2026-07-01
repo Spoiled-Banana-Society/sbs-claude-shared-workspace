@@ -13,6 +13,14 @@ import (
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 )
 
+// seasonYear is the single source of truth for the season prefix on every draft
+// id ("<seasonYear>-<type>-draft-<n>"). All three places that build or scan a
+// draft id MUST use this const so the year can never be half-changed (scanning
+// one year while creating another would spawn empty leagues forever). The
+// player data is already 2026 (playerStats2026); this only governs the draft-id
+// label and is independent of the on-chain contract and the VRF systems.
+const seasonYear = "2026"
+
 // normalizePassType folds anything that isn't explicitly "free" into "paid"
 // (legacy tokens have an empty PassType and are treated as paid).
 func normalizePassType(pt string) string {
@@ -20,6 +28,23 @@ func normalizePassType(pt string) string {
 		return "free"
 	}
 	return "paid"
+}
+
+// isSpecialWheelPass reports whether a token's Level marks it as a HOF/Jackpot
+// pass. Those are won on the wheel and are RESTRICTED to their own special
+// (wheel) slow draft — they may be sold while the round is filling, but must
+// NEVER be spent to enter a regular fast/slow main-lobby draft. The regular
+// league picker (selectTokensByType) excludes them so the same pass can't be
+// double-used (the bug that let a HOF wheel pass be drafted into a normal
+// league: a free wheel HOF pass with a low id was picked ahead of a real free
+// pass). Empty / "Pro" = an ordinary pass and stays eligible.
+func isSpecialWheelPass(level string) bool {
+	switch strings.TrimSpace(level) {
+	case "Hall of Fame", "Jackpot":
+		return true
+	default:
+		return false
+	}
 }
 
 // selectTokensByType returns the `count` lowest-numbered tokens whose PassType
@@ -31,6 +56,11 @@ func selectTokensByType(tokens []DraftToken, want string, count int) ([]DraftTok
 	want = normalizePassType(want)
 	matching := make([]DraftToken, 0, len(tokens))
 	for _, t := range tokens {
+		// HOF/Jackpot wheel passes are locked to their own special draft and can
+		// never be consumed to enter a regular main-lobby draft — skip them here.
+		if isSpecialWheelPass(t.Level) {
+			continue
+		}
 		if normalizePassType(t.PassType) == want {
 			matching = append(matching, t)
 		}
@@ -114,6 +144,12 @@ func selectLowestPartialLeague(startFrom int, maxLookback int, ownerId string, r
 			continue
 		}
 		l := leagues[i]
+		// Wheel-won specials (Jackpot/HOF) are enterable ONLY by winning them on
+		// the wheel — never hand a regular join an open seat in one (Richard,
+		// 2026-06-18).
+		if l.Level == "Jackpot" || l.Level == "Hall of Fame" {
+			continue
+		}
 		if l.NumPlayers <= 0 || l.NumPlayers >= 10 {
 			continue
 		}
@@ -170,6 +206,23 @@ type DraftLeagueTracker struct {
 	// or the VRF JP/HOF position lists), so the guaranteed 1+5 per 100 stays a
 	// pure paid-draft pool. Names them "Special Draft Jackpot/HOF #N".
 	SpecialDraftCount     int   `json:"specialDraftCount" firestore:"SpecialDraftCount"`
+	// RecentFills is a short rolling window (last ~10) of batch drafts that
+	// filled, each with its DraftStartTime. The slot machine reveals a draft's
+	// type at DraftStartTime-39s (fill+21s); the batch-progress stream uses
+	// these to gate the JP/HOF count + odds on each draft's REAL reveal moment,
+	// so a viewer never sees a Jackpot/HOF deduct before the slot lands — even
+	// across a hard refresh, and even when drafts fill back-to-back. Only batch
+	// drafts (not wheel-won specials) are recorded. Best-effort/cosmetic: this
+	// never affects the actual VRF distribution.
+	RecentFills           []RecentFill `json:"recentFills,omitempty" firestore:"RecentFills,omitempty"`
+}
+
+// RecentFill records when a batch draft filled, for reveal-time gating in the
+// batch-progress UI. Id is the per-100 league number (== FilledLeaguesCount at
+// fill); StartTime is the draft's DraftStartTime (Unix s) — reveal = StartTime-39.
+type RecentFill struct {
+	Id        int   `json:"id" firestore:"Id"`
+	StartTime int64 `json:"startTime" firestore:"StartTime"`
 }
 
 type Score struct {
@@ -225,7 +278,7 @@ func CreateLeague(ownerId string, draftNum int, draftType string) (*League, erro
 		return nil, err
 	}
 	res := &League{
-		LeagueId:     FormatDraftLeagueID(draftType, draftNum),
+		LeagueId:     fmt.Sprintf(seasonYear+"-%s-draft-%d", draftType, draftNum),
 		DisplayName:  fmt.Sprintf("BBB #%d", (draftNum)),
 		CurrentUsers: make([]LeagueUser, 0),
 		NumPlayers:   0,
@@ -319,7 +372,7 @@ func scanForPartialLeague(startFrom int, draftType string, ownerId string) int {
 	start := time.Now()
 	read := func(n int) (*League, bool) {
 		var l League
-		draftId := FormatDraftLeagueID(draftType, n)
+		draftId := fmt.Sprintf(seasonYear+"-%s-draft-%d", draftType, n)
 		if err := utils.Db.ReadDocument("drafts", draftId, &l); err != nil {
 			return nil, false
 		}
@@ -345,9 +398,15 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 	var draftId string
 	var l League
 
+	// The owner's spendable-pass doc. We CLAIM (delete) it INSIDE the seat
+	// transaction below, atomic with the seat, so two concurrent joins can't
+	// put the same pass into two leagues (the double-spend). Same ref every
+	// loop iteration — the pass doesn't change, only which league we try.
+	validTokenRef := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId)
+
 	// find the right league to add the card to ensuring that this owner does not already have a token in that league
 	for {
-		draftId = FormatDraftLeagueID(draftType, currentDraftNum)
+		draftId = fmt.Sprintf(seasonYear+"-%s-draft-%d", draftType, currentDraftNum)
 		err := utils.Db.ReadDocument("drafts", draftId, &l)
 		if err != nil {
 			s := err.Error()
@@ -381,6 +440,12 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 			}
 			fmt.Println("league inside of tx: ", league)
 
+			// Belt-and-suspenders: a regular join must never land in a wheel-won
+			// special (JP/HOF). Roll to the next slot — the loop continues on this
+			// error string (Richard, 2026-06-18).
+			if league.Level == "Jackpot" || league.Level == "Hall of Fame" {
+				return fmt.Errorf("try the next leagueId")
+			}
 			if league.NumPlayers == 10 {
 				fmt.Printf("%s is now locked so we are returning an error string to trigger the for loop to continue\r", league.LeagueId)
 				return fmt.Errorf("try the next leagueId")
@@ -396,10 +461,28 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 				return fmt.Errorf("try the next leagueId")
 			}
 
+			// Atomic pass-claim: confirm the pass is still in the owner's
+			// spendable pool, then seat the user AND consume the pass in the
+			// SAME commit. If a concurrent join already took it, this read is
+			// NotFound -> abort with a DISTINCT error ("pass already used", not
+			// "try the next leagueId") so the join stops instead of re-trying
+			// another league with a pass that's already gone. (All reads in a
+			// Firestore tx must precede all writes — this read is still before
+			// the tx.Set/tx.Delete below, so the ordering is valid.)
+			if _, terr := tx.Get(validTokenRef); terr != nil {
+				if strings.Contains(terr.Error(), "code = NotFound") {
+					return fmt.Errorf("pass already used")
+				}
+				return terr
+			}
+
 			league.CurrentUsers = append(league.CurrentUsers, LeagueUser{OwnerId: token.OwnerId, TokenId: token.CardId})
 			league.NumPlayers++
 			l = league
-			return tx.Set(leagueRef, &league)
+			if err := tx.Set(leagueRef, &league); err != nil {
+				return err
+			}
+			return tx.Delete(validTokenRef)
 		})
 		if err != nil {
 			if err.Error() != "try the next leagueId" {
@@ -428,16 +511,12 @@ func AddCardToLeague(token *DraftToken, expectedDraftNum int, draftType string) 
 		}
 	}
 
-	// Double-spend cleanup: mark the token in-use and remove it from the
-	// owner's validDraftTokens. Both must complete before we return; they're
-	// independent, so run them concurrently and surface the first error.
-	if err := runConcurrently(
-		func() error { return token.updateInUseDraftTokenInDatabase(draftId) },
-		func() error {
-			_, e := utils.Db.Client.Collection(fmt.Sprintf("owners/%s/validDraftTokens", token.OwnerId)).Doc(token.CardId).Delete(context.Background())
-			return e
-		},
-	); err != nil {
+	// The pass was already removed from validDraftTokens INSIDE the seat
+	// transaction above (atomic with the seat — see the tx.Delete). Here we
+	// only write the denormalized "in use" copies (usedDraftTokens / cards /
+	// metadata). If this best-effort write fails, the pass is still correctly
+	// consumed + seated, so it can never be re-used; the copies reconcile.
+	if err := token.updateInUseDraftTokenInDatabase(draftId); err != nil {
 		return -1, err
 	}
 

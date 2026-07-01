@@ -84,11 +84,7 @@ func (dr *DraftResources) getPlayersMapWithRankings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if len(res) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte("[]"))
-		return
-	}
+	fmt.Println("first entry of the array: ", res[0])
 
 	data, err := json.Marshal(res)
 	if err != nil {

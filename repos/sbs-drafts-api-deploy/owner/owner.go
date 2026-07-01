@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
@@ -18,37 +17,22 @@ type OwnerResources struct{}
 func (or *OwnerResources) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	registerProtected := func(r chi.Router) {
-		r.Post("/{ownerId}/draftToken/mint", or.CreateTokensInDatabase)
-		r.Get("/{ownerId}/drafts/{draftId}/state/queue", or.GetQueueForDraft)
-		r.Post("/{ownerId}/drafts/{draftId}/state/queue", or.UpdateQueueForDraft)
-		r.Get("/{ownerId}/drafts/{draftId}/state/sort", or.GetSortForDraft)
-		r.Put("/{ownerId}/drafts/{draftId}/state/sort/{sortBy}", or.UpdateSortForDraft)
-		r.Post("/{ownerId}/drafts/state/rankings", or.UpdateUserRankings)
-		r.Delete("/{ownerId}/drafts/state/rankings", or.RemoveUserRankings)
-		r.Post("/{ownerId}/promoCode/update", or.UpdatePromoCode)
-		r.Post("/{ownerId}/mobile/login", or.LogInUserOnMobile)
-		r.Post("/{ownerId}/manage/deleteUserData", or.DeleteOwnerData)
-		r.Post("/{ownerId}/metadata/{tokenId}", or.GenerateMetadataForCard)
-		r.Post("/{ownerId}/update/pfpImage", or.UpdatePFPImageForUser)
-		r.Post("/{ownerId}/update/displayName", or.UpdateDisplayNameForUser)
-		r.Post("/{ownerId}/card/{cardId}/actions/prizeTransfer", or.TransferETHFromCardToOwner)
-	}
-
-	if auth.AuthEnabled() {
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireServiceKey, auth.RequireWalletMatchesOwner)
-			registerProtected(r)
-		})
-	} else {
-		registerProtected(r)
-	}
-
+	r.Post("/{ownerId}/draftToken/mint", or.CreateTokensInDatabase)
+	r.Post("/{ownerId}/drafts/state/rankings", or.UpdateUserRankings)
 	r.Get("/{ownerId}/draftToken/all", or.ReturnTokensOwnedByUser)
 	r.Get("/{ownerId}/rankings/get", or.ReturnUserRankings)
 	r.Get("/{ownerId}/promoCode/get", or.ReturnPromoCode)
+	r.Post("/{ownerId}/promoCode/update", or.UpdatePromoCode)
+	r.Post("/{ownerId}/mobile/login", or.LogInUserOnMobile)
+	r.Post("/{ownerId}/manage/deleteUserData", or.DeleteOwnerData)
 	r.Get("/{ownerId}/drafts/{draftId}", or.ReturnCardForOwnerInDraft)
+	r.Post("/{ownerId}/metadata/{tokenId}", or.GenerateMetadataForCard)
 	r.Get("/{ownerId}", or.ReturnOwnerObjectById)
+	r.Post("/{ownerId}/update/pfpImage", or.UpdatePFPImageForUser)
+	r.Post("/{ownerId}/update/displayName", or.UpdateDisplayNameForUser)
+	r.Post("/{ownerId}/card/{cardId}/actions/prizeTransfer", or.TransferETHFromCardToOwner)
+	r.Get("/{ownerId}/drafts/{draftId}/state/queue", or.GetQueueForDraft)
+	r.Post("/{ownerId}/drafts/{draftId}/state/queue", or.UpdateQueueForDraft)
 	r.Get("/auth/type", or.GetAuthType)
 	r.Patch("/{ownerId}/sms/preferences", or.UpdateSmsPreferences)
 	r.Post("/{ownerId}/sms/onboarding-complete", or.CompleteSmsOnboarding)
@@ -62,22 +46,6 @@ type UserNotificationToken struct {
 
 type MobileLoginResponse struct {
 	IsLive bool `json:"isLive"`
-}
-
-func writeMobileLoginSuccess(w http.ResponseWriter) {
-	var response MobileLoginResponse
-	err := utils.Db.ReadDocument("draftStatus", "healthCheck", &response)
-	if err != nil {
-		fmt.Println("ERROR reading in draftStatus/healthCheck: ", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 }
 
 /*
@@ -129,9 +97,7 @@ func (or *OwnerResources) LogInUserOnMobile(w http.ResponseWriter, r *http.Reque
 			if err != nil {
 				fmt.Println("Error creating notification token document for user: ", err)
 				http.Error(w, fmt.Sprint("Error creating notification token document for user: ", err), http.StatusBadRequest)
-				return
 			}
-			writeMobileLoginSuccess(w)
 			return
 		} else {
 			fmt.Println("Error finding push token for user: ", err)
@@ -150,7 +116,26 @@ func (or *OwnerResources) LogInUserOnMobile(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	writeMobileLoginSuccess(w)
+	var response MobileLoginResponse
+	err = utils.Db.ReadDocument("draftStatus", "healthCheck", &response)
+	if err != nil {
+		fmt.Println("ERROR reading in draftStatus/healthCheck: ", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data, err := json.Marshal(response)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 type MintTokensResponse struct {
@@ -173,7 +158,6 @@ func (or *OwnerResources) CreateTokensInDatabase(w http.ResponseWriter, r *http.
 	if ownerId == "" {
 		fmt.Println("no OwnerId was found")
 		http.Error(w, "Did not find an ownerId in the url path", http.StatusBadRequest)
-		return
 	}
 	ownerId = strings.ToLower(ownerId)
 
@@ -330,22 +314,6 @@ func (or *OwnerResources) UpdateUserRankings(w http.ResponseWriter, r *http.Requ
 	}
 }
 
-func (or *OwnerResources) RemoveUserRankings(w http.ResponseWriter, r *http.Request) {
-	ownerId := chi.URLParam(r, "ownerId")
-	if ownerId == "" {
-		http.Error(w, "Did not find an ownerId in the url path", http.StatusInternalServerError)
-		return
-	}
-	ownerId = strings.ToLower(ownerId)
-
-	err := utils.Db.DeleteDocument(fmt.Sprintf("owners/%s/drafts", ownerId), "rankings")
-	if err != nil {
-		fmt.Println("error in removing the owners rankings in the db")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
 type GetRankingsResponse struct {
 	PlayerId string             `json:"playerId"`
 	Rank     int64              `json:"rank"`
@@ -399,7 +367,6 @@ func (or *OwnerResources) ReturnUserRankings(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -416,7 +383,6 @@ func (or *OwnerResources) ReturnPromoCode(w http.ResponseWriter, r *http.Request
 		errMess := fmt.Sprintf("No owner id found in URL")
 		fmt.Println(errMess)
 		http.Error(w, errMess, http.StatusInternalServerError)
-		return
 	}
 	ownerId = strings.ToLower(ownerId)
 
@@ -425,14 +391,12 @@ func (or *OwnerResources) ReturnPromoCode(w http.ResponseWriter, r *http.Request
 		errMess := fmt.Sprintf("Error returning promo code for %s with error: %v\r", ownerId, err)
 		fmt.Println(errMess)
 		http.Error(w, errMess, http.StatusInternalServerError)
-		return
 	}
 
 	data, err := json.Marshal(promo)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -461,14 +425,12 @@ func (or *OwnerResources) UpdatePromoCode(w http.ResponseWriter, r *http.Request
 		errMes := fmt.Sprintf("ERROR updating promo code for %s with error: %v\r", newCode.OwnerId, err)
 		fmt.Println(errMes)
 		http.Error(w, errMes, http.StatusInternalServerError)
-		return
 	}
 
 	data, err := json.Marshal(newCode)
 	if err != nil {
 		fmt.Println(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -839,41 +801,6 @@ func (or *OwnerResources) UpdateQueueForDraft(w http.ResponseWriter, r *http.Req
 
 	_, err = w.Write(data)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (or *OwnerResources) GetSortForDraft(w http.ResponseWriter, r *http.Request) {
-	ownerId := strings.ToLower(chi.URLParam(r, "ownerId"))
-	draftId := chi.URLParam(r, "draftId")
-
-	sortBy := models.FetchSortForDrafter(draftId, ownerId).SortBy
-	if sortBy == "" {
-		sortBy = "ADP"
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(sortBy); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (or *OwnerResources) UpdateSortForDraft(w http.ResponseWriter, r *http.Request) {
-	ownerId := strings.ToLower(chi.URLParam(r, "ownerId"))
-	draftId := chi.URLParam(r, "draftId")
-	sortBy := chi.URLParam(r, "sortBy")
-
-	userInfo := models.FetchSortForDrafter(draftId, ownerId)
-	userInfo.SortBy = sortBy
-	if err := models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(sortBy); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

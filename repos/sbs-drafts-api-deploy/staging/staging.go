@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
-	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/batchproof"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
@@ -22,10 +21,8 @@ type StagingResources struct{}
 
 func (sr *StagingResources) Routes() chi.Router {
 	r := chi.NewRouter()
-	if auth.AuthEnabled() {
-		r.Use(auth.RequireAdminKey)
-	}
 	r.Post("/fill-bots/{speed}", sr.FillBots)
+	r.Post("/add-bots-to-league", sr.AddBotsToLeague)
 	r.Post("/mint-tokens/{ownerId}", sr.MintTokens)
 	r.Post("/cleanup-stale-leagues", sr.CleanupStaleLeagues)
 	r.Post("/reset-draft-counter", sr.ResetDraftCounter)
@@ -44,6 +41,68 @@ func (sr *StagingResources) Routes() chi.Router {
 type CreateSpecialDraftRequest struct {
 	Type    string   `json:"type"`    // "jackpot" or "hof"
 	Wallets []string `json:"wallets"` // exactly 10 wallet addresses
+	// RoundId is the queue round this create belongs to. When present it makes
+	// creation IDEMPOTENT per round: a marker doc keyed on (type, roundId)
+	// resolves every repeated/concurrent create for the same round to the SAME
+	// draftId, so a duplicate create can never spawn a second league or duplicate
+	// seat tokens. nil = legacy callers → fall back to the old counter path.
+	RoundId *int `json:"roundId,omitempty"`
+}
+
+// reserveSpecialDraftId atomically resolves the draftId for a special (wheel)
+// draft. The slot number comes from the dedicated SpecialDraftCount sequence,
+// bumped inside the transaction, so two different rounds can never share a slot
+// (the collision that would have let the next winner overwrite an existing
+// special draft). When a roundId is supplied a marker doc keyed on
+// (type, roundId) records the reserved id, so a repeated/concurrent create for
+// the SAME round resolves to the SAME draftId instead of reserving a new slot —
+// making creation idempotent per round. Special drafts keep the "2025-slow-draft-N"
+// id format so the existing capture/scan paths still pick them up.
+func (sr *StagingResources) reserveSpecialDraftId(draftType string, roundId *int) (string, int, error) {
+	ctx := context.Background()
+	trackerRef := utils.Db.Client.Collection("drafts").Doc("draftTracker")
+	var markerRef *firestore.DocumentRef
+	if roundId != nil {
+		markerRef = utils.Db.Client.Collection("specialDraftRounds").Doc(fmt.Sprintf("%s-%d", draftType, *roundId))
+	}
+
+	var draftId string
+	var draftNum int
+	err := utils.Db.Client.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		// Idempotent short-circuit: this round already reserved a draftId.
+		if markerRef != nil {
+			if m, gerr := tx.Get(markerRef); gerr == nil && m.Exists() {
+				data := m.Data()
+				if v, ok := data["draftId"].(string); ok && v != "" {
+					draftId = v
+					if n, ok2 := data["draftNum"].(int64); ok2 {
+						draftNum = int(n)
+					}
+					return nil
+				}
+			}
+		}
+		tSnap, gerr := tx.Get(trackerRef)
+		if gerr != nil {
+			return gerr
+		}
+		var t models.DraftLeagueTracker
+		if derr := tSnap.DataTo(&t); derr != nil {
+			return derr
+		}
+		draftNum = t.SpecialDraftCount + 1
+		draftId = fmt.Sprintf("2025-slow-draft-%d", draftNum)
+		if serr := tx.Set(trackerRef, map[string]interface{}{"SpecialDraftCount": draftNum}, firestore.MergeAll); serr != nil {
+			return serr
+		}
+		if markerRef != nil {
+			if serr := tx.Set(markerRef, map[string]interface{}{"draftId": draftId, "draftNum": draftNum, "type": draftType}); serr != nil {
+				return serr
+			}
+		}
+		return nil
+	})
+	return draftId, draftNum, err
 }
 
 // CreateSpecialDraft creates a slow draft league with a specific level (Jackpot/HOF)
@@ -71,39 +130,58 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 		level = "Hall of Fame"
 	}
 
-	// Read draft tracker to get next draft number
-	var counts models.DraftLeagueTracker
-	err := utils.Db.ReadDocument("drafts", "draftTracker", &counts)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading draft tracker: %s", err.Error()), http.StatusInternalServerError)
+	// Resolve the draftId IDEMPOTENTLY from the dedicated SpecialDraftCount
+	// sequence (NOT the per-100 slow-draft counter, which is for regular 2026-
+	// slow drafts). A marker keyed on (type, roundId) makes repeated/concurrent
+	// creates for the SAME round resolve to the SAME draftId, and the atomic
+	// SpecialDraftCount bump guarantees distinct rounds never share a slot — so a
+	// duplicate create can never spawn a second league or duplicate seat tokens.
+	draftId, draftNum, rerr := sr.reserveSpecialDraftId(req.Type, req.RoundId)
+	if rerr != nil {
+		http.Error(w, fmt.Sprintf("Error reserving special draft slot: %s", rerr.Error()), http.StatusInternalServerError)
 		return
 	}
 
-	draftNum := counts.CurrentSlowDraftCount + 1
-	draftId := models.FormatDraftLeagueID("slow", draftNum)
-
-	// Create the league with the special level
-	league := &models.League{
-		LeagueId:     draftId,
-		DisplayName:  fmt.Sprintf("%s Draft #%d", level, draftNum),
-		CurrentUsers: make([]models.LeagueUser, 0),
-		NumPlayers:   0,
-		MaxPlayers:   10,
-		DraftType:    "slow",
-		Level:        level,
-		IsLocked:     false,
-	}
-
-	// Save the empty league first
-	err = utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating league: %s", err.Error()), http.StatusInternalServerError)
-		return
+	// Load the league if it already exists (idempotent re-create), else start a
+	// fresh one. NEVER overwrite an existing league's members with an empty list.
+	var league *models.League
+	var existing models.League
+	if rerr := utils.Db.ReadDocument("drafts", draftId, &existing); rerr == nil && existing.LeagueId != "" {
+		league = &existing
+	} else {
+		league = &models.League{
+			LeagueId:     draftId,
+			DisplayName:  fmt.Sprintf("%s Draft #%d", level, draftNum),
+			CurrentUsers: make([]models.LeagueUser, 0),
+			NumPlayers:   0,
+			MaxPlayers:   10,
+			DraftType:    "slow",
+			Level:        level,
+			IsLocked:     false,
+		}
+		if err := utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league); err != nil {
+			http.Error(w, fmt.Sprintf("Error creating league: %s", err.Error()), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Add each wallet's token to the league — mint a new token for each
 	for _, wallet := range req.Wallets {
 		wallet = strings.ToLower(wallet)
+
+		// Idempotent: never seat the same wallet twice in this league. On an
+		// idempotent re-create (same round → same draftId) the wallet is already
+		// present, so we skip — no duplicate seat token (the orphan bug).
+		alreadySeated := false
+		for _, u := range league.CurrentUsers {
+			if strings.EqualFold(u.OwnerId, wallet) {
+				alreadySeated = true
+				break
+			}
+		}
+		if alreadySeated {
+			continue
+		}
 
 		// Mint a fresh token for this wallet. PassType 'free' is load-bearing:
 		// it is the stamp the frontend promo gate (promoCreditAllowed) reads, and
@@ -146,7 +224,7 @@ func (sr *StagingResources) CreateSpecialDraft(w http.ResponseWriter, r *http.Re
 	}
 
 	// Save updated league with all users
-	err = utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league)
+	err := utils.Db.CreateOrUpdateDocument("drafts", league.LeagueId, league)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error saving league: %s", err.Error()), http.StatusInternalServerError)
 		return
@@ -647,7 +725,7 @@ func (sr *StagingResources) FillBots(w http.ResponseWriter, r *http.Request) {
 			if len(cards) > 0 {
 				joinedLeagueId = cards[0].LeagueId
 				discoveredLeagueId = joinedLeagueId
-				// Extract draft number from league id (AddCardToLeague does +1)
+				// Extract draft number: "2025-fast-draft-42" → pass 41 (AddCardToLeague does +1)
 				parts := strings.Split(joinedLeagueId, "-")
 				if len(parts) > 0 {
 					if num, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
@@ -672,6 +750,123 @@ func (sr *StagingResources) FillBots(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// AddBotsToLeagueRequest is the body for /staging/add-bots-to-league.
+type AddBotsToLeagueRequest struct {
+	LeagueId string   `json:"leagueId"`
+	Speed    string   `json:"speed"`
+	OwnerIds []string `json:"ownerIds"`
+}
+
+// AddBotsToLeague joins pre-created house "bot" wallets — each already holding a
+// minted FREE draft pass — to a SPECIFIC league. It reuses the EXACT join +
+// fill-trigger from FillBots' leagueId branch, but sources the bots from the
+// provided pool instead of minting throwaway paid bots inline. This is what lets
+// a bot's real on-chain free pass reveal into a real team after the draft.
+//
+// Purely additive + staging-only: it never touches an existing endpoint, only
+// the one target league passed in, and only bots that hold an unused free pass.
+func (sr *StagingResources) AddBotsToLeague(w http.ResponseWriter, r *http.Request) {
+	var req AddBotsToLeagueRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.LeagueId == "" {
+		http.Error(w, "leagueId is required", http.StatusBadRequest)
+		return
+	}
+	if len(req.OwnerIds) == 0 {
+		http.Error(w, "ownerIds is required", http.StatusBadRequest)
+		return
+	}
+	speed := req.Speed
+	if speed == "" {
+		speed = "fast"
+	}
+
+	results := make([]map[string]interface{}, 0)
+	for _, ownerId := range req.OwnerIds {
+		// Locate this bot's available FREE pass (one not already in a league).
+		userTokens, err := models.ReturnAllDraftTokensForOwner(ownerId)
+		if err != nil {
+			results = append(results, map[string]interface{}{"ownerId": ownerId, "error": fmt.Sprintf("token lookup failed: %s", err.Error())})
+			continue
+		}
+		var token *models.DraftToken
+		for i := range userTokens.Available {
+			t := userTokens.Available[i]
+			if strings.EqualFold(t.PassType, "free") && t.LeagueId == "" {
+				token = &userTokens.Available[i]
+				break
+			}
+		}
+		if token == nil {
+			results = append(results, map[string]interface{}{"ownerId": ownerId, "error": "no available free pass"})
+			continue
+		}
+
+		// Join transaction — identical to FillBots' leagueId branch.
+		leagueRef := utils.Db.Client.Collection("drafts").Doc(req.LeagueId)
+		txErr := utils.Db.Client.RunTransaction(context.Background(), func(ctx context.Context, tx *firestore.Transaction) error {
+			doc, err := tx.Get(leagueRef)
+			if err != nil {
+				return err
+			}
+			var league models.League
+			if err := doc.DataTo(&league); err != nil {
+				return err
+			}
+			if league.NumPlayers >= 10 {
+				return fmt.Errorf("league is full")
+			}
+			league.CurrentUsers = append(league.CurrentUsers, models.LeagueUser{
+				OwnerId: ownerId,
+				TokenId: token.CardId,
+			})
+			league.NumPlayers++
+			return tx.Set(leagueRef, &league)
+		})
+		if txErr != nil {
+			results = append(results, map[string]interface{}{"ownerId": ownerId, "error": fmt.Sprintf("join failed: %s", txErr.Error())})
+			continue
+		}
+
+		// Move the token valid -> used, stamped to this league.
+		token.LeagueId = req.LeagueId
+		token.DraftType = speed
+		if err := token.UpdateInUseDraftTokenInDatabase(req.LeagueId); err != nil {
+			fmt.Printf("[add-bots-to-league] token in-use update failed for %s: %s\n", ownerId, err.Error())
+		}
+
+		// Fill-trigger — identical to FillBots.
+		var checkLeague models.League
+		utils.Db.ReadDocument("drafts", req.LeagueId, &checkLeague)
+		if checkLeague.NumPlayers == 10 {
+			fmt.Printf("[add-bots-to-league] League %s reached 10 players, creating draft state\n", req.LeagueId)
+			if err := models.CreateLeagueDraftStateUponFilling(req.LeagueId, speed); err != nil {
+				fmt.Printf("[add-bots-to-league] ERROR creating draft state for %s: %s\n", req.LeagueId, err.Error())
+			}
+		} else {
+			ref := utils.Db.RTdb.NewRef(fmt.Sprintf("drafts/%s", req.LeagueId))
+			ref.Set(context.TODO(), map[string]interface{}{"numPlayers": checkLeague.NumPlayers})
+		}
+
+		fmt.Printf("[add-bots-to-league] bot %s joined league %s with token %s\n", ownerId, req.LeagueId, token.CardId)
+		results = append(results, map[string]interface{}{
+			"ownerId":  ownerId,
+			"tokenId":  token.CardId,
+			"leagueId": req.LeagueId,
+			"joined":   true,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"botsAdded": len(results),
+		"results":   results,
+	})
+}
+
 // CleanupStaleLeagues deletes unfilled leagues (< 10 players) and advances
 // the draft counter past them so bots don't waste time iterating stale data.
 // Usage: POST /staging/cleanup-stale-leagues
@@ -690,7 +885,7 @@ func (sr *StagingResources) CleanupStaleLeagues(w http.ResponseWriter, r *http.R
 	// Scan forward from the last filled league looking for stale unfilled ones
 	consecutiveNotFound := 0
 	for num := startNum; consecutiveNotFound < 5; num++ {
-		draftId := models.FormatDraftLeagueID("fast", num)
+		draftId := fmt.Sprintf("2025-fast-draft-%d", num)
 		var league models.League
 		err := utils.Db.ReadDocument("drafts", draftId, &league)
 		if err != nil {
@@ -732,7 +927,7 @@ func (sr *StagingResources) CleanupStaleLeagues(w http.ResponseWriter, r *http.R
 
 	// Also check slow drafts
 	for num := 1; ; num++ {
-		draftId := models.FormatDraftLeagueID("slow", num)
+		draftId := fmt.Sprintf("2025-slow-draft-%d", num)
 		var league models.League
 		err := utils.Db.ReadDocument("drafts", draftId, &league)
 		if err != nil {
@@ -806,7 +1001,7 @@ func (sr *StagingResources) ResetDraftCounter(w http.ResponseWriter, r *http.Req
 		wg.Add(1)
 		go func(n int) {
 			defer func() { <-ticket; wg.Done() }()
-			deleteDraft(models.FormatDraftLeagueID("fast", n))
+			deleteDraft(fmt.Sprintf("2025-fast-draft-%d", n))
 		}(num)
 	}
 
@@ -816,7 +1011,7 @@ func (sr *StagingResources) ResetDraftCounter(w http.ResponseWriter, r *http.Req
 		wg.Add(1)
 		go func(n int) {
 			defer func() { <-ticket; wg.Done() }()
-			deleteDraft(models.FormatDraftLeagueID("slow", n))
+			deleteDraft(fmt.Sprintf("2025-slow-draft-%d", n))
 		}(num)
 	}
 

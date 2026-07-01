@@ -187,7 +187,7 @@ func (pick *PlayerStateInfo) UpdateDraftSummary(draftId string) error {
 
 	// A DIFFERENT pick occupies the slot — real conflict, keep rejecting.
 	fmt.Printf("New Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
-	return fmt.Errorf("%w: pick already recorded in draft summary at pick %d", ErrPickAlreadyProcessed, pick.PickNum)
+	return fmt.Errorf("new Pick: %v, is submitting a pick that already shows being drafted in the summary with %v\r", *pick, summary.Summary[pick.PickNum-1])
 }
 
 func RevertAdditionToDraftSummary(draftId string, pick PlayerStateInfo) error {

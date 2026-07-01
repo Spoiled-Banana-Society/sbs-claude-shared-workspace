@@ -94,33 +94,3 @@ func NotifyPickReminderSMS(draftID, displayName, ownerID string) {
 		fmt.Printf("NotifyPickReminderSMS: draftId=%s owner=%s onesignal err=%v\n", draftID, id, err)
 	}
 }
-
-// NotifyOnDeckSMS notifies the user who is ON DECK — their pick is next — used
-// for FAST drafts so they get a heads-up a full pick before their turn. A 30s
-// on-the-clock alert leaves no time to react, so we alert one pick early.
-// Same eligibility gate as the pick reminder, so an opt-out is respected.
-func NotifyOnDeckSMS(draftID, displayName, ownerID string) {
-	client := onesignal.Default()
-	if !client.Enabled() {
-		return
-	}
-
-	id := strings.ToLower(strings.TrimSpace(ownerID))
-	if id == "" {
-		return
-	}
-
-	owner, err := ReturnOwnerObjectById(id)
-	if err != nil {
-		fmt.Printf("NotifyOnDeckSMS: owner %s read err=%v\n", id, err)
-		return
-	}
-	if !OwnerEligibleForSmsPickReminder(owner) {
-		return
-	}
-
-	msg := fmt.Sprintf("Your pick is next in \"%s\" — get ready. Open the SBS app.", displayName)
-	if err := client.SendSMS(context.Background(), []string{id}, msg); err != nil {
-		fmt.Printf("NotifyOnDeckSMS: draftId=%s owner=%s onesignal err=%v\n", draftID, id, err)
-	}
-}

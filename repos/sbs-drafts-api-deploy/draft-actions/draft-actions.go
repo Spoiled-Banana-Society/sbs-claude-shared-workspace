@@ -4,14 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/Spoiled-Banana-Society/sbs-drafts-api/auth"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/models"
 	"github.com/Spoiled-Banana-Society/sbs-drafts-api/utils"
 	"github.com/go-chi/chi"
 )
+
+// requireAdminKey gates a handler with the X-Admin-Key header. Fails closed
+// when ADMIN_API_KEY is not configured so a missing-env-var deploy can't
+// silently expose admin endpoints to the internet.
+func requireAdminKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		expected := strings.TrimSpace(os.Getenv("ADMIN_API_KEY"))
+		if expected == "" {
+			http.Error(w, "ADMIN_API_KEY not configured", http.StatusServiceUnavailable)
+			return
+		}
+		provided := strings.TrimSpace(r.Header.Get("X-Admin-Key"))
+		if provided == "" || provided != expected {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
 
 type DraftActionResources struct{}
 
@@ -31,23 +50,16 @@ type ManualPickRequest struct {
 func (dra *DraftActionResources) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	if auth.AuthEnabled() {
-		r.With(auth.RequireAutoDraftSecret).Post("/{draftId}/owner/{ownerId}/actions/autoDraft", dra.autoDraft)
-		r.With(auth.RequireAdminKey).Post("/{draftId}/owner/{ownerId}/admin/recover-card", dra.recoverCard)
-		r.Group(func(r chi.Router) {
-			r.Use(auth.RequireServiceKey, auth.RequireWalletMatchesOwner)
-			r.Get("/{draftId}/owner/{ownerId}/preferences", dra.getDraftPreferences)
-			r.Patch("/{draftId}/owner/{ownerId}/preferences", dra.patchDraftPreferences)
-			r.Post("/{draftId}/owner/{ownerId}/actions/pick", dra.submitPick)
-		})
-		return r
-	}
-
 	r.Get("/{draftId}/owner/{ownerId}/preferences", dra.getDraftPreferences)
 	r.Patch("/{draftId}/owner/{ownerId}/preferences", dra.patchDraftPreferences)
 	r.Post("/{draftId}/owner/{ownerId}/actions/autoDraft", dra.autoDraft)
 	r.Post("/{draftId}/owner/{ownerId}/actions/pick", dra.submitPick)
-	r.With(auth.RequireAdminKey).Post("/{draftId}/owner/{ownerId}/admin/recover-card", dra.recoverCard)
+
+	// Admin-only: re-run close-draft per-card flow for one user. Used when
+	// the original close partially failed (image-gen 500, network blip, etc)
+	// and a card needs its roster + image re-persisted. Idempotent. Gated
+	// with X-Admin-Key — also called by the daily reconciliation cron.
+	r.Post("/{draftId}/owner/{ownerId}/admin/recover-card", requireAdminKey(dra.recoverCard))
 
 	return r
 }
@@ -146,31 +158,22 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 
 	userInfo := models.FetchSortForDrafter(draftId, ownerId)
 
-	if userInfo.AutoDraft {
-		calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
-		if err != nil {
-			if models.IsPickAlreadyProcessed(err) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Pick already completed"))
-				return
-			}
-			fmt.Printf("autoDraft error (CalculateAutoPickForUser): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if calculatedPick.PlayerId == "" {
-			fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated (empty PlayerId)\n", draftId, ownerId)
-			http.Error(w, "No pick was calculated", http.StatusInternalServerError)
-			return
-		}
+	calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
+	if err != nil {
+		fmt.Printf("autoDraft error (CalculateAutoPickForUser): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	if calculatedPick.PlayerId == "" {
+		fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated (empty PlayerId)\n", draftId, ownerId)
+		http.Error(w, "No pick was calculated", http.StatusInternalServerError)
+		return
+	}
+
+	if userInfo.AutoDraft {
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
-			if models.IsPickAlreadyProcessed(err) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Pick already completed"))
-				return
-			}
 			fmt.Printf("autoDraft error (ProcessNewPick): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
 			// TRANSIENT failure (stall/blip): tell Cloud Tasks the truth so it
 			// re-delivers — the in-process 2s×3 retries are the first line; this
@@ -191,65 +194,68 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	} else {
-		// Timer-expiry path: Cloud Task was scheduled ~2s before PickEndTime.
-		// Wait out the remaining time in-process, re-check the slot, then pick.
-		pickEndTime := realTimeDraftInfo.PickEndTime
-		if wait := time.Until(time.Unix(pickEndTime, 0)); wait > 0 {
-			fmt.Printf("autoDraft waiting %v until pickEndTime for draftId=%s pick=%d\n", wait, draftId, currentPickNumber)
-			time.Sleep(wait)
+		// Wait until PickEndTime before processing the pick
+		now := time.Now().Unix()
+		if now < realTimeDraftInfo.PickEndTime {
+			waitDuration := time.Duration(realTimeDraftInfo.PickEndTime-now) * time.Second
+			time.Sleep(waitDuration)
 		}
 
-		realTimeDraftInfo, err = models.GetRealTimeDraftInfoForDraft(draftId)
-		if err != nil {
-			fmt.Printf("autoDraft error (GetRealTimeDraftInfoForDraft after wait): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		// RE-CHECK AFTER THE WAIT (Layer A) — fixes the auto-draft double-count.
+		// Cloud Tasks is at-least-once, and because we slept above (holding the
+		// request open) the same pick's job can be redelivered. Both copies passed
+		// the top-of-handler guard (pick not made yet), both slept, both woke.
+		// Without re-reading draft state here, BOTH would bump the miss-counter
+		// below — +2 off one timeout, flipping AutoDraft on and (at a snake turn)
+		// instantly auto-drafting the user's back-to-back pick. Re-fetch and bail
+		// if the pick already advanced, BEFORE touching the counter.
+		latest, refErr := models.GetRealTimeDraftInfoForDraft(draftId)
+		if refErr != nil {
+			fmt.Printf("autoDraft error (re-fetch after wait): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, refErr)
+			http.Error(w, refErr.Error(), http.StatusInternalServerError)
 			return
 		}
-		if realTimeDraftInfo.CurrentPickNumber > currentPickNumber {
+		if latest.CurrentPickNumber > currentPickNumber {
+			// Pick already made (by the user, or by the first copy of this job) —
+			// do NOT increment the miss-counter. 200 so Cloud Tasks stops retrying.
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Pick already completed"))
 			return
 		}
+		realTimeDraftInfo = latest
 
-		calculatedPick, err := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo)
-		if err != nil {
-			if models.IsPickAlreadyProcessed(err) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Pick already completed"))
-				return
+		// LAYER B: per-pick idempotency key. Re-fetch the sort doc so we see any
+		// increment a sibling run already persisted, then count this miss only
+		// ONCE per pick number. Even if two runs wake at the same instant and both
+		// bump, both write counter=prev+1 for the SAME pick → last-write-wins
+		// converges to prev+1, never prev+2. Persist BEFORE ProcessNewPick
+		// (unchanged ordering) so the next-pick scheduler goroutine reads the
+		// updated counter — preserves the snake-turn instant-auto behavior.
+		// (AutoDraft enables after 2 consecutive misses; was 3, bumped to 2 on
+		// 2026-04-26 per Richard.)
+		userInfo = models.FetchSortForDrafter(draftId, ownerId)
+		if userInfo.LastMissedPickNum != currentPickNumber {
+			userInfo.NumPicksMissedConsecutive++
+			userInfo.LastMissedPickNum = currentPickNumber
+			if userInfo.NumPicksMissedConsecutive >= 2 {
+				userInfo.AutoDraft = true
 			}
-			fmt.Printf("autoDraft error (CalculateAutoPickForUser after wait): draftId=%s ownerId=%s currentPickNumber=%d currentRound=%d err=%v\n", draftId, ownerId, currentPickNumber, currentRound, err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if calculatedPick.PlayerId == "" {
-			fmt.Printf("autoDraft error: draftId=%s ownerId=%s no pick calculated after wait (empty PlayerId)\n", draftId, ownerId)
-			http.Error(w, "No pick was calculated", http.StatusInternalServerError)
-			return
+			if err = models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
+				fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
+			}
 		}
 
-		userInfo.NumPicksMissedConsecutive++
-		if userInfo.NumPicksMissedConsecutive >= 2 {
-			userInfo.AutoDraft = true
-		}
-		if err := models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {
-			fmt.Printf("autoDraft warn (UpdateSortForDrafter before ProcessNewPick): draftId=%s ownerId=%s err=%v\n", draftId, ownerId, err)
-		}
-
+		// Process the pick (also spawns next-pick scheduling goroutine,
+		// which now reads the just-persisted userInfo).
 		err = models.ProcessNewPick(draftId, calculatedPick, false)
 		if err != nil {
-			if models.IsPickAlreadyProcessed(err) {
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("Pick already completed"))
-				return
-			}
 			fmt.Printf("autoDraft error (ProcessNewPick after wait): draftId=%s ownerId=%s calculatedPick=%+v err=%v\n", draftId, ownerId, calculatedPick, err)
+			// Same transient-vs-benign split as the AutoDraft branch above.
 			if utils.IsTransientDbErr(err) {
 				fmt.Printf(`{"severity":"ERROR","event":"autodraft_transient_will_retry","draftId":"%s","pick":%d,"error":%q}`+"\n", draftId, currentPickNumber, err.Error())
 				http.Error(w, "transient failure — retry", http.StatusServiceUnavailable)
 				return
 			}
-			// Non-transient (benign race) — no-retry 200 so Cloud Tasks stops.
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Pick processed successfully"))
 			return
