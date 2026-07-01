@@ -25,6 +25,12 @@ export interface NotifEvent {
   pickNumber?: number;
   /** your_turn only — drives copy and the web-push TTL. */
   pickLengthSeconds?: number;
+  /**
+   * your_turn only — when true this alert is for the ON-DECK player (their pick
+   * is NEXT), not the one on the clock. Fast drafts fire on-deck so there's time
+   * to react; copy says "your pick is next" instead of "you're on the clock".
+   */
+  onDeck?: boolean;
 }
 
 /** Rendered, human-facing copy for one event. */

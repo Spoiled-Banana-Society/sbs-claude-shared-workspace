@@ -71,8 +71,24 @@ export function renderMessage(event: NotifEvent): RenderedMessage {
     };
   }
 
-  // draft.your_turn — "You're on the clock — League #<n>", or the wheel-special line.
+  // draft.your_turn — on-deck ("your pick is next", fast drafts fire a pick
+  // early so there's time to react) vs on-the-clock ("you're on the clock",
+  // slow drafts). `event.onDeck` is set by the onPickAdvance Cloud Function.
   const timer = timerCopy(event.pickLengthSeconds);
+  if (event.onDeck) {
+    if (tier) {
+      return {
+        title: `Your pick is next — ${tier} Draft (from the Wheel)`,
+        body: 'Get to the draft — you\'re on deck.',
+        url,
+      };
+    }
+    return {
+      title: subject ? `Your pick is next — ${subject}` : 'Your pick is next',
+      body: 'Get to the draft — you\'re on deck.',
+      url,
+    };
+  }
   if (tier) {
     return {
       title: `You're on the clock — ${tier} Draft (from the Wheel)`,
