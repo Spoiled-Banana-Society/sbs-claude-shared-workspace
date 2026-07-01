@@ -1,4 +1,10 @@
-# On-deck SMS alerts for FAST drafts — ready to deploy (2026-06-30)
+# On-deck SMS alerts for FAST drafts — ✅ DEPLOYED 2026-06-30 (sbs-drafts-api-staging rev 00169-7j4)
+
+> Deployed from a clean go1.20 build copy because local ~/sbs-drafts-api-deploy has an
+> unfinished go1.25 upgrade that can't build with the go1.20 Dockerfile. That upgrade WIP
+> was left untouched. The GitHub `staging` branch is frozen at 2026-06-14 and was NOT updated.
+> Details + safe-deploy recipe: memory `reference_go_backend_deploy_reality_2026_06_30`.
+
 
 ## What & why
 Fast drafts (30s/pick) send a per-pick SMS via OneSignal saying **"You're on the clock…"**
