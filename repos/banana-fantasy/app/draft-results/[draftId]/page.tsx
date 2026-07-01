@@ -137,7 +137,12 @@ export default function DraftResultsPage() {
   // is the stable playerKeys state array).
   const usersMap = useDraftRoomUsers(playerKeys);
   const [selectedPlayer, setSelectedPlayer] = useState('');
-  const [draftLevel, setDraftLevel] = useState('Pro');
+  // '' = type not yet known. Render NEUTRAL (not pro/purple) until the
+  // authoritative Firestore Level loads, so a jackpot/HOF draft never flashes
+  // as Pro. Was `useState('Pro')` — that default made every jackpot/HOF results
+  // screen show purple because the Go `/state/info` endpoint doesn't carry the
+  // type (see the level fetch below + /api/drafts/status).
+  const [draftLevel, setDraftLevel] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [cardImages, setCardImages] = useState<Record<string, { imageUrl: string; cardId: string }>>({});
   // wallet → authoritative on-chain BBB4 token id (realTokenId). Captured
@@ -184,6 +189,17 @@ export default function DraftResultsPage() {
   useEffect(() => {
     if (!draftId) { setIsLoading(false); return; }
 
+    // Authoritative draft type. The Go `/state/info` endpoint (getDraftInfo)
+    // does NOT return the level, so it can never tell us jackpot vs pro — the
+    // real type lives on the Firestore draft doc `Level` (stamped at the
+    // slot-machine reveal, long before this screen). Firestore-only route so it
+    // resolves fast — before the team card / badge paint — and only set it when
+    // known (leaves draftLevel '' → neutral, never a wrong 'Pro' flash).
+    fetch(`/api/drafts/${encodeURIComponent(draftId)}/level`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => { if (s?.level) setDraftLevel(String(s.level)); })
+      .catch(() => {});
+
     (async () => {
       try {
         const promises: Promise<unknown>[] = [
@@ -200,7 +216,8 @@ export default function DraftResultsPage() {
         // Draft info
         if (infoRes.status === 'fulfilled') {
           const info = infoRes.value as Record<string, unknown>;
-          setDraftLevel(String(info.draftLevel ?? info.level ?? info.draftType ?? 'Pro'));
+          // Level intentionally NOT read from info here — /state/info never
+          // carries it; the authoritative Firestore Level is fetched above.
           const name = String(info.displayName ?? '');
           if (name) setDisplayName(name);
 
@@ -444,8 +461,11 @@ export default function DraftResultsPage() {
           parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
           parts.push({ text: `Team #${teamNumber}`, color: '#ffffff' });
         }
-        parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
-        parts.push({ text: draftLevel, color: levelColor });
+        // Only show the type once known — never stamp a default 'Pro' on the card.
+        if (draftLevel) {
+          parts.push({ text: ' · ', color: 'rgba(255,255,255,0.3)' });
+          parts.push({ text: draftLevel, color: levelColor });
+        }
 
         // Measure total width
         const totalTextW = parts.reduce((w, p) => w + ctx.measureText(p.text).width, 0);
@@ -694,15 +714,21 @@ export default function DraftResultsPage() {
                 Team #{teamNumber}
               </span>
             )}
-            {teamNumber && <span className="text-white/10 text-xs">·</span>}
-            <span
-              className="text-sm font-semibold"
-              style={{
-                color: draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
-              }}
-            >
-              {draftLevel}
-            </span>
+            {/* Only render the type badge once the authoritative level is known
+                — no default 'Pro' flash for jackpot/HOF drafts. */}
+            {draftLevel && (
+              <>
+                {teamNumber && <span className="text-white/10 text-xs">·</span>}
+                <span
+                  className="text-sm font-semibold"
+                  style={{
+                    color: draftLevel.toLowerCase() === 'jackpot' ? '#ef4444' : draftLevel.toLowerCase() === 'hof' || draftLevel.toLowerCase() === 'hall of fame' ? '#D4AF37' : '#a855f7',
+                  }}
+                >
+                  {draftLevel}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
