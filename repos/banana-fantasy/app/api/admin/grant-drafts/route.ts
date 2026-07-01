@@ -30,8 +30,18 @@ export async function POST(req: Request) {
 
   let actorWallet = '';
   try {
-    const admin = await requireAdmin(req);
-    actorWallet = admin.walletAddress ?? admin.userId;
+    // Auth: admin Privy session OR x-admin-key (ADMIN_API_KEY) — the same
+    // server-to-server key path several other admin endpoints accept (dedupe-
+    // passes, recover-draft-card, etc.). Lets the SBS team grant passes while the
+    // admin UI is unavailable for a given login.
+    const providedKey = req.headers.get('x-admin-key') || '';
+    const adminKey = process.env.ADMIN_API_KEY || '';
+    if (adminKey && providedKey === adminKey) {
+      actorWallet = 'admin-key';
+    } else {
+      const admin = await requireAdmin(req);
+      actorWallet = admin.walletAddress ?? admin.userId;
+    }
 
     if (!isFirestoreConfigured()) throw new ApiError(503, 'Firestore not configured');
 
