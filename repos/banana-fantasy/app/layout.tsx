@@ -10,7 +10,7 @@ const SITE_URL = 'https://sbsfantasy.com';
 const SITE_NAME = 'SBSFantasy';
 const DEFAULT_TITLE = 'SBSFantasy';
 const DEFAULT_DESCRIPTION =
-  'Banana Best Ball IV drops June 23rd — $100K GTD Prize Pool';
+  'Banana Best Ball IV is live now! $100K Guaranteed Prize Pool';
 
 // The share-card image must be an ABSOLUTE url pointing at the SAME deployment
 // that renders the page — otherwise metadataBase (sbsfantasy.com) rewrites it
@@ -27,7 +27,7 @@ const DEPLOY_ORIGIN = process.env.VERCEL_PROJECT_PRODUCTION_URL
 // logo washed out on light card backgrounds. Static .png so it's served
 // directly (the prelaunch middleware walls off extension-less routes, which
 // would otherwise break the countdown's share card). Bump ?v= to bust caches.
-const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=3`;
+const DEFAULT_OG_IMAGE = `${DEPLOY_ORIGIN}/og-card.png?v=4`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
