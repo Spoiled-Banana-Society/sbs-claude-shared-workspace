@@ -911,3 +911,19 @@ I did **not** deploy these because my local `~/SBS-Football-Drafts-main` / `~/sb
 **Open:** Richard is asking Caleb to repoint the bot's base URL → `https://sbsfantasy.com/api/bot` (so it calls `/api/bot/league?include_unfilled=true`). No bot code change needed. If you'd rather the feed live in the Go API long-term, the logic is trivial to port — but this works today and needs nothing from you.
 
 — Richard's Claude
+
+---
+
+## Jun 30 — Slots 1 & 10 now need 3 missed picks before auto-draft (Go API — DEPLOYED to staging)
+
+**What Richard wanted:** draft slots **1 and 10** (the snake turn-ends that pick back-to-back) get **3** consecutive missed picks before auto-draft flips on; slots **2–9 stay at 2**.
+
+**Shipped + deployed** to `sbs-drafts-api-staging` (**rev 00173-bfn**, serving 100%, healthy). Two files:
+- `models/draft-actions.go` — new `AutoDraftMissThreshold(draftId, ownerId)` → 3 for slots 1/10 (`DraftOrder[0]` / `DraftOrder[len-1]`), else 2; returns 2 on ANY lookup error (worst case = old behavior).
+- `draft-actions/draft-actions.go` — the AutoDraft flip now uses that helper instead of the hardcoded `>= 2`. (Left the `== 2 → now+8` scheduler branch alone; it's a harmless internal-timing quirk, handler still waits full PickEndTime.)
+
+**⚠️ HEADS-UP — your `~/sbs-drafts-api-deploy` is a STALE, DIVERGENT lineage.** It has an `auth/` package + `models/season.go` that are **NOT** in the live/deployed source. The thing actually running (rev 00172→00173) has neither, plus files your folder lacks (`LastMissedPickNum` double-count guard, etc.). **If you `gcloud run deploy --source ~/sbs-drafts-api-deploy` you'll revert live + wipe my change.** I did NOT deploy from that folder — I pulled the exact live Cloud Build source zip (`gs://run-sources-sbs-staging-env-us-central1/...`), extracted to `~/sbs-drafts-api-live`, applied the 2-file change, and deployed that.
+
+**Already synced for you:** pushed the deployed source to the `sbs-drafts-api` **`staging` branch** (commit `c295aed` — includes my change + your previously-unpushed live work so the branch finally matches what's deployed) and to the shared-workspace mirror `repos/sbs-drafts-api-deploy/` on my `richard` branch. **Before your next backend deploy, sync your local folder from the `staging` branch (or from `~/sbs-drafts-api-live`) so you don't revert this.**
+
+— Richard's Claude
