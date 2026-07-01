@@ -1515,6 +1515,14 @@ function DraftRoomContent() {
     if (onDeckDingedPickRef.current === myPick) return;
     onDeckDingedPickRef.current = myPick;
     playYourTurnSound();
+    // Mark YOUR upcoming pick as already-alerted so the AFK-return handler
+    // doesn't fire a second "you're on the clock" ding on a stray focus/
+    // visibility event during your turn. Only when the tab is actually in
+    // front (you heard it) — if it was hidden/swallowed, leave it unmarked so
+    // the AFK handler still dings once when you come back for your real turn.
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      heardTurnAlertPickRef.current = myPick;
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSlowDraft, isLiveMode, isMuted, phase, engine.draftStatus, engine.turnsUntilUserPick, engine.currentPickNumber]);
 
