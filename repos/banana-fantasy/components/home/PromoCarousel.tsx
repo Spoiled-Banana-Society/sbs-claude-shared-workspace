@@ -253,8 +253,12 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               const hasProgress = promo.progressMax !== undefined && promo.progressMax > 0;
               const showProgressBar = hasProgress || isClaimed;
               const progressMax = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (promo.progressMax || 10);
-              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed ? progressMax : (promo.progressCurrent || 0));
-              const progressPercent = isClaimed ? 100 : (hasProgress
+              // Stacking promos (Buy-10 spin, buy-bonus) repeat — after a
+              // claim the bar keeps showing real rolled-over progress (0/10),
+              // never a forced full bar (reads as "done, can't earn again").
+              const isStacking = promo.type === 'mint' || promo.type === 'buy-bonus';
+              const progressCurrent = (promo.type === 'new-user' || promo.type === 'tweet-engagement') ? 0 : (isClaimed && !isStacking ? progressMax : (promo.progressCurrent || 0));
+              const progressPercent = isClaimed && !isStacking ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
               return (

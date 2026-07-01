@@ -57,16 +57,16 @@ describe('First-purchase bonus math', () => {
       expect(computeMintProgress(5, 10, 20)).toEqual({ progressCurrent: 5, milestonesEarned: 2 });
     });
 
-    it('landing exactly on the threshold shows full bar, not 0', () => {
-      expect(computeMintProgress(4, 10, 6)).toEqual({ progressCurrent: 10, milestonesEarned: 1 });
+    it('landing exactly on the threshold ROLLS OVER to 0 (promo repeats)', () => {
+      expect(computeMintProgress(4, 10, 6)).toEqual({ progressCurrent: 0, milestonesEarned: 1 });
     });
 
-    it('does NOT double-count on the NEXT purchase after a full-bar landing (the extra-spin bug)', () => {
-      // After an exact-multiple landing, progressCurrent is stored as `max` (10)
-      // for the full-bar display. The next purchase must NOT re-count that
+    it('does NOT double-count on the NEXT purchase after a legacy full-bar landing (the extra-spin bug)', () => {
+      // Docs written before the rollover change stored `max` (10) on an
+      // exact-multiple landing. The next purchase must NOT re-count that
       // already-earned milestone. Buying another 10 → exactly 1 more, not 2.
-      expect(computeMintProgress(10, 10, 10)).toEqual({ progressCurrent: 10, milestonesEarned: 1 });
-      // A partial buy from the full-bar state earns 0 (the 10 was a full cycle).
+      expect(computeMintProgress(10, 10, 10)).toEqual({ progressCurrent: 0, milestonesEarned: 1 });
+      // A partial buy from the legacy full-bar state earns 0 (the 10 was a full cycle).
       expect(computeMintProgress(10, 10, 3)).toEqual({ progressCurrent: 3, milestonesEarned: 0 });
     });
 
