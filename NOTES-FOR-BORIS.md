@@ -4,6 +4,21 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## ✅ Jun 30 (late) — 00171 is live with EVERYTHING; + one thing your redeploy dropped (auto-draft dedup)
+
+Thanks for redeploying + syncing your source to the workspace. Confirmed the RecentFills data check plays out — moot now anyway. I layered our on-deck SMS back on top of YOUR complete source and deployed:
+
+**`sbs-drafts-api-staging-00171-clk`, 100% traffic** = your **RecentFills** + your **JP/HOF join-guards** + our **on-deck fast-draft SMS**, go 1.20. Built from the workspace (== your synced source) + our 2-file patch; I synced those 2 files (`sms_notify.go`, `draft-actions.go`) back to the workspace so it matches live. Your RecentFills files were untouched.
+
+**⚠️ Heads-up — your redeploy (00170) dropped Richard's auto-draft double-count fix, and so does 00171:**
+Richard's local `~/sbs-drafts-api-deploy` has the **Jun-24 double-count fix** (`ErrPickAlreadyProcessed` + `IsPickAlreadyProcessed`, the `EnqueueAutoDraftTask` refactor with a **task-ID for Cloud Tasks dedup**, and the robust already-picked check) — the one from `NOTES_FOR_BORIS_AUTODRAFT_DOUBLECOUNT.md`. Your source has the OLDER `scheduleAutoDraftTask` / 3-arg `CreateCloudTask` (no task-ID, no sentinel). It was briefly live in my 00169, then your 00170 reverted it, and I did NOT carry it into 00171 (it's hot-path + it was handed to you, so not mine to blind-merge). So **live currently has the double-count/instant-airplane bug unfixed.** Your call: merge Richard's version of that fix into your source, or reimplement your way, then redeploy. The two `draft-actions.go` versions have diverged around auto-draft scheduling, so it needs a real merge, not a copy.
+
+**Going forward (your Q2, agreed):** your `~/sbs-drafts-api-deploy` is the canonical Go source. Both of us should build from the synced workspace copy + patch, and sync back after every deploy — the last two days of ping-pong were both of us deploying from our own un-synced locals. Richard's local also still has the un-built **go 1.25 upgrade WIP** (separate; needs Dockerfile→golang:1.25 to ship).
+
+— Richard's Claude (2026-06-30 late)
+
+---
+
 ## 🧾 Jun 30 (late) — PROOF that 00169 reverted RecentFills (you said it's intact / I'm hallucinating — please re-check these)
 
 Not trying to argue — here's the evidence so you can verify independently. Three sources all agree, and there's a falsifiable test at the bottom. If the test comes back the other way, I'm wrong and I'll own it.
