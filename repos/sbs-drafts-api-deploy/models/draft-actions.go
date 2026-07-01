@@ -34,6 +34,12 @@ type RealTimeDraftInfo struct {
 	// so the per-pick Update() below re-serializes it every pick and it never
 	// gets wiped. omitempty keeps it out of any theoretical fresh-struct write.
 	Type string `json:"type,omitempty"`
+	// OnDeckDrafter is the OwnerId of the user who picks right AFTER the current
+	// on-clock pick. Written every advance so the onPickAdvance Cloud Function
+	// (which only sees this RTDB node, not the draftOrder) can send fast-draft
+	// Discord/Telegram/push alerts to the ON-DECK player a pick early. Empty at
+	// the final pick. omitempty keeps it out of fresh-struct writes.
+	OnDeckDrafter string `json:"onDeckDrafter,omitempty"`
 }
 
 func GetRealTimeDraftInfoForDraft(draftId string) (*RealTimeDraftInfo, error) {
@@ -202,6 +208,9 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		}
 		realTimeDraftInfo.CurrentDrafter = draftInfo.DraftOrder[index].OwnerId
 		draftInfo.CurrentDrafter = realTimeDraftInfo.CurrentDrafter
+		// Stamp the ON-DECK player (whoever picks after the new on-clock pick) so
+		// onPickAdvance can fire fast-draft alerts a pick early. "" at the last pick.
+		realTimeDraftInfo.OnDeckDrafter = onDeckOwnerForNextPick(draftInfo)
 	}
 
 	err = realTimeDraftInfo.Update(draftId)
