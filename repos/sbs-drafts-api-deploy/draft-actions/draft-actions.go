@@ -232,12 +232,14 @@ func (dra *DraftActionResources) autoDraft(w http.ResponseWriter, r *http.Reques
 		// (unchanged ordering) so the next-pick scheduler goroutine reads the
 		// updated counter — preserves the snake-turn instant-auto behavior.
 		// (AutoDraft enables after 2 consecutive misses; was 3, bumped to 2 on
-		// 2026-04-26 per Richard.)
+		// 2026-04-26 per Richard. Exception: draft slots 1 and 10 — the snake
+		// turn-ends that pick back-to-back — get one extra miss (3) per Richard
+		// on 2026-06-30, since a single disconnect at the turn is costlier.)
 		userInfo = models.FetchSortForDrafter(draftId, ownerId)
 		if userInfo.LastMissedPickNum != currentPickNumber {
 			userInfo.NumPicksMissedConsecutive++
 			userInfo.LastMissedPickNum = currentPickNumber
-			if userInfo.NumPicksMissedConsecutive >= 2 {
+			if userInfo.NumPicksMissedConsecutive >= models.AutoDraftMissThreshold(draftId, ownerId) {
 				userInfo.AutoDraft = true
 			}
 			if err = models.UpdateSortForDrafter(draftId, ownerId, userInfo); err != nil {

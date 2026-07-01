@@ -288,6 +288,31 @@ func onDeckOwnerForNextPick(draftInfo *DraftInfo) string {
 	return draftInfo.DraftOrder[index].OwnerId
 }
 
+// AutoDraftMissThreshold returns how many consecutive timer-expired (missed)
+// picks flip a drafter into permanent auto-draft. The two snake turn-ends —
+// draft slots 1 and 10 — get one extra miss (3) because their back-to-back
+// picks at each round flip make a single disconnect costlier; every other slot
+// uses 2 (the standard). On ANY uncertainty (lookup error, owner not found,
+// empty order) it returns 2, so the worst case is identical to prior behavior.
+func AutoDraftMissThreshold(draftId, ownerId string) int {
+	const defaultThreshold = 2
+	const turnEndThreshold = 3
+	info, err := ReturnDraftInfoForDraft(draftId)
+	if err != nil || info == nil || len(info.DraftOrder) == 0 {
+		return defaultThreshold
+	}
+	last := len(info.DraftOrder) - 1
+	for i, u := range info.DraftOrder {
+		if strings.EqualFold(u.OwnerId, ownerId) {
+			if i == 0 || i == last {
+				return turnEndThreshold
+			}
+			return defaultThreshold
+		}
+	}
+	return defaultThreshold
+}
+
 // scheduleAutoDraftTask schedules a Cloud Task to trigger auto-draft 5 seconds before the pick end time
 // This function runs in a goroutine and handles errors gracefully without blocking the main flow
 func scheduleAutoDraftTask(draftId, ownerId string, pickNum, roundNum int, pickEndTime int64) {
