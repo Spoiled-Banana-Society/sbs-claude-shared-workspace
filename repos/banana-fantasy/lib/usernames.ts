@@ -34,10 +34,12 @@ const FOUNDER_WALLETS = new Set([
   '0x438bbe98eed1dd2df244b007dab0583cc9be72e0', // Boris (admin/drafting)
   '0xd3301bc039faf4223da98bceb5fb81abc9399362', // Boris (old Privy login)
   '0x2e64db49fc597a731091471607f6cd0251d7eafb', // Richard
+  '0x93e2dc5642722688b2c5431cd7b3584cd97ee175', // Boris (Vag Bros / heyooo — MetaMask locked out)
 ]);
 const RESERVED_NAME_KEYS = new Set([
   'boris', 'borisvagner',
   'richard', 'richvagner', 'richardvagner', 'rich',
+  'vagbros', 'vagbrothers', // reserved to Boris's two wallets only
 ]);
 // Strip everything but letters+digits, lowercase — collapses separators so a
 // reserved name can't be slipped through with a dot/underscore/hyphen.
