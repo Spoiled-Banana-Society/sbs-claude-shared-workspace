@@ -231,12 +231,52 @@ func ProcessNewPick(draftId string, pickInfo *PlayerStateInfo, isUserPick bool) 
 		leagueDisplayName := draftInfo.DisplayName
 		// Pick reminder runs only after a pick is recorded, so the first on-clock user is notified by
 		// draft-start SMS at room fill, not here (avoids duplicate "your turn" right after the blast).
-		go NotifyPickReminderSMS(draftId, leagueDisplayName, nextDrafter)
+		if leagueReadErr == nil && strings.EqualFold(league.DraftType, "slow") {
+			// Slow drafts (8h/pick): alert the user now on the clock.
+			go NotifyPickReminderSMS(draftId, leagueDisplayName, nextDrafter)
+		} else {
+			// Fast drafts (30s/pick): the on-the-clock user has no time to react to an
+			// alert sent at their turn, so instead alert the ON-DECK user (whoever picks
+			// right after nextDrafter) a full pick early — "your pick is next". Picks 1-2
+			// are already covered by the draft-start blast; there is no on-deck user past
+			// the final pick.
+			if onDeck := onDeckOwnerForNextPick(draftInfo); onDeck != "" && !strings.HasPrefix(strings.ToLower(onDeck), "bot-") {
+				go NotifyOnDeckSMS(draftId, leagueDisplayName, onDeck)
+			}
+		}
 	} else {
 		go CloseDraftForAllUsers(draftId)
 	}
 
 	return nil
+}
+
+// onDeckOwnerForNextPick returns the OwnerId of the user who is ON DECK — i.e.
+// who picks immediately after the pick currently on the clock — or "" if the
+// current pick is the last one (15 rounds x 10 = 150). It mirrors the snake
+// index math used above to advance CurrentDrafter, applied to the next pick.
+// draftInfo.CurrentRound / PickInRound / CurrentPickNumber reflect the pick now
+// on the clock at this point in ProcessNewPick.
+func onDeckOwnerForNextPick(draftInfo *DraftInfo) string {
+	if draftInfo == nil || draftInfo.CurrentPickNumber >= 150 {
+		return ""
+	}
+	nextRound := draftInfo.CurrentRound
+	nextPickInRound := draftInfo.PickInRound + 1
+	if nextPickInRound > 10 {
+		nextRound++
+		nextPickInRound = 1
+	}
+	var index int
+	if nextRound%2 == 0 {
+		index = len(draftInfo.DraftOrder) - nextPickInRound
+	} else {
+		index = nextPickInRound - 1
+	}
+	if index < 0 || index >= len(draftInfo.DraftOrder) {
+		return ""
+	}
+	return draftInfo.DraftOrder[index].OwnerId
 }
 
 // scheduleAutoDraftTask schedules a Cloud Task to trigger auto-draft 5 seconds before the pick end time
