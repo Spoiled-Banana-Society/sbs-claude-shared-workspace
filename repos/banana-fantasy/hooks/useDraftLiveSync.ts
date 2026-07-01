@@ -41,7 +41,6 @@ interface UseDraftLiveSyncParams {
   phase: RoomPhase;
   liveDataReady: boolean;
   setLiveDataReady: Dispatch<SetStateAction<boolean>>;
-  setFallbackLocal: Dispatch<SetStateAction<boolean>>;
   setPhase: Dispatch<SetStateAction<RoomPhase>>;
   setMainCountdown: Dispatch<SetStateAction<number>>;
   setShowSlotMachine: Dispatch<SetStateAction<boolean>>;
@@ -63,7 +62,6 @@ export function useDraftLiveSync({
   phase,
   liveDataReady,
   setLiveDataReady,
-  setFallbackLocal,
   setPhase,
   setMainCountdown,
   setShowSlotMachine,
@@ -664,7 +662,7 @@ export function useDraftLiveSync({
         console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
-          logger.debug('[Draft Room] All retries exhausted — falling back to local mode');
+          logger.debug('[Draft Room] Retries exhausted — surfacing reconnect UI (NO fake local draft)');
           reportClientError({
             source: LOG_SOURCES.draft.LIVE_LOAD_EXHAUSTED,
             message: err instanceof Error ? err.message : String(err),
@@ -682,8 +680,15 @@ export function useDraftLiveSync({
             },
             stack: err instanceof Error ? err.stack : undefined,
           });
-          setFallbackLocal(true);
-          liveInitializedRef.current = true;
+          // NEVER fall to a local bot-simulated draft: it diverges from the real
+          // server draft and only a refresh recovered from it. Surface the existing
+          // "Draft connection error → Retry" banner instead, and leave the loader
+          // re-runnable (liveInitializedRef stays false, retry counter reset) so
+          // Retry / returning to the tab reloads the REAL draft. The server
+          // auto-picks the user's turns while disconnected, so nothing is lost by
+          // waiting rather than faking.
+          setLiveError('Still connecting to the live draft — tap Retry.');
+          liveRetryCountRef.current = 0;
         } else {
           logger.debug('[Live Mode] Auto-retrying in 5s...');
           if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);

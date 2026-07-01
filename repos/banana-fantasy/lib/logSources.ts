@@ -53,6 +53,12 @@ export const LOG_SOURCES = {
     WS_RECONNECT_FAILED: 'draft.ws.reconnect_failed',
     JOIN_FAILED: 'draft.join_failed',
     LIVE_LOAD_EXHAUSTED: 'draft.live_load_exhausted_retries',
+    // The pre-draft countdown reached 0 before the live engine finished loading
+    // (backgrounded-tab / cold-backend race). We now WAIT on the live loader and
+    // show the "Reconnecting…" screen instead of starting a fake local bot draft.
+    // This makes a previously-invisible race measurable. Info/warning severity —
+    // recoverable, no data loss (server owns the picks).
+    LIVE_WAIT_AT_START: 'draft.live_wait_at_start',
     // Money paths: a draft pass was spent but the refund (on join-fail or leave)
     // didn't land → user is down a pass with no trace. Critical.
     LEAVE_REFUND_FAILED: 'draft.leave_refund_failed',

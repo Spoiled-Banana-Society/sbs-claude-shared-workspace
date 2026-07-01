@@ -180,7 +180,11 @@ function DraftRoomContent() {
     return () => { try { unsub(); } catch { /* ignore */ } };
   }, [draftId]);
 
-  const [fallbackLocal, setFallbackLocal] = useState(false);
+  // Never flips true anymore: a live draft that can't load waits on the live
+  // loader ("Reconnecting…") instead of starting a fake local bot draft. Kept as
+  // an always-false value because several reads below (engine mode, diagnostics,
+  // error-banner gate) still branch on it.
+  const [fallbackLocal] = useState(false);
   const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
@@ -482,7 +486,6 @@ function DraftRoomContent() {
     phase,
     liveDataReady,
     setLiveDataReady,
-    setFallbackLocal,
     setPhase,
     setMainCountdown,
     setShowSlotMachine,
@@ -2264,11 +2267,22 @@ function DraftRoomContent() {
         setPhase('drafting');
         if (draftId) draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
       } else {
-        setFallbackLocal(true);
-        setPhase('drafting');
-        if (draftOrder.length > 0) engine.initializeDraft(draftOrder);
-        setEngineReady(true);
-        if (draftId) draftStore.updateDraft(draftId, { phase: 'drafting', status: 'drafting', players: 10, isYourTurn: false });
+        // Live draft data hasn't finished loading — the on-device countdown beat
+        // the network (classic backgrounded-tab / cold-backend race). We must NOT
+        // start a local bot-simulated draft here: it diverges from the real server
+        // draft and only a page refresh ever escaped it. Instead show the existing
+        // "Reconnecting…" loading screen and let the live loader (plus the
+        // visibility/pageshow retryLiveSync) bring in the REAL board — loadLiveData's
+        // success path flips us to 'drafting' with authoritative data. No fake draft.
+        setPhase('loading');
+        retryLiveSync(); // kick the loader in case its retry timer was frozen while backgrounded
+        reportClientError({
+          source: LOG_SOURCES.draft.LIVE_WAIT_AT_START,
+          message: 'Countdown ended before live engine ready — waiting for live (no local fallback)',
+          route: 'draft-room',
+          actor: walletParam,
+          context: { draftId, phase, playerCount, playersInOrder: draftOrder.length },
+        });
       }
     } else {
       setPhase('drafting');
