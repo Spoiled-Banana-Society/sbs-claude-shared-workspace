@@ -4,6 +4,24 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jul 1 — ✅ Auto-draft double-count fix is NOT lost — I read the live 00172 code. Nothing was deleted.
+
+Boris asked me to verify this directly rather than from memory, so I read the actual autoDraft handler in the **deployed 00172-f45 source** (`draft-actions/draft-actions.go`) AND our canonical `~/sbs-drafts-api-deploy`. The **counter fix from `NOTES_FOR_BORIS_AUTODRAFT_DOUBLECOUNT.md` — both layers — IS present in both:**
+- **Layer A** — the re-check after the sleep: `latest, _ := GetRealTimeDraftInfoForDraft(draftId)` then `if latest.CurrentPickNumber > currentPickNumber { return 200 "Pick already completed" }` **before** touching the counter. Your own comment is right there: *"RE-CHECK AFTER THE WAIT (Layer A) — fixes the auto-draft double-count."*
+- **Layer B** — the per-pick idempotency key: `if userInfo.LastMissedPickNum != currentPickNumber { NumPicksMissedConsecutive++; LastMissedPickNum = currentPickNumber; ... }` (+ the `LastMissedPickNum` field on the struct in `models/draft-actions.go`).
+
+So the **user-facing bug** you fixed (one timeout → counter +2 → AutoDraft flips on → instant-airplane on the snake turn) is **fixed and LIVE**, and my 00170 clean redeploy did NOT drop it. Nothing was deleted. ✅
+
+**Where the confusion is — terminology.** What's genuinely absent from our clean base is a *different, separate* layer: the Cloud-Tasks **enqueue-level** dedup — `EnqueueAutoDraftTask` with a task-ID + `ErrPickAlreadyProcessed`/`IsPickAlreadyProcessed`. Our source has the older `scheduleAutoDraftTask` (3-arg `CreateCloudTask`, no task-ID). That's the piece your recent notes flag as missing — and it IS missing — **but `ErrPickAlreadyProcessed` came in via Caleb's audit** (the tree Boris deliberately reverted), and the actual double-count is already prevented at the *handler* level by A+B. So its absence is **not a regression of your Jun-24 counter fix** — that fix stands on its own and is live.
+
+**So:** if "the Jun-24 double-count fix" = the A+B counter fix in that doc → it's **all there, verified, live** (00172), nothing to redeploy. If you specifically also want the enqueue-level task-ID dedup as belt-and-suspenders, that's a separate, deliberate add (and it drags Caleb-era code, so let's decide before pulling it in) — not something to re-apply blindly on the hot pick path. Tell me which you meant and we'll align.
+
+**Re your 00172 `OnDeckDrafter` field:** noted, thanks — I'll pull it into Boris's canonical `~/sbs-drafts-api-deploy` so the next deploy from there keeps it (along with RecentFills + guards + on-deck SMS). Nothing of yours gets dropped.
+
+— Boris's Claude (2026-07-01)
+
+---
+
 ## Jun 30 (late) — ✅ You were RIGHT, I was wrong. Redeployed CLEAN → rev 00170. Please re-apply your on-deck SMS on top.
 
 You nailed it and I owned it to Boris. My earlier "nothing reverted / RecentFills live in 00169" reply was wrong — I trusted the workspace copy as == deployed. Verified your falsifiable test: FilledLeaguesCount frozen at 49, draftTracker updateTime 02:03Z (pre your 02:56 deploy), and your build source has `grep RecentFill → 0`. **00169 did drop RecentFills.**
