@@ -177,6 +177,7 @@ export function useDraftAudio() {
       if (!yourTurnAudioRef.current) {
         yourTurnAudioRef.current = new Audio('/your-turn.wav');
       }
+      yourTurnAudioRef.current.muted = false; // primeAudio may have left it muted
       yourTurnAudioRef.current.currentTime = 0;
       yourTurnAudioRef.current.play().catch(() => {});
     } catch {}
@@ -187,10 +188,40 @@ export function useDraftAudio() {
       if (!newPickAudioRef.current) {
         newPickAudioRef.current = new Audio('/new-turn.wav');
       }
+      newPickAudioRef.current.muted = false; // primeAudio may have left it muted
       newPickAudioRef.current.currentTime = 0;
       newPickAudioRef.current.play().catch(() => {});
     } catch {}
   }, []);
+
+  // iOS/Safari (esp. installed PWA) unlock: an HTMLAudioElement can only play
+  // programmatically AFTER it has been played once inside a real user gesture,
+  // and the Web Audio context can only be resumed from a gesture. The your-turn
+  // ding + countdown ticks fire on state changes (no tap), so without this they
+  // stay muted forever — only the pick-made sound, which fires right after the
+  // draft-button tap, happened to be unlocked. Call this from the FIRST tap in
+  // the draft room to unlock every draft sound at once. Idempotent + silent
+  // (each .wav is started muted, then immediately paused/reset).
+  const primeAudio = useCallback(() => {
+    try {
+      // Web Audio: create + resume within the gesture so ticks/alerts work.
+      initAudio();
+    } catch {}
+    try {
+      if (!yourTurnAudioRef.current) yourTurnAudioRef.current = new Audio('/your-turn.wav');
+      if (!newPickAudioRef.current) newPickAudioRef.current = new Audio('/new-turn.wav');
+      for (const el of [yourTurnAudioRef.current, newPickAudioRef.current]) {
+        el.muted = true;
+        const p = el.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => { el.pause(); el.currentTime = 0; el.muted = false; })
+           .catch(() => { el.muted = false; });
+        } else {
+          el.pause(); el.currentTime = 0; el.muted = false;
+        }
+      }
+    } catch {}
+  }, [initAudio]);
 
   const cleanup = useCallback(() => {
     if (keepAliveRef.current) {
@@ -205,5 +236,5 @@ export function useDraftAudio() {
     newPickAudioRef.current = null;
   }, []);
 
-  return { playSpinningSound, playReelStop, playCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, resumeAudio, cleanup };
+  return { playSpinningSound, playReelStop, playCountdownTick, playWinSound, playYourTurnSound, playNewPickSound, resumeAudio, primeAudio, cleanup };
 }

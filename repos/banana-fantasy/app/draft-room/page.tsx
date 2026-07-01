@@ -145,6 +145,7 @@ function DraftRoomContent() {
     playYourTurnSound,
     playNewPickSound,
     resumeAudio,
+    primeAudio,
     cleanup: cleanupAudio,
   } = useDraftAudio();
 
@@ -1516,6 +1517,32 @@ function DraftRoomContent() {
     playYourTurnSound();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSlowDraft, isLiveMode, isMuted, phase, engine.draftStatus, engine.turnsUntilUserPick, engine.currentPickNumber]);
+
+  // iOS/PWA audio unlock. Draft sounds that fire on state changes (your-turn
+  // ding, countdown ticks) can only play on mobile once they've been triggered
+  // inside a real user gesture. Prime every sound on the FIRST tap anywhere in
+  // the room so later programmatic plays aren't silently blocked. Runs once.
+  const audioPrimedRef = useRef(false);
+  useEffect(() => {
+    if (!isLiveMode) return;
+    const prime = () => {
+      if (audioPrimedRef.current) return;
+      audioPrimedRef.current = true;
+      primeAudio();
+      document.removeEventListener('pointerdown', prime);
+      document.removeEventListener('touchend', prime);
+      document.removeEventListener('click', prime);
+    };
+    document.addEventListener('pointerdown', prime);
+    document.addEventListener('touchend', prime);
+    document.addEventListener('click', prime);
+    return () => {
+      document.removeEventListener('pointerdown', prime);
+      document.removeEventListener('touchend', prime);
+      document.removeEventListener('click', prime);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLiveMode]);
 
   // AFK audio recovery. Browsers suspend the AudioContext + can block HTML
   // audio while the tab is backgrounded, so a your-turn ding fired while the
