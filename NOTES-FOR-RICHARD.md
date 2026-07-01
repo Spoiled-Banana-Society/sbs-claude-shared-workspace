@@ -4,6 +4,28 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jun 30 — ✅ Reply to your Jun 30 note (on-deck SMS + 4 Qs): 00169 has EVERYONE's work; the drift to fix is the workspace copy
+
+Verified from live Cloud Run + live Firestore just now:
+
+- **Serving = `sbs-drafts-api-staging-00169-7j4`, 100% traffic** (created 2026-07-01 02:56 UTC — your deploy; the 02:47–02:54 source uploads were the failed go-1.25 build attempts before it landed on go 1.20). **Your on-deck fast-draft SMS change is live.** ✅
+- **Your Jun 18 Jackpot/HOF regular-join guards are live in 00169** (present in `models/leagues.go`). **That Jun 18 ask is closed** — thanks. ✅
+- **Nothing of Boris's was reverted.** Boris's Claude shipped a JP/HOF **reveal-timing** feature this week via **`RecentFills` on `drafts/draftTracker`**: `models/draft-state.go` records each batch fill's `{Id, StartTime}` (a provisional entry in the PHASE-1 txn, then stamped with the real `DraftStartTime` after the RTDB write) and `models/leagues.go` adds the `RecentFill` struct + `RecentFills` field to `DraftLeagueTracker`. It's **live and populating in 00169** (latest fill Id 49 carries its anchor). So 00169 built from a source that included it — good.
+
+**Your Q3 (did you revert Boris's work): No — BUT the shared-workspace copy is stale and WILL drop it on the next workspace-based build.**
+`repos/sbs-drafts-api-deploy/models/draft-state.go` in this workspace has **zero `RecentFills` mentions** — it does not have the reveal-timing. Live 00169 does. Root cause: **Boris's Claude deployed the RecentFills revs (00167/00168) from `~/sbs-drafts-api-deploy` and skipped the "sync source → workspace + push" step** (my miss, per the backend workflow in CLAUDE.md). So `~/sbs-drafts-api-deploy` is the **current authoritative source** (has RecentFills + your guards, go 1.20); the workspace copy is behind on several `.go` files.
+→ **Fix:** Boris's Claude will rsync `~/sbs-drafts-api-deploy` → `repos/sbs-drafts-api-deploy` and push, so the workspace matches live. **Heads-up on timing:** you're actively deploying right now — let's not both push the workspace at once. If you've already synced your 00169 source in, tell me and I'll rebase on top (making sure RecentFills survives) rather than clobber it.
+
+**Your Q2 (canonical Go deploy source):** `~/sbs-drafts-api-deploy` on Boris's machine — that's where 00167/00168 and the RecentFills in 00169 came from. Let's make that the single source of truth and both build from it after syncing.
+
+**Your Q1 (go 1.25 upgrade):** Boris has no stake in it — **your call.** The `go.mod` in the live deploy source AND the workspace is **go 1.20**; the go-1.25 bump is only in your local un-built WIP. Recommend reverting your local `go.mod`/`go.sum` back to the 1.20 pair so `--source` deploys work from your Mac again; do 1.25 as its own task later if you want it (Dockerfile → `golang:1.25-alpine` + a test build).
+
+**Your Q4 (reconcile the stale `staging` branch):** **Caleb is no longer working with us** — so the "accurate reference for Caleb" reason is gone. No need to reconcile on his account. If you still want the GitHub `staging` branch to match live for general hygiene, go ahead; Boris is fine either way.
+
+— Boris's Claude (2026-06-30)
+
+---
+
 ## Jun 16 — ⚠️ TWO Vercel projects now (staging + prod countdown). DO NOT cross-deploy.
 
 `sbsfantasy.com` is going live with a pre-launch **countdown page**. There are now **two Vercel projects from the same `sbs-frontend-v2` repo** — deploys route by **branch**, never cross them:
