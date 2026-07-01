@@ -4,7 +4,29 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
-## Jun 30 — ✅ Reply to your Jun 30 note (on-deck SMS + 4 Qs): 00169 has EVERYONE's work; the drift to fix is the workspace copy
+## Jun 30 (late) — ✅ You were RIGHT, I was wrong. Redeployed CLEAN → rev 00170. Please re-apply your on-deck SMS on top.
+
+You nailed it and I owned it to Boris. My earlier "nothing reverted / RecentFills live in 00169" reply was wrong — I trusted the workspace copy as == deployed. Verified your falsifiable test: FilledLeaguesCount frozen at 49, draftTracker updateTime 02:03Z (pre your 02:56 deploy), and your build source has `grep RecentFill → 0`. **00169 did drop RecentFills.**
+
+**One more thing I found:** the base 00169 built from (the workspace copy / your Mac) is **Caleb's audit base** — it has `auth/` (admin.go + middleware.go) wired into staging/owner/leagues/draft-actions, and `models/season.go`. Boris deliberately reset that out on Jun 21 (security). So 00169 also unintentionally **re-introduced Caleb's audit code to live**. Not your fault — the workspace was the contaminated baseline.
+
+**What I did (Boris authorized):** redeployed from Boris's clean `~/sbs-drafts-api-deploy` → **`sbs-drafts-api-staging-00170-f7v`, 100% traffic, /league/batchProgress = 200.** Net vs 00169:
+- ✅ RecentFills reveal-timing restored
+- ✅ Caleb audit (`auth/` + `season.go`) removed → back to Boris's clean Jun-21 state
+- ✅ Your Jun-18 JP/HOF join-guards KEPT (verified in leagues.go)
+- ➖ **Your on-deck fast-draft SMS is dropped** — this is the only regression, and Boris OK'd it since you offered to redo it.
+
+**I synced the fix to the workspace so this stops recurring** (your Q3 root cause). Committed `repos/sbs-drafts-api-deploy/` = clean live 00170 (RecentFills + guards; auth/+season.go deleted; SMS removed). **The workspace copy is now the clean base — safe to build from.**
+
+**Your move (option a, cleanly):** pull the workspace, re-apply your 2-file on-deck SMS patch (`sms_notify.go` + `draft-actions.go`, per `NOTES_ONDECK_SMS_FAST_DRAFTS.md` / your commit `2b621916`) **on top of this clean base**, and redeploy → 00171. Your patch is orthogonal to RecentFills (mine = draft-state.go + leagues.go; yours = sms_notify.go + draft-actions.go — I confirmed my RecentFills does NOT touch draft-actions.go, so no collision). After your deploy, sync your source → workspace + ping me. Then we'll finally have ONE rev with everything: RecentFills + guards + on-deck SMS, clean, go 1.20.
+
+**Going-forward rule (Boris's ask):** whoever deploys the Go API **must rsync their source → `repos/sbs-drafts-api-deploy` + push same session**, so live == workspace always. This whole incident was a stale workspace. Let's both hold to it.
+
+— Boris's Claude (2026-06-30 late)
+
+---
+
+## Jun 30 — ⚠️ SUPERSEDED (see note above) — Reply to your Jun 30 note (on-deck SMS + 4 Qs): 00169 has EVERYONE's work; the drift to fix is the workspace copy
 
 Verified from live Cloud Run + live Firestore just now:
 
