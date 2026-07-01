@@ -4,6 +4,27 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## ✅ Jul 1 — on-deck alerts COMPLETE for fast drafts (SMS + Discord/Telegram/push) + 2 source caveats
+
+Finished the fast-draft on-deck alerts across BOTH outbound systems. Live now:
+- **SMS** (Go `NotifyOnDeckSMS`) — rev 00171, unchanged.
+- **Discord/Telegram/push/email** (Cloud Function `onPickAdvance` → pick-up route → channels) — NEW. Fires for the ON-DECK player, "Your pick is next", fast drafts only. Slow drafts still on-clock.
+
+**How it's wired (3 pieces):**
+1. **Go `onDeckDrafter` field (rev 00172-f45):** added `OnDeckDrafter string json:"onDeckDrafter,omitempty"` to `RealTimeDraftInfo` and stamp it every advance (`realTimeDraftInfo.OnDeckDrafter = onDeckOwnerForNextPick(draftInfo)`, right after CurrentDrafter is set). Needed because the RTDB `realTimeDraftInfo` node does NOT carry `draftOrder`, so the Cloud Function had no way to compute on-deck itself. **Committed to workspace `repos/sbs-drafts-api-deploy` — please pull into your canonical source.** (This is on top of your RecentFills + guards + the on-deck SMS; go 1.20.)
+2. **Cloud Function `onPickAdvance`:** reads `after.onDeckDrafter`; for fast (`pickLength<=3600`) notifies the on-deck player with `onDeck:true` + their own pick number; slow unchanged. Fallback: if `onDeckDrafter` is absent (last pick or a pre-upgrade node) it falls back to on-clock so a fast draft never goes silent. **Deployed 2026-07-01 05:06 UTC.**
+3. **Frontend:** `NotifEvent.onDeck` flag through pick-up route → `messages.ts` renders "Your pick is next — League #N". Live on Vercel.
+
+**⚠️ CAVEAT 1 — Cloud Function source is drifted (same story as the Go backend):** the DEPLOYED `onPickAdvance` was from **2026-05-28** and had **NO fast gate** ("Fires for ALL drafts") + the `after.pickNumber` field fix — i.e. it was NEWER than BOTH `~/sbs-staging-functions/functions/index.js` AND `repos/sbs-staging-functions` (both still have the old gated version with the `after.currentPickNumber` bug). I deployed from the **downloaded deployed source** + my change (via `firebase deploy --only functions:onPickAdvance`). I put that correct on-deck `onPickAdvance` into `~/sbs-staging-functions/functions/index.js` — BUT its OTHER functions (onDraftFilled, scheduledUpdateADP, etc.) are the 2026-05-28 versions, so **do NOT run `firebase deploy --only functions` (all) from that dir — deploy per-function, or reconcile the source first.** The workspace `repos/sbs-staging-functions` copy is still the old gated version and needs reconciling to match live.
+
+**⚠️ CAVEAT 2 — firebase login token expires fast** (had to `firebase login --reauth` mid-session).
+
+Also STILL OPEN from before: the Jun-24 **auto-draft double-count fix** is in Richard's local only, not in canonical/deployed source (see the note below). 00172 does NOT include it.
+
+— Richard's Claude (2026-07-01)
+
+---
+
 ## ✅ Jun 30 (late) — 00171 is live with EVERYTHING; + one thing your redeploy dropped (auto-draft dedup)
 
 Thanks for redeploying + syncing your source to the workspace. Confirmed the RecentFills data check plays out — moot now anyway. I layered our on-deck SMS back on top of YOUR complete source and deployed:
