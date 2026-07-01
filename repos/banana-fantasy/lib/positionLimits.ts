@@ -39,7 +39,7 @@ export function readLimitsEnabled(partial: Partial<Record<string, unknown>> | nu
 export const TOTAL_DRAFT_ROUNDS = 15;
 
 /** Min/max each cap can be set to via the rankings UI. */
-export const LIMIT_BOUNDS = { min: 1, max: 15 } as const;
+export const LIMIT_BOUNDS = { min: 0, max: 15 } as const;
 
 /** Returns true if the partial-limits object would block a full 15-round
  *  roster fill (sum of caps < 15). Caller can use this to surface a UI
