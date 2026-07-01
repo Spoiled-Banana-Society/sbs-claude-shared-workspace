@@ -42,45 +42,68 @@ export async function GET(req: Request) {
     const eventMs = fs?.active && typeof fs.at === 'string' ? Date.parse(fs.at) : NaN;
     if (!Number.isFinite(eventMs)) return json({ ok: true, skipped: 'no active founder schedule' }, 200);
 
-    const broadcastAt = eventMs - 86_400_000; // 24h before = the day-before at the same time
     const now = Date.now();
-    if (now < broadcastAt) return json({ ok: true, skipped: 'too early', broadcastAt: new Date(broadcastAt).toISOString() }, 200);
     if (now >= eventMs) return json({ ok: true, skipped: 'event already started' }, 200);
 
-    const key = new Date(eventMs).toISOString().slice(0, 10); // matches on-login dedupeKey
-    if (fs?.teaserBroadcastKey === key) return json({ ok: true, skipped: 'already broadcast', key }, 200);
-
     const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
+    const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+    const isEventDay = ptDate(now) === ptDate(eventMs);
+    const dateKey = new Date(eventMs).toISOString().slice(0, 10);      // day-before key
+    const minuteKey = new Date(eventMs).toISOString().slice(0, 16);    // day-of key — MATCHES the
+                                                                       // returning-check on-login bell
+                                                                       // (`founder-today-<minuteKey>`)
+                                                                       // so a user who got the login
+                                                                       // bell is deduped, never doubled.
+    const fsd = fs as { teaserBroadcastKey?: string; teaserDayofKey?: string };
 
-    // Every real (logged-in) user. orderBy a field only returns docs that have
-    // it, so this naturally excludes imported/never-logged-in wallet docs.
+    // Broadcast one payload to EVERY logged-in user (orderBy firstLoginAt excludes
+    // never-logged-in imports). createNotification dedupes per (wallet, dedupeKey).
     const usersSnap = await db.collection('v2_users').orderBy('firstLoginAt').get();
     const wallets = usersSnap.docs.map((d) => d.id).filter((w) => /^0x[0-9a-f]{40}$/.test(w.toLowerCase()));
+    const broadcast = async (payload: Parameters<typeof createNotification>[1]) => {
+      let sent = 0;
+      const BATCH = 50;
+      for (let i = 0; i < wallets.length; i += BATCH) {
+        const chunk = wallets.slice(i, i + BATCH);
+        const results = await Promise.allSettled(chunk.map((w) => createNotification(w, payload)));
+        sent += results.filter((r) => r.status === 'fulfilled').length;
+      }
+      return sent;
+    };
 
-    const payload = {
-      type: 'founder_draft' as const,
+    // DAY-OF (event day, before event time): ping ALL users "today" — same as the
+    // on-login bell but reaching everyone, not just people who happen to open the
+    // app. Idempotent via `teaserDayofKey`.
+    if (isEventDay) {
+      if (fsd?.teaserDayofKey === minuteKey) return json({ ok: true, skipped: 'day-of already broadcast', minuteKey }, 200);
+      const sent = await broadcast({
+        type: 'founder_draft',
+        title: `Founder Draft today — ${timePT}`,
+        message: 'The Founder Draft drops today. Tap to learn how Founder Drafts work.',
+        link: '/faq#founder-draft',
+        dedupeKey: `founder-today-${minuteKey}`,
+        icon: 'crown',
+      });
+      await fsRef.set({ teaserDayofKey: minuteKey, teaserDayofAt: new Date(now).toISOString() }, { merge: true });
+      logger.info('cron.founder-teaser.dayof', { minuteKey, users: wallets.length, sent, timePT });
+      return json({ ok: true, phase: 'day-of', minuteKey, users: wallets.length, sent, timePT }, 200);
+    }
+
+    // DAY-BEFORE (from 24h before until the event day begins): "tomorrow" ping.
+    const broadcastAt = eventMs - 86_400_000;
+    if (now < broadcastAt) return json({ ok: true, skipped: 'too early', broadcastAt: new Date(broadcastAt).toISOString() }, 200);
+    if (fsd?.teaserBroadcastKey === dateKey) return json({ ok: true, skipped: 'day-before already broadcast', dateKey }, 200);
+    const sent = await broadcast({
+      type: 'founder_draft',
       title: `Founder Draft tomorrow — ${timePT}`,
       message: 'A Founder Draft drops tomorrow. Tap to learn how Founder Drafts work.',
       link: '/faq#founder-draft',
-      dedupeKey: `founder-tomorrow-${key}`,
+      dedupeKey: `founder-tomorrow-${dateKey}`,
       icon: 'crown',
-    };
-
-    // Real-time per-user bell (createNotification persists + pushes the live
-    // 'notification' event). Batched so we don't open thousands of writes at once.
-    let sent = 0;
-    const BATCH = 50;
-    for (let i = 0; i < wallets.length; i += BATCH) {
-      const chunk = wallets.slice(i, i + BATCH);
-      const results = await Promise.allSettled(chunk.map((w) => createNotification(w, payload)));
-      sent += results.filter((r) => r.status === 'fulfilled').length;
-    }
-
-    // Mark sent so the hourly cron doesn't re-broadcast.
-    await fsRef.set({ teaserBroadcastKey: key, teaserBroadcastAt: new Date(now).toISOString() }, { merge: true });
-
-    logger.info('cron.founder-teaser.broadcast', { key, users: wallets.length, sent, timePT });
-    return json({ ok: true, key, users: wallets.length, sent, timePT }, 200);
+    });
+    await fsRef.set({ teaserBroadcastKey: dateKey, teaserBroadcastAt: new Date(now).toISOString() }, { merge: true });
+    logger.info('cron.founder-teaser.broadcast', { dateKey, users: wallets.length, sent, timePT });
+    return json({ ok: true, phase: 'day-before', dateKey, users: wallets.length, sent, timePT }, 200);
   } catch (err) {
     logger.error('cron.founder-teaser.failed', { err });
     return jsonError('Internal Server Error', 500);
