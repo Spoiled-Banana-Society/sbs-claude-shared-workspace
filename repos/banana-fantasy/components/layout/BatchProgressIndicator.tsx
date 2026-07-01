@@ -126,7 +126,9 @@ export function BatchProgressIndicator() {
   // moves ONLY when a draft's TYPE is revealed by the slot (the count deduct),
   // in lockstep with it — never on a bare fill. null once that special is hit
   // (so it shows nothing instead of "0%").
-  const fmtPct = (p: number) => (p >= 10 ? `${Math.round(p)}%` : `${p.toFixed(1)}%`);
+  // Always 1 decimal so the odds visibly tick every draft (e.g. 10.0% → 10.2%
+  // → 10.4%) instead of freezing on a rounded whole number once ≥10% (Boris).
+  const fmtPct = (p: number) => `${p.toFixed(1)}%`;
   const jackpotPct = !jackpotHit && rDraftsLeft > 0 ? (jackpotRemaining / rDraftsLeft) * 100 : null;
   const hofPct = !allHofHit && rDraftsLeft > 0 ? (hofRemaining / rDraftsLeft) * 100 : null;
 
