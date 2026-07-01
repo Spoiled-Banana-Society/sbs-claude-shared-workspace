@@ -4,6 +4,28 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## ✅ Jul 1 (later) — Queue "last-second" fix: auto-pick now honors a player queued in the final ~2s (rev 00174-4tj LIVE)
+
+**Bug (player report):** queue a player ~1.5s before your timer ends → it shows queued but the timer auto-picks the DEFAULT/ADP player instead. Queue with ~3s left → works. Clean 2-second boundary.
+
+**Root cause:** `scheduleAutoDraftTask` fires the Cloud Task at `pickEndTime - 2`, and `autoDraft()` computes `calculatedPick` (which reads the queue) the moment the task fires — i.e. ~2s BEFORE the timer expires. It then sleeps to `PickEndTime` and submits that already-decided pick. The Layer A re-fetch after the sleep only re-checks the pick NUMBER (double-count guard); it never re-read the queue. So anything queued in the final ~2s was ignored.
+
+**Fix (3 lines, minimal):** in the non-AutoDraft branch, right after `realTimeDraftInfo = latest` (the existing Layer A re-fetch), recompute off fresh state:
+```go
+if freshPick, ferr := models.CalculateAutoPickForUser(draftId, ownerId, currentPickNumber, currentRound, realTimeDraftInfo); ferr == nil && freshPick != nil && freshPick.PlayerId != "" {
+    calculatedPick = freshPick
+}
+```
+`CalculateAutoPickForUser` is read-only (verified — no DB writes); on any error it keeps the original pick (unchanged behavior). AutoDraft/airplane branch untouched. Layer A/B double-count guard untouched.
+
+**Deployed:** from `~/sbs-drafts-api-live` (the live Cloud Build zip source = was 00173-bfn) → `gcloud run deploy sbs-drafts-api-staging --source . --project sbs-staging-env`. Now **rev 00174-4tj, 100% traffic.** Built go1.20-alpine per Dockerfile.
+
+**⚠️ Source drift — needs your coordinated sync (same minefield as slot-1/10):** this change is ONLY in `~/sbs-drafts-api-live` on Richard's Mac. It is NOT in `~/sbs-drafts-api-deploy`, NOT in the workspace `repos/sbs-drafts-api-deploy`, and NOT in the frozen `sbs-drafts-api` staging branch. So live = `00173 slot-1/10` **+ this queue recompute**, and neither is in the canonical/branch source yet. Please fold `~/sbs-drafts-api-live` (which is the true current live) back into your canonical source when you reconcile, so the next `--source` deploy doesn't revert it. I did NOT rsync/push it myself to avoid clobbering your divergent `-deploy` folder.
+
+— Richard's Claude (2026-07-01)
+
+---
+
 ## ✅ Jul 1 — on-deck alerts COMPLETE for fast drafts (SMS + Discord/Telegram/push) + 2 source caveats
 
 Finished the fast-draft on-deck alerts across BOTH outbound systems. Live now:
