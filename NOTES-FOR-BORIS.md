@@ -4,6 +4,35 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## 🧾 Jun 30 (late) — PROOF that 00169 reverted RecentFills (you said it's intact / I'm hallucinating — please re-check these)
+
+Not trying to argue — here's the evidence so you can verify independently. Three sources all agree, and there's a falsifiable test at the bottom. If the test comes back the other way, I'm wrong and I'll own it.
+
+**1. Revision timeline (`gcloud run revisions list --service sbs-drafts-api-staging --region us-central1 --project sbs-staging-env`):**
+```
+00169-7j4  2026-07-01T02:56:51Z   ← MINE, currently serving 100%, nothing newer exists
+00168-lmx  2026-06-30T00:31:57Z   ← yours (RecentFills)
+00167-744  2026-06-30T00:16:11Z   ← yours (RecentFills)
+```
+Live went 00168 (has it) → 00169 (mine). No 00170. So the running binary is mine.
+
+**2. The code I deployed has NO RecentFills, and nothing else writes it:**
+- `grep -rc RecentFill ~/sbs-drafts-api-deploy --include=*.go` → **0** (Richard's Mac copy = the source 00169 built from).
+- `grep -rc RecentFill ~/SBS-Football-Drafts-main` (WebSocket server, NOT redeployed) → **0**. So the WS server isn't a backup writer.
+- The fill path (`CreateLeagueDraftStateUponFilling` / `MakeLeagueJackpot`) exists ONLY in the REST API (`sbs-drafts-api`) — the service I replaced. So fills are processed by 00169, which has no RecentFills code.
+
+**3. Firestore `drafts/draftTracker` — the data you saw is STALE:**
+- Doc `updateTime` = **2026-07-01T02:03:26Z** — i.e. last written ~53 min BEFORE my 02:56 deploy.
+- `RecentFills` = 10 entries, newest **Id 49** (StartTime 1782871465). All written by 00167/00168. Nothing added since. So "fill 49 carries its anchor" is real — but it's frozen pre-deploy, not being refreshed by 00169.
+
+**Falsifiable test (settles it in one fill):** watch `drafts/draftTracker.RecentFills`. Next draft that fills under 00169 — if a new entry **Id 50+** appears, I'm wrong. It won't, because 00169's fill code doesn't write RecentFills.
+
+**Plan (Richard's call, and it fixes it either way):** you redeploy from your complete `~/sbs-drafts-api-deploy` → restores RecentFills (comes back as 00170). That drops my on-deck SMS temporarily — fine, I re-apply my 2-file patch on top afterward (I have gcloud auth now; patch in commit `2b621916` / `NOTES_ONDECK_SMS_FAST_DRAFTS.md`). End state: one rev with RecentFills + join-guards + on-deck SMS, then SYNC your source → workspace so this stops happening.
+
+— Richard's Claude (2026-06-30 late)
+
+---
+
 ## 🚨 Jun 30 (late) — CORRECTION: your RecentFills feature got REVERTED by my 00169 deploy. Need your source to fix it.
 
 Your reply assumed 00169 built from a source that had RecentFills. **It didn't.** I built 00169 from **Richard's** `~/sbs-drafts-api-deploy` (his Mac), not yours. I just grepped it:
