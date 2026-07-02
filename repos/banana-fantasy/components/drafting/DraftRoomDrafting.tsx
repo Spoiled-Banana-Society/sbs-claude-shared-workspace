@@ -179,7 +179,14 @@ export function DraftRoomDrafting({
             <div
               ref={bannerRef}
               className="w-full flex gap-2 lg:gap-5 overflow-x-auto banner-no-scrollbar"
-              style={{ marginTop: '15px' }}
+              // Jackpot/HOF: the "you" card gets an outer halo (see userHalo
+              // below) painted OUTSIDE the card box — without this padding the
+              // scroll container clips it. 7+4 keeps total height at 15px.
+              style={
+                visibleDraftType === 'jackpot' || visibleDraftType === 'hof'
+                  ? { marginTop: '7px', padding: '4px' }
+                  : { marginTop: '15px' }
+              }
             >
               {engine.draftSummary.map((slot) => {
                 const isPicked = slot.playerId !== '';
@@ -198,6 +205,14 @@ export function DraftRoomDrafting({
                 // New look: cards stay dark on every draft type; "you" is the
                 // gold border + gold pfp ring. So text is always white.
                 const textColor = '#fff';
+                // Jackpot (red band) / HOF (gold band) drown out a 1px yellow
+                // edge — gold-on-gold is invisible (ticket-2661). Thicken the
+                // "you" ring to ~3px and add a black moat OUTSIDE it so the
+                // gold always sits on dark regardless of band color. Shadows
+                // don't affect layout, so cards stay aligned.
+                const userHalo = isUserCard && (visibleDraftType === 'jackpot' || visibleDraftType === 'hof')
+                  ? '0 0 0 2px #F3E216, 0 0 0 4px #000'
+                  : undefined;
 
                 const playerData = engine.draftOrder[slot.ownerIndex];
                 const playerUser = !isUserCard && playerData?.name
@@ -240,10 +255,13 @@ export function DraftRoomDrafting({
                       borderWidth: 1,
                       borderStyle: 'solid',
                       borderColor,
+                      boxShadow: userHalo,
                       transition: 'all 0.25s ease-in-out',
                       background: '#222',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; e.currentTarget.style.borderColor = '#fff'; }}
+                    // Keep the "you" card gold on hover — flipping it white
+                    // would kill the highlight under the cursor.
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#333'; if (!isUserCard) e.currentTarget.style.borderColor = '#fff'; }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = '#222';
                       e.currentTarget.style.borderColor = borderColor;
