@@ -14,8 +14,8 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Each week, your best players at each position are automatically selected based on their actual performance. Your weekly score is the sum of your best performers according to your roster requirements (1 QB, 2 RB, 2 WR, 1 TE, 1 Flex, 1 DST, plus 7 bench).',
       },
       {
-        question: 'What is the starting lineup? What about the bench?',
-        answer: 'Your starting lineup each week is 8 spots: 1 QB, 2 RB, 2 WR, 1 TE, 1 Flex (your best remaining RB, WR, or TE), and 1 DST. The other 7 of your 15 picks are your bench.\n\nYou never set the lineup yourself — every week your highest scorers are placed into the starting spots automatically. If a bench pick outscores a starter, it\'s swapped into the lineup for that week, so your bench is never wasted — it\'s your depth, and it cashes in any week it outperforms.',
+        question: 'What is the starting lineup?',
+        answer: '1 QB\n2 RB\n2 WR\n1 TE\n1 Flex (RB/WR/TE)\n1 DST\n\n+ 7 Bench',
       },
       {
         question: 'Can I trade or drop players after drafting?',
