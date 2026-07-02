@@ -31,15 +31,23 @@ async function enrichDisplayNames(entries: unknown[], signal: AbortSignal): Prom
   if (wallets.length === 0) return entries;
   let users: Record<string, { displayName: string | null }> = {};
   try {
-    const res = await fetch('/api/users/display-batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wallets }),
-      signal,
-    });
-    if (!res.ok) return entries;
-    const body = (await res.json()) as { users?: Record<string, { displayName: string | null }> };
-    users = body.users ?? {};
+    // The server slices display-batch to 30 wallets and silently drops the
+    // rest — a 30+ row leaderboard left the tail un-enriched. Chunk to the cap.
+    const CHUNK = 30;
+    const chunks: string[][] = [];
+    for (let i = 0; i < wallets.length; i += CHUNK) chunks.push(wallets.slice(i, i + CHUNK));
+    const results = await Promise.all(chunks.map(async (chunk) => {
+      const res = await fetch('/api/users/display-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wallets: chunk }),
+        signal,
+      });
+      if (!res.ok) return {};
+      const body = (await res.json()) as { users?: Record<string, { displayName: string | null }> };
+      return body.users ?? {};
+    }));
+    users = Object.assign({}, ...results);
   } catch {
     return entries; // network blip — keep originals rather than dropping the table
   }
