@@ -45,8 +45,22 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+// The server slices display-batch to 30 wallets and SILENTLY drops the rest —
+// fine for a 10-seat draft room, but the admin Drafts tab aggregates members
+// across every active draft and can exceed it (the dropped tail rendered as
+// raw hex). Chunk to the server's cap and merge.
+const API_MAX_BATCH = 30;
+
 async function fetchUsers(wallets: string[], signal: AbortSignal): Promise<DraftRoomUsersMap> {
   if (wallets.length === 0) return EMPTY;
+  if (wallets.length > API_MAX_BATCH) {
+    const chunks: string[][] = [];
+    for (let i = 0; i < wallets.length; i += API_MAX_BATCH) {
+      chunks.push(wallets.slice(i, i + API_MAX_BATCH));
+    }
+    const results = await Promise.all(chunks.map((c) => fetchUsers(c, signal)));
+    return Object.assign({}, ...results);
+  }
 
   let lastErr: unknown;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

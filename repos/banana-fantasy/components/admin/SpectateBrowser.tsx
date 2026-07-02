@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { bananaDefaultName } from '@/utils/helpers';
 
 interface ActiveDraft {
   draftId: string;
@@ -153,6 +154,14 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     [filtered],
   );
   const users = useDraftRoomUsers(memberWallets);
+
+  // Never render raw hex in the band: if a wallet's batch entry is missing
+  // (transient fetch failure), fall back to the SAME wallet-derived default
+  // the API floors to — identical string, so it can't disagree with what the
+  // user sees elsewhere. Non-0x ids (bot seats) keep WalletLink's own label.
+  const nameFor = (w: string): string | undefined =>
+    users[w.toLowerCase()]?.displayName
+      ?? (/^0x[0-9a-fA-F]{40}$/.test(w) ? bananaDefaultName(w.toLowerCase()) : undefined);
 
   // NEW / RET account flags (admin-only endpoint). Keyed on the sorted
   // deduped wallet set so the 5s poll doesn't refetch unless the set actually
@@ -352,7 +361,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                         <div className="flex flex-wrap gap-x-2.5 gap-y-1 max-w-[280px]">
                           {d.members.map(w => (
                             <span key={w} className="inline-flex items-center gap-1">
-                              <WalletLink wallet={w} displayName={users[w.toLowerCase()]?.displayName} hideAddress />
+                              <WalletLink wallet={w} displayName={nameFor(w)} hideAddress />
                               <FlagChip flags={flags[w.toLowerCase()]} />
                             </span>
                           ))}
@@ -364,7 +373,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       d.currentDrafter
                         ? (
                           <span className="inline-flex items-center gap-1">
-                            <WalletLink wallet={d.currentDrafter} displayName={users[d.currentDrafter.toLowerCase()]?.displayName} hideAddress />
+                            <WalletLink wallet={d.currentDrafter} displayName={nameFor(d.currentDrafter)} hideAddress />
                             <FlagChip flags={flags[d.currentDrafter.toLowerCase()]} />
                           </span>
                         )
