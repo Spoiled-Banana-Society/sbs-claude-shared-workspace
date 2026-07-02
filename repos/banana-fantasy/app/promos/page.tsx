@@ -29,7 +29,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'referral':           { accent: '#3b82f6', label: 'Referral' },
   'jackpot':            { accent: '#ef4444', label: 'Jackpot' },
   'hof':                { accent: '#D4AF37', label: 'HOF' },
-  'mint':               { accent: '#a855f7', label: 'Mint' },
+  'mint':               { accent: '#a855f7', label: 'Buy' },
   'new-user':           { accent: '#ec4899', label: 'New User' },
   'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
