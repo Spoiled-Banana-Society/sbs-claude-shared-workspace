@@ -133,7 +133,12 @@ export function BadgeCatalogGrid({ readOnlyForUserId }: BadgeCatalogGridProps) {
                       ? () => handleEquip(isEquipped && equipped ? null : badge.id)
                       : undefined
                     }
-                    disabled={!clickable}
+                    // NOT the `disabled` attribute: browsers suppress ALL mouse/touch
+                    // events over disabled buttons, so the <Tooltip> wrapper never saw
+                    // hover/tap on locked badges (the recurring "King badge shows no
+                    // copy" bug — locked-for-you badges had dead tooltips everywhere).
+                    // Locked tiles are inert anyway (no onClick); aria keeps semantics.
+                    aria-disabled={!clickable}
                     className={`relative flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition ${
                       isEquipped
                         ? 'border-banana bg-banana/15'
