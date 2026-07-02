@@ -35,6 +35,24 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
 
 /**
+ * Promo types visible ONLY to admin-allowlisted wallets (isWalletAdmin) —
+ * a private on-site preview before a promo goes public. To launch one for
+ * everyone, move its type from here into VISIBLE_PROMO_TYPES_ORDER.
+ *
+ * 'buy-bonus' = "Buy 2 → 1 Free" (July 4th weekend candidate). Inserted
+ * right before 'mint' so it sits next to the Buy 10 card.
+ */
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['buy-bonus'];
+
+/** Display order with the admin-preview types spliced in (before 'mint'). */
+function adminPreviewOrder(): PromoType[] {
+  const order = [...VISIBLE_PROMO_TYPES_ORDER];
+  const mintIdx = order.indexOf('mint');
+  order.splice(mintIdx === -1 ? order.length : mintIdx, 0, ...ADMIN_PREVIEW_PROMO_TYPES);
+  return order;
+}
+
+/**
  * Promo types currently marked NEW (renders a small badge). Promos
  * stay in this set as long as Boris wants the highlight; remove when
  * the novelty fades.
@@ -84,6 +102,12 @@ interface FilterOpts {
    * sorted list — in-flight / actionable stuff always wins position 1.
    */
   hasVisibleClaim?: (p: Promo) => boolean;
+  /**
+   * True when the viewing wallet is on the admin allowlist. Unlocks the
+   * ADMIN_PREVIEW_PROMO_TYPES so admins can see a not-yet-public promo
+   * live on the site. Regular users are unaffected.
+   */
+  isAdminPreview?: boolean;
 }
 
 /**
@@ -92,8 +116,10 @@ interface FilterOpts {
  * in-progress promos bubbled to the front.
  */
 export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {}): Promo[] {
+  const typeOrder = opts.isAdminPreview ? adminPreviewOrder() : VISIBLE_PROMO_TYPES_ORDER;
+  const visibleTypes = opts.isAdminPreview ? new Set<PromoType>(typeOrder) : VISIBLE_PROMO_TYPES;
   const filtered = promos.filter((p) => {
-    if (!VISIBLE_PROMO_TYPES.has(p.type)) return false;
+    if (!visibleTypes.has(p.type)) return false;
     // New-user promo only renders for actual new users. Suppressed
     // for returning BB3 holders and anyone who already claimed it.
     if (p.type === 'new-user') {
@@ -138,9 +164,10 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     const aProgress = a.progressMax ? (a.progressCurrent || 0) / a.progressMax : 0;
     const bProgress = b.progressMax ? (b.progressCurrent || 0) / b.progressMax : 0;
     if (bProgress !== aProgress) return bProgress - aProgress;
-    // 3. Then the fixed display order from VISIBLE_PROMO_TYPES_ORDER.
-    const aIdx = VISIBLE_PROMO_TYPES_ORDER.indexOf(a.type);
-    const bIdx = VISIBLE_PROMO_TYPES_ORDER.indexOf(b.type);
+    // 3. Then the fixed display order (admin preview types spliced in
+    //    when unlocked).
+    const aIdx = typeOrder.indexOf(a.type);
+    const bIdx = typeOrder.indexOf(b.type);
     return aIdx - bIdx;
   });
 

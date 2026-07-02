@@ -10,6 +10,7 @@ import { logger } from '@/lib/logger';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo, PromoType } from '@/types';
@@ -31,7 +32,7 @@ const TYPE_STYLES: Record<PromoType, TypeStyle> = {
   'hof':                { accent: '#D4AF37', label: 'HOF' },
   'mint':               { accent: '#a855f7', label: 'Buy' },
   'new-user':           { accent: '#ec4899', label: 'New User' },
-  'buy-bonus':          { accent: '#f97316', label: 'Bonus' },
+  'buy-bonus':          { accent: '#ef4444', label: 'July 4th' },
   'tweet-engagement':   { accent: '#0ea5e9', label: 'X' },
   'spin-share':         { accent: '#8b5cf6', label: 'Share' },
   'founder-draft':      { accent: '#06b6d4', label: 'Founder' },
@@ -115,9 +116,10 @@ export default function PromosPage() {
       firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
       flagsKnown: isBalanceLoaded,
       hasVisibleClaim,
+      isAdminPreview: isWalletAdmin(user?.walletAddress),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promos, isBB3Holder, newUserPromoClaimed, user?.hasSpunWheel, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded]);
+  }, [promos, isBB3Holder, newUserPromoClaimed, user?.hasSpunWheel, isTwitterVerified, claimedLocally, user?.firstPurchaseBonusGranted, user?.firstPurchasePromoUnlocked, isBalanceLoaded, user?.walletAddress]);
 
   const filteredPromos = useMemo(() => {
     // visiblePromos is already filter + sorted by the shared helper

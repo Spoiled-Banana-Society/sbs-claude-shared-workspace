@@ -367,8 +367,8 @@ const seedPromos: Promo[] = [
   {
     id: '7',
     type: 'buy-bonus',
-    title: 'Buy 2 → 1 Free',
-    description: 'Limited time offer!',
+    title: 'Buy 2 → 1 FREE',
+    description: 'July 4th Weekend only!',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
@@ -378,9 +378,9 @@ const seedPromos: Promo[] = [
     progressCurrent: 0,
     progressMax: 2,
     modalContent: {
-      title: 'Buy 2 → 1 Free Draft',
+      title: '🇺🇸 July 4th: Buy 2 → 1 FREE Draft',
       explanation:
-        '• For a limited time purchase 2 draft passes and receive 1 additional free draft pass!\n• This offer applies to every 2 passes purchased.',
+        '• July 4th Weekend special: buy 2 draft passes and receive 1 additional free draft pass!\n• Applies to every 2 passes purchased — no limit. Buy 4, get 2.\n• This weekend only!',
     },
   },
   {

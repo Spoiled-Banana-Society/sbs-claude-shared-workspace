@@ -5,6 +5,7 @@ import { Promo } from '@/types';
 import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
+import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 
@@ -79,6 +80,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     firstPurchasePromoUnlocked: !!user?.firstPurchasePromoUnlocked,
     flagsKnown: isBalanceLoaded,
     hasVisibleClaim: (p) => hasVisibleClaim(p),
+    isAdminPreview: isWalletAdmin(user?.walletAddress),
   });
 
   // Create extended array with clones for infinite loop
