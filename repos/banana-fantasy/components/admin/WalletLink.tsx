@@ -23,6 +23,10 @@ interface Props {
   full?: boolean;
   /** Suppress the underline / link styling. Useful when the parent row is itself clickable. */
   bare?: boolean;
+  /** Show only the resolved name — no truncated hex beside it. The full
+   *  wallet stays one click away (User Lookup) and in the hover title.
+   *  Falls back to the truncated hex when no name resolved. */
+  hideAddress?: boolean;
   /** Used inline (flow context). Default is inline-flex. */
   inline?: boolean;
   /** Extra Tailwind classes. */
@@ -42,6 +46,7 @@ export function WalletLink({
   full = false,
   bare = false,
   inline = false,
+  hideAddress = false,
   className = '',
 }: Props) {
   const wAddr = (wallet || '').trim().toLowerCase();
@@ -70,7 +75,9 @@ export function WalletLink({
       {trimmedName ? (
         <>
           <span className="font-medium">{trimmedName}</span>
-          <span className="text-text-muted font-mono text-[11px]">{addrLabel}</span>
+          {!hideAddress && (
+            <span className="text-text-muted font-mono text-[11px]">{addrLabel}</span>
+          )}
         </>
       ) : (
         <span className="font-mono text-[12px]">{addrLabel}</span>

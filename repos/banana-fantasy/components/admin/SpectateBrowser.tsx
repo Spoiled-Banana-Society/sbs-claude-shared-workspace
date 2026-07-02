@@ -34,6 +34,38 @@ interface QueueStatus {
 
 const REFRESH_INTERVAL_MS = 5000;
 
+interface UserFlags {
+  isNew: boolean;
+  isReturning: boolean;
+}
+
+/** NEW (account < 7 days) / RET (past-season player) chip. Returning wins if
+ *  a wallet somehow carries both (the API already enforces that). */
+function FlagChip({ flags }: { flags?: UserFlags }) {
+  if (!flags) return null;
+  if (flags.isReturning) {
+    return (
+      <span
+        title="Returning player — matched a past-season identity"
+        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20"
+      >
+        Ret
+      </span>
+    );
+  }
+  if (flags.isNew) {
+    return (
+      <span
+        title="New user — account created in the last 7 days"
+        className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/20"
+      >
+        New
+      </span>
+    );
+  }
+  return null;
+}
+
 function levelPillStyle(level: string | null): { bg: string; color: string; label: string } {
   if (!level) return { bg: '#a855f7', color: '#fff', label: 'PRO' };
   const l = level.toLowerCase();
@@ -121,6 +153,37 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     [filtered],
   );
   const users = useDraftRoomUsers(memberWallets);
+
+  // NEW / RET account flags (admin-only endpoint). Keyed on the sorted
+  // deduped wallet set so the 5s poll doesn't refetch unless the set actually
+  // changes; token via ref (see render-loop rule above). Merged into prev so
+  // known flags never flicker out between polls.
+  const [flags, setFlags] = useState<Record<string, UserFlags>>({});
+  const flagsWalletKey = useMemo(
+    () => [...new Set(memberWallets.map(w => w.toLowerCase()))].sort().join(','),
+    [memberWallets],
+  );
+  useEffect(() => {
+    if (!enabled || !flagsWalletKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current();
+        const res = await fetch('/api/admin/user-flags', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ wallets: flagsWalletKey.split(',') }),
+        });
+        if (!res.ok) return;
+        const body = (await res.json()) as { flags?: Record<string, UserFlags> };
+        if (!cancelled && body.flags) setFlags(prev => ({ ...prev, ...body.flags }));
+      } catch { /* cosmetic — names still render without flags */ }
+    })();
+    return () => { cancelled = true; };
+  }, [enabled, flagsWalletKey]);
 
   return (
     <div className="space-y-4">
@@ -286,9 +349,12 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                   <td className="px-4 py-3 text-gray-400 text-xs">
                     {d.filling ? (
                       d.members && d.members.length > 0 ? (
-                        <div className="flex flex-wrap gap-x-2 gap-y-1 max-w-[280px]">
+                        <div className="flex flex-wrap gap-x-2.5 gap-y-1 max-w-[280px]">
                           {d.members.map(w => (
-                            <WalletLink key={w} wallet={w} displayName={users[w.toLowerCase()]?.displayName} />
+                            <span key={w} className="inline-flex items-center gap-1">
+                              <WalletLink wallet={w} displayName={users[w.toLowerCase()]?.displayName} hideAddress />
+                              <FlagChip flags={flags[w.toLowerCase()]} />
+                            </span>
                           ))}
                         </div>
                       ) : (
@@ -296,7 +362,12 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                       )
                     ) : (
                       d.currentDrafter
-                        ? <WalletLink wallet={d.currentDrafter} displayName={users[d.currentDrafter.toLowerCase()]?.displayName} />
+                        ? (
+                          <span className="inline-flex items-center gap-1">
+                            <WalletLink wallet={d.currentDrafter} displayName={users[d.currentDrafter.toLowerCase()]?.displayName} hideAddress />
+                            <FlagChip flags={flags[d.currentDrafter.toLowerCase()]} />
+                          </span>
+                        )
                         : '—'
                     )}
                   </td>
