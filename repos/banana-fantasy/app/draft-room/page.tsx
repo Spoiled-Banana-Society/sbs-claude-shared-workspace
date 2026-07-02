@@ -2699,7 +2699,9 @@ function DraftRoomContent() {
       )}
 
       {isLiveMode && liveError && !fallbackLocal && (
-        <div className="fixed top-[200px] left-1/2 -translate-x-1/2 z-30 w-full max-w-lg px-4">
+        // z-[60]: must sit ABOVE the fixed top strips (filling/drafting bands are
+        // z-[55]) — at z-30 the banner rendered clipped underneath them.
+        <div className="fixed top-[200px] left-1/2 -translate-x-1/2 z-[60] w-full max-w-lg px-4">
           <div className="bg-red-950/95 border border-red-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
             <div className="flex items-start gap-3">
               <span className="text-2xl flex-shrink-0">⚠️</span>
