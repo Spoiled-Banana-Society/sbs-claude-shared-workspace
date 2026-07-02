@@ -662,7 +662,16 @@ export function useDraftLiveSync({
         console.error(`[Live Mode] loadLiveData attempt ${liveRetryCountRef.current}/${MAX_OUTER_RETRIES} failed:`, err);
 
         if (liveRetryCountRef.current >= MAX_OUTER_RETRIES) {
-          logger.debug('[Draft Room] Retries exhausted — surfacing reconnect UI (NO fake local draft)');
+          // While the room is still FILLING, the visible screen runs off its own
+          // poll — the live connection isn't load-bearing until the draft fills,
+          // so don't alarm the user with a "connection error" banner yet. Keep
+          // retrying silently; if it's still dead once the draft fills, the next
+          // exhaustion (post-fill phase) surfaces the banner, and the page's
+          // countdown-end live-not-ready guard still protects draft start.
+          const suppressWhileFilling = phaseRef.current === 'filling';
+          logger.debug(suppressWhileFilling
+            ? '[Draft Room] Retries exhausted while filling — banner suppressed, retrying silently'
+            : '[Draft Room] Retries exhausted — surfacing reconnect UI (NO fake local draft)');
           reportClientError({
             source: LOG_SOURCES.draft.LIVE_LOAD_EXHAUSTED,
             message: err instanceof Error ? err.message : String(err),
@@ -677,6 +686,7 @@ export function useDraftLiveSync({
               // If fillingWaits hit the ceiling, this draft was stuck FILLING for
               // ~10min (real problem) rather than just genuinely-broken data.
               stuckWhileFilling: fillingWaitCountRef.current >= 150,
+              bannerSuppressedWhileFilling: suppressWhileFilling,
             },
             stack: err instanceof Error ? err.stack : undefined,
           });
@@ -687,8 +697,23 @@ export function useDraftLiveSync({
           // Retry / returning to the tab reloads the REAL draft. The server
           // auto-picks the user's turns while disconnected, so nothing is lost by
           // waiting rather than faking.
-          setLiveError('Still connecting to the live draft — tap Retry.');
+          if (!suppressWhileFilling) {
+            setLiveError('Still connecting to the live draft — tap Retry.');
+          }
           liveRetryCountRef.current = 0;
+          if (suppressWhileFilling) {
+            if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
+            if (loadLiveDataReadyTimeoutRef.current) clearTimeout(loadLiveDataReadyTimeoutRef.current);
+            loadLiveDataRetryTimeoutRef.current = setTimeout(() => {
+              liveInitializedRef.current = false;
+              setLiveDataReady(false);
+              loadLiveDataReadyTimeoutRef.current = setTimeout(() => {
+                setLiveDataReady(true);
+                loadLiveDataReadyTimeoutRef.current = null;
+              }, 100);
+              loadLiveDataRetryTimeoutRef.current = null;
+            }, 5000);
+          }
         } else {
           logger.debug('[Live Mode] Auto-retrying in 5s...');
           if (loadLiveDataRetryTimeoutRef.current) clearTimeout(loadLiveDataRetryTimeoutRef.current);
