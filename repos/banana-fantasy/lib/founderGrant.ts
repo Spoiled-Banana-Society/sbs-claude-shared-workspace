@@ -238,14 +238,12 @@ export async function creditFounderDraft(
     .map((o) => (o?.ownerId || '').toLowerCase())
     .filter((o) => o && !o.startsWith('bot-'));
   for (const wallet of humans) {
-    // PAID-only badge (Boris 2026-06-24): free-pass drafters get NEITHER the
-    // Founders badge NOR the spin. resolveDraftPassType returns 'paid' only for
-    // a paid pass used in THIS draft (defaults to non-paid on any lookup error,
-    // so a free/unknown pass never earns the badge).
-    runInBackground('founders-badge', (async () => {
-      const passType = await resolveDraftPassType(wallet, draftId).catch(() => null);
-      if (passType === 'paid') await unlockBadge(wallet, 'founders-league', { draftId });
-    })());
+    // PARTICIPATION badge (Boris 2026-07-01): EVERY human in a Founder Draft
+    // earns the Founders League badge — free AND paid passes alike, same as the
+    // JP/HOF club badges. Only the SPIN reward stays paid-only (that gate lives
+    // in grantFounderDraftSpins below, unchanged). The badge is cosmetic and
+    // just celebrates that you played, so it shouldn't be pay-walled.
+    runInBackground('founders-badge', unlockBadge(wallet, 'founders-league', { draftId }));
   }
   runInBackground('founder-spins', grantFounderDraftSpins(draftId, actorLabel));
   await ref.set({ creditedAt: new Date().toISOString() }, { merge: true });
