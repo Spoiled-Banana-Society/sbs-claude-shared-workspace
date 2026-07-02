@@ -304,17 +304,15 @@ export function DraftRow({
         <div className="sm:w-28 flex-shrink-0 flex items-center justify-end gap-1 sm:gap-2">
           {['filling', 'randomizing', 'pre-spin-countdown', 'draft-starting'].includes(effectiveLive.displayPhase) ? (
             <>
-              <Tooltip content="Enter draft room">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDraftClick(draft);
-                  }}
-                  className="w-[52px] sm:w-20 py-1.5 sm:py-2 rounded-lg font-semibold text-xs sm:text-sm transition-all hover:scale-105 bg-white text-black hover:bg-white/90 flex items-center justify-center"
-                >
-                  {isCreating ? 'Joining...' : 'Enter'}
-                </button>
-              </Tooltip>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDraftClick(draft);
+                }}
+                className="w-[52px] sm:w-20 py-1.5 sm:py-2 rounded-lg font-semibold text-xs sm:text-sm transition-all hover:scale-105 bg-white text-black hover:bg-white/90 flex items-center justify-center"
+              >
+                {isCreating ? 'Joining...' : 'Enter'}
+              </button>
               {effectiveLive.displayPhase === 'filling' && onExitDraft && !isSpecial && (
                 <Tooltip content="Leave draft">
                   <button
