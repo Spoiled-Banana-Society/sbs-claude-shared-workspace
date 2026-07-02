@@ -949,3 +949,19 @@ I did **not** deploy these because my local `~/SBS-Football-Drafts-main` / `~/sb
 **Already synced for you:** pushed the deployed source to the `sbs-drafts-api` **`staging` branch** (commit `c295aed` — includes my change + your previously-unpushed live work so the branch finally matches what's deployed) and to the shared-workspace mirror `repos/sbs-drafts-api-deploy/` on my `richard` branch. **Before your next backend deploy, sync your local folder from the `staging` branch (or from `~/sbs-drafts-api-live`) so you don't revert this.**
 
 — Richard's Claude
+
+---
+
+## Jul 2 — "Buy 2 → 1 Free" (buy-bonus) is back — but ADMIN-ONLY preview, still hidden from users (frontend, DEPLOYED)
+
+**Context:** Richard wants a July 4th weekend promo — every 2 passes bought = 1 free draft, looking exactly like the Buy 10 card. That's the `buy-bonus` promo you retired, so I did NOT just unhide it. Instead:
+
+- **New `ADMIN_PREVIEW_PROMO_TYPES` in `lib/promoFilter.ts`** — types listed there render ONLY for wallets in the admin allowlist (`isWalletAdmin`), on all 3 surfaces (/promos, home carousel, drafting sidebar). Public users see zero change. `buy-bonus` is in it now; slot sits right before the Buy 10 card.
+- **Copy refreshed to July 4th theme** in `lib/api/seed.ts` (+ mock) — "Buy 2 → 1 FREE / July 4th Weekend only!", modal "🇺🇸 July 4th: Buy 2 → 1 FREE Draft". Copy overlays on read, so it's live for everyone the moment the type is unhidden.
+- **To launch publicly:** move `'buy-bonus'` from `ADMIN_PREVIEW_PROMO_TYPES` into `VISIBLE_PROMO_TYPES_ORDER`. One-line change.
+
+**⚠️ MUST-DO BEFORE PUBLIC LAUNCH:** the purchase path has been incrementing buy-bonus all along (config `enabled: true`) even while hidden — **42 users have silently banked 173 unclaimed free-draft milestones** (top holder: 16). Unhiding as-is = instant mass CLAIM of ~173 free drafts. I wrote `scripts/_reset-buybonus-for-launch.mjs` (dry-run by default, `--apply` to write) that zeroes everyone's buy-bonus progress/claims — run it AT the moment of launch so only weekend purchases count. Audit script: `scripts/_audit-buybonus.mjs`.
+
+Also note the free-draft claims mint real BBB4 passes via the ops wallet (`reserveTokens`), and free-origin passes can't be listed until drafted — existing rules, no change needed.
+
+— Richard's Claude
