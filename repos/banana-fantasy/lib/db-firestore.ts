@@ -303,6 +303,10 @@ function calcSpinsForPurchase(quantity: number): number {
 
 function calcBuyBonusFreeDrafts(quantity: number): number {
   if (!API_CONFIG.promos.buyBonus.enabled) return 0;
+  // In 'spin' mode the reward is a wheel spin granted on CLAIM (claim path in
+  // claimPromo) — this legacy auto-grant of free drafts must stay at 0 or the
+  // verifyPurchase path would hand out drafts on top of the claimable spin.
+  if (API_CONFIG.promos.buyBonus.reward !== 'draft') return 0;
   return Math.floor(quantity / API_CONFIG.promos.buyBonus.buy) * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
 }
 
@@ -570,11 +574,13 @@ export async function claimPromo(userId: string, promoId: string) {
 
     if (spinsAdded <= 0) throw new ApiError(400, 'Nothing to claim');
 
-    // Buy-bonus awards free drafts, everything else awards wheel spins.
-    // When on-chain admin mint is configured, free-draft awards ALSO mint real
-    // BBB4 NFTs after the tx commits (dual-write — counter + NFT stay in sync).
+    // Buy-bonus in 'draft' mode awards free drafts; in 'spin' mode (July 4th
+    // 2026 config) it falls through to the wheel-spin path like every other
+    // promo. When on-chain admin mint is configured, free-draft awards ALSO
+    // mint real BBB4 NFTs after the tx commits (dual-write — counter + NFT
+    // stay in sync).
     const draftPassCount =
-      promo.type === 'buy-bonus'
+      promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft'
         ? spinsAdded * API_CONFIG.promos.buyBonus.bonusFreeDrafts
         : 0;
     const mintOnChain = isAdminMintConfigured() && draftPassCount > 0;
@@ -677,15 +683,17 @@ export async function claimPromo(userId: string, promoId: string) {
     // commits so it reaches every device in real-time (content-carrying ping),
     // instead of the client firing a second round-trip after the claim returns.
     if (result.spinsAdded > 0) {
-      const isBuyBonus = result.promo.type === 'buy-bonus';
+      // Key off what was actually granted (draftPassCount), not the promo
+      // type — buy-bonus grants spins when configured reward === 'spin'.
+      const grantedDrafts = result.draftPassCount > 0;
       void createNotification(userId, {
         type: 'promo',
         title: 'Promo Claimed!',
-        message: isBuyBonus
-          ? `You earned ${result.spinsAdded} free draft pass${result.spinsAdded !== 1 ? 'es' : ''}!`
+        message: grantedDrafts
+          ? `You earned ${result.draftPassCount} free draft pass${result.draftPassCount !== 1 ? 'es' : ''}!`
           : `You earned ${result.spinsAdded} wheel spin${result.spinsAdded !== 1 ? 's' : ''}!`,
-        link: isBuyBonus ? '/drafting' : '/banana-wheel',
-        icon: isBuyBonus ? 'ticket' : 'spin',
+        link: grantedDrafts ? '/drafting' : '/banana-wheel',
+        icon: grantedDrafts ? 'ticket' : 'spin',
       });
     }
 
@@ -1542,7 +1550,7 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
     user.freeDrafts = (user.freeDrafts || 0) + freeDraftsAdded;
 
     const { mintMilestonesEarned, buyBonusMilestonesEarned } = await _incrementMintPromosInTx(tx, userRef, purchase.quantity);
-    if (buyBonusMilestonesEarned > 0) {
+    if (buyBonusMilestonesEarned > 0 && API_CONFIG.promos.buyBonus.reward === 'draft') {
       freeDraftsAdded = buyBonusMilestonesEarned * API_CONFIG.promos.buyBonus.bonusFreeDrafts;
     }
     // Stash for post-commit event push (inside this transaction the data

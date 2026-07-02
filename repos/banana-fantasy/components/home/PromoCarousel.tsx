@@ -6,6 +6,7 @@ import { PromoModal } from '../modals/PromoModal';
 import { useAuth } from '@/hooks/useAuth';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
 
@@ -198,7 +199,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
     // because we'd be lying about a backend reward.
     setClaimedPromos(prev => new Set([...Array.from(prev), promo.id]));
     if (user) {
-      if (promo.type === 'buy-bonus') {
+      if (promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft') {
         updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
       } else {
         updateUser({ wheelSpins: (user.wheelSpins || 0) + count });

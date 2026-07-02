@@ -3,6 +3,7 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import confetti from 'canvas-confetti';
+import { API_CONFIG } from '@/lib/api/config';
 
 interface ClaimSuccessModalProps {
   count: number;
@@ -73,9 +74,10 @@ export function ClaimSuccessModal({ count, promoType, onClose }: ClaimSuccessMod
     return () => clearTimeout(t);
   }, []);
 
-  // Reward labeling — buy-bonus rewards are free drafts, everything else
-  // (mint/daily/pick-10/jackpot/referral/new-user) is free spins.
-  const isBuyBonus = promoType === 'buy-bonus';
+  // Reward labeling — buy-bonus in 'draft' mode rewards free drafts; in
+  // 'spin' mode (July 4th 2026 config) it's free spins like everything else
+  // (mint/daily/pick-10/jackpot/referral/new-user).
+  const isBuyBonus = promoType === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft';
   const rewardLabel = isBuyBonus
     ? `${count} Free ${count === 1 ? 'Draft' : 'Drafts'}`
     : `${count} Free ${count === 1 ? 'Spin' : 'Spins'}`;

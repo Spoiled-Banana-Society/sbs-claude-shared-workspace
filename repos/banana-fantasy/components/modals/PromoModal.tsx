@@ -12,6 +12,7 @@ import { UserPopover } from '@/components/social/UserPopover';
 import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { useBatchProgress } from '@/hooks/useBatchProgress';
+import { API_CONFIG } from '@/lib/api/config';
 
 interface PromoModalProps {
   isOpen: boolean;
@@ -918,7 +919,7 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
   const renderBuyBonusContent = () => (
     <div className="bg-bg-tertiary rounded-xl p-4 text-center">
       <div className="text-4xl mb-3">🎁</div>
-      <p className="font-semibold mb-2 text-text-primary">Limited Time Offer!</p>
+      <p className="font-semibold mb-2 text-text-primary">July 4th Weekend Only!</p>
       <p className="text-text-secondary text-sm">
         Head to the Buy Drafts page to take advantage of this promotion.
       </p>
@@ -1181,12 +1182,12 @@ export function PromoModal({ isOpen, onClose, promo, onClaim, isPromoClaimed = f
             <div className="text-4xl mb-4">🎉</div>
             <h3 className="text-xl font-bold text-text-primary mb-2">Success!</h3>
             <p className="text-text-secondary mb-6">
-              {promo.type === 'buy-bonus'
+              {promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft'
                 ? `You got ${claimSuccess.count} free ${claimSuccess.count === 1 ? 'draft' : 'drafts'}!`
                 : `You got ${claimSuccess.count} free ${claimSuccess.count === 1 ? 'spin' : 'spins'}!`}
             </p>
             <div className="flex flex-col gap-3">
-              {promo.type === 'buy-bonus' ? (
+              {promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft' ? (
                 <button
                   onClick={() => {
                     setClaimSuccess({ show: false, count: 0 });

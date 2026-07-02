@@ -42,6 +42,11 @@ export const API_CONFIG = {
     buyBonus: {
       enabled: true,
       buy: 2,
+      // What a milestone pays out on claim. 'spin' = 1 Banana Wheel spin
+      // (Richard's July 4th 2026 call); 'draft' = the original flat
+      // free-draft reward — that machinery (on-chain mint, Go API
+      // registration) is intact, flip this back to restore it.
+      reward: 'spin' as 'spin' | 'draft',
       bonusFreeDrafts: 1,
     },
 

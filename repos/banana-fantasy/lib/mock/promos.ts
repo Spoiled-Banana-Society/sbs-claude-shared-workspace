@@ -161,7 +161,7 @@ export const mockPromos: Promo[] = [
   {
     id: '7',
     type: 'buy-bonus',
-    title: 'Buy 2 → 1 FREE',
+    title: 'Buy 2 → FREE SPIN',
     description: 'July 4th Weekend only!',
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
@@ -170,8 +170,8 @@ export const mockPromos: Promo[] = [
     progressCurrent: 0,
     progressMax: 2,
     modalContent: {
-      title: '🇺🇸 July 4th: Buy 2 → 1 FREE Draft',
-      explanation: 'July 4th Weekend special: buy 2 draft passes and receive 1 additional free draft pass! Applies to every 2 passes purchased — no limit.',
+      title: '🇺🇸 July 4th: Buy 2 → FREE SPIN',
+      explanation: 'July 4th Weekend special: every 2 draft passes purchased earns a free Banana Wheel spin! Every spin wins up to 20 Free Drafts — at least 1 guaranteed. No limit.',
     },
   },
   {

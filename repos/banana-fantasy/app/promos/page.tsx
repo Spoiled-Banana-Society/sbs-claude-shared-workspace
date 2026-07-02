@@ -11,6 +11,7 @@ import { reportClientError } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { filterAndSortVisiblePromos } from '@/lib/promoFilter';
 import { isWalletAdmin } from '@/lib/adminAllowlist';
+import { API_CONFIG } from '@/lib/api/config';
 import { SpinExplainer } from '@/components/promos/SpinExplainer';
 import { ActivityHistory } from '@/components/profile/ActivityHistory';
 import type { Promo, PromoType } from '@/types';
@@ -200,7 +201,7 @@ export default function PromosPage() {
     }
     setClaimedLocally(prev => new Set([...Array.from(prev), promo.id]));
     if (user) {
-      if (promo.type === 'buy-bonus') {
+      if (promo.type === 'buy-bonus' && API_CONFIG.promos.buyBonus.reward === 'draft') {
         updateUser({ freeDrafts: (user.freeDrafts || 0) + count });
       } else {
         updateUser({ wheelSpins: (user.wheelSpins || 0) + count });
