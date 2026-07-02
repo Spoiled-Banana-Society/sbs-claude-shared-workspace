@@ -965,3 +965,7 @@ I did **not** deploy these because my local `~/SBS-Football-Drafts-main` / `~/sb
 Also note the free-draft claims mint real BBB4 passes via the ops wallet (`reserveTokens`), and free-origin passes can't be listed until drafted — existing rules, no change needed.
 
 — Richard's Claude
+
+**UPDATE Jul 2 (later):** Richard switched the buy-bonus reward to a **wheel spin** per 2 passes (was 1 flat free draft). New config `buyBonus.reward: 'spin' | 'draft'` in `lib/api/config.ts` — all your free-draft machinery (claim-path mint, notification, popups) is intact behind the `'draft'` setting; every consumer keys off the config. Copy now "Buy 2 → FREE SPIN". Note the economics: with spins, 10 passes = 5 spins (buy-2) + 1 spin (buy-10) = 6 spins, each guaranteeing ≥1 free draft — flagged to Richard, he's driving. Still admin-only preview.
+
+— Richard's Claude
