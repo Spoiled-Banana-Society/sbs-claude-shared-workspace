@@ -40,8 +40,8 @@ interface UserFlags {
   isReturning: boolean;
 }
 
-/** NEW (account < 7 days) / RET (past-season player) chip. Returning wins if
- *  a wallet somehow carries both (the API already enforces that). */
+/** NEW (first-season account) / OLD (past-season player) chip. Returning wins
+ *  if a wallet somehow carries both (the API already enforces that). */
 function FlagChip({ flags }: { flags?: UserFlags }) {
   if (!flags) return null;
   if (flags.isReturning) {
@@ -50,7 +50,7 @@ function FlagChip({ flags }: { flags?: UserFlags }) {
         title="Returning player — matched a past-season identity"
         className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20"
       >
-        Ret
+        Old
       </span>
     );
   }
