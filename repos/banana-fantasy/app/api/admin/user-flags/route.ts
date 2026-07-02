@@ -10,15 +10,19 @@ import { isReturningWalletSync } from '@/lib/returningUsers';
 import { logger } from '@/lib/logger';
 
 const MAX_BATCH = 120;
-const NEW_USER_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+// NEW = account created this season (public launch 2026-06-23). NOT the 7-day
+// promo window — for the admin band the meaningful split is first-time player
+// vs past-season player, so a first-season account stays NEW until it's
+// linked/marked returning (Boris 2026-07-02).
+const SEASON_LAUNCH_MS = Date.parse('2026-06-23T00:00:00Z');
 
 // POST /api/admin/user-flags
 // Body: { wallets: string[] }
 //
 // Admin-gated. Returns per-wallet account flags for admin surfaces (the
 // Drafts/Spectate "who's in" band):
-//   isNew       — account created within the last 7 days (same window as the
-//                 new-user promo gate) and not a returning player.
+//   isNew       — first-season account: created since the 2026-06-23 public
+//                 launch and not a returning player.
 //   isReturning — matched a past-season identity: the server-verified
 //                 web2 returning-check stamp OR the static past-players
 //                 wallet snapshot. Same definition the promo guard uses.
@@ -64,7 +68,6 @@ export async function POST(req: Request) {
     const refs = wallets.map((w) => db.collection('v2_users').doc(w));
     const snaps = await db.getAll(...refs);
 
-    const now = Date.now();
     const flags: Record<string, UserFlags> = {};
     snaps.forEach((snap, i) => {
       const wallet = wallets[i];
@@ -72,7 +75,7 @@ export async function POST(req: Request) {
       const data = snap.data() as { createdAt?: unknown; isReturningPlayer?: boolean };
       const isReturning = data.isReturningPlayer === true || isReturningWalletSync(wallet);
       const created = createdAtMs(data.createdAt);
-      const isNew = !isReturning && created !== null && now - created < NEW_USER_WINDOW_MS;
+      const isNew = !isReturning && created !== null && created >= SEASON_LAUNCH_MS;
       if (isNew || isReturning) flags[wallet] = { isNew, isReturning };
     });
 
