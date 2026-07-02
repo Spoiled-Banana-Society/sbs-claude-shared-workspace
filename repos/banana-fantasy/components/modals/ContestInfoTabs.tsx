@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useWallets } from '@privy-io/react-auth';
 import { mockFAQSections } from '@/lib/faqContent';
 import { ContestDetailsBody } from './ContestDetailsBody';
 import { DraftProofExplainerContent } from '@/components/drafting/DraftProofExplainerContent';
@@ -33,6 +34,19 @@ const TYPES: { word: string; pct: string; color: string; d: string }[] = [
 
 export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
   const [tab, setTab] = useState<Tab>('contest');
+
+  // Audience filter — same rule as app/faq/page.tsx. Without it this modal
+  // showed BOTH the web2 and web3 variants of dual-audience questions (the
+  // duplicate "Can I trade or drop players?" bug). Confirmed web2 = embedded
+  // Privy wallet only; default-safe: logged-out / any external wallet → web3.
+  const { wallets, ready: walletsReady } = useWallets();
+  const isWeb2 = walletsReady && wallets.length > 0 && wallets.every((w) => w.walletClientType === 'privy');
+  const hideAudience = isWeb2 ? 'web3' : 'web2';
+  const faqSections = mockFAQSections
+    .filter((section) => section.audience !== hideAudience)
+    .map((section) => ({ ...section, items: section.items.filter((item) => item.audience !== hideAudience) }))
+    .filter((section) => section.items.length > 0);
+
   return (
     <div>
       {/* tab bar */}
@@ -84,7 +98,7 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
 
       {tab === 'faq' && (
         <div className="space-y-5">
-          {mockFAQSections.map(section => (
+          {faqSections.map(section => (
             <div key={section.id}>
               <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">{section.title}</p>
               <div className="space-y-1.5">
