@@ -66,6 +66,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'wallet, type, title, and message are required' }, { status: 400 });
     }
 
+    // SERVER KILL-SWITCH for the retired "New Promo Available!" client
+    // self-ping (removed 2026-07-03 — promo launches are broadcast-only).
+    // Stale browser bundles deployed before the removal still POST these;
+    // swallow them as a success so old clients don't retry, but never
+    // persist. Remove after a few weeks when no old bundles remain.
+    if (typeof dedupeKey === 'string' && dedupeKey.startsWith('sbs-promo-new-seen-')) {
+      return NextResponse.json({ ok: true, skipped: 'retired-self-ping' });
+    }
+
     await createNotification(wallet, { type, title, message, link, dedupeKey, icon });
 
     return NextResponse.json({ ok: true });

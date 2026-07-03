@@ -305,11 +305,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   {/* NEW Badge */}
                   {promo.isNew && (
                     <div className="absolute -right-1 -top-1 z-30">
-                      <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border ${
-                        isJuly4
-                          ? 'bg-[#ef4444] text-white border-[#b91c1c]/50'
-                          : 'bg-banana text-[#1d1d1f] border-banana/50'
-                      }`}>
+                      {/* One consistent banana-yellow NEW ribbon for every promo
+                          (Boris 2026-07-03 — no per-promo color variants). */}
+                      <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border bg-banana text-[#1d1d1f] border-banana/50">
                         NEW
                       </span>
                     </div>
