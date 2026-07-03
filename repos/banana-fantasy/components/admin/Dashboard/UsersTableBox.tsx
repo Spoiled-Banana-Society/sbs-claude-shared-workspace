@@ -71,6 +71,12 @@ const WEEK_MS = 7 * 24 * 3600 * 1000;
 const FORTNIGHT_MS = 14 * 24 * 3600 * 1000;
 const lastActiveMs = (u: AggregateUser) => (u.lastActiveAt ? Date.parse(u.lastActiveAt) : 0);
 
+// NET drafts: entries minus leaves. A leave refunds the pass, and users who
+// bounce (enter → leave → re-enter) log an `entered` event each time — the
+// gross count read as "4 drafts" for someone who only ever held 2 passes
+// (Bucsfan, 2026-07-03). Net = drafts they're actually in / completed.
+const netDrafts = (u: AggregateUser) => Math.max(0, u.activity.draftsEntered - u.activity.draftsLeft);
+
 const FILTERS: { key: FilterKey; label: string; predicate: (u: AggregateUser) => boolean }[] = [
   { key: 'all', label: 'All', predicate: () => true },
   {
@@ -110,7 +116,7 @@ const FILTERS: { key: FilterKey; label: string; predicate: (u: AggregateUser) =>
 
 const SORTS: { key: SortKey; label: string; pick: (u: AggregateUser) => number }[] = [
   { key: 'spend', label: 'Spend', pick: (u) => u.activity.spendUsd },
-  { key: 'drafts', label: 'Drafts', pick: (u) => u.activity.draftsEntered },
+  { key: 'drafts', label: 'Drafts', pick: (u) => netDrafts(u) },
   { key: 'spins', label: 'Spins', pick: (u) => u.activity.spinsWon },
   { key: 'promos', label: 'Promos', pick: (u) => u.activity.promosClaimed },
   { key: 'last_active', label: 'Last active', pick: lastActiveMs },
@@ -292,7 +298,12 @@ export function UsersTableBox({ enabled }: Props) {
                         </div>
                       </div>
                     </td>
-                    <td className={`py-2 text-right ${u.activity.draftsEntered > 0 ? 'text-blue-300' : 'text-gray-600'}`}>{u.activity.draftsEntered}</td>
+                    <td
+                      className={`py-2 text-right ${netDrafts(u) > 0 ? 'text-blue-300' : 'text-gray-600'}`}
+                      title={u.activity.draftsLeft > 0 ? `${u.activity.draftsEntered} entered · ${u.activity.draftsLeft} left` : undefined}
+                    >
+                      {netDrafts(u)}
+                    </td>
                     <td className={`py-2 text-right ${u.activity.passesBought > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>{u.activity.passesBought}</td>
                     <td className={`py-2 text-right ${u.activity.spendUsd > 0 ? 'text-emerald-300' : 'text-gray-600'}`}>
                       {u.activity.spendUsd > 0 ? `$${Math.round(u.activity.spendUsd).toLocaleString()}` : '—'}
