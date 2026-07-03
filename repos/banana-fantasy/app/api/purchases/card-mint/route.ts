@@ -42,7 +42,12 @@ const FAILED_MINTS_COLLECTION = 'failed_mints';
 // mint txHash so a retried card-mint can never double-credit / double-grant.
 const CARD_FEE_CREDIT_COLLECTION = 'card_fee_credits';
 const WALLET_REGEX = /^0x[0-9a-fA-F]{40}$/;
-const MAX_QUANTITY = 40;
+// 100 = uniform ceiling with the USDC path (purchases/create). One on-chain
+// reserveTokens tx mints the whole batch — 100 is comfortably inside Base's
+// gas envelope; far beyond that a single tx gets risky, so whales buy twice.
+// NOTE the card PROCESSOR may still decline very large charges ($2,500) on
+// its own risk rules — that's their ceiling, not ours (Boris 2026-07-03).
+const MAX_QUANTITY = 100;
 
 // Floor at which the admin wallet can reliably submit the permit +
 // transferFrom + reserveTokens trio. We pin gas params to 0.1 gwei
