@@ -265,12 +265,26 @@ export async function ensureUserSeeded(userId: string): Promise<User> {
 
   await batch.commit();
 
-  // Fire-and-forget signup event (first-time seed)
+  // ONE-SEEDER CLAIM: a fresh account's first page load fires several API
+  // calls concurrently; each sees "no username yet" and runs this seed. The
+  // seed WRITES are idempotent, but the signup EVENTS below are not — every
+  // racer used to log its own "New account" row (Boris 2026-07-03: "why does
+  // it show twice?"; one wallet had six). create() is atomic: exactly one
+  // caller wins and emits; losers skip events but still return the seed.
+  let firstSeeder = false;
   try {
-    const { logUserEvent } = await import('@/lib/userEvents');
-    void logUserEvent(userId, 'signup');
-  } catch {
-    // non-fatal
+    await userRef.collection('metadata').doc('seedClaim').create({ at: new Date().toISOString() });
+    firstSeeder = true;
+  } catch { /* claimed by a concurrent seeder — events already emitted */ }
+
+  // Fire-and-forget signup event (first-time seed)
+  if (firstSeeder) {
+    try {
+      const { logUserEvent } = await import('@/lib/userEvents');
+      void logUserEvent(userId, 'signup');
+    } catch {
+      // non-fatal
+    }
   }
 
   // Admin Live Activity: "New account" event, tagged new vs returning.
@@ -278,19 +292,21 @@ export async function ensureUserSeeded(userId: string): Promise<User> {
   // the web2 email/X identity match (returning-check) runs moments later
   // on the same login, so a web2 returnee's row may read NEW here while
   // their user record (and every chip) flips to returning seconds after.
-  try {
-    const [{ logActivityEvent }, { isReturningWalletSync }] = await Promise.all([
-      import('@/lib/activityEvents'),
-      import('@/lib/returningUsers'),
-    ]);
-    const isReturning = isReturningWalletSync(userId);
-    void logActivityEvent({
-      type: 'user_signed_up',
-      userId,
-      metadata: { isReturning, isNewAccount: !isReturning, firstSession: true },
-    });
-  } catch {
-    // non-fatal
+  if (firstSeeder) {
+    try {
+      const [{ logActivityEvent }, { isReturningWalletSync }] = await Promise.all([
+        import('@/lib/activityEvents'),
+        import('@/lib/returningUsers'),
+      ]);
+      const isReturning = isReturningWalletSync(userId);
+      void logActivityEvent({
+        type: 'user_signed_up',
+        userId,
+        metadata: { isReturning, isNewAccount: !isReturning, firstSession: true },
+      });
+    } catch {
+      // non-fatal
+    }
   }
 
   // Welcome bell notification (Boris 2026-06-10): every new user gets ONE
