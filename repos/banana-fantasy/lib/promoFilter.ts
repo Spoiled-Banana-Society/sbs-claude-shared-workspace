@@ -25,6 +25,7 @@ export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
   'first-purchase', // "First Purchase → FREE SPINS" — leads the not-yet-started
                     // group (claimable + in-progress promos still bubble above it)
   'new-user',
+  'buy-bonus',     // "Buy 2 → FREE SPIN" — July 4th weekend promo; re-hide Sunday night (2026-07-05)
   'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
   'daily-drafts',  // "4 drafts daily"
   'pick-10',
@@ -42,7 +43,7 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  * 'buy-bonus' = "Buy 2 → 1 Free" (July 4th weekend candidate). Inserted
  * right before 'mint' so it sits next to the Buy 10 card.
  */
-export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = ['buy-bonus'];
+export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
 /** Display order with the admin-preview types spliced in (before 'mint'). */
 function adminPreviewOrder(): PromoType[] {
