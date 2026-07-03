@@ -6,6 +6,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens } from '@/lib/passLedger';
 import { createNotification } from '@/lib/queueNotifications';
+import { sendAdminAlertEmail } from '@/lib/adminAlerts';
 import { getAdminWalletAllowlist } from '@/lib/adminAllowlist';
 import { LAUNCH_ISO } from '@/lib/sbsDay';
 import { logger } from '@/lib/logger';
@@ -108,14 +109,32 @@ export async function POST(req: Request) {
           // every admin device renders it INSTANTLY — the bulk path skips that
           // ping and waits for the next poll. Admin list is tiny, so the
           // per-wallet fan-out is cheap.
-          await Promise.allSettled(admins.map((w) => createNotification(w, {
-            type: 'system',
-            title: 'New user entered a draft',
-            message: `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
-            link: '/admin?tab=drafts',
-            icon: '🆕',
-            dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
-          })));
+          await Promise.allSettled([
+            ...admins.map((w) => createNotification(w, {
+              type: 'system',
+              title: 'New user entered a draft',
+              message: `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
+              link: '/admin?tab=drafts',
+              icon: '🆕',
+              dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
+            })),
+            // Pocket channel — instant email to the team (no SMS provider in
+            // the stack; Resend is the wired always-on channel). Same event,
+            // different surface, so it does NOT violate one-event-one-bell.
+            // Guarded by a create()-once doc so a retried request can't
+            // double-email (bells dedupe themselves; email has no such rail).
+            (async () => {
+              try {
+                await db.collection('admin_alert_sent')
+                  .doc(`new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`.replace(/[/\\\s]+/g, '_'))
+                  .create({ at: new Date().toISOString() });
+              } catch { return; } // already sent for this user+draft
+              await sendAdminAlertEmail(
+                `🆕 New user in a lobby: ${name}`,
+                `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
+              );
+            })(),
+          ]);
         } catch (err) {
           logger.warn('use-pass.admin_new_user_bell_failed', { userId, leagueId, err });
         }
