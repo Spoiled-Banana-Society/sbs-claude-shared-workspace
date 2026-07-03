@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 
+import { usePrivy } from '@privy-io/react-auth';
+
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import type { ActivityEventType, PaymentMethod, WalletType } from '@/lib/activityEvents';
 import { WalletLink } from '@/components/admin/WalletLink';
@@ -108,15 +110,50 @@ function eventMatchesFilters(
 
 export function LiveActivity({ enabled }: { enabled: boolean }) {
   const { events, isConnected, error } = useActivityStream(enabled ? '/api/admin/activity/stream' : null);
+  const { getAccessToken } = usePrivy();
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [walletFilter, setWalletFilter] = useState<WalletFilter>('all');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
   const [search, setSearch] = useState('');
 
+  // Full history on demand: the live stream only carries the latest 100
+  // events, so older rows (e.g. every pass purchase ever) scroll out of
+  // the window. "Load full history" fetches the complete record once and
+  // merges it under the live rows — live events keep streaming on top.
+  const [history, setHistory] = useState<LiveActivityEvent[] | null>(null);
+  const [historyState, setHistoryState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [historyExhaustive, setHistoryExhaustive] = useState(true);
+  const loadHistory = async () => {
+    setHistoryState('loading');
+    try {
+      const token = await getAccessToken();
+      const res = await fetch('/api/admin/activity/history?type=all', {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const body = (await res.json()) as { events?: LiveActivityEvent[]; exhaustive?: boolean };
+      setHistory(body.events ?? []);
+      setHistoryExhaustive(body.exhaustive !== false);
+      setHistoryState('loaded');
+    } catch {
+      setHistoryState('error');
+    }
+  };
+
+  // Live events win on id collision (they're fresher); history fills in
+  // everything older than the stream window.
+  const allEvents = useMemo(() => {
+    if (!history) return events;
+    const seen = new Set(events.map((e) => e.id));
+    const merged = [...events, ...history.filter((e) => !seen.has(e.id))];
+    merged.sort((a, b) => (b.createdAt ?? Date.parse(b.createdAtIso)) - (a.createdAt ?? Date.parse(a.createdAtIso)));
+    return merged;
+  }, [events, history]);
+
   const filtered = useMemo(
-    () => events.filter((e) => eventMatchesFilters(e, typeFilter, walletFilter, paymentFilter, search)),
-    [events, typeFilter, walletFilter, paymentFilter, search],
+    () => allEvents.filter((e) => eventMatchesFilters(e, typeFilter, walletFilter, paymentFilter, search)),
+    [allEvents, typeFilter, walletFilter, paymentFilter, search],
   );
 
   const stats = useMemo(() => {
@@ -230,13 +267,39 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
           className="rounded-md border border-white/[0.08] bg-black/40 text-xs text-gray-200 px-2 py-1.5 min-w-[220px]"
         />
         <button
+          onClick={loadHistory}
+          disabled={historyState === 'loading' || historyState === 'loaded'}
+          className={`ml-auto rounded-md border text-xs px-3 py-1.5 transition ${
+            historyState === 'loaded'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 cursor-default'
+              : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-gray-200'
+          }`}
+        >
+          {historyState === 'loaded'
+            ? (historyExhaustive ? '✓ Full history loaded' : '✓ History loaded (last 1,000)')
+            : historyState === 'loading' ? 'Loading history…'
+            : historyState === 'error' ? 'Retry full history'
+            : 'Load full history'}
+        </button>
+        <button
           onClick={downloadCsv}
-          className="ml-auto rounded-md border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-xs text-gray-200 px-3 py-1.5"
+          className="rounded-md border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] text-xs text-gray-200 px-3 py-1.5"
           disabled={filtered.length === 0}
         >
           Export CSV ({filtered.length})
         </button>
       </div>
+
+      {/* Filtered-purchases rollup — the "how much have we actually sold"
+          line. Only when the purchases filter is active. */}
+      {typeFilter === 'pass_purchased' && filtered.length > 0 && (
+        <p className="text-[11px] text-gray-400">
+          {filtered.length} purchase{filtered.length === 1 ? '' : 's'}
+          {' · '}{filtered.reduce((s, e) => s + e.quantity, 0)} passes
+          {' · '}${filtered.reduce((s, e) => s + (Number(e.metadata?.totalPrice) || 0), 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} total
+          {history === null && <span className="text-gray-600"> — live window only; use “Load full history” for all-time</span>}
+        </p>
+      )}
 
       {/* Events table */}
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
