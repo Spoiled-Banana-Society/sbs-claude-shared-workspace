@@ -96,8 +96,13 @@ export async function POST(req: Request) {
           const u = (await userRef.get()).data() as
             | { createdAt?: string; isReturningPlayer?: boolean; username?: string }
             | undefined;
+          // SAME returning rule as the admin NEW/OLD chips: the doc flag OR
+          // the past-season wallet snapshot. Checking only the flag let
+          // sdotdfs (OLD via snapshot, flag unset) email as a "new user".
+          const { isReturningWalletSync } = await import('@/lib/returningUsers');
+          const isReturning = u?.isReturningPlayer === true || isReturningWalletSync(userId);
           const isNew = !!u && typeof u.createdAt === 'string'
-            && u.createdAt >= LAUNCH_ISO && u.isReturningPlayer !== true;
+            && u.createdAt >= LAUNCH_ISO && !isReturning;
           if (!isNew) return;
           // Comped accounts don't count (Boris 2026-07-03: "if we grant them
           // the free draft pass, don't count that"): if ANY pass was ever
@@ -113,6 +118,9 @@ export async function POST(req: Request) {
           const name = u?.username && !/^user-0x/i.test(u.username)
             ? u.username
             : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
+          const speedLabel = leagueId?.includes('-slow-') ? 'SLOW draft'
+            : leagueId?.includes('-fast-') ? 'FAST draft'
+            : 'draft';
           // Per-admin createNotification (NOT the bulk broadcast helper): the
           // single-wallet path pushes the bell content over the live stream so
           // every admin device renders it INSTANTLY — the bulk path skips that
@@ -121,8 +129,8 @@ export async function POST(req: Request) {
           await Promise.allSettled([
             ...admins.map((w) => createNotification(w, {
               type: 'system',
-              title: 'New user entered a draft',
-              message: `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
+              title: `New user entered a ${speedLabel}`,
+              message: `${name} — a NEW account — just took a seat in a ${speedLabel}${leagueId ? ` (${leagueId})` : ''}.`,
               link: '/admin?tab=drafts',
               icon: '🆕',
               dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
@@ -139,8 +147,8 @@ export async function POST(req: Request) {
                   .create({ at: new Date().toISOString() });
               } catch { return; } // already sent for this user+draft
               await sendAdminAlertEmail(
-                `🆕 New user in a lobby: ${name}`,
-                `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
+                `🆕 New user in a ${speedLabel}: ${name}`,
+                `${name} — a NEW account — just took a seat in a ${speedLabel}${leagueId ? ` (${leagueId})` : ''}.`,
               );
             })(),
           ]);
