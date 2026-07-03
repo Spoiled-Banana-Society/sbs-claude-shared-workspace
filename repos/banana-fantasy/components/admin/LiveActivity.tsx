@@ -171,7 +171,16 @@ function persistFiltersToUrl(entries: Record<string, string>): void {
     if (v && v !== 'all' && v !== '') params.set(k, v);
     else params.delete(k);
   }
-  window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+  // No-op when nothing changed. Critical: this used to fire on MOUNT too,
+  // re-writing the URL from a location snapshot taken mid tab-switch (the
+  // router.replace hadn't committed yet) — which resurrected the PREVIOUS
+  // tab= into the URL and the admin shell then yanked the user to that tab
+  // (Boris: "i hit pass purchased and switch tabs, it takes me to the draft
+  // page"). The mount-skip lives at the call site; this equality check is
+  // the second seatbelt.
+  const next = params.toString();
+  if (next === new URLSearchParams(window.location.search).toString()) return;
+  window.history.replaceState(null, '', `${window.location.pathname}?${next}`);
 }
 
 export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideStats?: boolean }) {
@@ -190,7 +199,12 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
   const [walletFilter, setWalletFilter] = useState<WalletFilter>(() => (urlParam('walletType') as WalletFilter) || 'all');
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>(() => (urlParam('pay') as PaymentFilter) || 'all');
   const [search, setSearch] = useState(() => urlParam('q') || '');
+  // Persist ONLY after a real filter change — never on mount. The mount run
+  // raced the admin shell's router.replace during tab switches and rewrote
+  // the URL with the previous tab's params (see persistFiltersToUrl).
+  const filtersTouchedRef = useRef(false);
   useEffect(() => {
+    if (!filtersTouchedRef.current) { filtersTouchedRef.current = true; return; }
     persistFiltersToUrl({ type: typeFilter, walletType: walletFilter, pay: paymentFilter, q: search });
   }, [typeFilter, walletFilter, paymentFilter, search]);
 

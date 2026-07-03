@@ -5,6 +5,9 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens } from '@/lib/passLedger';
+import { createNotificationForWallets } from '@/lib/queueNotifications';
+import { getAdminWalletAllowlist } from '@/lib/adminAllowlist';
+import { LAUNCH_ISO } from '@/lib/sbsDay';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -79,6 +82,40 @@ export async function POST(req: Request) {
       addActivityEventToTx(tx, activityDoc);
       return { decremented: true, before: current, after: current - 1 };
     });
+
+    // Admin-only heads-up when a NEW user (first-season account, not a
+    // returning player) enters a filling draft (Boris 2026-07-03: "give me a
+    // bell if a new user is ever in a draft thats filling"). One bell per
+    // user+draft (dedupeKey), so several new users in one lobby ping several
+    // times, but a re-entry never double-pings. Fire-and-forget: a bell
+    // failure must never affect the join.
+    if (result.decremented) {
+      void (async () => {
+        try {
+          const u = (await userRef.get()).data() as
+            | { createdAt?: string; isReturningPlayer?: boolean; username?: string }
+            | undefined;
+          const isNew = !!u && typeof u.createdAt === 'string'
+            && u.createdAt >= LAUNCH_ISO && u.isReturningPlayer !== true;
+          if (!isNew) return;
+          const admins = getAdminWalletAllowlist();
+          if (admins.length === 0) return;
+          const name = u?.username && !/^user-0x/i.test(u.username)
+            ? u.username
+            : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
+          await createNotificationForWallets(admins, {
+            type: 'system',
+            title: 'New user entered a draft',
+            message: `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
+            link: '/admin?tab=drafts',
+            icon: '🆕',
+            dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
+          });
+        } catch (err) {
+          logger.warn('use-pass.admin_new_user_bell_failed', { userId, leagueId, err });
+        }
+      })();
+    }
 
     return json({
       success: true,
