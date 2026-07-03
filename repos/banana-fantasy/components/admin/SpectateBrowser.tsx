@@ -254,7 +254,22 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     };
   }, [enabled, walletAddress]);
 
+  // Wheel-won JP/HOF specials live in the SPECIAL DRAFTS panel above — keep
+  // them out of the main table so each draft appears exactly once (Boris:
+  // "i dont need it to show twice"). Batch JP/HOF drafts (BBB #N) are not
+  // queue rounds, so they still show below.
+  const specialDraftIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (queues) {
+      for (const type of ['jackpot', 'hof'] as const) {
+        for (const r of queues[type]?.rounds || []) if (r.draftId) ids.add(r.draftId);
+      }
+    }
+    return ids;
+  }, [queues]);
+
   const filtered = (drafts ?? []).filter(d => {
+    if (specialDraftIds.has(d.draftId)) return false;
     if (filter === 'all') return true;
     if (filter === 'fast' || filter === 'slow') return d.speed === filter;
     if (filter === 'jackpot') return (d.level ?? '').toLowerCase().includes('jackpot');
@@ -267,11 +282,16 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   // dedupes + builds a stable cache key, so re-deriving this list each render is
   // free (no extra fetches unless the wallet set actually changes).
   // Resolve from the FULL draft list (not `filtered`) so the Special Drafts
-  // band always has names even when a speed filter hides those rows below.
-  const memberWallets = useMemo(
-    () => (drafts ?? []).flatMap(d => [...(d.members ?? []), d.currentDrafter, d.onDeck ?? '']).filter(Boolean),
-    [drafts],
-  );
+  // band always has names even when a speed filter hides those rows below —
+  // plus everyone sitting in a wheel queue round (specials may have queue
+  // members before a draft doc exists).
+  const memberWallets = useMemo(() => {
+    const fromDrafts = (drafts ?? []).flatMap(d => [...(d.members ?? []), d.currentDrafter, d.onDeck ?? '']);
+    const fromQueues = queues
+      ? (['jackpot', 'hof'] as const).flatMap(t => (queues[t]?.rounds || []).flatMap(r => (r.members || []).map(m => m.wallet)))
+      : [];
+    return [...fromDrafts, ...fromQueues].filter(Boolean);
+  }, [drafts, queues]);
   const users = useDraftRoomUsers(memberWallets);
 
   // Never render raw hex in the band: if a wallet's batch entry is missing
@@ -392,6 +412,23 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                           </div>
                           <span className="text-gray-300 text-xs">{memberCount}/10</span>
                         </div>
+                        {/* Who's in — queue members (pre-draft) or the live roster. */}
+                        {(() => {
+                          const seatWallets = (round.members?.length
+                            ? round.members.map(mm => mm.wallet)
+                            : (live?.members ?? [])).filter(Boolean);
+                          if (seatWallets.length === 0) return null;
+                          return (
+                            <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1 max-w-[340px] text-xs">
+                              {seatWallets.map(w => (
+                                <span key={w} className="inline-flex items-center gap-1">
+                                  <WalletLink wallet={w} displayName={nameFor(w)} hideAddress />
+                                  <FlagChip flags={flags[w.toLowerCase()]} />
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-gray-300">
                         <div className="capitalize">{round.status}</div>
