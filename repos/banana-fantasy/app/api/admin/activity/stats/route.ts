@@ -28,6 +28,16 @@ import { logger } from '@/lib/logger';
 // both surfaces MUST agree on what "today" means or the dashboard and the
 // audit cards drift apart.
 import { LAUNCH_ISO, sbsDayStartIso } from '@/lib/sbsDay';
+import { isReturningWalletSync } from '@/lib/returningUsers';
+import { getAdminBellWallets } from '@/lib/adminAllowlist';
+
+// Wallets that must never count as customers: every team/admin wallet plus
+// legacy team wallets that predate the allowlist (Boris's old Privy login,
+// Richard's r8 test wallet). "Unique buyers" is a REAL-customer metric.
+const EXTRA_TEAM_WALLETS = [
+  '0xd3301bc039faf4223da98bceb5fb81abc9399362', // Boris old Privy login
+  '0xbd2e09c009a7834cd32f9fa8a87073c5b3083f11', // Richard test wallet (r8)
+];
 
 interface Bucket {
   purchases: number;
@@ -117,11 +127,24 @@ export async function GET(req: Request) {
     const today = emptyBucket();
     const totalLeagues = new Set<string>();
     const todayLeagues = new Set<string>();
+    // Distinct REAL customers who bought ≥1 pass (team wallets excluded) —
+    // Boris 2026-07-03: "how many unique users bought at least 1, total vs daily".
+    const teamWallets = new Set([...getAdminBellWallets(), ...EXTRA_TEAM_WALLETS].map((w) => w.toLowerCase()));
+    const buyersTotal = new Set<string>();
+    const buyersToday = new Set<string>();
     for (const doc of snap.docs) {
       const e = doc.data();
       fold(total, e, totalLeagues);
-      if (typeof e.createdAtIso === 'string' && e.createdAtIso >= dayStartIso) {
+      const isToday = typeof e.createdAtIso === 'string' && e.createdAtIso >= dayStartIso;
+      if (isToday) {
         fold(today, e, todayLeagues);
+      }
+      if (e.type === 'pass_purchased') {
+        const w = String(e.walletAddress || '').toLowerCase();
+        if (w && !teamWallets.has(w)) {
+          buyersTotal.add(w);
+          if (isToday) buyersToday.add(w);
+        }
       }
     }
     // Leaves can outnumber enters inside a window edge — floor at 0 for sanity.
@@ -202,7 +225,32 @@ export async function GET(req: Request) {
     today.promosClaimed = promoToday;
     total.promosClaimed = promoSnap.size;
 
+    // Buyer identity splits: gmail/social vs own-wallet signup, and returning
+    // (past-season identity, flag OR wallet snapshot — same rule as the OLD
+    // chips) vs brand-new. ~dozens of buyer docs, one batched getAll.
+    let buyersWeb2 = 0; let buyersWeb3 = 0; let buyersUntagged = 0; let buyersReturning = 0;
+    if (buyersTotal.size > 0) {
+      const buyerDocs = await db.getAll(...[...buyersTotal].map((w) => db.doc(`v2_users/${w}`)));
+      for (const d of buyerDocs) {
+        const u = (d.exists ? d.data() : {}) as { walletType?: string; isReturningPlayer?: boolean };
+        if (u.walletType === 'privy_embedded') buyersWeb2++;
+        else if (u.walletType === 'privy_external' || u.walletType === 'external_connect') buyersWeb3++;
+        else buyersUntagged++;
+        if (u.isReturningPlayer === true || isReturningWalletSync(d.id)) buyersReturning++;
+      }
+    }
+    const uniqueBuyers = {
+      total: buyersTotal.size,
+      today: buyersToday.size,
+      web2: buyersWeb2,
+      web3: buyersWeb3,
+      untagged: buyersUntagged,
+      returning: buyersReturning,
+      newUsers: buyersTotal.size - buyersReturning,
+    };
+
     return json({
+      uniqueBuyers,
       dayStartIso,
       launchIso: LAUNCH_ISO,
       scanned: snap.size,

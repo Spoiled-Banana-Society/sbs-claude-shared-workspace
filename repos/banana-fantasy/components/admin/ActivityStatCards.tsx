@@ -22,7 +22,12 @@ interface StatsBucket {
   spins: number; freeDraftsWonFromSpins: number; jpPassesFromSpins: number; hofPassesFromSpins: number;
   draftsFilled: number; draftEntries: number; promosClaimed: number;
 }
-interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket }
+interface UniqueBuyers {
+  total: number; today: number;
+  web2: number; web3: number; untagged: number;
+  returning: number; newUsers: number;
+}
+interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket; uniqueBuyers?: UniqueBuyers }
 
 const POLL_MS = 30_000;
 
@@ -112,6 +117,19 @@ export function ActivityStatCards({ enabled }: { enabled: boolean }) {
           label="Promos claimed"
           value={stats ? stats.today.promosClaimed.toString() : '…'}
           sub={stats ? `all-time ${stats.total.promosClaimed}` : 'loading'}
+        />
+        {/* Real customers: distinct wallets with ≥1 purchase, team/admin
+            wallets excluded. Splits use the same rules as everywhere else
+            (returning = flag OR past-wallet snapshot; gmail = privy_embedded). */}
+        <StatCard
+          label="Unique buyers"
+          value={stats?.uniqueBuyers ? stats.uniqueBuyers.today.toString() : '…'}
+          sub={stats?.uniqueBuyers
+            ? `bought today — all-time ${stats.uniqueBuyers.total} buyers`
+            : 'loading'}
+          sub2={stats?.uniqueBuyers
+            ? `${stats.uniqueBuyers.newUsers} new · ${stats.uniqueBuyers.returning} returning · ${stats.uniqueBuyers.web2} gmail / ${stats.uniqueBuyers.web3} wallet${stats.uniqueBuyers.untagged > 0 ? ` / ${stats.uniqueBuyers.untagged} untagged` : ''}`
+            : undefined}
         />
       </div>
     </div>
