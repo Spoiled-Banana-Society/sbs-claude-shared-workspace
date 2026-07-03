@@ -66,12 +66,15 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'activity', label: 'Live Activity', group: 'Daily' },
   { key: 'logs', label: 'Logs', group: 'Daily' },
   { key: 'support', label: 'Support', group: 'Daily' },
+  // Drafts rides in Daily, directly above the Users section (Boris
+  // 2026-07-03: "drafts then user look up then users") — it's a
+  // several-times-a-day surface, not an occasional op.
+  { key: 'drafts', label: 'Drafts', group: 'Daily' },
   // Users — per-user work
   { key: 'user-lookup', label: 'User Lookup', group: 'Users' },
   { key: 'users', label: 'Users', group: 'Users' },
   // Operations — things done
   { key: 'money', label: 'Money', group: 'Operations' },
-  { key: 'drafts', label: 'Drafts', group: 'Operations' },
   // System — occasional
   { key: 'audit', label: 'Audit', group: 'System' },
   { key: 'tools', label: 'Tools', group: 'System' },
