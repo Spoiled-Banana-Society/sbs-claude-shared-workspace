@@ -2992,14 +2992,32 @@ export async function announcePick10ExpansionIfActivated(): Promise<void> {
     // Batch+tier-scoped dedupeKey → each user gets exactly one bell per tier.
     const dedupeKey = guardId;
 
-    // In-app bell → every account. ids-only read (the doc id IS the wallet),
-    // bounded, and a single bulk write rather than a per-user fan-out.
+    // In-app bell → every account EXCEPT first-season users who haven't
+    // drafted yet (Boris 2026-07-03): a brand-new user's early sessions
+    // shouldn't include batch-promo bells — they discover the promo via the
+    // NEW-ribbon card, and start receiving this bell from their first draft
+    // onward. RETURNING players always receive it (they know the product).
+    const draftedSnap = await db
+      .collection('v2_activity_events')
+      .where('type', '==', 'draft_entered')
+      .select('userId')
+      .limit(20000)
+      .get();
+    const hasDrafted = new Set(draftedSnap.docs.map((d) => String((d.data() as { userId?: string }).userId ?? '')));
+    const { isReturningWalletSync } = await import('@/lib/returningUsers');
     const usersSnap = await db
       .collection(USERS_COLLECTION)
-      .select()
+      .select('isReturningPlayer')
       .limit(PICK10_EXPANSION_MAX_FANOUT)
       .get();
-    const wallets = usersSnap.docs.map((doc) => doc.id);
+    const wallets = usersSnap.docs
+      .filter((doc) => {
+        const w = doc.id.toLowerCase();
+        const returning = (doc.data() as { isReturningPlayer?: boolean }).isReturningPlayer === true
+          || isReturningWalletSync(w);
+        return returning || hasDrafted.has(w);
+      })
+      .map((doc) => doc.id);
     const { createNotificationForWallets } = await import('@/lib/queueNotifications');
     const bells = await createNotificationForWallets(wallets, {
       type: 'promo',
