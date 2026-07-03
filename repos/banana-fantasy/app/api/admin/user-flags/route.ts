@@ -31,6 +31,8 @@ const SEASON_LAUNCH_MS = Date.parse('2026-06-23T00:00:00Z');
 interface UserFlags {
   isNew: boolean;
   isReturning: boolean;
+  /** ISO account-creation time — lets admin surfaces show "created 2h ago". */
+  createdAt: string | null;
 }
 
 function createdAtMs(raw: unknown): number | null {
@@ -76,7 +78,13 @@ export async function POST(req: Request) {
       const isReturning = data.isReturningPlayer === true || isReturningWalletSync(wallet);
       const created = createdAtMs(data.createdAt);
       const isNew = !isReturning && created !== null && created >= SEASON_LAUNCH_MS;
-      if (isNew || isReturning) flags[wallet] = { isNew, isReturning };
+      if (isNew || isReturning) {
+        flags[wallet] = {
+          isNew,
+          isReturning,
+          createdAt: created !== null ? new Date(created).toISOString() : null,
+        };
+      }
     });
 
     return json({ flags });

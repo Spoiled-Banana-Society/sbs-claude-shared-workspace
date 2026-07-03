@@ -39,16 +39,34 @@ const REFRESH_INTERVAL_MS = 5000;
 interface UserFlags {
   isNew: boolean;
   isReturning: boolean;
+  createdAt?: string | null;
 }
 
-/** NEW (first-season account) / OLD (past-season player) chip. Returning wins
- *  if a wallet somehow carries both (the API already enforces that). */
+/** Compact account age: "34m" / "2h" / "5d". */
+function ageShort(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const ms = Date.now() - Date.parse(iso);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  if (ms < 60 * 60 * 1000) return `${Math.max(1, Math.round(ms / 60_000))}m`;
+  if (ms < 48 * 60 * 60 * 1000) return `${Math.round(ms / 3_600_000)}h`;
+  return `${Math.round(ms / 86_400_000)}d`;
+}
+
+function createdTitle(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return ` — account created ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at ${d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+}
+
+/** NEW (first-season account, with account age) / OLD (past-season player)
+ *  chip. Returning wins if a wallet somehow carries both (the API already
+ *  enforces that). Hover shows the exact creation date + time. */
 function FlagChip({ flags }: { flags?: UserFlags }) {
   if (!flags) return null;
   if (flags.isReturning) {
     return (
       <span
-        title="Returning player — matched a past-season identity"
+        title={`Returning player — matched a past-season identity${createdTitle(flags.createdAt)}`}
         className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20"
       >
         Old
@@ -56,12 +74,13 @@ function FlagChip({ flags }: { flags?: UserFlags }) {
     );
   }
   if (flags.isNew) {
+    const age = ageShort(flags.createdAt);
     return (
       <span
-        title="New user — account created in the last 7 days"
+        title={`New user — first-season account${createdTitle(flags.createdAt)}`}
         className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/20"
       >
-        New
+        New{age ? <span className="font-bold text-emerald-200/80 normal-case tracking-normal"> · {age}</span> : null}
       </span>
     );
   }
