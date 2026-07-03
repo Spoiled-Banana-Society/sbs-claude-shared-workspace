@@ -22,15 +22,18 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  'first-purchase', // "First Purchase → FREE SPINS" — leads the not-yet-started
-                    // group (claimable + in-progress promos still bubble above it)
-  'new-user',
-  'buy-bonus',     // "Buy 2 → FREE SPIN" — July 4th weekend promo; re-hide Sunday night (2026-07-05)
-  'mint',          // "Buy 10 → FREE SPIN" — buy 10 passes, earn a spin
-  'daily-drafts',  // "4 drafts daily"
-  'pick-10',
+  // Boris's order (2026-07-03): a NEW user's first card is their welcome
+  // free-spin, then the featured July-4th, then first-purchase, then the new
+  // Pick 6 & 10 — the two launch promos always near the front. Claim-ready /
+  // near-complete promos still bubble above the fixed order (same rules).
+  'new-user',       // first-timers only — outranks even the featured pin
+  'buy-bonus',      // "Buy 2 → FREE SPIN" — July 4th weekend; re-hide Sunday night (2026-07-05)
+  'first-purchase',
+  'pick-10',        // "Pick 6 & 10 → FREE SPINS"
+  'mint',           // "Buy 10 → FREE SPIN"
+  'daily-drafts',   // "4 drafts daily"
   'jackpot',
-  'referral',      // "Refer a friend"
+  'referral',       // "Refer a friend"
 ];
 
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
@@ -161,7 +164,13 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   });
 
   const sorted = filtered.sort((a, b) => {
-    // 0. Featured promo is pinned to position 1, above everything —
+    // -1. The new-user welcome promo (only rendered for actual new users)
+    //     outranks everything, including the featured pin — a first-timer's
+    //     very first card is their free-spin welcome (Boris 2026-07-03).
+    const aNU = a.type === 'new-user' ? 1 : 0;
+    const bNU = b.type === 'new-user' ? 1 : 0;
+    if (aNU !== bNU) return bNU - aNU;
+    // 0. Featured promo is pinned next, above everything else —
     //    it's the limited-time card we're actively pushing.
     if (FEATURED_PROMO_TYPE) {
       const aFeat = a.type === FEATURED_PROMO_TYPE ? 1 : 0;
