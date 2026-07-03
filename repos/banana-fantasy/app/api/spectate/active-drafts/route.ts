@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 import { ApiError } from '@/lib/api/errors';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { requireAdmin } from '@/lib/adminAuth';
-import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
+import { getAdminDatabase, getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
 // GET /api/spectate/active-drafts
@@ -38,6 +38,10 @@ interface ActiveDraft {
   members: string[];
   /** When the draft started (Unix seconds). 0 if unknown. Used to sort newest-first. */
   draftStartTime: number;
+  /** When the current pick's clock expires (Unix seconds). 0 if unknown. */
+  pickEndTime: number;
+  /** Wallet next on the clock after the current pick. Empty if unknown. */
+  onDeck: string;
 }
 
 interface DraftInfoResponse {
@@ -133,6 +137,25 @@ export async function GET(req: Request) {
       existing.map(x => fetchJson<DraftInfoResponse>(`${apiBase}/draft/${encodeURIComponent(x.c.id)}/state/info`)),
     );
 
+    // Step 2.5 — the pick CLOCK and on-deck drafter live only in RTDB
+    // (realTimeDraftInfo); the Go info endpoint doesn't expose them. Read the
+    // node just for drafts that are actually mid-draft (info != null) so the
+    // Spectate tab can show who's on the clock, time remaining, and who's up
+    // next. Best-effort: a failed read only costs the clock display.
+    const rtdb = getAdminDatabase();
+    const clockResults = await Promise.all(
+      existing.map(async (x, i) => {
+        if (!infoResults[i]) return null;
+        try {
+          const snap = await rtdb.ref(`drafts/${x.c.id}/realTimeDraftInfo`).get();
+          const v = snap.val() as { pickEndTime?: number; onDeckDrafter?: string } | null;
+          return v ? { pickEndTime: Number(v.pickEndTime ?? 0) || 0, onDeck: String(v.onDeckDrafter ?? '') } : null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
     type Categorized = ActiveDraft & { completed: boolean };
     const drafts: Categorized[] = existing
       .map(({ c, snap }, i): Categorized | null => {
@@ -172,6 +195,8 @@ export async function GET(req: Request) {
           maxPlayers,
           members,
           draftStartTime: Number(info?.draftStartTime ?? 0) || 0,
+          pickEndTime: clockResults[i]?.pickEndTime ?? 0,
+          onDeck: clockResults[i]?.onDeck ?? '',
         };
       })
       .filter((d): d is Categorized => d !== null);

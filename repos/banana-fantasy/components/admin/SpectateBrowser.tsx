@@ -19,6 +19,10 @@ interface ActiveDraft {
   numPlayers?: number;
   maxPlayers?: number;
   members?: string[];
+  /** Unix seconds when the current pick's clock expires (0 = unknown). */
+  pickEndTime?: number;
+  /** Wallet next on the clock after the current pick. */
+  onDeck?: string;
 }
 
 interface QueueRound {
@@ -85,6 +89,37 @@ function FlagChip({ flags }: { flags?: UserFlags }) {
     );
   }
   return null;
+}
+
+/** Live pick countdown, ticking locally between the 5s polls. Green-ish while
+ *  healthy, amber under 10s, red once overdue (an overdue clock that keeps
+ *  climbing is the freeze tell — the engine should have auto-picked). */
+function PickClock({ endsAt }: { endsAt?: number }) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+  if (!endsAt) return null;
+  const left = endsAt - now;
+  const abs = Math.abs(left);
+  const mm = Math.floor(abs / 60);
+  const text = mm >= 60
+    ? `${Math.floor(mm / 60)}h ${mm % 60}m`
+    : `${mm}:${String(abs % 60).padStart(2, '0')}`;
+  const cls = left < 0
+    ? 'text-red-400'
+    : left <= 10
+      ? 'text-amber-300'
+      : 'text-emerald-300/90';
+  return (
+    <span
+      className={`font-mono text-[11px] tabular-nums ${cls}`}
+      title={left < 0 ? 'Pick clock expired — engine should auto-pick any second; if this keeps climbing the draft is stuck' : 'Time left on the current pick'}
+    >
+      {left < 0 ? `+${text} over` : text}
+    </span>
+  );
 }
 
 function levelPillStyle(level: string | null): { bg: string; color: string; label: string } {
@@ -231,9 +266,11 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   // so the "who's in" band shows real identities, not raw hex. useDraftRoomUsers
   // dedupes + builds a stable cache key, so re-deriving this list each render is
   // free (no extra fetches unless the wallet set actually changes).
+  // Resolve from the FULL draft list (not `filtered`) so the Special Drafts
+  // band always has names even when a speed filter hides those rows below.
   const memberWallets = useMemo(
-    () => filtered.flatMap(d => [...(d.members ?? []), d.currentDrafter]).filter(Boolean),
-    [filtered],
+    () => (drafts ?? []).flatMap(d => [...(d.members ?? []), d.currentDrafter, d.onDeck ?? '']).filter(Boolean),
+    [drafts],
   );
   const users = useDraftRoomUsers(memberWallets);
 
@@ -329,6 +366,11 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                     : { bg: '#D4AF37', color: '#000', label: 'HOF' };
                   const memberCount = round.members?.length || 0;
                   const fillPct = (memberCount / 10) * 100;
+                  // Live pick state for drafting rounds — joined from the same
+                  // active-drafts poll that powers the table below.
+                  const live = round.draftId
+                    ? (drafts ?? []).find(d => d.draftId === round.draftId && !d.filling && d.currentDrafter)
+                    : undefined;
                   return (
                     <tr key={`${type}-${round.roundId}`} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
                       <td className="px-4 py-3">
@@ -351,7 +393,24 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                           <span className="text-gray-300 text-xs">{memberCount}/10</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-gray-300 capitalize">{round.status}</td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <div className="capitalize">{round.status}</div>
+                        {live && (
+                          <div className="mt-0.5 text-xs text-gray-400 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500">P{live.pickNumber}/150 ·</span>
+                              <WalletLink wallet={live.currentDrafter} displayName={nameFor(live.currentDrafter)} hideAddress />
+                              <span className="text-gray-500">on the clock</span>
+                              <PickClock endsAt={live.pickEndTime} />
+                            </div>
+                            {live.onDeck && (
+                              <div className="text-[10px] text-gray-500">
+                                next: <WalletLink wallet={live.onDeck} displayName={nameFor(live.onDeck)} hideAddress />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right">
                         {round.draftId ? (
                           <div className="inline-flex items-center gap-1.5">
@@ -455,10 +514,18 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                     ) : (
                       d.currentDrafter
                         ? (
-                          <span className="inline-flex items-center gap-1">
-                            <WalletLink wallet={d.currentDrafter} displayName={nameFor(d.currentDrafter)} hideAddress />
-                            <FlagChip flags={flags[d.currentDrafter.toLowerCase()]} />
-                          </span>
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1.5">
+                              <WalletLink wallet={d.currentDrafter} displayName={nameFor(d.currentDrafter)} hideAddress />
+                              <FlagChip flags={flags[d.currentDrafter.toLowerCase()]} />
+                              <PickClock endsAt={d.pickEndTime} />
+                            </span>
+                            {d.onDeck && (
+                              <div className="text-[10px] text-gray-500">
+                                next: <WalletLink wallet={d.onDeck} displayName={nameFor(d.onDeck)} hideAddress />
+                              </div>
+                            )}
+                          </div>
                         )
                         : '—'
                     )}
