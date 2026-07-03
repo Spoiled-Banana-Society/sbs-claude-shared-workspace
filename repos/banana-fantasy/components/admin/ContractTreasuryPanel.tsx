@@ -149,6 +149,22 @@ export function ContractTreasuryPanel({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
+      {/* Boris's canonical "how much do we actually have": contract + treasury
+          − the flat $700 adjustment. This is THE number he tracks. */}
+      {snap && !loadErr && (
+        <div className="flex items-baseline justify-between rounded-lg border border-banana/30 bg-banana/5 px-3 py-2">
+          <span className="text-xs font-semibold text-banana uppercase tracking-wider">Actual total (−$700)</span>
+          <span className="text-lg font-bold text-banana tabular-nums">
+            {(() => {
+              try {
+                const net = BigInt(snap.contractUsdc ?? '0') + BigInt(snap.treasuryUsdc ?? '0') - 700_000_000n;
+                return usd((net > 0n ? net : 0n).toString());
+              } catch { return '—'; }
+            })()}
+          </span>
+        </div>
+      )}
+
       {snap && (
         <div className="text-[11px] text-gray-500 font-mono space-y-0.5 border-t border-gray-700 pt-2">
           <div>owner: {short(snap.opsWallet)}</div>
