@@ -17,7 +17,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useModalStack } from '@/hooks/useModalStack';
 import { useContests } from '@/hooks/useContests';
 import { usePromos } from '@/hooks/usePromos';
-import { useNewPromoNotification } from '@/hooks/useNewPromoNotification';
 import { SkeletonContestCard } from '@/components/ui/Skeleton';
 import { useEnterDraft } from '@/hooks/useEnterDraft';
 import { useToast } from '@/components/ui/Toast';
@@ -90,10 +89,9 @@ export default function HomePage() {
   const [isJoiningDraft] = React.useState(false);
   const contestsQuery = useContests();
   const promosQuery = usePromos({ userId: user?.id });
-  // New-promo announcement ping only. The nag reminders ("Ready to Claim!",
-  // "Last Chance!") were removed 2026-06-09 — real-time event notis cover
-  // the moment something is actually earned.
-  useNewPromoNotification(promosQuery.promos);
+  // Client self-ping for new promos REMOVED 2026-07-03 (it double-belled on
+  // top of launch broadcasts — the July 4th promo incident). `isNew` on a
+  // promo is now a purely visual ribbon; announcements are broadcast-only.
 
   // Shared entry flow — identical to the /drafting "Enter draft" path. Shows the
   // branded "Joining lobby" overlay, joins BEFORE navigating, and seeds the room

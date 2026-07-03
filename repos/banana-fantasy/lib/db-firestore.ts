@@ -2894,15 +2894,18 @@ interface BatchSpecialsState {
    *  the "promo just expanded" announcement — one announcement per batch). */
   batchStart: number;
   filled: number;
+  /** True when this batch's Jackpot has filled (HOFs may remain) — unlocks
+   *  the middle Pick-6&10 tier (Boris 2026-07-03 ladder design). */
+  jpHit: boolean;
 }
 
 async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
   const db = getAdminFirestore();
   const snap = await db.collection('drafts').doc('draftTracker').get();
-  if (!snap.exists) return { allHit: false, batchStart: 0, filled: 0 };
+  if (!snap.exists) return { allHit: false, jpHit: false, batchStart: 0, filled: 0 };
   const d = snap.data() as Record<string, unknown>;
   const filled = Number(d.FilledLeaguesCount ?? 0) || 0;
-  if (filled <= 0) return { allHit: false, batchStart: 0, filled };
+  if (filled <= 0) return { allHit: false, jpHit: false, batchStart: 0, filled };
   const jpIds = Array.isArray(d.JackpotLeagueIds) ? (d.JackpotLeagueIds as number[]) : [];
   const hofIds = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
   const current = filled % 100;
@@ -2911,11 +2914,28 @@ async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
   const hitInBatch = (ids: number[]) => ids.filter((id) => id > batchStart && id <= filled).length;
   const jackpotRemaining = Math.max(0, 1 - hitInBatch(jpIds));
   const hofRemaining = Math.max(0, 5 - hitInBatch(hofIds));
-  return { allHit: jackpotRemaining === 0 && hofRemaining === 0, batchStart, filled };
+  const jpHit = jackpotRemaining === 0;
+  return { allHit: jpHit && hofRemaining === 0, jpHit, batchStart, filled };
 }
 
 export async function allBatchSpecialsHit(): Promise<boolean> {
   return (await getBatchSpecialsState()).allHit;
+}
+
+/**
+ * The Pick-slot promo LADDER (Boris 2026-07-03) — the reward escalates as the
+ * batch's chase prizes run out, so there's always a reason to draft NOW:
+ *   • Jackpot still hiding → slot 10 only (the JP itself is the promo).
+ *   • Jackpot hit, HOFs remain → slots 6 & 10.
+ *   • Everything hit (JP + all 5 HOF) → slots 6, 9 & 10.
+ * Resets automatically when the next 100-batch starts (fresh JP → slot 10).
+ * Paid drafts only — enforced downstream in recordPick10/promoCreditAllowed.
+ */
+export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
+  const state = await getBatchSpecialsState();
+  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
+  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
+  return { slots: [10], tier: 'base', batchStart: state.batchStart };
 }
 
 // Bound the bell fan-out so a misread tracker can never broadcast to an
@@ -2937,29 +2957,40 @@ const PICK10_EXPANSION_MAX_FANOUT = 10000;
  */
 export async function announcePick10ExpansionIfActivated(): Promise<void> {
   try {
-    const { allHit, batchStart } = await getBatchSpecialsState();
-    if (!allHit) return;
+    const { allHit, jpHit, batchStart } = await getBatchSpecialsState();
+    if (!jpHit) return;
+
+    // Two-tier ladder announcements, each ONCE per batch:
+    //   jp  → "Pick 6 & 10 unlocked" the moment the batch's Jackpot hits.
+    //   all → "Pick 6, 9 & 10" when every special is gone.
+    // A batch where JP hits last announces the jp tier and then the all tier
+    // moments later — two distinct messages, each with its own guard + dedupe.
+    const tier = allHit ? 'all' : 'jp';
+    const guardId = tier === 'all' ? `pick10-expansion-${batchStart}` : `pick10-expansion-jp-${batchStart}`;
 
     const db = getAdminFirestore();
     // Create-once guard: .create() throws ALREADY_EXISTS if a prior observer of
     // this same batch already announced, so exactly one broadcast goes out.
-    const guardRef = db.collection('promo_announcements').doc(`pick10-expansion-${batchStart}`);
+    const guardRef = db.collection('promo_announcements').doc(guardId);
     try {
       await guardRef.create({
-        kind: 'pick10-expansion',
+        kind: tier === 'all' ? 'pick10-expansion' : 'pick10-expansion-jp',
         batchStart,
         announcedAt: FieldValue.serverTimestamp(),
       });
     } catch {
-      return; // already announced for this batch
+      return; // already announced this tier for this batch
     }
 
-    const title = 'Pick 6, 9 & 10 → Free Spins! 🎰';
-    const message =
-      'Every special draft in this batch has been claimed — so for a limited time, landing slot 6, 9, OR 10 in a paid draft earns a free wheel spin (normally just slot 10). Draft now before the next batch begins!';
+    const title = tier === 'all'
+      ? 'MAX Promo — Pick 6, 9 & 10 Free Spins'
+      : 'New Promo — Pick 6 & 10 Free Spins';
+    const message = tier === 'all'
+      ? 'All specials hit — Pick 6, 9 & 10 each win a Free Spin until the next batch begins!'
+      : 'The Jackpot has been hit — Pick 6 and Pick 10 now each win a Free Spin until the batch ends!';
     const link = '/promos';
-    // Batch-scoped dedupeKey → each user gets exactly one bell per expansion.
-    const dedupeKey = `pick10-expansion-${batchStart}`;
+    // Batch+tier-scoped dedupeKey → each user gets exactly one bell per tier.
+    const dedupeKey = guardId;
 
     // In-app bell → every account. ids-only read (the doc id IS the wallet),
     // bounded, and a single bulk write rather than a per-user fan-out.
@@ -2976,7 +3007,8 @@ export async function announcePick10ExpansionIfActivated(): Promise<void> {
       message,
       link,
       dedupeKey,
-      icon: 'sparkles',
+      // Clean line icon (same wheel icon as spin-won bells) — never emoji.
+      icon: 'spin',
     });
 
     // Push → all opted-in devices, one OneSignal API call (off-site users).

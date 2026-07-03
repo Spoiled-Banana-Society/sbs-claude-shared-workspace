@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
-import { awardJackpotDraw, recordPick10, allBatchSpecialsHit, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
+import { awardJackpotDraw, recordPick10, getPick10ActiveSlots, announcePick10ExpansionIfActivated, unlockBadge } from '@/lib/db';
 import { waitUntil } from '@vercel/functions';
 import { getDraftInfo } from '@/lib/draftApi';
 import { logger } from '@/lib/logger';
@@ -52,22 +52,20 @@ export async function POST(req: Request, { params }: { params: { draftId: string
       const info = await getDraftInfo(draftId);
       const order = info?.draftOrder ?? [];
       const draftName = String(draftSnap.get('DisplayName') ?? draftId);
-      // Normally only slot 10 earns a spin. BUT once the current 100-batch has
-      // had all its specials hit (1 Jackpot + 5 HOF), Pick 10 expands to also
-      // reward slots 6 and 9 — reverting to slot-10-only when the next batch
-      // starts. recordPick10 is idempotent per (user, draft) and paid-gated.
-      const expanded = await allBatchSpecialsHit();
-      const slots = expanded ? [6, 9, 10] : [10];
+      // Pick-slot LADDER: slot 10 always; batch's Jackpot hit → 6 & 10; all
+      // specials hit → 6, 9 & 10 — reverting to slot-10-only when the next
+      // batch starts. recordPick10 is idempotent per (user, draft) and paid-gated.
+      const { slots, tier } = await getPick10ActiveSlots();
       for (const slot of slots) {
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
           await recordPick10(owner, draftId, draftName, undefined, slot);
         }
       }
-      // The promo is now live this batch — tell everyone (bell + push), once
-      // per batch. Backgrounded so the broadcast fan-out never delays the
-      // reveal response; idempotent guard inside makes a re-fire a no-op.
-      if (expanded) waitUntil(announcePick10ExpansionIfActivated());
+      // Tier live this batch — tell everyone (bell + push), once per TIER per
+      // batch. Backgrounded so the broadcast fan-out never delays the reveal
+      // response; idempotent guard inside makes a re-fire a no-op.
+      if (tier !== 'base') waitUntil(announcePick10ExpansionIfActivated());
     } catch { /* state not initialized yet — close backstop covers it */ }
 
     if (!isJackpot && !isHof) {

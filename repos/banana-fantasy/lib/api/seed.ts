@@ -229,19 +229,23 @@ const seedPromos: Promo[] = [
   {
     id: '2',
     type: 'pick-10',
-    title: 'Pick 10 → FREE SPIN',
-    description: 'Get the 10th pick for a spin',
+    title: 'Pick 6 & 10 → FREE SPINS',
+    description: 'Every Spin wins up to 20 Free Drafts',
     ctaText: 'Draft Now',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
+    // Visual NEW ribbon only — the client self-ping tied to isNew was removed
+    // 2026-07-03 (one event = one bell; announcements are broadcast-only, and
+    // this promo announces itself per-batch via announcePick10ExpansionIfActivated).
+    isNew: true,
     progressCurrent: 0,
     progressMax: 1,
     claimable: false,
     claimCount: 0,
     modalContent: {
-      title: 'Get Pick 10 Get a SPIN',
+      title: 'Pick 6 & 10 → Free Spins',
       explanation:
-        '• For every 10th Slot Pick in a Draft you Hit you get a Free Banana Spin.\n• Paid Drafts Only.',
+        '• Hit Pick 10 in any draft → Free Banana Spin.\n• When the Jackpot is hit, Pick 6 unlocks — Pick 6 and Pick 10 each win a Free Spin until the batch ends.\n• Every Spin wins Free Drafts — up to 20, minimum 1.\n• Paid Drafts Only.',
       // Per-user state — starts empty. Real Pick 10s are appended by
       // recordPick10 on actual paid drafts. (Previously this carried 3 fake
       // demo rows incl. 2 'claim' entries, which were cloned into every real

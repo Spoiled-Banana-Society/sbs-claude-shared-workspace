@@ -8,7 +8,7 @@ import { getDraftSummary, getDraftInfo } from '@/lib/draftApi';
 import { buildOgCardUrl } from '@/lib/nftCard';
 import { upsertMarketplaceIndex, normalizeLevel } from '@/lib/marketplaceIndex';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
-import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, allBatchSpecialsHit, announcePick10ExpansionIfActivated } from '@/lib/db';
+import { awardJackpotDraw, computeAndStoreRipeness, recordFirstPurchaseDraftFinished, recordPick10, getPick10ActiveSlots, announcePick10ExpansionIfActivated } from '@/lib/db';
 import { pushStreamEventBg } from '@/lib/userEventStream';
 import { waitUntil } from '@vercel/functions';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
@@ -325,21 +325,20 @@ export async function POST(
       const info = await getDraftInfo(draftId);
       const order = info?.draftOrder ?? [];
       const draftName = info?.displayName ?? draftId;
-      // Slot 10 always; once the current 100-batch's specials (1 JP + 5 HOF)
-      // are all hit, Pick 10 expands to also reward slots 6 and 9 (reverts at
-      // the next batch). recordPick10 is idempotent per (user, draft) + paid-gated.
-      const expanded = await allBatchSpecialsHit();
-      const slots = expanded ? [6, 9, 10] : [10];
+      // Pick-slot LADDER: slot 10 always; JP hit → 6 & 10; all specials hit →
+      // 6, 9 & 10 (reverts at the next batch). recordPick10 is idempotent per
+      // (user, draft) + paid-gated.
+      const { slots, tier } = await getPick10ActiveSlots();
       for (const slot of slots) {
         const owner = order[slot - 1]?.ownerId?.toLowerCase();
         if (owner && !owner.startsWith('bot-')) {
           await recordPick10(owner, draftId, draftName, undefined, slot);
         }
       }
-      // Promo live this batch → one-time bell + push to everyone. Backgrounded
-      // so the close pipeline isn't held up; idempotent per batch (the
+      // Tier live this batch → one bell + push per TIER per batch. Backgrounded
+      // so the close pipeline isn't held up; idempotent per batch+tier (the
       // reveal-complete route may have already announced — this is the backstop).
-      if (expanded) waitUntil(announcePick10ExpansionIfActivated());
+      if (tier !== 'base') waitUntil(announcePick10ExpansionIfActivated());
     } catch (err) {
       logger.warn('marketplace.refresh_draft_pick10_backstop_failed', { draftId, err: String(err) });
     }
