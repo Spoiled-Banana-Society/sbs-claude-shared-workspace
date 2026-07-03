@@ -6,7 +6,6 @@ import { NextRequest } from 'next/server';
 import { ethers } from 'ethers';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/adminMint';
@@ -14,7 +13,7 @@ import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { logger } from '@/lib/logger';
 
 /**
- * POST /api/admin/bots/mint  — STAGING ONLY, admin-gated.
+ * POST /api/admin/bots/mint  — admin-gated ops tool (admin login or x-bot-secret).
  *
  * Builds the house "bot" wallet pool. For each bot it:
  *   1. generates a fresh wallet ADDRESS (no key stored — bots are fully
@@ -40,9 +39,6 @@ const BOT_COLLECTION = 'botWallets';
 const MAX_PER_CALL = 10;
 
 export async function POST(req: NextRequest) {
-  if (!testHelpersEnabled()) {
-    return jsonError('Not available in this environment', 403);
-  }
   try {
     await requireBotAuth(req);
     if (!isAdminMintConfigured()) {

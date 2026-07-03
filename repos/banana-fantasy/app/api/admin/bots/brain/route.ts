@@ -3,7 +3,6 @@ export const dynamic = 'force-dynamic';
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
@@ -20,7 +19,6 @@ import { BRAIN_DEFAULTS, BRAIN_DOC as DOC_PATH } from '@/lib/botBrainConfig';
  */
 
 export async function GET(req: NextRequest) {
-  if (!testHelpersEnabled()) return jsonError('Not available in this environment', 403);
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
@@ -47,7 +45,6 @@ function num(v: unknown, name: string, min: number, max: number): number {
 }
 
 export async function PUT(req: NextRequest) {
-  if (!testHelpersEnabled()) return jsonError('Not available in this environment', 403);
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);

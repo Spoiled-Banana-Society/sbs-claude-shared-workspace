@@ -4,14 +4,13 @@ export const maxDuration = 120;
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { countSpendableTokens } from '@/lib/passLedger';
 import { logger } from '@/lib/logger';
 
 /**
- * POST /api/admin/bots/fill  — STAGING ONLY, admin-gated.
+ * POST /api/admin/bots/fill  — admin-gated ops tool (admin login or x-bot-secret).
  *
  * Tops up a SPECIFIC league with N house bots. Picks N pool bots that hold an
  * unused free pass, then calls the Go `/staging/add-bots-to-league` endpoint to
@@ -31,9 +30,6 @@ const GO_API = (
 const MAX_FILL = 10;
 
 export async function POST(req: NextRequest) {
-  if (!testHelpersEnabled()) {
-    return jsonError('Not available in this environment', 403);
-  }
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);

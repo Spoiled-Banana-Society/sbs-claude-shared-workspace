@@ -4,7 +4,6 @@ export const maxDuration = 60;
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
-import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
@@ -88,7 +87,6 @@ function brainPick(
 }
 
 export async function POST(req: NextRequest) {
-  if (!testHelpersEnabled()) return jsonError('Not available in this environment', 403);
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);

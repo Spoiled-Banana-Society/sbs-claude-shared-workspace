@@ -3,13 +3,12 @@ export const dynamic = 'force-dynamic';
 import { NextRequest } from 'next/server';
 import { requireBotAuth } from '@/lib/botAuth';
 import { json, jsonError } from '@/lib/api/routeUtils';
-import { testHelpersEnabled } from '@/lib/envGates';
 import { ApiError } from '@/lib/api/errors';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 
 /**
- * GET /api/admin/bots  — STAGING ONLY, admin-gated.
+ * GET /api/admin/bots  — admin-gated ops tool (admin login or x-bot-secret).
  *
  * The bot registry: every house bot wallet + the token(s) minted to it. This is
  * the list to EXCLUDE from prizes/standings when playoffs/payouts are built
@@ -20,9 +19,6 @@ import { logger } from '@/lib/logger';
 const BOT_COLLECTION = 'botWallets';
 
 export async function GET(req: NextRequest) {
-  if (!testHelpersEnabled()) {
-    return jsonError('Not available in this environment', 403);
-  }
   try {
     await requireBotAuth(req);
     if (!isFirestoreConfigured()) return jsonError('Firestore not configured', 503);
