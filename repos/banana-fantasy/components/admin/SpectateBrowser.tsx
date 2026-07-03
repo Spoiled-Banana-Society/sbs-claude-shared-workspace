@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePrivy } from '@privy-io/react-auth';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { useDraftRoomUsers } from '@/hooks/useDraftRoomUsers';
+import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { bananaDefaultName } from '@/utils/helpers';
 
 interface ActiveDraft {
@@ -84,6 +85,44 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'fast' | 'slow' | 'jackpot' | 'hof'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // One-click "+ Bot" on a filling draft. Joins one house bot (server mints a
+  // fresh one behind the scenes when the pool is empty — the 409 retry). The
+  // 5s poll below picks up the new member on its own.
+  const getAdminHeaders = useAdminAuthHeaders();
+  const [addingBotId, setAddingBotId] = useState<string | null>(null);
+  const [botNote, setBotNote] = useState<string | null>(null);
+  const addBot = async (d: ActiveDraft) => {
+    setAddingBotId(d.draftId);
+    setBotNote(null);
+    try {
+      const headers = { ...(await getAdminHeaders()), 'Content-Type': 'application/json' };
+      const fill = () =>
+        fetch('/api/admin/bots/fill', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ leagueId: d.draftId, count: 1, speed: d.speed }),
+        });
+      let res = await fill();
+      if (res.status === 409) {
+        const mintRes = await fetch('/api/admin/bots/mint', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ count: 1 }),
+        });
+        const mintBody = await mintRes.json().catch(() => ({}));
+        if (!mintRes.ok || !mintBody.poolAdded) throw new Error(mintBody?.error || `bot mint failed (${mintRes.status})`);
+        res = await fill();
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      setBotNote(`Bot added to ${d.displayName || d.draftId}.`);
+    } catch (e) {
+      setBotNote(`Bot add failed for ${d.displayName || d.draftId}: ${(e as Error).message}`);
+    } finally {
+      setAddingBotId(null);
+    }
+  };
 
   const copySpectateLink = (draftId: string) => {
     const url = `${window.location.origin}/spectate/${draftId}`;
@@ -200,6 +239,7 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
         <div className="text-sm text-gray-400">
           {loading && drafts === null ? 'Loading active drafts…' : `${filtered.length} active draft${filtered.length === 1 ? '' : 's'}`}
           {error && <span className="ml-2 text-red-400">last poll: {error}</span>}
+          {botNote && <span className={`ml-2 ${botNote.includes('failed') ? 'text-red-400' : 'text-banana'}`}>{botNote}</span>}
         </div>
         <div className="flex items-center gap-1">
           {(['all', 'fast', 'slow', 'jackpot', 'hof'] as const).map(f => (
@@ -390,12 +430,22 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                         {copiedId === d.draftId ? '✓ Copied' : 'Copy link'}
                       </button>
                       {d.filling ? (
-                        <span
-                          className="inline-flex items-center px-3 py-1 rounded-md border border-white/10 text-gray-500 text-xs font-medium cursor-default"
-                          title="The live board opens once this draft fills to 10 and starts"
-                        >
-                          Starts at 10
-                        </span>
+                        <>
+                          <button
+                            onClick={() => addBot(d)}
+                            disabled={addingBotId === d.draftId}
+                            title="Join one house bot to this draft"
+                            className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/40 bg-banana/10 text-banana text-xs font-semibold hover:bg-banana/20 transition disabled:opacity-50"
+                          >
+                            {addingBotId === d.draftId ? 'Adding…' : '+ Bot'}
+                          </button>
+                          <span
+                            className="inline-flex items-center px-3 py-1 rounded-md border border-white/10 text-gray-500 text-xs font-medium cursor-default"
+                            title="The live board opens once this draft fills to 10 and starts"
+                          >
+                            Starts at 10
+                          </span>
+                        </>
                       ) : (
                         <a
                           href={`/spectate/${d.draftId}`}

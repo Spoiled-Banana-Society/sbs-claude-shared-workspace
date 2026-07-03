@@ -17,7 +17,6 @@ import { SpectateBrowser } from '@/components/admin/SpectateBrowser';
 import { CompletedDraftsList } from '@/components/admin/CompletedDraftsList';
 import { FounderScheduleEditor } from '@/components/admin/FounderScheduleEditor';
 import { AdminDraftManage } from '@/components/admin/AdminDraftManage';
-import { BotFillPanel } from '@/components/admin/BotFillPanel';
 import { SubTabBar, useSubTab, type SubTabItem } from '@/components/admin/SubTabBar';
 
 type DraftsSub = 'active' | 'completed' | 'spectate' | 'founder' | 'manage';
@@ -42,7 +41,10 @@ export function DraftsTab({ enabled }: { enabled: boolean }) {
       {sub === 'completed' && <CompletedDraftsList enabled={enabled} />}
       {sub === 'spectate' && <SpectateBrowser enabled={enabled} />}
       {sub === 'founder' && <FounderScheduleEditor enabled={enabled} />}
-      {sub === 'manage' && <><AdminDraftManage enabled={enabled} /><BotFillPanel /></>}
+      {/* House-bot ops are behind the scenes now: the "+ Bot" button lives on
+          each filling draft row (Active sub-tab + the Manage list); minting
+          happens automatically whenever the pool runs dry. */}
+      {sub === 'manage' && <AdminDraftManage enabled={enabled} />}
     </div>
   );
 }
