@@ -380,10 +380,11 @@ const seedPromos: Promo[] = [
     ctaText: 'Buy Now',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
-    // NO isNew: the launch was announced via the one broadcast bell
-    // ("4th of July Weekend Promo is Live"). isNew would make every
-    // client ALSO self-ping "New Promo Available!" — the double-bell
-    // Boris flagged on 2026-07-03. One event = one bell.
+    // Visual NEW ribbon (big featured treatment while FEATURED_PROMO_TYPE =
+    // 'buy-bonus'). SAFE again as of 2026-07-03: the isNew client self-ping
+    // was deleted (double-bell fix) — the flag is display-only now; the launch
+    // announcement stays broadcast-only.
+    isNew: true,
     claimable: false,
     claimCount: 0,
     progressCurrent: 0,
