@@ -5,7 +5,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens } from '@/lib/passLedger';
-import { createNotificationForWallets } from '@/lib/queueNotifications';
+import { createNotification } from '@/lib/queueNotifications';
 import { getAdminWalletAllowlist } from '@/lib/adminAllowlist';
 import { LAUNCH_ISO } from '@/lib/sbsDay';
 import { logger } from '@/lib/logger';
@@ -103,14 +103,19 @@ export async function POST(req: Request) {
           const name = u?.username && !/^user-0x/i.test(u.username)
             ? u.username
             : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
-          await createNotificationForWallets(admins, {
+          // Per-admin createNotification (NOT the bulk broadcast helper): the
+          // single-wallet path pushes the bell content over the live stream so
+          // every admin device renders it INSTANTLY — the bulk path skips that
+          // ping and waits for the next poll. Admin list is tiny, so the
+          // per-wallet fan-out is cheap.
+          await Promise.allSettled(admins.map((w) => createNotification(w, {
             type: 'system',
             title: 'New user entered a draft',
             message: `${name} — a NEW account — just took a seat${leagueId ? ` in ${leagueId}` : ''}.`,
             link: '/admin?tab=drafts',
             icon: '🆕',
             dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
-          });
+          })));
         } catch (err) {
           logger.warn('use-pass.admin_new_user_bell_failed', { userId, leagueId, err });
         }
