@@ -71,10 +71,11 @@ export async function fetchRecentUserEvents(limit = 100): Promise<UserEventRecor
  */
 const TOUCH_THROTTLE_MS = 5 * 60 * 1000;     // 5 minutes
 // "Came back" definition for the admin Live Activity feed: first authenticated
-// request after ≥6h of inactivity. At most a handful per day per user — a
-// session signal, not a page-load signal (the old per-login events were
-// dropped as noise for exactly that reason).
-const RETURN_GAP_MS = 6 * 60 * 60 * 1000;
+// request after ≥1h of inactivity (Boris 2026-07-02: an hour clearly idle then
+// using the app again = a log-in worth seeing). Still a session signal, not a
+// page-load signal — the 5-min lastActiveAt throttle keeps continuous browsing
+// as ONE session; only a real ≥1h gap starts a new row.
+const RETURN_GAP_MS = 60 * 60 * 1000;
 // A first-touch within this window of account creation is the signup itself —
 // the user_signed_up event (fired at seed) covers it; don't double-ping.
 const SIGNUP_GRACE_MS = 10 * 60 * 1000;
