@@ -11,7 +11,7 @@
 
 import { useState, useCallback } from 'react';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
-import { BRAIN_DEFAULTS, type BotBrainConfig } from '@/lib/botBrainConfig';
+import { type BotBrainConfig } from '@/lib/botBrainConfig';
 
 type BotRow = { address: string; tokenIds: string[]; passType: string; mintTxHash: string | null };
 type SimTeam = { seat: number; picks: string[]; counts: Record<string, number> };
@@ -116,10 +116,6 @@ export function BotFillPanel() {
     if (body) { setSimTeams(body.teams || []); setMsg('Simulated a full 15-round draft with these dials.'); }
   };
 
-  const brainNum = (key: keyof BotBrainConfig) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setBrain((b) => (b ? { ...b, [key]: Number(e.target.value) } : b));
-  const brainCap = (pos: keyof BotBrainConfig['positionCaps']) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setBrain((b) => (b ? { ...b, positionCaps: { ...b.positionCaps, [pos]: Number(e.target.value) } } : b));
 
   const input = 'rounded-lg bg-bg-tertiary border border-white/10 px-3 py-2 text-sm text-white w-full';
   const btn = 'rounded-lg bg-banana text-black font-semibold px-4 py-2 text-sm disabled:opacity-50';
@@ -210,46 +206,16 @@ export function BotFillPanel() {
               Brain enabled (off = bots fall back to the end-of-timer autopilot)
             </label>
 
-            <div className="grid gap-3 sm:grid-cols-2 mb-3">
-              <div>
-                <div className="text-xs text-text-muted mb-1">Fast drafts — pick delay (seconds)</div>
-                <div className="flex items-center gap-2">
-                  <input type="number" min={1} max={25} value={brain.fastMinDelaySec} onChange={brainNum('fastMinDelaySec')} className={`${input}`} />
-                  <span className="text-text-muted text-xs">to</span>
-                  <input type="number" min={1} max={28} value={brain.fastMaxDelaySec} onChange={brainNum('fastMaxDelaySec')} className={`${input}`} />
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-text-muted mb-1">Slow drafts — pick delay (seconds)</div>
-                <div className="flex items-center gap-2">
-                  <input type="number" min={5} max={600} value={brain.slowMinDelaySec} onChange={brainNum('slowMinDelaySec')} className={`${input}`} />
-                  <span className="text-text-muted text-xs">to</span>
-                  <input type="number" min={5} max={900} value={brain.slowMaxDelaySec} onChange={brainNum('slowMaxDelaySec')} className={`${input}`} />
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2 mb-3">
-              <div>
-                <div className="text-xs text-text-muted mb-1">Variance — picks randomly from the top N by ADP</div>
-                <input type="number" min={1} max={20} value={brain.topN} onChange={brainNum('topN')} className={input} />
-              </div>
-              <div>
-                <div className="text-xs text-text-muted mb-1">Roster caps (max per position, 15 picks)</div>
-                <div className="flex gap-2">
-                  {(['QB', 'RB', 'WR', 'TE', 'DST'] as const).map((pos) => (
-                    <label key={pos} className="flex-1">
-                      <span className="block text-[10px] text-text-muted text-center">{pos}</span>
-                      <input type="number" min={1} max={15} value={brain.positionCaps[pos]} onChange={brainCap(pos)} className={`${input} text-center`} />
-                    </label>
-                  ))}
-                </div>
-              </div>
+            <div className="mb-3 rounded-lg bg-bg-tertiary/60 border border-white/5 px-3 py-2 text-xs text-text-secondary leading-relaxed">
+              Built-in behavior: picks land 10–30s into the clock (30–90s in slow drafts), near the
+              top of ADP but not always #1. Every bot draws its own team plan per draft — 2–3 QB,
+              3–4 RB1, 3–4 WR1, 2–3 TE, 2–3 DST, at most one WR2 (sometimes an RB2, never before
+              2 starters) — so no two bot teams look alike.
             </div>
 
             <div className="flex gap-2">
               <button onClick={saveBrain} disabled={busy === 'brain-save'} className={btn}>
-                {busy === 'brain-save' ? 'Saving…' : 'Save brain'}
+                {busy === 'brain-save' ? 'Saving…' : 'Save'}
               </button>
               <button
                 onClick={simulate}
@@ -257,12 +223,6 @@ export function BotFillPanel() {
                 className="rounded-lg bg-bg-tertiary border border-banana/40 text-banana font-semibold px-4 py-2 text-sm disabled:opacity-50"
               >
                 {busy === 'brain-sim' ? 'Simulating…' : 'Simulate a draft'}
-              </button>
-              <button
-                onClick={() => setBrain({ ...BRAIN_DEFAULTS })}
-                className="rounded-lg bg-bg-tertiary border border-white/10 text-text-secondary px-4 py-2 text-sm"
-              >
-                Reset to defaults
               </button>
             </div>
 

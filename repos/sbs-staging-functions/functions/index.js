@@ -485,6 +485,55 @@ exports.onDraftFilled = functions
  */
 const sleepMs = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Deterministic per-(draft,bot) randomness — the same bot in the same draft
+// always draws the SAME team blueprint, so all 15 stateless invocations build
+// toward one coherent plan without storing anything.
+function hashSeed(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Richard's "normal drafter" team blueprint (2026-07-02): 2-3 QB, 3-4 RB1,
+// 3-4 WR1, 2-3 TE, 2-3 DST; at most ONE RB2 and ONE WR2, WR2 preferred over
+// RB2, RB2 only sometimes (and only on 3-RB1 builds). Always sums to 15.
+function drawTeamBlueprint(rand) {
+  for (let tries = 0; tries < 60; tries++) {
+    const t = {
+      QB: rand() < 0.6 ? 2 : 3,
+      RB1: rand() < 0.5 ? 3 : 4,
+      WR1: rand() < 0.45 ? 3 : 4,
+      TE: rand() < 0.6 ? 2 : 3,
+      DST: rand() < 0.7 ? 2 : 3,
+      RB2: 0,
+      WR2: 0,
+    };
+    const rem = 15 - (t.QB + t.RB1 + t.WR1 + t.TE + t.DST);
+    if (rem < 0 || rem > 2) continue;
+    if (rem === 2) {
+      t.WR2 = 1;
+      t.RB2 = 1;
+    } else if (rem === 1) {
+      if (t.RB1 === 3 && rand() < 0.3) t.RB2 = 1;
+      else t.WR2 = 1;
+    }
+    return t;
+  }
+  return { QB: 3, RB1: 4, WR1: 4, TE: 2, DST: 2, RB2: 0, WR2: 0 };
+}
+
 exports.onBotTurn = functions
   .region('us-central1')
   .runWith({ timeoutSeconds: 180, memory: '256MB' })
@@ -552,31 +601,36 @@ exports.onBotTurn = functions
       const sumBody = await sumRes.json().catch(() => null);
       const summary = Array.isArray(sumBody) ? sumBody : (sumBody && sumBody.summary) || [];
       const taken = new Set();
-      const mine = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0 };
-      const posOf = (playerId) => {
-        const part = String(playerId).split('-')[1] || '';
-        return part.replace(/\d+$/, '');
-      };
+      const mine = {}; // this bot's roster so far, counted by SLOT TYPE (RB1 vs RB2 etc.)
+      const typeOf = (playerId) => String(playerId).split('-')[1] || '';
+      const posOf = (playerId) => typeOf(playerId).replace(/\d+$/, '');
       for (const row of summary) {
         const p = row && row.playerInfo;
         if (!p || !p.playerId) continue;
         taken.add(p.playerId);
         if (String(p.ownerAddress || '').toLowerCase() === drafter) {
-          const pos = posOf(p.playerId);
-          if (mine[pos] != null) mine[pos] += 1;
+          const t = typeOf(p.playerId);
+          mine[t] = (mine[t] || 0) + 1;
         }
       }
 
-      const caps = Object.assign({ QB: 3, RB: 7, WR: 8, TE: 3, DST: 3 }, cfg.positionCaps || {});
+      // This bot's team blueprint for THIS draft (deterministic — see helpers).
+      const targets = drawTeamBlueprint(mulberry32(hashSeed(draftId + '|' + drafter)));
+
       let available = Object.keys(players)
         .filter((id) => !taken.has(id))
         .map((id) => ({ id, adp: Number(players[id].ADP) || 999 }))
         .sort((a, b) => a.adp - b.adp);
-      const underCap = available.filter((s) => {
-        const pos = posOf(s.id);
-        return mine[pos] == null || mine[pos] < (caps[pos] ?? 99);
+      // Draft toward the blueprint: only slot types still needed, and never a
+      // backup (RB2/WR2) before 2+ starters at that position are rostered.
+      const needed = available.filter((s) => {
+        const t = typeOf(s.id);
+        if ((mine[t] || 0) >= (targets[t] ?? 0)) return false;
+        if (t === 'RB2' && (mine.RB1 || 0) < 2) return false;
+        if (t === 'WR2' && (mine.WR1 || 0) < 2) return false;
+        return true;
       });
-      if (underCap.length > 0) available = underCap; // caps are soft — never strand the bot
+      if (needed.length > 0) available = needed; // blueprint is a plan, not a straitjacket — never strand the bot
       if (available.length === 0) return null; // engine fallback will handle it
 
       // Variance: weighted draw from the top N by ADP (front-loaded weights).
