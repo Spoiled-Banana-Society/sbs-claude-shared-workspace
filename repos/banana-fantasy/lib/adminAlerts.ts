@@ -12,8 +12,11 @@ import { logger } from '@/lib/logger';
  * otherwise the in-code team list below (same pattern as adminAllowlist).
  */
 
+// Boris + Richard ONLY (Boris 2026-07-03: "we only want it to the two
+// emails we give you").
 const DEFAULT_ADMIN_ALERT_EMAILS = [
   'iamvagnerboris@gmail.com',
+  'richardvagnermusic@gmail.com',
 ];
 
 export function getAdminAlertEmails(): string[] {
