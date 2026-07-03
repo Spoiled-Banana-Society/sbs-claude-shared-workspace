@@ -53,6 +53,21 @@ export function getAdminWalletAllowlist(): string[] {
   return [...FALLBACK_ADMIN_WALLETS];
 }
 
+/**
+ * Recipients for admin-only BELL notifications: the UNION of the env list and
+ * the curated in-code list. The env var (set before 0x93e2 was added on
+ * 2026-07-01) silently dropped Boris's SBS Admin wallet from the new-user
+ * bells — access gating stays env-first, but a bell must reach every known
+ * team wallet regardless of which list is stale.
+ */
+export function getAdminBellWallets(): string[] {
+  const union = new Set([
+    ...getAdminWalletAllowlist(),
+    ...(isProd() ? PROD_ADMIN_WALLETS : FALLBACK_ADMIN_WALLETS),
+  ]);
+  return [...union];
+}
+
 export function isWalletAdmin(walletAddress: string | null | undefined): boolean {
   if (!walletAddress) return false;
   const normalized = normalizeWallet(walletAddress);

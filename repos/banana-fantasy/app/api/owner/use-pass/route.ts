@@ -7,7 +7,7 @@ import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvent
 import { countSpendableTokens } from '@/lib/passLedger';
 import { createNotification } from '@/lib/queueNotifications';
 import { sendAdminAlertEmail } from '@/lib/adminAlerts';
-import { getAdminWalletAllowlist } from '@/lib/adminAllowlist';
+import { getAdminBellWallets } from '@/lib/adminAllowlist';
 import { LAUNCH_ISO } from '@/lib/sbsDay';
 import { logger } from '@/lib/logger';
 
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
             .where('origin', '==', 'admin_grant')
             .limit(1).get();
           if (!granted.empty) return;
-          const admins = getAdminWalletAllowlist();
+          const admins = getAdminBellWallets();
           if (admins.length === 0) return;
           const name = u?.username && !/^user-0x/i.test(u.username)
             ? u.username
