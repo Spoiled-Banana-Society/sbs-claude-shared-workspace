@@ -315,8 +315,23 @@ export function UsersTableBox({ enabled }: Props) {
                     >
                       {timeAgo(u.lastActiveAt)}
                     </td>
-                    <td className="px-5 py-2 text-right text-[11px] text-gray-500">
-                      {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : '—'}
+                    {/* Exact signup stamp — date on top, time beneath (Boris
+                        2026-07-03: "stamp the exact time and date they created
+                        the account"). Full locale string on hover. */}
+                    <td
+                      className="px-5 py-2 text-right text-[11px] text-gray-500 whitespace-nowrap"
+                      title={u.createdAt ? new Date(u.createdAt).toLocaleString() : undefined}
+                    >
+                      {u.createdAt ? (
+                        <>
+                          <span className="block leading-tight">
+                            {new Date(u.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                          </span>
+                          <span className="block leading-tight text-[10px] text-gray-600">
+                            {new Date(u.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                          </span>
+                        </>
+                      ) : '—'}
                     </td>
                   </tr>
                 );
