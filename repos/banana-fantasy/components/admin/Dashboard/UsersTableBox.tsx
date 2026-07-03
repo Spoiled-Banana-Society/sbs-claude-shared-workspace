@@ -26,6 +26,7 @@
 import { useMemo, useState } from 'react';
 import { useUsersAggregate, type AggregateUser } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { bananaDefaultName } from '@/utils/helpers';
 
 /**
  * Avatar — three-tier fallback, in this order:
@@ -269,15 +270,13 @@ export function UsersTableBox({ enabled }: Props) {
                 const inLimbo = u.promos.pendingTypes.length;
                 // Name resolution order:
                 //   1. displayName the user chose on the Profile page
-                //   2. auto-generated username (e.g. "BananaKing99",
-                //      "User-0x01aB")
-                //   3. derived default "Banana #XXXX" using the last 4
-                //      hex chars of the wallet — so older accounts that
-                //      have neither field still get a recognizable
-                //      label instead of duplicating the wallet on both
-                //      lines of the cell.
-                const fallback = `Banana #${u.wallet.slice(-4).toUpperCase()}`;
-                const name = u.displayName || u.username || fallback;
+                //   2. real username (the API rejects 'User-…' placeholders
+                //      and wallet-string usernames)
+                //   3. the CANONICAL wallet-derived default — the exact same
+                //      Banana##### the user sees about themselves everywhere
+                //      on the site (never a homemade variant, so admin and
+                //      product can't disagree about someone's name).
+                const name = u.displayName || u.username || bananaDefaultName(u.wallet);
                 const nameIsFallback = !u.displayName && !u.username;
                 return (
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
@@ -285,7 +284,10 @@ export function UsersTableBox({ enabled }: Props) {
                       <div className="flex items-center gap-2.5">
                         <Avatar src={u.avatar} />
                         <div className="min-w-0">
-                          <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-400 italic' : 'text-white'}`} title={name}>{name}</p>
+                          {/* Default banana names render as REAL names (white) —
+                              they ARE the user's name. Subtle gray only, no
+                              italic, to still hint "hasn't customized yet". */}
+                          <p className={`text-xs truncate leading-tight ${nameIsFallback ? 'text-gray-300' : 'text-white'}`} title={name}>{name}</p>
                           <WalletLink wallet={u.wallet} bare className="!text-[10px] !text-gray-500 hover:!text-banana" />
                         </div>
                       </div>

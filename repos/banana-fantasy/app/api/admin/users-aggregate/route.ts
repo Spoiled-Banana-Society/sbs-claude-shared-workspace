@@ -128,20 +128,29 @@ export async function GET(req: Request) {
       const d = doc.data() ?? {};
       const wallet = (typeof d.walletAddress === 'string' ? d.walletAddress : doc.id).toLowerCase();
       if (!/^0x[0-9a-f]{40}$/.test(wallet)) continue;
-      // Pull a name from any of the candidate fields. Don't strip the
-      // 'User-' prefix here — Boris's ask is "show their default name
-      // if they haven't edited it"; the default IS something like
-      // "User-12345" which is a valid display string. Editing the name
-      // overwrites it via /api/owner/update.
-      const username = typeof d.username === 'string' && d.username.trim() ? d.username : null;
+      // Pull a name from the candidate fields — but REJECT the internal
+      // seed placeholder ('User-0x…') and usernames that are literally a
+      // wallet string: neither is a display name anywhere else on the
+      // site (display-batch rejects both). Rows with no real name fall
+      // back to the canonical bananaDefaultName(wallet) in the table —
+      // the SAME default the user sees about themselves.
+      const rawUsername = typeof d.username === 'string' && d.username.trim() ? d.username.trim() : null;
+      const username = rawUsername && !rawUsername.startsWith('User-') && !/^(0x)?[0-9a-fA-F]{40}$/.test(rawUsername)
+        ? rawUsername
+        : null;
       const displayName = typeof d.displayName === 'string' && d.displayName.trim()
         ? d.displayName
         : (typeof d.bananaName === 'string' && d.bananaName.trim() ? d.bananaName : null);
+      // Prefer the healed/cached pfp on the user doc (what the rest of the
+      // site shows); fall back to the deterministic GCS guess.
+      const profilePicture = typeof d.profilePicture === 'string' && /^https?:\/\//.test(d.profilePicture)
+        ? d.profilePicture
+        : null;
       byWallet.set(wallet, {
         wallet,
         username,
         displayName,
-        avatar: `${PFP_BUCKET}/${wallet}.jpg`,
+        avatar: profilePicture ?? `${PFP_BUCKET}/${wallet}.jpg`,
         walletType: typeof d.walletType === 'string' ? d.walletType : 'unknown',
         createdAt: toIso(d.createdAt),
         lastActiveAt: toIso(d.lastActiveAt) ?? toIso(d.lastLoginAt),
