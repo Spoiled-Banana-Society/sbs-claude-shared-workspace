@@ -54,30 +54,27 @@ interface NavItem {
   key: TabKey;
   label: string;
   group: string;
+  /** Not shown in the sidebar (still a valid ?tab= for deep links). */
+  hidden?: boolean;
 }
 
+// FLAT sidebar, no group headers, Boris's exact order (2026-07-03: "take
+// away all those top headers... put this in order"). `group` is vestigial
+// (kept for the mobile header subtitle only).
 const NAV_ITEMS: NavItem[] = [
-  // Daily — checked every day
-  { key: 'dashboard', label: 'Dashboard', group: 'Daily' },
-  // The live heartbeat — purchases, signups, log-ins, spins, drafts as they
-  // happen, with day/all-time counters. Promoted out of Audit (2026-07-03):
-  // it's a daily-glance surface, not an occasional forensic one. The Audit →
-  // Live Activity sub-tab still renders it for old links.
-  { key: 'activity', label: 'Live Activity', group: 'Daily' },
-  { key: 'logs', label: 'Logs', group: 'Daily' },
-  { key: 'support', label: 'Support', group: 'Daily' },
-  // Drafts rides in Daily, directly above the Users section (Boris
-  // 2026-07-03: "drafts then user look up then users") — it's a
-  // several-times-a-day surface, not an occasional op.
-  { key: 'drafts', label: 'Drafts', group: 'Daily' },
-  // Users — per-user work
-  { key: 'user-lookup', label: 'User Lookup', group: 'Users' },
-  { key: 'users', label: 'Users', group: 'Users' },
-  // Operations — things done
-  { key: 'money', label: 'Money', group: 'Operations' },
-  // System — occasional
-  { key: 'audit', label: 'Audit', group: 'System' },
-  { key: 'tools', label: 'Tools', group: 'System' },
+  { key: 'drafts', label: 'Drafts', group: 'Admin' },
+  { key: 'user-lookup', label: 'User Lookup', group: 'Admin' },
+  { key: 'activity', label: 'Live Activity', group: 'Admin' },
+  { key: 'dashboard', label: 'Dashboard', group: 'Admin' },
+  { key: 'support', label: 'Support', group: 'Admin' },
+  { key: 'logs', label: 'Logs', group: 'Admin' },
+  { key: 'tools', label: 'Tools', group: 'Admin' },
+  { key: 'money', label: 'Money', group: 'Admin' },
+  { key: 'audit', label: 'Audit', group: 'Admin' },
+  // Users table page: not in Boris's sidebar list — the same table lives at
+  // the bottom of the Dashboard. Kept as a valid tab so ?tab=users links
+  // (and the Dashboard's "open full page" affordances) still work.
+  { key: 'users', label: 'Users', group: 'Admin', hidden: true },
 ];
 
 /**
@@ -206,14 +203,7 @@ export default function AdminPage() {
     return cats.reduce((sum, c) => sum + (notifCounts[c] ?? 0), 0);
   };
 
-  const groups = useMemo(() => {
-    const seen = new Map<string, NavItem[]>();
-    for (const item of NAV_ITEMS) {
-      if (!seen.has(item.group)) seen.set(item.group, []);
-      seen.get(item.group)!.push(item);
-    }
-    return [...seen.entries()];
-  }, []);
+  const visibleNavItems = useMemo(() => NAV_ITEMS.filter((n) => !n.hidden), []);
 
   useEffect(() => {
     if (isLoading) return;
@@ -311,40 +301,33 @@ export default function AdminPage() {
             </div>
           )}
 
-          <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
-            {groups.map(([group, items]) => (
-              <div key={group}>
-                <p className="px-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500 mb-1.5">
-                  {group}
-                </p>
-                <div className="space-y-0.5">
-                  {items.map((item) => {
-                    const badge = badgeForTab(item.key);
-                    return (
-                      <button
-                        key={item.key}
-                        onClick={() => {
-                          setActiveTab(item.key);
-                          setSidebarOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 md:py-1.5 rounded-md text-sm transition-colors ${
-                          activeTab === item.key
-                            ? 'bg-white/[0.08] text-white font-medium'
-                            : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
-                        }`}
-                      >
-                        <span className="truncate">{item.label}</span>
-                        {badge > 0 && (
-                          <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+          {/* Flat list, no group headers, generous breathing room between
+              items (Boris 2026-07-03). */}
+          <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-3">
+            {visibleNavItems.map((item) => {
+              const badge = badgeForTab(item.key);
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    setActiveTab(item.key);
+                    setSidebarOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                    activeTab === item.key
+                      ? 'bg-white/[0.08] text-white font-medium'
+                      : 'text-gray-400 hover:text-white hover:bg-white/[0.03]'
+                  }`}
+                >
+                  <span className="truncate">{item.label}</span>
+                  {badge > 0 && (
+                    <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1.5 rounded-full bg-banana text-black text-[10px] font-bold">
+                      {badge > 99 ? '99+' : badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="px-5 py-4 border-t border-white/[0.06]">
