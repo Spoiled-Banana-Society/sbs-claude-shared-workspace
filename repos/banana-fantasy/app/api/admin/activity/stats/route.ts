@@ -34,6 +34,13 @@ interface Bucket {
   passesBought: number;
   purchaseUsd: number;
   newAccounts: number;
+  /** Of newAccounts: how many are returning players (past-season identity).
+   *  In `total` this is ALL returning-player accounts. */
+  returningNewAccounts: number;
+  /** Of newAccounts: signed up via Privy social (Gmail/X → embedded wallet). */
+  web2NewAccounts: number;
+  /** Of newAccounts: came in with their own crypto wallet. */
+  web3NewAccounts: number;
   logins: number;
   spins: number;
   freeDraftsWonFromSpins: number;
@@ -47,7 +54,7 @@ interface Bucket {
 function emptyBucket(): Bucket {
   return {
     purchases: 0, passesBought: 0, purchaseUsd: 0,
-    newAccounts: 0, logins: 0,
+    newAccounts: 0, returningNewAccounts: 0, web2NewAccounts: 0, web3NewAccounts: 0, logins: 0,
     spins: 0, freeDraftsWonFromSpins: 0, jpPassesFromSpins: 0, hofPassesFromSpins: 0,
     draftsFilled: 0, draftEntries: 0, promosClaimed: 0,
   };
@@ -120,6 +127,80 @@ export async function GET(req: Request) {
     // Leaves can outnumber enters inside a window edge — floor at 0 for sanity.
     total.draftEntries = Math.max(0, total.draftEntries);
     today.draftEntries = Math.max(0, today.draftEntries);
+
+    // ── AUTHORITATIVE OVERRIDES ─────────────────────────────────────────
+    // Event-derived counts are only as old as each event type — user_signed_up
+    // began 2026-07-03, spin_won misses seeds, promo_claimed undercounts. For
+    // those buckets the real records are cheap to read, so the records win
+    // (Boris 2026-07-03: "we had 25 new accounts just today??" — real answer
+    // was 11). Purchases / drafts filled / entries stay event-based: their
+    // events have run since launch and match the money.
+
+    // New accounts: v2_users is the record of truth (createdAt = ISO string).
+    // Same source as the dashboard Users box, so the two can never disagree.
+    const usersColl = db.collection('v2_users');
+    // walletType tags the signup rail: privy_embedded = social login (Gmail/X,
+    // we made them a wallet) = "web2"; privy_external / external_connect =
+    // brought their own crypto wallet = "web3".
+    const isWeb2 = (wt: string | undefined) => wt === 'privy_embedded';
+    const isWeb3 = (wt: string | undefined) => wt === 'privy_external' || wt === 'external_connect';
+    const [usersTotalCnt, newTodaySnap, returningTotalCnt, web2TotalCnt, web3ExtCnt, web3ConnCnt] = await Promise.all([
+      usersColl.count().get(),
+      usersColl.where('createdAt', '>=', dayStartIso).get(),
+      usersColl.where('isReturningPlayer', '==', true).count().get(),
+      usersColl.where('walletType', '==', 'privy_embedded').count().get(),
+      usersColl.where('walletType', '==', 'privy_external').count().get(),
+      usersColl.where('walletType', '==', 'external_connect').count().get(),
+    ]);
+    today.newAccounts = newTodaySnap.size;
+    for (const d of newTodaySnap.docs) {
+      const u = d.data() as { isReturningPlayer?: boolean; walletType?: string };
+      if (u.isReturningPlayer === true) today.returningNewAccounts++;
+      if (isWeb2(u.walletType)) today.web2NewAccounts++;
+      else if (isWeb3(u.walletType)) today.web3NewAccounts++;
+    }
+    total.newAccounts = usersTotalCnt.data().count;
+    total.returningNewAccounts = returningTotalCnt.data().count;
+    total.web2NewAccounts = web2TotalCnt.data().count;
+    total.web3NewAccounts = web3ExtCnt.data().count + web3ConnCnt.data().count;
+
+    // Spins + wheel winnings: walk v2_users/*/wheelSpins (the record of every
+    // spin — same walk as /api/admin/metrics, incl. the seed shapes). Totals
+    // are lifetime to match the dashboard Spins box.
+    const spinSnap = await db.collectionGroup('wheelSpins').limit(50_000).get();
+    let spinsToday = 0; let fdToday = 0; let fdTotal = 0;
+    let jpToday = 0; let jpTotal = 0; let hofToday = 0; let hofTotal = 0;
+    for (const d of spinSnap.docs) {
+      const x = d.data() as {
+        prize?: { type?: string; value?: unknown; amount?: unknown };
+        timestamp?: string; date?: string;
+      };
+      const ts = typeof x.timestamp === 'string' ? x.timestamp : (typeof x.date === 'string' ? x.date : '');
+      const isToday = ts >= dayStartIso;
+      if (isToday) spinsToday++;
+      const pt = x.prize?.type ?? ''; const pv = x.prize?.value; const pa = x.prize?.amount;
+      let fd = 0;
+      if (pt === 'draft_pass' && typeof pv === 'number') fd = pv;
+      else if (pt === 'drafts' && typeof pa === 'number') fd = pa;
+      else if ((pt === 'custom' && pv === 'jackpot') || pt === 'jackpot') { jpTotal++; if (isToday) jpToday++; }
+      else if ((pt === 'custom' && pv === 'hof') || pt === 'hof') { hofTotal++; if (isToday) hofToday++; }
+      fdTotal += fd; if (isToday) fdToday += fd;
+    }
+    today.spins = spinsToday; total.spins = spinSnap.size;
+    today.freeDraftsWonFromSpins = fdToday; total.freeDraftsWonFromSpins = fdTotal;
+    today.jpPassesFromSpins = jpToday; total.jpPassesFromSpins = jpTotal;
+    today.hofPassesFromSpins = hofToday; total.hofPassesFromSpins = hofTotal;
+
+    // Promos claimed: v2_user_events promo_claimed is the complete record
+    // (the activity-event copy started later and undercounts — 226 vs 366).
+    const promoSnap = await db.collection('v2_user_events')
+      .where('eventType', '==', 'promo_claimed').limit(50_000).get();
+    let promoToday = 0;
+    for (const d of promoSnap.docs) {
+      if (((d.data() as { timestamp?: string }).timestamp ?? '') >= dayStartIso) promoToday++;
+    }
+    today.promosClaimed = promoToday;
+    total.promosClaimed = promoSnap.size;
 
     return json({
       dayStartIso,

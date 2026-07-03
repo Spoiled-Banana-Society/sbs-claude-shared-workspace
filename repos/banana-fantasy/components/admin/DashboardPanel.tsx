@@ -37,6 +37,7 @@ import {
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
 import { ActivityStatCards } from '@/components/admin/ActivityStatCards';
+import { LiveActivity } from '@/components/admin/LiveActivity';
 import { UsersTableBox } from '@/components/admin/Dashboard/UsersTableBox';
 import { explainError } from '@/lib/logSources';
 import { dropResolvedEvents } from '@/lib/errorGrouping';
@@ -104,6 +105,20 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
           </div>
         </>
       )}
+
+      {/* Live feed — the full activity stream with type pills (Pass purchased,
+          Spin prize, Draft entered, …), filters, and CSV export. Boris
+          2026-07-03: "where is the purchased tab in dashboard where that
+          activity" — the whole feed lives here now; Audit keeps its copy.
+          hideStats: the six-card band above is the same data. */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+        <div className="px-5 py-3 border-b border-white/[0.06]">
+          <h3 className="text-sm font-semibold text-white">Live Activity — as it happens</h3>
+        </div>
+        <div className="p-4">
+          <LiveActivity enabled={enabled} hideStats />
+        </div>
+      </div>
 
       {/* Footer: top users + errors (smaller secondary panels) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

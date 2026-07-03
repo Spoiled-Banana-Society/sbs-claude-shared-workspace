@@ -17,7 +17,8 @@ import { usePrivy } from '@privy-io/react-auth';
 
 interface StatsBucket {
   purchases: number; passesBought: number; purchaseUsd: number;
-  newAccounts: number; logins: number;
+  newAccounts: number; returningNewAccounts: number;
+  web2NewAccounts: number; web3NewAccounts: number; logins: number;
   spins: number; freeDraftsWonFromSpins: number; jpPassesFromSpins: number; hofPassesFromSpins: number;
   draftsFilled: number; draftEntries: number; promosClaimed: number;
 }
@@ -25,12 +26,13 @@ interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsB
 
 const POLL_MS = 30_000;
 
-function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function StatCard({ label, value, sub, sub2 }: { label: string; value: string; sub?: string; sub2?: string }) {
   return (
     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
       <p className="text-[10px] uppercase tracking-wider text-gray-500">{label}</p>
       <p className="text-lg font-semibold text-white mt-0.5">{value}</p>
       {sub && <p className="text-[10px] text-gray-500 mt-0.5">{sub}</p>}
+      {sub2 && <p className="text-[10px] text-gray-600 mt-0.5">{sub2}</p>}
     </div>
   );
 }
@@ -82,7 +84,12 @@ export function ActivityStatCards({ enabled }: { enabled: boolean }) {
         <StatCard
           label="New accounts"
           value={stats ? stats.today.newAccounts.toString() : '…'}
-          sub={stats ? `${stats.today.logins} log-ins today — all-time ${stats.total.newAccounts}` : 'loading'}
+          sub={stats
+            ? `${stats.today.newAccounts - stats.today.returningNewAccounts} new · ${stats.today.returningNewAccounts} returning · ${stats.today.web2NewAccounts} gmail / ${stats.today.web3NewAccounts} wallet`
+            : 'loading'}
+          sub2={stats
+            ? `${stats.today.logins} log-ins today — all-time ${stats.total.newAccounts} (${stats.total.returningNewAccounts} ret · ${stats.total.web2NewAccounts} gmail / ${stats.total.web3NewAccounts} wallet)`
+            : undefined}
         />
         <StatCard
           label="Spins"

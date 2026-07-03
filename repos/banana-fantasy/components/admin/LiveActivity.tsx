@@ -174,7 +174,7 @@ function persistFiltersToUrl(entries: Record<string, string>): void {
   window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
 }
 
-export function LiveActivity({ enabled }: { enabled: boolean }) {
+export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideStats?: boolean }) {
   const { events, isConnected, error } = useActivityStream(enabled ? '/api/admin/activity/stream' : null);
   const { getAccessToken } = usePrivy();
 
@@ -348,7 +348,9 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
     <div className="space-y-4">
       {/* Stats row */}
       {/* Day (3am-PT boundary) + since-launch totals, computed server-side
-          over the FULL event record — never the 100-event live window. */}
+          over the FULL event record — never the 100-event live window.
+          Hidden when embedded in the Dashboard (it renders its own band). */}
+      {!hideStats && <>
       <div className="flex items-baseline justify-between">
         <p className="text-[11px] uppercase tracking-wider text-gray-500 font-medium">{dayLabel}</p>
         <p className="text-[10px] text-gray-600">all-time = since launch (Jun 23) · live-updating</p>
@@ -389,6 +391,7 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
           sub={stats ? `all-time ${stats.total.promosClaimed}` : 'loading'}
         />
       </div>
+      </>}
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2">
