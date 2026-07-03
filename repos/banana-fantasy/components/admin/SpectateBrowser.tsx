@@ -124,6 +124,30 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     }
   };
 
+  // Mirror action: pull the most recently added house bot back out of a
+  // filling draft (its pass returns to the pool for reuse). Server refuses
+  // once the draft has filled/started, and 404s if no bots are in it.
+  const [removingBotId, setRemovingBotId] = useState<string | null>(null);
+  const removeBot = async (d: ActiveDraft) => {
+    setRemovingBotId(d.draftId);
+    setBotNote(null);
+    try {
+      const headers = { ...(await getAdminHeaders()), 'Content-Type': 'application/json' };
+      const res = await fetch('/api/admin/bots/remove', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ leagueId: d.draftId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      setBotNote(`Bot removed from ${d.displayName || d.draftId}.`);
+    } catch (e) {
+      setBotNote(`Bot remove failed for ${d.displayName || d.draftId}: ${(e as Error).message}`);
+    } finally {
+      setRemovingBotId(null);
+    }
+  };
+
   const copySpectateLink = (draftId: string) => {
     const url = `${window.location.origin}/spectate/${draftId}`;
     navigator.clipboard.writeText(url).then(() => {
@@ -438,6 +462,14 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
                             className="inline-flex items-center px-2.5 py-1 rounded-md border border-banana/40 bg-banana/10 text-banana text-xs font-semibold hover:bg-banana/20 transition disabled:opacity-50"
                           >
                             {addingBotId === d.draftId ? 'Adding…' : '+ Bot'}
+                          </button>
+                          <button
+                            onClick={() => removeBot(d)}
+                            disabled={removingBotId === d.draftId}
+                            title="Remove the most recently added house bot from this draft"
+                            className="inline-flex items-center px-2.5 py-1 rounded-md border border-white/15 text-white/60 text-xs font-semibold hover:bg-white/[0.06] hover:text-white transition disabled:opacity-50"
+                          >
+                            {removingBotId === d.draftId ? 'Removing…' : '– Bot'}
                           </button>
                           <span
                             className="inline-flex items-center px-3 py-1 rounded-md border border-white/10 text-gray-500 text-xs font-medium cursor-default"
