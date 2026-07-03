@@ -36,6 +36,7 @@ import {
 } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
 import { GlobalSearch } from '@/components/admin/TopBar/GlobalSearch';
+import { ActivityStatCards } from '@/components/admin/ActivityStatCards';
 import { UsersTableBox } from '@/components/admin/Dashboard/UsersTableBox';
 import { explainError } from '@/lib/logSources';
 import { dropResolvedEvents } from '@/lib/errorGrouping';
@@ -81,6 +82,11 @@ export function DashboardPanel({ enabled }: { enabled: boolean }) {
       {/* Search bar — Boris's ask: 'you also took away the thing where
           we can search all the different things in the dashboard'. */}
       <GlobalSearch enabled={enabled} />
+
+      {/* Day-at-a-glance band (Boris 2026-07-03: "i want this stuff in the
+          dashboard not in audit") — same six cards as Audit → Live Activity,
+          same server truth, so the two screens can never disagree. */}
+      <ActivityStatCards enabled={enabled} />
 
       {m && (
         <>

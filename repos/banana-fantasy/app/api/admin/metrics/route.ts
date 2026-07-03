@@ -9,6 +9,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { logger } from '@/lib/logger';
 import { getRequestId } from '@/lib/requestId';
 import { wheelSegments } from '@/lib/wheelConfig';
+import { sbsDayStartIso } from '@/lib/sbsDay';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -147,7 +148,10 @@ async function count(q: Query<DocumentData>): Promise<number> {
 async function buildMetrics(): Promise<MetricsResponse> {
   const db = getAdminFirestore();
   const now = Date.now();
-  const today = since(DAY_MS);
+  // "Today" = the SBS business day (starts 3 AM PT — lib/sbsDay), NOT a
+  // rolling 24h window. Must match /api/admin/activity/stats or the
+  // dashboard's TODAY column disagrees with the activity cards.
+  const today = new Date(sbsDayStartIso());
   const week = since(WEEK_MS);
   const todayIso = today.toISOString();
   const weekIso = week.toISOString();
