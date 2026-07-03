@@ -115,30 +115,22 @@ export async function GET(req: Request) {
     const topFreeDrafts = [...all].sort((a, b) => b.freeDraftsWon - a.freeDraftsWon).slice(0, TOP_N);
 
     // Canonical name pass for the ranked entries only (≤ 4×TOP_N unique
-    // wallets — one cheap getAll): events denormalize username at WRITE
-    // time, so entries whose events predate a name edit (or carry the
-    // 'User-…' placeholder) showed bare wallets in the Top Users cards.
-    // Resolve the CURRENT v2_users username, reject placeholders and
-    // wallet-string names, and floor to the canonical wallet-derived
-    // banana default — same rules as everywhere else on the site.
+    // wallets). Events denormalize username at WRITE time, so stale/
+    // placeholder names leaked into the Top Users cards. Resolve through
+    // the SAME shared chain the rest of the site uses (getPublicUsers):
+    // v2_users.username → Go owner profile displayName (where Profile-page
+    // edits land — AeroSpace's case, his Firestore doc still had the
+    // 'User-0x…' seed placeholder) → canonical banana default. All
+    // placeholder/wallet-string names rejected inside the resolver.
     const ranked = [...new Set([...topSpend, ...topPromos, ...topSpins, ...topFreeDrafts].map((e) => e.userId))]
       .filter((id) => /^0x[0-9a-f]{40}$/.test(id));
     if (ranked.length > 0) {
-      const isReal = (raw: unknown): raw is string =>
-        typeof raw === 'string' && !!raw.trim() && !raw.trim().startsWith('User-')
-        && !/^(0x)?[0-9a-fA-F]{40}$/.test(raw.trim());
+      const { getPublicUsers } = await import('@/lib/friends');
       const { bananaDefaultName } = await import('@/utils/helpers');
-      const snaps = await db.getAll(...ranked.map((id) => db.collection('v2_users').doc(id)));
-      const nameById = new Map<string, string>();
-      snaps.forEach((s, i) => {
-        const current = s.exists ? (s.data() as { username?: unknown }).username : null;
-        nameById.set(ranked[i], isReal(current) ? String(current).trim() : bananaDefaultName(ranked[i]));
-      });
+      const profiles = await getPublicUsers(ranked).catch(() => new Map<string, { username?: string }>());
       for (const list of [topSpend, topPromos, topSpins, topFreeDrafts]) {
         for (const e of list) {
-          const resolved = nameById.get(e.userId);
-          if (resolved) e.username = resolved;
-          else if (!isReal(e.username)) e.username = null;
+          e.username = profiles.get(e.userId)?.username || bananaDefaultName(e.userId);
         }
       }
     }
