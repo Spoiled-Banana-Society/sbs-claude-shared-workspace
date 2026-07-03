@@ -324,6 +324,10 @@ const seedPromos: Promo[] = [
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
+    // Visual NEW ribbon only (self-ping removed 2026-07-03). Boris wants both
+    // the first-purchase and Pick 6&10 cards badged; first-purchase upgrades
+    // to every-2-passes on 2026-07-06 (see project_first_purchase_2for1).
+    isNew: true,
     claimable: false,
     claimCount: 0,
     modalContent: {
