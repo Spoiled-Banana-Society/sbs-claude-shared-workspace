@@ -273,6 +273,26 @@ export async function ensureUserSeeded(userId: string): Promise<User> {
     // non-fatal
   }
 
+  // Admin Live Activity: "New account" event, tagged new vs returning.
+  // At seed time only the past-players WALLET snapshot can answer that —
+  // the web2 email/X identity match (returning-check) runs moments later
+  // on the same login, so a web2 returnee's row may read NEW here while
+  // their user record (and every chip) flips to returning seconds after.
+  try {
+    const [{ logActivityEvent }, { isReturningWalletSync }] = await Promise.all([
+      import('@/lib/activityEvents'),
+      import('@/lib/returningUsers'),
+    ]);
+    const isReturning = isReturningWalletSync(userId);
+    void logActivityEvent({
+      type: 'user_signed_up',
+      userId,
+      metadata: { isReturning, isNewAccount: !isReturning, firstSession: true },
+    });
+  } catch {
+    // non-fatal
+  }
+
   // Welcome bell notification (Boris 2026-06-10): every new user gets ONE
   // persisted noti explaining how to earn their free spin, linking straight
   // to the new-user promo modal. Dedupe-keyed → exactly once per account.

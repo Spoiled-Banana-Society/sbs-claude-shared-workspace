@@ -26,7 +26,12 @@ export type ActivityEventType =
   | 'draft_left'          // user left a filling draft before start (pass refunded)
   | 'draft_won'           // league finalized, user finished in paying place
   | 'marketplace_sold'    // team listed → sold
-  | 'cashout_completed';  // offramp settled — Coinbase or direct USDC/bank
+  | 'cashout_completed'   // offramp settled — Coinbase or direct USDC/bank
+  // ── Presence events (admin Live Activity only — hidden from the user-facing
+  //    profile history; see HIDDEN types in ActivityHistory). metadata carries
+  //    { isReturning, isNewAccount, firstSession?, accountCreatedAt? }.
+  | 'user_signed_up'      // account seeded for the first time ("just created the account")
+  | 'user_returned';      // authenticated activity after ≥6h gap ("logged in / came back")
 
 export type WalletType =
   | 'privy_embedded'      // Privy-managed EOA (social/email login)

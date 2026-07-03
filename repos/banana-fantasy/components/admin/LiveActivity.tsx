@@ -17,6 +17,8 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_won: 'Draft won',
   marketplace_sold: 'Marketplace sale',
   cashout_completed: 'Cashout completed',
+  user_signed_up: 'New account',
+  user_returned: 'Logged in',
 };
 
 const TYPE_COLOR: Record<ActivityEventType, string> = {
@@ -30,7 +32,29 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_won: 'text-amber-300 bg-amber-500/10 border-amber-500/30',
   marketplace_sold: 'text-cyan-300 bg-cyan-500/10 border-cyan-500/30',
   cashout_completed: 'text-green-300 bg-green-500/10 border-green-500/30',
+  user_signed_up: 'text-banana bg-yellow-500/10 border-yellow-500/30',
+  user_returned: 'text-indigo-300 bg-indigo-500/10 border-indigo-500/30',
 };
+
+/** NEW / OLD tag for presence events (signups + logins), read from the
+ *  event's metadata. OLD = past-season player; NEW = first-season account.
+ *  "1st" marks a user_returned that is the wallet's first tracked session. */
+function PresenceChip({ e }: { e: LiveActivityEvent }) {
+  if (e.type !== 'user_signed_up' && e.type !== 'user_returned') return null;
+  const m = (e.metadata ?? {}) as { isReturning?: boolean; isNewAccount?: boolean; firstSession?: boolean };
+  return (
+    <span className="inline-flex items-center gap-1">
+      {m.isReturning ? (
+        <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20">Old</span>
+      ) : m.isNewAccount ? (
+        <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/20">New</span>
+      ) : null}
+      {e.type === 'user_returned' && m.firstSession && (
+        <span className="text-[9px] font-bold uppercase tracking-widest px-1.5 py-px rounded-full bg-white/[0.06] text-gray-300 border border-white/10" title="First tracked session for this wallet">1st</span>
+      )}
+    </span>
+  );
+}
 
 const WALLET_TYPE_LABEL: Record<WalletType, string> = {
   privy_embedded: 'Privy (embedded)',
@@ -109,6 +133,8 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
       grants: by('pass_granted').length,
       spins: by('spin_won').length,
       promos: by('promo_claimed').length,
+      signups: by('user_signed_up').length,
+      returns: by('user_returned').length,
     };
   }, [events]);
 
@@ -149,11 +175,16 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
   return (
     <div className="space-y-4">
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
         <StatCard
           label="Purchases (24h)"
           value={stats.purchases.toString()}
           sub={`${stats.purchasedPasses} passes · $${stats.purchasedTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+        />
+        <StatCard
+          label="New accounts (24h)"
+          value={stats.signups.toString()}
+          sub={`${stats.returns} log-ins`}
         />
         <StatCard label="Admin grants (24h)" value={stats.grants.toString()} />
         <StatCard label="Spin prizes (24h)" value={stats.spins.toString()} />
@@ -238,8 +269,11 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
                       {relativeTime(e.createdAt, e.createdAtIso)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] border ${TYPE_COLOR[e.type]}`}>
-                        {TYPE_LABEL[e.type]}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] border ${TYPE_COLOR[e.type]}`}>
+                          {TYPE_LABEL[e.type]}
+                        </span>
+                        <PresenceChip e={e} />
                       </span>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-200">{e.username ?? '—'}</td>

@@ -70,6 +70,15 @@ export async function fetchRecentUserEvents(limit = 100): Promise<UserEventRecor
  * doesn't surface it anymore.
  */
 const TOUCH_THROTTLE_MS = 5 * 60 * 1000;     // 5 minutes
+// "Came back" definition for the admin Live Activity feed: first authenticated
+// request after ≥6h of inactivity. At most a handful per day per user — a
+// session signal, not a page-load signal (the old per-login events were
+// dropped as noise for exactly that reason).
+const RETURN_GAP_MS = 6 * 60 * 60 * 1000;
+// A first-touch within this window of account creation is the signup itself —
+// the user_signed_up event (fired at seed) covers it; don't double-ping.
+const SIGNUP_GRACE_MS = 10 * 60 * 1000;
+const SEASON_LAUNCH_MS = Date.parse('2026-06-23T00:00:00Z');
 const USERS_COLLECTION = 'v2_users';
 
 export async function recordActivityAndDetectLogin(
@@ -82,12 +91,44 @@ export async function recordActivityAndDetectLogin(
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(lower);
     const snap = await userRef.get();
-    const data = snap.data() as { lastActiveAt?: string } | undefined;
+    const data = snap.data() as {
+      lastActiveAt?: string;
+      createdAt?: string;
+      isReturningPlayer?: boolean;
+    } | undefined;
     const now = Date.now();
     const lastIso = data?.lastActiveAt;
     const last = lastIso ? Date.parse(lastIso) : 0;
     if (now - last >= TOUCH_THROTTLE_MS) {
       await userRef.set({ lastActiveAt: new Date(now).toISOString() }, { merge: true });
+
+      // "Logged in / came back" event for the admin Live Activity feed.
+      // Only for FULLY seeded users (snap.exists) — an auth touch can race
+      // ahead of the seed and create a partial doc; that first contact is
+      // the signup, which fires its own event from ensureUserSeeded.
+      if (snap.exists && now - last >= RETURN_GAP_MS) {
+        const createdMs = data?.createdAt ? Date.parse(data.createdAt) : NaN;
+        const justSignedUp = Number.isFinite(createdMs) && now - createdMs < SIGNUP_GRACE_MS;
+        if (!justSignedUp) {
+          try {
+            const [{ logActivityEvent }, { isReturningWalletSync }] = await Promise.all([
+              import('@/lib/activityEvents'),
+              import('@/lib/returningUsers'),
+            ]);
+            const isReturning = data?.isReturningPlayer === true || isReturningWalletSync(lower);
+            void logActivityEvent({
+              type: 'user_returned',
+              userId: lower,
+              metadata: {
+                isReturning,
+                isNewAccount: !isReturning && Number.isFinite(createdMs) && createdMs >= SEASON_LAUNCH_MS,
+                firstSession: !lastIso,
+                accountCreatedAt: data?.createdAt ?? null,
+              },
+            });
+          } catch { /* presence event is cosmetic — never fail the touch */ }
+        }
+      }
     }
   } catch (err) {
     logger.error('user.activity.touch_failed', { err, userId: lower });

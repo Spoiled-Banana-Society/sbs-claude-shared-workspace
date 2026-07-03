@@ -20,7 +20,13 @@ const TYPE_LABEL: Record<ActivityEventType, string> = {
   draft_won: 'Draft win',
   marketplace_sold: 'Sold',
   cashout_completed: 'Cashed out',
+  // Presence events exist for the ADMIN live feed only — hidden below.
+  user_signed_up: 'Account created',
+  user_returned: 'Logged in',
 };
+
+// Admin-only telemetry types — never rendered in the user-facing history.
+const HIDDEN_TYPES: ReadonlySet<ActivityEventType> = new Set(['user_signed_up', 'user_returned']);
 
 // Clean line-icon key per type (same icon set as the bell — never emoji).
 // pass_granted is overridden by source in iconFor().
@@ -35,6 +41,8 @@ const TYPE_ICON: Record<ActivityEventType, string> = {
   draft_won: 'trophy',
   marketplace_sold: 'banknote',
   cashout_completed: 'banknote',
+  user_signed_up: 'check',
+  user_returned: 'check',
 };
 
 function iconFor(e: LiveActivityEvent): string {
@@ -75,6 +83,8 @@ const TYPE_COLOR: Record<ActivityEventType, string> = {
   draft_won: 'text-amber-300',
   marketplace_sold: 'text-cyan-300',
   cashout_completed: 'text-green-300',
+  user_signed_up: 'text-gray-400',
+  user_returned: 'text-gray-400',
 };
 
 function formatWhen(ms: number | null, iso: string): string {
@@ -209,7 +219,7 @@ export function ActivityHistory({
   const visibleEvents = useMemo(() => {
     // Optional type filter — e.g. the Promos tab passes the promo-relevant
     // types so it only shows spins/claims/buys/wins, not every draft action.
-    let evs = events;
+    let evs = events.filter((e) => !HIDDEN_TYPES.has(e.type));
     if (filterTypes && filterTypes.length) {
       const allowed = new Set<ActivityEventType>(filterTypes);
       evs = evs.filter((e) => allowed.has(e.type));
