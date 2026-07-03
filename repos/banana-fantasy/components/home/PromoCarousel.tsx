@@ -264,6 +264,9 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
               const progressPercent = isClaimed && !isStacking ? 100 : (hasProgress
                 ? ((promo.progressCurrent || 0) / promo.progressMax!) * 100
                 : 0);
+              // Featured (July 4th) card gets the patriotic treatment:
+              // flag stripe, chip, corner stars, red ribbon, red→blue bar.
+              const isJuly4 = !!promo.featured;
               return (
                 <div
                   key={`${promo.id}-${index}`}
@@ -278,6 +281,17 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                       : 'border border-[#d2d2d7] shadow-sm'}
                   `}
                 >
+                  {/* July 4th featured treatment — flag stripe + faint corner stars */}
+                  {isJuly4 && (
+                    <>
+                      <div className="absolute inset-x-0 top-0 h-1.5 z-20 pointer-events-none bg-gradient-to-r from-[#ef4444] via-[#f8fafc] to-[#3b82f6]" />
+                      <span className="absolute left-3 top-9 z-[5] text-[#ef4444]/50 text-xs pointer-events-none">✦</span>
+                      <span className="absolute right-8 top-14 z-[5] text-[#3b82f6]/45 text-[10px] pointer-events-none">✦</span>
+                      <span className="absolute left-5 bottom-9 z-[5] text-[#3b82f6]/50 text-sm pointer-events-none">✦</span>
+                      <span className="absolute right-4 bottom-14 z-[5] text-[#ef4444]/45 text-[10px] pointer-events-none">✦</span>
+                    </>
+                  )}
+
                   {/* Hover overlay */}
                   <div className={`absolute inset-0 bg-[#f5f5f7] pointer-events-none transition-opacity duration-300 z-10 ${isHovered ? 'opacity-50' : 'opacity-0'}`} />
 
@@ -291,13 +305,22 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                   {/* NEW Badge */}
                   {promo.isNew && (
                     <div className="absolute -right-1 -top-1 z-30">
-                      <span className="inline-block bg-banana text-[#1d1d1f] text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border border-banana/50">
+                      <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg transform rotate-12 border ${
+                        isJuly4
+                          ? 'bg-[#ef4444] text-white border-[#b91c1c]/50'
+                          : 'bg-banana text-[#1d1d1f] border-banana/50'
+                      }`}>
                         NEW
                       </span>
                     </div>
                   )}
 
                   <div className="relative flex flex-col h-full items-center justify-center text-center">
+                    {isJuly4 && (
+                      <span className="mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#d2d2d7] bg-gradient-to-r from-[#ef4444]/10 via-transparent to-[#3b82f6]/10 px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-[#1d1d1f]">
+                        🇺🇸 July 4th Weekend
+                      </span>
+                    )}
                     <h4 className="font-semibold text-[#1d1d1f] text-lg leading-snug tracking-tight">
                       {promoTitle.includes('→') ? (
                         <>
@@ -398,7 +421,7 @@ export function PromoCarousel({ promos, claimPromo, onVerifyTweet, onGenerateRef
                               </div>
                               <div className="h-1.5 bg-[#e8e8ed] rounded-full overflow-hidden">
                                 <div
-                                  className="h-full bg-[#1d1d1f] rounded-full transition-all duration-500"
+                                  className={`h-full rounded-full transition-all duration-500 ${isJuly4 ? 'bg-gradient-to-r from-[#ef4444] to-[#3b82f6]' : 'bg-[#1d1d1f]'}`}
                                   style={{ width: `${progressPercent}%` }}
                                 />
                               </div>
