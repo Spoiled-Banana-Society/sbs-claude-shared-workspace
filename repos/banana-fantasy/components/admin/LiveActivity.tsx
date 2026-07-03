@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import type { ActivityEventType, PaymentMethod, WalletType } from '@/lib/activityEvents';
 import { WalletLink } from '@/components/admin/WalletLink';
+import { bananaDefaultName } from '@/utils/helpers';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Pass purchased',
@@ -276,9 +277,15 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
                         <PresenceChip e={e} />
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-200">{e.username ?? '—'}</td>
+                    {/* Canonical name floor: events snapshot the username at
+                        write time — a purchase made before the user named
+                        themselves showed '—'. Fall back to the same
+                        wallet-derived default the user sees everywhere. */}
+                    <td className="px-4 py-3 text-xs text-gray-200">
+                      {e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : '—')}
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-400">
-                      <WalletLink wallet={e.walletAddress || ''} bare displayName={e.username ?? undefined} />
+                      <WalletLink wallet={e.walletAddress || ''} bare displayName={e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : undefined)} />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {WALLET_TYPE_LABEL[e.walletType]} · {e.devicePlatform}
