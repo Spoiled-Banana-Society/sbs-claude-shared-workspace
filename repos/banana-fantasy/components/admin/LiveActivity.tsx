@@ -133,6 +133,33 @@ function AccountChip({ flags }: { flags?: UserFlags }) {
 
 const FLAGS_CHUNK = 100; // server caps at 120/request
 
+interface StatsBucket {
+  purchases: number; passesBought: number; purchaseUsd: number;
+  newAccounts: number; logins: number;
+  spins: number; freeDraftsWonFromSpins: number; jpPassesFromSpins: number; hofPassesFromSpins: number;
+  draftsFilled: number; draftEntries: number; promosClaimed: number;
+}
+interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket }
+
+const STATS_POLL_MS = 45_000;
+
+/** Read a filter's initial value from the URL so refresh keeps the view. */
+function urlParam(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+/** Write filters into the URL (replaceState — no nav, survives refresh/share). */
+function persistFiltersToUrl(entries: Record<string, string>): void {
+  if (typeof window === 'undefined') return;
+  const params = new URLSearchParams(window.location.search);
+  for (const [k, v] of Object.entries(entries)) {
+    if (v && v !== 'all' && v !== '') params.set(k, v);
+    else params.delete(k);
+  }
+  window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
+}
+
 export function LiveActivity({ enabled }: { enabled: boolean }) {
   const { events, isConnected, error } = useActivityStream(enabled ? '/api/admin/activity/stream' : null);
   const { getAccessToken } = usePrivy();
@@ -142,10 +169,53 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
   const getAccessTokenRef = useRef(getAccessToken);
   useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
 
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
-  const [walletFilter, setWalletFilter] = useState<WalletFilter>('all');
-  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>('all');
-  const [search, setSearch] = useState('');
+  // Filters init from the URL and write back on change — refreshing the page
+  // keeps the exact view (Boris 2026-07-03: "if I refresh I should still be
+  // in the tab"). Tab + sub-tab were already URL-synced; this covers the pills.
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => (urlParam('type') as TypeFilter) || 'all');
+  const [walletFilter, setWalletFilter] = useState<WalletFilter>(() => (urlParam('walletType') as WalletFilter) || 'all');
+  const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>(() => (urlParam('pay') as PaymentFilter) || 'all');
+  const [search, setSearch] = useState(() => urlParam('q') || '');
+  useEffect(() => {
+    persistFiltersToUrl({ type: typeFilter, walletType: walletFilter, pay: paymentFilter, q: search });
+  }, [typeFilter, walletFilter, paymentFilter, search]);
+
+  // Accurate day/total stats from the server (the live window only holds the
+  // latest ~100 events — computing cards from it undercounted, e.g. "7
+  // purchases (24h)" when the real day had far more). Polled + nudged by
+  // fresh live events (throttled to one refetch per 5s).
+  const [stats, setStats] = useState<ActivityStats | null>(null);
+  const statsFetchingRef = useRef(false);
+  const lastStatsFetchRef = useRef(0);
+  const fetchStats = async () => {
+    if (statsFetchingRef.current) return;
+    if (Date.now() - lastStatsFetchRef.current < 5_000) return;
+    statsFetchingRef.current = true;
+    lastStatsFetchRef.current = Date.now();
+    try {
+      const token = await getAccessTokenRef.current();
+      const res = await fetch('/api/admin/activity/stats', {
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (res.ok) setStats(await res.json() as ActivityStats);
+    } catch { /* keep last-known stats */ } finally {
+      statsFetchingRef.current = false;
+    }
+  };
+  const fetchStatsRef = useRef(fetchStats);
+  fetchStatsRef.current = fetchStats;
+  useEffect(() => {
+    if (!enabled) return;
+    void fetchStatsRef.current();
+    const t = setInterval(() => { void fetchStatsRef.current(); }, STATS_POLL_MS);
+    return () => clearInterval(t);
+  }, [enabled]);
+  // New live event → the day numbers just changed → refresh (throttled above).
+  const latestEventId = events[0]?.id ?? '';
+  useEffect(() => {
+    if (!enabled || !latestEventId) return;
+    void fetchStatsRef.current();
+  }, [enabled, latestEventId]);
 
   // Full history on demand: the live stream only carries the latest 100
   // events, so older rows (e.g. every pass purchase ever) scroll out of
@@ -220,25 +290,11 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
     [allEvents, typeFilter, walletFilter, paymentFilter, search],
   );
 
-  const stats = useMemo(() => {
-    const last24h = Date.now() - 24 * 60 * 60 * 1000;
-    const recent = events.filter((e) => (e.createdAt ?? Date.parse(e.createdAtIso)) >= last24h);
-    const by = (t: ActivityEventType) => recent.filter((e) => e.type === t);
-    const purchased = by('pass_purchased');
-    const purchasedTotal = purchased.reduce((s, e) => s + (Number(e.metadata?.totalPrice) || 0), 0);
-    const revenueCurrency = (purchased[0]?.metadata?.currency as string) ?? 'USD';
-    return {
-      purchases: purchased.length,
-      purchasedPasses: purchased.reduce((s, e) => s + e.quantity, 0),
-      purchasedTotal,
-      revenueCurrency,
-      grants: by('pass_granted').length,
-      spins: by('spin_won').length,
-      promos: by('promo_claimed').length,
-      signups: by('user_signed_up').length,
-      returns: by('user_returned').length,
-    };
-  }, [events]);
+  const dayLabel = useMemo(() => {
+    if (!stats?.dayStartIso) return 'Today';
+    const d = new Date(stats.dayStartIso);
+    return `Today (since ${d.toLocaleTimeString('en-US', { hour: 'numeric', timeZone: 'America/Los_Angeles' })} PT)`;
+  }, [stats?.dayStartIso]);
 
   const csv = useMemo(() => {
     const header = [
@@ -277,20 +333,47 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
   return (
     <div className="space-y-4">
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      {/* Day (3am-PT boundary) + since-launch totals, computed server-side
+          over the FULL event record — never the 100-event live window. */}
+      <div className="flex items-baseline justify-between">
+        <p className="text-[11px] uppercase tracking-wider text-gray-500 font-medium">{dayLabel}</p>
+        <p className="text-[10px] text-gray-600">all-time = since launch (Jun 23) · live-updating</p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
         <StatCard
-          label="Purchases (24h)"
-          value={stats.purchases.toString()}
-          sub={`${stats.purchasedPasses} passes · $${stats.purchasedTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+          label="Purchases"
+          value={stats ? stats.today.purchases.toString() : '…'}
+          sub={stats
+            ? `${stats.today.passesBought} passes · $${stats.today.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} — all-time ${stats.total.passesBought} · $${stats.total.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+            : 'loading'}
         />
         <StatCard
-          label="New accounts (24h)"
-          value={stats.signups.toString()}
-          sub={`${stats.returns} log-ins`}
+          label="New accounts"
+          value={stats ? stats.today.newAccounts.toString() : '…'}
+          sub={stats ? `${stats.today.logins} log-ins today — all-time ${stats.total.newAccounts}` : 'loading'}
         />
-        <StatCard label="Admin grants (24h)" value={stats.grants.toString()} />
-        <StatCard label="Spin prizes (24h)" value={stats.spins.toString()} />
-        <StatCard label="Promos claimed (24h)" value={stats.promos.toString()} />
+        <StatCard
+          label="Spins"
+          value={stats ? stats.today.spins.toString() : '…'}
+          sub={stats ? `all-time ${stats.total.spins}` : 'loading'}
+        />
+        <StatCard
+          label="Won from spins"
+          value={stats ? stats.today.freeDraftsWonFromSpins.toString() : '…'}
+          sub={stats
+            ? `free drafts${(stats.today.jpPassesFromSpins + stats.today.hofPassesFromSpins) > 0 ? ` +${stats.today.jpPassesFromSpins}JP/${stats.today.hofPassesFromSpins}HOF` : ''} — all-time ${stats.total.freeDraftsWonFromSpins} (+${stats.total.jpPassesFromSpins}JP/${stats.total.hofPassesFromSpins}HOF)`
+            : 'loading'}
+        />
+        <StatCard
+          label="Drafts filled"
+          value={stats ? stats.today.draftsFilled.toString() : '…'}
+          sub={stats ? `${stats.today.draftEntries} seats entered — all-time ${stats.total.draftsFilled} filled` : 'loading'}
+        />
+        <StatCard
+          label="Promos claimed"
+          value={stats ? stats.today.promosClaimed.toString() : '…'}
+          sub={stats ? `all-time ${stats.total.promosClaimed}` : 'loading'}
+        />
       </div>
 
       {/* Filter bar */}

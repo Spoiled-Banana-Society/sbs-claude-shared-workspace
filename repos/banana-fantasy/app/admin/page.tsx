@@ -23,6 +23,7 @@ import { isWalletAdmin } from '@/lib/adminAllowlist';
 import { useAdminAuthHeaders } from '@/hooks/admin/useAdminApi';
 import { useAdminNotifications, type NotifCategory } from '@/hooks/admin/useAdminNotifications';
 import { UsersTable } from '@/components/admin/UsersTable';
+import { LiveActivity } from '@/components/admin/LiveActivity';
 import { LogsTab } from '@/components/admin/LogsTab';
 import { SupportInbox } from '@/components/admin/SupportInbox';
 import { AdminTools } from '@/components/admin/AdminTools';
@@ -39,6 +40,7 @@ import { HealthPill } from '@/components/admin/TopBar/HealthPill';
 
 type TabKey =
   | 'dashboard'
+  | 'activity'
   | 'logs'
   | 'support'
   | 'user-lookup'
@@ -57,6 +59,11 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   // Daily — checked every day
   { key: 'dashboard', label: 'Dashboard', group: 'Daily' },
+  // The live heartbeat — purchases, signups, log-ins, spins, drafts as they
+  // happen, with day/all-time counters. Promoted out of Audit (2026-07-03):
+  // it's a daily-glance surface, not an occasional forensic one. The Audit →
+  // Live Activity sub-tab still renders it for old links.
+  { key: 'activity', label: 'Live Activity', group: 'Daily' },
   { key: 'logs', label: 'Logs', group: 'Daily' },
   { key: 'support', label: 'Support', group: 'Daily' },
   // Users — per-user work
@@ -364,6 +371,7 @@ export default function AdminPage() {
 
           <div className="px-4 sm:px-6 md:px-8 py-4 md:py-6 max-w-[1400px]">
             {activeTab === 'dashboard' && <DashboardPanel enabled={isAuthorized} />}
+            {activeTab === 'activity' && <LiveActivity enabled={isAuthorized} />}
             {activeTab === 'logs' && <LogsTab enabled={isAuthorized} />}
             {activeTab === 'support' && <SupportInbox enabled={isAuthorized} />}
             {activeTab === 'user-lookup' && <UserLookupPanel enabled={isAuthorized} />}
