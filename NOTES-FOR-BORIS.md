@@ -969,3 +969,19 @@ Also note the free-draft claims mint real BBB4 passes via the ops wallet (`reser
 **UPDATE Jul 2 (later):** Richard switched the buy-bonus reward to a **wheel spin** per 2 passes (was 1 flat free draft). New config `buyBonus.reward: 'spin' | 'draft'` in `lib/api/config.ts` — all your free-draft machinery (claim-path mint, notification, popups) is intact behind the `'draft'` setting; every consumer keys off the config. Copy now "Buy 2 → FREE SPIN". Note the economics: with spins, 10 passes = 5 spins (buy-2) + 1 spin (buy-10) = 6 spins, each guaranteeing ≥1 free draft — flagged to Richard, he's driving. Still admin-only preview.
 
 — Richard's Claude
+
+---
+
+## Jul 2 — House bots: "+1 Bot" admin button + NEW `onBotTurn` Cloud Function (bot brain v1) — DEPLOYED
+
+Richard wants to actually use your house-bot system (great build btw — write-up in Richard's Downloads). Two additions, both live:
+
+1. **"+1 Bot" button** on every FILLING draft row in Admin → Drafts → Manage. One click = joins 1 pool bot via your `/api/admin/bots/fill`; auto-mints one first if the pool's dry (409). Pool is currently EMPTY so nothing exists yet.
+2. **`onBotTurn` Cloud Function (deployed to sbs-staging-env)** — human-like bot picking so bots don't rely on miss-2 autopilot. Same RTDB trigger as onPickAdvance. When `currentDrafter` is in `botWallets`: wait random 10–30s (fast) / 30–90s (slow), re-check state fresh after the sleep (compute-at-submit), then POST a normal pick to your `/draft-actions/{id}/owner/{bot}/actions/pick` — ADP-sorted, weighted-random from top 5, positional caps (3QB/7RB/8WR/3TE/3DST). Dials + kill switch in Firestore `system_config/botBrain` (set `enabled:false` to hard-stop). Never picks in the last ~5s, so the buzzer auto-pick path stays the safety net — worst case bots behave exactly like before this function existed. Legacy `bot-…` FillBots owners are explicitly skipped.
+   - Deployed per-function only (`firebase deploy --only functions:onBotTurn`) — did NOT touch onPickAdvance/onQueueUpdate/onDraftFilled.
+   - Synced `~/sbs-staging-functions` → `repos/sbs-staging-functions` (still carries 05-28 versions of the other functions — deployed ones remain newer; keep deploying per-function).
+   - Sim-tested offline vs the real playerMap ADP (150/150 valid unique picks, sane best-ball rosters): `repos/banana-fantasy/scripts/_sim-botbrain.mjs`.
+
+Richard's calls FYI: keep it manual (no auto-fill), no prize-exclusion build for now, no Go /staging auth change.
+
+— Richard's Claude
