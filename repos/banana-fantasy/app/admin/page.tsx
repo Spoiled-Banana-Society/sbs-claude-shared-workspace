@@ -131,12 +131,13 @@ export default function AdminPage() {
 
   // Resolve the initial tab from URL. Honors new keys directly, redirects
   // legacy keys to the new home (with sub-tab pre-set), falls back to
-  // 'dashboard' for unknown values.
+  // 'drafts' for unknown/absent values (Boris 2026-07-03: "the default
+  // should land on drafts not dashboard").
   const initialTab: TabKey = useMemo(() => {
     const fromUrl = searchParams?.get('tab') ?? null;
     if (isValidTabKey(fromUrl)) return fromUrl;
     const legacy = resolveLegacyTab(fromUrl);
-    return legacy?.tab ?? 'dashboard';
+    return legacy?.tab ?? 'drafts';
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [activeTab, setActiveTabRaw] = useState<TabKey>(initialTab);
