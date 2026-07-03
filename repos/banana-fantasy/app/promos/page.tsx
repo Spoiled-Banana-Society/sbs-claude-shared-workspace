@@ -460,19 +460,23 @@ function PromoCard({ promo, isClaimed, hasVisibleClaim, onClick, onClaim, pickEx
       className={`
         relative group w-full text-left rounded-2xl border bg-white/[0.02] backdrop-blur-xl
         transition-all duration-200 ease-out
-        ${hasVisibleClaim
+        ${hasVisibleClaim || promo.featured
           ? 'border-banana/40 hover:border-banana/60'
           : 'border-white/[0.06] hover:border-white/[0.12]'}
         hover:bg-white/[0.04]
       `}
     >
-      {/* NEW indicator — subtle, top-right */}
-      {promo.isNew && (
+      {/* NEW indicator — big banana pill for the featured promo, subtle text otherwise */}
+      {promo.isNew && (promo.featured ? (
+        <span className="absolute -top-3 right-4 z-10 inline-flex items-center rounded-full bg-banana px-3.5 py-1.5 text-xs font-bold uppercase tracking-widest text-black shadow-[0_0_24px_rgba(251,191,36,0.5)]">
+          New
+        </span>
+      ) : (
         <span className="absolute top-4 right-4 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-banana font-medium">
           <span className="w-1.5 h-1.5 rounded-full bg-banana" />
           New
         </span>
-      )}
+      ))}
 
       <div className="p-5 sm:p-6 flex flex-col h-full min-h-[13rem]">
         {/* Type label — small dot + plain text, color-restrained */}

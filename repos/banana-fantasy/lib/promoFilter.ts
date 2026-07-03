@@ -45,6 +45,14 @@ export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER)
  */
 export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 
+/**
+ * Limited-time featured promo: pinned to position 1 on every surface
+ * (above claimable bubbling) and given the big NEW badge treatment.
+ * Set to null when no promo is being featured — remove 'buy-bonus'
+ * here when the July 4th promo ends (Sunday night 2026-07-05).
+ */
+export const FEATURED_PROMO_TYPE: PromoType | null = 'buy-bonus';
+
 /** Display order with the admin-preview types spliced in (before 'mint'). */
 function adminPreviewOrder(): PromoType[] {
   const order = [...VISIBLE_PROMO_TYPES_ORDER];
@@ -153,6 +161,13 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   });
 
   const sorted = filtered.sort((a, b) => {
+    // 0. Featured promo is pinned to position 1, above everything —
+    //    it's the limited-time card we're actively pushing.
+    if (FEATURED_PROMO_TYPE) {
+      const aFeat = a.type === FEATURED_PROMO_TYPE ? 1 : 0;
+      const bFeat = b.type === FEATURED_PROMO_TYPE ? 1 : 0;
+      if (aFeat !== bFeat) return bFeat - aFeat;
+    }
     // 1. Claimable / actionable promos first — user can hit the button now.
     if (opts.hasVisibleClaim) {
       const aClaim = opts.hasVisibleClaim(a) ? 1 : 0;
@@ -175,7 +190,12 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
   // The first-purchase promo shows a NEW badge only for new users; returning
   // (BB3) players get the same box without the badge. Derived here so every
   // surface (home carousel, drafting sidebar, /promos) stays in sync.
-  return sorted.map((p) =>
-    p.type === 'first-purchase' ? { ...p, isNew: !opts.isBB3Holder } : p,
-  );
+  return sorted.map((p) => {
+    if (p.type === 'first-purchase') return { ...p, isNew: !opts.isBB3Holder };
+    // Featured promo always carries the (big) NEW badge on every surface.
+    if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
+      return { ...p, isNew: true, featured: true };
+    }
+    return p;
+  });
 }

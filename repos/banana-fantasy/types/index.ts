@@ -414,6 +414,9 @@ export interface Promo {
   claimCount?: number;
   completedDraftIds?: string[];
   isNew?: boolean;
+  /** Limited-time featured promo (FEATURED_PROMO_TYPE in promoFilter):
+   *  pinned to position 1 on every surface + big NEW badge treatment. */
+  featured?: boolean;
   /** New-user promo only: admin force-granted to a returning player. Lets the
    *  client filter show it despite isBB3Holder (returning) hiding it normally.
    *  Set server-side in getPromos; claimed/spun still hide it. */
