@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import {
   useAdminDraftsManage,
   useDeleteDraftWithRefund,
+  useAdminAuthHeaders,
   type ManageDraftRow,
   type DraftHealth,
 } from '@/hooks/admin/useAdminApi';
@@ -58,12 +59,59 @@ export function AdminDraftManage({ enabled }: Props) {
   }>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [addingBotId, setAddingBotId] = useState<string | null>(null);
 
   const { data, isLoading, isError, error, refetch, isFetching } = useAdminDraftsManage(
     enabled,
     appliedFilters,
   );
   const deleteMutation = useDeleteDraftWithRefund();
+  const getHeaders = useAdminAuthHeaders();
+
+  // One-click "+1 Bot" on a filling draft. Joins one house bot from the pool
+  // (POST /api/admin/bots/fill); if the pool has no bot with an unused pass
+  // (409), mints a fresh one on the spot (real on-chain free pass, ~seconds)
+  // and retries the join once. Speed comes from the slot id (…-fast-… / …-slow-…).
+  const handleAddBot = async (row: ManageDraftRow) => {
+    setAddingBotId(row.id);
+    setResultMessage(null);
+    const speed = row.id.includes('slow') ? 'slow' : 'fast';
+    clientLog('admin.drafts.manage', 'addbot.start', { slotId: row.id, speed });
+    try {
+      const headers = { ...(await getHeaders()), 'Content-Type': 'application/json' };
+      const fill = () =>
+        fetch('/api/admin/bots/fill', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ leagueId: row.id, count: 1, speed }),
+        });
+      let res = await fill();
+      if (res.status === 409) {
+        // Pool dry — mint one bot, then retry the join.
+        const mintRes = await fetch('/api/admin/bots/mint', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ count: 1 }),
+        });
+        const mintBody = await mintRes.json().catch(() => ({}));
+        if (!mintRes.ok || !mintBody.poolAdded) {
+          throw new Error(mintBody?.error || `mint failed (HTTP ${mintRes.status})`);
+        }
+        res = await fill();
+      }
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      clientLog('admin.drafts.manage', 'addbot.done', { slotId: row.id });
+      setResultMessage(`Added 1 bot to ${row.id} (${row.numPlayers + 1}/${row.maxPlayers}).`);
+      refetch();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      clientLog('admin.drafts.manage', 'addbot.error', { slotId: row.id, error: msg });
+      setResultMessage(`Failed to add bot to ${row.id}: ${msg}`);
+    } finally {
+      setAddingBotId(null);
+    }
+  };
 
   const applyFilters = () => {
     const filters = {
@@ -294,12 +342,24 @@ export function AdminDraftManage({ enabled }: Props) {
                       </div>
                     </div>
                   ) : (
-                    <button
-                      onClick={() => setPendingDeleteId(row.id)}
-                      className="px-2 py-1 text-xs bg-zinc-800 border border-white/10 text-white/70 rounded hover:bg-zinc-700 hover:text-white"
-                    >
-                      Delete & refund
-                    </button>
+                    <div className="flex items-center gap-2 justify-end">
+                      {row.health === 'filling' && row.numPlayers < row.maxPlayers && (
+                        <button
+                          onClick={() => handleAddBot(row)}
+                          disabled={addingBotId === row.id}
+                          title="Join one house bot to this draft (mints one if the pool is empty)"
+                          className="px-2 py-1 text-xs bg-banana/15 border border-banana/30 text-banana rounded hover:bg-banana/25 disabled:opacity-50"
+                        >
+                          {addingBotId === row.id ? 'Adding…' : '+1 Bot'}
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setPendingDeleteId(row.id)}
+                        className="px-2 py-1 text-xs bg-zinc-800 border border-white/10 text-white/70 rounded hover:bg-zinc-700 hover:text-white"
+                      >
+                        Delete & refund
+                      </button>
+                    </div>
                   )}
                 </td>
               </tr>
