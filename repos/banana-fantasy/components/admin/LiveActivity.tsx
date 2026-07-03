@@ -11,7 +11,7 @@ import { bananaDefaultName } from '@/utils/helpers';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Pass purchased',
-  pass_granted: 'Admin grant',
+  pass_granted: 'Pass granted',
   spin_won: 'Spin prize',
   promo_claimed: 'Promo claimed',
   draft_entered: 'Draft entered',
@@ -65,6 +65,20 @@ const WALLET_TYPE_LABEL: Record<WalletType, string> = {
   external_connect: 'External wallet',
   unknown: '—',
 };
+
+/** pass_granted covers three real sources — label by which one it was.
+ *  (It used to blanket-say "Admin grant", making every wheel-prize mint look
+ *  like a manual freebie — Boris 2026-07-03.) */
+function typeLabelFor(e: LiveActivityEvent): string {
+  if (e.type === 'pass_granted') {
+    const s = String(e.metadata?.source ?? '');
+    if (s === 'wheel_spin_mint') return 'Wheel prize mint';
+    if (s === 'card_fee_reward') return 'Credit reward';
+    if (e.metadata?.adminActor) return 'Admin grant';
+    return 'Pass granted';
+  }
+  return TYPE_LABEL[e.type];
+}
 
 function shortWallet(v: string | null | undefined): string {
   if (!v) return '—';
@@ -482,7 +496,7 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center gap-1.5">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] border ${TYPE_COLOR[e.type]}`}>
-                          {TYPE_LABEL[e.type]}
+                          {typeLabelFor(e)}
                         </span>
                         <PresenceChip e={e} />
                       </span>
