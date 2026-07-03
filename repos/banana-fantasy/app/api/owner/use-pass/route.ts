@@ -99,6 +99,15 @@ export async function POST(req: Request) {
           const isNew = !!u && typeof u.createdAt === 'string'
             && u.createdAt >= LAUNCH_ISO && u.isReturningPlayer !== true;
           if (!isNew) return;
+          // Comped accounts don't count (Boris 2026-07-03: "if we grant them
+          // the free draft pass, don't count that"): if ANY pass was ever
+          // admin-granted to this wallet, they're someone we invited — skip
+          // both the bell and the email. Organic new users only.
+          const granted = await db.collection('pass_origin')
+            .where('ownerAtMint', '==', userId)
+            .where('origin', '==', 'admin_grant')
+            .limit(1).get();
+          if (!granted.empty) return;
           const admins = getAdminWalletAllowlist();
           if (admins.length === 0) return;
           const name = u?.username && !/^user-0x/i.test(u.username)
