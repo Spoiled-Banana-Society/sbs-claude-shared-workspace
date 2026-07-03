@@ -33,6 +33,10 @@ interface UserFlags {
   isReturning: boolean;
   /** ISO account-creation time — lets admin surfaces show "created 2h ago". */
   createdAt: string | null;
+  /** Canonically resolved CURRENT display name (v2 username → Go owner
+   *  profile → banana default) — the same chain user-facing surfaces use,
+   *  so admin can never disagree with what the user sees. */
+  name: string | null;
 }
 
 function createdAtMs(raw: unknown): number | null {
@@ -68,23 +72,27 @@ export async function POST(req: Request) {
 
     const db = getAdminFirestore();
     const refs = wallets.map((w) => db.collection('v2_users').doc(w));
-    const snaps = await db.getAll(...refs);
+    const [snaps, profiles] = await Promise.all([
+      db.getAll(...refs),
+      // Shared canonical resolver (v2 → Go owner profile → banana default)
+      // so the name admin surfaces show is EXACTLY what user-facing surfaces
+      // show — including names edited only on the Go side (CryptoHX case).
+      import('@/lib/friends').then(({ getPublicUsers }) => getPublicUsers(wallets)).catch(() => new Map<string, { username?: string }>()),
+    ]);
 
     const flags: Record<string, UserFlags> = {};
     snaps.forEach((snap, i) => {
       const wallet = wallets[i];
-      if (!snap.exists) return;
-      const data = snap.data() as { createdAt?: unknown; isReturningPlayer?: boolean };
-      const isReturning = data.isReturningPlayer === true || isReturningWalletSync(wallet);
-      const created = createdAtMs(data.createdAt);
+      const data = snap.exists ? (snap.data() as { createdAt?: unknown; isReturningPlayer?: boolean }) : {};
+      const isReturning = (snap.exists && data.isReturningPlayer === true) || isReturningWalletSync(wallet);
+      const created = snap.exists ? createdAtMs(data.createdAt) : null;
       const isNew = !isReturning && created !== null && created >= SEASON_LAUNCH_MS;
-      if (isNew || isReturning) {
-        flags[wallet] = {
-          isNew,
-          isReturning,
-          createdAt: created !== null ? new Date(created).toISOString() : null,
-        };
-      }
+      flags[wallet] = {
+        isNew,
+        isReturning,
+        createdAt: created !== null ? new Date(created).toISOString() : null,
+        name: profiles.get(wallet)?.username || null,
+      };
     });
 
     return json({ flags });

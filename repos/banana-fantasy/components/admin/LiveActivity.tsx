@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { usePrivy } from '@privy-io/react-auth';
 
@@ -108,9 +108,39 @@ function eventMatchesFilters(
   return true;
 }
 
+interface UserFlags {
+  isNew: boolean;
+  isReturning: boolean;
+  createdAt?: string | null;
+  name?: string | null;
+}
+
+/** NEW / OLD account tag rendered beside every user in the feed. */
+function AccountChip({ flags }: { flags?: UserFlags }) {
+  if (!flags) return null;
+  if (flags.isReturning) {
+    return (
+      <span title="Returning player — matched a past-season identity" className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-sky-400/10 text-sky-300 border border-sky-400/20">Old</span>
+    );
+  }
+  if (flags.isNew) {
+    return (
+      <span title={`New user — first-season account${flags.createdAt ? ` — created ${new Date(flags.createdAt).toLocaleString()}` : ''}`} className="text-[9px] font-black uppercase tracking-widest px-1.5 py-px rounded-full bg-emerald-400/10 text-emerald-300 border border-emerald-400/20">New</span>
+    );
+  }
+  return null;
+}
+
+const FLAGS_CHUNK = 100; // server caps at 120/request
+
 export function LiveActivity({ enabled }: { enabled: boolean }) {
   const { events, isConnected, error } = useActivityStream(enabled ? '/api/admin/activity/stream' : null);
   const { getAccessToken } = usePrivy();
+
+  // Ref the token getter so effects keyed on data never refire on Privy
+  // re-renders. See render-loop rule (CLAUDE.md Rule #0).
+  const getAccessTokenRef = useRef(getAccessToken);
+  useEffect(() => { getAccessTokenRef.current = getAccessToken; }, [getAccessToken]);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [walletFilter, setWalletFilter] = useState<WalletFilter>('all');
@@ -150,6 +180,40 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
     merged.sort((a, b) => (b.createdAt ?? Date.parse(b.createdAtIso)) - (a.createdAt ?? Date.parse(a.createdAtIso)));
     return merged;
   }, [events, history]);
+
+  // Canonical CURRENT name + NEW/OLD flags for every wallet in view. Events
+  // snapshot the username at write time, which goes stale after renames and
+  // misses names edited only on the Go profile — resolve live via the admin
+  // flags endpoint (same v2 → Go → banana chain user surfaces use). Keyed on
+  // the sorted wallet set; merged so known entries never flicker out.
+  const [flagsMap, setFlagsMap] = useState<Record<string, UserFlags>>({});
+  const walletKey = useMemo(
+    () => [...new Set(allEvents.map((e) => (e.walletAddress || '').toLowerCase()).filter((w) => /^0x[0-9a-f]{40}$/.test(w)))].sort().join(','),
+    [allEvents],
+  );
+  useEffect(() => {
+    if (!enabled || !walletKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessTokenRef.current();
+        const wallets = walletKey.split(',');
+        const chunks: string[][] = [];
+        for (let i = 0; i < wallets.length; i += FLAGS_CHUNK) chunks.push(wallets.slice(i, i + FLAGS_CHUNK));
+        const results = await Promise.all(chunks.map(async (chunk) => {
+          const res = await fetch('/api/admin/user-flags', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ wallets: chunk }),
+          });
+          if (!res.ok) return {};
+          return ((await res.json()) as { flags?: Record<string, UserFlags> }).flags ?? {};
+        }));
+        if (!cancelled) setFlagsMap((prev) => Object.assign({}, prev, ...results));
+      } catch { /* cosmetic — stored names still render */ }
+    })();
+    return () => { cancelled = true; };
+  }, [enabled, walletKey]);
 
   const filtered = useMemo(
     () => allEvents.filter((e) => eventMatchesFilters(e, typeFilter, walletFilter, paymentFilter, search)),
@@ -340,15 +404,23 @@ export function LiveActivity({ enabled }: { enabled: boolean }) {
                         <PresenceChip e={e} />
                       </span>
                     </td>
-                    {/* Canonical name floor: events snapshot the username at
-                        write time — a purchase made before the user named
-                        themselves showed '—'. Fall back to the same
-                        wallet-derived default the user sees everywhere. */}
+                    {/* Live canonical name (v2 → Go profile → banana default)
+                        + NEW/OLD account chip on every row. Falls back to the
+                        event's stored snapshot until flags resolve. */}
                     <td className="px-4 py-3 text-xs text-gray-200">
-                      {e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : '—')}
+                      <span className="inline-flex items-center gap-1.5">
+                        {flagsMap[(e.walletAddress || '').toLowerCase()]?.name
+                          ?? e.username
+                          ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : '—')}
+                        <AccountChip flags={flagsMap[(e.walletAddress || '').toLowerCase()]} />
+                      </span>
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-400">
-                      <WalletLink wallet={e.walletAddress || ''} bare displayName={e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : undefined)} />
+                      <WalletLink
+                        wallet={e.walletAddress || ''}
+                        bare
+                        displayName={flagsMap[(e.walletAddress || '').toLowerCase()]?.name ?? e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : undefined)}
+                      />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">
                       {WALLET_TYPE_LABEL[e.walletType]} · {e.devicePlatform}
