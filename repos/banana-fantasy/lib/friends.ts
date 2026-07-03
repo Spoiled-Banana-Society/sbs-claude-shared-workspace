@@ -348,7 +348,10 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
       const w = (data.walletAddress || snap.id).toLowerCase();
       out.set(w, {
         walletAddress: w,
-        username: data.username || '',
+        // Placeholder usernames (seeded 'User-0x…', wallet-string names)
+        // are NOT names — blank them so the Go fallback + banana default
+        // below kick in, same rule as display-batch.
+        username: data.username && !isPlaceholderProfileName(data.username, w) ? data.username : '',
         profilePicture: data.profilePicture,
         equippedBadge: data.equippedBadge ?? null,
       });

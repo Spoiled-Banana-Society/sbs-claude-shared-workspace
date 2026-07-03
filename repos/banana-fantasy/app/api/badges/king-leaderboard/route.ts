@@ -8,6 +8,7 @@ import { getPublicUsers } from '@/lib/friends';
 import { currentKingWeek, tallyKingDrafts, rankKingContenders } from '@/lib/kingWeek';
 import { fetchDraftRosters } from '@/lib/kingRoster';
 import { fetchOwnerPaidFilledCount } from '@/lib/api/owner';
+import { bananaDefaultName } from '@/utils/helpers';
 import { logger } from '@/lib/logger';
 
 /**
@@ -62,7 +63,10 @@ export async function GET(req: Request) {
         const p = profileMap.get(wallet);
         return {
           wallet,
-          name: p?.username || `${wallet.slice(0, 6)}…${wallet.slice(-4)}`,
+          // Canonical floor — never a raw wallet slice. getPublicUsers only
+          // covers the top 10, so deeper rows (e.g. the viewer's own row
+          // outside the top 10) need the same wallet-derived default.
+          name: p?.username || bananaDefaultName(wallet),
           pfp: p?.profilePicture ?? null,
           count,
           rank: i + 1,
