@@ -275,6 +275,13 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
     if (filter === 'jackpot') return (d.level ?? '').toLowerCase().includes('jackpot');
     if (filter === 'hof') return (d.level ?? '').toLowerCase().includes('hall of fame') || d.level === 'HOF';
     return true;
+  }).sort((a, b) => {
+    // Boris 2026-07-03: FILLING lobbies on top, the one closest to full
+    // first; started drafts below. Within each group keep the API's
+    // newest-first order (Array.sort is stable).
+    if (a.filling !== b.filling) return a.filling ? -1 : 1;
+    if (a.filling && b.filling) return (b.numPlayers ?? 0) - (a.numPlayers ?? 0);
+    return 0;
   });
 
   // Resolve banana names for everyone in a filling lobby (+ the current drafter)
