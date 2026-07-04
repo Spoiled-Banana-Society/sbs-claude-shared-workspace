@@ -1066,11 +1066,16 @@ function DraftRoomContent() {
   }, [engine.queuedPlayers, draftId]);
 
   useEffect(() => {
-    if (!engine.airplaneMode) return;
     const id = getPersistId();
     if (!id) return;
-    localStorage.setItem(`airplane:${id}`, '1');
-    draftStore.updateDraft(id, { airplaneMode: true });
+    // Persist BOTH states. The auto-OFF paths (initial-prefs-sync from the
+    // server on re-entry, manual-pick auto-off) only change the engine —
+    // when this wrote just the ON state, draftStore kept airplaneMode:true
+    // forever, so the drafting page showed a permanent ✈️ after a real
+    // airplane trip while the room itself was correct (mobile, 2026-07-04).
+    // Mounting with the engine off now also heals any stale stored flag.
+    localStorage.setItem(`airplane:${id}`, engine.airplaneMode ? '1' : '0');
+    draftStore.updateDraft(id, { airplaneMode: engine.airplaneMode });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine.airplaneMode, draftId]);
 
