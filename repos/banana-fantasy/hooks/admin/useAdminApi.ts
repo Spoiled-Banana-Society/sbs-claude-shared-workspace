@@ -17,6 +17,8 @@ export interface AdminUser {
   id: string;
   walletAddress: string;
   username: string | null;
+  /** Server-assigned unique default-handle number ("Banana"+bananaNumber). */
+  bananaNumber?: number | null;
   email: string | null;
   createdAt: string | null;
   isReturningPlayer: boolean;

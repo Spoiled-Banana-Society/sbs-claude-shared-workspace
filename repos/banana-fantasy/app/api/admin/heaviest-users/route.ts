@@ -126,11 +126,11 @@ export async function GET(req: Request) {
       .filter((id) => /^0x[0-9a-f]{40}$/.test(id));
     if (ranked.length > 0) {
       const { getPublicUsers } = await import('@/lib/friends');
-      const { bananaDefaultName } = await import('@/utils/helpers');
+      const { bananaPlaceholderName } = await import('@/utils/helpers');
       const profiles = await getPublicUsers(ranked).catch(() => new Map<string, { username?: string }>());
       for (const list of [topSpend, topPromos, topSpins, topFreeDrafts]) {
         for (const e of list) {
-          e.username = profiles.get(e.userId)?.username || bananaDefaultName(e.userId);
+          e.username = profiles.get(e.userId)?.username || bananaPlaceholderName(e.userId);
         }
       }
     }

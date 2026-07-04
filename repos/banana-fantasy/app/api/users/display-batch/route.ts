@@ -7,7 +7,7 @@ import { json, jsonError, parseBody } from '@/lib/api/routeUtils';
 import { getUserDisplayBatch, healUserPfpFromLegacy } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import type { Ripeness } from '@/types';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 
 const MAX_BATCH = 30;
 const STAGING_DRAFTS_API_URL = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -132,13 +132,16 @@ export async function POST(req: Request) {
     const out: Record<string, UserDisplay> = {};
     for (const w of realWallets) {
       const v = v2[w];
-      // Order: real username → legacy Go-API name → the wallet-derived
-      // banana handle. The floor MUST be bananaDefaultName(wallet) — the
-      // same derivation the header/profile uses — so a user's default reads
-      // identically everywhere (the old server-assigned bananaNumber floor
-      // made referral rows show a different "default" than the user's own
-      // header, Boris 2026-06-11).
-      const bananaName = bananaDefaultName(w);
+      // Order: real username → legacy Go-API name → the SERVER-ASSIGNED
+      // banana handle (v2_users.bananaNumber — unique counter, assigned on
+      // first sight by getUserDisplayBatch above). NOT the wallet-hash
+      // derivation: its 90k space let two users share one "Banana#####",
+      // which mis-routed an admin pass grant on 2026-07-04. The header now
+      // adopts THIS value at login (useAuth adoptServerHandle), so a user's
+      // default still reads identically everywhere — Boris's 2026-06-11
+      // referral-row/header mismatch stays fixed, at the correct source.
+      // Neutral placeholder only if assignment transiently failed.
+      const bananaName = v?.bananaNumber != null ? `Banana${v.bananaNumber}` : bananaPlaceholderName(w);
       // A freshly-seeded user gets the internal placeholder username
       // `User-<first6>` (db-firestore createUser). That's junk, never a display
       // name — reject it (exactly like the admin/activity/jackpot routes do) so
@@ -147,7 +150,10 @@ export async function POST(req: Request) {
       // of "Banana12345"/the edited team name.
       const realUsername = v?.username && !v.username.startsWith('User-') ? v.username : null;
       const goName = goApiData[w]?.displayName;
-      const realGoName = goName && !goName.startsWith('User-') ? goName : null;
+      // Go displayName carrying the wallet's own HASH default is the app's
+      // former auto-sync echo (updateUser mirrored the invented name), not a
+      // chosen name — treat it as junk so the unique server number wins.
+      const realGoName = goName && !goName.startsWith('User-') && goName !== bananaDefaultName(w) ? goName : null;
       out[w] = {
         displayName: realUsername || realGoName || bananaName,
         imageUrl: v?.profilePicture || goApiData[w]?.imageUrl || null,

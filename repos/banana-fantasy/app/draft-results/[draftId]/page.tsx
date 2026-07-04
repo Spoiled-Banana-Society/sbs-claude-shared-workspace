@@ -7,7 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { getDraftInfo } from '@/lib/api/drafts';
 import { getOwnerDraftTokens, isPlaceholderName } from '@/lib/api/owner';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { ErrorState } from '@/components/ui/ErrorState';
 import TeamCardObsidian, { type CardTier } from '@/components/draft/TeamCardObsidian';
@@ -394,7 +394,7 @@ export default function DraftResultsPage() {
       if (r?.pfpDisplayName && !isPlaceholderName(r.pfpDisplayName, key)) {
         return r.pfpDisplayName;
       }
-      return bananaDefaultName(key);
+      return bananaPlaceholderName(key);
     }
     // Bots — clean up the timestamp prefix.
     if (key.startsWith('bot-')) return key.replace(/^bot-fast-\d+-/, 'Bot ');

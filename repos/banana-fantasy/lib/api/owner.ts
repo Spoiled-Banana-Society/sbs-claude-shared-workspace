@@ -7,7 +7,7 @@
 import type { League, RosterPlayer, User } from '@/types';
 import { createHttpClient, normalizeWalletAddress } from './client';
 import { getDraftsApiUrl } from '@/lib/staging';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 function draftsApi() {
   return createHttpClient({
@@ -79,14 +79,14 @@ export interface ApiDraftToken {
 }
 
 /**
- * The default display name shown when a user hasn't chosen one — an
- * on-brand `Banana #1234567` handle derived deterministically from the
- * wallet (7-digit space, ~9M values). Stable per user across devices
- * and sessions. See `bananaDefaultName` / `bananaNumberFromWallet` in
- * `utils/helpers.ts` for the hash + collision-math rationale.
+ * Instant stand-in shown for a user with no chosen name until the
+ * SERVER-ASSIGNED unique handle loads (useAuth adoptServerHandle →
+ * /api/users/display-batch). Neutral on purpose: the old wallet-hash
+ * "Banana#####" had only 90k values, two users could compute the SAME
+ * handle, and acting on one mis-routed an admin pass grant (2026-07-04).
  */
 export function defaultDisplayName(walletAddress: string): string {
-  return bananaDefaultName(normalizeWalletAddress(walletAddress));
+  return bananaPlaceholderName(normalizeWalletAddress(walletAddress));
 }
 
 /**

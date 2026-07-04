@@ -15,7 +15,7 @@ import { subscribeDraftDisplayName, subscribeDraftNumPlayers, subscribeDraftRand
 import { setLeagueNumberInCache, useLeagueNumberForSlot } from '@/hooks/useLeagueNumberForSlot';
 import { clientLog } from '@/lib/clientLog';
 import { computeInitialPlayerCount, parseInitialPlayers, reconcileLiveCount, resolveRandomizeAnchor } from '@/lib/draftRoomLobby';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DraftRoomFilling } from '@/components/drafting/DraftRoomFilling';
@@ -560,7 +560,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -611,7 +611,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -633,7 +633,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
+            displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));
@@ -760,7 +760,7 @@ function DraftRoomContent() {
             const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
               id: String(idx + 1),
               name: u.ownerId,
-              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaDefaultName(u.ownerId),
+              displayName: u.ownerId.toLowerCase() === walletParam.toLowerCase() ? 'You' : bananaPlaceholderName(u.ownerId),
               isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
               avatar: '🍌',
             }));
@@ -1750,7 +1750,7 @@ function DraftRoomContent() {
               return {
                 id: String(idx + 1),
                 name: entry.ownerId,
-                displayName: isUser ? 'You' : bananaDefaultName(entry.ownerId),
+                displayName: isUser ? 'You' : bananaPlaceholderName(entry.ownerId),
                 isYou: isUser,
                 avatar: '🍌',
               };
@@ -1837,7 +1837,7 @@ function DraftRoomContent() {
           const realOrder = info.draftOrder.map((u: { ownerId: string }, idx: number) => ({
             id: String(idx + 1),
             name: u.ownerId,
-            displayName: bananaDefaultName(u.ownerId),
+            displayName: bananaPlaceholderName(u.ownerId),
             isYou: u.ownerId.toLowerCase() === walletParam.toLowerCase(),
             avatar: '🍌',
           }));

@@ -81,19 +81,31 @@ export const bananaNumberFromWallet = (walletAddress: string): number => {
     return ((h >>> 0) % 90_000) + 10_000
 }
 
-// On-brand default handle for users who haven't set a name. Stable per
-// wallet (deterministic from the address) so the same user always sees
-// the same handle across devices and sessions. No space, no "#", exactly
-// 5 digits — e.g. "Banana24789" — so it never truncates in a draft slot.
+// ⛔ DO NOT use for display. The hash above has only 90k values — two wallets
+// CAN produce the same "Banana#####" (a hash-matched lookup mis-granted a
+// pass to a name-twin on 2026-07-04). The real default handle is the
+// SERVER-ASSIGNED `bananaNumber` (v2_users, unique counter) returned by
+// /api/users/display-batch. While that loads — or for wallets with no
+// account — use `bananaPlaceholderName` below.
 export const bananaDefaultName = (walletAddress: string): string => {
     if (!walletAddress) return "Banana"
     return `Banana${bananaNumberFromWallet(walletAddress)}`
 }
 
+// Neutral, collision-honest stand-in while the server-assigned handle loads
+// (or for wallets that have no account at all). Tagged with the wallet's
+// leading hex so two players in one list still read differently — but it
+// never LOOKS like a real numbered handle, so nobody can act on it.
+export const bananaPlaceholderName = (walletAddress: string): string => {
+    const hex = (walletAddress || "").replace(/^0x/i, "")
+    return hex ? `Banana ${hex.slice(0, 4)}` : "Banana"
+}
+
 // Returns the user's display name if it's a real, user-chosen one;
-// otherwise an on-brand "Banana #1234567" default derived from the
-// wallet. Never surfaces a leftover "TestName" placeholder or a raw
-// wallet address.
+// otherwise the neutral banana placeholder (the caller's data source is
+// responsible for supplying the server-assigned "Banana#####" — never
+// derive a numbered handle from the wallet here). Never surfaces a
+// leftover "TestName" placeholder or a raw wallet address.
 export const getTruncatedAccountName = (displayName: string, walletAddress: string) => {
     const name = (displayName || "").trim()
     const isPlaceholder =
@@ -102,5 +114,5 @@ export const getTruncatedAccountName = (displayName: string, walletAddress: stri
         // falls through to the Banana default — same rule everywhere on the site.
         || /^user-0x[0-9a-f]/i.test(name)
 
-    return isPlaceholder ? bananaDefaultName(walletAddress) : truncateDisplayName(name)
+    return isPlaceholder ? bananaPlaceholderName(walletAddress) : truncateDisplayName(name)
 }

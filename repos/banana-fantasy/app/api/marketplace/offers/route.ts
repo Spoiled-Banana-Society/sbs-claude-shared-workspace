@@ -6,7 +6,7 @@ import {
   COLLECTION_SLUG,
   type OfferData,
 } from '@/lib/opensea';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { isPlaceholderName } from '@/lib/api/owner';
 
 export const dynamic = 'force-dynamic';
@@ -167,11 +167,12 @@ export async function GET(req: Request) {
       for (const offer of offers) {
         const addr = offer.offererAddress.toLowerCase();
         const profile = profiles.get(addr);
-        // Always floor to the canonical Banana handle unless the Go name is a
-        // real, user-chosen one — never the raw-wallet base or a placeholder.
-        offer.offererName = profile?.name && !isPlaceholderName(profile.name, addr)
+        // Real, user-chosen Go name wins (a Go name equal to the wallet's own
+        // hash default is the app's old auto-sync echo); otherwise the neutral
+        // placeholder — never the colliding wallet-hash handle.
+        offer.offererName = profile?.name && !isPlaceholderName(profile.name, addr) && profile.name !== bananaDefaultName(addr)
           ? profile.name
-          : bananaDefaultName(addr);
+          : bananaPlaceholderName(addr);
         if (profile?.pfp) offer.offererPfp = profile.pfp;
       }
     } catch { /* enrichment failed — continue with raw data */ }

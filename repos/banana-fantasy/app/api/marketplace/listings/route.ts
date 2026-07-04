@@ -17,7 +17,7 @@ import { recordListed, getAllRecentCachedListings } from '@/lib/marketplace/list
 import { logger } from '@/lib/logger';
 import { getTeamsForTokens, teamDataToTraits, mergeTraits } from '@/lib/marketplace/teamData';
 import { resolveTokenImage } from '@/lib/nftCardServer';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { isPlaceholderName } from '@/lib/api/owner';
 import { classifyToken } from '@/lib/nftPassClassify';
 import { currentMaxTokenId, isRealToken } from '@/lib/onchain/contractSupply';
@@ -280,12 +280,14 @@ export async function GET(req: Request) {
       for (const listing of listings) {
         const addr = (listing.ownerAddress || '').toLowerCase();
         const profile = ownerProfiles.get(addr);
-        // Floor to the canonical Banana handle unless the Go name is a real,
-        // user-chosen one — never the raw-wallet base or a placeholder.
+        // Real, user-chosen Go name wins; otherwise the neutral placeholder.
+        // Never the wallet-hash handle (collides across users), and a Go name
+        // equal to the wallet's own hash default is the app's old auto-sync
+        // echo, not a chosen name.
         if (addr) {
-          listing.owner = profile?.name && !isPlaceholderName(profile.name, addr)
+          listing.owner = profile?.name && !isPlaceholderName(profile.name, addr) && profile.name !== bananaDefaultName(addr)
             ? profile.name
-            : bananaDefaultName(addr);
+            : bananaPlaceholderName(addr);
         }
         if (profile?.pfp) listing.ownerPfp = profile.pfp;
       }

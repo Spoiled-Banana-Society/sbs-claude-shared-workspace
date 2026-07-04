@@ -15,7 +15,7 @@ import { reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 import { DEFAULT_POSITION_LIMITS, type Position, type PositionLimits } from '@/lib/positionLimits';
 import { usePositionLimits } from '@/hooks/usePositionLimits';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 export type DraftPlayer = typeof DRAFT_PLAYERS[number];
 export type DraftMode = 'local' | 'live';
@@ -365,7 +365,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     const order: DraftPlayer[] = draftInfo.draftOrder.map((u, idx) => ({
       id: String(idx + 1),
       name: u.ownerId, // In live mode, name is the wallet address (kept raw — it's the usersMap lookup key)
-      displayName: bananaDefaultName(u.ownerId), // never expose the raw wallet — derive a Banana##### default; real handle is layered on later from usersMap
+      displayName: bananaPlaceholderName(u.ownerId), // never the raw wallet OR a hash-derived Banana##### (hash collides across users) — neutral placeholder until the real handle layers in from usersMap
       isYou: u.ownerId.toLowerCase() === userWallet.toLowerCase(),
       avatar: '🍌',
     }));

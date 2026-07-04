@@ -26,7 +26,7 @@
 import { useMemo, useState } from 'react';
 import { useUsersAggregate, type AggregateUser } from '@/hooks/admin/useAdminApi';
 import { WalletLink } from '@/components/admin/WalletLink';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 /**
  * Avatar — three-tier fallback, in this order:
@@ -282,7 +282,7 @@ export function UsersTableBox({ enabled }: Props) {
                 //      Banana##### the user sees about themselves everywhere
                 //      on the site (never a homemade variant, so admin and
                 //      product can't disagree about someone's name).
-                const name = u.displayName || u.username || bananaDefaultName(u.wallet);
+                const name = u.displayName || u.username || bananaPlaceholderName(u.wallet);
                 const nameIsFallback = !u.displayName && !u.username;
                 return (
                   <tr key={u.wallet} className="border-t border-white/[0.04] hover:bg-white/[0.02]">

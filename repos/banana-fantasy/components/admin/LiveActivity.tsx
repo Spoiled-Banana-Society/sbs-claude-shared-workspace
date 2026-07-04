@@ -7,7 +7,7 @@ import { usePrivy } from '@privy-io/react-auth';
 import { useActivityStream, type LiveActivityEvent } from '@/hooks/useActivityStream';
 import type { ActivityEventType, PaymentMethod, WalletType } from '@/lib/activityEvents';
 import { WalletLink } from '@/components/admin/WalletLink';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 const TYPE_LABEL: Record<ActivityEventType, string> = {
   pass_purchased: 'Pass purchased',
@@ -525,7 +525,7 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
                       <span className="inline-flex items-center gap-1.5">
                         {flagsMap[(e.walletAddress || '').toLowerCase()]?.name
                           ?? e.username
-                          ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : '—')}
+                          ?? (e.walletAddress ? bananaPlaceholderName(e.walletAddress) : '—')}
                         <AccountChip flags={flagsMap[(e.walletAddress || '').toLowerCase()]} />
                       </span>
                     </td>
@@ -533,7 +533,7 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
                       <WalletLink
                         wallet={e.walletAddress || ''}
                         bare
-                        displayName={flagsMap[(e.walletAddress || '').toLowerCase()]?.name ?? e.username ?? (e.walletAddress ? bananaDefaultName(e.walletAddress) : undefined)}
+                        displayName={flagsMap[(e.walletAddress || '').toLowerCase()]?.name ?? e.username ?? (e.walletAddress ? bananaPlaceholderName(e.walletAddress) : undefined)}
                       />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-400">

@@ -5,7 +5,7 @@ import { getPrivyUser } from '@/lib/auth';
 import { fetchPrivyUser } from '@/lib/privyServer';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { ensureNamedReferralCode, unlockBadge } from '@/lib/db';
-import { bananaDefaultName } from '@/utils/helpers';
+
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -121,9 +121,9 @@ export async function POST(req: Request) {
     // ensureNamedReferralCode reuses the existing code when the name is
     // unchanged, so this never reverts an edited code. Best-effort.
     try {
-      const uname = (userSnap.get('username') as string | undefined)?.trim();
-      const displayName = uname && !/^0x/i.test(uname) ? uname : bananaDefaultName(wallet);
-      await ensureNamedReferralCode(wallet, displayName);
+      // ensureNamedReferralCode reads the authoritative name server-side and
+      // ignores any passed display name (see its SECURITY note).
+      await ensureNamedReferralCode(wallet);
     } catch { /* non-fatal — referrals page also mints on demand */ }
 
     // If we couldn't server-verify the user (token not ready → client-wallet

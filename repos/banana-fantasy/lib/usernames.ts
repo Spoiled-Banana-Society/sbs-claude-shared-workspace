@@ -65,6 +65,15 @@ export function validateUsernameShape(name: string): UsernameError | null {
   return null;
 }
 
+// "Banana####…" (4+ digits) is the server-assigned default-handle namespace —
+// claiming one as a custom name squats another user's assigned handle. Short
+// forms like "Banana69" stay claimable. Enforced only for NEW claims (in
+// checkUsername/claimUsername, after confirming the caller doesn't already
+// hold the name) so the pre-guard accounts that carry such names keep working.
+function isDefaultHandleShaped(name: string): boolean {
+  return /^banana\d{4,}$/i.test(name.trim());
+}
+
 /**
  * Is `name` available for `selfWallet`? Available means: valid shape, and not
  * reserved by a *different* wallet (checks both the reservation collection and
@@ -98,6 +107,14 @@ export async function checkUsername(name: string, selfWallet: string): Promise<U
     .get();
   const takenByOther = dupe.docs.some((d) => d.id.toLowerCase() !== self);
   if (takenByOther) return { available: false, reason: 'taken' };
+
+  // Nobody holds it — but a NEW claim of a default-handle-shaped name would
+  // squat someone's server-assigned Banana number. Self re-claims never reach
+  // here (they hit the reservation / legacy-doc checks above).
+  const selfHoldsLegacy = dupe.docs.some((d) => d.id.toLowerCase() === self);
+  if (isDefaultHandleShaped(name) && !selfHoldsLegacy) {
+    return { available: false, reason: 'reserved' };
+  }
 
   return { available: true };
 }
@@ -148,6 +165,11 @@ export async function claimUsername(name: string, selfWallet: string): Promise<U
         // Guard against a legacy v2_users dupe that has no reservation yet.
         const dupe = await db.collection(USERS).where('username_lower', '==', lower).limit(2).get();
         if (dupe.docs.some((d) => d.id.toLowerCase() !== self)) throw new Error('taken');
+        // Unheld default-handle-shaped name: block the NEW squat (self
+        // re-claims are covered by the reservation / legacy checks above).
+        if (isDefaultHandleShaped(cleanName) && !dupe.docs.some((d) => d.id.toLowerCase() === self)) {
+          throw new Error('reserved');
+        }
       }
 
       // Release the caller's old reservation if they're renaming.
@@ -165,6 +187,7 @@ export async function claimUsername(name: string, selfWallet: string): Promise<U
     return { available: true };
   } catch (err) {
     if (err instanceof Error && err.message === 'taken') return { available: false, reason: 'taken' };
+    if (err instanceof Error && err.message === 'reserved') return { available: false, reason: 'reserved' };
     throw err;
   }
 }

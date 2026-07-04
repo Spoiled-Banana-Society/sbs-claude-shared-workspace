@@ -7,7 +7,7 @@ import type { DraftType } from '@/lib/draftRoomConstants';
 import { draftBandBackground, draftBandShadow } from '@/lib/draftBandStyle';
 import { AvatarWithBadge } from '@/components/badges/AvatarWithBadge';
 import type { DraftRoomUsersMap } from '@/hooks/useDraftRoomUsers';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaPlaceholderName } from '@/utils/helpers';
 
 type DraftRoomPlayer = typeof DRAFT_PLAYERS[number];
 
@@ -119,7 +119,7 @@ export function DraftRoomFilling({
             if (isRandomizing) {
               displayName = isUser
                 ? myName
-                : (otherDisplayName || (hasWalletData ? bananaDefaultName(player!.name) : `Player ${i + 1}`));
+                : (otherDisplayName || (hasWalletData ? bananaPlaceholderName(player!.name) : `Player ${i + 1}`));
             } else if (isFilled) {
               displayName = isUser ? myName : (otherDisplayName || `Player ${i + 1}`);
             } else {

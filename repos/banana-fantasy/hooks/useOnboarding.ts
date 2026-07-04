@@ -144,18 +144,34 @@ export function useOnboarding() {
       setIsNewUser(false);
       // Best-effort: mirror the display name / avatar + completion onto the Go
       // owner record. Non-blocking for the gate above; errors are ignored.
+      //
+      // ONLY when the user actually TYPED a name. The old fallback
+      // (`user?.username`) sent the client-computed "Banana#####" default
+      // through the claim path, permanently storing an invented name as if
+      // the user chose it — 189 accounts got their wallet-hash default
+      // squatted as a real username this way, which (a) mis-routed an admin
+      // pass grant to a name-twin and (b) 409s a later signup whose wallet
+      // hashes to the same number. Skipping without a typed name must leave
+      // the account unnamed; the server-assigned unique number covers display.
+      const typedName = opts?.displayName?.trim();
       try {
-        await callOwnerApi('PUT', {
-          walletAddress,
-          displayName: opts?.displayName || user?.username || walletAddress.slice(0, 6),
-          avatar: opts?.avatar ?? user?.profilePicture ?? undefined,
-          onboardingComplete: true,
-        });
+        if (typedName) {
+          await callOwnerApi('PUT', {
+            walletAddress,
+            displayName: typedName,
+            avatar: opts?.avatar ?? user?.profilePicture ?? undefined,
+            onboardingComplete: true,
+          });
+        } else if (opts?.avatar) {
+          // Avatar-only skip: persist the picture through the normal profile
+          // path without touching the (unset) username.
+          updateUser({ profilePicture: opts.avatar });
+        }
       } catch {
         // Ignore backend completion errors to avoid blocking the UI
       }
     },
-    [setIsNewUser, setShowOnboarding, setOnboardingDone, user?.profilePicture, user?.username, walletAddress],
+    [setIsNewUser, setShowOnboarding, setOnboardingDone, updateUser, user?.profilePicture, walletAddress],
   );
 
   const hasCompletedOnboarding = onboardingDone;

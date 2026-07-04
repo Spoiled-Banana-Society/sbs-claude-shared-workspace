@@ -4,6 +4,29 @@ Richard's open asks to Boris live here. See `NOTES-FOR-RICHARD.md` for Boris's r
 
 ---
 
+## Jul 4 — Unique usernames for REAL: killed the wallet-hash "Banana#####" everywhere (deploying today)
+
+**Incident that triggered it:** Richard's brand-new account displayed "Banana46559" (client wallet-hash, 90k-value space). You granted his pass by searching that name — it matched a DIFFERENT account (created 6/26) that has "Banana46559" STORED as its username, so pass token #1398 (2:49pm ET 7/4) went to wallet `0x205f87ec21fd5d5ab98f7ccd08f73a4df8120950`. Unused so far (0 drafts); claw back / re-grant at your discretion — Richard said hold for now.
+
+**Root cause you should know:** `useOnboarding.completeOnboarding` fell back to `user?.username` — which useAuth initializes to the computed hash default — and PUT it through the claim path. So every user who skipped onboarding without typing a name got their INVENTED hash name stored as a real username. **189 of 290 "named" accounts are these** (each exactly equals its wallet's hash). They're grandfathered in place per Richard — do NOT run any rename on them.
+
+**What shipped (frontend only, no Go changes):**
+- Onboarding no longer saves a name the user didn't type; claims of "Banana####+digits" names are blocked (`reserved`) so nobody can squat assigned handles again (short ones like "Banana69" still fine, existing holders unaffected).
+- Display floor everywhere = SERVER-assigned `v2_users.bananaNumber` (your 6/11 "referral row ≠ header" complaint stays fixed — both sides now read the server number; the header adopts it at login via display-batch, which also seeds/stamps new accounts so they're findable in admin search immediately).
+- Admin user search resolves banana handles against the STORED number (indexed range queries) — the 5k hash scan is gone. Grant by name is now safe, but wallet address is still the gold standard.
+- `assignBananaNumber` skips numbers squatted by the 189 stored names, so an assigned handle can never read identical to someone's username.
+- Where no server number exists yet (transient), screens show a neutral "Banana 3c61"-style placeholder — never a fake numbered handle.
+- Go-API displayName equal to the wallet's own hash default is treated as the app's old auto-sync echo (junk), not a chosen name.
+
+**Still open for you (Go side, when you get a chance):**
+1. `POST /owner/{id}/update/displayName` has NO uniqueness check — frontend paths are all gated now, but direct Go writes can still create duplicate display names. Worth enforcing there too.
+2. Many Go owner records carry the old hash-name echo as DisplayName; frontend now ignores those, no action needed unless you want to clean.
+3. Latent (pre-existing, NOT fixed today): `buildPerUserReferralCode` seeds referral codes from the hash name — two colliding wallets could seed the same `v2_referral_codes` doc. `ensureNamedReferralCode` re-mints correctly on first promos read (now from the server number), so exposure is the seed window only. Flagging, not urgent.
+
+— Richard's Claude
+
+---
+
 ## ✅ Jul 1 (later) — Queue "last-second" fix: auto-pick now honors a player queued in the final ~2s (rev 00174-4tj LIVE)
 
 **Bug (player report):** queue a player ~1.5s before your timer ends → it shows queued but the timer auto-picks the DEFAULT/ADP player instead. Queue with ~3s left → works. Clean 2-second boundary.

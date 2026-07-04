@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode, use
 import { useSafePrivy as usePrivy, usePrivyAvailable, useSafeCreateWallet, useSafeWallets } from '@/providers/PrivyProvider';
 import { User } from '@/types';
 import { getOwnerUser, updateOwnerDisplayName, updateOwnerPfpImage, defaultDisplayName, isPlaceholderName } from '@/lib/api/owner';
+import { bananaDefaultName } from '@/utils/helpers';
 import { ApiError as ClientApiError, normalizeWalletAddress } from '@/lib/api/client';
 import { MobileLoginModal } from '@/components/modals/MobileLoginModal';
 import { logger } from '@/lib/logger';
@@ -679,6 +680,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .catch(() => { /* silent — referral tracking is best-effort; code stays for next-login retry */ });
       };
 
+      // Resolve the SERVER-assigned unique handle for unnamed users. The
+      // instant client-side `defaultDisplayName` is a wallet hash with only
+      // 90k values — two users can compute the SAME "Banana#####", and on
+      // 2026-07-04 that mis-routed an admin pass grant to a name-twin. The
+      // display-batch route returns the counter-assigned number (unique,
+      // one per account, same one the draft room shows) and stamps/seeds
+      // the account on first sight — so brand-new users become findable in
+      // admin search immediately. One-shot fetch, replaces the username
+      // only while it's still a placeholder/computed default.
+      const adoptServerHandle = (wallet: string) => {
+        fetch('/api/users/display-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallets: [wallet.toLowerCase()] }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data: { users?: Record<string, { displayName?: string | null }> } | null) => {
+            const dn = data?.users?.[wallet.toLowerCase()]?.displayName;
+            if (!dn) return;
+            setUser((prev) => {
+              if (!prev || prev.walletAddress?.toLowerCase() !== wallet.toLowerCase()) return prev;
+              const cur = prev.username;
+              const replaceable = !cur || isPlaceholderName(cur, wallet)
+                || cur === defaultDisplayName(wallet)
+                || cur === bananaDefaultName(wallet); // old hash default (pre-fix cache)
+              return replaceable && cur !== dn ? { ...prev, username: dn } : prev;
+            });
+          })
+          .catch(() => { /* non-fatal — hash placeholder stays until next load */ });
+      };
+
       // Try to fetch real SBS profile from backend
       getOwnerUser(walletAddress)
         .then((backendUser) => {
@@ -687,7 +719,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Filter savedProfile.username through the placeholder check —
           // older builds wrote the truncated wallet ("0x709.a4e9") here,
           // and that leaks across wallets on the same browser profile.
-          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+          const safeSavedName = savedProfile?.username
+            && !isPlaceholderName(savedProfile.username, walletAddress)
+            // A cached name equal to the wallet's old HASH default is the
+            // app's own invention (saved pre-fix), never a chosen name.
+            && savedProfile.username !== bananaDefaultName(walletAddress)
             ? savedProfile.username
             : undefined;
           const merged: User = {
@@ -698,6 +734,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             nflTeam: savedProfile?.nflTeam || backendUser.nflTeam,
           };
           setUser(merged);
+          // Unnamed user → swap the hash placeholder for the server-unique
+          // handle (and stamp/seed the account server-side).
+          if (
+            isPlaceholderName(merged.username, walletAddress)
+            || merged.username === defaultDisplayName(walletAddress)
+            || merged.username === bananaDefaultName(walletAddress) // old hash default (Go echo / pre-fix cache)
+          ) {
+            adoptServerHandle(walletAddress);
+          }
           // Warm the durable self-pfp cache so the draft room shows our avatar
           // immediately even on a cold mobile load / before the poll returns.
           rememberSelfPfp(merged.profilePicture);
@@ -728,7 +773,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           // Backend unreachable or user not found — fall back to Privy-only profile
           const isNotFound = err instanceof ClientApiError && err.status === 404;
-          const safeSavedName = savedProfile?.username && !isPlaceholderName(savedProfile.username, walletAddress)
+          const safeSavedName = savedProfile?.username
+            && !isPlaceholderName(savedProfile.username, walletAddress)
+            // A cached name equal to the wallet's old HASH default is the
+            // app's own invention (saved pre-fix), never a chosen name.
+            && savedProfile.username !== bananaDefaultName(walletAddress)
             ? savedProfile.username
             : undefined;
           const fallbackUser: User = {
@@ -755,6 +804,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             createdAt: new Date().toISOString(),
           };
           setUser(fallbackUser);
+          if (!safeSavedName) adoptServerHandle(walletAddress);
           rememberSelfPfp(fallbackUser.profilePicture);
           if (isNotFound) {
             setIsNewUser(true);

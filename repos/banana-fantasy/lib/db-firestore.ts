@@ -12,7 +12,7 @@ import { isAdminMintConfigured, reserveTokensToWallet } from '@/lib/onchain/admi
 import { recordPassOrigins } from '@/lib/onchain/passOrigin';
 import { registerMintedTokens } from '@/lib/onchain/reconcilePasses';
 import { logActivityEvent } from '@/lib/activityEvents';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { FieldValue } from 'firebase-admin/firestore';
 import type {
   CompletedDraft,
@@ -837,9 +837,18 @@ export async function ensureNamedReferralCode(userId: string, _displayName?: str
   // bug). A user still on the default "User-…" placeholder falls back to their
   // default Banana##### handle (the same name they see). `_displayName` is now
   // ignored on purpose.
-  const defaultName = bananaDefaultName(userId.toLowerCase());
   const userSnap = await userRef.get();
   const stored = (userSnap.data()?.username as string | undefined) || '';
+  // Default handle = the SERVER-ASSIGNED unique number (assigning one on the
+  // spot when missing), never the wallet hash — the hash's 90k space collides,
+  // so two users could mint the SAME default referral code (and it must match
+  // the handle the header/display-batch now shows). Placeholder only if the
+  // assignment transiently fails.
+  const lowerId = userId.toLowerCase();
+  const storedNumber = userSnap.data()?.bananaNumber as number | undefined;
+  const defaultName = typeof storedNumber === 'number'
+    ? `Banana${storedNumber}`
+    : await assignBananaNumber(lowerId).then((n) => `Banana${n}`).catch(() => bananaPlaceholderName(lowerId));
   let ownName: string;
   if (stored && !stored.startsWith('User-')) {
     // A claimed new-system username — authoritative, and written in the SAME
@@ -852,13 +861,17 @@ export async function ensureNamedReferralCode(userId: string, _displayName?: str
     // "RisBrian" while the link stays the default /r/Banana#####. Server-side read
     // of their OWN owners doc (not a client-supplied name → no squatting vector);
     // falls back to the Banana default when the display name is itself a
-    // placeholder (User-…/0x…/empty), i.e. a genuine new user who hasn't edited.
-    const ownerSnap = await db.collection('owners').doc(userId.toLowerCase()).get();
+    // placeholder (User-…/0x…/empty/the app's old hash-name echo), i.e. a
+    // genuine new user who hasn't edited.
+    const ownerSnap = await db.collection('owners').doc(lowerId).get();
     const ownerDisplay = (ownerSnap.data() as { PFP?: { DisplayName?: string } } | undefined)?.PFP?.DisplayName?.trim() || '';
     const ownerIsReal = !!ownerDisplay
       && !/^user-0x[0-9a-fA-F]/i.test(ownerDisplay)
       && !/^0x[0-9a-fA-F]{4,}/.test(ownerDisplay)
-      && ownerDisplay.toLowerCase() !== userId.toLowerCase();
+      && ownerDisplay.toLowerCase() !== lowerId
+      // The Go store's copy of the wallet's own HASH default is the app's old
+      // auto-sync echo, not a chosen name.
+      && ownerDisplay !== bananaDefaultName(lowerId);
     ownName = ownerIsReal ? ownerDisplay : defaultName;
   }
   const base = sanitizeRefName(ownName) || sanitizeRefName(defaultName);
@@ -941,7 +954,11 @@ export async function trackReferral(referrerUserId: string, referredUserId: stri
     const cleanUsername =
       referredUsername && !/^user-?[0-9a-fx]/i.test(referredUsername.trim()) && !/^0x[0-9a-f]{6,}/i.test(referredUsername.trim())
         ? referredUsername.trim()
-        : bananaDefaultName(referredUserId);
+        // Server-assigned number from the doc already read in this tx — never
+        // the wallet hash (collides across users).
+        : (typeof referredUser.bananaNumber === 'number'
+            ? `Banana${referredUser.bananaNumber}`
+            : bananaPlaceholderName(referredUserId));
     const entry: ReferralEntry = {
       username: cleanUsername,
       referredUserId,
@@ -1393,7 +1410,10 @@ async function _incrementReferralPromosInTx(
       && !/^user-?[0-9a-fx]/i.test(buyerUser.username.trim())
       && !/^0x[0-9a-f]{6,}/i.test(buyerUser.username.trim())
       ? buyerUser.username.trim()
-      : bananaDefaultName(buyerUserId),
+      // Server-assigned number from the doc in-hand — never the wallet hash.
+      : (typeof buyerUser.bananaNumber === 'number'
+          ? `Banana${buyerUser.bananaNumber}`
+          : bananaPlaceholderName(buyerUserId)),
     friendTotal: entry.draftsPurchased,
     newlyHit,
   };
@@ -1989,13 +2009,14 @@ export async function recomputeUserExposure(
   const existingMap = new Map<string, UserExposure['exposures'][number]>();
   for (const e of existing?.exposures ?? []) existingMap.set(e.teamPosition, e);
   const rawExposureName = userSnap.exists ? ((userSnap.data() as User).username || '') : (existing?.username || '');
-  // Floor the seeded `User-0x…` placeholder / raw wallet to the canonical Banana
-  // handle so the exposure page never shows the internal placeholder.
+  // Floor the seeded `User-0x…` placeholder / raw wallet to the SERVER-assigned
+  // banana handle (doc in-hand) — never the wallet hash, which collides.
+  const exposureNumber = userSnap.exists ? (userSnap.data() as User).bananaNumber : undefined;
   const username = rawExposureName
     && !/^user-?[0-9a-fx]/i.test(rawExposureName.trim())
     && !/^0x[0-9a-f]{6,}/i.test(rawExposureName.trim())
     ? rawExposureName.trim()
-    : bananaDefaultName(lower);
+    : (typeof exposureNumber === 'number' ? `Banana${exposureNumber}` : bananaPlaceholderName(lower));
 
   const exposures: UserExposure['exposures'] = [];
   for (const [teamPosition, { team, position, drafts, displayName }] of counts.entries()) {
@@ -3204,7 +3225,7 @@ export async function awardJackpotDraw(draftId: string, displayName?: string): P
   // Display names for the draw animation + notis.
   const { getPublicUsers } = await import('@/lib/friends');
   const nameMap = await getPublicUsers(humans).catch(() => new Map());
-  const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || bananaDefaultName(w);
+  const nameOf = (w: string) => (nameMap.get(w)?.username as string | undefined) || bananaPlaceholderName(w);
 
   const atIso = new Date().toISOString();
   await drawRef.set({
@@ -3680,7 +3701,21 @@ async function assignBananaNumber(userId: string): Promise<number> {
     if (typeof existing === 'number') return existing;
     const counterSnap = await tx.get(counterRef);
     const counterData = counterSnap.exists ? (counterSnap.data() as { next?: number }) : null;
-    const next = typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START;
+    let next = typeof counterData?.next === 'number' ? counterData.next : BANANA_NUMBER_START;
+    // Skip numbers whose "Banana{n}" is already someone's STORED username —
+    // ~189 pre-guard accounts carry their old hash default as a real
+    // (reserved) name, and an assigned handle must never read identical to
+    // another user's username. New Banana#### claims are blocked
+    // (lib/usernames), so the squatted set is fixed and each number is only
+    // ever walked past once.
+    for (let guard = 0; guard < 50; guard++) {
+      const [resSnap, dupeSnap] = await Promise.all([
+        tx.get(db.collection('usernames').doc(`banana${next}`)),
+        tx.get(db.collection(USERS_COLLECTION).where('username_lower', '==', `banana${next}`).limit(1)),
+      ]);
+      if (!resSnap.exists && dupeSnap.empty) break;
+      next++;
+    }
     tx.set(counterRef, { next: next + 1 }, { merge: true });
     tx.set(userRef, { bananaNumber: next }, { merge: true });
     return next;

@@ -16,7 +16,7 @@
  */
 
 import { getAdminFirestore } from '@/lib/firebaseAdmin';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { createNotification } from '@/lib/queueNotifications';
 import { runInBackground } from '@/lib/serverBackground';
 import { pushStreamEventBg } from '@/lib/userEventStream';
@@ -28,9 +28,11 @@ import { pushStreamEventBg } from '@/lib/userEventStream';
 async function friendDisplayName(wallet: string): Promise<string> {
   try {
     const map = await getPublicUsers([wallet]);
-    return map.get(wallet.toLowerCase())?.username || bananaDefaultName(wallet);
+    // getPublicUsers already floors to the server-assigned handle; this is a
+    // last-resort neutral placeholder (never the colliding wallet hash).
+    return map.get(wallet.toLowerCase())?.username || bananaPlaceholderName(wallet);
   } catch {
-    return bananaDefaultName(wallet);
+    return bananaPlaceholderName(wallet);
   }
 }
 
@@ -167,7 +169,7 @@ export async function listForUser(walletAddress: string): Promise<FriendListBuck
 
   const toPublic = (w: string): PublicUser => profileMap.get(w.toLowerCase()) ?? {
     walletAddress: w,
-    username: bananaDefaultName(w),
+    username: bananaPlaceholderName(w),
   };
 
   return {
@@ -206,7 +208,7 @@ export async function getMutualFriends(walletA: string, walletB: string): Promis
   const mutual: string[] = [];
   for (const w of aFriends) if (bFriends.has(w)) mutual.push(w);
   const profileMap = await getPublicUsers(mutual);
-  return mutual.map((w) => profileMap.get(w) ?? { walletAddress: w, username: bananaDefaultName(w) });
+  return mutual.map((w) => profileMap.get(w) ?? { walletAddress: w, username: bananaPlaceholderName(w) });
 }
 
 // ─── Writes ────────────────────────────────────────────────────────────────
@@ -339,13 +341,17 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
   const snaps = await db.getAll(...refs);
   const backfills: Array<Promise<unknown>> = [];
   const needsGoApi: string[] = [];
+  // Server-assigned unique default-handle numbers for the no-username floor
+  // below. NEVER derived from the wallet hash — the hash collides across users.
+  const serverNumbers = new Map<string, number>();
 
   for (let i = 0; i < snaps.length; i++) {
     const snap = snaps[i];
     const wallet = wallets[i].toLowerCase();
-    const data = snap.exists ? (snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string; equippedBadge?: string | null } | undefined) : undefined;
+    const data = snap.exists ? (snap.data() as { walletAddress?: string; username?: string; username_lower?: string; profilePicture?: string; equippedBadge?: string | null; bananaNumber?: number } | undefined) : undefined;
     if (data) {
       const w = (data.walletAddress || snap.id).toLowerCase();
+      if (typeof data.bananaNumber === 'number') serverNumbers.set(w, data.bananaNumber);
       out.set(w, {
         walletAddress: w,
         // Placeholder usernames (seeded 'User-0x…', wallet-string names)
@@ -368,15 +374,25 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
     }
   }
 
+  // Server-assigned handle (or neutral placeholder) — the floor for wallets
+  // with no chosen name. Never the wallet hash: its 90k space let two users
+  // share one "Banana#####" (mis-granted pass, 2026-07-04).
+  const bananaFloor = (w: string): string => {
+    const n = serverNumbers.get(w);
+    return typeof n === 'number' ? `Banana${n}` : bananaPlaceholderName(w);
+  };
+
   if (needsGoApi.length > 0) {
     const results = await Promise.all(needsGoApi.map(async (w) => [w, await fetchGoApiOwnerPfp(w)] as const));
     for (const [w, pfp] of results) {
       const existing = out.get(w);
       const dn = pfp?.displayName?.trim();
-      const goName = dn && !isPlaceholderProfileName(dn, w) ? dn : undefined;
+      // The Go store echoing the wallet's own HASH default is the app's old
+      // auto-sync, not a chosen name — floor it like a placeholder.
+      const goName = dn && !isPlaceholderProfileName(dn, w) && dn !== bananaDefaultName(w) ? dn : undefined;
       out.set(w, {
         walletAddress: w,
-        username: existing?.username || goName || bananaDefaultName(w),
+        username: existing?.username || goName || bananaFloor(w),
         profilePicture: existing?.profilePicture || pfp?.imageUrl,
         equippedBadge: existing?.equippedBadge ?? null,
       });
@@ -385,15 +401,15 @@ export async function getPublicUsers(wallets: string[]): Promise<Map<string, Pub
 
   // Final pass: guarantee every wallet resolves to a real, non-wallet name.
   // Anything empty or wallet-shaped — no v2 doc, a placeholder, or a Go-API
-  // miss — becomes the on-brand "Banana #1234" default. A raw 0x… address
-  // must never surface as a person's name.
+  // miss — becomes the server-assigned banana handle (or the neutral
+  // placeholder). A raw 0x… address must never surface as a person's name.
   for (const w of wallets) {
     const lw = w.toLowerCase();
     const cur = out.get(lw);
     if (!cur) {
-      out.set(lw, { walletAddress: lw, username: bananaDefaultName(lw) });
+      out.set(lw, { walletAddress: lw, username: bananaFloor(lw) });
     } else if (isPlaceholderProfileName(cur.username, lw)) {
-      out.set(lw, { ...cur, username: bananaDefaultName(lw) });
+      out.set(lw, { ...cur, username: bananaFloor(lw) });
     }
   }
   // Don't await — page renders don't need to block on the backfill write.
@@ -446,10 +462,10 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
     if (lower === requester) return [];
     const snap = await db.collection('v2_users').doc(lower).get();
     if (snap.exists) {
-      const d = snap.data() as { walletAddress?: string; username?: string; profilePicture?: string } | undefined;
+      const d = snap.data() as { walletAddress?: string; username?: string; profilePicture?: string; bananaNumber?: number } | undefined;
       if (d) out.push({
         walletAddress: lower,
-        username: d.username || bananaDefaultName(lower),
+        username: d.username || (typeof d.bananaNumber === 'number' ? `Banana${d.bananaNumber}` : bananaPlaceholderName(lower)),
         profilePicture: d.profilePicture,
       });
     }
@@ -467,13 +483,13 @@ export async function searchUsers(query: string, requesterWallet: string, limit 
 
   const seen = new Set<string>();
   const pushDoc = (doc: FirebaseFirestore.QueryDocumentSnapshot) => {
-    const d = doc.data() as { walletAddress?: string; username?: string; profilePicture?: string };
+    const d = doc.data() as { walletAddress?: string; username?: string; profilePicture?: string; bananaNumber?: number };
     const wallet = (d.walletAddress || doc.id).toLowerCase();
     if (wallet === requester || seen.has(wallet)) return;
     seen.add(wallet);
     out.push({
       walletAddress: wallet,
-      username: d.username || bananaDefaultName(wallet),
+      username: d.username || (typeof d.bananaNumber === 'number' ? `Banana${d.bananaNumber}` : bananaPlaceholderName(wallet)),
       profilePicture: d.profilePicture,
     });
   };

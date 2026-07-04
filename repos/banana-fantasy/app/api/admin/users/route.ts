@@ -42,19 +42,21 @@ async function resolveUsersCollection(): Promise<CollectionReference<DocumentDat
   return v2;
 }
 
-// The default "Banana#####" handle is COMPUTED from the wallet (FNV-1a hash),
-// NOT stored — so a user still on the "User-…" placeholder username can't be
-// found by the username prefix search. Mirror of utils/helpers.ts
-// bananaNumberFromWallet (pure, no deps) so admin lookup resolves a typed
-// banana handle by computation. Keep in sync with the source.
-function bananaNumberFromWallet(walletAddress: string): number {
-  const hex = (walletAddress || '').replace(/^0x/i, '').toLowerCase();
-  let h = 0x811c9dc5;
-  for (let i = 0; i < hex.length; i++) {
-    h ^= hex.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
+// Default "Banana#####" handles resolve against the STORED server-assigned
+// `bananaNumber` (counters/banana_user_number, one per account — unique).
+// NEVER against the old client wallet-hash: that 90k-value hash collides, and
+// on 2026-07-04 a hash-matched search sent an admin pass grant to a name-twin.
+// For a typed prefix like "banana7", every number length is covered by one
+// range query per digit-count (7, 70–79, 700–799, …).
+function bananaPrefixRanges(digits: string): Array<{ lo: number; hi: number }> {
+  const p = Number(digits);
+  if (!Number.isFinite(p)) return [];
+  const ranges: Array<{ lo: number; hi: number }> = [];
+  for (let k = 0; k <= 6 - digits.length; k++) {
+    const scale = 10 ** k;
+    ranges.push({ lo: p * scale, hi: (p + 1) * scale - 1 });
   }
-  return ((h >>> 0) % 90_000) + 10_000;
+  return ranges;
 }
 
 function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) {
@@ -65,6 +67,9 @@ function mapUserDoc(doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData>) 
     id: doc.id,
     walletAddress: isStoredValid ? storedWallet : doc.id,
     username: (typeof data.username === 'string' && !data.username.startsWith('User-')) ? data.username : null,
+    // Server-assigned unique default-handle number ("Banana"+bananaNumber).
+    // Display fallback for unnamed users — NEVER recompute from the wallet.
+    bananaNumber: typeof data.bananaNumber === 'number' ? data.bananaNumber : null,
     email:
       (typeof data.blueCheckEmail === 'string' && data.blueCheckEmail) ||
       (typeof data.email === 'string' && data.email) ||
@@ -143,23 +148,26 @@ export async function GET(req: Request) {
         }
       }
 
-      // Banana-handle resolution. "Banana#####" is computed from the wallet,
-      // not stored, so a user still on the "User-…" placeholder username won't
-      // be found by the prefix queries above. When the query looks like a
-      // banana handle (full "banana75024" or a prefix like "banana7"), scan and
-      // match the COMPUTED handle so every default-named user is findable —
-      // regardless of whether the stored username has been stamped yet. Cheap
-      // at current scale; bounded scan (5k) + result cap (50) for growth.
-      if (/^banana\d*$/.test(q)) {
-        const scan = await usersCollection.limit(5000).get();
-        for (const doc of scan.docs) {
-          if (results.has(doc.id) || results.size >= 50) continue;
-          const data = doc.data();
-          const wallet = (typeof data.walletAddress === 'string' && data.walletAddress)
-            ? data.walletAddress
-            : doc.id;
-          if (`banana${bananaNumberFromWallet(wallet)}`.startsWith(q)) {
-            results.set(doc.id, mapUserDoc(doc));
+      // Banana-handle resolution against the STORED server-assigned number.
+      // (Stored "BananaNNNNN" usernames are already covered by the username
+      // prefix queries above.) One indexed range query per digit-length —
+      // no scans, no computed hashes, no collisions.
+      const bananaDigits = q.match(/^banana(\d+)$/)?.[1];
+      if (bananaDigits) {
+        const numberSnaps = await Promise.all(
+          bananaPrefixRanges(bananaDigits).map((r) =>
+            usersCollection
+              .where('bananaNumber', '>=', r.lo)
+              .where('bananaNumber', '<=', r.hi)
+              .limit(20)
+              .get()
+              .catch(() => null),
+          ),
+        );
+        for (const snap of numberSnaps) {
+          if (!snap) continue;
+          for (const doc of snap.docs) {
+            if (!results.has(doc.id) && results.size < 50) results.set(doc.id, mapUserDoc(doc));
           }
         }
       }

@@ -1,5 +1,5 @@
 import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
-import { bananaDefaultName } from '@/utils/helpers';
+import { bananaDefaultName, bananaPlaceholderName } from '@/utils/helpers';
 import { json, jsonError } from '@/lib/api/routeUtils';
 import { ApiError } from '@/lib/api/errors';
 import { BBB4_CONTRACT } from '@/lib/opensea';
@@ -77,9 +77,12 @@ export async function GET(
     // Owner display identity: custom username → legacy Go name → permanent
     // "Banana{N}" handle. Badge: only an EQUIPPED badge (no default).
     const v2 = ownerLc ? (displays as Record<string, { username: string | null; profilePicture: string | null; equippedBadge: string | null; bananaNumber: number | null; ripeness: Ripeness | null }>)[ownerLc] : null;
-    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc ? profile.pfp.displayName : null;
-    // Wallet-derived default — same derivation as the header (bananaDefaultName).
-    const bananaName = ownerLc ? bananaDefaultName(ownerLc) : null;
+    // A Go name equal to the wallet's own hash default is the app's old
+    // auto-sync echo, not a chosen name — treat like a placeholder.
+    const goName = typeof profile?.pfp?.displayName === 'string' && profile.pfp.displayName.toLowerCase() !== ownerLc && (!ownerLc || profile.pfp.displayName !== bananaDefaultName(ownerLc)) ? profile.pfp.displayName : null;
+    // SERVER-assigned unique handle (assigned on first sight by
+    // getUserDisplayBatch above) — never the colliding wallet hash.
+    const bananaName = ownerLc ? (v2?.bananaNumber != null ? `Banana${v2.bananaNumber}` : bananaPlaceholderName(ownerLc)) : null;
     const ownerName = v2?.username || goName || bananaName;
     const ownerPfp = v2?.profilePicture || profile?.pfp?.imageUrl || null;
     const ownerBadge = v2?.equippedBadge ?? null;
