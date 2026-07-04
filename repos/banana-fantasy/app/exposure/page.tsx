@@ -6,6 +6,7 @@ import {
   getTopExposures,
   getExposureByPosition,
   positions,
+  nflTeams,
   type ExposureEntry,
   type RealStack,
   teamByeWeeks,
@@ -82,6 +83,11 @@ export default function ExposurePage() {
   // Which sub-view of the Exposure page is showing. Team Stacks used to live
   // at the very bottom (scroll-only); it's now its own tab up top.
   const [exposureTab, setExposureTab] = useState<'positions' | 'stacks'>('positions');
+  // Include 0% rows — team-positions the user has NEVER drafted. The exposure
+  // doc only contains slots with at least one draft, so these rows are
+  // synthesized client-side from the full nflTeams × positions universe.
+  // Off by default so the everyday view stays a portfolio, not a spreadsheet.
+  const [showUndrafted, setShowUndrafted] = useState(false);
 
   // Leagues whose roster contains the selected team+position. Match by
   // team + base position group (RB / WR / QB / TE / DST), since roster
@@ -140,6 +146,25 @@ export default function ExposurePage() {
 
   // ── Computed data ─────────────────────────────────────────────────────
 
+  // Portfolio exposures, optionally padded with 0% rows for every
+  // team-position the user has never drafted. ADP / avg pick stay undefined
+  // on synthesized rows (they're aggregated from the user's own drafts, so
+  // there's nothing to show) — those columns render as "—".
+  const mergedExposures = useMemo(() => {
+    if (!showUndrafted) return exposures;
+    const have = new Set(exposures.map(e => e.teamPosition));
+    const zeros: ExposureEntry[] = [];
+    for (const team of nflTeams) {
+      for (const pos of positions) {
+        const tp = `${team} ${pos}`;
+        if (!have.has(tp)) {
+          zeros.push({ team, position: pos, teamPosition: tp, drafts: 0, totalDrafts, exposure: 0 });
+        }
+      }
+    }
+    return [...exposures, ...zeros];
+  }, [exposures, showUndrafted, totalDrafts]);
+
   const filteredExposures = useMemo(() => {
     // Search chips override the position pill — searching "IND RB" with
     // the QB pill active should still surface IND RB1/RB2 rows. Without
@@ -147,9 +172,11 @@ export default function ExposurePage() {
     // confusing "no positions match" empty state on what they know is
     // in their portfolio.
     const hasSearch = search.length > 0 && search.some(c => c.trim());
+    // With 0% rows included the full universe is 32 teams × 7 slots = 224 —
+    // raise the "All" cap so nothing gets silently cut off.
     let data = hasSearch || posFilter === 'all'
-      ? getTopExposures(exposures, 100)
-      : getExposureByPosition(exposures, posFilter);
+      ? getTopExposures(mergedExposures, showUndrafted ? 300 : 100)
+      : getExposureByPosition(mergedExposures, posFilter);
 
     if (hasSearch) {
       // OR across chips: a row is one team-position, so multiple chips
@@ -177,10 +204,13 @@ export default function ExposurePage() {
         return { ...e, adp, avgPick, vsAdp };
       })
       .sort((a, b) => {
-        if (sortBy === 'adp') return a.adp - b.adp;
-        return b.exposure - a.exposure;
+        // Alphabetical tie-break so the 0% block reads as an ordered list
+        // instead of landing in whatever order the universe was generated.
+        if (sortBy === 'adp' && a.adp !== b.adp) return a.adp - b.adp;
+        if (sortBy === 'exposure' && a.exposure !== b.exposure) return b.exposure - a.exposure;
+        return a.teamPosition.localeCompare(b.teamPosition);
       });
-  }, [exposures, posFilter, search, sortBy]);
+  }, [mergedExposures, posFilter, search, sortBy, showUndrafted]);
 
   // "Team #" lookup — type your team/league number and open that team's card
   // (same idea as My Teams / Marketplace). Matches the league number shown on
@@ -460,6 +490,20 @@ export default function ExposurePage() {
                 </button>
               ))}
             </div>
+            {/* 0% toggle — pad the table with every team-position the user
+                has never drafted, so they can spot teams they hold zero of.
+                Pairs with the position pills: tap QB + 0%s = all 32 QBs. */}
+            <button
+              onClick={() => setShowUndrafted(v => !v)}
+              title="Include team positions you haven't drafted (0% exposure)"
+              className={`text-[11px] px-2.5 py-2 rounded-[10px] font-semibold transition-colors flex-shrink-0 whitespace-nowrap ${
+                showUndrafted
+                  ? 'bg-banana text-black'
+                  : 'bg-white/[0.03] border border-white/[0.06] text-white/50 hover:text-white/70 hover:bg-white/[0.06]'
+              }`}
+            >
+              0%s
+            </button>
             <input
               type="number"
               inputMode="numeric"
@@ -563,6 +607,11 @@ export default function ExposurePage() {
             <p className="text-white/40 text-sm">
               {totalDrafts === 0 ? 'No draft data yet' : 'No positions match your filters'}
             </p>
+            {totalDrafts > 0 && !showUndrafted && (
+              <button onClick={() => setShowUndrafted(true)} className="text-banana text-xs mt-2 hover:underline">
+                Include 0% positions
+              </button>
+            )}
           </div>
         )}
       </div>
