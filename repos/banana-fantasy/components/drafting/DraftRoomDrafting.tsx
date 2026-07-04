@@ -495,7 +495,7 @@ export function DraftRoomDrafting({
               <DraftTabs
                 activeTab={activeTab}
                 onTabChange={onTabChange}
-                queueCount={engine.queuedPlayers.length}
+                queueCount={engine.queuedPlayers.filter(p => engine.availablePlayers.some(a => a.playerId === p.playerId)).length}
                 chatUnread={chatUnread}
                 sidebarOpen={sidebarOpen}
                 onToggleSidebar={() => setSidebarOpen(prev => !prev)}
