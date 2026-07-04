@@ -75,13 +75,23 @@ export async function POST(req: Request) {
 
     const result = await db.runTransaction(async (tx) => {
       const snap = await tx.get(userRef);
-      const current = (snap.exists ? (snap.data()?.[field] as number | undefined) : undefined) ?? 0;
-      if (current <= 0) {
-        return { decremented: false, before: current, after: current };
-      }
-      tx.set(userRef, { [field]: current - 1 }, { merge: true });
+      const mirror = (snap.exists ? (snap.data()?.[field] as number | undefined) : undefined) ?? 0;
+      // `available` (the wallet's REAL spendable inventory in validDraftTokens,
+      // confirmed > 0 by the hard gate above) is the source of truth. The scalar
+      // counter is only a fast-read MIRROR and can legitimately lag BELOW the real
+      // inventory: a mint/grant that writes the token but dies before
+      // recountFromInventory (slow on-chain grant + serverless timeout — the exact
+      // failure Boris hit) leaves the mirror stale-low while the token really
+      // exists. The OLD `if (current <= 0) return decremented:false` here then
+      // falsely blocked a pass the wallet genuinely owns, and the client showed a
+      // ghost "deducted then refunded" with no draft. Trust the real inventory:
+      // decrement from the true count and write the reconciled value so the mirror
+      // self-heals toward reality. Gate 1 guarantees available >= 1, so this always
+      // decrements — a stale mirror can never block a real pass again.
+      const trueCount = Math.max(mirror, available);
+      tx.set(userRef, { [field]: trueCount - 1 }, { merge: true });
       addActivityEventToTx(tx, activityDoc);
-      return { decremented: true, before: current, after: current - 1 };
+      return { decremented: true, before: mirror, after: trueCount - 1 };
     });
 
     // Admin-only heads-up when a NEW user (first-season account, not a
