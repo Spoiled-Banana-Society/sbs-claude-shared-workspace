@@ -117,9 +117,14 @@ async function adminFetch<T>(
   url: string,
   getHeaders: () => Promise<HeadersInit>,
   init?: RequestInit,
+  // Client abort budget. Defaults to 20s — right for the dashboard's fast
+  // read calls. Slow on-chain writes (grant-drafts mints an NFT on Base and
+  // waits up to 60s for the receipt) pass a longer budget so the button waits
+  // for the mint instead of falsely erroring at 20s while the server finishes.
+  timeoutMs = 20_000,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const headers = await getHeaders();
@@ -146,7 +151,7 @@ async function adminFetch<T>(
   } catch (err) {
     if (err instanceof AdminApiError) throw err;
     if ((err as Error).name === 'AbortError') {
-      throw new AdminApiError('Request timed out after 20s', 504);
+      throw new AdminApiError(`Request timed out after ${Math.round(timeoutMs / 1000)}s`, 504);
     }
     throw new AdminApiError((err as Error).message || 'Network error', 0);
   } finally {
@@ -926,7 +931,7 @@ export function useGrantDrafts() {
       adminFetch<GrantDraftsResponse>('/api/admin/grant-drafts', getHeaders, {
         method: 'POST',
         body: JSON.stringify(input),
-      }),
+      }, 90_000), // wait for the on-chain mint (up to ~60s) instead of false-erroring at 20s
     onSuccess: (data) => {
       // Optimistically patch the cached users rows if we know the target
       qc.setQueriesData<AdminUsersResponse>({ queryKey: ['admin', 'users'] }, (prev) => {
