@@ -683,3 +683,22 @@ exports.onBotTurn = functions
 
     return null;
   });
+
+/**
+ * scheduledUpdateRosters — daily roster/depth-chart refresh from Rolling
+ * Insights (PlayersFromTeam + 2026 byes in playerStats2026/playerMap; ADP is
+ * owned by scheduledUpdateADP). Export restored 2026-07-04 so the deployed
+ * cron picks up the NAME_FIX/PINNED guards in updateRosters.js — the old
+ * deployed copy kept dropping Justin Jefferson (MIN) and mangling several
+ * depth names on every nightly run. See updateRosters.js.
+ */
+const { updateRosters } = require("./updateRosters");
+exports.scheduledUpdateRosters = functions
+  .runWith({ timeoutSeconds: 300, memory: "512MB" })
+  .pubsub.schedule("every 24 hours")
+  .timeZone("America/New_York")
+  .onRun(async () => {
+    const res = await updateRosters({ db: admin.firestore() });
+    console.log("[scheduledUpdateRosters] complete", JSON.stringify(res));
+    return null;
+  });

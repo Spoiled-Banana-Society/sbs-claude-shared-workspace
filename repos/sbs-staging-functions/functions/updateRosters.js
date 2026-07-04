@@ -71,10 +71,37 @@ function cleanName(n) {
 const NAME_FIX = {
   "TEN|QB": { "Jihad Ward": "Cam Ward" },
   "PHI|WR": { "Devin Smith": "DeVonta Smith" },
+  // 2026-07-04 batch — RI depth-chart feed regressions found by diffing the
+  // pools against the hand-verified prod map (all reported to RI):
+  "TB|RB": { "Kenny Gainwell": "Kenneth Gainwell" },
+  "NO|RB": { "DeJuan Neal": "Devin Neal" },
+  "MIA|QB": { "Aubrey Miller": "Cam Miller" },
+  "ATL|TE": { "Joshua Simon": "John Simon" },
+  "KC|RB": { "Nazeeh Johnson": "Emany Johnson" },
 };
 function applyNameFix(ab, base, list) {
   const fix = NAME_FIX[`${ab}|${base}`];
   return fix ? list.map((n) => fix[n] || n) : list;
+}
+
+// Players the RI feed OMITS entirely (not just misspells), so neither NAME_FIX
+// nor carryover can save them — carryover only keeps prior names that still
+// appear in the new feed. Each pin is force-inserted at the given depth index
+// after carryover, so the daily cron can never drop them again. Remove a pin
+// once RI confirms their feed is fixed.
+const PINNED = {
+  "MIN|WR": [{ name: "Justin Jefferson", at: 0 }],
+};
+function applyPins(ab, base, list) {
+  const pins = PINNED[`${ab}|${base}`];
+  if (!pins) return list;
+  const out = [...list];
+  for (const pin of pins) {
+    if (!out.some((n) => norm(n) === norm(pin.name))) {
+      out.splice(Math.min(pin.at, out.length), 0, pin.name);
+    }
+  }
+  return out;
 }
 
 // "1": {player}, "2": {player} -> ["..", ".."] in numeric depth order.
@@ -165,7 +192,7 @@ async function updateRosters({ db } = {}) {
       const teamRoster = roster[team];
       if (!teamRoster || !teamRoster[base]) continue;
       const prior = Array.isArray(entry.PlayersFromTeam) ? entry.PlayersFromTeam : [];
-      entry.PlayersFromTeam = carryover(prior, teamRoster[base]);
+      entry.PlayersFromTeam = applyPins(team, base, carryover(prior, teamRoster[base]));
       rostersUpdated += 1;
     }
   }

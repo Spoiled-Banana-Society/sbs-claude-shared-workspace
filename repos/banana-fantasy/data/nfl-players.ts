@@ -74,13 +74,30 @@ const TEAM_PLAYERS: Record<string, Record<string, string[]>> = {
 // To refresh: re-read playerStats2026.playerMap.Players[*].ADP and paste here.
 const LIVE_ADP: Record<string, number> = { "CIN-WR1": 1, "DET-RB1": 2, "LAR-WR1": 3, "ATL-RB1": 4, "DAL-WR1": 5, "SEA-WR1": 6, "DET-WR1": 7, "MIN-WR1": 8, "IND-RB1": 9, "SF-RB1": 10, "LV-RB1": 11, "BUF-RB1": 12, "NE-WR1": 13, "PHI-RB1": 14, "ATL-WR1": 15, "LAC-RB1": 16, "HOU-WR1": 17, "PHI-WR1": 18, "NO-WR1": 19, "MIA-RB1": 20, "KC-RB1": 21, "CIN-RB1": 22, "KC-WR1": 23, "BAL-RB1": 24, "LV-TE": 25, "LAC-WR1": 26, "CHI-WR1": 27, "ARI-RB1": 28, "TB-WR1": 29, "NYG-WR1": 30, "CAR-WR1": 31, "NYJ-RB1": 32, "BAL-WR1": 33, "NYJ-WR1": 34, "SF-WR1": 35, "DEN-WR1": 36, "LAR-RB1": 37, "NO-RB1": 38, "JAX-WR1": 39, "GB-WR1": 40, "ARI-TE": 41, "WAS-WR1": 42, "DAL-RB1": 43, "GB-RB1": 44, "NYG-RB1": 45, "TEN-WR1": 46, "BUF-WR1": 47, "NE-RB1": 48, "ARI-WR1": 49, "CHI-RB1": 50, "BUF-QB": 51, "HOU-RB1": 52, "TB-RB1": 53, "PIT-WR1": 54, "IND-WR1": 55, "JAX-RB1": 56, "CLE-RB1": 57, "SEA-RB1": 58, "CAR-RB1": 59, "PIT-RB1": 60, "TEN-RB1": 61, "DEN-RB1": 62, "CHI-TE": 63, "CLE-WR1": 64, "WAS-RB1": 65, "BAL-QB": 66, "MIN-RB1": 67, "LV-WR1": 68, "CIN-QB": 69, "WAS-QB": 70, "IND-TE": 71, "NE-QB": 72, "CHI-QB": 73, "PHI-QB": 74, "MIA-WR1": 75, "DAL-QB": 76, "DAL-WR2": 77, "LAC-QB": 78, "GB-TE": 79, "CIN-WR2": 80, "JAX-QB": 81, "KC-QB": 82, "NYG-QB": 83, "SF-QB": 84, "DET-TE": 85, "CLE-TE": 86, "LAR-QB": 87, "DEN-QB": 88, "LAR-WR2": 89, "DET-QB": 90, "HOU-DST": 91, "ATL-TE": 92, "MIN-QB": 93, "LAR-DST": 94, "GB-QB": 95, "DEN-DST": 96, "DET-WR2": 97, "SEA-DST": 98, "SF-TE": 99, "PHI-DST": 100, "TB-QB": 101, "NO-QB": 102, "MIN-DST": 103, "KC-TE": 104, "NE-DST": 105, "JAX-DST": 106, "DAL-TE": 107, "BAL-TE": 108, "PIT-DST": 109, "BUF-TE": 110, "MIA-QB": 111, "BAL-DST": 112, "DET-DST": 113, "NYG-TE": 114, "NE-RB2": 115, "DET-RB2": 116, "PHI-TE": 116, "BUF-DST": 117, "LAR-RB2": 118, "TEN-QB": 118, "LAC-DST": 119, "SEA-QB": 120, "HOU-QB": 121, "IND-QB": 122, "GB-DST": 123, "LAC-TE": 124, "WAS-TE": 125, "CHI-RB2": 126, "KC-DST": 126, "NE-TE": 127, "CLE-DST": 128, "PIT-RB2": 128, "JAX-TE": 129, "CAR-QB": 129, "SF-DST": 131, "NYJ-TE": 132, "NO-TE": 133, "MIN-WR2": 134, "IND-DST": 135, "NO-WR2": 136, "ATL-DST": 137, "CHI-WR2": 138, "MIN-TE": 139, "NO-DST": 140, "ATL-RB2": 140, "LV-QB": 141, "CAR-DST": 142, "HOU-TE": 143, "TB-RB2": 144, "PHI-WR2": 144, "NYG-DST": 145, "PIT-QB": 146, "SEA-TE": 147, "CHI-DST": 148, "TEN-TE": 149, "DEN-RB2": 150, "NYJ-QB": 150, "CAR-RB2": 153, "LAC-RB2": 155, "TB-DST": 160, "SEA-WR2": 161, "JAX-WR2": 162, "TB-TE": 163, "DAL-DST": 164, "MIA-TE": 165, "MIA-DST": 166, "LAC-WR2": 167, "PIT-TE": 168, "TEN-DST": 169, "JAX-RB2": 170, "DEN-WR2": 171, "NYG-RB2": 172, "ARI-QB": 173, "TB-WR2": 174, "WAS-DST": 175, "KC-WR2": 176, "GB-WR2": 177, "LAR-TE": 178, "CIN-DST": 179, "ATL-QB": 180, "CIN-TE": 181, "NE-WR2": 182, "NYJ-DST": 183, "WAS-RB2": 184, "LV-DST": 185, "ARI-RB2": 186, "MIN-RB2": 187, "HOU-WR2": 188, "PHI-RB2": 189, "ARI-DST": 190, "SF-WR2": 191, "HOU-RB2": 192, "ARI-WR2": 193, "IND-WR2": 194, "LV-RB2": 195, "SF-RB2": 196, "PIT-WR2": 197, "BUF-RB2": 198, "KC-RB2": 199, "CAR-WR2": 200, "TEN-WR2": 201, "SEA-RB2": 202, "NYJ-WR2": 203, "BUF-WR2": 204, "ATL-WR2": 205, "NO-RB2": 206, "TEN-RB2": 207, "CLE-RB2": 208, "IND-RB2": 209, "NYJ-RB2": 210, "WAS-WR2": 211, "NYG-WR2": 212, "DAL-RB2": 213, "GB-RB2": 214, "BAL-WR2": 215, "MIA-RB2": 216, "CIN-RB2": 217, "BAL-RB2": 218, "CLE-WR2": 219, "LV-WR2": 220, "MIA-WR2": 221, "DEN-TE": 222, "CLE-QB": 223, "CAR-TE": 224 };
 
+// The server convention (playerStats2026/playerMap) gives RB2/WR2 the SAME full
+// position pool as RB1/WR1 — the depth chart always starts at the star. The
+// hardcoded arrays above were authored offset-by-one for the 2-slots, which hid
+// every team's RB1/WR1 from the lobby depth chart. Merge base pool + slot extras
+// so the lobby matches what the server shows once the draft starts.
+function fullPositionPool(teamPlayers: Record<string, string[]>, pos: string): string[] | undefined {
+  const basePos = pos === 'RB2' ? 'RB1' : pos === 'WR2' ? 'WR1' : pos;
+  const base = teamPlayers[basePos];
+  const own = teamPlayers[pos];
+  if (!base && !own) return undefined;
+  const merged = [...(base || [])];
+  for (const name of own || []) {
+    if (!merged.includes(name)) merged.push(name);
+  }
+  return merged;
+}
+
 function generateAllPositions(): PlayerData[] {
   const players: PlayerData[] = [];
   for (const team of TEAMS) {
     for (const pos of POSITIONS_PER_TEAM) {
       const playerId = `${team}-${pos}`;
       const teamPlayers = TEAM_PLAYERS[team];
-      const posPlayers = teamPlayers?.[pos] || [`${team} ${pos}`];
+      const posPlayers = (teamPlayers && fullPositionPool(teamPlayers, pos)) || [`${team} ${pos}`];
       const adp = LIVE_ADP[playerId] ?? 999;
       players.push({
         playerId,
