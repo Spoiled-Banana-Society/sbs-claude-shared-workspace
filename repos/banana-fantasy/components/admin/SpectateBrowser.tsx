@@ -363,130 +363,6 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
         </div>
       </div>
 
-      {queues && (() => {
-        const specialRounds = (['jackpot', 'hof'] as const)
-          .flatMap(type => (queues[type]?.rounds || [])
-            .filter(r => r.status !== 'completed')
-            .map(r => ({ type, round: r })))
-          .sort((a, b) => b.round.roundId - a.round.roundId);
-        if (specialRounds.length === 0) return null;
-        return (
-          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-            <div className="px-4 py-2 bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 font-medium border-b border-white/[0.04]">
-              Special Drafts ({specialRounds.length})
-            </div>
-            <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm min-w-[640px]">
-              <thead className="bg-white/[0.02] text-[11px] uppercase text-gray-500 tracking-wider">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Round</th>
-                  <th className="px-4 py-3 font-medium">Members</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Watch</th>
-                </tr>
-              </thead>
-              <tbody>
-                {specialRounds.map(({ type, round }) => {
-                  const pill = type === 'jackpot'
-                    ? { bg: '#ef4444', color: '#fff', label: 'JP' }
-                    : { bg: '#D4AF37', color: '#000', label: 'HOF' };
-                  const memberCount = round.members?.length || 0;
-                  const fillPct = (memberCount / 10) * 100;
-                  // Live pick state for drafting rounds — joined from the same
-                  // active-drafts poll that powers the table below.
-                  const live = round.draftId
-                    ? (drafts ?? []).find(d => d.draftId === round.draftId && !d.filling && d.currentDrafter)
-                    : undefined;
-                  return (
-                    <tr key={`${type}-${round.roundId}`} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
-                      <td className="px-4 py-3">
-                        <span
-                          className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full font-black"
-                          style={{ background: pill.bg, color: pill.color }}
-                        >
-                          {pill.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-300">#{round.roundId}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{ width: `${fillPct}%`, backgroundColor: pill.bg }}
-                            />
-                          </div>
-                          <span className="text-gray-300 text-xs">{memberCount}/10</span>
-                        </div>
-                        {/* Who's in — queue members (pre-draft) or the live roster. */}
-                        {(() => {
-                          const seatWallets = (round.members?.length
-                            ? round.members.map(mm => mm.wallet)
-                            : (live?.members ?? [])).filter(Boolean);
-                          if (seatWallets.length === 0) return null;
-                          return (
-                            <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1 max-w-[340px] text-xs">
-                              {seatWallets.map(w => (
-                                <span key={w} className="inline-flex items-center gap-1">
-                                  <WalletLink wallet={w} displayName={nameFor(w)} hideAddress />
-                                  <FlagChip flags={flags[w.toLowerCase()]} />
-                                </span>
-                              ))}
-                            </div>
-                          );
-                        })()}
-                      </td>
-                      <td className="px-4 py-3 text-gray-300">
-                        <div className="capitalize">{round.status}</div>
-                        {live && (
-                          <div className="mt-0.5 text-xs text-gray-400 space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-gray-500">P{live.pickNumber}/150 ·</span>
-                              <WalletLink wallet={live.currentDrafter} displayName={nameFor(live.currentDrafter)} hideAddress />
-                              <span className="text-gray-500">on the clock</span>
-                              <PickClock endsAt={live.pickEndTime} />
-                            </div>
-                            {live.onDeck && (
-                              <div className="text-[10px] text-gray-500">
-                                next: <WalletLink wallet={live.onDeck} displayName={nameFor(live.onDeck)} hideAddress />
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {round.draftId ? (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              onClick={() => copySpectateLink(round.draftId!)}
-                              className="inline-flex items-center px-2.5 py-1 rounded-md border border-white/15 text-white/70 text-xs font-medium hover:bg-white/[0.06] hover:text-white transition"
-                              title="Copy spectator URL"
-                            >
-                              {copiedId === round.draftId ? '✓ Copied' : 'Copy link'}
-                            </button>
-                            <a
-                              href={`/spectate/${round.draftId}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
-                            >
-                              Spectate ↗
-                            </a>
-                          </div>
-                        ) : (
-                          <span className="text-gray-500 text-xs">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        );
-      })()}
 
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
         <div className="overflow-x-auto">
@@ -627,6 +503,131 @@ export function SpectateBrowser({ enabled }: { enabled: boolean }) {
         </table>
         </div>
       </div>
+
+      {queues && (() => {
+        const specialRounds = (['jackpot', 'hof'] as const)
+          .flatMap(type => (queues[type]?.rounds || [])
+            .filter(r => r.status !== 'completed')
+            .map(r => ({ type, round: r })))
+          .sort((a, b) => b.round.roundId - a.round.roundId);
+        if (specialRounds.length === 0) return null;
+        return (
+          <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+            <div className="px-4 py-2 bg-white/[0.03] text-[11px] uppercase tracking-wider text-gray-500 font-medium border-b border-white/[0.04]">
+              Special Drafts ({specialRounds.length})
+            </div>
+            <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm min-w-[640px]">
+              <thead className="bg-white/[0.02] text-[11px] uppercase text-gray-500 tracking-wider">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Round</th>
+                  <th className="px-4 py-3 font-medium">Members</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Watch</th>
+                </tr>
+              </thead>
+              <tbody>
+                {specialRounds.map(({ type, round }) => {
+                  const pill = type === 'jackpot'
+                    ? { bg: '#ef4444', color: '#fff', label: 'JP' }
+                    : { bg: '#D4AF37', color: '#000', label: 'HOF' };
+                  const memberCount = round.members?.length || 0;
+                  const fillPct = (memberCount / 10) * 100;
+                  // Live pick state for drafting rounds — joined from the same
+                  // active-drafts poll that powers the table below.
+                  const live = round.draftId
+                    ? (drafts ?? []).find(d => d.draftId === round.draftId && !d.filling && d.currentDrafter)
+                    : undefined;
+                  return (
+                    <tr key={`${type}-${round.roundId}`} className="border-t border-white/[0.04] hover:bg-white/[0.02]">
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full font-black"
+                          style={{ background: pill.bg, color: pill.color }}
+                        >
+                          {pill.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">#{round.roundId}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{ width: `${fillPct}%`, backgroundColor: pill.bg }}
+                            />
+                          </div>
+                          <span className="text-gray-300 text-xs">{memberCount}/10</span>
+                        </div>
+                        {/* Who's in — queue members (pre-draft) or the live roster. */}
+                        {(() => {
+                          const seatWallets = (round.members?.length
+                            ? round.members.map(mm => mm.wallet)
+                            : (live?.members ?? [])).filter(Boolean);
+                          if (seatWallets.length === 0) return null;
+                          return (
+                            <div className="mt-1.5 flex flex-wrap gap-x-2.5 gap-y-1 max-w-[340px] text-xs">
+                              {seatWallets.map(w => (
+                                <span key={w} className="inline-flex items-center gap-1">
+                                  <WalletLink wallet={w} displayName={nameFor(w)} hideAddress />
+                                  <FlagChip flags={flags[w.toLowerCase()]} />
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">
+                        <div className="capitalize">{round.status}</div>
+                        {live && (
+                          <div className="mt-0.5 text-xs text-gray-400 space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-gray-500">P{live.pickNumber}/150 ·</span>
+                              <WalletLink wallet={live.currentDrafter} displayName={nameFor(live.currentDrafter)} hideAddress />
+                              <span className="text-gray-500">on the clock</span>
+                              <PickClock endsAt={live.pickEndTime} />
+                            </div>
+                            {live.onDeck && (
+                              <div className="text-[10px] text-gray-500">
+                                next: <WalletLink wallet={live.onDeck} displayName={nameFor(live.onDeck)} hideAddress />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {round.draftId ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => copySpectateLink(round.draftId!)}
+                              className="inline-flex items-center px-2.5 py-1 rounded-md border border-white/15 text-white/70 text-xs font-medium hover:bg-white/[0.06] hover:text-white transition"
+                              title="Copy spectator URL"
+                            >
+                              {copiedId === round.draftId ? '✓ Copied' : 'Copy link'}
+                            </button>
+                            <a
+                              href={`/spectate/${round.draftId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center px-3 py-1 rounded-md bg-banana text-black text-xs font-bold hover:brightness-110 transition"
+                            >
+                              Spectate ↗
+                            </a>
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-xs">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+          </div>
+        );
+      })()}
 
       <p className="text-[11px] text-gray-500">
         Anyone with the spectator URL can watch — share freely. Refreshes every {REFRESH_INTERVAL_MS / 1000}s.
