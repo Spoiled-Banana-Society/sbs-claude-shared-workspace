@@ -11,8 +11,23 @@ import { BadgeCatalogGrid } from '@/components/badges/BadgeCatalogGrid';
 import { KingLeaderboard } from '@/components/badges/KingLeaderboard';
 import { NotificationSettings } from '@/components/notifications/NotificationSettings';
 import { FREE_DRAFT_CREDIT_CENTS } from '@/lib/pricing';
+import { useExportWallet } from '@privy-io/react-auth';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Wallets allowed to export their embedded-wallet private key from the
+ * profile page. Per-user support tool, NOT a general feature: Privy's
+ * export modal runs on Privy's own domain, so the key never touches our
+ * app — but we still gate it to specific support cases until we decide
+ * to offer export to everyone.
+ *
+ * 2026-07-03: Rockin_Korotkin sent 341 APE on ApeChain to his embedded
+ * wallet; export lets him recover it from MetaMask himself.
+ */
+const KEY_EXPORT_ALLOWLIST = new Set<string>([
+  '0xfff36cb99d9d7432ba70d6a93c1a72d49a7fc98e',
+]);
 
 function truncateAddress(addr: string): string {
   if (!addr || addr.length < 10) return addr;
@@ -29,6 +44,27 @@ function memberSince(iso: string): string {
 export default function ProfilePage() {
   const { user, login, isLoading: authLoading, isEmbeddedWallet } = useAuth();
   const [copiedWallet, setCopiedWallet] = useState(false);
+  const { exportWallet } = useExportWallet();
+  const [exportArmed, setExportArmed] = useState(false);
+  const [exportError, setExportError] = useState(false);
+  const canExportKey =
+    isEmbeddedWallet &&
+    !!user?.walletAddress &&
+    KEY_EXPORT_ALLOWLIST.has(user.walletAddress.toLowerCase());
+
+  const handleExportKey = async () => {
+    if (!exportArmed) {
+      setExportArmed(true);
+      return;
+    }
+    setExportArmed(false);
+    try {
+      await exportWallet({ address: user!.walletAddress! });
+    } catch {
+      // Export disabled in Privy dashboard or modal failed — show a hint.
+      setExportError(true);
+    }
+  };
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<
     'overview' | 'activity' | 'badges' | 'notifications'
@@ -255,8 +291,35 @@ export default function ProfilePage() {
                   <p className="text-white/30 text-xs">{isEmbeddedWallet ? 'Embedded (Privy)' : 'External (MetaMask / WalletConnect)'}</p>
                 </div>
               </div>
-              <span className="text-green-400/60 text-xs font-bold">Connected</span>
+              <div className="flex items-center gap-3">
+                {canExportKey && (
+                  <button
+                    onClick={handleExportKey}
+                    onBlur={() => setExportArmed(false)}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all duration-200 ${
+                      exportArmed
+                        ? 'border-red-400/60 text-red-300 bg-red-500/10'
+                        : 'border-white/20 text-white/60 hover:border-banana/50 hover:text-banana'
+                    }`}
+                  >
+                    {exportArmed ? 'Tap again to reveal key' : 'Export key'}
+                  </button>
+                )}
+                <span className="text-green-400/60 text-xs font-bold">Connected</span>
+              </div>
             </div>
+            {canExportKey && (
+              <p className="text-white/25 text-[11px] leading-snug">
+                Export opens a secure Privy window showing your wallet&apos;s private key —
+                SBS never sees it. Never share this key with anyone; anyone who has it
+                controls your wallet.
+              </p>
+            )}
+            {exportError && (
+              <p className="text-red-400/70 text-[11px]">
+                Export isn&apos;t available right now — contact support and we&apos;ll sort it out.
+              </p>
+            )}
 
             {/* X/Twitter */}
             <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
