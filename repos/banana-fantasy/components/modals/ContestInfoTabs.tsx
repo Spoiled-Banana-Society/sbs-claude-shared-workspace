@@ -34,6 +34,8 @@ const TYPES: { word: string; pct: string; color: string; d: string }[] = [
 
 export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
   const [tab, setTab] = useState<Tab>('contest');
+  // FAQ tab: which section card is expanded (one at a time, same as /faq).
+  const [openFaqSection, setOpenFaqSection] = useState<string | null>(null);
 
   // Audience filter — same rule as app/faq/page.tsx. Without it this modal
   // showed BOTH the web2 and web3 variants of dual-audience questions (the
@@ -97,15 +99,29 @@ export function ContestInfoTabs({ contest }: { contest: Contest | null }) {
       )}
 
       {tab === 'faq' && (
-        <div className="space-y-5">
-          {faqSections.map(section => (
-            <div key={section.id}>
-              <p className="text-white/35 text-[11px] font-semibold uppercase tracking-[0.1em] mb-2">{section.title}</p>
-              <div className="space-y-1.5">
-                {section.items.map((item, i) => <FaqItem key={i} q={item.question} a={item.answer} link={item.link} />)}
+        // Same view as /faq (Richard 2026-07-04): collapsed section cards, one
+        // open at a time, question accordions inside — instead of the old flat
+        // every-question-visible list. Content stays the shared mockFAQSections.
+        <div className="space-y-2">
+          {faqSections.map(section => {
+            const open = openFaqSection === section.id;
+            return (
+              <div key={section.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+                <button
+                  onClick={() => setOpenFaqSection(open ? null : section.id)}
+                  className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left hover:bg-white/[0.03] transition-colors"
+                >
+                  <span className="text-white text-[14px] font-semibold">{section.title}</span>
+                  <svg viewBox="0 0 24 24" className={`w-4 h-4 shrink-0 text-white/40 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                </button>
+                {open && (
+                  <div className="px-2.5 pb-2.5 space-y-1.5">
+                    {section.items.map((item, i) => <FaqItem key={i} q={item.question} a={item.answer} link={item.link} />)}
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
