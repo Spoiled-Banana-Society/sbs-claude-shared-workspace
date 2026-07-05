@@ -36,6 +36,12 @@ export function useEnterDraft() {
   const router = useRouter();
   const { user, updateUser, refreshBalance } = useAuth();
   const [joiningLobby, setJoiningLobby] = useState(false);
+  // Visible failure message rendered by <JoiningLobbyOverlay error={joinError}>.
+  // MUST be in-page UI, not window.alert(): iOS saved-to-home-screen apps
+  // silently swallow alert(), which made every failure below invisible —
+  // users saw the pass counter dip and then nothing (2026-07-05, Richard's
+  // own iPhone PWA). Every failure path sets this instead of alerting.
+  const [joinError, setJoinError] = useState<string | null>(null);
   // Synchronous re-entrancy guard. setState (joiningLobby) doesn't take effect
   // until the next render, so two taps in the same frame would BOTH get past it
   // and each spend a pass + join a draft (mobile double-tap = double-charge).
@@ -53,6 +59,12 @@ export function useEnterDraft() {
     if (!user?.walletAddress) return;
     if (inFlightRef.current) return; // a join is already in flight — ignore the double-tap
     inFlightRef.current = true;
+    setJoinError(null);
+    // Overlay up from the TAP, not after the pass-spend round-trip. The spend
+    // call can stall (iOS PWA resume with dead sockets); before this change the
+    // user got zero feedback until it returned — a dead button with a dipped
+    // pass counter. Every early-return below must setJoiningLobby(false).
+    setJoiningLobby(true);
 
     const beforePaid = user.draftPasses || 0;
     const beforeFree = user.freeDrafts || 0;
@@ -72,20 +84,42 @@ export function useEnterDraft() {
     // could let someone enter a draft they shouldn't.
     let decremented = false;
     try {
-      const res = await fetch('/api/owner/use-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // `speed` powers the admin "new user in a FAST/SLOW draft" bell + email
-        // (the leagueId isn't known yet at decrement time for a filling draft).
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType, speed }),
-      });
+      // 12s cap. Without it a lost reply (iOS kills a suspended PWA's sockets;
+      // the first request after reopen can send but never hear back) left this
+      // await hanging FOREVER — the flow died one line above the join with no
+      // message. The server may still have committed the decrement; that's the
+      // mirror counter only (real pass spends at the Go join), and the balance
+      // route self-heals it on next read, so aborting here is always safe.
+      const spendController = new AbortController();
+      const spendTimeout = setTimeout(() => spendController.abort(), 12_000);
+      let res: Response;
+      try {
+        res = await fetch('/api/owner/use-pass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // `speed` powers the admin "new user in a FAST/SLOW draft" bell + email
+          // (the leagueId isn't known yet at decrement time for a filling draft).
+          body: JSON.stringify({ userId: user.id || user.walletAddress, passType, speed }),
+          signal: spendController.signal,
+        });
+      } finally {
+        clearTimeout(spendTimeout);
+      }
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
-    } catch {
-      // Network failure — roll back and tell the user. Don't navigate
-      // because we can't confirm the backend got the decrement.
+    } catch (err) {
+      // Network failure or 12s timeout — roll back and tell the user. Don't
+      // navigate because we can't confirm the backend got the decrement.
+      reportClientEvent({
+        source: 'draft.enter.spend_fail',
+        message: `use-pass failed/timed out: ${err instanceof Error ? err.message : String(err)}`,
+        route: 'enter-draft', actor: user.walletAddress,
+        context: { speed, passType, err: err instanceof Error ? err.message : String(err) },
+      }, { skipThrottle: true });
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      alert('Network error. Please try again.');
+      void refreshBalance();
+      setJoiningLobby(false);
+      setJoinError('Connection hiccup — your pass was NOT used. Tap Enter again. If it keeps happening, close and reopen the app.');
       inFlightRef.current = false;
       return;
     }
@@ -95,7 +129,8 @@ export function useEnterDraft() {
       // re-sync from Firestore so the header reflects truth.
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
-      alert('No draft passes available. Your balance has been refreshed.');
+      setJoiningLobby(false);
+      setJoinError('No draft passes available. Your balance has been refreshed.');
       inFlightRef.current = false;
       return;
     }
@@ -136,10 +171,9 @@ export function useEnterDraft() {
     // the user straight into a FULLY POPULATED lobby on first paint — no blank,
     // no pulse, no async draftId race (the old flow navigated with no id and
     // joined inside the room, which caused the "0 then 1 then 2" flash).
-    setJoiningLobby(true);
-    // Hold the overlay for a minimum beat so the branded "Joining lobby…"
-    // transition is always clearly visible, even when joinDraft resolves
-    // near-instantly. Perceptible but snappy — never pads beyond this.
+    // (Overlay is already up — shown at the tap.) Hold it for a minimum beat
+    // so the branded "Joining lobby…" transition is always clearly visible,
+    // even when joinDraft resolves near-instantly. Never pads beyond this.
     const MIN_OVERLAY_MS = 700;
     const overlayStart = Date.now();
     // DIAGNOSTIC breadcrumb (Boris 2026-07-05, "Vertig0 pressed enter, pass
@@ -225,7 +259,7 @@ export function useEnterDraft() {
         });
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
-      alert('Could not join a draft right now. Your pass was not used — please try again.');
+      setJoinError('Could not join a draft right now. Your pass was NOT used — please try again.');
       inFlightRef.current = false;
       return;
     }
@@ -273,5 +307,7 @@ export function useEnterDraft() {
     router.push(`/draft-room?${params.toString()}`);
   };
 
-  return { joiningLobby, enterDraftWithPassType };
+  const clearJoinError = () => setJoinError(null);
+
+  return { joiningLobby, joinError, clearJoinError, enterDraftWithPassType };
 }

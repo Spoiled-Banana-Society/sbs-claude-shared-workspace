@@ -108,6 +108,8 @@ export default function DraftingPage() {
     promoIndex,
     showEntryFlow,
     joiningLobby,
+    joinError,
+    clearJoinError,
     showContestDetails,
     infoTopic,
     handleEnterDraft,
@@ -424,7 +426,7 @@ export default function DraftingPage() {
         freePasses={user?.freeDrafts || 0}
       />
 
-      <JoiningLobbyOverlay show={joiningLobby} />
+      <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />
 
       {topic && (
         <div

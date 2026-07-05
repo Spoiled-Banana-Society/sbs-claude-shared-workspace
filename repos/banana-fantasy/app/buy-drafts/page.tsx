@@ -24,7 +24,7 @@ const BuyPassesModal = dynamic(
 export default function BuyDraftsPage() {
   const router = useRouter();
   const { isLoggedIn, isLoading, user, setShowLoginModal } = useAuth();
-  const { joiningLobby, enterDraftWithPassType } = useEnterDraft();
+  const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
   const [mode, setMode] = useState<'none' | 'buy' | 'entry'>('none');
 
   const passes = (user?.draftPasses || 0) + (user?.freeDrafts || 0);
@@ -104,7 +104,7 @@ export default function BuyDraftsPage() {
         }}
       />
 
-      <JoiningLobbyOverlay show={joiningLobby} />
+      <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />
     </div>
   );
 }

@@ -183,7 +183,7 @@ export function useDraftingPageState() {
   // Single shared entry flow (join-before-navigate + "Joining lobby" overlay).
   // Lives in useEnterDraft so the home page and this page use the exact same
   // implementation — no divergence, no glitch creeping back via one copy.
-  const { joiningLobby, enterDraftWithPassType } = useEnterDraft();
+  const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
   const [hiddenDraftIds, setHiddenDraftIds] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set();
     try {
@@ -1793,6 +1793,8 @@ export function useDraftingPageState() {
     promoIndex,
     showEntryFlow,
     joiningLobby,
+    joinError,
+    clearJoinError,
     showContestDetails,
     infoTopic,
     handleEnterDraft,

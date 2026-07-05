@@ -98,7 +98,7 @@ export default function HomePage() {
   // URL with id/players/joinedAt so the lobby paints fully populated (no blank,
   // no count-pop-in). Single source of truth in useEnterDraft so the two entry
   // points can't drift and reintroduce the old home-page glitch.
-  const { joiningLobby, enterDraftWithPassType } = useEnterDraft();
+  const { joiningLobby, joinError, clearJoinError, enterDraftWithPassType } = useEnterDraft();
 
   const allPromos = promosQuery.promos || [];
 
@@ -228,7 +228,7 @@ export default function HomePage() {
 
       {/* Branded "Joining lobby…" transition while the join call is in flight,
           covering the hand-off into the room (matches the /drafting flow). */}
-      <JoiningLobbyOverlay show={joiningLobby} />
+      <JoiningLobbyOverlay show={joiningLobby} error={joinError} onDismiss={clearJoinError} />
 
     </div>
   );
