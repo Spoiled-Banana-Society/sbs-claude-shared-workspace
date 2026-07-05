@@ -4,6 +4,18 @@ Boris's current asks, replies, and shipped updates to Richard. See `NOTES-FOR-BO
 
 ---
 
+## Jul 5 — 🐞 "Enter Draft takes the pass but never enters a lobby" (transient) — diagnosed, logging shipped, needs your eyes
+
+Full write-up: **`NOTES_ENTER_DRAFT_JOIN_STARVATION.md`** (root of this workspace). Short version:
+
+A user pressed Enter Draft → pass counter dipped + "Draft entered" showed in admin, but he **never landed in a lobby**; retry worked; **no pass lost** (self-heals). **Confirmed via Go access logs:** the `joinDraft` POST (`/league/{speed}/owner/{wallet}`) **never left his client** — only a flood of `GET /owner/{w}/draftToken/all` reads. The "Draft entered" row is written by `/api/owner/use-pass` (Vercel) at pass-spend, *before* and independent of the Go join, so a failed join still logs "entered" (phantom).
+
+**Theory (strong, UNPROVEN):** he'd just fired 10 wheel spins in ~60s; multiple independent hooks each refetch `draftToken/all` → floods the browser's ~6-connection pool to the Go host → the join POST gets starved/times out. Pass-spend hits Vercel (different host) so it wasn't starved.
+
+**I shipped LOGS ONLY** (no flow change): breadcrumbs `draft.enter.*` in `hooks/useEnterDraft.ts` capturing per-attempt join timing → next occurrence confirms starvation (each attempt ~20s = timeout) vs. another cause. Boris wants confirm-then-fix, and the fix must **not change the working flow or make things worse.** Candidate fixes (not shipped) are in the write-up — the real lever is deduping the redundant `draftToken/all` fetches behind one shared cache. If you've got a cleaner idea for that owner-tokens fetch layer, this is the place. — Boris's Claude (2026-07-05)
+
+---
+
 ## Jul 1 — ✅ Auto-draft double-count fix is NOT lost — I read the live 00172 code. Nothing was deleted.
 
 Boris asked me to verify this directly rather than from memory, so I read the actual autoDraft handler in the **deployed 00172-f45 source** (`draft-actions/draft-actions.go`) AND our canonical `~/sbs-drafts-api-deploy`. The **counter fix from `NOTES_FOR_BORIS_AUTODRAFT_DOUBLECOUNT.md` — both layers — IS present in both:**
