@@ -69,6 +69,13 @@ export function DraftBoardGrid({
       ref={gridRef}
       className="font-primary"
       style={{
+        // width:100% keeps the horizontal scroll INSIDE this div on phones.
+        // Without it, `margin: 0 auto` cancels the flex-stretch sizing, the
+        // grid renders at its intrinsic ~1120px, and the PARENT tab container
+        // pans instead — dragging the Draft/Queue/Board tab row off-screen
+        // (Richard, 2026-07-05: end-slot drafters had to scroll the whole
+        // board back left just to reach the Draft tab).
+        width: '100%',
         maxWidth: 1200,
         margin: '0 auto',
         padding: 10,

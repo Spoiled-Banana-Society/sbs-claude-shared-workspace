@@ -22,8 +22,11 @@ const TABS: { key: DraftTab; label: string }[] = [
 ];
 
 export function DraftTabs({ activeTab, onTabChange, queueCount = 0, chatUnread = 0, sidebarOpen, onToggleSidebar }: DraftTabsProps) {
+  // sticky left-0: if any tab's content ever overflows horizontally and the
+  // parent scroll container pans, the tab row stays pinned to the viewport
+  // instead of scrolling off-screen with the content.
   return (
-    <div className="relative flex items-center justify-center gap-4 md:gap-10 py-3 font-primary uppercase font-bold" style={{ backgroundColor: '#000' }}>
+    <div className="sticky left-0 z-10 flex items-center justify-center gap-4 md:gap-10 py-3 font-primary uppercase font-bold" style={{ backgroundColor: '#000' }}>
       {TABS.map(tab => (
         <button
           key={tab.key}
