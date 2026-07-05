@@ -7,7 +7,7 @@ import { isStagingMode } from '@/lib/staging';
 import * as draftStore from '@/lib/draftStore';
 import { joinDraft } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
-import { reportClientError } from '@/lib/clientErrors';
+import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
 import { LOG_SOURCES } from '@/lib/logSources';
 
 /**
@@ -142,14 +142,43 @@ export function useEnterDraft() {
     // near-instantly. Perceptible but snappy — never pads beyond this.
     const MIN_OVERLAY_MS = 700;
     const overlayStart = Date.now();
+    // DIAGNOSTIC breadcrumb (Boris 2026-07-05, "Vertig0 pressed enter, pass
+    // dipped, never entered"): the pass is spent by /api/owner/use-pass (Vercel)
+    // BEFORE this join POST hits the Go API. A user did a 10-spin burst, then
+    // enter never landed a lobby — Go logs showed the join POST never arrived,
+    // suspected connection-pool starvation from a draftToken/all read flood.
+    // These traces capture PER-ATTEMPT TIMING so next time we know for sure: if
+    // each attempt is ~20s (the joinDraft AbortController timeout) the POST is
+    // timing out (starvation); a fast fail points elsewhere. reportClientEvent
+    // posts to Vercel (/api/client-errors), a DIFFERENT host than the Go join,
+    // so it can't compete for the starved pool. Fire-and-forget, non-blocking.
+    reportClientEvent({
+      source: 'draft.enter.spent',
+      message: `pass spent, starting join (${speed}/${passType})`,
+      route: 'enter-draft', actor: user.walletAddress,
+      context: { speed, passType },
+    }, { skipThrottle: true });
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
+      const t0 = Date.now();
       try {
         draftRoom = await joinDraft(user.walletAddress, speed, 1, passType);
+        reportClientEvent({
+          source: 'draft.enter.join_done',
+          message: `join attempt ${attempt} → ${draftRoom?.id ? `draftId ${draftRoom.id}` : 'NO draft id'} in ${Date.now() - t0}ms`,
+          route: 'enter-draft', actor: user.walletAddress,
+          context: { attempt, draftId: draftRoom?.id ?? null, ms: Date.now() - t0, speed },
+        }, { skipThrottle: true });
         if (draftRoom?.id) break;
         throw new Error('Join failed: no draft ID');
       } catch (err) {
+        reportClientEvent({
+          source: 'draft.enter.join_fail',
+          message: `join attempt ${attempt}/${MAX_JOIN_RETRIES} failed in ${Date.now() - t0}ms: ${err instanceof Error ? err.message : String(err)}`,
+          route: 'enter-draft', actor: user.walletAddress,
+          context: { attempt, ms: Date.now() - t0, speed, err: err instanceof Error ? err.message : String(err) },
+        }, { skipThrottle: true });
         logger.warn(`[Enter] join attempt ${attempt}/${MAX_JOIN_RETRIES} failed`, { err: err instanceof Error ? err.message : String(err) });
         if (attempt < MAX_JOIN_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
       }
@@ -158,6 +187,16 @@ export function useEnterDraft() {
     if (!draftRoom?.id) {
       // Join failed after retries. Refund the pass we just spent (use-pass
       // decremented Firestore; no league was actually joined) and bail.
+      // Breadcrumb: if we see this, the handler ran to completion and refunded
+      // cleanly. If the join_fail traces above appear WITHOUT this one, the user
+      // abandoned mid-join (handler hung on the retries) — which is the exact
+      // Vertig0 signature (pass dipped, no refund event, self-healed later).
+      reportClientEvent({
+        source: 'draft.enter.no_lobby',
+        message: `all ${MAX_JOIN_RETRIES} join attempts failed — refunding, took ${Date.now() - overlayStart}ms total`,
+        route: 'enter-draft', actor: user.walletAddress,
+        context: { speed, passType, totalMs: Date.now() - overlayStart },
+      }, { skipThrottle: true });
       setJoiningLobby(false);
       void fetch('/api/owner/refund-pass', {
         method: 'POST',
