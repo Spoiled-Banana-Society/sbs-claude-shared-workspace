@@ -233,7 +233,18 @@ export async function ensureUserSeeded(userId: string): Promise<User> {
     ...seed.user,
     username_lower: seed.user.username ? seed.user.username.toLowerCase() : undefined,
   };
-  batch.set(userRef, stripUndefined(seedUserWithLower));
+  // MERGE, not overwrite. A fresh account's first load fires several API calls
+  // at once; a co-located writer can create a PARTIAL doc before this seed runs
+  // — most importantly `assignBananaNumber` (display-batch), which merge-writes
+  // the user's permanent `bananaNumber`. A plain (non-merge) set here WIPED that
+  // number, so the next display re-assigned a NEW one — the default handle
+  // visibly changed (e.g. Banana10156 → 10157 after a refresh) and the wiped
+  // number leaked as an orphaned gap. Merging preserves any pre-written
+  // co-located fields (bananaNumber, profilePicture, ripeness, lastActiveAt,
+  // firstLoginAt) while still writing every seed field. Safe because we only
+  // reach here when there's no `username` yet (bare partial doc); the seed sets
+  // all the canonical fields explicitly. (Boris 2026-07-05)
+  batch.set(userRef, stripUndefined(seedUserWithLower), { merge: true });
 
   for (const promo of seed.promos) {
     const promoRef = userRef.collection(PROMOS_SUBCOLLECTION).doc(promo.id);
