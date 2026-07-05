@@ -1807,6 +1807,12 @@ export async function getExposure(userId: string): Promise<UserExposure | null> 
 export interface ExposureRecomputeDiag {
   url?: string;
   status?: number;
+  /** Raw count of `active` tokens the Go API returned, BEFORE the on-chain
+   *  owner filter. 0 here = the wallet genuinely has no completed drafts
+   *  (legit empty). >0 with a null return = a failure/ambiguous rebuild
+   *  (Go slow, on-chain check dropped everything, rosters not ready) — the
+   *  caller must NOT treat that as "no drafts". */
+  rawTokenCount?: number;
   tokenCount?: number;
   tokensWithRoster?: number;
   sampleKeys?: string[];
@@ -1864,6 +1870,12 @@ export async function recomputeUserExposure(
     }
     const body = (await res.json()) as { active?: typeof active };
     active = body.active ?? [];
+    // Capture the RAW token count before the on-chain owner filter below.
+    // This is the authoritative "does this wallet have any completed drafts"
+    // signal — the caller uses it to tell a genuine zero (rawTokenCount===0)
+    // apart from a rebuild that failed/dropped everything (rawTokenCount>0
+    // but ends with totalDrafts===0).
+    if (diagOut) diagOut.rawTokenCount = active.length;
 
     // CRITICAL: the Go `/draftToken/all` list keeps a draft under its ORIGINAL
     // drafter forever — it does NOT drop a team you sold or transferred away. So
@@ -1944,7 +1956,16 @@ export async function recomputeUserExposure(
     diagOut.distinctSlots = counts.size;
   }
   if (totalDrafts === 0) {
-    if (diagOut) diagOut.reason = 'no-rosters-with-team';
+    // Distinguish a GENUINE zero (the wallet has no completed drafts at all)
+    // from a FAILED/ambiguous rebuild (the Go API returned tokens but we
+    // aggregated nothing — rosters not ready, or the on-chain owner filter
+    // dropped everything on a slow RPC). The endpoint shows "No draft data
+    // yet" only for the former, and a "building…" retry state for the latter.
+    if (diagOut) {
+      diagOut.reason = (diagOut.rawTokenCount ?? 0) === 0
+        ? 'genuinely-empty'
+        : 'no-rosters-with-team';
+    }
     return null;
   }
 

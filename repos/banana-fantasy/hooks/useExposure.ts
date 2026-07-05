@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { UserExposure } from '@/lib/exposureUtils';
 import { fetchJson } from '@/lib/appApiClient';
 import { useSWRLike } from '@/hooks/useSWRLike';
@@ -9,7 +10,13 @@ export function useExposure(opts?: { userId?: string }) {
   const { user } = useAuth();
   const userId = opts?.userId ?? user?.id;
 
-  return useSWRLike<UserExposure | null>(
+  // While the server reports `building` (no snapshot yet + a transient rebuild
+  // failure), poll fast so the real data lands within a couple seconds instead
+  // of on the 20s cadence. Mirrored into state (can't read the query's own data
+  // inside its options — temporal dead zone) and reset once it resolves.
+  const [fastPoll, setFastPoll] = useState(false);
+
+  const query = useSWRLike<UserExposure | null>(
     userId ? `exposure:${userId}` : null,
     ({ signal }) => fetchJson<UserExposure>(`/api/exposure/${userId}`, { signal }),
     {
@@ -20,7 +27,13 @@ export function useExposure(opts?: { userId?: string }) {
       // every 20s while open. Finishing a draft → the data is fresh here without
       // a manual reload (Boris 2026-06-13).
       revalidateOnFocus: true,
-      refreshInterval: 20_000,
+      refreshInterval: fastPoll ? 3_000 : 20_000,
     },
   );
+
+  useEffect(() => {
+    setFastPoll(query.data?.building === true);
+  }, [query.data]);
+
+  return query;
 }

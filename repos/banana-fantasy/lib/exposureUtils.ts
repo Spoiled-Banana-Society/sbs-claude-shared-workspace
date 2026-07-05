@@ -20,6 +20,11 @@ export interface UserExposure {
   username: string;
   totalDrafts: number;
   exposures: ExposureEntry[];
+  /** Set by the API when it has no snapshot to serve yet AND the rebuild is
+   *  failing/ambiguous (a transient hiccup — NOT a genuine zero). The client
+   *  shows a "building…" state and polls faster instead of a false "no drafts"
+   *  empty. Absent on a normal payload. */
+  building?: boolean;
 }
 
 export interface DepthChartPlayer {

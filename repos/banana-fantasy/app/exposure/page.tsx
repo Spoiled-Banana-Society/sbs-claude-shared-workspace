@@ -58,6 +58,11 @@ export default function ExposurePage() {
   const userExposure = exposureQuery.data ?? { username: '', totalDrafts: 0, exposures: [] };
   const exposures = userExposure.exposures;
   const totalDrafts = userExposure.totalDrafts;
+  // The API sets `building` when it has no snapshot yet and the rebuild is
+  // still failing/ambiguous (a transient hiccup, not a genuine zero). Show a
+  // "building…" state instead of the false "no drafts" empty; it resolves live
+  // on the next poll (which the hook speeds up while building).
+  const isBuilding = userExposure.building === true && totalDrafts === 0;
   const { user } = useAuth();
   const leaguesQuery = useLeagues({ userId: user?.id, status: 'completed' });
   const leagues = leaguesQuery.data ?? [];
@@ -319,7 +324,9 @@ export default function ExposurePage() {
           <p className="text-white/40 text-sm">
             {totalDrafts > 0
               ? `${totalDrafts} drafts · Portfolio breakdown across all your teams`
-              : 'Draft to start tracking your portfolio exposure'}
+              : isBuilding
+                ? 'Building your exposure…'
+                : 'Draft to start tracking your portfolio exposure'}
           </p>
         </div>
         {/* Back to Teams + Marketplace — mirrors the Teams-page header so the
@@ -605,7 +612,9 @@ export default function ExposurePage() {
         ) : (
           <div className="text-center py-12 rounded-xl border border-white/[0.04] bg-white/[0.02]">
             <p className="text-white/40 text-sm">
-              {totalDrafts === 0 ? 'No draft data yet' : 'No positions match your filters'}
+              {totalDrafts === 0
+                ? (isBuilding ? 'Building your exposure…' : 'No draft data yet')
+                : 'No positions match your filters'}
             </p>
             {totalDrafts > 0 && !showUndrafted && (
               <button onClick={() => setShowUndrafted(true)} className="text-banana text-xs mt-2 hover:underline">
@@ -794,7 +803,10 @@ export default function ExposurePage() {
       )}
 
       {/* ── Empty state ───────────────────────────────────────────────── */}
-      {totalDrafts === 0 && !exposureQuery.isValidating && (
+      {/* Only a GENUINE zero shows the "start drafting" empty state. While the
+          server is still (re)building a snapshot, `isBuilding` suppresses it so
+          a drafter never sees a false "you have no teams". */}
+      {totalDrafts === 0 && !exposureQuery.isValidating && !isBuilding && (
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-6 py-16 text-center">
           <div className="text-4xl mb-4">&#x1F4CA;</div>
           <p className="text-white/50 font-medium mb-2">No exposure data yet</p>
@@ -808,8 +820,8 @@ export default function ExposurePage() {
         </div>
       )}
 
-      {/* ── Loading ───────────────────────────────────────────────────── */}
-      {exposureQuery.isValidating && totalDrafts === 0 && (
+      {/* ── Loading / building ────────────────────────────────────────── */}
+      {(exposureQuery.isValidating || isBuilding) && totalDrafts === 0 && (
         <div className="space-y-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-12 rounded-xl bg-white/[0.03] animate-pulse" />
