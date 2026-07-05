@@ -189,14 +189,18 @@ function buildSeedUser(userId: string): {
     referralPromo.modalContent.referralLink = link;
   }
 
-  const wheelSpins = deepClone(seedDb.wheelSpinsByUser['1'] ?? []);
   const badges = deepClone(seedDb.badgesByUser['1'] ?? seedUserBadges());
-  // A brand-new user has drafted NOTHING — start their exposure + draft history
-  // EMPTY. (We used to clone mock user #1's demo data — `seedDb.exposureByUser['1']`
-  // = 20 fake drafts "KC QB 35% / PHI QB 25%…" and 3 fake completed drafts — the
-  // same mock-template leak the walletAddress/username overrides above (line ~154)
-  // were added to fix, but exposure + draftHistory were missed. Real data is
-  // written by recomputeUserExposure / draft completion once they actually play.)
+  // A brand-new user has drafted NOTHING and spun NOTHING — start their
+  // exposure, draft history AND wheel-spin history EMPTY. (We used to clone
+  // mock user #1's demo data — `seedDb.exposureByUser['1']` = 20 fake drafts
+  // "KC QB 35% / PHI QB 25%…", 3 fake completed drafts, and 5 fake wheel spins
+  // incl. a claimed jackpot win — the same mock-template leak the
+  // walletAddress/username overrides above (line ~154) were added to fix, but
+  // these subcollections were missed. Real data is written by
+  // recomputeUserExposure / draft completion / actual spins once they play.)
+  // NOTE: badges + promos ARE seeded on purpose (badges = LOCKED placeholders
+  // checked via unlocked===true; promos = the shared promo catalog).
+  const wheelSpins: WheelSpin[] = [];
   const exposure: UserExposure = { username: user.username, totalDrafts: 0, exposures: [] };
   const draftHistory: CompletedDraft[] = [];
   const referral = { code, createdAt: todayDate() };
