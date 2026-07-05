@@ -1689,7 +1689,9 @@ export function useDraftingPageState() {
         const refundRes = await fetch('/api/owner/refund-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId }),
+          // reason:'leave' → server fires the admin "new user left the lobby"
+          // ping (a join-failure refund omits it, so it never mis-pings).
+          body: JSON.stringify({ userId, passType, leagueId: exitingDraft.id, tokenId: storedDraft?.cardId || exitingDraft.cardId, reason: 'leave' }),
         });
         if (!refundRes.ok) {
           // Money path: user left but the pass refund didn't land. Critical.

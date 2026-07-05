@@ -5,6 +5,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildActivityEventDoc } from '@/lib/activityEvents';
 import { recountFromInventory } from '@/lib/passLedger';
+import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
 import { logger } from '@/lib/logger';
 
 /**
@@ -28,6 +29,10 @@ export async function POST(req: Request) {
     const clientPassType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
     const tokenId = typeof body.tokenId === 'string' ? body.tokenId : null;
+    // `reason: 'leave'` marks a genuine lobby EXIT (vs a join-failure refund,
+    // which also hits this route). Only a real leave fires the admin "new user
+    // left the lobby" ping.
+    const reason = typeof body.reason === 'string' ? body.reason : null;
 
     if (!isFirestoreConfigured()) {
       return json({ success: true, note: 'Firestore not configured' });
@@ -72,6 +77,14 @@ export async function POST(req: Request) {
     // actually spend. Self-healing, exactly like every other counter path.
     // recountFromInventory writes the draft_left activity event in the same tx.
     const counts = await recountFromInventory(userId, activityDoc);
+
+    // Admin heads-up when a genuinely new organic user LEAVES a filling draft
+    // (Boris 2026-07-05). Only on a real leave (reason:'leave'), never a
+    // join-failure refund. Speed derives from the leagueId (the "…-fast-…" /
+    // "…-slow-…" draft id). Fire-and-forget: never affects the refund.
+    if (reason === 'leave') {
+      void alertAdminsNewUserDraftEvent({ userId, action: 'left', leagueId });
+    }
 
     return json({
       success: true,

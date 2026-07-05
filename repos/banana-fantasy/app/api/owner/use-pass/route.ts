@@ -5,10 +5,7 @@ import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils'
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens } from '@/lib/passLedger';
-import { createNotification } from '@/lib/queueNotifications';
-import { sendAdminAlertEmail } from '@/lib/adminAlerts';
-import { getAdminBellWallets } from '@/lib/adminAllowlist';
-import { LAUNCH_ISO } from '@/lib/sbsDay';
+import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -98,81 +95,12 @@ export async function POST(req: Request) {
       return { decremented: true, before: mirror, after: trueCount - 1 };
     });
 
-    // Admin-only heads-up when a NEW user (first-season account, not a
-    // returning player) enters a filling draft (Boris 2026-07-03: "give me a
-    // bell if a new user is ever in a draft thats filling"). One bell per
-    // user+draft (dedupeKey), so several new users in one lobby ping several
-    // times, but a re-entry never double-pings. Fire-and-forget: a bell
-    // failure must never affect the join.
+    // Admin heads-up when a genuinely new organic user takes a seat in a
+    // filling draft (Boris 2026-07-03). Same gate + fan-out as the "left the
+    // lobby" ping (refund-pass), via the shared helper so they never drift.
+    // Fire-and-forget: a bell/email failure must never affect the join.
     if (result.decremented) {
-      void (async () => {
-        try {
-          const u = (await userRef.get()).data() as
-            | { createdAt?: string; isReturningPlayer?: boolean; username?: string }
-            | undefined;
-          // SAME returning rule as the admin NEW/OLD chips: the doc flag OR
-          // the past-season wallet snapshot. Checking only the flag let
-          // sdotdfs (OLD via snapshot, flag unset) email as a "new user".
-          const { isReturningWalletSync } = await import('@/lib/returningUsers');
-          const isReturning = u?.isReturningPlayer === true || isReturningWalletSync(userId);
-          const isNew = !!u && typeof u.createdAt === 'string'
-            && u.createdAt >= LAUNCH_ISO && !isReturning;
-          if (!isNew) return;
-          // Comped accounts don't count (Boris 2026-07-03: "if we grant them
-          // the free draft pass, don't count that"): if ANY pass was ever
-          // admin-granted to this wallet, they're someone we invited — skip
-          // both the bell and the email. Organic new users only.
-          const granted = await db.collection('pass_origin')
-            .where('ownerAtMint', '==', userId)
-            .where('origin', '==', 'admin_grant')
-            .limit(1).get();
-          if (!granted.empty) return;
-          const admins = getAdminBellWallets();
-          if (admins.length === 0) return;
-          const name = u?.username && !/^user-0x/i.test(u.username)
-            ? u.username
-            : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
-          // Prefer the explicit client `speed`; fall back to leagueId parsing.
-          const speedLabel = speed === 'slow' ? 'SLOW draft'
-            : speed === 'fast' ? 'FAST draft'
-            : leagueId?.includes('-slow-') ? 'SLOW draft'
-            : leagueId?.includes('-fast-') ? 'FAST draft'
-            : 'draft';
-          // Per-admin createNotification (NOT the bulk broadcast helper): the
-          // single-wallet path pushes the bell content over the live stream so
-          // every admin device renders it INSTANTLY — the bulk path skips that
-          // ping and waits for the next poll. Admin list is tiny, so the
-          // per-wallet fan-out is cheap.
-          await Promise.allSettled([
-            ...admins.map((w) => createNotification(w, {
-              type: 'system',
-              title: `New user entered a ${speedLabel}`,
-              message: `${name} — a NEW account — just took a seat in a ${speedLabel}${leagueId ? ` (${leagueId})` : ''}.`,
-              link: '/admin?tab=drafts',
-              icon: '🆕',
-              dedupeKey: `admin-new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`,
-            })),
-            // Pocket channel — instant email to the team (no SMS provider in
-            // the stack; Resend is the wired always-on channel). Same event,
-            // different surface, so it does NOT violate one-event-one-bell.
-            // Guarded by a create()-once doc so a retried request can't
-            // double-email (bells dedupe themselves; email has no such rail).
-            (async () => {
-              try {
-                await db.collection('admin_alert_sent')
-                  .doc(`new-user-in-draft-${userId}-${leagueId ?? 'unknown'}`.replace(/[/\\\s]+/g, '_'))
-                  .create({ at: new Date().toISOString() });
-              } catch { return; } // already sent for this user+draft
-              await sendAdminAlertEmail(
-                `🆕 New user in a ${speedLabel}: ${name}`,
-                `${name} — a NEW account — just took a seat in a ${speedLabel}${leagueId ? ` (${leagueId})` : ''}.`,
-              );
-            })(),
-          ]);
-        } catch (err) {
-          logger.warn('use-pass.admin_new_user_bell_failed', { userId, leagueId, err });
-        }
-      })();
+      void alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId });
     }
 
     return json({

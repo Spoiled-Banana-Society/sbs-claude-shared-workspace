@@ -1,4 +1,8 @@
 import { logger } from '@/lib/logger';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getAdminBellWallets } from '@/lib/adminAllowlist';
+import { createNotification } from '@/lib/queueNotifications';
+import { LAUNCH_ISO } from '@/lib/sbsDay';
 
 /**
  * Instant email alerts to the SBS team for operational events worth a
@@ -52,5 +56,94 @@ export async function sendAdminAlertEmail(subject: string, line: string): Promis
     }
   } catch (err) {
     logger.warn('admin_alert_email.error', { err });
+  }
+}
+
+/**
+ * Admin-only heads-up when a genuinely NEW user (first-season account, not a
+ * returning player, not admin-comped) JOINS or LEAVES a filling draft. Same
+ * gate + fan-out for both events so the two never drift (Boris 2026-07-03
+ * "bell if a new user is in a lobby"; 2026-07-05 "also ping if they leave").
+ * Fire-and-forget: never throws into the caller's request path.
+ *
+ * `action`: 'joined' (seat taken via use-pass) or 'left' (leave via refund-pass).
+ * `speed`: explicit fast/slow from the client (join — the leagueId isn't known
+ * yet), else derived from `leagueId` (leave — leagueId IS the "…-fast-…"/"…-slow-…"
+ * draft id). One bell + one email per user+draft+action (dedupeKey), so a
+ * re-entry never double-pings.
+ */
+export async function alertAdminsNewUserDraftEvent(opts: {
+  userId: string;
+  action: 'joined' | 'left';
+  speed?: 'fast' | 'slow' | null;
+  leagueId?: string | null;
+}): Promise<void> {
+  const { userId, action } = opts;
+  const speed = opts.speed ?? null;
+  const leagueId = opts.leagueId ?? null;
+  try {
+    const db = getAdminFirestore();
+    const userRef = db.collection('v2_users').doc(userId);
+    const u = (await userRef.get()).data() as
+      | { createdAt?: string; isReturningPlayer?: boolean; username?: string }
+      | undefined;
+    // SAME returning rule as the admin NEW/OLD chips: the doc flag OR the
+    // past-season wallet snapshot (flag-only missed OLD-via-snapshot users).
+    const { isReturningWalletSync } = await import('@/lib/returningUsers');
+    const isReturning = u?.isReturningPlayer === true || isReturningWalletSync(userId);
+    const isNew = !!u && typeof u.createdAt === 'string'
+      && u.createdAt >= LAUNCH_ISO && !isReturning;
+    if (!isNew) return;
+    // Comped accounts don't count: if ANY pass was ever admin-granted to this
+    // wallet, they're someone we invited — skip both bell and email.
+    const granted = await db.collection('pass_origin')
+      .where('ownerAtMint', '==', userId)
+      .where('origin', '==', 'admin_grant')
+      .limit(1).get();
+    if (!granted.empty) return;
+    const admins = getAdminBellWallets();
+    if (admins.length === 0) return;
+
+    const name = u?.username && !/^user-0x/i.test(u.username)
+      ? u.username
+      : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
+    const speedLabel = speed === 'slow' ? 'SLOW draft'
+      : speed === 'fast' ? 'FAST draft'
+      : leagueId?.includes('-slow-') ? 'SLOW draft'
+      : leagueId?.includes('-fast-') ? 'FAST draft'
+      : 'draft';
+    const joined = action === 'joined';
+    const suffix = leagueId ? ` (${leagueId})` : '';
+    const title = joined ? `New user entered a ${speedLabel}` : `New user LEFT a ${speedLabel} lobby`;
+    const message = joined
+      ? `${name} — a NEW account — just took a seat in a ${speedLabel}${suffix}.`
+      : `${name} — a NEW account — just LEFT a ${speedLabel} lobby${suffix}.`;
+    const icon = joined ? '🆕' : '👋';
+    const dedupeKey = `admin-new-user-${joined ? 'in' : 'left'}-draft-${userId}-${leagueId ?? 'unknown'}`;
+    const emailSubject = joined
+      ? `🆕 New user in a ${speedLabel}: ${name}`
+      : `👋 New user left a ${speedLabel}: ${name}`;
+
+    await Promise.allSettled([
+      ...admins.map((w) => createNotification(w, {
+        type: 'system',
+        title,
+        message,
+        link: '/admin?tab=drafts',
+        icon,
+        dedupeKey,
+      })),
+      // Instant email (guarded by a create()-once doc so a retry can't double-send).
+      (async () => {
+        try {
+          await db.collection('admin_alert_sent')
+            .doc(dedupeKey.replace(/[/\\\s]+/g, '_'))
+            .create({ at: new Date().toISOString() });
+        } catch { return; } // already sent for this user+draft+action
+        await sendAdminAlertEmail(emailSubject, message);
+      })(),
+    ]);
+  } catch (err) {
+    logger.warn('admin_new_user_draft_event.failed', { userId, action, leagueId, err });
   }
 }
