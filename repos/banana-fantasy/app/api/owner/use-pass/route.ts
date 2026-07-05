@@ -36,6 +36,10 @@ export async function POST(req: Request) {
     const userId = requireString(body.userId, 'userId').toLowerCase();
     const passType = body.passType === 'free' ? 'free' : 'paid';
     const leagueId = typeof body.leagueId === 'string' ? body.leagueId : null;
+    // Draft speed for the admin new-user alert. The client sends it explicitly
+    // (the specific leagueId isn't assigned until the filling draft closes), so
+    // this is the authoritative FAST/SLOW source; leagueId parsing is a fallback.
+    const speed = body.speed === 'slow' ? 'slow' : body.speed === 'fast' ? 'fast' : null;
 
     if (!isFirestoreConfigured()) {
       return json({ success: true, note: 'Firestore not configured' });
@@ -128,7 +132,10 @@ export async function POST(req: Request) {
           const name = u?.username && !/^user-0x/i.test(u.username)
             ? u.username
             : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
-          const speedLabel = leagueId?.includes('-slow-') ? 'SLOW draft'
+          // Prefer the explicit client `speed`; fall back to leagueId parsing.
+          const speedLabel = speed === 'slow' ? 'SLOW draft'
+            : speed === 'fast' ? 'FAST draft'
+            : leagueId?.includes('-slow-') ? 'SLOW draft'
             : leagueId?.includes('-fast-') ? 'FAST draft'
             : 'draft';
           // Per-admin createNotification (NOT the bulk broadcast helper): the

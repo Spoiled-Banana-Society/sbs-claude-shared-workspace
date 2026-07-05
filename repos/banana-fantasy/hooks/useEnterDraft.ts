@@ -75,7 +75,9 @@ export function useEnterDraft() {
       const res = await fetch('/api/owner/use-pass', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
+        // `speed` powers the admin "new user in a FAST/SLOW draft" bell + email
+        // (the leagueId isn't known yet at decrement time for a filling draft).
+        body: JSON.stringify({ userId: user.id || user.walletAddress, passType, speed }),
       });
       const body = await res.json().catch(() => ({}));
       decremented = res.ok && !!body?.decremented;
