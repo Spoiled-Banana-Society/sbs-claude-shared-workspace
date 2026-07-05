@@ -153,7 +153,7 @@ interface StatsBucket {
   spins: number; freeDraftsWonFromSpins: number; jpPassesFromSpins: number; hofPassesFromSpins: number;
   draftsFilled: number; draftEntries: number; promosClaimed: number;
 }
-interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket }
+interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket; actualMoneyUsd?: number | null }
 
 const STATS_POLL_MS = 45_000;
 
@@ -373,8 +373,11 @@ export function LiveActivity({ enabled, hideStats }: { enabled: boolean; hideSta
         <StatCard
           label="Purchases"
           value={stats ? stats.today.purchases.toString() : '…'}
+          // All-time dollar figure = REAL money on hand (contract + treasury −
+          // $700, live on-chain), NOT gross ticket sales. Falls back to gross
+          // sales only if the on-chain read is unavailable.
           sub={stats
-            ? `${stats.today.passesBought} passes · $${stats.today.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} — all-time ${stats.total.passesBought} · $${stats.total.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+            ? `${stats.today.passesBought} passes · $${stats.today.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} today — all-time ${stats.total.passesBought} passes · ${stats.actualMoneyUsd != null ? `$${Math.round(stats.actualMoneyUsd).toLocaleString()} on hand (−$700)` : `$${stats.total.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} gross`}`
             : 'loading'}
         />
         <StatCard

@@ -27,7 +27,7 @@ interface UniqueBuyers {
   web2: number; web3: number; untagged: number;
   returning: number; newUsers: number;
 }
-interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket; uniqueBuyers?: UniqueBuyers }
+interface ActivityStats { dayStartIso: string; today: StatsBucket; total: StatsBucket; uniqueBuyers?: UniqueBuyers; actualMoneyUsd?: number | null }
 
 const POLL_MS = 30_000;
 
@@ -83,8 +83,15 @@ export function ActivityStatCards({ enabled }: { enabled: boolean }) {
           label="Purchases"
           value={stats ? stats.today.purchases.toString() : '…'}
           sub={stats
-            ? `${stats.today.passesBought} passes · $${stats.today.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} — all-time ${stats.total.passesBought} · $${stats.total.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+            ? `${stats.today.passesBought} passes · $${stats.today.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} today — all-time ${stats.total.passesBought} passes`
             : 'loading'}
+          // Real money on hand (contract + treasury − $700, live on-chain), NOT
+          // gross ticket sales. Falls back to gross if the RPC read is unavailable.
+          sub2={stats
+            ? (stats.actualMoneyUsd != null
+                ? `$${Math.round(stats.actualMoneyUsd).toLocaleString()} on hand (−$700)`
+                : `$${stats.total.purchaseUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} gross sales`)
+            : undefined}
         />
         <StatCard
           label="New accounts"

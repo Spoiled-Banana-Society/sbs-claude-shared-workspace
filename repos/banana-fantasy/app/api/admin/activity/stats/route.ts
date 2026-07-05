@@ -30,6 +30,27 @@ import { logger } from '@/lib/logger';
 import { LAUNCH_ISO, sbsDayStartIso } from '@/lib/sbsDay';
 import { isReturningWalletSync } from '@/lib/returningUsers';
 import { getAdminBellWallets } from '@/lib/adminAllowlist';
+import { readBbb4Treasury } from '@/lib/onchain/skimBbb4Usdc';
+
+// Canonical "actual money on hand" = live BBB4 contract USDC + cold treasury
+// USDC − $700 (the flat adjustment Boris tracks; same formula as the Money tab's
+// "Actual total (−$700)" in ContractTreasuryPanel). This is REAL money held, not
+// gross ticket sales (passesBought × $25). Cached ~60s so the 30s admin polls
+// don't hammer the Base RPC; falls back to the last good value on RPC failure.
+const MONEY_TTL_MS = 60_000;
+let moneyCache: { at: number; usd: number | null } = { at: 0, usd: null };
+async function getActualMoneyUsd(now: number): Promise<number | null> {
+  if (moneyCache.usd !== null && now - moneyCache.at < MONEY_TTL_MS) return moneyCache.usd;
+  try {
+    const snap = await readBbb4Treasury();
+    const net = BigInt(snap.contractUsdc || '0') + BigInt(snap.treasuryUsdc || '0') - 700_000_000n;
+    const usd = Number(net) / 1e6;
+    moneyCache = { at: now, usd };
+    return usd;
+  } catch {
+    return moneyCache.usd; // last-known on a transient RPC hiccup
+  }
+}
 
 // Wallets that must never count as customers: every team/admin wallet plus
 // legacy team wallets that predate the allowlist (Boris's old Privy login,
@@ -249,6 +270,8 @@ export async function GET(req: Request) {
       newUsers: buyersTotal.size - buyersReturning,
     };
 
+    const actualMoneyUsd = await getActualMoneyUsd(Date.now());
+
     return json({
       uniqueBuyers,
       dayStartIso,
@@ -257,6 +280,9 @@ export async function GET(req: Request) {
       truncated: snap.size >= SCAN_CAP,
       today,
       total,
+      // Real money on hand (contract + treasury − $700), live on-chain. Null if
+      // the RPC read failed and there's no cached value yet.
+      actualMoneyUsd,
     });
   } catch (err) {
     if (err instanceof ApiError) return jsonError(err.message, err.status);
