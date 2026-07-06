@@ -4,7 +4,7 @@ import { ApiError } from '@/lib/api/errors';
 import { json, jsonError, parseBody, requireString } from '@/lib/api/routeUtils';
 import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
-import { countSpendableTokens } from '@/lib/passLedger';
+import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
 import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
 import { logger } from '@/lib/logger';
 
@@ -23,6 +23,16 @@ const USERS_COLLECTION = 'v2_users';
  * Floor of 0: if the counter is already 0 (or missing), the transaction
  * no-ops and returns `decremented: false`. The activity event is also
  * skipped in that case (no actual consumption happened).
+ *
+ * POST-JOIN MODE (`joined: true`, 2026-07-06): the live enter flow is now
+ * join-first — the Go engine has ALREADY consumed the real token by the time
+ * this is called, so the pre-spend gate + manual decrement above make no
+ * sense (for a 1-pass user the gate would see 0 spendable tokens post-join,
+ * return decremented:false, and silently drop the feed row AND the admin
+ * new-user bell). Instead this mode recounts the mirror straight from the
+ * real inventory (already minus the consumed token) and writes the
+ * draft_entered row — now WITH the real leagueId — in the same transaction.
+ * The legacy pre-spend mode below is kept for local (non-staging) mode.
  */
 export async function POST(req: Request) {
   try {
@@ -43,6 +53,33 @@ export async function POST(req: Request) {
     }
 
     const field = passType === 'paid' ? 'draftPasses' : 'freeDrafts';
+
+    if (body.joined === true) {
+      const activityDoc = await buildActivityEventDoc({
+        type: 'draft_entered',
+        userId,
+        walletAddress: userId,
+        paymentMethod: passType === 'paid' ? null : 'free',
+        quantity: 1,
+        metadata: {
+          passType,
+          ...(leagueId ? { leagueId } : {}),
+        },
+      });
+      // One transaction: mirror ← real inventory (Go already consumed the
+      // token) + the draft_entered feed row. Self-correcting by construction.
+      const counts = await recountFromInventory(userId, activityDoc);
+      void alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId });
+      return json({
+        success: true,
+        joined: true,
+        field,
+        decremented: true,
+        draftPasses: counts.draftPasses,
+        freeDrafts: counts.freeDrafts,
+      });
+    }
+
     const db = getAdminFirestore();
     const userRef = db.collection(USERS_COLLECTION).doc(userId);
 

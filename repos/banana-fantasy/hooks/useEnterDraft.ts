@@ -8,7 +8,6 @@ import * as draftStore from '@/lib/draftStore';
 import { joinDraft } from '@/lib/api/leagues';
 import { logger } from '@/lib/logger';
 import { reportClientError, reportClientEvent } from '@/lib/clientErrors';
-import { LOG_SOURCES } from '@/lib/logSources';
 
 /**
  * THE single "enter a draft" flow. Used by EVERY entry point (home page
@@ -24,13 +23,23 @@ import { LOG_SOURCES } from '@/lib/logSources';
  * What the flow does (this is the GOOD behavior, do not regress it):
  *  1. Show the branded "Joining lobby…" overlay (caller renders
  *     <JoiningLobbyOverlay show={joiningLobby} />).
- *  2. Decrement the pass against the authoritative Firestore gate; abort +
- *     refund on failure.
- *  3. Call joinDraft HERE (with retries) so we have the real draftId + player
- *     count BEFORE navigating.
+ *  2. Call joinDraft FIRST (with retries) — the Go engine is the real
+ *     ownership gate (it consumes the actual token and rejects a wallet with
+ *     none), so it's the only call allowed to block the user.
+ *  3. On success, sync the Firestore mirror + activity feed in the background
+ *     via POST /api/owner/use-pass { joined: true } — non-blocking.
  *  4. Navigate to /draft-room with id + players + joinedAt seeded into the URL
  *     so the room paints a fully-populated lobby on first frame — no blank,
  *     no "0 → 1 → N" flash, no async-draftId-spawn race.
+ *
+ * JOIN-FIRST (2026-07-06, do not reorder back): the flow used to gate on the
+ * use-pass round-trip BEFORE joining. Breadcrumb data (draft.enter.*) proved
+ * every real-world failure was that Vercel round-trip exceeding its 12s abort
+ * on flaky devices — while the Go join itself never failed once. Blocking the
+ * essential call behind the bookkeeping call was the entire "takes my pass but
+ * doesn't join" bug (Richard, MrMcNasty, Vertig0, + 3 wallets on 7/5). The
+ * mirror decrement is cosmetic: the Go join consumes the real token, and the
+ * balance route recounts the mirror from inventory on next read regardless.
  */
 export function useEnterDraft() {
   const router = useRouter();
@@ -77,68 +86,51 @@ export function useEnterDraft() {
       updateUser({ freeDrafts: Math.max(0, beforeFree - 1) });
     }
 
-    // Backend gate: Firestore is the authoritative source. If the
-    // decrement fails (counter already at 0, even if local state showed
-    // otherwise), abort the join — user genuinely has no passes. The
-    // Go API still has its own ledger; without this gate a stale UI
-    // could let someone enter a draft they shouldn't.
-    let decremented = false;
-    try {
-      // 12s cap. Without it a lost reply (iOS kills a suspended PWA's sockets;
-      // the first request after reopen can send but never hear back) left this
-      // await hanging FOREVER — the flow died one line above the join with no
-      // message. The server may still have committed the decrement; that's the
-      // mirror counter only (real pass spends at the Go join), and the balance
-      // route self-heals it on next read, so aborting here is always safe.
-      const spendController = new AbortController();
-      const spendTimeout = setTimeout(() => spendController.abort(), 12_000);
-      let res: Response;
-      try {
-        res = await fetch('/api/owner/use-pass', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // `speed` powers the admin "new user in a FAST/SLOW draft" bell + email
-          // (the leagueId isn't known yet at decrement time for a filling draft).
-          body: JSON.stringify({ userId: user.id || user.walletAddress, passType, speed }),
-          signal: spendController.signal,
-        });
-      } finally {
-        clearTimeout(spendTimeout);
-      }
-      const body = await res.json().catch(() => ({}));
-      decremented = res.ok && !!body?.decremented;
-    } catch (err) {
-      // Network failure or 12s timeout — roll back and tell the user. Don't
-      // navigate because we can't confirm the backend got the decrement.
-      reportClientEvent({
-        source: 'draft.enter.spend_fail',
-        message: `use-pass failed/timed out: ${err instanceof Error ? err.message : String(err)}`,
-        route: 'enter-draft', actor: user.walletAddress,
-        context: { speed, passType, err: err instanceof Error ? err.message : String(err) },
-      }, { skipThrottle: true });
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      void refreshBalance();
-      setJoiningLobby(false);
-      setJoinError('Connection hiccup — your pass was NOT used. Tap Enter again. If it keeps happening, close and reopen the app.');
-      inFlightRef.current = false;
-      return;
-    }
-
-    if (!decremented) {
-      // Backend says no spendable passes. Rollback optimistic update and
-      // re-sync from Firestore so the header reflects truth.
-      updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
-      void refreshBalance();
-      setJoiningLobby(false);
-      setJoinError('No draft passes available. Your balance has been refreshed.');
-      inFlightRef.current = false;
-      return;
-    }
-
-    // Non-staging / local mode: no backend draft to join. Spin up a local
-    // draft and navigate — same shape the home page used before, kept here so
-    // the single hook covers every mode.
+    // Non-staging / local mode: no Go engine exists here, so the Firestore
+    // decrement stays the gate (it's the only ledger in this mode). Live mode
+    // skips this entirely — the Go join below is the authoritative gate.
     if (!isLive) {
+      let decremented = false;
+      try {
+        // 12s cap so a lost reply can't hang the flow forever.
+        const spendController = new AbortController();
+        const spendTimeout = setTimeout(() => spendController.abort(), 12_000);
+        let res: Response;
+        try {
+          res = await fetch('/api/owner/use-pass', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id || user.walletAddress, passType, speed }),
+            signal: spendController.signal,
+          });
+        } finally {
+          clearTimeout(spendTimeout);
+        }
+        const body = await res.json().catch(() => ({}));
+        decremented = res.ok && !!body?.decremented;
+      } catch (err) {
+        reportClientEvent({
+          source: 'draft.enter.spend_fail',
+          message: `use-pass failed/timed out (local mode): ${err instanceof Error ? err.message : String(err)}`,
+          route: 'enter-draft', actor: user.walletAddress,
+          context: { speed, passType, err: err instanceof Error ? err.message : String(err) },
+        }, { skipThrottle: true });
+        updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
+        void refreshBalance();
+        setJoiningLobby(false);
+        setJoinError('Connection hiccup — your pass was NOT used. Tap Enter again. If it keeps happening, close and reopen the app.');
+        inFlightRef.current = false;
+        return;
+      }
+
+      if (!decremented) {
+        updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
+        void refreshBalance();
+        setJoiningLobby(false);
+        setJoinError('No draft passes available. Your balance has been refreshed.');
+        inFlightRef.current = false;
+        return;
+      }
       const localDraftId = `local-${Date.now()}`;
       const localContestName = `League #${Math.floor(Math.random() * 9000) + 1000}`;
       draftStore.addDraft({
@@ -176,22 +168,21 @@ export function useEnterDraft() {
     // even when joinDraft resolves near-instantly. Never pads beyond this.
     const MIN_OVERLAY_MS = 700;
     const overlayStart = Date.now();
-    // DIAGNOSTIC breadcrumb (Boris 2026-07-05, "Vertig0 pressed enter, pass
-    // dipped, never entered"): the pass is spent by /api/owner/use-pass (Vercel)
-    // BEFORE this join POST hits the Go API. A user did a 10-spin burst, then
-    // enter never landed a lobby — Go logs showed the join POST never arrived,
-    // suspected connection-pool starvation from a draftToken/all read flood.
-    // These traces capture PER-ATTEMPT TIMING so next time we know for sure: if
-    // each attempt is ~20s (the joinDraft AbortController timeout) the POST is
-    // timing out (starvation); a fast fail points elsewhere. reportClientEvent
-    // posts to Vercel (/api/client-errors), a DIFFERENT host than the Go join,
-    // so it can't compete for the starved pool. Fire-and-forget, non-blocking.
+    // DIAGNOSTIC breadcrumbs (Boris 2026-07-05): per-attempt join timing.
+    // reportClientEvent posts to Vercel (/api/client-errors), a different host
+    // than the Go join, so it can't compete with it. Fire-and-forget.
     reportClientEvent({
-      source: 'draft.enter.spent',
-      message: `pass spent, starting join (${speed}/${passType})`,
+      source: 'draft.enter.join_start',
+      message: `starting join (${speed}/${passType}) — join-first, nothing spent yet`,
       route: 'enter-draft', actor: user.walletAddress,
       context: { speed, passType },
     }, { skipThrottle: true });
+    // Go's rejections that a retry can never change: no matching pass in the
+    // wallet, or the season join deadline passed. Retrying these just makes
+    // the user stare at the overlay for two extra backoffs.
+    const isDeterministicRejection = (msg: string) =>
+      /not enough (paid|free) draft passes/i.test(msg) || /deadline to join has passed/i.test(msg);
+    let rejectionMsg: string | null = null;
     let draftRoom: Awaited<ReturnType<typeof joinDraft>> | null = null;
     const MAX_JOIN_RETRIES = 3;
     for (let attempt = 1; attempt <= MAX_JOIN_RETRIES; attempt++) {
@@ -207,59 +198,42 @@ export function useEnterDraft() {
         if (draftRoom?.id) break;
         throw new Error('Join failed: no draft ID');
       } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
         reportClientEvent({
           source: 'draft.enter.join_fail',
-          message: `join attempt ${attempt}/${MAX_JOIN_RETRIES} failed in ${Date.now() - t0}ms: ${err instanceof Error ? err.message : String(err)}`,
+          message: `join attempt ${attempt}/${MAX_JOIN_RETRIES} failed in ${Date.now() - t0}ms: ${msg}`,
           route: 'enter-draft', actor: user.walletAddress,
-          context: { attempt, ms: Date.now() - t0, speed, err: err instanceof Error ? err.message : String(err) },
+          context: { attempt, ms: Date.now() - t0, speed, err: msg },
         }, { skipThrottle: true });
-        logger.warn(`[Enter] join attempt ${attempt}/${MAX_JOIN_RETRIES} failed`, { err: err instanceof Error ? err.message : String(err) });
+        logger.warn(`[Enter] join attempt ${attempt}/${MAX_JOIN_RETRIES} failed`, { err: msg });
+        if (isDeterministicRejection(msg)) {
+          rejectionMsg = msg;
+          break;
+        }
         if (attempt < MAX_JOIN_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
       }
     }
 
     if (!draftRoom?.id) {
-      // Join failed after retries. Refund the pass we just spent (use-pass
-      // decremented Firestore; no league was actually joined) and bail.
-      // Breadcrumb: if we see this, the handler ran to completion and refunded
-      // cleanly. If the join_fail traces above appear WITHOUT this one, the user
-      // abandoned mid-join (handler hung on the retries) — which is the exact
-      // Vertig0 signature (pass dipped, no refund event, self-healed later).
+      // Join failed (retries exhausted, or Go rejected outright). NOTHING was
+      // spent — join-first means no decrement happened, so there is nothing to
+      // refund. Roll back the optimistic header tick and tell the user.
       reportClientEvent({
         source: 'draft.enter.no_lobby',
-        message: `all ${MAX_JOIN_RETRIES} join attempts failed — refunding, took ${Date.now() - overlayStart}ms total`,
+        message: `join did not land (${rejectionMsg ? `rejected: ${rejectionMsg.trim()}` : `all ${MAX_JOIN_RETRIES} attempts failed`}) — nothing spent, took ${Date.now() - overlayStart}ms total`,
         route: 'enter-draft', actor: user.walletAddress,
-        context: { speed, passType, totalMs: Date.now() - overlayStart },
+        context: { speed, passType, totalMs: Date.now() - overlayStart, rejected: !!rejectionMsg },
       }, { skipThrottle: true });
       setJoiningLobby(false);
-      void fetch('/api/owner/refund-pass', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id || user.walletAddress, passType }),
-      })
-        .then((res) => {
-          if (!res.ok) {
-            reportClientError({
-              source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
-              message: `Join-fail refund returned ${res.status}`,
-              route: 'enter-draft',
-              actor: user.walletAddress,
-              context: { passType, userId: user.id || user.walletAddress, status: res.status },
-            });
-          }
-        })
-        .catch((err) => {
-          reportClientError({
-            source: LOG_SOURCES.draft.JOIN_REFUND_FAILED,
-            message: err instanceof Error ? err.message : String(err),
-            route: 'enter-draft',
-            actor: user.walletAddress,
-            context: { passType, userId: user.id || user.walletAddress, network: true },
-          });
-        });
       updateUser({ draftPasses: beforePaid, freeDrafts: beforeFree });
       void refreshBalance();
-      setJoinError('Could not join a draft right now. Your pass was NOT used — please try again.');
+      if (rejectionMsg && /not enough/i.test(rejectionMsg)) {
+        setJoinError('No draft passes available. Your balance has been refreshed.');
+      } else if (rejectionMsg) {
+        setJoinError('Joining is closed — the deadline to enter drafts has passed.');
+      } else {
+        setJoinError('Could not join a draft right now. Your pass was NOT used — please try again.');
+      }
       inFlightRef.current = false;
       return;
     }
@@ -267,6 +241,37 @@ export function useEnterDraft() {
     const newId = draftRoom.id;
     const joinedCount = Math.min(Math.max(Number(draftRoom.players) || 1, 1), 10);
     const joinedAt = Date.now();
+
+    // Post-join bookkeeping (NON-BLOCKING — the user is already seated, this
+    // must never delay or fail the flow). The Go join consumed the real token;
+    // this syncs the Firestore mirror counter to that reality, writes the
+    // draft_entered feed row WITH the real leagueId (no more phantom rows on
+    // failed joins), and fires the admin new-user bell. keepalive lets the
+    // request survive the route change to /draft-room. If it's lost, the
+    // mirror self-heals on the next balance read — we only log the miss.
+    void fetch('/api/owner/use-pass', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: user.id || user.walletAddress,
+        passType,
+        speed,
+        leagueId: newId,
+        joined: true,
+      }),
+      keepalive: true,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`post-join bookkeeping returned ${res.status}`);
+      })
+      .catch((err) => {
+        reportClientError({
+          source: 'draft.enter.bookkeep_fail',
+          message: err instanceof Error ? err.message : String(err),
+          route: 'enter-draft', actor: user.walletAddress,
+          context: { passType, leagueId: newId, speed },
+        });
+      });
 
     // Persist the draft so the room + leave flow have the exact token/passType.
     draftStore.addDraft({
