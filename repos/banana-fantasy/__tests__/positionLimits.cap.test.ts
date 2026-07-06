@@ -16,7 +16,16 @@ function isAtCap(roster: Roster, limits: PositionLimits, playerId: string): bool
   return have >= cap;
 }
 
-function autoPick(roster: Roster, available: { playerId: string; adp: number }[], limits = DEFAULT_POSITION_LIMITS): string {
+function autoPick(
+  roster: Roster,
+  available: { playerId: string; adp: number }[],
+  limits = DEFAULT_POSITION_LIMITS,
+  queue: { playerId: string }[] = [],
+): string {
+  // Queue first — a queued player is a deferred manual pick; caps do NOT
+  // apply (queue beats caps).
+  const queuePick = queue.find((q) => available.some((a) => a.playerId === q.playerId));
+  if (queuePick) return queuePick.playerId;
   const ok = available.filter((p) => !isAtCap(roster, limits, p.playerId)).sort((a, b) => a.adp - b.adp);
   if (ok.length) return ok[0].playerId;          // BPA not at cap
   return [...available].sort((a, b) => a.adp - b.adp)[0]?.playerId ?? ''; // RELAX
@@ -47,5 +56,27 @@ describe('auto-draft position caps (default RB2:1)', () => {
     const roster: Roster = { RB: ['DET-RB1', 'ATL-RB1', 'PHI-RB1', 'BUF-RB1'] }; // 4 RB1 = RB1 cap, but 0 RB2
     const best = autoPick(roster, [{ playerId: 'DET-RB2', adp: 116 }]);
     expect(best).toBe('DET-RB2'); // RB2 still allowed
+  });
+
+  it('QUEUE BEATS CAPS: takes a queued player even when its slot is at cap (jetsonjets22 draft-77)', () => {
+    const roster: Roster = { WR: ['LAC-WR2'] }; // WR2 already rostered
+    const limits: PositionLimits = { ...DEFAULT_POSITION_LIMITS, WR2: 1 }; // his setting: max 1 WR2
+    const best = autoPick(
+      roster,
+      [{ playerId: 'NO-RB2', adp: 100 }, { playerId: 'TB-WR2', adp: 120 }],
+      limits,
+      [{ playerId: 'TB-WR2' }], // queued WR2, at cap under old rule
+    );
+    expect(best).toBe('TB-WR2'); // queue wins — must NOT fall through to NO-RB2
+  });
+
+  it('queue skips DRAFTED players and takes the next queued one', () => {
+    const best = autoPick(
+      {},
+      [{ playerId: 'NO-WR2', adp: 150 }, { playerId: 'NO-RB2', adp: 100 }],
+      DEFAULT_POSITION_LIMITS,
+      [{ playerId: 'TB-WR2' }, { playerId: 'NO-WR2' }], // TB-WR2 already drafted (not in available)
+    );
+    expect(best).toBe('NO-WR2');
   });
 });

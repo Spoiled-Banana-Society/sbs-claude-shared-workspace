@@ -804,9 +804,11 @@ export function useDraftEngine(mode: DraftMode = 'local') {
 
   // ==================== AUTO-PICK AI ====================
   // positionLimits caps the auto-picker so a single seat can't grind out 8 QBs.
-  // Filters apply to queue, BPA, and position-fill candidates. If every
+  // Caps filter BPA candidates ONLY — the queue bypasses them, because a queued
+  // player is a deferred manual pick and manual picks bypass caps entirely
+  // (jetsonjets22 draft-77: caps silently overrode his queued WR2s). If every
   // position is at its cap, we relax and pick BPA so the draft never stalls
-  // (caps block, they never force fills — manual picks bypass entirely).
+  // (caps block, they never force fills).
   const autoPickForPlayer = useCallback((
     playerRoster: PositionRoster,
     queue: PlayerData[],
@@ -833,11 +835,12 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     const sortByMetric = (a: PlayerData, b: PlayerData) =>
       sortBy === 'adp' ? a.adp - b.adp : a.rank - b.rank;
 
-    // 1. Queue first — if the user queued players that are still available
-    //    and not at cap, those pick before anything else.
+    // 1. Queue first — a queued player is a deferred MANUAL pick, so position
+    //    caps do NOT apply here (same as clicking the player live). The queue
+    //    always beats the caps.
     if (queue.length > 0) {
       const queuePick = queue.find(q =>
-        available.some(a => a.playerId === q.playerId) && !isAtCap(q.playerId),
+        available.some(a => a.playerId === q.playerId),
       );
       if (queuePick) return queuePick.playerId;
     }

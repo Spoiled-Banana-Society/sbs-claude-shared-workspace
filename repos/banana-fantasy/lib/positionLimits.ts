@@ -1,8 +1,10 @@
 // Per-position auto-draft limits.
 //
 // Caps the auto-picker so a single seat can't grind out 8 QBs and freeze
-// the other 9 drafters out of the position. Limits ONLY apply to auto-pick
-// (airplane mode, user timeout, bot picks). Manual clicks bypass entirely.
+// the other 9 drafters out of the position. Limits ONLY apply to what the
+// auto-picker chooses ON ITS OWN (best-available in airplane mode, user
+// timeout, bot picks). Manual clicks AND queued players bypass entirely —
+// a queued player is a deferred manual pick, so the queue beats the caps.
 //
 // When every position is at its cap, the picker relaxes and grabs BPA so
 // the draft never stalls — caps block, they never force fills.
