@@ -74,11 +74,25 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
   // (all-filled) counts; the client adds the pending deductions back until each
   // reveal lands.
   const nowMs = Date.now();
-  const recent = Array.isArray(d.RecentFills) ? (d.RecentFills as Array<{ Id?: number; StartTime?: number }>) : [];
-  const pendingReveals: PendingReveal[] = [];
-  for (const rf of recent) {
+  const recentRaw = Array.isArray(d.RecentFills) ? (d.RecentFills as Array<{ Id?: number; StartTime?: number }>) : [];
+  // Dedupe RecentFills by Id, keeping the entry with the HIGHEST StartTime. A
+  // draft pushes a provisional {Id, StartTime:0} the instant it fills (the count
+  // moves atomically), then a corrected {Id, StartTime:<real>} push follows.
+  // When that correction APPENDS instead of replacing, BOTH linger — and the
+  // provisional's `nowMs + 1h` hold below keeps the draft "pending reveal"
+  // FOREVER, freezing revealedFilled one behind the real count. That desynced
+  // the header: it showed "79/100 · HOF 4.5%" (1/22) when 79 filled means 1/21 =
+  // 4.76%. Keeping the max StartTime per Id drops the stale sentinel so the timed
+  // (already-revealed) entry wins and the odds track the true fill count.
+  const stById = new Map<number, number>();
+  for (const rf of recentRaw) {
     const id = Number(rf?.Id ?? 0) || 0;
     const st = Number(rf?.StartTime ?? 0) || 0;
+    if (!id) continue;
+    if (!stById.has(id) || st > (stById.get(id) as number)) stById.set(id, st);
+  }
+  const pendingReveals: PendingReveal[] = [];
+  for (const [id, st] of stById) {
     if (id <= batchStart || id > filled) continue; // only this batch's fills
     // st<=0 is the provisional sentinel: the draft has FILLED but its slot
     // isn't timed yet (the count moved atomically with this entry). Hold it with

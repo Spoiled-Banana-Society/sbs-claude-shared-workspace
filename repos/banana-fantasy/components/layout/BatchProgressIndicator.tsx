@@ -126,9 +126,11 @@ export function BatchProgressIndicator() {
   // moves ONLY when a draft's TYPE is revealed by the slot (the count deduct),
   // in lockstep with it — never on a bare fill. null once that special is hit
   // (so it shows nothing instead of "0%").
-  // Always 1 decimal so the odds visibly tick every draft (e.g. 10.0% → 10.2%
-  // → 10.4%) instead of freezing on a rounded whole number once ≥10% (Boris).
-  const fmtPct = (p: number) => `${p.toFixed(1)}%`;
+  // Two decimals — MATCHES the X/Discord bot + Go API exactly (they render
+  // toFixed(2)), so the header and the bot always read the SAME number (e.g.
+  // both "HOF 4.76%") instead of the header rounding to 4.8% while the bot says
+  // 4.76%. Still ticks every draft (the reason we moved off whole numbers).
+  const fmtPct = (p: number) => `${p.toFixed(2)}%`;
   const jackpotPct = !jackpotHit && rDraftsLeft > 0 ? (jackpotRemaining / rDraftsLeft) * 100 : null;
   const hofPct = !allHofHit && rDraftsLeft > 0 ? (hofRemaining / rDraftsLeft) * 100 : null;
 
