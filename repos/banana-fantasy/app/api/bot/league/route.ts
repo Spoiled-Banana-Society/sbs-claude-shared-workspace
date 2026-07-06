@@ -155,7 +155,23 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
-  const leagues: AbbrevLeague[] = [];
+  interface ParsedDraft {
+    leagueId: string;
+    numPlayers: number;
+    maxPlayers: number;
+    draftType: string;
+    isFilled: boolean;
+    label: string;
+    rawName: string;
+    leagueNumber: number | null;
+    renamePending: boolean;
+  }
+
+  // First pass: parse + filter every draft doc, and count the fills whose
+  // rename has already landed (needed before we can emit any rename-pending
+  // draft — see the RENAME RACE note below).
+  const parsed: ParsedDraft[] = [];
+  let renamedFillCount = 0;
   for (const doc of snap.docs) {
     if (!LEAGUE_ID_RE.test(doc.id)) continue;
     const d = doc.data() as Record<string, unknown>;
@@ -181,12 +197,71 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       (typeof d.IsLocked === 'boolean' ? d.IsLocked : false) || numPlayers >= maxPlayers;
     const label = draftType === 'slow' ? 'Slow' : 'Fast';
 
-    // While filling, the doc's "BBB #N" is a temporary slot number that gets
-    // overwritten with the real league number on fill — so only trust it once
-    // filled. League # maps directly to the BBB # (no test-draft offset).
+    // While filling, the doc's "BBB #N" is a temporary PER-SPEED slot number
+    // that gets overwritten with the real global league number on fill (the
+    // fast+slow FilledLeaguesCount — the same number the site's counter shows).
     const rawName = String(d.DisplayName ?? doc.id);
     const numMatch = /#\s*(\d+)/.exec(rawName);
     const leagueNumber = numMatch ? Number(numMatch[1]) : null;
+
+    // RENAME RACE (bot announced "League #79" for what is League #82,
+    // 2026-07-06): NumPlayers hits 10 a beat BEFORE the backend renames the
+    // doc from its temp slot name ("BBB #79" on 2026-fast-draft-79) to the
+    // real league number ("BBB #82"). A poll landing in that gap used to
+    // announce the slot number as the league number. Real numbers are a
+    // 1-based fill count across BOTH speeds, so once renamed the name always
+    // moves PAST the 0-based slot index — a filled draft still wearing
+    // exactly its slot number hasn't been renamed yet.
+    const slotNumber = Number(/(\d+)$/.exec(doc.id)?.[1]);
+    const renamePending = isFilled && leagueNumber !== null && leagueNumber === slotNumber;
+    if (isFilled && leagueNumber !== null && !renamePending) renamedFillCount++;
+
+    parsed.push({
+      leagueId: String(d.LeagueId ?? doc.id),
+      numPlayers,
+      maxPlayers,
+      draftType,
+      isFilled,
+      label,
+      rawName,
+      leagueNumber,
+      renamePending,
+    });
+  }
+
+  // Odds for a rename-pending draft: computed at "fills completed EXCLUDING
+  // any pending one" (= renamedFillCount), NOT the tracker count — the tracker
+  // may or may not have counted the in-flight fill yet, and the held message
+  // must be byte-identical to the "1 more to fill" the bot last rendered so
+  // it stays silent until the rename lands.
+  const pendingOdds = trackerData
+    ? computeOdds({ ...trackerData, FilledLeaguesCount: renamedFillCount })
+    : NO_ODDS;
+  const pendingOddsLine = buildOddsLine(pendingOdds);
+
+  const leagues: AbbrevLeague[] = [];
+  for (const p of parsed) {
+    const { numPlayers, maxPlayers, draftType, isFilled, label, rawName, leagueNumber } = p;
+
+    // Rename still pending → keep reporting the draft as one short of full,
+    // exactly as the bot last saw it, so it announces the fill ONCE — with the
+    // final league number — on the next poll after the rename lands.
+    if (p.renamePending) {
+      const namePart = `Draft Lobby (${label})`;
+      leagues.push({
+        leagueId: p.leagueId,
+        displayName: pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart,
+        numPlayers: maxPlayers - 1,
+        maxPlayers,
+        draftType,
+        isFilled: false,
+        leagueNumber: null,
+        state: 'filling',
+        hofPercent: pendingOdds.hofPercent,
+        jackpotPercent: pendingOdds.jackpotPercent,
+      });
+      continue;
+    }
 
     const namePart = isFilled
       ? leagueNumber !== null
@@ -208,7 +283,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     const displayName = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
 
     leagues.push({
-      leagueId: String(d.LeagueId ?? doc.id),
+      leagueId: p.leagueId,
       displayName,
       numPlayers,
       maxPlayers,
