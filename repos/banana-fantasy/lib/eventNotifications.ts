@@ -117,7 +117,7 @@ export function eventNotificationContent(
       return {
         type: 'promo',
         title: 'First Purchase Free Spins',
-        message: 'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
+        message: 'Every 2 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
         link: '/buy-drafts',
         dedupeKey: `first-purchase-unlocked-${userId}`,
         icon: 'gift',

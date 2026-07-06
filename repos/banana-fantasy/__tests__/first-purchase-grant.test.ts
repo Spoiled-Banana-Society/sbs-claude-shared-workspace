@@ -9,22 +9,22 @@ import {
 } from '@/lib/promoMath';
 
 describe('First-purchase bonus math', () => {
-  it('grants 1 spin per 4 passes', () => {
-    expect(FIRST_PURCHASE_PASSES_PER_SPIN).toBe(4);
-    expect(firstPurchaseSpins(4)).toBe(1);
-    expect(firstPurchaseSpins(8)).toBe(2);
-    expect(firstPurchaseSpins(12)).toBe(3);
+  it('grants 1 spin per 2 passes (upgraded from 4 on 2026-07-06)', () => {
+    expect(FIRST_PURCHASE_PASSES_PER_SPIN).toBe(2);
+    expect(firstPurchaseSpins(2)).toBe(1);
+    expect(firstPurchaseSpins(4)).toBe(2);
+    expect(firstPurchaseSpins(6)).toBe(3);
   });
 
-  it('floors partial quantities (buy 6 → 1 spin, buy 3 → 0)', () => {
-    expect(firstPurchaseSpins(6)).toBe(1);
-    expect(firstPurchaseSpins(3)).toBe(0);
-    expect(firstPurchaseSpins(7)).toBe(1);
+  it('floors partial quantities (buy 3 → 1 spin, buy 1 → 0)', () => {
+    expect(firstPurchaseSpins(3)).toBe(1);
+    expect(firstPurchaseSpins(1)).toBe(0);
+    expect(firstPurchaseSpins(7)).toBe(3);
   });
 
-  it('has NO cap — buy 40 first txn → 10 spins', () => {
-    expect(firstPurchaseSpins(40)).toBe(10);
-    expect(firstPurchaseSpins(100)).toBe(25);
+  it('has NO cap — buy 40 first txn → 20 spins', () => {
+    expect(firstPurchaseSpins(40)).toBe(20);
+    expect(firstPurchaseSpins(100)).toBe(50);
   });
 
   it('returns 0 for non-positive / invalid quantities', () => {
@@ -34,12 +34,12 @@ describe('First-purchase bonus math', () => {
   });
 
   describe('computeFirstPurchaseGrant (first-paid-purchase only)', () => {
-    it('first purchase consumes the bonus and grants floor(qty/4)', () => {
-      expect(computeFirstPurchaseGrant(false, 8)).toEqual({ consume: true, spins: 2 });
+    it('first purchase consumes the bonus and grants floor(qty/2)', () => {
+      expect(computeFirstPurchaseGrant(false, 8)).toEqual({ consume: true, spins: 4 });
     });
 
     it('a tiny first purchase still CONSUMES the bonus with 0 spins (all-at-once rule)', () => {
-      expect(computeFirstPurchaseGrant(false, 3)).toEqual({ consume: true, spins: 0 });
+      expect(computeFirstPurchaseGrant(false, 1)).toEqual({ consume: true, spins: 0 });
     });
 
     it('a second purchase grants nothing and does not re-consume', () => {
@@ -74,49 +74,49 @@ describe('First-purchase bonus math', () => {
       const qty = 6;
       const firstPurchase = computeFirstPurchaseGrant(false, qty);
       const mint = computeMintProgress(0, 10, qty);
-      expect(firstPurchase.spins).toBe(1); // 6 → 1 first-purchase spin
+      expect(firstPurchase.spins).toBe(3); // 6 → 3 first-purchase spins
       expect(mint.progressCurrent).toBe(6); // AND Buy-10 shows 6/10
     });
   });
 
   describe('firstPurchaseUpsell (mint-time nudge)', () => {
-    it('buying 1 → need 3 more for the first spin (total 4)', () => {
+    it('buying 1 → need 1 more for the first spin (total 2)', () => {
       expect(firstPurchaseUpsell(1)).toEqual({
         spinsThisPurchase: 0,
-        passesToNextSpin: 3,
-        nextSpinTotal: 4,
+        passesToNextSpin: 1,
+        nextSpinTotal: 2,
       });
     });
 
-    it('buying 5 → 1 spin now, 3 more for the next (total 8)', () => {
+    it('buying 5 → 2 spins now, 1 more for the next (total 6)', () => {
       expect(firstPurchaseUpsell(5)).toEqual({
-        spinsThisPurchase: 1,
-        passesToNextSpin: 3,
-        nextSpinTotal: 8,
+        spinsThisPurchase: 2,
+        passesToNextSpin: 1,
+        nextSpinTotal: 6,
       });
     });
 
-    it('buying 10 → 2 spins now, 2 more for the next (total 12)', () => {
+    it('buying 10 → 5 spins now, next is a full 2 away (total 12)', () => {
       expect(firstPurchaseUpsell(10)).toEqual({
-        spinsThisPurchase: 2,
+        spinsThisPurchase: 5,
         passesToNextSpin: 2,
         nextSpinTotal: 12,
       });
     });
 
-    it('on a multiple of 4 the next spin is a full 4 away', () => {
+    it('on a multiple of 2 the next spin is a full 2 away', () => {
       expect(firstPurchaseUpsell(8)).toEqual({
-        spinsThisPurchase: 2,
-        passesToNextSpin: 4,
-        nextSpinTotal: 12,
+        spinsThisPurchase: 4,
+        passesToNextSpin: 2,
+        nextSpinTotal: 10,
       });
     });
 
-    it('quantity 0 → buy 4 for the first spin', () => {
+    it('quantity 0 → buy 2 for the first spin', () => {
       expect(firstPurchaseUpsell(0)).toEqual({
         spinsThisPurchase: 0,
-        passesToNextSpin: 4,
-        nextSpinTotal: 4,
+        passesToNextSpin: 2,
+        nextSpinTotal: 2,
       });
     });
   });

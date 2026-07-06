@@ -22,12 +22,12 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  // Boris's order (2026-07-03): a NEW user's first card is their welcome
-  // free-spin, then the featured July-4th, then first-purchase, then the new
-  // Pick 6 & 10 — the two launch promos always near the front. Claim-ready /
-  // near-complete promos still bubble above the fixed order (same rules).
+  // Boris's order (2026-07-03, July-4th card removed 2026-07-06): a NEW
+  // user's first card is their welcome free-spin, then first-purchase (now
+  // every-2-passes), then the Pick 6 & 10 — the launch promos always near
+  // the front. Claim-ready / near-complete promos still bubble above the
+  // fixed order (same rules).
   'new-user',       // first-timers only — outranks even the featured pin
-  'buy-bonus',      // "Buy 2 → FREE SPIN" — July 4th weekend; re-hide Sunday night (2026-07-05)
   'first-purchase',
   'pick-10',        // "Pick 6 & 10 → FREE SPINS"
   'mint',           // "Buy 10 → FREE SPIN"
@@ -51,10 +51,10 @@ export const ADMIN_PREVIEW_PROMO_TYPES: PromoType[] = [];
 /**
  * Limited-time featured promo: pinned to position 1 on every surface
  * (above claimable bubbling) and given the big NEW badge treatment.
- * Set to null when no promo is being featured — remove 'buy-bonus'
- * here when the July 4th promo ends (Sunday night 2026-07-05).
+ * Set to null when no promo is being featured — 'buy-bonus' was removed
+ * here when the July 4th promo ended (2026-07-06).
  */
-export const FEATURED_PROMO_TYPE: PromoType | null = 'buy-bonus';
+export const FEATURED_PROMO_TYPE: PromoType | null = null;
 
 /** Display order with the admin-preview types spliced in (before 'mint'). */
 function adminPreviewOrder(): PromoType[] {
@@ -196,11 +196,12 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     return aIdx - bIdx;
   });
 
-  // The first-purchase promo shows a NEW badge only for new users; returning
-  // (BB3) players get the same box without the badge. Derived here so every
-  // surface (home carousel, drafting sidebar, /promos) stays in sync.
+  // The first-purchase promo carries the NEW badge for everyone since the
+  // 2026-07-06 upgrade to every-2-passes (it used to be new-users-only) —
+  // the better terms are news to returning players too. Derived here so
+  // every surface (home carousel, drafting sidebar, /promos) stays in sync.
   return sorted.map((p) => {
-    if (p.type === 'first-purchase') return { ...p, isNew: !opts.isBB3Holder };
+    if (p.type === 'first-purchase') return { ...p, isNew: true };
     // Featured promo always carries the (big) NEW badge on every surface.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
       return { ...p, isNew: true, featured: true };

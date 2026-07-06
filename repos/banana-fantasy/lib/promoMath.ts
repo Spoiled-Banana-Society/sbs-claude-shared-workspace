@@ -5,11 +5,11 @@
 // lib/slowDraftClock.ts). db-firestore imports these and does the I/O.
 
 /** First-purchase bonus: this many paid passes earns one wheel spin. */
-export const FIRST_PURCHASE_PASSES_PER_SPIN = 4;
+export const FIRST_PURCHASE_PASSES_PER_SPIN = 2;
 
 /**
  * Wheel spins earned from a first paid purchase of `quantity` passes.
- * 4 → 1, 8 → 2, 12 → 3 … floored, NO cap. Non-positive / invalid → 0.
+ * 2 → 1, 4 → 2, 6 → 3 … floored, NO cap. Non-positive / invalid → 0.
  */
 export function firstPurchaseSpins(quantity: number): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
@@ -25,7 +25,7 @@ export interface FirstPurchaseGrant {
 
 /**
  * Decide the first-purchase outcome. The bonus is ONE-TIME: the first paid
- * purchase defines it, regardless of size. A tiny first buy (qty < 4) still
+ * purchase defines it, regardless of size. A tiny first buy (qty < 2) still
  * consumes the bonus with 0 spins — you must buy it all in one transaction.
  * A subsequent purchase grants nothing and must not re-consume.
  */
@@ -38,9 +38,9 @@ export function computeFirstPurchaseGrant(
 }
 
 export interface FirstPurchaseUpsell {
-  /** Spins this quantity earns right now (floor(qty / 4)). */
+  /** Spins this quantity earns right now (floor(qty / 2)). */
   spinsThisPurchase: number;
-  /** How many MORE passes to reach the next spin (1..4). */
+  /** How many MORE passes to reach the next spin (1..2). */
   passesToNextSpin: number;
   /** Total quantity at which the next spin lands (qty + passesToNextSpin). */
   nextSpinTotal: number;
@@ -48,8 +48,8 @@ export interface FirstPurchaseUpsell {
 
 /**
  * Drives the first-purchase mint-time nudge ("buy X more for a total of N to
- * earn a spin"). Pure so the message math is unit-tested. At a multiple of 4
- * the user just earned a spin and the next is a full 4 away.
+ * earn a spin"). Pure so the message math is unit-tested. At a multiple of 2
+ * the user just earned a spin and the next is a full 2 away.
  */
 export function firstPurchaseUpsell(quantity: number): FirstPurchaseUpsell {
   const q = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 0;

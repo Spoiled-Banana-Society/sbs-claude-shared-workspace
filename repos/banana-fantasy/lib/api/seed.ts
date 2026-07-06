@@ -320,19 +320,20 @@ const seedPromos: Promo[] = [
     id: '11',
     type: 'first-purchase',
     title: 'First Purchase → FREE SPINS',
-    description: 'Every 4 passes on your first buy = 1 spin',
+    description: 'Every 2 passes on your first buy = 1 spin',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
-    // No NEW ribbon yet — this promo has run since launch. Add isNew: true on
-    // 2026-07-06 when it upgrades to every-2-passes (project_first_purchase_2for1)
-    // and is genuinely new again. isNew is display-only (self-ping removed).
+    // NEW ribbon since 2026-07-06: the promo upgraded from every-4-passes to
+    // every-2-passes when the July 4th Buy-2 promo ended, so it's genuinely
+    // new again. isNew is display-only (self-ping removed).
+    isNew: true,
     claimable: false,
     claimCount: 0,
     modalContent: {
       title: 'First Purchase → FREE SPINS',
       explanation:
-        '• Your very first draft-pass purchase earns Free Banana Spins — every 4 passes = 1 Free Banana Spin.\n• Buy 8 for 2, buy 12 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+        '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
     },
   },
   {

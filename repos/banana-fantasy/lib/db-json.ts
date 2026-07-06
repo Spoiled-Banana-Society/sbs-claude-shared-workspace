@@ -461,8 +461,11 @@ export async function verifyPurchase(purchaseId: string, txHash: string) {
       }
     }
 
-    // Update promo progress for buy-bonus promo.
-    const buyBonusPromo = promos.find((p) => p.type === 'buy-bonus');
+    // Update promo progress for buy-bonus promo (skipped while the promo is
+    // disabled — July 4th run ended 2026-07-06).
+    const buyBonusPromo = API_CONFIG.promos.buyBonus.enabled
+      ? promos.find((p) => p.type === 'buy-bonus')
+      : undefined;
     if (buyBonusPromo) {
       const max = buyBonusPromo.progressMax || 2;
       const current = buyBonusPromo.progressCurrent || 0;

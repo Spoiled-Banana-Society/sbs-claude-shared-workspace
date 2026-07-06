@@ -1264,8 +1264,9 @@ async function _incrementMintPromosInTx(
     tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
   }
 
-  // First-purchase bonus: every 4 passes on the user's FIRST paid purchase = 1
-  // spin. One-time — the durable `firstPurchaseBonusGranted` flag gates it (so
+  // First-purchase bonus: every 2 passes on the user's FIRST paid purchase =
+  // 1 spin (FIRST_PURCHASE_PASSES_PER_SPIN; was 4 until 2026-07-06). One-time
+  // — the durable `firstPurchaseBonusGranted` flag gates it (so
   // retries can't double-grant). Runs in the SAME tx as the mint promo above,
   // so a single purchase advances both atomically (interconnection).
   let firstPurchaseSpinsEarned = 0;
@@ -1288,7 +1289,11 @@ async function _incrementMintPromosInTx(
   }
 
   let buyBonusMilestonesEarned = 0;
-  const buyBonusDoc = promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus');
+  // Gated on config: when the promo is off (July 4th run ended 2026-07-06)
+  // purchases must not bank hidden progress/claims toward it.
+  const buyBonusDoc = API_CONFIG.promos.buyBonus.enabled
+    ? promosSnap.docs.find((doc) => (doc.data() as Promo).type === 'buy-bonus')
+    : undefined;
   if (buyBonusDoc) {
     const buyBonusPromo = deepClone(buyBonusDoc.data() as Promo);
     const bbMax = buyBonusPromo.progressMax || 2;
