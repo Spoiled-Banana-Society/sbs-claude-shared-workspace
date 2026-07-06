@@ -234,10 +234,10 @@ const seedPromos: Promo[] = [
     ctaText: 'Draft Now',
     ctaLink: '/drafting',
     backgroundColor: '#2a2a35',
-    // Visual NEW ribbon only — the client self-ping tied to isNew was removed
-    // 2026-07-03 (one event = one bell; announcements are broadcast-only, and
-    // this promo announces itself per-batch via announcePick10ExpansionIfActivated).
-    isNew: true,
+    // No NEW ribbon (Boris 2026-07-06 — Pick 6 & 10 is a standing promo, not new).
+    // promoFilter also force-clears isNew for 'pick-10' so existing seeded docs
+    // drop the ribbon too; keeping this false for freshly-seeded docs.
+    isNew: false,
     progressCurrent: 0,
     progressMax: 1,
     claimable: false,
@@ -326,7 +326,8 @@ const seedPromos: Promo[] = [
     backgroundColor: '#2a2a35',
     // NEW ribbon since 2026-07-06: the promo upgraded from every-4-passes to
     // every-2-passes when the July 4th Buy-2 promo ended, so it's genuinely
-    // new again. isNew is display-only (self-ping removed).
+    // new again. isNew is display-only (self-ping removed). promoFilter also
+    // force-sets isNew for 'first-purchase' so every existing user sees it too.
     isNew: true,
     claimable: false,
     claimCount: 0,

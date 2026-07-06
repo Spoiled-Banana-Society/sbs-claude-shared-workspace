@@ -22,18 +22,18 @@ import type { Promo, PromoType } from '@/types';
  * 5 standing promos in fixed order.
  */
 export const VISIBLE_PROMO_TYPES_ORDER: PromoType[] = [
-  // Boris's order (2026-07-03, July-4th card removed 2026-07-06): a NEW
-  // user's first card is their welcome free-spin, then first-purchase (now
-  // every-2-passes), then the Pick 6 & 10 — the launch promos always near
-  // the front. Claim-ready / near-complete promos still bubble above the
-  // fixed order (same rules).
+  // Boris's revenue-funnel order (2026-07-06): first-timer's welcome spin →
+  // convert to a first paid buy → drive bulk buys (Buy 10) → repeat paid
+  // drafting (4-in-24h) → engagement reward (Pick 6 & 10) → growth (referral)
+  // → excitement (jackpot). Claim-ready / near-complete promos still bubble
+  // above this fixed order, and new-user stays pinned #1 for first-timers.
   'new-user',       // first-timers only — outranks even the featured pin
-  'first-purchase',
-  'pick-10',        // "Pick 6 & 10 → FREE SPINS"
-  'mint',           // "Buy 10 → FREE SPIN"
-  'daily-drafts',   // "4 drafts daily"
-  'jackpot',
-  'referral',       // "Refer a friend"
+  'first-purchase', // biggest conversion lever: free user → paying user
+  'mint',           // "Buy 10 → FREE SPIN" — biggest revenue per action
+  'daily-drafts',   // "4 drafts in 24h" — repeat paid drafting = recurring rev
+  'pick-10',        // "Pick 6 & 10 → FREE SPINS" — engagement reward
+  'referral',       // "Refer a friend" — top-of-funnel growth
+  'jackpot',        // excitement, least direct on revenue
 ];
 
 export const VISIBLE_PROMO_TYPES = new Set<PromoType>(VISIBLE_PROMO_TYPES_ORDER);
@@ -196,11 +196,15 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     return aIdx - bIdx;
   });
 
-  // The first-purchase promo carries the NEW badge for everyone since the
-  // 2026-07-06 upgrade to every-2-passes (it used to be new-users-only) —
-  // the better terms are news to returning players too. Derived here so
-  // every surface (home carousel, drafting sidebar, /promos) stays in sync.
+  // NO "NEW" badge on the Pick 6 & 10 promo (Boris 2026-07-06) — it's a
+  // standing launch promo, not new. Forced off here regardless of the seeded
+  // value so it drops the ribbon for EVERY existing user immediately, not only
+  // freshly-seeded ones. First-purchase KEEPS its NEW badge (it upgraded to
+  // every-2-passes) — forced on here so every surface (home carousel, drafting
+  // sidebar, /promos) stays in sync. Featured promo still carries the big NEW
+  // badge when one is active (FEATURED is null now that July 4th ended).
   return sorted.map((p) => {
+    if (p.type === 'pick-10') return { ...p, isNew: false };
     if (p.type === 'first-purchase') return { ...p, isNew: true };
     // Featured promo always carries the (big) NEW badge on every surface.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
