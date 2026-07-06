@@ -74,24 +74,6 @@ function useRevealGated(data: BatchProgress | null): RevealGated | null {
   };
 }
 
-// Our own bolt glyph (no fire emoji). Solid for one color, red→gold gradient
-// when both Jackpot and HOF are still live.
-function BoltIcon({ a, b }: { a: string; b: string }) {
-  const mix = a !== b;
-  return (
-    <svg width={10} height={10} viewBox="0 0 24 24" aria-hidden className="shrink-0">
-      {mix && (
-        <defs>
-          <linearGradient id="bpHeatBolt" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor={a} /><stop offset="100%" stopColor={b} />
-          </linearGradient>
-        </defs>
-      )}
-      <path d="M13 2 4 14h6l-1 8 9-12h-6z" fill={mix ? 'url(#bpHeatBolt)' : a} />
-    </svg>
-  );
-}
-
 export function BatchProgressIndicator() {
   const { isLoggedIn } = useAuth();
   const { data } = useBatchProgress();
@@ -147,12 +129,20 @@ export function BatchProgressIndicator() {
     ? Math.min(1, Math.max(0, (HOT_WINDOW - draftsLeft) / HOT_WINDOW)) : 0;
   const hot = heat > 0 && !!accent;
   const a2 = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
-  const haloBg = !accent ? undefined : accent.kind === 'mix'
-    ? `radial-gradient(circle at 28% 50%, ${accent.a}${a2(0.10 + heat * 0.26)}, transparent 60%), radial-gradient(circle at 72% 50%, ${accent.b}${a2(0.10 + heat * 0.26)}, transparent 60%)`
-    : `radial-gradient(circle at 50% 50%, ${accent.a}${a2(0.12 + heat * 0.28)}, transparent 65%)`;
-  const haloShadow = !accent ? undefined : accent.kind === 'mix'
-    ? `-6px 0 ${10 + heat * 22}px ${heat * 3}px ${accent.a}66, 6px 0 ${10 + heat * 22}px ${heat * 3}px ${accent.b}66`
-    : `0 0 ${10 + heat * 26}px ${heat * 5}px ${accent.a}55`;
+  // Heating-up pulse for a STILL-LIVE special (JP red / HOF gold). No pill, no
+  // outer glow — the special's own number + label + % scales and glows in place,
+  // and BOTH the pulse speed and the glow intensity ramp with `heat` (0→~1 as the
+  // batch nears 100 with the special unhit): faster, bigger, brighter the closer
+  // it gets. `--bpScale` feeds the keyframe below; textShadow is the colored glow.
+  const heatPulse = (live: boolean, color: string): React.CSSProperties | undefined =>
+    (hot && live)
+      ? ({
+          animation: `bpHeatPulse ${(1.4 - heat).toFixed(2)}s ease-in-out infinite`,
+          ['--bpScale']: (1.06 + heat * 0.17).toFixed(3),
+          textShadow: `0 0 ${(3 + heat * 9).toFixed(1)}px ${color}${a2(0.5 + heat * 0.45)}, 0 0 ${(7 + heat * 22).toFixed(1)}px ${color}${a2(0.2 + heat * 0.45)}`,
+          willChange: 'transform',
+        } as React.CSSProperties)
+      : undefined;
 
   return (
     <Tooltip
@@ -198,16 +188,15 @@ export function BatchProgressIndicator() {
       }
     >
       <div className="relative flex items-center gap-1.5 mr-1 md:mr-3">
-        {hot && (
-          <div className="pointer-events-none absolute -inset-1 rounded-2xl" style={{ background: haloBg, boxShadow: haloShadow }} />
-        )}
         <div className="relative flex flex-col items-center w-auto min-w-[56px] px-0.5 py-1 cursor-default">
           <span className="text-[13px] sm:text-[16px] font-semibold tabular-nums text-white/75 leading-tight">
             {currentDraft}<span className="text-white/40 font-normal">/{batchEnd}</span>
           </span>
           <div className="flex items-center justify-center gap-[7px] sm:gap-[11px] leading-tight whitespace-nowrap">
-            {/* JP: count + live chance-to-hit (% climbs as Pro drafts resolve, gone once hit) */}
-            <span className="inline-flex items-center gap-[3px]">
+            {/* JP: count + live chance-to-hit (% climbs as Pro drafts resolve, gone once hit).
+                In the hot window while still live, the whole group pulses + glows red,
+                intensifying the closer the batch gets to a guaranteed drop. */}
+            <span className="inline-flex items-center gap-[3px]" style={heatPulse(jLive, JP_RED)}>
               <span className={`text-[12px] sm:text-[14px] font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>
                 {jackpotHit ? '\u2713' : jackpotRemaining}
               </span>
@@ -216,7 +205,7 @@ export function BatchProgressIndicator() {
                 <span className="text-[11px] sm:text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jackpotPct)}</span>
               )}
             </span>
-            <span className="inline-flex items-center gap-[3px]">
+            <span className="inline-flex items-center gap-[3px]" style={heatPulse(hLive, HOF_GOLD)}>
               <span className={`text-[12px] sm:text-[14px] font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>
                 {allHofHit ? '\u2713' : hofRemaining}
               </span>
@@ -227,23 +216,7 @@ export function BatchProgressIndicator() {
             </span>
           </div>
         </div>
-
-        {/* "N left" heat pill \u2014 only in the hot window, colored by what's live */}
-        {hot && accent && (
-          accent.kind === 'mix' ? (
-            <span className="relative inline-block shrink-0 rounded-full p-px" style={{ background: `linear-gradient(90deg, ${accent.a}, ${accent.b})`, animation: `bpHeatPulse ${1.3 - heat}s ease-in-out infinite` }}>
-              <span className="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold" style={{ background: '#0b0c10' }}>
-                <BoltIcon a={accent.a} b={accent.b} />
-                <span style={{ backgroundImage: `linear-gradient(90deg, ${accent.a}, ${accent.b})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent' }}>{draftsLeft} left</span>
-              </span>
-            </span>
-          ) : (
-            <span className="relative inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[9px] font-bold" style={{ color: accent.a, borderColor: `${accent.a}66`, background: `${accent.a}1A`, animation: `bpHeatPulse ${1.3 - heat}s ease-in-out infinite` }}>
-              <BoltIcon a={accent.a} b={accent.b} />{draftsLeft} left
-            </span>
-          )
-        )}
-        <style jsx global>{`@keyframes bpHeatPulse { 0%,100% { transform: scale(1); opacity: .92 } 50% { transform: scale(1.06); opacity: 1 } }`}</style>
+        <style jsx global>{`@keyframes bpHeatPulse { 0%,100% { transform: scale(1); opacity: .9 } 50% { transform: scale(var(--bpScale, 1.08)); opacity: 1 } }`}</style>
       </div>
     </Tooltip>
   );
