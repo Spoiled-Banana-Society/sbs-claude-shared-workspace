@@ -6,7 +6,8 @@ import type { BatchProgress } from '@/lib/api/leagues';
 import { Tooltip } from '../ui/Tooltip';
 import { useAuth } from '@/hooks/useAuth';
 
-const HOT_WINDOW = 20;       // heat starts when ≤ 20 drafts left this batch
+const HEAT_TRIGGER_PCT = 10; // a live special starts pulsing once ITS odds hit 10%
+const HEAT_MAX_PCT = 35;     // …ramping to full intensity by ~35% (a near-lock)
 const JP_RED = '#ef4444';
 const HOF_GOLD = '#D4AF37';
 
@@ -116,26 +117,23 @@ export function BatchProgressIndicator() {
   const jackpotPct = !jackpotHit && rDraftsLeft > 0 ? (jackpotRemaining / rDraftsLeft) * 100 : null;
   const hofPct = !allHofHit && rDraftsLeft > 0 ? (hofRemaining / rDraftsLeft) * 100 : null;
 
-  // ── "Heating up" — in the last 20 drafts of a batch, while a Jackpot and/or
-  // HOF is STILL unclaimed, the counter glows so users know the odds are
-  // climbing and it's time to draft. Color follows WHAT'S LEFT: red (JP only),
-  // gold (HOF only), red→gold blend (both). Driven live by the batch poll.
-  const jLive = !jackpotHit, hLive = !allHofHit;
-  const accent = (jLive && hLive) ? { kind: 'mix' as const, a: JP_RED, b: HOF_GOLD }
-    : jLive ? { kind: 'one' as const, a: JP_RED, b: JP_RED }
-    : hLive ? { kind: 'one' as const, a: HOF_GOLD, b: HOF_GOLD }
-    : null;
-  const heat = (accent && draftsLeft <= HOT_WINDOW)
-    ? Math.min(1, Math.max(0, (HOT_WINDOW - draftsLeft) / HOT_WINDOW)) : 0;
-  const hot = heat > 0 && !!accent;
+  // ── "Heating up" — a still-live special starts pulsing once ITS OWN live odds
+  // reach HEAT_TRIGGER_PCT (10%), then intensifies the higher the % climbs,
+  // maxing out around HEAT_MAX_PCT (a near-lock). Driven by each special's own
+  // chance-to-hit — so JP and HOF light up INDEPENDENTLY (and both, when both
+  // qualify), and more specials still out → higher % → it lights up earlier.
+  // jackpotPct/hofPct are already null once that special is hit, so a hit one
+  // never pulses. The special's number + label + % scales + glows in place;
+  // pulse speed AND glow both ramp with its heat. No pill, no outer box glow.
+  const heatFor = (pct: number | null): number =>
+    pct == null || pct < HEAT_TRIGGER_PCT
+      ? 0
+      : Math.min(1, (pct - HEAT_TRIGGER_PCT) / (HEAT_MAX_PCT - HEAT_TRIGGER_PCT));
+  const jpHeat = heatFor(jackpotPct);
+  const hofHeat = heatFor(hofPct);
   const a2 = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0');
-  // Heating-up pulse for a STILL-LIVE special (JP red / HOF gold). No pill, no
-  // outer glow — the special's own number + label + % scales and glows in place,
-  // and BOTH the pulse speed and the glow intensity ramp with `heat` (0→~1 as the
-  // batch nears 100 with the special unhit): faster, bigger, brighter the closer
-  // it gets. `--bpScale` feeds the keyframe below; textShadow is the colored glow.
-  const heatPulse = (live: boolean, color: string): React.CSSProperties | undefined =>
-    (hot && live)
+  const heatPulse = (heat: number, color: string): React.CSSProperties | undefined =>
+    heat > 0
       ? ({
           animation: `bpHeatPulse ${(1.4 - heat).toFixed(2)}s ease-in-out infinite`,
           ['--bpScale']: (1.06 + heat * 0.17).toFixed(3),
@@ -196,7 +194,7 @@ export function BatchProgressIndicator() {
             {/* JP: count + live chance-to-hit (% climbs as Pro drafts resolve, gone once hit).
                 In the hot window while still live, the whole group pulses + glows red,
                 intensifying the closer the batch gets to a guaranteed drop. */}
-            <span className="inline-flex items-center gap-[3px]" style={heatPulse(jLive, JP_RED)}>
+            <span className="inline-flex items-center gap-[3px]" style={heatPulse(jpHeat, JP_RED)}>
               <span className={`text-[12px] sm:text-[14px] font-bold tabular-nums ${jackpotHit ? 'text-green-400' : 'text-red-400'}`}>
                 {jackpotHit ? '\u2713' : jackpotRemaining}
               </span>
@@ -205,7 +203,7 @@ export function BatchProgressIndicator() {
                 <span className="text-[11px] sm:text-[12px] font-semibold tabular-nums text-red-400">{fmtPct(jackpotPct)}</span>
               )}
             </span>
-            <span className="inline-flex items-center gap-[3px]" style={heatPulse(hLive, HOF_GOLD)}>
+            <span className="inline-flex items-center gap-[3px]" style={heatPulse(hofHeat, HOF_GOLD)}>
               <span className={`text-[12px] sm:text-[14px] font-bold tabular-nums ${allHofHit ? 'text-green-400' : 'text-banana'}`}>
                 {allHofHit ? '\u2713' : hofRemaining}
               </span>
