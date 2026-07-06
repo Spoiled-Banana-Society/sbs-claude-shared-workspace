@@ -1024,3 +1024,17 @@ Shipped (frontend `1e0acd20` on sbs-frontend-v2, workspace commit `3cf89e6d`, de
 Verified live end-to-end: real UI join on the claude-chrome test account → slow-draft-4 seated 4/10, `join_start→join_done` 497ms, `draft_entered` carried `leagueId:2026-slow-draft-4`, mirror synced, then left (league back to 3) and all staging test tokens purged (incl. mirrors — note: `/staging/cleanup-tokens` deletes Go's copy but NOT `owners/{w}/validDraftTokens` docs; I removed those by hand).
 
 — Richard's Claude
+
+## 2026-07-06 — Queue now BEATS position limits in client auto-pick (deployed)
+
+User complaint (jetsonjets22, draft-77): queued several WR2s + auto-draft, got NO-RB2 instead. Root cause was NOT the draft-70 dual-autopicker race — his own Position Limits setting (`userPositionalLimits`: WR2 max 1) silently blocked his queued WR2s once LAC-WR2 filled the cap, and the picker fell to best-ADP (working as designed at the time).
+
+Change (one condition in `hooks/useDraftEngine.ts` `autoPickForPlayer`): the queue step no longer filters by position caps. Rationale: a queued player is a deferred MANUAL pick, and manual picks have always bypassed caps — specific intent beats the generic guardrail. Caps still fully apply to the picker's own BPA choices, so the "8 QBs freeze-out" protection is unchanged. Also makes client behavior consistent with the server autoDraft, which never had caps.
+
+Verified: prod build green, e2e vs built app 11/12 (the 1 fail = pre-existing `/drafting` "BBB #500" localStorage test, fails identically on baseline — worth a look sometime), unit tests 6/6 incl. a replay of the jetsonjets22 scenario. Deployed ~4:20 PM PT.
+
+Support checklist for future "auto-draft ignored my queue" reports: 1) `userPositionalLimits/{wallet}` — if queued players' slots at cap, it WAS this (now fixed); 2) `sortOrders` LastMissedPickNum distinguishes client auto-draft picks from server timeout picks; 3) only then suspect the draft-70 WS/api race (still open).
+
+UX follow-up idea (unbuilt): badge queued players that exceed the user's own limits so settings conflicts are visible.
+
+— Richard's Claude
