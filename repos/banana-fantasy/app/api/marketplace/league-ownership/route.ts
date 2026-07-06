@@ -2,8 +2,29 @@ import { rateLimit, RATE_LIMITS } from '@/lib/rateLimit';
 import { json, jsonError, getSearchParam } from '@/lib/api/routeUtils';
 import { getOnchainOwner } from '@/lib/onchain/ownerOf';
 import { canonTokenId } from '@/lib/onchain/contractSupply';
+import { getAdminFirestore } from '@/lib/firebaseAdmin';
+import { getWalletTrades } from '@/lib/marketplace/activityOwnership';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * On-chain owner ≠ wallet, but is the team really gone? The drafts engine's
+ * token record (draftTokens/{id}.OwnerId) is who it credits the team to — a
+ * pass purchased on a sibling account mints the NFT elsewhere while the engine
+ * (correctly) credits the drafter. Only a marketplace sale by THIS wallet
+ * should hide the team. Errors return false (hide) — same behavior as before.
+ */
+async function engineCreditsWalletUnsold(wallet: string, tokenId: string): Promise<boolean> {
+  try {
+    const doc = await getAdminFirestore().collection('draftTokens').doc(tokenId).get();
+    const ownerId = String(doc.data()?.OwnerId ?? '').toLowerCase();
+    if (!doc.exists || ownerId !== wallet) return false;
+    const { recentSells } = await getWalletTrades(wallet);
+    return !recentSells.has(tokenId);
+  } catch {
+    return false;
+  }
+}
 
 const DRAFTS_API = process.env.NEXT_PUBLIC_STAGING_DRAFTS_API_URL
   || 'https://sbs-drafts-api-staging-652484219017.us-central1.run.app';
@@ -70,7 +91,16 @@ export async function GET(req: Request) {
         const tokenId = tokenByLeague.get(leagueId);
         if (!tokenId) return null; // can't map → don't hide (be conservative)
         const owner = await getOnchainOwner(tokenId);
-        if (owner && owner !== wallet.toLowerCase()) return leagueId; // sold
+        if (owner && owner !== wallet.toLowerCase()) {
+          // Chain says another wallet holds the NFT — but that alone isn't
+          // "sold". A pass paid for on a sibling account mints the NFT to that
+          // wallet while the drafts engine credits (and drafted) it here, and
+          // hiding it strands a real team (Silkyjohnson, 2026-07-06). Trust the
+          // engine's own record: still credited to this wallet AND this wallet
+          // never sold the token → show it. A real sale fails both.
+          if (await engineCreditsWalletUnsold(wallet.toLowerCase(), tokenId)) return null;
+          return leagueId; // sold
+        }
         return null;
       }),
     )).filter((x): x is string => x !== null);
