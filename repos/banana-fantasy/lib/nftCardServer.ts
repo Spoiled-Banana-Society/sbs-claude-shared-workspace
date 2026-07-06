@@ -29,15 +29,33 @@ async function playersWithPicks(id: string, fallback: CardPlayer[]): Promise<Car
     const leagueId = String(dt.get('LeagueId') ?? dt.get('_leagueId') ?? '');
     const owner = String(dt.get('OwnerId') ?? dt.get('_ownerId') ?? '').toLowerCase();
     if (!leagueId || !owner) return fallback;
-    const summary = await Promise.race([
-      getDraftSummary(leagueId),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('summary timeout')), 5000)),
-    ]);
     const picks: Array<{ playerId: string; pickNum: number }> = [];
-    for (const it of (summary as Array<{ playerInfo?: { ownerAddress?: string; playerId?: string; pickNum?: number } }>)) {
-      const info = it?.playerInfo;
-      if (!info?.playerId || (info.ownerAddress || '').toLowerCase() !== owner) continue;
-      picks.push({ playerId: info.playerId, pickNum: Number(info.pickNum) || 0 });
+    // 1) Live Go summary (fast when the draft is recent / still in Redis).
+    try {
+      const summary = await Promise.race([
+        getDraftSummary(leagueId),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('summary timeout')), 5000)),
+      ]);
+      for (const it of (summary as Array<{ playerInfo?: { ownerAddress?: string; playerId?: string; pickNum?: number } }>)) {
+        const info = it?.playerInfo;
+        if (!info?.playerId || (info.ownerAddress || '').toLowerCase() !== owner) continue;
+        picks.push({ playerId: info.playerId, pickNum: Number(info.pickNum) || 0 });
+      }
+    } catch { /* fall through to the durable Firestore summary below */ }
+    // 2) DURABLE fallback: the Go summary is EPHEMERAL (drops out of Redis for
+    //    older drafts), but the same pick list is persisted forever in Firestore
+    //    at drafts/{id}/state/summary (PascalCase fields). This is what makes the
+    //    pick self-heal work for EVERY prior league, not just recent ones.
+    if (picks.length < 10) {
+      picks.length = 0;
+      const sumDoc = await getAdminFirestore()
+        .collection('drafts').doc(leagueId).collection('state').doc('summary').get();
+      const rows = (sumDoc.data()?.Summary ?? []) as Array<{ PlayerInfo?: { PlayerId?: string; OwnerAddress?: string; PickNum?: number } }>;
+      for (const row of rows) {
+        const info = row?.PlayerInfo;
+        if (!info?.PlayerId || (info.OwnerAddress || '').toLowerCase() !== owner) continue;
+        picks.push({ playerId: info.PlayerId, pickNum: Number(info.PickNum) || 0 });
+      }
     }
     if (picks.length < 10) return fallback;
     return picks
@@ -189,15 +207,31 @@ export async function resolveCard(tokenId: string, owner?: string | null): Promi
           const leagueNo = leagueNoFromAttrs(attrs);
           const stored = String(d.Image ?? '');
           const useStored = isOgImage(stored) && !isPreRevealOg(stored);
-          // Pick source priority when BUILDING: durable stored players (our
-          // Firestore, no Go needed) → live Go summary self-heal → pick-less
-          // attributes. So once captured, the card never depends on the Go API.
-          const cardPlayers = useStored
-            ? players
-            : indexPlayers ?? await playersWithPicks(id, players);
-          const image = useStored
-            ? stored
-            : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
+          // PICK-BEARING priority so a plain VIEW never downgrades a captured team
+          // back to the pick-less attribute roster (which then re-stamped the index
+          // pick-less — the bug that wiped picks/ADP on every view). Order:
+          //   1. durable index players that ALREADY carry picks → trust them (+ the
+          //      stored image); leaves already-complete teams untouched.
+          //   2. else self-heal the pick list from the draft summary (durable
+          //      Firestore fallback) and REBUILD the image so picks/ADP/bye show.
+          //   3. else (no summary anywhere) keep the pick-less attribute roster.
+          const hasPicks = (ps: CardPlayer[] | null): ps is CardPlayer[] =>
+            !!ps && ps.length >= 10 && ps.some((p) => p.pick !== '-' && p.pick != null);
+          let cardPlayers: CardPlayer[];
+          let image: string;
+          if (hasPicks(indexPlayers)) {
+            cardPlayers = indexPlayers;
+            image = useStored ? stored : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
+          } else {
+            const healed = await playersWithPicks(id, players);
+            if (hasPicks(healed)) {
+              cardPlayers = healed;
+              image = buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
+            } else {
+              cardPlayers = players;
+              image = useStored ? stored : buildOgCardUrl({ tier: tierFromLevel(level), passNo: id, teamNo: id, leagueNo, players: cardPlayers });
+            }
+          }
           return { image, drafted: true, level, players: cardPlayers };
         }
       }
