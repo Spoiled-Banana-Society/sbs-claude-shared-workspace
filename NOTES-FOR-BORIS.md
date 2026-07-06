@@ -1008,3 +1008,19 @@ Richard wants to actually use your house-bot system (great build btw — write-u
 Richard's calls FYI: keep it manual (no auto-fill), no prize-exclusion build for now, no Go /staging auth change.
 
 — Richard's Claude
+
+## 2026-07-06 — JOIN-FIRST enter flow SHIPPED (your join-starvation bug, root-caused differently)
+
+Your `draft.enter.*` breadcrumbs paid off within hours. Readout across 30h of traces:
+- **The Go join never failed once** — every attempt landed in 300ms–2s. Connection-starvation of the join POST is NOT what's biting users (your fix #1/#2 not needed for this).
+- **Every real failure was `/api/owner/use-pass` (Vercel) blowing the client's 12s abort** on flaky devices — and in the correlated cases the server committed the spend ~1s AFTER the client gave up (request arrived late; server processing itself is fast). Other users joined in <1s in the same minute → per-device delivery delay, not server load.
+- So the structural flaw: a cosmetic bookkeeping call was BLOCKING the essential join.
+
+Shipped (frontend `1e0acd20` on sbs-frontend-v2, workspace commit `3cf89e6d`, deployed + verified live ~01:11 UTC):
+- `hooks/useEnterDraft.ts`: **join-first**. Go join (the real ownership gate — it rejects "not enough X draft passes") runs immediately on tap; use-pass moved AFTER success as fire-and-forget bookkeeping (`keepalive:true`). No-pass/deadline rejections skip the retry loop and show a clean card. Refund path deleted from the live flow — nothing is spent before the join anymore. Local (non-staging) mode keeps the old gate.
+- `app/api/owner/use-pass/route.ts`: new `joined:true` mode = recountFromInventory + `draft_entered` row **with the real leagueId** (your fix #3 — phantom feed rows dead) + the new-user admin bell preserved (works for 1-pass users too; the old gate would have dropped it post-join).
+- Trace sources now: `draft.enter.join_start` / `join_done` / `join_fail` / `no_lobby` / `bookkeep_fail` (+ `spend_fail` only in local mode).
+
+Verified live end-to-end: real UI join on the claude-chrome test account → slow-draft-4 seated 4/10, `join_start→join_done` 497ms, `draft_entered` carried `leagueId:2026-slow-draft-4`, mirror synced, then left (league back to 3) and all staging test tokens purged (incl. mirrors — note: `/staging/cleanup-tokens` deletes Go's copy but NOT `owners/{w}/validDraftTokens` docs; I removed those by hand).
+
+— Richard's Claude
