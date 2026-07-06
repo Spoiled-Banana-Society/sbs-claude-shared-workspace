@@ -85,7 +85,7 @@ export async function alertAdminsNewUserDraftEvent(opts: {
     const db = getAdminFirestore();
     const userRef = db.collection('v2_users').doc(userId);
     const u = (await userRef.get()).data() as
-      | { createdAt?: string; isReturningPlayer?: boolean; username?: string }
+      | { createdAt?: string; isReturningPlayer?: boolean; username?: string; bananaNumber?: number }
       | undefined;
     // SAME returning rule as the admin NEW/OLD chips: the doc flag OR the
     // past-season wallet snapshot (flag-only missed OLD-via-snapshot users).
@@ -104,9 +104,16 @@ export async function alertAdminsNewUserDraftEvent(opts: {
     const admins = getAdminBellWallets();
     if (admins.length === 0) return;
 
-    const name = u?.username && !/^user-0x/i.test(u.username)
-      ? u.username
-      : `${userId.slice(0, 6)}…${userId.slice(-4)}`;
+    // ALWAYS show the name Boris knows them by (Boris 2026-07-05: "it never
+    // said the username's name"). Resolve to: their real chosen username →
+    // else the server-assigned "Banana#####" default handle they actually
+    // display as → and only fall back to a short wallet if neither exists.
+    // Never surfaces the raw "User-0x…" placeholder or a bare wallet when a
+    // real handle is available.
+    const raw = (u?.username || '').trim();
+    const realUsername = raw && !/^user-0x/i.test(raw) && !/^0x[0-9a-f]{6,}/i.test(raw) ? raw : null;
+    const name = realUsername
+      ?? (typeof u?.bananaNumber === 'number' ? `Banana${u.bananaNumber}` : `${userId.slice(0, 6)}…${userId.slice(-4)}`);
     const speedLabel = speed === 'slow' ? 'SLOW draft'
       : speed === 'fast' ? 'FAST draft'
       : leagueId?.includes('-slow-') ? 'SLOW draft'
@@ -114,15 +121,19 @@ export async function alertAdminsNewUserDraftEvent(opts: {
       : 'draft';
     const joined = action === 'joined';
     const suffix = leagueId ? ` (${leagueId})` : '';
-    const title = joined ? `New user entered a ${speedLabel}` : `New user LEFT a ${speedLabel} lobby`;
+    // Both events are pre-fill by definition (the alert only fires for a
+    // filling lobby, and you can't leave once it's filled) — state it plainly.
+    const title = joined
+      ? `${name} joined a filling ${speedLabel}`
+      : `${name} LEFT a ${speedLabel} before it filled`;
     const message = joined
-      ? `${name} — a NEW account — just took a seat in a ${speedLabel}${suffix}.`
-      : `${name} — a NEW account — just LEFT a ${speedLabel} lobby${suffix}.`;
+      ? `${name} — a NEW account — just took a seat in a filling ${speedLabel}${suffix}.`
+      : `${name} — a NEW account — just LEFT a ${speedLabel} lobby before it filled${suffix}.`;
     const icon = joined ? '🆕' : '👋';
     const dedupeKey = `admin-new-user-${joined ? 'in' : 'left'}-draft-${userId}-${leagueId ?? 'unknown'}`;
     const emailSubject = joined
-      ? `🆕 New user in a ${speedLabel}: ${name}`
-      : `👋 New user left a ${speedLabel}: ${name}`;
+      ? `🆕 ${name} — new user in a filling ${speedLabel}`
+      : `👋 ${name} — new user left a ${speedLabel} before it filled`;
 
     await Promise.allSettled([
       ...admins.map((w) => createNotification(w, {
