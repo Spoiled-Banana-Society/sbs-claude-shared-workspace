@@ -3100,11 +3100,11 @@ export async function announcePick10ExpansionIfActivated(): Promise<void> {
     }
 
     const title = tier === 'all'
-      ? 'MAX Promo — Pick 6, 9 & 10 Free Spins'
+      ? 'New Promo — Pick 6, 9 & 10 Free Spins'
       : 'New Promo — Pick 6 & 10 Free Spins';
     const message = tier === 'all'
-      ? 'All specials hit — Pick 6, 9 & 10 each win a Free Spin until the next batch begins!'
-      : 'The Jackpot has been hit — Pick 6 and Pick 10 now each win a Free Spin until the batch ends!';
+      ? 'Every special is hit (the Jackpot + all 5 HOF) — so Pick 6, 9 AND 10 now each win a Free Spin, until the next batch begins!'
+      : 'The Jackpot has been hit — so Pick 6 and Pick 10 now each win a Free Spin, until the batch ends!';
     const link = '/promos';
     // Batch+tier-scoped dedupeKey → each user gets exactly one bell per tier.
     const dedupeKey = guardId;
