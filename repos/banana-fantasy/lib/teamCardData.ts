@@ -13,7 +13,13 @@ export function toCardPlayer(playerId: string, position: string, pick: number | 
   const [team, posFromId] = playerId.split('-');
   return {
     team: team || '',
-    pos: position || posFromId || '',
+    // Position comes from the playerId FIRST — it's the actual drafted player
+    // ("DAL-WR2" → "WR2"), same source the final NFT card parses. The passed
+    // `position` is the engine's ROSTER-SLOT label (e.g. a WR2 pick sitting in
+    // your first WR slot reads "WR1"), so preferring it made the generating
+    // screen drop every "2" (DAL WR2 → DAL WR1) until the real card loaded and
+    // corrected it. playerId wins; `position` is only a fallback for a malformed id.
+    pos: posFromId || position || '',
     bye: meta?.byeWeek ?? '-',
     adp: meta?.adp ?? '-',
     pick: pick ?? '-',
