@@ -63,13 +63,17 @@ export async function POST(req: Request) {
     if (!result.available) {
       return NextResponse.json({ error: result.reason || 'taken', reason: result.reason }, { status: 409 });
     }
-    // Refresh the referral code to the new name immediately (real-time) so it
-    // matches the username. Best-effort: never fail the rename if this hiccups —
-    // getPromos re-derives it on the next read regardless.
-    try {
-      const { ensureNamedReferralCode } = await import('@/lib/db');
-      await ensureNamedReferralCode(wallet);
-    } catch { /* non-fatal — referral self-heals on next promos read */ }
+    // Refresh the referral code to match the new name in the BACKGROUND — do
+    // NOT block the response on it. It's best-effort and getPromos re-derives it
+    // on the next read regardless, so it never needed to be awaited. Awaiting it
+    // stacked another ensureUserSeeded + userRef.get() + (possibly) a Banana#
+    // assignment on TOP of the Privy verify + claim transaction, so the "Saving…"
+    // spinner hung for seconds on a weak mobile connection even though the name
+    // was already claimed. Fire-and-forget → the rename returns the instant the
+    // name is reserved.
+    void import('@/lib/db')
+      .then(({ ensureNamedReferralCode }) => ensureNamedReferralCode(wallet))
+      .catch(() => { /* non-fatal — referral self-heals on next promos read */ });
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });
