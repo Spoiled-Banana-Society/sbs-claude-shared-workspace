@@ -458,6 +458,30 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // needed.
   const seedById = new Map(seedList.map(p => [p.id, p]));
 
+  // The Pick-slot promo is a LIVE LADDER — its title + NEW badge track the
+  // batch's current tier so the CARD matches the broadcast bells
+  // (announcePick10ExpansionIfActivated):
+  //   base (Jackpot still hiding)    → "Pick 10 → FREE SPIN",        no NEW
+  //   jp   (Jackpot hit)             → "Pick 6 & 10 → FREE SPINS"     + NEW
+  //   all  (Jackpot + all 5 HOF hit) → "Pick 6, 9 & 10 → FREE SPINS"  + NEW
+  // Reverts to base automatically when the next 100-batch begins. The modal
+  // explanation covers the full escalating ladder in every tier. (isNew is set
+  // here, server-side — promoFilter no longer forces it off for pick-10.)
+  let pickTier: 'base' | 'jp' | 'all' = 'base';
+  try { pickTier = (await getPick10ActiveSlots()).tier; } catch { /* fall back to base copy */ }
+  const PICK_LADDER_EXPLANATION =
+    '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
+    + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
+    + '• When every special is gone (Jackpot + all 5 HOF), Pick 9 unlocks too — Pick 6, 9 & 10 each win a Free Spin.\n'
+    + '• The reward escalates as the batch’s chase prizes run out, then resets when the next 100-draft batch begins.\n'
+    + '• Every Spin wins Free Drafts — up to 20, minimum 1.\n'
+    + '• Paid Drafts Only.';
+  const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = {
+    base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
+    jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: true },
+    all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
+  };
+
   return allDocs.map((promo) => {
     const seed = seedById.get(promo.id);
     if (seed) {
@@ -532,6 +556,18 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     if (promo.type === 'new-user' && hasVerifiedTwitter && !newUserPromoAlreadyClaimed && !newUserBlocked) {
       promo.claimable = true;
       promo.claimCount = Math.max(promo.claimCount ?? 0, 1);
+    }
+    // Pick-slot promo: overlay the LIVE tier copy (title + NEW badge + full
+    // ladder explanation) AFTER the static seed overlay above, so the card
+    // reflects the batch's current tier and matches the bells.
+    if (promo.type === 'pick-10') {
+      const c = PICK_TIER_COPY[pickTier];
+      promo.title = c.title;
+      promo.description = c.description;
+      promo.isNew = c.isNew;
+      promo.modalContent = promo.modalContent || {};
+      promo.modalContent.title = c.title;
+      promo.modalContent.explanation = PICK_LADDER_EXPLANATION;
     }
     return promo;
   }).filter((promo) => !(promo.type === 'new-user' && newUserBlocked)); // returning players never see the new-user promo (unless force-granted)

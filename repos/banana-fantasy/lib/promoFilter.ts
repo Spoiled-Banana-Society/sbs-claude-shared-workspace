@@ -196,15 +196,14 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
     return aIdx - bIdx;
   });
 
-  // NO "NEW" badge on the Pick 6 & 10 promo (Boris 2026-07-06) — it's a
-  // standing launch promo, not new. Forced off here regardless of the seeded
-  // value so it drops the ribbon for EVERY existing user immediately, not only
-  // freshly-seeded ones. First-purchase KEEPS its NEW badge (it upgraded to
-  // every-2-passes) — forced on here so every surface (home carousel, drafting
-  // sidebar, /promos) stays in sync. Featured promo still carries the big NEW
-  // badge when one is active (FEATURED is null now that July 4th ended).
+  // The Pick-slot promo's NEW badge is now driven SERVER-SIDE by its live tier
+  // (getPromos: base = no NEW, jp/all = NEW), so it's NOT forced here anymore —
+  // the server value flows through. First-purchase KEEPS its NEW badge (it
+  // upgraded to every-2-passes) — forced on here so every surface (home
+  // carousel, drafting sidebar, /promos) stays in sync. Featured promo still
+  // carries the big NEW badge when one is active (FEATURED is null now that
+  // July 4th ended).
   return sorted.map((p) => {
-    if (p.type === 'pick-10') return { ...p, isNew: false };
     if (p.type === 'first-purchase') return { ...p, isNew: true };
     // Featured promo always carries the (big) NEW badge on every surface.
     if (FEATURED_PROMO_TYPE && p.type === FEATURED_PROMO_TYPE) {
