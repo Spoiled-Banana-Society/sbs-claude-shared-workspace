@@ -462,8 +462,8 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // batch's current tier so the CARD matches the broadcast bells
   // (announcePick10ExpansionIfActivated):
   //   base (Jackpot still hiding)    → "Pick 10 → FREE SPIN",        no NEW
-  //   jp   (Jackpot hit)             → "Pick 6 & 10 → FREE SPINS"     + NEW
-  //   all  (Jackpot + all 5 HOF hit) → "Pick 6, 9 & 10 → FREE SPINS"  + NEW
+  //   jp   (Jackpot hit)             → "Pick 6 & 10 → FREE SPINS"     no NEW
+  //   all  (Jackpot + all 5 HOF hit) → "Pick 6, 9 & 10 → FREE SPINS"  + NEW  ← only tier with the NEW badge
   // Reverts to base automatically when the next 100-batch begins. The modal
   // explanation covers the full escalating ladder in every tier. (isNew is set
   // here, server-side — promoFilter no longer forces it off for pick-10.)
@@ -478,7 +478,7 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     + '• Paid Drafts Only.';
   const PICK_TIER_COPY: Record<'base' | 'jp' | 'all', { title: string; description: string; isNew: boolean }> = {
     base: { title: 'Pick 10 → FREE SPIN', description: 'Hit Pick 10 in a paid draft for a Free Spin', isNew: false },
-    jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: true },
+    jp: { title: 'Pick 6 & 10 → FREE SPINS', description: 'Jackpot hit — Pick 6 & 10 each win a Free Spin', isNew: false },
     all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
   };
 
