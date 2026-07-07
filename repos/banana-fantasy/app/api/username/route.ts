@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { getPrivyUser } from '@/lib/auth';
 import { ApiError } from '@/lib/api/errors';
 import { checkUsername, claimUsername } from '@/lib/usernames';
+import { runInBackground } from '@/lib/serverBackground';
 
 // Resolve the caller's wallet. getPrivyUser still authenticates them (throws
 // 401 on a bad/absent token), so only a logged-in user reaches the fallback:
@@ -63,17 +64,19 @@ export async function POST(req: Request) {
     if (!result.available) {
       return NextResponse.json({ error: result.reason || 'taken', reason: result.reason }, { status: 409 });
     }
-    // Refresh the referral code to match the new name in the BACKGROUND — do
-    // NOT block the response on it. It's best-effort and getPromos re-derives it
-    // on the next read regardless, so it never needed to be awaited. Awaiting it
-    // stacked another ensureUserSeeded + userRef.get() + (possibly) a Banana#
-    // assignment on TOP of the Privy verify + claim transaction, so the "Saving…"
-    // spinner hung for seconds on a weak mobile connection even though the name
-    // was already claimed. Fire-and-forget → the rename returns the instant the
-    // name is reserved.
-    void import('@/lib/db')
-      .then(({ ensureNamedReferralCode }) => ensureNamedReferralCode(wallet))
-      .catch(() => { /* non-fatal — referral self-heals on next promos read */ });
+    // Refresh the referral code to match the new name WITHOUT blocking the
+    // response — but via runInBackground (waitUntil-backed) so it's GUARANTEED
+    // to finish right after the response instead of being killed when the lambda
+    // freezes. This keeps the rename fast (was: awaited, which stacked another
+    // ensureUserSeeded + userRef.get() + a Banana# assignment on top of the Privy
+    // verify + claim transaction → "Saving…" hung for seconds on weak mobile)
+    // AND keeps the stored referral doc updated immediately, so the /r/NewName
+    // link is right everywhere the instant the name is claimed — not only on the
+    // next /referrals read. The name itself is already committed above.
+    runInBackground(
+      'username.referral_refresh',
+      import('@/lib/db').then(({ ensureNamedReferralCode }) => ensureNamedReferralCode(wallet)),
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status });
