@@ -467,8 +467,12 @@ export async function getPromos(userId: string): Promise<Promo[]> {
   // Reverts to base automatically when the next 100-batch begins. The modal
   // explanation covers the full escalating ladder in every tier. (isNew is set
   // here, server-side — promoFilter no longer forces it off for pick-10.)
+  // DISPLAY tier (not the credit tier): at a batch boundary this reverts to
+  // base ("Pick 10") the instant the batch's last draft fills, so the card never
+  // confuses people by still advertising "Pick 6, 9 & 10" after the batch ended.
+  // Crediting is unaffected — reveal-complete still uses getPick10ActiveSlots.
   let pickTier: 'base' | 'jp' | 'all' = 'base';
-  try { pickTier = (await getPick10ActiveSlots()).tier; } catch { /* fall back to base copy */ }
+  try { pickTier = (await getPick10DisplayTier()).tier; } catch { /* fall back to base copy */ }
   const PICK_LADDER_EXPLANATION =
     '• Hit Pick 10 in any paid draft → Free Banana Spin.\n'
     + '• When this batch’s Jackpot is hit, Pick 6 unlocks too — Pick 6 & 10 each win a Free Spin.\n'
@@ -3016,7 +3020,7 @@ interface BatchSpecialsState {
   jpHit: boolean;
 }
 
-async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
+async function getBatchSpecialsState(opts?: { display?: boolean }): Promise<BatchSpecialsState> {
   const db = getAdminFirestore();
   const snap = await db.collection('drafts').doc('draftTracker').get();
   if (!snap.exists) return { allHit: false, jpHit: false, batchStart: 0, filled: 0 };
@@ -3027,7 +3031,16 @@ async function getBatchSpecialsState(): Promise<BatchSpecialsState> {
   const hofIds = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
   const current = filled % 100;
   let batchStart = filled - current;
-  if (current === 0 && filled > 0) batchStart = filled - 100;
+  if (current === 0 && filled > 0) {
+    // At a batch boundary (e.g. FilledLeaguesCount=100 — the batch's last draft
+    // just filled) the two views diverge (Boris 2026-07-08):
+    //   • CREDIT view (default): stay on the just-completed batch, so league
+    //     100's OWN reveal still awards its batch's Pick 6/9/10 tier.
+    //   • DISPLAY view: advance to the NEXT batch, so the promo card + dashboard
+    //     show the fresh "Pick 10 / 1 JP / 5 HOF" the moment the batch closes,
+    //     not the spent all-hit state. Deductions begin as the new batch fills.
+    batchStart = opts?.display ? filled : filled - 100;
+  }
   const hitInBatch = (ids: number[]) => ids.filter((id) => id > batchStart && id <= filled).length;
   const jackpotRemaining = Math.max(0, 1 - hitInBatch(jpIds));
   const hofRemaining = Math.max(0, 5 - hitInBatch(hofIds));
@@ -3050,6 +3063,23 @@ export async function allBatchSpecialsHit(): Promise<boolean> {
  */
 export async function getPick10ActiveSlots(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
   const state = await getBatchSpecialsState();
+  if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
+  if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
+  return { slots: [10], tier: 'base', batchStart: state.batchStart };
+}
+
+/**
+ * DISPLAY-ONLY tier for the promo CARD (Boris 2026-07-08). Identical to
+ * getPick10ActiveSlots EXCEPT at a batch boundary: the moment the batch's last
+ * draft fills (FilledLeaguesCount hits a multiple of 100), this shows the NEXT
+ * batch's fresh tier — base = "Pick 10" — so the card doesn't confuse people by
+ * still advertising "Pick 6, 9 & 10" after the batch has ended. It NEVER touches
+ * crediting: getPick10ActiveSlots (above) is what reveal-complete/refresh-draft
+ * use to actually award spins, and it stays on the just-completed batch so league
+ * 100's own reveal still pays out its earned Pick 6/9/10.
+ */
+export async function getPick10DisplayTier(): Promise<{ slots: number[]; tier: 'base' | 'jp' | 'all'; batchStart: number }> {
+  const state = await getBatchSpecialsState({ display: true });
   if (state.allHit) return { slots: [6, 9, 10], tier: 'all', batchStart: state.batchStart };
   if (state.jpHit) return { slots: [6, 10], tier: 'jp', batchStart: state.batchStart };
   return { slots: [10], tier: 'base', batchStart: state.batchStart };

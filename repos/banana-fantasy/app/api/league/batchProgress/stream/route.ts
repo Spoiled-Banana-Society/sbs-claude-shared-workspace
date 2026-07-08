@@ -50,10 +50,14 @@ function buildPayload(data: Record<string, unknown> | undefined): BatchProgress 
   const hofIds: number[] = Array.isArray(d.HofLeagueIds) ? (d.HofLeagueIds as number[]) : [];
 
   const current = filled % 100;
-  // At a batch boundary (filled%100==0 and filled>0), the just-completed
-  // batch is still the relevant one — same fix as the Go side.
+  // DISPLAY-ONLY: at a batch boundary (filled%100==0 and filled>0 — the batch's
+  // last draft just filled) advance to the NEXT batch so the header shows the
+  // fresh "1 JP / 5 HOF" immediately, instead of the spent all-hit state (Boris
+  // 2026-07-08). The real deductions still begin only as the next batch's drafts
+  // fill (their ids are > this batchStart). Nothing in crediting/VRF changes —
+  // this route is pure display.
   let batchStart = filled - current;
-  if (current === 0 && filled > 0) batchStart = filled - 100;
+  if (current === 0 && filled > 0) batchStart = filled;
 
   let jackpotsHit = 0;
   for (const id of jpIds) {
