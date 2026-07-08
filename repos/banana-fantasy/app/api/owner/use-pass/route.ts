@@ -6,6 +6,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { addActivityEventToTx, buildActivityEventDoc } from '@/lib/activityEvents';
 import { countSpendableTokens, recountFromInventory } from '@/lib/passLedger';
 import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 
 const USERS_COLLECTION = 'v2_users';
@@ -69,7 +70,7 @@ export async function POST(req: Request) {
       // One transaction: mirror ← real inventory (Go already consumed the
       // token) + the draft_entered feed row. Self-correcting by construction.
       const counts = await recountFromInventory(userId, activityDoc);
-      void alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId });
+      runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
       return json({
         success: true,
         joined: true,
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
     // lobby" ping (refund-pass), via the shared helper so they never drift.
     // Fire-and-forget: a bell/email failure must never affect the join.
     if (result.decremented) {
-      void alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId });
+      runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'joined', speed, leagueId }));
     }
 
     return json({

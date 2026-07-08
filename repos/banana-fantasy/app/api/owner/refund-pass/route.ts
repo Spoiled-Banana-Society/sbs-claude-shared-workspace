@@ -6,6 +6,7 @@ import { getAdminFirestore, isFirestoreConfigured } from '@/lib/firebaseAdmin';
 import { buildActivityEventDoc } from '@/lib/activityEvents';
 import { recountFromInventory } from '@/lib/passLedger';
 import { alertAdminsNewUserDraftEvent } from '@/lib/adminAlerts';
+import { runInBackground } from '@/lib/serverBackground';
 import { logger } from '@/lib/logger';
 
 /**
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
     // join-failure refund. Speed derives from the leagueId (the "…-fast-…" /
     // "…-slow-…" draft id). Fire-and-forget: never affects the refund.
     if (reason === 'leave') {
-      void alertAdminsNewUserDraftEvent({ userId, action: 'left', leagueId });
+      runInBackground('admin.new_user_draft_event', alertAdminsNewUserDraftEvent({ userId, action: 'left', leagueId }));
     }
 
     return json({

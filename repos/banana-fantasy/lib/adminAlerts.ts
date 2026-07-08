@@ -69,8 +69,12 @@ export async function sendAdminAlertEmail(subject: string, line: string): Promis
  * `action`: 'joined' (seat taken via use-pass) or 'left' (leave via refund-pass).
  * `speed`: explicit fast/slow from the client (join — the leagueId isn't known
  * yet), else derived from `leagueId` (leave — leagueId IS the "…-fast-…"/"…-slow-…"
- * draft id). One bell + one email per user+draft+action (dedupeKey), so a
- * re-entry never double-pings.
+ * draft id). The dedupeKey is UNIQUE PER EVENT (the event time is appended), so
+ * EVERY join and EVERY leave pings — a new user joining/leaving the SAME draft 5
+ * times sends 5 bells + 5 emails (Boris 2026-07-07: "tell me every time, 100%").
+ * The old per-user+draft+action key suppressed every re-entry after the first,
+ * which is why pings went missing. Delivery is via runInBackground (waitUntil)
+ * at the call sites so a lambda freeze can't drop the bell/email either.
  */
 export async function alertAdminsNewUserDraftEvent(opts: {
   userId: string;
@@ -130,7 +134,10 @@ export async function alertAdminsNewUserDraftEvent(opts: {
       ? `${name} — a NEW account — just took a seat in a filling ${speedLabel}${suffix}.`
       : `${name} — a NEW account — just LEFT a ${speedLabel} lobby before it filled${suffix}.`;
     const icon = joined ? '🆕' : '👋';
-    const dedupeKey = `admin-new-user-${joined ? 'in' : 'left'}-draft-${userId}-${leagueId ?? 'unknown'}`;
+    // UNIQUE PER EVENT (append the event time) so every join/leave pings — same
+    // user + same draft, 5 times = 5 pings. NOT keyed per user+draft+action (that
+    // suppressed re-entries). Same key drives the bell + the email for THIS event.
+    const dedupeKey = `admin-new-user-${joined ? 'in' : 'left'}-draft-${userId}-${leagueId ?? 'unknown'}-${Date.now()}`;
     const emailSubject = joined
       ? `🆕 ${name} — new user in a filling ${speedLabel}`
       : `👋 ${name} — new user left a ${speedLabel} before it filled`;
