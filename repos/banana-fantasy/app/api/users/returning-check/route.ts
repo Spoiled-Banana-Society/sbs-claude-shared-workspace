@@ -72,35 +72,10 @@ export async function POST(req: Request) {
       });
 
 
-      // 2) Founder Draft — day-before + day-of bells, once each, when a schedule
-      //    is active. Driven off the founder schedule singleton (PT dates).
-      const fsSnap = await db.collection('founderSchedule').doc('next').get();
-      const fs = fsSnap.exists ? (fsSnap.data() as { at?: string; active?: boolean }) : null;
-      const eventMs = fs?.active && typeof fs.at === 'string' ? Date.parse(fs.at) : NaN;
-      if (Number.isFinite(eventMs)) {
-        const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
-        const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
-        const todayPT = ptDate(Date.now());
-        const eventDayPT = ptDate(eventMs);
-        // Key on the event timestamp (to the minute), not just the date, so if
-        // the admin CHANGES the scheduled time the bell re-fires for the new
-        // time on the user's next load (still once-per-time — no spam).
-        const key = new Date(eventMs).toISOString().slice(0, 16);
-        // Day-OF bell fires on login (Wed). The day-BEFORE "tomorrow" ping is
-        // NOT on login anymore — it's a single 6PM-PT broadcast to all users
-        // (/api/crons/founder-teaser) so it doesn't get buried in the launch-day
-        // onboarding flood. Same dedupeKey there, so no double-ping.
-        if (todayPT === eventDayPT && Date.now() < eventMs) {
-          await createNotification(wallet, {
-            type: 'founder_draft',
-            title: `Founder Draft today — ${timePT}`,
-            message: 'The Founder Draft drops today. Tap to learn how Founder Drafts work.',
-            link: '/faq#founder-draft',
-            dedupeKey: `founder-today-${key}`,
-            icon: 'crown',
-          });
-        }
-      }
+      // 2) Founder Draft — the ONLY founder ping is now a single day-of broadcast
+      //    at ~5am PT to every user (/api/crons/founder-teaser). No day-before
+      //    ping and no second on-login ping (Boris 2026-07-08: "only one ping
+      //    about founder draft"), so nothing fires here anymore.
     } catch { /* non-fatal — never block the returning check on a bell write */ }
 
     // Already decided for this account → cheap idempotent answer.

@@ -16,18 +16,18 @@ function authed(req: Request): boolean {
 /**
  * GET /api/crons/founder-teaser  (hourly Vercel cron + manual admin trigger)
  *
- * Sends the "Founder Draft tomorrow — <time> PT" BELL (no toast, real-time via
- * createNotification) to EVERY logged-in user, ONCE, at exactly 24h before the
- * Founder Draft (i.e. the day-before at the same clock time). On launch day the
- * Founder Draft is Wed 6PM PT, so this fires Tue 6PM PT — a single clean ping
- * that lands well after the launch-hour onboarding flood, not buried in it.
+ * The ONE and ONLY Founder Draft ping (Boris 2026-07-08: "only one ping about
+ * founder draft"): a single day-OF broadcast at ~5am PT to EVERY logged-in user
+ * — "Weekly Founder Draft today at <time> PT" — that deep-links to the Founder
+ * Draft FAQ. Real-time bell via createNotification (no toast). There is no
+ * day-before ping and no second on-login ping (both removed).
  *
- * The day-OF bell stays on-login (returning-check). The day-BEFORE on-login
- * bell was removed so the only "tomorrow" ping is this broadcast.
- *
- * Idempotent two ways: a `teaserBroadcastKey` flag on the schedule doc stops a
- * re-broadcast, and each user's bell uses the SAME dedupeKey as the on-login
- * path (`founder-tomorrow-<eventDate>`) so no one can be double-pinged.
+ * "~5am PT": the cron ticks hourly, so this fires on the FIRST tick on the event
+ * day at/after 5am PT (i.e. the 5am PT tick), never earlier. Idempotent via
+ * `teaserDayofKey` on the schedule doc — later ticks that day no-op — and each
+ * user's bell is deduped on `founder-today-<minuteKey>`, so no one is doubled.
+ * Keying on the event minute means an admin re-time re-fires cleanly for the new
+ * time (fresh key), still once.
  *
  * Auth: Vercel injects `Authorization: Bearer ${CRON_SECRET}`.
  */
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     const db = getAdminFirestore();
     const fsRef = db.collection('founderSchedule').doc('next');
     const fsSnap = await fsRef.get();
-    const fs = fsSnap.exists ? (fsSnap.data() as { at?: string; active?: boolean; teaserBroadcastKey?: string }) : null;
+    const fs = fsSnap.exists ? (fsSnap.data() as { at?: string; active?: boolean; teaserDayofKey?: string }) : null;
     const eventMs = fs?.active && typeof fs.at === 'string' ? Date.parse(fs.at) : NaN;
     if (!Number.isFinite(eventMs)) return json({ ok: true, skipped: 'no active founder schedule' }, 200);
 
@@ -47,63 +47,41 @@ export async function GET(req: Request) {
 
     const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
     const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
-    const isEventDay = ptDate(now) === ptDate(eventMs);
-    const dateKey = new Date(eventMs).toISOString().slice(0, 10);      // day-before key
-    const minuteKey = new Date(eventMs).toISOString().slice(0, 16);    // day-of key — MATCHES the
-                                                                       // returning-check on-login bell
-                                                                       // (`founder-today-<minuteKey>`)
-                                                                       // so a user who got the login
-                                                                       // bell is deduped, never doubled.
-    const fsd = fs as { teaserBroadcastKey?: string; teaserDayofKey?: string };
+
+    // Day-of only: skip until we're on the event's PT calendar day.
+    if (ptDate(now) !== ptDate(eventMs)) return json({ ok: true, skipped: 'not event day', ptNow: ptDate(now), ptEvent: ptDate(eventMs) }, 200);
+    // ~5am PT gate: hold until the 5am PT tick (mod 24 defeats the midnight
+    // "24" some Intl builds emit, so 0–4 correctly read as before-5am).
+    const ptHour = Number(new Date(now).toLocaleString('en-US', { hour: '2-digit', hour12: false, timeZone: 'America/Los_Angeles' })) % 24;
+    if (ptHour < 5) return json({ ok: true, skipped: 'before 5am PT', ptHour }, 200);
+
+    const minuteKey = new Date(eventMs).toISOString().slice(0, 16); // per-event (to the minute)
+    if (fs?.teaserDayofKey === minuteKey) return json({ ok: true, skipped: 'already broadcast', minuteKey }, 200);
 
     // Broadcast one payload to EVERY logged-in user (orderBy firstLoginAt excludes
     // never-logged-in imports). createNotification dedupes per (wallet, dedupeKey).
     const usersSnap = await db.collection('v2_users').orderBy('firstLoginAt').get();
     const wallets = usersSnap.docs.map((d) => d.id).filter((w) => /^0x[0-9a-f]{40}$/.test(w.toLowerCase()));
-    const broadcast = async (payload: Parameters<typeof createNotification>[1]) => {
-      let sent = 0;
-      const BATCH = 50;
-      for (let i = 0; i < wallets.length; i += BATCH) {
-        const chunk = wallets.slice(i, i + BATCH);
-        const results = await Promise.allSettled(chunk.map((w) => createNotification(w, payload)));
-        sent += results.filter((r) => r.status === 'fulfilled').length;
-      }
-      return sent;
-    };
-
-    // DAY-OF (event day, before event time): ping ALL users "today" — same as the
-    // on-login bell but reaching everyone, not just people who happen to open the
-    // app. Idempotent via `teaserDayofKey`.
-    if (isEventDay) {
-      if (fsd?.teaserDayofKey === minuteKey) return json({ ok: true, skipped: 'day-of already broadcast', minuteKey }, 200);
-      const sent = await broadcast({
-        type: 'founder_draft',
-        title: `Founder Draft today — ${timePT}`,
-        message: 'The Founder Draft drops today. Tap to learn how Founder Drafts work.',
-        link: '/faq#founder-draft',
-        dedupeKey: `founder-today-${minuteKey}`,
-        icon: 'crown',
-      });
-      await fsRef.set({ teaserDayofKey: minuteKey, teaserDayofAt: new Date(now).toISOString() }, { merge: true });
-      logger.info('cron.founder-teaser.dayof', { minuteKey, users: wallets.length, sent, timePT });
-      return json({ ok: true, phase: 'day-of', minuteKey, users: wallets.length, sent, timePT }, 200);
-    }
-
-    // DAY-BEFORE (from 24h before until the event day begins): "tomorrow" ping.
-    const broadcastAt = eventMs - 86_400_000;
-    if (now < broadcastAt) return json({ ok: true, skipped: 'too early', broadcastAt: new Date(broadcastAt).toISOString() }, 200);
-    if (fsd?.teaserBroadcastKey === dateKey) return json({ ok: true, skipped: 'day-before already broadcast', dateKey }, 200);
-    const sent = await broadcast({
+    let sent = 0;
+    const BATCH = 50;
+    const payload: Parameters<typeof createNotification>[1] = {
       type: 'founder_draft',
-      title: `Founder Draft tomorrow — ${timePT}`,
-      message: 'A Founder Draft drops tomorrow. Tap to learn how Founder Drafts work.',
+      title: `Weekly Founder Draft today at ${timePT}`,
+      // Spin is the hook but it's PAID-only (free-pass entrants get the badge,
+      // not the spin) — qualify it so we never promise a spin we won't grant.
+      message: 'Draft in it for a Founders badge — paid entries also earn a Free Spin. Tap to see how it works.',
       link: '/faq#founder-draft',
-      dedupeKey: `founder-tomorrow-${dateKey}`,
+      dedupeKey: `founder-today-${minuteKey}`,
       icon: 'crown',
-    });
-    await fsRef.set({ teaserBroadcastKey: dateKey, teaserBroadcastAt: new Date(now).toISOString() }, { merge: true });
-    logger.info('cron.founder-teaser.broadcast', { dateKey, users: wallets.length, sent, timePT });
-    return json({ ok: true, phase: 'day-before', dateKey, users: wallets.length, sent, timePT }, 200);
+    };
+    for (let i = 0; i < wallets.length; i += BATCH) {
+      const chunk = wallets.slice(i, i + BATCH);
+      const results = await Promise.allSettled(chunk.map((w) => createNotification(w, payload)));
+      sent += results.filter((r) => r.status === 'fulfilled').length;
+    }
+    await fsRef.set({ teaserDayofKey: minuteKey, teaserDayofAt: new Date(now).toISOString() }, { merge: true });
+    logger.info('cron.founder-teaser.dayof', { minuteKey, users: wallets.length, sent, timePT, ptHour });
+    return json({ ok: true, phase: 'day-of-5am', minuteKey, users: wallets.length, sent, timePT }, 200);
   } catch (err) {
     logger.error('cron.founder-teaser.failed', { err });
     return jsonError('Internal Server Error', 500);
