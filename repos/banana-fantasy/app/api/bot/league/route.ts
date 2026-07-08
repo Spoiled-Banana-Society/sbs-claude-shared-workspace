@@ -30,6 +30,9 @@ import { logger } from '@/lib/logger';
  *     computed from the current 100-draft batch (1 Jackpot + 5 HOF per 100),
  *     so it climbs automatically as drafts fill without a hit — no more manual
  *     edits in the bot's AdminJS config.
+ *   • Plus a trailing banana line ("🍌🍌🍌…", one more per draft, cycling
+ *     1→20) that keeps every message's text unique so X's duplicate-content
+ *     filter can't silently swallow the countdown tweets.
  *
  * The raw numbers are ALSO exposed as their own fields (leagueNumber, state,
  * hofPercent, jackpotPercent) so the bot can later switch to real tokens
@@ -155,6 +158,16 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
+  // 🍌 ladder — one more banana each draft, cycling 1→20 so the tweet never
+  // outgrows X's 280-char limit. X silently rejects a post whose text is
+  // identical to a recent one; the odds line used to keep countdown tweets
+  // unique by accident, so when all the batch specials hit and the line
+  // dropped out (2026-07-07), every "1 more to fill Draft Lobby (Fast)"
+  // became a duplicate and the bot went quiet. Keyed to the draft's SLOT
+  // index so a draft's bananas never change mid-countdown and the
+  // rename-race hold below stays byte-identical to the bot's last message.
+  const bananaLine = (slot: number) => '🍌'.repeat((slot % 20) + 1);
+
   interface ParsedDraft {
     leagueId: string;
     numPlayers: number;
@@ -165,6 +178,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     rawName: string;
     leagueNumber: number | null;
     renamePending: boolean;
+    slotNumber: number;
   }
 
   // First pass: parse + filter every draft doc, and count the fills whose
@@ -226,6 +240,7 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
       rawName,
       leagueNumber,
       renamePending,
+      slotNumber,
     });
   }
 
@@ -248,9 +263,10 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // final league number — on the next poll after the rename lands.
     if (p.renamePending) {
       const namePart = `Draft Lobby (${label})`;
+      const held = pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart;
       leagues.push({
         leagueId: p.leagueId,
-        displayName: pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart,
+        displayName: `${held}\n\n${bananaLine(p.slotNumber)}`,
         numPlayers: maxPlayers - 1,
         maxPlayers,
         draftType,
@@ -280,7 +296,9 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
 
     // Blank line between the name and the odds line (matches the original
     // message spacing — two newlines render as a blank line in Discord).
-    const displayName = draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart;
+    const displayName =
+      (draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart) +
+      `\n\n${bananaLine(p.slotNumber)}`;
 
     leagues.push({
       leagueId: p.leagueId,
