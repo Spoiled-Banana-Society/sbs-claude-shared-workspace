@@ -30,9 +30,10 @@ import { logger } from '@/lib/logger';
  *     computed from the current 100-draft batch (1 Jackpot + 5 HOF per 100),
  *     so it climbs automatically as drafts fill without a hit — no more manual
  *     edits in the bot's AdminJS config.
- *   • Plus a trailing banana line ("🍌🍌🍌…", one more per draft, cycling
- *     1→20) that keeps every message's text unique so X's duplicate-content
- *     filter can't silently swallow the countdown tweets.
+ *   • When the odds line is absent (all batch specials already hit), a
+ *     trailing banana line ("🍌🍌🍌…", one more per draft) takes its place to
+ *     keep every message's text unique so X's duplicate-content filter can't
+ *     silently swallow the countdown tweets. Never both at once.
  *
  * The raw numbers are ALSO exposed as their own fields (leagueNumber, state,
  * hofPercent, jackpotPercent) so the bot can later switch to real tokens
@@ -104,7 +105,12 @@ function computeOdds(tracker: Record<string, unknown> | undefined): Odds {
   const current = filled % BATCH_SIZE;
   const remainingSlots = BATCH_SIZE - current; // == BATCH_SIZE at a clean boundary
   if (remainingSlots <= 0) return NO_ODDS;
-  const batchStart = current === 0 ? filled - BATCH_SIZE : filled - current;
+  // At a clean boundary (filled == 100, 200, …) the batch that's FILLING is the
+  // NEXT one — fresh 1 JP + 5 HOF, zero hits. batchStart must be `filled` there,
+  // not `filled - BATCH_SIZE`: pointing at the completed batch counted the OLD
+  // batch's hits and killed the odds line for the whole first draft of a new
+  // batch (League #101 showed no HOF/Jackpot %, 2026-07-08).
+  const batchStart = filled - current;
 
   const toIds = (v: unknown): number[] =>
     Array.isArray(v) ? v.map((x) => Number(x)).filter((n) => Number.isFinite(n)) : [];
@@ -158,16 +164,19 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
   const oddsLine = buildOddsLine(odds);
   const oddsLinePreFill = buildOddsLine(oddsPreFill);
 
-  // 🍌 ladder — starts at ONE banana and adds one more each draft (Richard's
-  // spec 2026-07-07). X silently rejects a post whose text is identical to a
-  // recent one; the odds line used to keep countdown tweets unique by
-  // accident, so when all the batch specials hit and the line dropped out
-  // (2026-07-07), every "1 more to fill Draft Lobby (Fast)" became a
-  // duplicate and the bot went quiet. Keyed to the draft's SLOT index so a
-  // draft's bananas never change mid-countdown and the rename-race hold
-  // below stays byte-identical to the bot's last message. The anchor is the
-  // slot that was filling when this shipped (= 1 banana); the count wraps
-  // back to 1 after 50 so the tweet never outgrows X's 280-char limit.
+  // 🍌 ladder — FALLBACK ONLY, used when there is no odds line (Richard
+  // 2026-07-08: bananas come OFF whenever the odds line is showing). X
+  // silently rejects a post whose text is identical to a recent one; the
+  // odds line keeps countdown tweets unique (it moves every fill), but when
+  // all the batch specials hit the line drops out (2026-07-07) and every
+  // "1 more to fill Draft Lobby (Fast)" becomes a duplicate → bot goes
+  // quiet. The ladder (one more 🍌 per draft) covers exactly that tail of
+  // the batch; it disappears again when the next batch's line returns.
+  // Keyed to the draft's SLOT index so a draft's bananas never change
+  // mid-countdown and the rename-race hold below stays byte-identical to
+  // the bot's last message. The anchor is the slot that was filling when
+  // this shipped (= 1 banana); the count wraps back to 1 after 50 so the
+  // tweet never outgrows X's 280-char limit.
   const BANANA_ANCHOR: Record<string, number> = { fast: 90, slow: 5 };
   const bananaLine = (draftType: string, slot: number) => {
     const n = Math.max(1, slot - (BANANA_ANCHOR[draftType] ?? 0) + 1);
@@ -269,10 +278,12 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
     // final league number — on the next poll after the rename lands.
     if (p.renamePending) {
       const namePart = `Draft Lobby (${label})`;
-      const held = pendingOddsLine ? `${namePart}\n\n${pendingOddsLine}` : namePart;
+      const held = pendingOddsLine
+        ? `${namePart}\n\n${pendingOddsLine}`
+        : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`;
       leagues.push({
         leagueId: p.leagueId,
-        displayName: `${held}\n\n${bananaLine(draftType, p.slotNumber)}`,
+        displayName: held,
         numPlayers: maxPlayers - 1,
         maxPlayers,
         draftType,
@@ -302,9 +313,11 @@ async function loadLeagues(): Promise<AbbrevLeague[]> {
 
     // Blank line between the name and the odds line (matches the original
     // message spacing — two newlines render as a blank line in Discord).
-    const displayName =
-      (draftOddsLine ? `${namePart}\n\n${draftOddsLine}` : namePart) +
-      `\n\n${bananaLine(draftType, p.slotNumber)}`;
+    // Odds line and banana ladder are mutually exclusive: bananas only step
+    // in as the uniqueness fallback when the odds line is gone.
+    const displayName = draftOddsLine
+      ? `${namePart}\n\n${draftOddsLine}`
+      : `${namePart}\n\n${bananaLine(draftType, p.slotNumber)}`;
 
     leagues.push({
       leagueId: p.leagueId,
