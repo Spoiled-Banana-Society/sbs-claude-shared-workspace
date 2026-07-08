@@ -153,10 +153,10 @@ export default function StandingsPage() {
   const [sortOrder, setSortOrder] = useState<'oldest' | 'newest'>('newest');
   // Type filter persists in the URL (?type=jackpot) so a refresh / hard refresh
   // keeps you on the same tab instead of bouncing back to All.
-  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro'>(() => {
+  const [typeFilter, setTypeFilter] = useState<'all' | 'jackpot' | 'hof' | 'pro' | 'founder'>(() => {
     if (typeof window === 'undefined') return 'all';
     const t = new URLSearchParams(window.location.search).get('type');
-    return t === 'jackpot' || t === 'hof' || t === 'pro' ? t : 'all';
+    return t === 'jackpot' || t === 'hof' || t === 'pro' || t === 'founder' ? t : 'all';
   });
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -181,6 +181,7 @@ export default function StandingsPage() {
     set.add('Jackpot');
     set.add('HOF');
     set.add('Pro');
+    set.add('Founder');
     return [...set].sort();
   }, [leagues]);
   const TEAMS_PER_PAGE = 20;
@@ -201,8 +202,12 @@ export default function StandingsPage() {
   const filteredLeagues = useMemo(() => {
     let result = [...mergedLeagues];
 
-    // Type filter buttons
-    if (typeFilter !== 'all') {
+    // Type filter buttons. Founder is an OVERLAY, not a draft type — a Founder
+    // team is also Pro/JP/HOF — so it filters by Founder-Draft membership
+    // (same tokenId set that drives the FOUNDER pill on the cards).
+    if (typeFilter === 'founder') {
+      result = result.filter((league) => founderTeamIds.has(nftByLeague.get(league.id)?.tokenId ?? ''));
+    } else if (typeFilter !== 'all') {
       result = result.filter((league) => league.type === typeFilter);
     }
 
@@ -233,6 +238,8 @@ export default function StandingsPage() {
         return terms.every(q => {
           const matchedType = typeAliases[q];
           if (matchedType && league.type === matchedType) return true;
+          // "Founder" chip — membership overlay, not a league.type value.
+          if (q === 'founder' && founderTeamIds.has(nftByLeague.get(league.id)?.tokenId ?? '')) return true;
           if (league.name.toLowerCase().includes(q)) return true;
           if (league.id.toLowerCase().includes(q)) return true;
           const numMatch = league.name.match(/#(\d+)/);
@@ -262,7 +269,7 @@ export default function StandingsPage() {
       return sortOrder === 'oldest' ? idNumA - idNumB : idNumB - idNumA;
     });
     return result;
-  }, [mergedLeagues, teamSearch, sortOrder, typeFilter, leagueQuery, teamQuery, nftByLeague]);
+  }, [mergedLeagues, teamSearch, sortOrder, typeFilter, leagueQuery, teamQuery, nftByLeague, founderTeamIds]);
 
   // Paginate
   const totalTeamPages = Math.ceil(filteredLeagues.length / TEAMS_PER_PAGE);
@@ -304,14 +311,17 @@ export default function StandingsPage() {
   // exact set rendered, so the chip totals always match the list (no more
   // "All (33)" over "21 teams"), and the counts reflect real current ownership.
   const typeBreakdown = useMemo(() => {
-    const counts = { jackpot: 0, hof: 0, pro: 0 };
+    // founder overlaps the three types (a Founder team is also Pro/JP/HOF),
+    // so it's counted separately and NOT added to the All total.
+    const counts = { jackpot: 0, hof: 0, pro: 0, founder: 0 };
     mergedLeagues.forEach((l) => {
       if (l.type === 'jackpot') counts.jackpot++;
       else if (l.type === 'hof') counts.hof++;
       else counts.pro++;
+      if (founderTeamIds.has(nftByLeague.get(l.id)?.tokenId ?? '')) counts.founder++;
     });
     return counts;
-  }, [mergedLeagues]);
+  }, [mergedLeagues, founderTeamIds, nftByLeague]);
 
   return (
     <div className="w-full px-4 sm:px-8 lg:px-12 py-8 max-w-5xl mx-auto">
@@ -362,6 +372,8 @@ export default function StandingsPage() {
                     { key: 'pro', label: `Pro (${typeBreakdown.pro})`, color: '#a855f7' },
                     { key: 'jackpot', label: `Jackpot (${typeBreakdown.jackpot})`, color: '#ef4444' },
                     { key: 'hof', label: `HOF (${typeBreakdown.hof})`, color: '#D4AF37' },
+                    // Cyan matches the FOUNDER pill on the cards.
+                    { key: 'founder', label: `Founder (${typeBreakdown.founder})`, color: '#06b6d4' },
                   ] as const).map(({ key, label, color }) => (
                     <button
                       key={key}
@@ -499,7 +511,7 @@ export default function StandingsPage() {
                     {teamSearch.length > 0 || leagueQuery.trim() || teamQuery.trim()
                       ? 'No teams match'
                       : typeFilter !== 'all'
-                        ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : 'Pro'} teams`
+                        ? `No ${typeFilter === 'jackpot' ? 'Jackpot' : typeFilter === 'hof' ? 'HOF' : typeFilter === 'founder' ? 'Founder' : 'Pro'} teams`
                         : 'No teams'}
                   </p>
                 </div>
