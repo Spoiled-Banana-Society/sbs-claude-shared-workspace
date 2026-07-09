@@ -54,6 +54,26 @@ export async function POST(req: Request) {
     }
     const db = getAdminFirestore();
 
+    // ── Phase 0 (NY buy-support): OBSERVE-ONLY IP geolocation capture. Records
+    //    where Vercel geolocates this session from (US state via IP) so we can
+    //    validate whether IP detection is accurate enough to route NY buyers to
+    //    the Optimism on-ramp — before building anything that acts on it. This
+    //    changes NO behavior: it only logs + stamps ipRegion on the user doc.
+    //    Fully best-effort in its own try/catch so it can never affect login. ──
+    try {
+      const { getRequestGeo } = await import('@/lib/geoLocation');
+      const geo = getRequestGeo(req);
+      if (geo.country || geo.region) {
+        logger.info('geo.observed', { wallet, country: geo.country, region: geo.region, city: geo.city });
+        await db.collection('v2_users').doc(wallet).set({
+          ipCountry: geo.country ?? null,
+          ipRegion: geo.region ?? null,
+          ipCity: geo.city ?? null,
+          ipGeoAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+    } catch { /* observe-only — never affects the returning check or login */ }
+
     // ── On-login bells (every session; dedupeKeys make them idempotent so a
     //    user never gets the same one twice). Runs BEFORE the cached early-returns
     //    below so it fires for returning users too. Replaces the old top banners
