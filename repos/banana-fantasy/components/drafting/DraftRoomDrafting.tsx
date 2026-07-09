@@ -520,6 +520,7 @@ export function DraftRoomDrafting({
                   sortPreference={sortPreference}
                   userRankMap={userRankMap}
                   userStatsMap={userStatsMap}
+                  upcomingUserPicks={engine.upcomingUserPicks}
                 />
               )}
               {activeTab === 'queue' && (

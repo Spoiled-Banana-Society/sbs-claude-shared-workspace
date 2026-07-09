@@ -18,6 +18,10 @@ interface DraftPlayerListProps {
   userRankMap?: Map<string, number>;
   /** Override stats (adp, byeWeek) for sort + display, same fallback. */
   userStatsMap?: Map<string, { rank?: number; adp?: number; byeWeek?: number }>;
+  /** The user's next two overall pick numbers — renders the small
+   *  "YOUR PICK · N" divider where each lands in the ADP order. Only shown
+   *  in the unfiltered ADP view, where its position is honest. */
+  upcomingUserPicks?: number[];
 }
 
 type PositionFilter = 'ALL' | 'QB' | 'RB' | 'WR' | 'TE' | 'DST';
@@ -34,6 +38,7 @@ export function DraftPlayerList({
   sortPreference,
   userRankMap,
   userStatsMap,
+  upcomingUserPicks,
 }: DraftPlayerListProps) {
   const resolveRank = (player: PlayerData): number => {
     const custom = userRankMap?.get(player.playerId);
@@ -106,6 +111,45 @@ export function DraftPlayerList({
     return players;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availablePlayers, activePositions, sortField, searchQuery, userRankMap, userStatsMap]);
+
+  // "YOUR PICK · N" dividers. ADP shares the 1–150 overall-pick scale, so a
+  // divider sits before the first player whose sort value is past that pick —
+  // players above it will likely be gone by then. Only rendered in the full
+  // ADP-sorted view; any search/filter/RANK sort makes the position a lie.
+  // Back-to-back picks at the snake turn merge into one line.
+  const pickMarkersByIndex = useMemo(() => {
+    const markers = new Map<number, { label: string; faint: boolean }[]>();
+    if (!upcomingUserPicks || upcomingUserPicks.length === 0) return markers;
+    if (sortField !== 'adp' || searchQuery.trim() || activePositions.size > 0) return markers;
+
+    // Same fallback chain as the sort comparator, so the divider can never
+    // land out of order with the rows around it.
+    const sortValue = (p: PlayerData) => resolveAdp(p) || resolveRank(p);
+    const indexFor = (pick: number) => filteredPlayers.findIndex(p => sortValue(p) >= pick);
+
+    const [first, second] = upcomingUserPicks;
+    const firstIdx = indexFor(first);
+    if (second === first + 1) {
+      if (firstIdx >= 0) {
+        markers.set(firstIdx, [{ label: `Your picks · ${first} & ${second}`, faint: false }]);
+      }
+      return markers;
+    }
+    if (firstIdx >= 0) {
+      markers.set(firstIdx, [{ label: `Your pick · ${first}`, faint: false }]);
+    }
+    if (typeof second === 'number') {
+      const secondIdx = indexFor(second);
+      if (secondIdx >= 0) {
+        markers.set(secondIdx, [
+          ...(markers.get(secondIdx) ?? []),
+          { label: `Pick ${second}`, faint: true },
+        ]);
+      }
+    }
+    return markers;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredPlayers, upcomingUserPicks, sortField, searchQuery, activePositions]);
 
   const POSITION_FILTERS: PositionFilter[] = ['ALL', 'QB', 'RB', 'WR', 'TE', 'DST'];
 
@@ -314,13 +358,33 @@ export function DraftPlayerList({
 
       {/* Player List */}
       <div className="flex-1 overflow-y-auto flex flex-col items-center">
-        {filteredPlayers.map(player => {
+        {filteredPlayers.map((player, playerIdx) => {
           const queued = isInQueue(player.playerId);
           const expanded = expandedPlayer === player.playerId;
           const hexColor = getPositionColorHex(player.position);
 
           return (
-            <div key={player.playerId} style={{ maxWidth: 900, width: '100%', margin: '2px auto' }}>
+            <React.Fragment key={player.playerId}>
+              {pickMarkersByIndex.get(playerIdx)?.map(marker => (
+                <div
+                  key={marker.label}
+                  style={{ maxWidth: 900, width: '100%', margin: '0 auto', padding: '5px 8px', textAlign: 'center' }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.14em',
+                      textTransform: 'uppercase',
+                      whiteSpace: 'nowrap',
+                      color: marker.faint ? 'rgba(253,224,71,0.45)' : '#fde047',
+                    }}
+                  >
+                    {marker.label}
+                  </span>
+                </div>
+              ))}
+              <div style={{ maxWidth: 900, width: '100%', margin: '2px auto' }}>
               <button
                 onClick={() => setExpandedPlayer(expanded ? null : player.playerId)}
                 className="w-full text-left flex items-center transition-all"
@@ -447,7 +511,8 @@ export function DraftPlayerList({
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            </React.Fragment>
           );
         })}
 

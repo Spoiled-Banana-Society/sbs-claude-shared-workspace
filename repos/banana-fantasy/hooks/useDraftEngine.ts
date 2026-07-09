@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   ALL_POSITIONS,
   DRAFT_PLAYERS,
@@ -39,6 +39,7 @@ export interface DraftEngineState {
   timeRemaining: number;
   isUserTurn: boolean;
   turnsUntilUserPick: number;
+  upcomingUserPicks: number[];
   draftStatus: 'waiting' | 'active' | 'completed';
   mostRecentPick: DraftPick | null;
   draftSummary: DraftSummarySlot[];
@@ -273,6 +274,20 @@ export function useDraftEngine(mode: DraftMode = 'local') {
       ? calculateTurnsUntilPick(currentPickNumber, userDraftPosition)
       : calculateTurnsUntilPick(currentPickNumber, draftOrder.findIndex(p => p.isYou)))
     : 0;
+
+  // The user's next two overall pick numbers, strictly after the pick on the
+  // clock (while the user is picking, only the following pick matters).
+  // Powers the "YOUR PICK · N" divider in the player list. Empty when the
+  // draft isn't active or the viewer isn't a drafter (findIndex → -1).
+  const upcomingUserPickIndex = mode === 'live' ? userDraftPosition : draftOrder.findIndex(p => p.isYou);
+  const upcomingUserPicks = useMemo(() => {
+    const picks: number[] = [];
+    if (draftStatus !== 'active' || upcomingUserPickIndex < 0 || draftOrder.length === 0) return picks;
+    for (let pick = currentPickNumber + 1; pick <= TOTAL_PICKS && picks.length < 2; pick++) {
+      if (getSnakeDrafterIndex(pick) === upcomingUserPickIndex) picks.push(pick);
+    }
+    return picks;
+  }, [draftStatus, upcomingUserPickIndex, currentPickNumber, draftOrder.length]);
 
   // ==================== LOCAL MODE: INITIALIZE DRAFT ====================
   const initializeDraft = useCallback((shuffledOrder: DraftPlayer[]) => {
@@ -1117,6 +1132,7 @@ export function useDraftEngine(mode: DraftMode = 'local') {
     endOfTurnTimestamp,
     isUserTurn,
     turnsUntilUserPick,
+    upcomingUserPicks,
     draftStatus,
     mostRecentPick,
     draftSummary,
