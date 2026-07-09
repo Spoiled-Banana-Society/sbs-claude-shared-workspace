@@ -5,7 +5,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { formatUnits, type Address } from 'viem';
-import { useFundWallet, usePrivy } from '@privy-io/react-auth';
+import { useFundWallet, usePrivy, useSignTypedData, useWallets } from '@privy-io/react-auth';
+import { optimism } from 'viem/chains';
+import { runNyOptimismBridge } from '@/lib/nyBuyFlow';
 import { Modal } from '../ui/Modal';
 import { PaymentMethodSquares } from '@/components/marketplace/PaymentMethodSquares';
 import { useAuth } from '@/hooks/useAuth';
@@ -72,6 +74,10 @@ export function BuyPassesModal({
   // sees opened-popup attempts even when the user closes Privy's flow
   // mid-purchase.
   const { getAccessToken } = usePrivy();
+  // NY on-ramp: embedded silent signer + connected wallets, for signing the
+  // Optimism USDC permit (only used on the NY branch — see below).
+  const { signTypedData } = useSignTypedData();
+  const { wallets } = useWallets();
 
   // Purchase flow state lives in a module-level store so it survives modal
   // close/reopen — the card path opens MoonPay externally and a remount
@@ -550,11 +556,17 @@ export function BuyPassesModal({
       // mobile that fires before the funds are reliably settled across RPC
       // nodes, so the server's transferFrom reverts ("exceeds balance"). Waiting
       // for fundWallet to resolve is the known-good sequencing.
-      clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount });
+      // NY on-ramp detection. NY buyers can't get USDC on Base via MoonPay, so
+      // we fund on Optimism and bridge to Base (the isNy pre-step below). Decided
+      // server-side; returns ny:false unless the buyer is NY AND the flag is on,
+      // so this is a no-op for everyone else (they stay on the exact Base flow).
+      const nyStatus = await fetch('/api/user/ny-status').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const isNy = !!nyStatus?.ny;
+      clientLog('payment', 'funding_opened', { wallet: walletAddress, quantity, amountUsd: fundingAmount, ny: isNy });
       const result = await fundWallet({
         address: walletAddress,
         options: {
-          chain: BASE_SEPOLIA,
+          chain: isNy ? optimism : BASE_SEPOLIA,
           amount: fundingAmount,
           asset: 'USDC',
           defaultFundingMethod: 'card',
@@ -574,6 +586,24 @@ export function BuyPassesModal({
       // on they are never out money: any error just means "finish from balance",
       // so the error UI shows a reassuring notice instead of a scary failure.
       setCardPaymentCommitted(true);
+
+      // NY branch: the USDC landed on Optimism, not Base. Sweep + bridge it to
+      // the buyer's OWN Base wallet now, so the normal Base wait + mint() below
+      // run completely unchanged. Stays inside this same stepper — no new UI, no
+      // crypto jargon. Non-NY buyers skip this entirely.
+      if (isNy) {
+        setFlowStep('waiting-for-usdc');
+        await runNyOptimismBridge({
+          user: walletAddress as Address,
+          quantity,
+          permitValue: usdcTotal ?? BigInt(quantity * pricePerPass) * BigInt(10 ** 6),
+          signTypedData: signTypedData as unknown as Parameters<typeof runNyOptimismBridge>[0]['signTypedData'],
+          wallets: wallets as unknown as Parameters<typeof runNyOptimismBridge>[0]['wallets'],
+          getAccessToken,
+          isCancelled: () => cancelledRef.current,
+        });
+        if (cancelledRef.current) return;
+      }
 
       // Confirm the USDC actually landed before minting — event-driven via the
       // on-chain Transfer subscription (instant once it settles), no polling.
