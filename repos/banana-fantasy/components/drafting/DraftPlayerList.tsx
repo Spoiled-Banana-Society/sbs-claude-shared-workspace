@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { getPositionColorHex, positionFromPlayerId, POSITION_COLORS } from '@/lib/draftRoomConstants';
 import type { PlayerData } from '@/lib/draftRoomConstants';
+import { SLOT_STATS_HISTORY } from '@/data/slot-stats-history';
 
 interface DraftPlayerListProps {
   availablePlayers: PlayerData[];
@@ -509,6 +510,39 @@ export function DraftPlayerList({
                       {queued ? 'Unqueue' : 'Queue'}
                     </button>
                   </div>
+
+                  {/* Slot history — what this team-position slot actually
+                      scored the past 3 seasons (weeks 1-17, SBS scoring) */}
+                  {SLOT_STATS_HISTORY[player.playerId] && (
+                    <div style={{ width: 280, maxWidth: '90%', paddingBottom: 14 }}>
+                      <div style={{ display: 'flex', paddingBottom: 4 }}>
+                        <div style={{ flex: 1 }} />
+                        <div style={{ width: 100, textAlign: 'right', color: '#555', fontSize: 9, fontWeight: 'bold', letterSpacing: 1 }}>
+                          AVG / WK
+                        </div>
+                        <div style={{ width: 80, textAlign: 'right', color: '#555', fontSize: 9, fontWeight: 'bold', letterSpacing: 1 }}>
+                          TOTAL
+                        </div>
+                      </div>
+                      {['2025', '2024', '2023'].map(season => {
+                        const s = SLOT_STATS_HISTORY[player.playerId][season];
+                        if (!s) return null;
+                        return (
+                          <div key={season} style={{ display: 'flex', alignItems: 'baseline', padding: '7px 0', borderTop: '1px solid #16161c' }}>
+                            <div style={{ flex: 1, textAlign: 'left', fontWeight: 'bold', fontSize: 14, color: '#9ca3af' }}>
+                              {season}
+                            </div>
+                            <div style={{ width: 100, textAlign: 'right', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                              {s.avg}
+                            </div>
+                            <div style={{ width: 80, textAlign: 'right', color: '#fff', fontWeight: 'bold', fontSize: 17 }}>
+                              {s.total}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
               </div>
