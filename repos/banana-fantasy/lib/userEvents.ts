@@ -84,7 +84,7 @@ const USERS_COLLECTION = 'v2_users';
 
 export async function recordActivityAndDetectLogin(
   userId: string,
-  _meta?: Record<string, unknown>,
+  meta?: { geo?: { country: string | null; region: string | null; city: string | null } },
 ): Promise<void> {
   if (!isFirestoreConfigured()) return;
   const lower = userId.toLowerCase();
@@ -109,7 +109,18 @@ export async function recordActivityAndDetectLogin(
       const lastIso = data?.lastActiveAt;
       const last = lastIso ? Date.parse(lastIso) : 0;
       if (now - last < TOUCH_THROTTLE_MS) return null;
-      tx.set(userRef, { lastActiveAt: new Date(now).toISOString() }, { merge: true });
+      // Piggyback IP geolocation onto the throttled activity touch (Phase 0 of
+      // NY buy-support): captures ipRegion for every active user, not just fresh
+      // logins. Observe-only — never gates anything.
+      const touch: Record<string, unknown> = { lastActiveAt: new Date(now).toISOString() };
+      const g = meta?.geo;
+      if (g && (g.country || g.region)) {
+        touch.ipCountry = g.country ?? null;
+        touch.ipRegion = g.region ?? null;
+        touch.ipCity = g.city ?? null;
+        touch.ipGeoAt = new Date(now).toISOString();
+      }
+      tx.set(userRef, touch, { merge: true });
       return {
         exists: snap.exists,
         crossedReturnGap: now - last >= RETURN_GAP_MS,

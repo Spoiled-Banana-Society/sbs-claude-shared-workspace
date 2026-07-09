@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { ApiError } from '@/lib/api/errors';
 import { logger } from '@/lib/logger';
 import { LOG_SOURCES } from '@/lib/logSources';
+import { getRequestGeo } from '@/lib/geoLocation';
 
 type JwtPayload = Record<string, unknown>;
 
@@ -298,8 +299,14 @@ export async function getPrivyUser(req: Request): Promise<{ userId: string; wall
   // the previous in-memory throttle).
   const loginId = user.walletAddress || user.userId;
   if (loginId) {
+    // Passively record where Vercel geolocates this request from (US state via
+    // IP) alongside the activity touch — this fires on EVERY authenticated
+    // request, so ACTIVE users are captured, not just fresh logins (the
+    // returning-check hook only fired on login and missed established sessions).
+    // Piggybacks on the throttled lastActiveAt write, so no extra Firestore ops.
+    const geo = getRequestGeo(req);
     import('@/lib/userEvents')
-      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId))
+      .then(({ recordActivityAndDetectLogin }) => recordActivityAndDetectLogin(loginId, { geo }))
       .catch(() => { /* non-fatal */ });
   }
 
