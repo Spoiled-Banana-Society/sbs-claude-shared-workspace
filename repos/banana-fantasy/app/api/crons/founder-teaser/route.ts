@@ -13,6 +13,49 @@ function authed(req: Request): boolean {
   return (req.headers.get('authorization') ?? '') === `Bearer ${secret}`;
 }
 
+// Don't advance until the event is comfortably over: the fill window is
+// ±windowMinutes and the safety-net credit reads the live schedule, so rolling
+// the date too early could strand a draft that fills right at the boundary.
+const ADVANCE_GRACE_MS = 2 * 60 * 60 * 1000;
+
+/** UTC instant for 18:00 (6 PM) America/Los_Angeles on the given PT calendar day. */
+function sixPmPTUtcMs(y: number, m: number, d: number): number {
+  // 6 PM PT is 01:00 UTC next day during PDT (UTC-7) or 02:00 UTC during PST
+  // (UTC-8). Try both and keep the one that round-trips to 18:00 PT.
+  for (const offset of [7, 8]) {
+    const ms = Date.UTC(y, m - 1, d, 18 + offset, 0, 0);
+    const pt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles', hour: '2-digit', hour12: false, day: '2-digit',
+    }).formatToParts(new Date(ms));
+    const hour = Number(pt.find((p) => p.type === 'hour')?.value) % 24;
+    const day = Number(pt.find((p) => p.type === 'day')?.value);
+    if (hour === 18 && day === d) return ms;
+  }
+  return Date.UTC(y, m - 1, d, 18 + 8, 0, 0); // unreachable fallback
+}
+
+/**
+ * The weekly cadence (Richard 2026-07-08): Founder Draft is ALWAYS Wednesday
+ * 6 PM PT for now. Returns the first Wednesday-6PM-PT instant strictly after
+ * `afterMs`, as an ISO string.
+ */
+function nextWednesday6pmPT(afterMs: number): string {
+  const dayParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  for (let d = 0; d <= 8; d++) {
+    const probe = new Date(afterMs + d * 86_400_000);
+    const parts = dayParts.formatToParts(probe);
+    if (parts.find((p) => p.type === 'weekday')?.value !== 'Wed') continue;
+    const y = Number(parts.find((p) => p.type === 'year')?.value);
+    const m = Number(parts.find((p) => p.type === 'month')?.value);
+    const day = Number(parts.find((p) => p.type === 'day')?.value);
+    const ms = sixPmPTUtcMs(y, m, day);
+    if (ms > afterMs) return new Date(ms).toISOString();
+  }
+  return new Date(afterMs + 7 * 86_400_000).toISOString(); // unreachable fallback
+}
+
 /**
  * GET /api/crons/founder-teaser  (hourly Vercel cron + manual admin trigger)
  *
@@ -43,7 +86,19 @@ export async function GET(req: Request) {
     if (!Number.isFinite(eventMs)) return json({ ok: true, skipped: 'no active founder schedule' }, 200);
 
     const now = Date.now();
-    if (now >= eventMs) return json({ ok: true, skipped: 'event already started' }, 200);
+    if (now >= eventMs) {
+      // AUTO-ADVANCE (incident 2026-07-08: schedule left on the prior week →
+      // BBB #104 silently got no tag/spins). Once the event is 2h past, roll
+      // the schedule to the next Wednesday 6 PM PT so it can never go stale.
+      // Admin re-times still stick: any manually set future `at` is untouched.
+      if (now >= eventMs + ADVANCE_GRACE_MS) {
+        const nextAt = nextWednesday6pmPT(now);
+        await fsRef.set({ at: nextAt, dayLabel: 'Wednesday at 6 PM PT', updatedAt: new Date(now).toISOString() }, { merge: true });
+        logger.info('cron.founder-teaser.auto-advanced', { from: fs?.at, to: nextAt });
+        return json({ ok: true, advanced: { from: fs?.at, to: nextAt } }, 200);
+      }
+      return json({ ok: true, skipped: 'event already started' }, 200);
+    }
 
     const timePT = new Date(eventMs).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles' }) + ' PT';
     const ptDate = (ms: number) => new Date(ms).toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
