@@ -14,10 +14,6 @@ export const mockFAQSections: FAQSection[] = [
         answer: 'Each week, your best players at each position are automatically selected based on their actual performance. Your weekly score is the sum of your best performers according to your roster requirements (1 QB, 2 RB, 2 WR, 1 TE, 1 Flex, 1 DST, plus 7 bench).',
       },
       {
-        question: 'What is the starting lineup?',
-        answer: '1 QB\n2 RB\n2 WR\n1 TE\n1 Flex (RB/WR/TE)\n1 DST\n\n+ 7 Bench',
-      },
-      {
         question: 'Can I trade or drop players after drafting?',
         answer: 'No trades or waivers in Best Ball - that\'s the beauty of it! However, you can sell your entire team on our marketplace any time during the season if you want out.',
         audience: 'web2',
@@ -73,6 +69,10 @@ export const mockFAQSections: FAQSection[] = [
     id: 'scoring',
     title: 'Scoring',
     items: [
+      {
+        question: 'What is the starting lineup?',
+        answer: '1 QB\n2 RB\n2 WR\n1 TE\n1 Flex (RB/WR/TE)\n1 DST\n\n+ 7 Bench',
+      },
       {
         question: 'How are offensive points calculated?',
         answer: 'Full PPR. The highest scorer at each team-position counts every week.\n\nPASSING\nPassing TD  +4\nPassing yards  +1 per 25\n300+ passing yards  +3 bonus\nInterception thrown  −1\n\nRUSHING\nRushing TD  +6\nRushing yards  +1 per 10\n100+ rushing yards  +3 bonus\n\nRECEIVING\nReceiving TD  +6\nReceiving yards  +1 per 10\n100+ receiving yards  +3 bonus\nReception  +1\n\nMISC\nFumble lost  −1\nFumble-return TD  +6\n2-point conversion  +2',
