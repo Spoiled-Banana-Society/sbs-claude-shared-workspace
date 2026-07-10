@@ -96,8 +96,8 @@ interface FilterOpts {
   firstPurchaseBonusGranted?: boolean;
   /**
    * True once a brand-new user has finished their welcome-wheel free drafts.
-   * The first-purchase promo is NEW PLAYERS ONLY (Boris 2026-07-10): returning
-   * (BB3/past-season) players never see it, and new users only see it once this
+   * Returning (BB3) players see the first-purchase promo immediately (they
+   * get the CLASSIC variant server-side); new users only see it once this
    * unlocks — so the card appears as their first box right after they've used
    * up their free drafts (matching the banner/popup).
    */
@@ -144,20 +144,18 @@ export function filterAndSortVisiblePromos(promos: Promo[], opts: FilterOpts = {
       if (opts.newUserPromoClaimed) return false;
       if (opts.hasSpunWheel) return false; // welcome spin used → promo done forever
     }
-    // First-purchase promo is one-time and NEW PLAYERS ONLY. Once the user has
-    // purchased AND has no spins left to claim, it's spent — hide it.
+    // First-purchase promo is one-time. Once the user has purchased AND has
+    // no spins left to claim, it's spent — hide it. The card itself renders
+    // for both audiences — the SERVER decides which variant they get
+    // (returning players receive the classic copy + classic grant rate; new
+    // players the every-pass-2-spins / $1K version).
     if (p.type === 'first-purchase') {
       // Don't render until the gating flags are known — avoids flashing the card
       // for a purchased user during the brief pre-balance window.
       if (opts.flagsKnown === false) return false;
-      // Returning players from previous seasons never see it (Boris
-      // 2026-07-10) — buying earns them nothing (server grant skips them
-      // too). Unclaimed spins still render so a legacy or admin-granted
-      // claim is never stranded.
-      if (opts.isBB3Holder && !p.claimable) return false;
       if (opts.firstPurchaseBonusGranted && !p.claimable) return false;
-      // New users only see it after they've used up their welcome-wheel
-      // free drafts.
+      // New users (non-BB3) only see it after they've used up their welcome-
+      // wheel free drafts. Returning players see it from the start.
       if (
         !opts.isBB3Holder &&
         !opts.firstPurchasePromoUnlocked &&

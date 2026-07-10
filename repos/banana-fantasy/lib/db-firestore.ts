@@ -487,6 +487,20 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     all: { title: 'Pick 6, 9 & 10 → FREE SPINS', description: 'All specials hit — Pick 6, 9 & 10 each win a Free Spin', isNew: true },
   };
 
+  // First-purchase promo has TWO variants since 2026-07-10 (Boris): the seed
+  // carries the NEW-player copy (every pass = 2 Spins, $1K framing); RETURNING
+  // players keep the CLASSIC promo unchanged — these strings overlay theirs.
+  // The grant math matches per-audience in _incrementMintPromosInTx.
+  const CLASSIC_FIRST_PURCHASE_COPY = {
+    title: 'First Purchase → FREE SPINS',
+    description: 'Every 2 passes on your first buy = 1 spin',
+    modalTitle: 'First Purchase → FREE SPINS',
+    explanation:
+      '• Your very first draft-pass purchase earns Free Banana Spins — every 2 passes = 1 Free Banana Spin.\n• Buy 4 for 2, buy 6 for 3, and so on — no limit.\n• One-time offer: applies only to your first purchase, so buy them all in one transaction to lock in the most Spins.\n• After you buy, claim your Spins right here.',
+  };
+  const isReturningUser = (userData as { isReturningPlayer?: boolean }).isReturningPlayer === true
+    || isReturningWalletSync(userId);
+
   return allDocs.map((promo) => {
     const seed = seedById.get(promo.id);
     if (seed) {
@@ -561,6 +575,16 @@ export async function getPromos(userId: string): Promise<Promo[]> {
     if (promo.type === 'new-user' && hasVerifiedTwitter && !newUserPromoAlreadyClaimed && !newUserBlocked) {
       promo.claimable = true;
       promo.claimCount = Math.max(promo.claimCount ?? 0, 1);
+    }
+    // Returning players keep the CLASSIC first-purchase promo copy (their
+    // rate is unchanged) — overlay it AFTER the static seed overlay so the
+    // new-player $1K copy never reaches them.
+    if (promo.type === 'first-purchase' && isReturningUser) {
+      promo.title = CLASSIC_FIRST_PURCHASE_COPY.title;
+      promo.description = CLASSIC_FIRST_PURCHASE_COPY.description;
+      promo.modalContent = promo.modalContent || {};
+      promo.modalContent.title = CLASSIC_FIRST_PURCHASE_COPY.modalTitle;
+      promo.modalContent.explanation = CLASSIC_FIRST_PURCHASE_COPY.explanation;
     }
     // Pick-slot promo: overlay the LIVE tier copy (title + NEW badge + full
     // ladder explanation) AFTER the static seed overlay above, so the card
@@ -1305,19 +1329,20 @@ async function _incrementMintPromosInTx(
     tx.set(mintPromoDoc.ref, stripUndefined(mintPromo), { merge: true });
   }
 
-  // First-purchase bonus: every pass on the user's FIRST paid purchase =
-  // 2 spins (FIRST_PURCHASE_SPINS_PER_PASS; was every-2-passes = 1 spin until
-  // 2026-07-10, every-4 until 07-06). NEW PLAYERS ONLY (Boris 2026-07-10):
-  // returning players from previous seasons (past-player snapshot / manual
-  // allowlist / web2 identity match) earn nothing and don't consume the bonus
-  // — to grant a specific returning user, use an admin spin grant. One-time —
-  // the durable `firstPurchaseBonusGranted` flag gates it (so retries can't
-  // double-grant). Runs in the SAME tx as the mint promo above, so a single
-  // purchase advances both atomically (interconnection).
+  // First-purchase bonus, TWO rates since 2026-07-10 (Boris):
+  //   - NEW players: every pass on the FIRST paid purchase = 2 spins
+  //     (FIRST_PURCHASE_SPINS_PER_PASS) — buy 1 → 2, buy 2 → 4, no cap.
+  //   - RETURNING players (past-player snapshot / manual allowlist / web2
+  //     identity match): the CLASSIC promo, unchanged — every 2 passes = 1
+  //     spin (was every-4 until 07-06).
+  // One-time for everyone — the durable `firstPurchaseBonusGranted` flag
+  // gates it (so retries can't double-grant). Runs in the SAME tx as the
+  // mint promo above, so a single purchase advances both atomically
+  // (interconnection).
   let firstPurchaseSpinsEarned = 0;
   if (opts.handleFirstPurchase && userSnap) {
-    const userData = userSnap.data() as (User & { returningVia?: string }) | undefined;
-    const isReturning = isReturningWalletSync(userRef.id) || !!userData?.returningVia;
+    const userData = userSnap.data() as (User & { isReturningPlayer?: boolean }) | undefined;
+    const isReturning = userData?.isReturningPlayer === true || isReturningWalletSync(userRef.id);
     const grant = computeFirstPurchaseGrant(!!userData?.firstPurchaseBonusGranted, quantity, isReturning);
     if (grant.consume) {
       tx.set(userRef, { firstPurchaseBonusGranted: true }, { merge: true });

@@ -4,17 +4,30 @@
 // unit-testable without a live Firestore (mirrors lib/exposureUtils.ts,
 // lib/slowDraftClock.ts). db-firestore imports these and does the I/O.
 
-/** First-purchase bonus (new players only): every pass earns this many spins. */
+/** First-purchase bonus for NEW players: every pass earns this many spins. */
 export const FIRST_PURCHASE_SPINS_PER_PASS = 2;
 
+/** Classic first-purchase rate, kept for RETURNING players: passes per spin. */
+export const FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN = 2;
+
 /**
- * Wheel spins earned from a first paid purchase of `quantity` passes.
- * 1 → 2, 2 → 4, 4 → 8 … NO cap (was every-2-passes = 1 spin until
- * 2026-07-10). Non-positive / invalid → 0.
+ * NEW-player wheel spins earned from a first paid purchase of `quantity`
+ * passes. 1 → 2, 2 → 4, 4 → 8 … NO cap (new players upgraded from the
+ * classic rate on 2026-07-10). Non-positive / invalid → 0.
  */
 export function firstPurchaseSpins(quantity: number): number {
   if (!Number.isFinite(quantity) || quantity <= 0) return 0;
   return Math.floor(quantity) * FIRST_PURCHASE_SPINS_PER_PASS;
+}
+
+/**
+ * RETURNING-player (classic) first-purchase spins: every 2 passes = 1 spin,
+ * floored — 2 → 1, 4 → 2, 6 → 3 … NO cap. Unchanged from the pre-2026-07-10
+ * promo (Boris: keep it as it was for returning players).
+ */
+export function classicFirstPurchaseSpins(quantity: number): number {
+  if (!Number.isFinite(quantity) || quantity <= 0) return 0;
+  return Math.floor(quantity / FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN);
 }
 
 export interface FirstPurchaseGrant {
@@ -25,19 +38,23 @@ export interface FirstPurchaseGrant {
 }
 
 /**
- * Decide the first-purchase outcome. NEW PLAYERS ONLY (Boris 2026-07-10):
- * a returning player from a previous season earns nothing AND does not
- * consume the bonus — so a specific returning user can still be granted it
- * later without extra state repair. For new players the bonus is ONE-TIME:
- * the first paid purchase defines it (every pass in that transaction = 2
- * spins), and a subsequent purchase grants nothing and must not re-consume.
+ * Decide the first-purchase outcome. The bonus is ONE-TIME for everyone: the
+ * first paid purchase defines it, and a subsequent purchase grants nothing
+ * and must not re-consume. TWO rates (Boris 2026-07-10):
+ *   - NEW players: every pass = 2 spins (1 → 2, 2 → 4, 4 → 8 …).
+ *   - RETURNING players (past seasons): the classic promo, unchanged —
+ *     every 2 passes = 1 spin, and a tiny first buy (qty < 2) still consumes
+ *     the bonus with 0 spins (the all-in-one-transaction rule).
  */
 export function computeFirstPurchaseGrant(
   alreadyGranted: boolean,
   quantity: number,
   isReturning = false,
 ): FirstPurchaseGrant {
-  if (isReturning || alreadyGranted) return { consume: false, spins: 0 };
+  if (alreadyGranted) return { consume: false, spins: 0 };
+  if (isReturning) {
+    return { consume: quantity > 0, spins: classicFirstPurchaseSpins(quantity) };
+  }
   const spins = firstPurchaseSpins(quantity);
   return { consume: spins > 0, spins };
 }

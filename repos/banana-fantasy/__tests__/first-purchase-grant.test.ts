@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   FIRST_PURCHASE_SPINS_PER_PASS,
+  FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN,
   firstPurchaseSpins,
+  classicFirstPurchaseSpins,
   computeFirstPurchaseGrant,
   computeMintProgress,
   firstPurchaseUpsell,
@@ -41,9 +43,15 @@ describe('First-purchase bonus math', () => {
       expect(computeFirstPurchaseGrant(true, 12)).toEqual({ consume: false, spins: 0 });
     });
 
-    it('a RETURNING player earns nothing and does NOT consume (can be force-granted later)', () => {
-      expect(computeFirstPurchaseGrant(false, 8, true)).toEqual({ consume: false, spins: 0 });
-      expect(computeFirstPurchaseGrant(false, 1, true)).toEqual({ consume: false, spins: 0 });
+    it('a RETURNING player gets the CLASSIC promo unchanged: every 2 passes = 1 spin', () => {
+      expect(FIRST_PURCHASE_CLASSIC_PASSES_PER_SPIN).toBe(2);
+      expect(classicFirstPurchaseSpins(2)).toBe(1);
+      expect(classicFirstPurchaseSpins(6)).toBe(3);
+      expect(computeFirstPurchaseGrant(false, 8, true)).toEqual({ consume: true, spins: 4 });
+      // Classic all-in-one-transaction rule: a 1-pass first buy still consumes with 0 spins.
+      expect(computeFirstPurchaseGrant(false, 1, true)).toEqual({ consume: true, spins: 0 });
+      // One-time for returning players too.
+      expect(computeFirstPurchaseGrant(true, 8, true)).toEqual({ consume: false, spins: 0 });
     });
 
     it('a zero/invalid quantity does not consume the bonus', () => {

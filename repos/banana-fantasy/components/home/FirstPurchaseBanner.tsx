@@ -9,10 +9,11 @@ import { useSyncedFlag } from '@/hooks/useSyncedFlag';
 // the one-time popup (FirstPurchasePromoModal): the popup is the reveal moment,
 // this banner keeps reminding until they buy or dismiss it.
 //
-// NEW PLAYERS ONLY (Boris 2026-07-10): returning players from previous
-// seasons (isBB3Holder covers on-chain BBB3 + past-player snapshot + web2
-// identity match) never see it — buying earns them no first-purchase spins.
-// New users see it once they've finished their welcome-wheel winnings
+// TWO variants since 2026-07-10 (Boris): returning players (isBB3Holder =
+// on-chain BBB3 + past-player snapshot + web2 identity match) keep the
+// CLASSIC promo — shown right away with the classic copy (every 2 passes =
+// 1 spin). New users get the upgraded copy (every pass = 2 Free Spins, win
+// up to $1K) once they've finished their welcome-wheel winnings
 // (firstPurchasePromoUnlocked). Dismissible per account (synced across
 // devices). Hidden once they purchase.
 
@@ -30,7 +31,7 @@ export function FirstPurchaseBanner() {
     setDismissed(true);
   }, [setDismissed]);
 
-  const inWindow = !isBB3Holder && !!user?.firstPurchasePromoUnlocked;
+  const inWindow = isBB3Holder || !!user?.firstPurchasePromoUnlocked;
   const eligible =
     isLoggedIn && !!wallet && !user?.firstPurchaseBonusGranted && inWindow && loaded && !dismissed;
 
@@ -43,12 +44,25 @@ export function FirstPurchaseBanner() {
         onClick={() => router.push('/buy-drafts')}
         className="flex-1 text-left"
       >
-        <p className="text-sm font-semibold text-text-primary">
-          Buy 1 Draft Pass → win up to $1K in Drafts
-        </p>
-        <p className="text-xs text-text-secondary">
-          Every pass = 2 Free Spins · $50 in Drafts guaranteed · first purchase only
-        </p>
+        {isBB3Holder ? (
+          <>
+            <p className="text-sm font-semibold text-text-primary">
+              First Purchase Free Spins — every 2 passes = 1 free spin
+            </p>
+            <p className="text-xs text-text-secondary">
+              One-time offer on your first buy. Grab them in one transaction to stack the most spins.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-text-primary">
+              Buy 1 Draft Pass → win up to $1K in Drafts
+            </p>
+            <p className="text-xs text-text-secondary">
+              Every pass = 2 Free Spins · $50 in Drafts guaranteed · first purchase only
+            </p>
+          </>
+        )}
       </button>
       <button
         onClick={() => router.push('/buy-drafts')}

@@ -324,10 +324,11 @@ const seedPromos: Promo[] = [
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
-    // NEW ribbon since 2026-07-06 (upgraded again 2026-07-10: NEW PLAYERS
-    // ONLY, every pass = 2 spins, $1K framing). isNew is display-only
-    // (self-ping removed). promoFilter also force-sets isNew for
-    // 'first-purchase' so every eligible user sees it.
+    // NEW ribbon since 2026-07-06. This seed carries the NEW-PLAYER variant
+    // (2026-07-10: every pass = 2 spins, $1K framing); RETURNING players get
+    // the classic copy + classic rate overlaid server-side in getPromos /
+    // _incrementMintPromosInTx. isNew is display-only (self-ping removed).
+    // promoFilter also force-sets isNew for 'first-purchase'.
     isNew: true,
     claimable: false,
     claimCount: 0,
