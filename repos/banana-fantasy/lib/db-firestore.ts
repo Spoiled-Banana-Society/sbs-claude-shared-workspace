@@ -41,6 +41,7 @@ import { pushStreamEventBg } from '@/lib/userEventStream';
 import { createNotification } from '@/lib/queueNotifications';
 import { applyCompletionGate, computeFirstPurchaseGrant, computeMintProgress } from '@/lib/promoMath';
 import { isReturningWalletSync } from '@/lib/returningUsers';
+import { runInBackground } from '@/lib/serverBackground';
 
 const USERS_COLLECTION = 'v2_users';
 const PURCHASES_COLLECTION = 'v2_purchases';
@@ -788,24 +789,29 @@ export async function claimPromo(userId: string, promoId: string) {
       }
     }
 
-    // Fire-and-forget user event for Metrics dashboard
+    // Metrics event — runInBackground (NOT `void`): detached promises are
+    // killed by the Vercel lambda freeze after the response (Rule: bells were
+    // being dropped this way — jetsonjets22's claims committed but no
+    // "Promo Claimed!" bell ever landed, 2026-07-10).
     try {
       const { logUserEvent } = await import('@/lib/userEvents');
-      void logUserEvent(userId, 'promo_claimed', {
+      runInBackground('promo-claim-metrics', logUserEvent(userId, 'promo_claimed', {
         promoId,
         promoType: result.promo.type,
         spinsAdded: result.spinsAdded,
-      });
+      }));
     } catch { /* non-fatal */ }
 
     // Server-side "Promo Claimed!" notification — fired the instant the claim
-    // commits so it reaches every device in real-time (content-carrying ping),
-    // instead of the client firing a second round-trip after the claim returns.
+    // commits so it reaches every device in real-time (content-carrying ping).
+    // runInBackground/waitUntil, NOT `void` — this bell is the user's only
+    // confirmation the claim worked (toasts removed 2026-07-10), so dropping
+    // it reads as "the claim button is broken".
     if (result.spinsAdded > 0) {
       // Key off what was actually granted (draftPassCount), not the promo
       // type — buy-bonus grants spins when configured reward === 'spin'.
       const grantedDrafts = result.draftPassCount > 0;
-      void createNotification(userId, {
+      runInBackground('promo-claim-bell', createNotification(userId, {
         type: 'promo',
         title: 'Promo Claimed!',
         message: grantedDrafts
@@ -813,7 +819,7 @@ export async function claimPromo(userId: string, promoId: string) {
           : `You earned ${result.spinsAdded} wheel spin${result.spinsAdded !== 1 ? 's' : ''}!`,
         link: grantedDrafts ? '/drafting' : '/banana-wheel',
         icon: grantedDrafts ? 'ticket' : 'spin',
-      });
+      }));
     }
 
     await logActivityEvent({

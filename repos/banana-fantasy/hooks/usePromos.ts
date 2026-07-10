@@ -33,7 +33,11 @@ export function usePromos(opts?: { userId?: string }) {
   const swr = useSWRLike<Promo[]>(
     swrKey,
     ({ signal }) => fetchJson<Promo[]>('/api/promos', { signal, query: userId ? { userId } : {} }),
-    { fallbackData: [] },
+    // persist: hard refreshes / fresh navigations paint the promo boxes
+    // INSTANTLY from the last snapshot (then revalidate live) instead of
+    // showing empty boxes while the slow /api/promos round-trip completes
+    // (Boris 2026-07-10: drafting-page promo boxes must load quick).
+    { fallbackData: [], persist: true },
   );
 
   // optimistic local update after claims
@@ -118,6 +122,11 @@ export function usePromos(opts?: { userId?: string }) {
           title: 'Claim failed',
           message: error.message,
         });
+        // A failed claim usually means the button was STALE (e.g. already
+        // claimed on another device/surface — server says "not claimable").
+        // Refetch immediately so the card self-corrects instead of leaving a
+        // dead Claim button (jetsonjets22 report, 2026-07-10).
+        void mutateRef.current();
         return error;
       }
     },
