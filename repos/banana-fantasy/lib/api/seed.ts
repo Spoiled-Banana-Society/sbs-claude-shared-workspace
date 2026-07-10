@@ -320,7 +320,7 @@ const seedPromos: Promo[] = [
     id: '11',
     type: 'first-purchase',
     title: 'First Purchase → WIN UP TO $1K IN DRAFTS',
-    description: 'Buy 1 pass = 2 Free Spins — $50 in Drafts guaranteed',
+    description: 'GTD $50 in Drafts — every pass = 2 Free Spins',
     ctaText: 'Buy Drafts',
     ctaLink: '/buy-drafts',
     backgroundColor: '#2a2a35',
