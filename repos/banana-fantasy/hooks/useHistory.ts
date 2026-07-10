@@ -61,6 +61,6 @@ export function useHistory(opts?: { userId?: string }) {
         .filter((t) => t.rank || t.seasonScore || t.prizes)
         .map(mapTokenToCompletedDraft);
     },
-    { enabled: !!wallet, fallbackData: [] },
+    { enabled: !!wallet, fallbackData: [], persist: true },
   );
 }

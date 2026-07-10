@@ -38,7 +38,7 @@ export function useBadges(opts?: { userId?: string }) {
       signal,
       query: userId ? { userId } : {},
     }),
-    { fallbackData: FALLBACK },
+    { fallbackData: FALLBACK, persist: true },
   );
 
   const equipBadge = useCallback(async (badgeId: string | null) => {

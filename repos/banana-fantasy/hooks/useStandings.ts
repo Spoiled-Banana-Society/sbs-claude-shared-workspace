@@ -74,7 +74,7 @@ export function useGameweek() {
       }
       return '2025REG-01';
     },
-    { fallbackData: '2025REG-01' },
+    { fallbackData: '2025REG-01', persist: true },
   );
 }
 
@@ -103,7 +103,7 @@ export function useMyTeams(gameweek: string) {
       }
       return [];
     },
-    { enabled: !!wallet, fallbackData: [] },
+    { enabled: !!wallet, fallbackData: [], persist: true },
   );
 }
 

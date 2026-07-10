@@ -22,6 +22,7 @@ export function useExposure(opts?: { userId?: string }) {
     {
       enabled: !!userId,
       fallbackData: null,
+      persist: true,
       // Live-feel: the server recomputes exposure from completed drafts on each
       // GET (2s throttle), so refetch when the user returns to the tab and poll
       // every 20s while open. Finishing a draft → the data is fresh here without

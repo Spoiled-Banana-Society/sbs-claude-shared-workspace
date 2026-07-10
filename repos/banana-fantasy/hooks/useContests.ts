@@ -10,7 +10,7 @@ export function useContests() {
     ({ signal }) => fetchJson<Contest[]>('/api/contests', { signal }),
     // Poll so the live total-entries count ticks up as leagues fill, and refresh
     // on tab focus. The server coalesces the underlying read (5s), so cheap.
-    { fallbackData: [], refreshInterval: 10_000, revalidateOnFocus: true },
+    { fallbackData: [], refreshInterval: 10_000, revalidateOnFocus: true, persist: true },
   );
 }
 

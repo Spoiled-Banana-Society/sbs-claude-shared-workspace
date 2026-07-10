@@ -8,6 +8,6 @@ export function useLeaderboard() {
   return useSWRLike<LeaderboardEntry[]>(
     'leaderboard',
     ({ signal }) => fetchJson<LeaderboardEntry[]>('/api/leaderboard', { signal }),
-    { fallbackData: [] },
+    { fallbackData: [], persist: true },
   );
 }

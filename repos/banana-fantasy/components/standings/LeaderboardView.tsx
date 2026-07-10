@@ -49,7 +49,7 @@ export function LeaderboardView({ gameweek, onOpenLeagueDetail }: LeaderboardVie
         signal,
         query: { gameweek, level, orderBy: sortField, limit: '200' },
       }),
-    { fallbackData: [] },
+    { fallbackData: [], persist: true },
   );
 
   // Client-side pagination
