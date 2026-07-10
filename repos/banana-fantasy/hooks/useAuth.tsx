@@ -1345,10 +1345,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [walletAddress]);
 
+  // Admin "View as → New user" preview (sessionStorage 'sbs-view-as'): also
+  // simulate NEVER-PURCHASED so the first-purchase promo (card + banner state
+  // + More Info) renders exactly as a new user sees it — without touching the
+  // admin's real account data (Boris 2026-07-10). Admin wallets only; the
+  // override is per-session and display-only (claims still hit the server,
+  // which uses the REAL flags).
+  const viewAsNewPreview =
+    typeof window !== 'undefined' &&
+    !!user &&
+    isWalletAdmin(walletAddress) &&
+    window.sessionStorage.getItem('sbs-view-as') === 'new';
+  const exposedUser = viewAsNewPreview && user
+    ? { ...user, firstPurchaseBonusGranted: false, firstPurchasePromoUnlocked: true }
+    : user;
+
   return (
     <AuthContext.Provider
       value={{
-        user,
+        user: exposedUser,
         walletAddress: walletAddress ?? (MOCK_AUTH ? MOCK_WALLET : null),
         isLoggedIn: !!user,
         isLoading: MOCK_AUTH ? false : (!privy.ready || (privy.authenticated && !user)),
