@@ -25,8 +25,7 @@ import { LOG_SOURCES } from '@/lib/logSources';
 import { clientLog } from '@/lib/clientLog';
 import { connectMetaMaskFresh } from '@/lib/metamaskSigner';
 import { ensureBaseNetwork } from '@/lib/ensureBaseNetwork';
-import { useToast } from '@/components/ui/Toast';
-import { surfacePurchasePromoAwards, type PurchasePromoAwards } from '@/lib/promoAwardToasts';
+import { type PurchasePromoAwards } from '@/lib/promoAwardToasts';
 
 type MintFn = (
   quantity: number,
@@ -92,11 +91,6 @@ function normalizeMintError(error: unknown): string {
 export function useMintDraftPass(): UseMintDraftPassResult {
   const { wallets, ready: walletsReady } = useWallets();
   const { walletAddress } = useAuth();
-  // Ref pattern (CLAUDE.md render-loop rule): keep the mint callback's deps to
-  // stable values — `show` may churn per render and must not re-create `mint`.
-  const { show } = useToast();
-  const showToastRef = useRef(show);
-  showToastRef.current = show;
 
   // Privy embedded-wallet signer — lets web2 (email/X) users sign the gasless
   // permit silently (no confirm modal) for a one-tap mint. Ref-held so it
@@ -478,11 +472,8 @@ export function useMintDraftPass(): UseMintDraftPassResult {
         const hash = (data.txHashes?.mint ?? '0x') as Hex;
         setTxHash(hash);
         setMintStep('success');
-        // Instant milestone toasts + bell refresh on the buying device
-        // (the stream copy is deduped; mobile's RTDB socket may be dead).
-        surfacePurchasePromoAwards(data.promoAwards, showToastRef.current, {
-          cardFreeDraftsEarned: data.cardFreeDraftsEarned,
-        });
+        // No toasts (Boris 2026-07-10): promo milestones surface via the
+        // server-created bell only.
         await refreshContractState();
         return hash;
       } catch (err) {

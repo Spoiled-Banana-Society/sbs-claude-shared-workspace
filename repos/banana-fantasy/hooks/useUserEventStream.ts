@@ -1,12 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/components/ui/Toast';
 import { subscribeUserEvents, type UserStreamEvent } from '@/lib/api/firebase';
 import { BADGE_BY_ID } from '@/lib/badges/catalog';
-import { wasRecentLocalSurface, markLocalSurface } from '@/lib/localSurfaceDedupe';
+import { markLocalSurface } from '@/lib/localSurfaceDedupe';
 
 /**
  * Real-time user event stream — primary surface for badge unlocks +
@@ -197,9 +195,11 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
       // on the home page). No toast and no modal — the modal was too abrupt and
       // the toast wasn't landing reliably during the post-draft loading beat, so
       // we roll with the bell + banner + box.
+      // (pushNotif is a no-op — the real bell copy lives server-side in
+      // lib/eventNotifications.ts: "Win up to $1,000 in Drafts".)
       surfaces.pushNotif(
-        'First Purchase Free Spins 🍌',
-        'Every 4 passes on your first buy = 1 free spin. Buy them in one transaction to stack the most spins.',
+        'Win up to $1,000 in Drafts',
+        'Buy 1 Draft Pass → 2 Free Spins. $50 in Drafts guaranteed.',
         '/buy-drafts',
         `first-purchase-unlocked-${event.eventId}`,
       );
@@ -242,19 +242,9 @@ function renderEvent(event: UserStreamEvent, surfaces: Surfaces) {
 
 export function useUserEventStream() {
   const { walletAddress } = useAuth();
-  const { show } = useToast();
-  const pathname = usePathname();
-  // Latest pathname in a ref so the (rarely-rebuilt) subscription
-  // closure reads the current route without re-subscribing on every nav.
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
-  // Keep `show` in a ref so the subscription effect can depend ONLY on the
-  // stable user id — NOT on `show`/`isLoggedIn`, which churn (Privy auth
-  // blinks) and would tear down + re-subscribe the stream, dropping events
-  // that land in the gap. That churn is why the toast fired only sometimes.
-  // Mirrors the stable-deps pattern the bell + promos subscriptions use.
-  const showRef = useRef(show);
-  showRef.current = show;
+  // Toasts removed site-wide 2026-07-10 (Boris): bells are the only
+  // promo/event surface. This hook still subscribes to keep the seen-ledger
+  // and side-effects (e.g. the first-purchase-unlocked CustomEvent) alive.
 
   useEffect(() => {
     // Subscribe by WALLET ADDRESS (not user.id). user.id is the wallet only
@@ -280,7 +270,6 @@ export function useUserEventStream() {
       // still mark seen so we never reconsider it.
       const replayed = (event.timestamp ?? 0) < subscribedAt;
       const stale = replayed;
-      const inDraftRoom = (pathnameRef.current ?? '').startsWith('/draft-room');
 
       if (isSeen) return;
 
@@ -291,27 +280,20 @@ export function useUserEventStream() {
       }
 
       const surfaces: Surfaces = {
-        showToast: (message, link) => {
-          if (inDraftRoom) return; // toast suppressed in draft lobby/drafting
-          // The acting device already showed this milestone optimistically
-          // from its API response (instant on mobile) — don't double-toast
-          // when the stream copy of the same event arrives.
-          if (wasRecentLocalSurface(event.type)) return;
-          showRef.current({
-            level: 'success',
-            message,
-            ...(link ? { action: { label: 'View', onClick: () => { window.location.href = link; } } } : {}),
-          });
-          // Mark AFTER showing so the other surface (the purchase-response toast
-          // in surfacePurchasePromoAwards) is suppressed if the stream wins the
-          // race — makes the dedupe bidirectional (fixes the double-toast).
+        // No-op since 2026-07-10 (Boris): NO toasts anywhere on the site —
+        // bells are the only promo/event surface. The persistent bell is
+        // created SERVER-SIDE in pushStreamEvent (lib/userEventStream.ts →
+        // createNotification), account-synced across devices. Keeping this a
+        // no-op (like pushNotif below) avoids touching every renderEvent case;
+        // this hook still drives side-effects like the first-purchase
+        // CustomEvent and seen-tracking.
+        showToast: () => {
           markLocalSurface(event.type);
         },
         // No-op: the persistent bell entry is now created SERVER-SIDE in
         // pushStreamEvent (lib/userEventStream.ts → createNotification), so
-        // it's account-synced across devices. This hook only drives the
-        // ephemeral, per-device toast. (renderEvent still calls pushNotif;
-        // keeping it a no-op avoids touching every case.)
+        // it's account-synced across devices. (renderEvent still calls
+        // pushNotif; keeping it a no-op avoids touching every case.)
         pushNotif: () => {},
       };
 
